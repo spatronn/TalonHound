@@ -1,0 +1,241 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-validation:
+    name: Release validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Validate VERSION file and simulated release tag
+        run: |
+          test -f VERSION
+          node scripts/release/validate-version-tag.js "v$(tr -d '\r\n' < VERSION)"
+          node --test scripts/release/generate-manifest.test.js
+          node scripts/release/latest-migration.js
+
+      - name: Reject mismatched release tag simulation
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          if node scripts/release/validate-version-tag.js "v${version}.bad" >/dev/null 2>&1; then
+            echo "Expected mismatched tag validation to fail"
+            exit 1
+          fi
+          echo "Mismatch correctly rejected"
+
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: talonhound
+          POSTGRES_USER: talonhound
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U talonhound -d talonhound"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: talonhound
+      DB_PASSWORD: ci-test-password
+      DB_NAME: talonhound
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Run backend unit tests
+        working-directory: backend
+        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard
+
+      - name: Lint installation.sh
+        run: bash -n installation.sh
+
+      - name: Run release manifest tests
+        run: node --test scripts/release/generate-manifest.test.js
+
+      - name: Apply database init scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          for file in db/init/*.sql; do
+            echo "Applying $file"
+            PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$file"
+          done
+
+      - name: Migrate fresh database
+        working-directory: backend
+        run: npm run migrate
+
+      - name: Verify migrations are idempotent
+        working-directory: backend
+        run: npm run migrate
+
+      - name: First-run setup wizard integration tests (real Postgres)
+        working-directory: backend
+        run: npm run test:setup-wizard-integration
+
+      - name: Partition-aware backup restore smoke
+        env:
+          RESTORE_TEST_DB: talonhound_restore_test
+        run: |
+          chmod +x scripts/test-backup-restore-partition.sh
+          bash scripts/test-backup-restore-partition.sh
+
+  frontend-tests:
+    name: Frontend tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend unit tests
+        working-directory: frontend
+        run: npm run test:product-version && npm test
+
+      - name: Build frontend production bundle
+        working-directory: frontend
+        run: npm run build
+
+  compose-validation:
+    name: Compose validation
+    runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ci-test-password
+      REDIS_PASSWORD: ci-test-password
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-characters-long
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Validate compose files
+        run: |
+          docker compose -f docker-compose.yml config >/dev/null
+          TALONHOUND_BACKEND_IMAGE=ghcr.io/example/talonhound-backend:0.0.0 \
+          TALONHOUND_FRONTEND_IMAGE=ghcr.io/example/talonhound-frontend:0.0.0 \
+          TALONHOUND_INTEGRATION_IMAGE=ghcr.io/example/talonhound-integration:0.0.0 \
+          TALONHOUND_PROXY_IMAGE=ghcr.io/example/talonhound-proxy:0.0.0 \
+            docker compose -f docker-compose.yml -f docker-compose.release.yml config >/dev/null
+
+      - name: Proxy dynamic-upstream regression guard
+        run: bash scripts/test-proxy-dynamic-upstreams.sh
+
+  docker-build-smoke:
+    name: Docker build smoke (no push)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup QEMU (for emulated linux/arm64 builds)
+        uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Report runner architecture
+        run: |
+          echo "Runner uname -m: $(uname -m)"   # GitHub-hosted ubuntu-latest is x86_64 (amd64)
+          echo "Docker platform: $(docker version --format '{{.Server.Arch}}')"
+
+      - name: Build images (linux/amd64, native)
+        env:
+          BUILD_VERSION: ${{ github.sha }}
+          BUILD_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+        run: |
+          version="$(tr -d '\r\n' < VERSION)"
+          for spec in \
+            "backend/Dockerfile:talonhound-backend" \
+            "frontend/Dockerfile:talonhound-frontend" \
+            "integration/Dockerfile:talonhound-integration" \
+            "proxy/Dockerfile:talonhound-proxy"; do
+            file="${spec%%:*}"
+            tag="${spec##*:}"
+            docker buildx build \
+              --platform linux/amd64 \
+              --load \
+              --file "$file" \
+              --build-arg BUILD_VERSION="$version" \
+              --build-arg BUILD_COMMIT="$BUILD_COMMIT" \
+              --build-arg BUILD_DATE="${BUILD_DATE:-unknown}" \
+              --tag "local/${tag}:ci" \
+              .
+          done
+
+      - name: Build images (linux/arm64, QEMU-emulated — build only, no load)
+        env:
+          BUILD_VERSION: ${{ github.sha }}
+          BUILD_COMMIT: ${{ github.sha }}
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+        run: |
+          # Validates the Dockerfiles build for arm64 (e.g. bcrypt native compile under emulation)
+          # so architecture regressions are caught. This is an EMULATED build, not a real arm64
+          # host; native arm64 runtime is validated separately on real hardware.
+          version="$(tr -d '\r\n' < VERSION)"
+          for spec in \
+            "backend/Dockerfile" \
+            "frontend/Dockerfile" \
+            "integration/Dockerfile" \
+            "proxy/Dockerfile"; do
+            docker buildx build \
+              --platform linux/arm64 \
+              --file "$spec" \
+              --build-arg BUILD_VERSION="$version" \
+              --build-arg BUILD_COMMIT="$BUILD_COMMIT" \
+              --build-arg BUILD_DATE="${BUILD_DATE:-unknown}" \
+              --output type=cacheonly \
+              .
+          done

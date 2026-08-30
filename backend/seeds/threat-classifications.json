@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "description": "TalonHound bundled IOC threat classification taxonomy (built-in dictionary rows)",
+  "records": [
+    {
+      "id": "4ee39c50-9e95-4c2e-bfba-c177a4c771e7",
+      "name": "Unknown",
+      "slug": "unknown",
+      "description": "Default when classification is unset or unrecognized.",
+      "sort_order": 0,
+      "active": true,
+      "mitre_attack": []
+    },
+    {
+      "id": "8d6b91c4-86ad-4247-a986-9afe98fb1b43",
+      "name": "Phishing",
+      "slug": "phishing",
+      "description": "IOCs associated with phishing infrastructure, delivery, credential capture, or related social-engineering activity.",
+      "sort_order": 10,
+      "active": true,
+      "mitre_attack": [{ "id": "T1566" }]
+    },
+    {
+      "id": "1d7f32a2-60b2-4429-9e3c-f9ed8bd08c32",
+      "name": "Credential Theft",
+      "slug": "credential_theft",
+      "description": "IOCs linked to credential harvesting, theft, brute-force, or unauthorized account access activity.",
+      "sort_order": 20,
+      "active": true,
+      "mitre_attack": [{ "id": "TA0006" }]
+    },
+    {
+      "id": "d228b87f-625f-4421-8bb2-0995d6f25133",
+      "name": "Malware",
+      "slug": "malware",
+      "description": "IOCs associated with malicious software, payloads, or malware-related infrastructure not better classified elsewhere.",
+      "sort_order": 30,
+      "active": true,
+      "mitre_attack": []
+    },
+    {
+      "id": "4a6170bc-b944-4117-9bb8-762bfc0be7ca",
+      "name": "Ransomware",
+      "slug": "ransomware",
+      "description": "IOCs associated with ransomware operators, payloads, infrastructure, or delivery activity.",
+      "sort_order": 40,
+      "active": true,
+      "mitre_attack": [{ "id": "T1486" }]
+    },
+    {
+      "id": "16c102a0-89a4-4ba0-89c6-34e813d79082",
+      "name": "Command and Control (C2)",
+      "slug": "command_and_control",
+      "description": "IOCs associated with command-and-control channels, botnet controllers, or C2 infrastructure.",
+      "sort_order": 50,
+      "active": true,
+      "mitre_attack": [{ "id": "TA0011" }]
+    },
+    {
+      "id": "120e65b7-3da5-467c-93ab-a3897a95ae4e",
+      "name": "Botnet",
+      "slug": "botnet",
+      "description": "IOCs associated with botnet recruitment, control, or infected-host activity.",
+      "sort_order": 60,
+      "active": true,
+      "mitre_attack": []
+    },
+    {
+      "id": "10d77804-ea43-4d87-98c7-9d9dc57a263c",
+      "name": "Exploit",
+      "slug": "exploit",
+      "description": "IOCs associated with exploit delivery, exploitation infrastructure, or vulnerability abuse activity.",
+      "sort_order": 70,
+      "active": true,
+      "mitre_attack": [{ "id": "T1190" }]
+    },
+    {
+      "id": "4c168ff9-1165-4c88-9df2-f19f1034af8f",
+      "name": "Scanner / Reconnaissance",
+      "slug": "scanner_recon",
+      "description": "IOCs associated with scanning, probing, or reconnaissance activity against targets.",
+      "sort_order": 80,
+      "active": true,
+      "mitre_attack": [{ "id": "TA0043" }]
+    },
+    {
+      "id": "885cd03b-34a2-4803-8e24-f0e26197ea7b",
+      "name": "Suspicious Infrastructure",
+      "slug": "suspicious_infrastructure",
+      "description": "IOCs linked to suspicious or abused hosting, proxies, anonymization, or compromised infrastructure.",
+      "sort_order": 90,
+      "active": true,
+      "mitre_attack": []
+    },
+    {
+      "id": "55fdc758-f016-4a81-8422-122b4f0f482a",
+      "name": "Spam / Abuse",
+      "slug": "spam_abuse",
+      "description": "IOCs associated with spam campaigns, bulk abuse, or unsolicited malicious messaging.",
+      "sort_order": 100,
+      "active": true,
+      "mitre_attack": []
+    },
+    {
+      "id": "5985cb2a-b06b-428b-b719-2fc43d9f1a0b",
+      "name": "Dropper / Downloader",
+      "slug": "dropper_downloader",
+      "description": "IOCs associated with malware delivery, droppers, downloaders, or staging of secondary payloads.",
+      "sort_order": 110,
+      "active": true,
+      "mitre_attack": [{ "id": "T1105" }]
+    },
+    {
+      "id": "5345d47e-9e93-4610-8317-c0b3a28ed82b",
+      "name": "Payload Hosting",
+      "slug": "payload_hosting",
+      "description": "IOCs that host malicious payloads, staged files, or weaponized content for delivery.",
+      "sort_order": 120,
+      "active": true,
+      "mitre_attack": [{ "id": "T1105" }]
+    },
+    {
+      "id": "53aae112-f56f-4e79-8260-5ae6e1fc7888",
+      "name": "Data Exfiltration",
+      "slug": "data_exfiltration",
+      "description": "IOCs associated with data theft, exfiltration channels, or staging of stolen data.",
+      "sort_order": 130,
+      "active": true,
+      "mitre_attack": [{ "id": "TA0010" }]
+    },
+    {
+      "id": "9a3a6a9b-2fd6-4e9e-9a92-bdbbc8b19775",
+      "name": "Cryptomining",
+      "slug": "cryptomining",
+      "description": "IOCs associated with unauthorized cryptocurrency mining or cryptominer delivery.",
+      "sort_order": 140,
+      "active": true,
+      "mitre_attack": [{ "id": "T1496" }]
+    },
+    {
+      "id": "4560cda8-3532-4220-9520-9de778eec48f",
+      "name": "Fraud / Scam",
+      "slug": "fraud_scam",
+      "description": "IOCs associated with fraud, scams, financial deception, or related criminal schemes.",
+      "sort_order": 150,
+      "active": true,
+      "mitre_attack": []
+    },
+    {
+      "id": "87fe3fb7-5368-44a8-adee-084ee29beb61",
+      "name": "Typosquatting / Impersonation",
+      "slug": "typosquatting_impersonation",
+      "description": "IOCs associated with typosquatting, brand impersonation, or deceptive domain activity.",
+      "sort_order": 160,
+      "active": true,
+      "mitre_attack": [{ "id": "T1583.001" }]
+    },
+    {
+      "id": "a51cea8c-7bcb-4811-868f-1781d4cb1821",
+      "name": "Benign / Test",
+      "slug": "benign_test",
+      "description": "IOCs confirmed benign, used for testing, or non-malicious validation purposes.",
+      "sort_order": 170,
+      "active": true,
+      "mitre_attack": []
+    }
+  ]
+}

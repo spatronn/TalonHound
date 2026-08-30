@@ -1,0 +1,436 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      git_tag: ${{ steps.meta.outputs.git_tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+      latest_migration: ${{ steps.meta.outputs.latest_migration }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+
+      - name: Validate tag matches VERSION
+        id: meta
+        run: |
+          set -euo pipefail
+          node scripts/release/validate-version-tag.js "${GITHUB_REF_NAME}"
+          version="$(tr -d '\r\n' < VERSION)"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "git_tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          node --input-type=module -e "
+            import { releaseChannel, isPrereleaseVersion } from './backend/lib/releaseSemver.js';
+            import { appendFileSync } from 'node:fs';
+            const version = process.argv[1];
+            appendFileSync(process.env.GITHUB_OUTPUT, 'channel=' + releaseChannel(version) + '\n');
+            appendFileSync(process.env.GITHUB_OUTPUT, 'prerelease=' + (isPrereleaseVersion(version) ? 'true' : 'false') + '\n');
+          " "$version"
+          latest="$(node scripts/release/latest-migration.js | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>console.log(JSON.parse(s).latestMigration))")"
+          echo "latest_migration=${latest}" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Release-critical tests
+    needs: validate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: talonhound
+          POSTGRES_USER: talonhound
+          POSTGRES_PASSWORD: ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U talonhound -d talonhound"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_USER: talonhound
+      DB_PASSWORD: ci-test-password
+      DB_NAME: talonhound
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Backend tests
+        working-directory: backend
+        run: |
+          npm ci
+          npm run test:release
+          npm run test:migrate
+          npm run test:sprint-smoke
+
+      - name: Release manifest tests
+        run: node --test scripts/release/generate-manifest.test.js
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run test:product-version
+          npm test
+          npm run build
+
+      - name: Database migration validation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          for file in db/init/*.sql; do
+            PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -f "$file"
+          done
+          cd backend
+          npm run migrate
+          npm run migrate
+          cd ..
+          chmod +x scripts/test-backup-restore-partition.sh
+          RESTORE_TEST_DB=talonhound_restore_test bash scripts/test-backup-restore-partition.sh
+
+  build-backend:
+    name: Build backend image
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/talonhound-backend
+          tags: |
+            type=raw,value=${{ needs.validate.outputs.version }}
+      - id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          # Multi-platform OCI index. amd64 builds natively on the runner; arm64 builds via
+          # QEMU emulation (native npm modules like bcrypt are compiled from source under
+          # emulation — see backend/Dockerfile).
+          platforms: linux/amd64,linux/arm64
+          # Keep the pushed artifact a clean amd64+arm64 index; provenance is attested
+          # explicitly below on the index digest via attest-build-provenance.
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ needs.validate.outputs.version }}
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+      - uses: actions/attest-build-provenance@f9eaf234fc1c2e333c1eca18177db0f44fa6ba52 # v2.2.1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/talonhound-backend
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  build-frontend:
+    name: Build frontend image
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/talonhound-frontend
+          tags: |
+            type=raw,value=${{ needs.validate.outputs.version }}
+      - id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ needs.validate.outputs.version }}
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+      - uses: actions/attest-build-provenance@f9eaf234fc1c2e333c1eca18177db0f44fa6ba52 # v2.2.1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/talonhound-frontend
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  build-integration:
+    name: Build integration image
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/talonhound-integration
+          tags: |
+            type=raw,value=${{ needs.validate.outputs.version }}
+      - id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: integration/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ needs.validate.outputs.version }}
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+      - uses: actions/attest-build-provenance@f9eaf234fc1c2e333c1eca18177db0f44fa6ba52 # v2.2.1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/talonhound-integration
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  build-proxy:
+    name: Build proxy image
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
+      - uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/talonhound-proxy
+          tags: |
+            type=raw,value=${{ needs.validate.outputs.version }}
+      - id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: proxy/Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            BUILD_VERSION=${{ needs.validate.outputs.version }}
+            BUILD_COMMIT=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+      - uses: actions/attest-build-provenance@f9eaf234fc1c2e333c1eca18177db0f44fa6ba52 # v2.2.1
+        with:
+          subject-name: ghcr.io/${{ github.repository_owner }}/talonhound-proxy
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+  manifest:
+    name: Generate release manifest
+    needs: [validate, build-backend, build-frontend, build-integration, build-proxy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: Write release manifest
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          cat > /tmp/images.json <<EOF
+          {
+            "backend": {
+              "repository": "ghcr.io/${{ github.repository_owner }}/talonhound-backend",
+              "tag": "${version}",
+              "digest": "${{ needs.build-backend.outputs.digest }}",
+              "platforms": ["linux/amd64", "linux/arm64"]
+            },
+            "frontend": {
+              "repository": "ghcr.io/${{ github.repository_owner }}/talonhound-frontend",
+              "tag": "${version}",
+              "digest": "${{ needs.build-frontend.outputs.digest }}",
+              "platforms": ["linux/amd64", "linux/arm64"]
+            },
+            "integration": {
+              "repository": "ghcr.io/${{ github.repository_owner }}/talonhound-integration",
+              "tag": "${version}",
+              "digest": "${{ needs.build-integration.outputs.digest }}",
+              "platforms": ["linux/amd64", "linux/arm64"]
+            },
+            "proxy": {
+              "repository": "ghcr.io/${{ github.repository_owner }}/talonhound-proxy",
+              "tag": "${version}",
+              "digest": "${{ needs.build-proxy.outputs.digest }}",
+              "platforms": ["linux/amd64", "linux/arm64"]
+            }
+          }
+          EOF
+          node scripts/release/write-manifest-file.js \
+            --version "$version" \
+            --git-tag "${{ needs.validate.outputs.git_tag }}" \
+            --git-commit "${{ github.sha }}" \
+            --released-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --latest-migration "${{ needs.validate.outputs.latest_migration }}" \
+            --images-file /tmp/images.json \
+            --out release-manifest.json
+          node --input-type=module -e "import { validateReleaseManifest } from './scripts/release/generate-manifest.js'; import { readFileSync } from 'node:fs'; validateReleaseManifest(JSON.parse(readFileSync('release-manifest.json','utf8')));"
+          channel="${{ needs.validate.outputs.channel }}"
+          if [ "$channel" = "beta" ] || [ "$channel" = "stable" ]; then
+            node scripts/release/write-channel-manifest.js \
+              --version "$version" \
+              --released-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --out "updates/${channel}.json"
+            cp "updates/${channel}.json" channel-update-manifest.json
+          else
+            echo "Skipping channel update pointer for channel=${channel}"
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-manifest
+          path: |
+            release-manifest.json
+            channel-update-manifest.json
+            updates/
+          if-no-files-found: warn
+  publish-release:
+    name: Publish GitHub Release
+    needs: [validate, manifest]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-manifest
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="${{ needs.validate.outputs.version }}"
+          tag="${{ needs.validate.outputs.git_tag }}"
+          notes_file="$(mktemp)"
+          {
+            echo "TalonHound ${version}"
+            echo
+            echo "Official container images, release manifest, and source snapshot for this tag."
+            echo
+            echo "Install using \`docker-compose.release.yml\` with the image digests recorded in \`release-manifest.json\`."
+          } > "$notes_file"
+          args=(release create "$tag" --title "TalonHound ${version}" --notes-file "$notes_file" "release-manifest.json")
+          if [ -f channel-update-manifest.json ]; then
+            args+=("channel-update-manifest.json")
+          fi
+          if [ "${{ needs.validate.outputs.prerelease }}" = "true" ]; then
+            args+=(--prerelease)
+          fi
+          gh "${args[@]}"
+
+      - name: Publish channel update pointer on main
+        if: ${{ needs.validate.outputs.channel == 'beta' || needs.validate.outputs.channel == 'stable' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          channel="${{ needs.validate.outputs.channel }}"
+          version="${{ needs.validate.outputs.version }}"
+          if [ ! -f channel-update-manifest.json ]; then
+            echo "channel-update-manifest.json missing; skip pointer publish"
+            exit 0
+          fi
+          cp channel-update-manifest.json /tmp/channel-update-manifest.json
+          # Update the static HTTPS pointer used by installations (config-compatible with a future update.talonhound.io host).
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout -B main origin/main
+          mkdir -p updates
+          cp /tmp/channel-update-manifest.json "updates/${channel}.json"
+          git add "updates/${channel}.json"
+          if git diff --cached --quiet; then
+            echo "Channel pointer already up to date"
+            exit 0
+          fi
+          git commit -m "chore(release): point ${channel} channel to v${version}"
+          git push origin main

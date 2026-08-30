@@ -1,0 +1,14 @@
+-- Optional future index (NOT required for the NULLS LAST / oversample fix).
+-- Existing per-partition indexes on (created_at DESC) already support Merge Append walks.
+-- A partial index could help status-filtered plans that avoid the oversample CTE, but
+-- CREATE INDEX CONCURRENTLY cannot run inside a migration transaction in many frameworks.
+--
+-- Example (run manually offline if ever needed):
+--   CREATE INDEX CONCURRENTLY IF NOT EXISTS ioc_domain_created_at_active_idx
+--     ON ioc_domain (created_at DESC)
+--     WHERE COALESCE(status, 'active') = 'active';
+-- Repeat per partition (ioc_file_hash, ioc_ip, ioc_url, ioc_ipv6, ioc_items_other).
+--
+-- Rollback: DROP INDEX CONCURRENTLY IF EXISTS <name>;
+--
+-- This file is intentionally NOT a runnable .sql migration (no auto-apply).

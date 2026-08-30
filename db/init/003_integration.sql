@@ -1,0 +1,1 @@
+-- See 001_schema.sql — application schema comes from backend/migrations/.

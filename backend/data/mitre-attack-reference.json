@@ -1,0 +1,67 @@
+{
+  "version": "enterprise-attack-15.1",
+  "source": "MITRE ATT&CK Enterprise matrix (bundled snapshot for TalonHound classification mappings)",
+  "license_note": "MITRE ATT&CK is available under MITRE's terms; see docs/threat-classifications.md",
+  "records": [
+    {
+      "id": "TA0006",
+      "name": "Credential Access",
+      "type": "tactic",
+      "url": "https://attack.mitre.org/tactics/TA0006/"
+    },
+    {
+      "id": "TA0010",
+      "name": "Exfiltration",
+      "type": "tactic",
+      "url": "https://attack.mitre.org/tactics/TA0010/"
+    },
+    {
+      "id": "TA0011",
+      "name": "Command and Control",
+      "type": "tactic",
+      "url": "https://attack.mitre.org/tactics/TA0011/"
+    },
+    {
+      "id": "TA0043",
+      "name": "Reconnaissance",
+      "type": "tactic",
+      "url": "https://attack.mitre.org/tactics/TA0043/"
+    },
+    {
+      "id": "T1105",
+      "name": "Ingress Tool Transfer",
+      "type": "technique",
+      "url": "https://attack.mitre.org/techniques/T1105/"
+    },
+    {
+      "id": "T1190",
+      "name": "Exploit Public-Facing Application",
+      "type": "technique",
+      "url": "https://attack.mitre.org/techniques/T1190/"
+    },
+    {
+      "id": "T1486",
+      "name": "Data Encrypted for Impact",
+      "type": "technique",
+      "url": "https://attack.mitre.org/techniques/T1486/"
+    },
+    {
+      "id": "T1496",
+      "name": "Resource Hijacking",
+      "type": "technique",
+      "url": "https://attack.mitre.org/techniques/T1496/"
+    },
+    {
+      "id": "T1566",
+      "name": "Phishing",
+      "type": "technique",
+      "url": "https://attack.mitre.org/techniques/T1566/"
+    },
+    {
+      "id": "T1583.001",
+      "name": "Acquire Infrastructure: Domains",
+      "type": "sub-technique",
+      "url": "https://attack.mitre.org/techniques/T1583/001/"
+    }
+  ]
+}

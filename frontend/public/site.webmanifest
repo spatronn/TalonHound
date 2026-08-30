@@ -1,0 +1,12 @@
+{
+  "name": "TalonHound",
+  "short_name": "TalonHound",
+  "icons": [
+    { "src": "/favicon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/favicon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "/maskable-icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ],
+  "theme_color": "#1f6fe0",
+  "background_color": "#0b1220",
+  "display": "standalone"
+}

@@ -1,0 +1,196 @@
+/* TalonHound sign-in screen. All selectors are scoped under .login-shell so
+   these styles never leak into the authenticated app. */
+.login-shell{
+  --login-bg:#040C1D;
+  --login-panel:#081226;
+  --login-field:#0A1730;
+  --login-line:rgba(126,162,226,.16);
+  --login-line-strong:rgba(126,162,226,.32);
+  --login-ink:#F2F6FD;
+  --login-muted:#7D8BA6;
+  --login-dim:#55637E;
+  --login-blue:#2F6FEB;
+
+  min-height:100vh;
+  display:grid;
+  grid-template-columns:440px 1fr;
+  background:var(--login-bg);
+  color:var(--login-ink);
+  font-family:'IBM Plex Sans',system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+.login-shell *{box-sizing:border-box}
+
+/* ---------- form side (left) ---------- */
+.login-shell .auth{
+  background:var(--login-panel);
+  border-right:1px solid var(--login-line);
+  display:flex;
+  flex-direction:column;
+  padding:40px 44px;
+}
+.login-shell .top-brand{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin-bottom:56px;
+}
+.login-shell .top-brand img{width:34px;display:block}
+.login-shell .top-brand .wm{
+  font-family:'Sora',sans-serif;
+  font-size:18px;
+  font-weight:700;
+  letter-spacing:-.01em;
+}
+.login-shell .wm .hound{
+  background:linear-gradient(100deg,#9DBDF6 0%,#4C7FE8 90%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
+/* The app-wide dark-theme reset (see App's global <style>) paints every .card
+   with `background:#111827 !important`. Keep the sign-in form flush on the
+   panel by overriding just this scoped card back to transparent. */
+.login-shell .card{width:100%;max-width:340px;margin:auto 0;background:transparent !important}
+.login-shell .card h1{
+  font-family:'Sora',sans-serif;
+  font-size:24px;
+  font-weight:600;
+  letter-spacing:-.01em;
+}
+.login-shell .card .sub{
+  margin-top:8px;
+  color:var(--login-muted);
+  font-size:14.5px;
+}
+.login-shell form{margin-top:32px}
+.login-shell .field{margin-bottom:18px}
+.login-shell .field label{
+  display:block;
+  font-size:13px;
+  font-weight:500;
+  color:var(--login-muted);
+  margin-bottom:8px;
+}
+.login-shell .field-hint{
+  display:block;
+  font-size:12px;
+  color:var(--login-muted);
+  margin-top:6px;
+}
+/* !important on background/border/color defeats the app-wide dark-theme reset
+   (input,select,textarea / button rules in App's global <style>). */
+.login-shell .field input{
+  width:100%;
+  background:var(--login-field) !important;
+  border:1px solid var(--login-line) !important;
+  border-radius:8px;
+  color:var(--login-ink) !important;
+  font:inherit;
+  font-size:15px;
+  padding:12px 14px;
+  transition:border-color .15s, box-shadow .15s;
+  outline:none;
+}
+.login-shell .field input:hover{border-color:var(--login-line-strong) !important}
+.login-shell .field input:focus{
+  border-color:var(--login-blue) !important;
+  box-shadow:0 0 0 3px rgba(47,111,235,.2);
+}
+.login-shell .btn{
+  width:100%;
+  margin-top:6px;
+  border:1px solid #475569 !important;
+  border-radius:8px;
+  padding:8px 14px;
+  min-height:36px;
+  font:inherit;
+  font-size:13px;
+  font-weight:600;
+  line-height:1.2;
+  color:#e2e8f0 !important;
+  cursor:pointer;
+  background:#1f2937 !important;
+  transition:background .15s, border-color .15s;
+}
+.login-shell .btn:hover{background:#273549 !important;border-color:#64748b !important}
+.login-shell .btn:active{background:#1a2332 !important;border-color:#475569 !important}
+.login-shell .btn:focus-visible{outline:2px solid rgba(147,197,253,.7);outline-offset:2px}
+.login-shell .btn.loading{pointer-events:none;opacity:.5}
+.login-shell .msg{
+  margin-top:16px;
+  font-size:13.5px;
+  border-radius:8px;
+  padding:11px 14px;
+}
+.login-shell .msg.err{
+  background:rgba(240,117,103,.1);
+  border:1px solid rgba(240,117,103,.35);
+  color:#F5A79D;
+}
+.login-shell .foot{
+  margin-top:40px;
+  font-size:12px;
+  color:var(--login-dim);
+}
+
+/* ---------- brand side (right) ---------- */
+.login-shell .brand{
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:64px;
+  overflow:hidden;
+}
+.login-shell .texture{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  pointer-events:none;
+}
+.login-shell .texture *{
+  fill:none;
+  stroke:rgba(120,160,235,.07);
+  stroke-width:1.5;
+}
+.login-shell .texture .dash{stroke-dasharray:3 7}
+.login-shell .brand-inner{
+  position:relative;
+  z-index:2;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  text-align:center;
+  max-width:420px;
+}
+.login-shell .wolf{width:150px;display:block;margin-bottom:20px}
+.login-shell .wordmark{
+  font-family:'Sora',sans-serif;
+  font-size:clamp(30px,3vw,40px);
+  font-weight:700;
+  letter-spacing:-.02em;
+  line-height:1.1;
+}
+.login-shell .tagline{
+  margin-top:14px;
+  font-size:15.5px;
+  color:var(--login-muted);
+  line-height:1.6;
+  max-width:36ch;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width:900px){
+  .login-shell{grid-template-columns:1fr}
+  .login-shell .brand{display:none}
+  .login-shell .auth{
+    border-right:none;
+    padding:32px 24px;
+    min-height:100vh;
+  }
+  .login-shell .top-brand{margin-bottom:40px}
+  .login-shell .card{margin:0 auto auto}
+}

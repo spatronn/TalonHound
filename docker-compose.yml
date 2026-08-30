@@ -1,0 +1,448 @@
+# Explicit project name so container/volume/network prefixes are stable regardless of
+# the checkout directory. Override per-install with `-p <name>` or COMPOSE_PROJECT_NAME
+# to run multiple TalonHound stacks on one host. Keep this value = the existing project
+# name so named volumes (talonhound_postgres_data, ...) are preserved across upgrades.
+name: talonhound
+
+x-talonhound-logging: &talonhound-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "5"
+
+x-talonhound-build-args: &talonhound-build-args
+  BUILD_VERSION: ${TALONHOUND_VERSION:-dev}
+  BUILD_COMMIT: ${TALONHOUND_COMMIT:-dev}
+  BUILD_DATE: ${TALONHOUND_BUILD_DATE:-unknown}
+
+x-backend-build: &backend-build
+  context: .
+  dockerfile: backend/Dockerfile
+  args: *talonhound-build-args
+
+x-frontend-build: &frontend-build
+  context: .
+  dockerfile: frontend/Dockerfile
+  args: *talonhound-build-args
+
+x-integration-build: &integration-build
+  context: .
+  dockerfile: integration/Dockerfile
+  args: *talonhound-build-args
+
+x-proxy-build: &proxy-build
+  context: .
+  dockerfile: proxy/Dockerfile
+  args: *talonhound-build-args
+
+services:
+  db:
+    image: postgres:16-alpine
+    # Docker's default /dev/shm is 64 MB. PostgreSQL 16 places dynamic shared-memory (DSM)
+    # segments for parallel plans (parallel hash/bitmap, Gather, parallel sort) in /dev/shm
+    # (dynamic_shared_memory_type=posix). A broad IOC search export can plan a parallel
+    # query whose DSM segment (observed ~32 MB) exceeds 64 MB, aborting with
+    # "could not resize shared memory segment ... No space left on device". 256 MB gives
+    # ample headroom for concurrent parallel queries without being wasteful given
+    # shared_buffers=1GB. Declared here so it survives container recreation.
+    shm_size: 256mb
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1024MB
+      - -c
+      - work_mem=16MB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+    environment:
+      - POSTGRES_DB=talonhound
+      - POSTGRES_USER=talonhound
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  backend:
+    build: *backend-build
+    environment:
+      - PORT=3000
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env (min 32 chars, e.g. openssl rand -hex 32)}
+      # Bounded interactive browser sessions (secure defaults; override in .env if needed).
+      # Access token is short-lived; idle expires an inactive session; absolute is the hard cap.
+      - ACCESS_TOKEN_TTL=${ACCESS_TOKEN_TTL:-15m}
+      - SESSION_IDLE_TIMEOUT=${SESSION_IDLE_TIMEOUT:-60m}
+      - SESSION_ABSOLUTE_TIMEOUT=${SESSION_ABSOLUTE_TIMEOUT:-24h}
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - QUEUE_NAME=integration-imports
+      - INTEGRATION_JOB_TIMEOUT_MS=600000
+      - INTEGRATION_JOB_STALE_AFTER_MS=900000
+      - USOM_INCREMENTAL_ENABLED=${USOM_INCREMENTAL_ENABLED:-true}
+      - USOM_FULL_RECONCILIATION_ENABLED=${USOM_FULL_RECONCILIATION_ENABLED:-true}
+      - USOM_FULL_RECONCILIATION_CRON=${USOM_FULL_RECONCILIATION_CRON:-0 3 * * 0}
+      - USOM_FULL_RECONCILIATION_TIMEZONE=${USOM_FULL_RECONCILIATION_TIMEZONE:-Europe/Istanbul}
+      - USOM_FULL_RECONCILIATION_MAX_AGE_DAYS=${USOM_FULL_RECONCILIATION_MAX_AGE_DAYS:-8}
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      # IOC list timing: log searchStringParse, dbQuery, responseSent, etc. (ms). Set to 0 or remove to disable.
+      - IOC_LIST_TIMING=1
+      - API_INGEST_TOKEN=${API_INGEST_TOKEN:-}
+      # First-run Setup Wizard: SHA-256 hash of the one-time setup code from installation.sh
+      # (plaintext is never stored). Empty = open first-run (manual/dev bring-up on a trusted
+      # network). TALONHOUND_LEGACY_DEFAULT_ADMIN=1 opts back into the legacy default-admin
+      # bootstrap for automated flows; unset means the wizard creates the first administrator.
+      - SETUP_CODE_HASH=${SETUP_CODE_HASH:-}
+      - TALONHOUND_LEGACY_DEFAULT_ADMIN=${TALONHOUND_LEGACY_DEFAULT_ADMIN:-}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - FILE_ARTIFACTS_DUAL_WRITE_ENABLED=${FILE_ARTIFACTS_DUAL_WRITE_ENABLED:-0}
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+      - IOC_EXPORT_QUEUE_NAME=ioc-search-export
+      - IOC_BULK_QUERY_QUEUE_NAME=ioc-bulk-query
+      - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_CRON=${BACKUP_CRON:-0 0 * * 0}
+      - BACKUP_CRON_TIMEZONE=${BACKUP_CRON_TIMEZONE:-}
+      - INTEGRATION_SCHEDULE_TIMEZONE=${INTEGRATION_SCHEDULE_TIMEZONE:-}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENCRYPTION_ENABLED=${BACKUP_ENCRYPTION_ENABLED:-false}
+      - BACKUP_ENCRYPTION_KEY_FILE=${BACKUP_ENCRYPTION_KEY_FILE:-}
+      - BACKUP_MAX_CONCURRENT=1
+      - BACKUP_QUEUE_NAME=system-backup
+      # Update check (outbound HTTPS GET to a trusted channel manifest; never affects health/ready).
+      - UPDATE_CHECK_ENABLED=${UPDATE_CHECK_ENABLED:-true}
+      - UPDATE_CHECK_INTERVAL_HOURS=${UPDATE_CHECK_INTERVAL_HOURS:-24}
+      - UPDATE_MANIFEST_URL=${UPDATE_MANIFEST_URL:-}
+      - UPDATE_CHANNEL=${UPDATE_CHANNEL:-}
+      # Published Feed API keys: server-side AES-256-GCM key for revealable keys +
+      # per-key pull rate limit for /api/published-feeds/{slug}.
+      - API_KEY_ENCRYPTION_KEY=${API_KEY_ENCRYPTION_KEY:-}
+      - FEED_PUBLIC_RATE_LIMIT_PER_MIN=${FEED_PUBLIC_RATE_LIMIT_PER_MIN:-60}
+      # Phase-1 million-scale Published Feeds: file-backed streaming artifacts.
+      # Default OFF; enable to activate bounded-memory generation + streamed serving.
+      - PUBLISHED_FEED_STREAMING_ENABLED=${PUBLISHED_FEED_STREAMING_ENABLED:-false}
+      - PUBLISHED_FEED_INCREMENTAL_ENABLED=${PUBLISHED_FEED_INCREMENTAL_ENABLED:-false}
+      # Optional comma-separated feed ids for controlled incremental bootstrap/rollout.
+      - PUBLISHED_FEED_INCREMENTAL_FEED_IDS=${PUBLISHED_FEED_INCREMENTAL_FEED_IDS:-}
+      # Stable chunk generations remain off until migration/backfill/equivalence gates pass.
+      - PUBLISHED_FEED_CHUNKED_ENABLED=${PUBLISHED_FEED_CHUNKED_ENABLED:-false}
+      - PUBLISHED_FEED_CHUNKED_FEED_IDS=${PUBLISHED_FEED_CHUNKED_FEED_IDS:-}
+      - PUBLISHED_FEED_MAX_CONCURRENCY=${PUBLISHED_FEED_MAX_CONCURRENCY:-2}
+      - PUBLISHED_FEED_ARTIFACT_RETENTION_MINUTES=${PUBLISHED_FEED_ARTIFACT_RETENTION_MINUTES:-60}
+      # Scheduler poll resolution for due checks (default 60s). Must be << refresh_interval
+      # so a 5m feed is not delayed by a second full tick (~10m effective cadence).
+      - PUBLISHED_FEED_TICK_MS=${PUBLISHED_FEED_TICK_MS:-60000}
+      - PUBLISHED_FEED_STORAGE_DIR=/data/published-feeds
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - backup_data:/data/backups
+      - ioc_export_data:/data/ioc-search-exports
+      - published_feed_data:/data/published-feeds
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/readyz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  integration-scheduler:
+    build: *integration-build
+    command: ["npm", "run", "scheduler"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - QUEUE_NAME=integration-imports
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - FILE_ARTIFACTS_DUAL_WRITE_ENABLED=${FILE_ARTIFACTS_DUAL_WRITE_ENABLED:-0}
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+      - SCHEDULER_CRON=0 * * * *
+      - SOURCE_NAME=EmergingThreats:blockrules
+      - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
+      - USOM_API_BASE_URL=${USOM_API_BASE_URL:-https://siberguvenlik.gov.tr/api}
+      - USOM_API_PER_PAGE=${USOM_API_PER_PAGE:-5000}
+      - USOM_API_TIMEOUT_MS=${USOM_API_TIMEOUT_MS:-30000}
+      - USOM_API_MAX_RETRIES=${USOM_API_MAX_RETRIES:-5}
+      - USOM_API_REQUEST_DELAY_MS=${USOM_API_REQUEST_DELAY_MS:-250}
+      - USOM_INCREMENTAL_ENABLED=${USOM_INCREMENTAL_ENABLED:-true}
+      - USOM_FULL_RECONCILIATION_ENABLED=${USOM_FULL_RECONCILIATION_ENABLED:-true}
+      - USOM_FULL_RECONCILIATION_CRON=${USOM_FULL_RECONCILIATION_CRON:-0 3 * * 0}
+      - USOM_FULL_RECONCILIATION_TIMEZONE=${USOM_FULL_RECONCILIATION_TIMEZONE:-Europe/Istanbul}
+      - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
+      - URLHAUS_AUTH_KEY=${URLHAUS_AUTH_KEY:-}
+      - MALWARE_BAZAAR_SOURCE_NAME=MalwareBazaar:abuse.ch
+      - MALWAREBAZAAR_AUTH_KEY=${MALWAREBAZAAR_AUTH_KEY:-}
+      - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
+      - THREATFOX_AUTH_KEY=${THREATFOX_AUTH_KEY:-}
+      - THREATFOX_API_URL=${THREATFOX_API_URL:-https://threatfox-api.abuse.ch/api/v1/}
+      - THREATFOX_RECENT_DAYS=${THREATFOX_RECENT_DAYS:-3}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  integration-worker:
+    build: *integration-build
+    command: ["npm", "run", "worker"]
+    stop_grace_period: 45s
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - QUEUE_NAME=integration-imports
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - FILE_ARTIFACTS_DUAL_WRITE_ENABLED=${FILE_ARTIFACTS_DUAL_WRITE_ENABLED:-0}
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+      # Max feed syncs running at once across the whole deployment (global,
+      # Redis-enforced). The worker fills up to this many slots itself.
+      - FEED_SYNC_CONCURRENCY=${FEED_SYNC_CONCURRENCY:-2}
+      - WORKER_LOCK_DURATION_MS=900000
+      - WORKER_STALLED_INTERVAL_MS=60000
+      - WORKER_MAX_STALLED_COUNT=5
+      - INTEGRATION_JOB_TIMEOUT_MS=600000
+      - USOM_JOB_TIMEOUT_MS=${USOM_JOB_TIMEOUT_MS:-7200000}
+      - EMERGINGTHREATS_JOB_TIMEOUT_MS=2700000
+      - PHISHTANK_JOB_TIMEOUT_MS=3600000
+      - PHISHTANK_BATCH_SIZE=2000
+      - PHISHTANK_SOURCE_NAME=PhishTank:open_dnsrr
+      - PHISHTANK_CSV_URL=${PHISHTANK_CSV_URL:-https://data.phishtank.com/data/online-valid.csv}
+      - INTEGRATION_JOB_HEARTBEAT_INTERVAL_MS=30000
+      - INTEGRATION_JOB_STALE_AFTER_MS=900000
+      - INTEGRATION_WORKER_SHUTDOWN_GRACE_MS=30000
+      - INTEGRATION_QUEUE_CLEANUP_INTERVAL_MS=60000
+      - SOURCE_NAME=EmergingThreats:blockrules
+      - SOURCE_INDEX_URL=http://rules.emergingthreats.net/blockrules/
+      - USOM_API_BASE_URL=${USOM_API_BASE_URL:-https://siberguvenlik.gov.tr/api}
+      - USOM_API_PER_PAGE=${USOM_API_PER_PAGE:-5000}
+      - USOM_API_TIMEOUT_MS=${USOM_API_TIMEOUT_MS:-30000}
+      - USOM_API_MAX_RETRIES=${USOM_API_MAX_RETRIES:-5}
+      - USOM_API_REQUEST_DELAY_MS=${USOM_API_REQUEST_DELAY_MS:-250}
+      - USOM_IMPORT_MODE=${USOM_IMPORT_MODE:-incremental}
+      - USOM_INCREMENTAL_ENABLED=${USOM_INCREMENTAL_ENABLED:-true}
+      - USOM_INCREMENTAL_OVERLAP_HOURS=${USOM_INCREMENTAL_OVERLAP_HOURS:-24}
+      - USOM_INCREMENTAL_MAX_RECORDS=${USOM_INCREMENTAL_MAX_RECORDS:-100000}
+      - USOM_LOOKUP_CACHE_TTL_HOURS=${USOM_LOOKUP_CACHE_TTL_HOURS:-24}
+      - USOM_DB_STATEMENT_TIMEOUT_MS=${USOM_DB_STATEMENT_TIMEOUT_MS:-1800000}
+      - USOM_DB_IDLE_IN_TX_TIMEOUT_MS=${USOM_DB_IDLE_IN_TX_TIMEOUT_MS:-600000}
+      - URLHAUS_SOURCE_NAME=URLhaus:abuse.ch
+      - URLHAUS_AUTH_KEY=${URLHAUS_AUTH_KEY:-}
+      - MALWARE_BAZAAR_SOURCE_NAME=MalwareBazaar:abuse.ch
+      - MALWAREBAZAAR_AUTH_KEY=${MALWAREBAZAAR_AUTH_KEY:-}
+      - THREATFOX_SOURCE_NAME=ThreatFox:abuse.ch
+      - THREATFOX_AUTH_KEY=${THREATFOX_AUTH_KEY:-}
+      - THREATFOX_API_URL=${THREATFOX_API_URL:-https://threatfox-api.abuse.ch/api/v1/}
+      - THREATFOX_RECENT_DAYS=${THREATFOX_RECENT_DAYS:-3}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  ioc-expiration-worker:
+    build: *backend-build
+    command: ["npm", "run", "ioc-expiration-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - IOC_EXPIRATION_POLL_INTERVAL_MS=60000
+      - IOC_EXPIRATION_BATCH_SIZE=500
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      # Bounded cleanup of terminal auth_sessions rows past this retention window.
+      - SESSION_CLEANUP_RETENTION_DAYS=${SESSION_CLEANUP_RETENTION_DAYS:-7}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  ioc-search-export-worker:
+    build: *backend-build
+    command: ["npm", "run", "ioc-search-export-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - IOC_EXPORT_QUEUE_NAME=ioc-search-export
+      - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
+      - IOC_EXPORT_BATCH_SIZE=${IOC_EXPORT_BATCH_SIZE:-5000}
+      - IOC_EXPORT_RETENTION_HOURS=${IOC_EXPORT_RETENTION_HOURS:-24}
+      - IOC_EXPORT_HARD_LIMIT=${IOC_EXPORT_HARD_LIMIT:-2000000}
+      - IOC_EXPORT_WORKER_CONCURRENCY=${IOC_EXPORT_WORKER_CONCURRENCY:-2}
+      # Read-path flag must match the backend: the export worker re-parses the stored DSL
+      # and runs the same file-artifact canonical/dedup resolution as POST /api/iocs/search.
+      # Without it, hash/type filters (md5/sha1/sha256, type, known_hash_type) would resolve
+      # differently in exports than in the search preview.
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+    volumes:
+      - ioc_export_data:/data/ioc-search-exports
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  ioc-deep-search-worker:
+    build: *backend-build
+    command: ["npm", "run", "ioc-deep-search-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - IOC_DEEP_SEARCH_QUEUE_NAME=ioc-deep-search
+      - IOC_DEEP_SEARCH_QUERY_TIMEOUT_MS=${IOC_DEEP_SEARCH_QUERY_TIMEOUT_MS:-600000}
+      - IOC_DEEP_SEARCH_RETENTION_HOURS=${IOC_DEEP_SEARCH_RETENTION_HOURS:-24}
+      - IOC_DEEP_SEARCH_WORKER_CONCURRENCY=${IOC_DEEP_SEARCH_WORKER_CONCURRENCY:-2}
+      # Read-path flag must match the backend: the deep-search worker re-parses the stored
+      # DSL and runs the same file-artifact canonical/dedup resolution as POST /api/iocs/search
+      # so materialized results match the interactive preview exactly.
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  ioc-bulk-query-worker:
+    build: *backend-build
+    command: ["npm", "run", "ioc-bulk-query-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - IOC_BULK_QUERY_QUEUE_NAME=ioc-bulk-query
+      - IOC_BULK_QUERY_WORKER_CONCURRENCY=${IOC_BULK_QUERY_WORKER_CONCURRENCY:-2}
+      - IOC_BULK_QUERY_SYNC_MAX=${IOC_BULK_QUERY_SYNC_MAX:-500}
+      - IOC_BULK_QUERY_HARD_LIMIT=${IOC_BULK_QUERY_HARD_LIMIT:-50000}
+      - FILE_ARTIFACTS_READ_ENABLED=${FILE_ARTIFACTS_READ_ENABLED:-0}
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  backup-worker:
+    build: *backend-build
+    command: ["npm", "run", "backup-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
+      - BACKUP_CRON=${BACKUP_CRON:-0 0 * * 0}
+      - BACKUP_CRON_TIMEZONE=${BACKUP_CRON_TIMEZONE:-}
+      - INTEGRATION_SCHEDULE_TIMEZONE=${INTEGRATION_SCHEDULE_TIMEZONE:-}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
+      - BACKUP_DIR=/data/backups
+      - BACKUP_ENCRYPTION_ENABLED=${BACKUP_ENCRYPTION_ENABLED:-false}
+      - BACKUP_ENCRYPTION_KEY_FILE=${BACKUP_ENCRYPTION_KEY_FILE:-}
+      - BACKUP_MAX_CONCURRENT=1
+      - BACKUP_QUEUE_NAME=system-backup
+    volumes:
+      - backup_data:/data/backups
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  frontend:
+    build: *frontend-build
+    depends_on:
+      - backend
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+  proxy:
+    build: *proxy-build
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./proxy/certs:/etc/nginx/certs
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    logging: *talonhound-logging
+
+volumes:
+  postgres_data:
+  ioc_export_data:
+  backup_data:
+  published_feed_data:

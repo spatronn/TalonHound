@@ -1,0 +1,44 @@
+{
+  "name": "talonhound-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test:ioc-status-card": "node --test src/lib/iocStatusCard.test.js",
+    "test:ioc-confidence-card": "node --test src/lib/iocConfidenceCard.test.js",
+    "test:ip-enrichment-target": "node --test src/lib/ipEnrichmentTarget.test.js",
+    "test:intelligence": "node --test src/lib/ipEnrichmentTarget.test.js",
+    "test:analyst-intelligence-labels": "node --test src/lib/analystIntelligenceLabels.test.js src/lib/analystIntelligenceForm.test.js src/lib/iocProviderApplicability.test.js src/lib/intelligenceSummarySection.test.js",
+    "test:tags": "node --test src/lib/iocTagBadges.test.js src/lib/tagManagerList.test.js",
+    "test:threat-classification": "node --test src/lib/threatClassificationOrder.test.js src/lib/classificationSummary.test.js",
+    "test:threat-actors": "node --test src/lib/threatActorManagerList.test.js src/lib/threatActorTableDisplay.test.js",
+    "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js src/lib/deepSearch.test.js",
+    "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js",
+    "test:password-change": "node --test src/lib/passwordChangeGate.test.js",
+    "test:audit-logs": "node --test src/lib/auditLogsView.test.js",
+    "test:ux-phase1": "node --test src/lib/uiButtons.test.js src/lib/modalOverlay.test.js src/lib/createUserForm.test.js src/lib/feedFormField.test.js src/lib/publishedFeedForm.test.js src/lib/deleteUserConfirm.test.js src/lib/userRowControls.test.js",
+    "test:ux-shared": "node --test src/lib/appConfirm.test.js src/lib/appFeedback.test.js src/lib/emptyState.test.js src/lib/uiButtons.test.js src/lib/modalOverlay.test.js",
+    "test:integration-queue": "node --test src/lib/integrationJobDuration.test.js src/lib/integrationQueueStatusView.test.js src/lib/feedLastResult.test.js src/lib/jobQueueResult.test.js",
+    "test:enrichment-providers": "node --test src/components/enrichmentProviders/removeKeyConfirm.test.js src/components/enrichmentProviders/confirmActionController.test.js src/components/enrichmentProviders/providerMeta.test.js src/lib/intelligenceSummaryDisabled.test.js src/lib/systemHealthView.test.js",
+    "test:product-version": "node --test src/lib/productVersionView.test.js src/lib/updateStatusView.test.js src/lib/updateManagementUi.test.js",
+    "test": "node --test src/lib/*.test.js src/components/enrichmentProviders/*.test.js"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "axios": "^1.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.30.1",
+    "tldts": "^6.1.86"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "vite": "^5.4.19"
+  }
+}

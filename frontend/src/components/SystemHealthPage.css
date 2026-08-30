@@ -1,0 +1,106 @@
+.sh-page {
+  min-width: 0;
+}
+
+.sh-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sh-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.sh-summary-value {
+  color: #e2e8f0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.sh-checked {
+  margin: -6px 0 14px;
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: right;
+}
+
+.sh-section {
+  margin-top: 14px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #0f172a;
+  overflow: hidden;
+}
+
+.sh-section h3 {
+  margin: 0;
+  padding: 12px 14px;
+  border-bottom: 1px solid #334155;
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.sh-table-wrap {
+  overflow-x: auto;
+}
+
+.sh-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.sh-table th,
+.sh-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #1e293b;
+  color: #cbd5e1;
+  font-size: 12px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.sh-table th {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.sh-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.sh-name {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.sh-evidence {
+  color: #94a3b8 !important;
+}
+
+.sh-muted,
+.sh-loading {
+  color: #94a3b8;
+}
+
+@media (max-width: 1150px) {
+  .sh-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .sh-header {
+    flex-direction: column;
+  }
+
+  .sh-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .sh-table {
+    min-width: 760px;
+  }
+}

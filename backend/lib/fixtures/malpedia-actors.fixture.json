@@ -1,0 +1,48 @@
+{
+  "APT28": {
+    "description": "The Sofacy Group is a cyber espionage group believed to have ties to the Russian government.",
+    "meta": {
+      "synonyms": ["Fancy Bear", "Sofacy", "Pawn Storm", "APT 28"]
+    },
+    "uuid": "5b4ee3ea-eee3-4c8e-8323-85ae32658754",
+    "value": "APT28"
+  },
+  "APT29": {
+    "description": "APT29 is a Russian cyber espionage group also known as The Dukes.",
+    "meta": {
+      "synonyms": ["Cozy Bear", "Midnight Blizzard", "Nobelium", "UNC2452", "The Dukes"]
+    },
+    "uuid": "899ce53f-13a0-479b-a0e4-67d46e241542",
+    "value": "APT29"
+  },
+  "Lazarus Group": {
+    "description": "Commercial reporting has referred to this activity as Lazarus Group and HIDDEN COBRA.",
+    "meta": {
+      "synonyms": ["Lazarus", "HIDDEN COBRA", "Guardians of Peace"]
+    },
+    "uuid": "b8ca0932-c4cb-45c0-b7b1-88b9685ba24b",
+    "value": "Lazarus Group"
+  },
+  "UNC2452": {
+    "description": "Activity related to the SolarWinds supply chain injection.",
+    "meta": {
+      "synonyms": ["NOBELIUM", "Midnight Blizzard"]
+    },
+    "uuid": "899ce53f-13a0-479b-a0e4-67d46e241543",
+    "value": "UNC2452"
+  },
+  "Turla": {
+    "description": "Turla is a Russian-based threat group.",
+    "meta": {
+      "synonyms": ["Snake", "Venomous Bear"]
+    },
+    "uuid": "7a19ecb7-3c2d-4a1e-8b7f-111111111111",
+    "value": "Turla"
+  },
+  "": {
+    "description": "Invalid empty key actor",
+    "meta": { "synonyms": [] },
+    "uuid": "00000000-0000-4000-8000-000000000099",
+    "value": ""
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "source": {
+    "name": "malpedia",
+    "endpoint": "https://malpedia.caad.fkie.fraunhofer.de/api/get/actors",
+    "note": "Test fixture subset"
+  },
+  "generated_at": "2026-01-01T00:00:00.000Z",
+  "source_actor_count": 5,
+  "actor_count": 5,
+  "actors": [
+    {
+      "name": "APT28",
+      "slug": "apt28",
+      "aliases": ["Fancy Bear", "Sofacy", "Pawn Storm"],
+      "description": "The Sofacy Group is a cyber espionage group.",
+      "active": true
+    },
+    {
+      "name": "APT29",
+      "slug": "apt29",
+      "aliases": ["Cozy Bear", "Midnight Blizzard", "Nobelium", "UNC2452"],
+      "description": "APT29 is a Russian cyber espionage group.",
+      "active": true
+    },
+    {
+      "name": "Lazarus Group",
+      "slug": "lazarus-group",
+      "aliases": ["Lazarus", "HIDDEN COBRA", "Guardians of Peace"],
+      "description": "Commercial reporting has referred to this activity as Lazarus Group.",
+      "active": true
+    },
+    {
+      "name": "Turla",
+      "slug": "turla",
+      "aliases": ["Snake", "Venomous Bear"],
+      "description": "Turla is a Russian-based threat group.",
+      "active": true
+    },
+    {
+      "name": "UNC2452",
+      "slug": "unc2452",
+      "aliases": ["NOBELIUM", "Midnight Blizzard"],
+      "description": "Activity related to the SolarWinds supply chain injection.",
+      "active": true
+    }
+  ]
+}

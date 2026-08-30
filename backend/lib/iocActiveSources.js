@@ -1,0 +1,891 @@
+/** Shared helpers for active vs historical IOC feed memberships and list status filters. */
+
+export const ACTIVE_MEMBERSHIP_SQL = "m.status = 'active' AND m.purged_at IS NULL";
+
+export function isActiveFeedMembership(m) {
+  if (!m) return false;
+  if (m.purged_at) return false;
+  return String(m.status || 'active') === 'active';
+}
+
+export function isHistoricalFeedMembership(m) {
+  if (!m) return false;
+  if (m.purged_at || String(m.status || '').toLowerCase() === 'purged') return true;
+  const status = String(m.status || '').toLowerCase();
+  return status === 'expired' || status === 'removed';
+}
+
+/** @param {object|null|undefined} m */
+export function membershipDisplayStatus(m) {
+  if (!m) return 'active';
+  if (m.purged_at || String(m.status || '').toLowerCase() === 'purged') return 'purged';
+  return String(m.status || 'active').toLowerCase();
+}
+
+/** @param {object} m */
+export function formatFeedMembershipSource(m) {
+  const displayStatus = membershipDisplayStatus(m);
+  const historical = !isActiveFeedMembership(m);
+  return {
+    id: `feed:${m.id}`,
+    source_type: 'feed',
+    membership_id: Number(m.id),
+    name: m.feed_name || m.feed_key || 'Unknown feed',
+    feed_key: m.feed_key || null,
+    feed_name: m.feed_name || null,
+    status: displayStatus,
+    first_seen_at: m.first_seen_in_feed || null,
+    // Analyst-visible "last changed in source". Advances only on genuine source
+    // content change or reactivation. NULL for rows that predate migration 121, which
+    // fall back to first_seen_in_feed as the documented baseline.
+    last_changed_at: m.last_changed_in_source || m.first_seen_in_feed || null,
+    // DEPRECATED: last_seen_in_feed is technical presence bookkeeping, not an analyst
+    // fact — it advances on every successful poll even when nothing changed. Retained
+    // only for API backward compatibility; do NOT render it. Use last_changed_at.
+    last_seen_at: m.last_seen_in_feed || null,
+    policy_expires_at: m.policy_expires_at || null,
+    expires_at: m.expires_at || null,
+    override_enabled: Boolean(m.override_enabled),
+    purged_at: m.purged_at || null,
+    purge_reason: m.purge_reason || null,
+    actions_enabled: !historical && isActiveFeedMembership(m)
+  };
+}
+
+/** @param {object} row */
+export function formatManualHistoricalIocSource(row) {
+  const movedTo = row.moved_to_source_name || null;
+  const status = String(row.status || 'moved').toLowerCase();
+  const isRemoved = status === 'removed';
+  // Manual removals reuse moved_at/moved_by/move_reason as the removal record; a
+  // removal has no destination source, so surface the removal time as the source's
+  // "last changed in source" and give it a truthful reason string.
+  const description = isRemoved
+    ? 'Manually removed from source'
+    : (movedTo ? `Moved to ${movedTo}` : null);
+  return {
+    id: `manual-history:${row.id}`,
+    source_type: 'manual',
+    ioc_source_id: row.ioc_source_id != null ? Number(row.ioc_source_id) : null,
+    name: row.source_name || row.name || 'Manual source',
+    feed_key: null,
+    feed_name: null,
+    status,
+    first_seen_at: row.first_seen_at || row.created_at || null,
+    last_seen_at: row.last_seen_at || null,
+    last_changed_at: isRemoved ? (row.moved_at || row.last_seen_at || null) : (row.moved_at || null),
+    policy_expires_at: null,
+    expires_at: row.manual_expires_at || null,
+    override_enabled: false,
+    purged_at: null,
+    purge_reason: isRemoved ? 'Manually removed from source' : null,
+    moved_to_source_id: row.moved_to_source_id != null ? Number(row.moved_to_source_id) : null,
+    moved_to_source_name: movedTo,
+    moved_at: row.moved_at || null,
+    removed_at: isRemoved ? (row.moved_at || null) : null,
+    description,
+    removable: false,
+    actions_enabled: false
+  };
+}
+
+/** @param {object} row */
+export function formatManualIocSource(row) {
+  const sourceName = row.source_name || row.name || 'Manual source';
+  return {
+    id: `manual:${row.ioc_source_id || row.ioc_item_id}`,
+    source_type: 'manual',
+    ioc_item_id: row.ioc_item_id != null ? Number(row.ioc_item_id) : null,
+    ioc_source_id: row.ioc_source_id != null ? Number(row.ioc_source_id) : null,
+    name: sourceName,
+    feed_key: null,
+    feed_name: null,
+    status: 'active',
+    first_seen_at: row.created_at || null,
+    last_seen_at: row.last_seen_at || row.created_at || null,
+    policy_expires_at: null,
+    expires_at: row.expires_at || null,
+    override_enabled: false,
+    purged_at: null,
+    purge_reason: null,
+    // Active manual/custom sources can be detached from the IOC via the
+    // source-level removal endpoint. Feed sources are not removable this way.
+    removable: true,
+    actions_enabled: false
+  };
+}
+
+/**
+ * @param {string|undefined|null} raw
+ * @returns {'active'|'expired'|'suppressed'|'disabled'|'all'}
+ */
+export function parseIocListStatusFilter(raw) {
+  const v = String(raw ?? 'active').trim().toLowerCase();
+  if (v === 'all' || v === 'historical') return 'all';
+  if (v === 'expired') return 'expired';
+  if (v === 'suppressed') return 'suppressed';
+  if (v === 'disabled') return 'disabled';
+  return 'active';
+}
+
+/**
+ * @param {'active'|'expired'|'suppressed'|'disabled'|'all'} mode
+ * @param {string} [alias]
+ * @returns {string|null}
+ */
+export function iocStatusSqlClause(mode, alias = null) {
+  if (mode === 'all') return null;
+  const col = alias ? `${alias}.status` : 'status';
+  if (mode === 'active') return `COALESCE(${col}, 'active') = 'active'`;
+  if (mode === 'expired') return `COALESCE(${col}, 'active') = 'expired'`;
+  if (mode === 'suppressed') return `COALESCE(${col}, 'active') = 'suppressed'`;
+  if (mode === 'disabled') return `COALESCE(${col}, 'active') = 'disabled'`;
+  return `COALESCE(${col}, 'active') = 'active'`;
+}
+
+function observableKey(observableType, observable) {
+  return `${String(observableType || '').trim()}|${String(observable || '').trim()}`;
+}
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {Array<{ id?: number|string, observable: string, observable_type: string }>} items
+ * @param {{ byItemIds?: boolean }} [opts]
+ */
+export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts = {}) {
+  const keyed = (items || []).filter((x) => x?.observable && x?.observable_type);
+  if (!keyed.length) return items;
+
+  const byItemIds = Boolean(opts.byItemIds);
+  const itemIds = keyed.map((x) => Number(x.id)).filter((id) => Number.isFinite(id));
+  const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
+
+  let membershipRows;
+  let manualRows;
+
+  if (byItemIds && itemIds.length) {
+    const [membershipRes, manualRes] = await Promise.all([
+      pool.query(
+        `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.purged_at,
+                f.name AS feed_name, f.key AS feed_key
+         FROM ioc_feed_memberships m
+         JOIN integration_feeds f ON f.integration_id = m.feed_id
+         WHERE m.ioc_item_id = ANY($1::bigint[])
+           AND m.ioc_observable_type = ANY($2::text[])`,
+        [itemIds, types]
+      ),
+      pool.query(
+        `SELECT id AS ioc_item_id, observable_type, source_name
+         FROM ioc_items
+         WHERE id = ANY($1::bigint[])
+           AND ioc_source_id IS NOT NULL`,
+        [itemIds]
+      )
+    ]);
+    membershipRows = membershipRes.rows.map((row) => ({
+      ...row,
+      observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.ioc_observable_type)?.observable,
+      observable_type: row.ioc_observable_type
+    }));
+    manualRows = manualRes.rows.map((row) => ({
+      ...row,
+      observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.observable_type)?.observable
+    }));
+  } else {
+    const observables = [...new Set(keyed.map((x) => String(x.observable)))];
+    const membershipRes = await pool.query(
+      `SELECT i.observable, i.observable_type, m.status, m.purged_at,
+              f.name AS feed_name, f.key AS feed_key
+       FROM ioc_feed_memberships m
+       JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE i.observable = ANY($1::text[])
+         AND i.observable_type = ANY($2::text[])`,
+      [observables, types]
+    );
+    membershipRows = membershipRes.rows;
+    const manualRes = await pool.query(
+      `SELECT observable, observable_type, source_name, ioc_source_id, status
+       FROM ioc_items
+       WHERE observable = ANY($1::text[])
+         AND observable_type = ANY($2::text[])
+         AND ioc_source_id IS NOT NULL`,
+      [observables, types]
+    );
+    manualRows = manualRes.rows;
+  }
+
+  const activeByKey = new Map();
+  const historicalByKey = new Map();
+
+  for (const row of membershipRows) {
+    const k = observableKey(row.observable_type, row.observable);
+    if (isActiveFeedMembership(row)) {
+      if (!activeByKey.has(k)) activeByKey.set(k, { names: new Set(), feeds: new Set() });
+      const bucket = activeByKey.get(k);
+      if (row.feed_name) bucket.names.add(row.feed_name);
+      if (row.feed_key) bucket.feeds.add(row.feed_key);
+    } else if (isHistoricalFeedMembership(row)) {
+      if (!historicalByKey.has(k)) historicalByKey.set(k, []);
+      historicalByKey.get(k).push({
+        feed_name: row.feed_name || row.feed_key || 'Unknown feed',
+        status: membershipDisplayStatus(row),
+        purge_reason: row.purge_reason || null
+      });
+    }
+  }
+
+  for (const row of manualRows) {
+    const k = observableKey(row.observable_type, row.observable);
+    if (!activeByKey.has(k)) activeByKey.set(k, { names: new Set(), feeds: new Set() });
+    if (row.source_name) activeByKey.get(k).names.add(row.source_name);
+  }
+
+  return keyed.map((it) => {
+    const k = observableKey(it.observable_type, it.observable);
+    const active = activeByKey.get(k) || { names: new Set(), feeds: new Set() };
+    const historical = historicalByKey.get(k) || [];
+    const activeNames = [...active.names].sort();
+    const historicalNames = [...new Set(historical.map((h) => h.feed_name).filter(Boolean))].sort();
+    const sourceNames = activeNames.length ? activeNames : historicalNames;
+    const displaySource = sourceNames[0] || it.source_name || 'No active source';
+    return {
+      ...it,
+      source_count: sourceNames.length,
+      source_names: sourceNames,
+      active_source_count: activeNames.length,
+      historical_sources: historical,
+      display_source: displaySource
+    };
+  });
+}
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {{ observable: string, observableType: string, iocItemIds?: number[] }} opts
+ */
+export async function fetchObservableMembershipSummary(pool, { observable, observableType, iocItemIds = [] } = {}) {
+  const ids = (iocItemIds || []).filter((id) => Number.isFinite(Number(id)));
+  let membershipRows;
+  if (ids.length) {
+    const { rows } = await pool.query(
+      `SELECT m.id, m.ioc_item_id, m.status, m.purged_at, m.purge_reason,
+              m.first_seen_in_feed, m.last_seen_in_feed, m.last_changed_in_source,
+              m.policy_expires_at, m.expires_at,
+              m.override_enabled, m.explicit_confidence,
+              f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
+       FROM ioc_feed_memberships m
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.ioc_item_id = ANY($1::bigint[]) AND m.ioc_observable_type = $2
+       ORDER BY COALESCE(m.last_changed_in_source, m.first_seen_in_feed) DESC NULLS LAST`,
+      [ids, observableType]
+    );
+    membershipRows = rows;
+  } else {
+    const { rows } = await pool.query(
+      `SELECT m.id, m.ioc_item_id, m.status, m.purged_at, m.purge_reason,
+              m.first_seen_in_feed, m.last_seen_in_feed, m.last_changed_in_source,
+              m.policy_expires_at, m.expires_at,
+              m.override_enabled, m.explicit_confidence,
+              f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
+       FROM ioc_feed_memberships m
+       JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+       JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE i.observable = $1 AND i.observable_type = $2
+       ORDER BY COALESCE(m.last_changed_in_source, m.first_seen_in_feed) DESC NULLS LAST`,
+      [observable, observableType]
+    );
+    membershipRows = rows;
+  }
+
+  const activeMemberships = membershipRows.filter(isActiveFeedMembership);
+  const historicalMemberships = membershipRows.filter(isHistoricalFeedMembership);
+
+  const { rows: manualActive } = await pool.query(
+    `SELECT DISTINCT ON (i.ioc_source_id)
+            i.id AS ioc_item_id,
+            i.ioc_source_id,
+            COALESCE(s.name, i.source_name) AS source_name,
+            i.created_at,
+            i.last_seen_at,
+            i.expires_at
+     FROM ioc_items i
+     LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+     WHERE i.observable = $1 AND i.observable_type = $2
+       AND COALESCE(i.status, 'active') = 'active'
+       AND i.ioc_source_id IS NOT NULL
+     ORDER BY i.ioc_source_id, i.created_at DESC`,
+    [observable, observableType]
+  );
+
+  const activeFeedSources = activeMemberships.map((m) => formatFeedMembershipSource(m));
+  const activeManualSources = manualActive.map((row) => formatManualIocSource(row));
+  const activeSources = [...activeManualSources, ...activeFeedSources];
+
+  let historicalManualRows = [];
+  if (ids.length) {
+    const histRes = await pool.query(
+      `SELECT h.*,
+              COALESCE(s.name, h.source_name) AS source_name,
+              ts.name AS moved_to_source_name
+       FROM ioc_manual_source_memberships h
+       LEFT JOIN ioc_sources s ON s.id = h.ioc_source_id
+       LEFT JOIN ioc_sources ts ON ts.id = h.moved_to_source_id
+       WHERE h.ioc_item_id = ANY($1::bigint[])
+         AND h.ioc_observable_type = $2
+         AND h.status IN ('moved', 'superseded', 'inactive', 'removed')
+       ORDER BY h.moved_at DESC NULLS LAST, h.created_at DESC`,
+      [ids, observableType]
+    );
+    historicalManualRows = histRes.rows;
+  } else {
+    const histRes = await pool.query(
+      `SELECT h.*,
+              COALESCE(s.name, h.source_name) AS source_name,
+              ts.name AS moved_to_source_name
+       FROM ioc_manual_source_memberships h
+       INNER JOIN ioc_items i ON i.id = h.ioc_item_id AND i.observable_type = h.ioc_observable_type
+       LEFT JOIN ioc_sources s ON s.id = h.ioc_source_id
+       LEFT JOIN ioc_sources ts ON ts.id = h.moved_to_source_id
+       WHERE i.observable = $1 AND i.observable_type = $2
+         AND h.status IN ('moved', 'superseded', 'inactive', 'removed')
+       ORDER BY h.moved_at DESC NULLS LAST, h.created_at DESC`,
+      [observable, observableType]
+    );
+    historicalManualRows = histRes.rows;
+  }
+
+  const historicalManualSources = historicalManualRows.map((row) => formatManualHistoricalIocSource(row));
+  const historicalSources = [
+    ...historicalManualSources,
+    ...historicalMemberships.map((m) => formatFeedMembershipSource(m))
+  ];
+
+  const activeSourceNames = [...new Set(activeSources.map((s) => s.name).filter(Boolean))].sort();
+
+  return {
+    membershipRows,
+    activeMemberships,
+    historicalMemberships,
+    activeSources,
+    historicalSources,
+    activeSourceCount: activeSourceNames.length,
+    activeSourceNames,
+    historicalSourceCount: historicalSources.length
+  };
+}
+
+/**
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {string} observable
+ * @param {string} observableType
+ */
+export async function fetchLookupTombstoneRowsForObservable(db, observable, observableType) {
+  const { rows } = await db.query(
+    `SELECT DISTINCT lower(observable) AS observable,
+            CASE WHEN observable_type = 'hostname' THEN 'domain' ELSE observable_type END AS observable_type,
+            source_name
+     FROM ioc_items
+     WHERE observable = $1
+       AND observable_type = $2
+       AND source_name IS NOT NULL
+       AND source_name <> ''`,
+    [observable, observableType]
+  );
+  return rows;
+}
+
+/**
+ * SQL predicate: observable has at least one active feed membership or manual IOC source.
+ * @param {string} observableExpr
+ * @param {string} observableTypeExpr
+ */
+export function activeObservableHasActiveSourceSql(observableExpr, observableTypeExpr) {
+  return `(
+    EXISTS (
+      SELECT 1
+      FROM ioc_feed_memberships m
+      INNER JOIN ioc_items ii
+        ON ii.id = m.ioc_item_id AND ii.observable_type = m.ioc_observable_type
+      INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+      WHERE ii.observable = ${observableExpr}
+        AND ii.observable_type = ${observableTypeExpr}
+        AND m.status = 'active'
+        AND m.purged_at IS NULL
+        AND f.archived_at IS NULL
+        AND COALESCE(ii.status, 'active') = 'active'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM ioc_items ii
+      WHERE ii.observable = ${observableExpr}
+        AND ii.observable_type = ${observableTypeExpr}
+        AND COALESCE(ii.status, 'active') = 'active'
+        AND ii.ioc_source_id IS NOT NULL
+    )
+  )`;
+}
+
+/** @param {Array<object>} items @param {string|undefined|null} statusFilter */
+export function applyActiveListScope(items, statusFilter) {
+  if (parseIocListStatusFilter(statusFilter) !== 'active') return items;
+  return (items || []).filter((it) => Number(it.active_source_count ?? it.source_count ?? 0) > 0);
+}
+
+/** Membership-indexed active observables (avoids full ioc_items scan + correlated EXISTS). */
+export function activeScopedObservablesSql() {
+  return `
+    SELECT DISTINCT i.observable, i.observable_type
+    FROM ioc_feed_memberships m
+    INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+    INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+    WHERE m.status = 'active'
+      AND m.purged_at IS NULL
+      AND f.archived_at IS NULL
+      AND COALESCE(i.status, 'active') = 'active'
+    UNION
+    SELECT DISTINCT i.observable, i.observable_type
+    FROM ioc_items i
+    WHERE COALESCE(i.status, 'active') = 'active'
+      AND i.ioc_source_id IS NOT NULL`;
+}
+
+const IOC_LIST_PARTITION_BY_TYPE = {
+  ip: 'ioc_ip',
+  ipv6: 'ioc_ipv6',
+  domain: 'ioc_domain',
+  url: 'ioc_url',
+  md5: 'ioc_file_hash',
+  sha1: 'ioc_file_hash',
+  sha256: 'ioc_file_hash',
+  ssdeep: 'ioc_file_hash',
+  imphash: 'ioc_file_hash',
+  tlsh: 'ioc_file_hash'
+};
+
+/**
+ * @param {import('pg').Pool|import('pg').PoolClient} pool
+ * @param {Array<{ ioc_item_id: number|string, ioc_observable_type: string }>} candidates
+ */
+async function resolveIocPartitionRows(pool, candidates = []) {
+  const byType = new Map();
+  for (const c of candidates) {
+    const type = String(c.ioc_observable_type || '');
+    if (!IOC_LIST_PARTITION_BY_TYPE[type]) continue;
+    if (!byType.has(type)) byType.set(type, new Set());
+    byType.get(type).add(Number(c.ioc_item_id));
+  }
+
+  /** @type {Map<string, { id: number, public_id: string, observable: string, observable_type: string, created_at: string }>} */
+  const resolved = new Map();
+  for (const [type, idSet] of byType.entries()) {
+    const table = IOC_LIST_PARTITION_BY_TYPE[type];
+    const ids = [...idSet];
+    if (!ids.length) continue;
+    const { rows } = await pool.query(
+      `SELECT id, public_id, observable, observable_type, created_at
+       FROM ${table}
+       WHERE observable_type = $2
+         AND id = ANY($1::bigint[])
+         AND (status = 'active' OR status IS NULL)`,
+      [ids, type]
+    );
+    for (const row of rows) {
+      resolved.set(`${row.id}:${row.observable_type}`, row);
+    }
+  }
+  return resolved;
+}
+
+function statusObservablesCte(mode) {
+  // Dynamic require of flag would be circular at module load; check env directly here
+  // to match isFileArtifactsReadEnabled without importing flags into hot path cycles.
+  const v = String(process.env.FILE_ARTIFACTS_READ_ENABLED || '').trim().toLowerCase();
+  const readOn = v === '1' || v === 'true' || v === 'yes' || v === 'on';
+
+  if (mode === 'active') {
+    if (readOn) {
+      return `
+      WITH active_items AS (
+        SELECT i.id, i.observable, i.observable_type, i.public_id
+        FROM ioc_feed_memberships m
+        INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+        INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+        WHERE m.status = 'active'
+          AND m.purged_at IS NULL
+          AND f.archived_at IS NULL
+          AND COALESCE(i.status, 'active') = 'active'
+        UNION
+        SELECT i.id, i.observable, i.observable_type, i.public_id
+        FROM ioc_items i
+        WHERE COALESCE(i.status, 'active') = 'active'
+          AND i.ioc_source_id IS NOT NULL
+      ), scoped_obs AS (
+        SELECT DISTINCT
+          CASE
+            WHEN COALESCE(
+              CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END,
+              NULL
+            ) IS NOT NULL
+              THEN 'a:' || COALESCE(
+                CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END
+              )::text
+            ELSE 'o:' || ai.observable_type || ':' || LOWER(ai.observable)
+          END AS identity_key,
+          COALESCE(faph.hash_type, ai.observable_type) AS observable_type
+        FROM active_items ai
+        LEFT JOIN file_artifact_ioc_links fal
+          ON fal.ioc_item_id = ai.id AND fal.ioc_observable_type = ai.observable_type
+        LEFT JOIN file_artifacts fa ON fa.id = fal.artifact_id
+        LEFT JOIN file_artifact_hashes faph
+          ON faph.artifact_id = COALESCE(
+               CASE WHEN fa.status = 'merged' THEN fa.merged_into_artifact_id ELSE fa.id END,
+               fa.id
+             )
+         AND faph.is_primary = TRUE
+      )`;
+    }
+    return `
+      WITH scoped_obs AS (
+        ${activeScopedObservablesSql()}
+      )`;
+  }
+  if (mode === 'expired') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT observable, observable_type
+        FROM ioc_items
+        WHERE COALESCE(status, 'active') = 'expired'
+      )`;
+  }
+  if (mode === 'suppressed') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT observable, observable_type
+        FROM ioc_items
+        WHERE COALESCE(status, 'active') = 'suppressed'
+      )`;
+  }
+  if (mode === 'disabled') {
+    return `
+      WITH scoped_obs AS (
+        SELECT DISTINCT observable, observable_type
+        FROM ioc_items
+        WHERE COALESCE(status, 'active') = 'disabled'
+      )`;
+  }
+  return `
+    WITH scoped_obs AS (
+      SELECT DISTINCT observable, observable_type
+      FROM ioc_items
+    )`;
+}
+
+async function fetchActiveTopSources(pool, limit = 20) {
+  const { rows } = await pool.query(
+    `SELECT source_name, SUM(c)::bigint AS count
+     FROM (
+       SELECT f.name AS source_name,
+              COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+       FROM ioc_feed_memberships m
+       INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+       INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+       WHERE m.status = 'active'
+         AND m.purged_at IS NULL
+         AND f.archived_at IS NULL
+         AND COALESCE(i.status, 'active') = 'active'
+       GROUP BY f.name
+       UNION ALL
+       SELECT COALESCE(s.name, i.source_name) AS source_name,
+              COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+       FROM ioc_items i
+       LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+       WHERE COALESCE(i.status, 'active') = 'active'
+         AND i.ioc_source_id IS NOT NULL
+       GROUP BY COALESCE(s.name, i.source_name)
+     ) src
+     GROUP BY source_name
+     ORDER BY count DESC, source_name ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+async function fetchItemRowTopSources(pool, statusClause, limit = 20) {
+  const { rows } = await pool.query(
+    `SELECT source_name, COUNT(DISTINCT (observable, observable_type))::bigint AS count
+     FROM ioc_items
+     WHERE ${statusClause}
+       AND source_name IS NOT NULL
+       AND source_name <> ''
+     GROUP BY source_name
+     ORDER BY count DESC, source_name ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+/**
+ * Run a query with parallel workers disabled inside a short transaction.
+ * SET LOCAL requires a transaction block; without it parallel hash aggregates can exhaust /dev/shm.
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {string} sql
+ * @param {unknown[]} [params]
+ */
+async function queryWithoutParallelWorkers(db, sql, params = []) {
+  const client = typeof db.connect === 'function' ? await db.connect() : null;
+  const runner = client || db;
+  const ownClient = Boolean(client);
+  try {
+    await runner.query('BEGIN');
+    await runner.query('SET LOCAL max_parallel_workers_per_gather = 0');
+    await runner.query("SET LOCAL work_mem = '4MB'");
+    const result = await runner.query(sql, params);
+    await runner.query('COMMIT');
+    return result;
+  } catch (err) {
+    await runner.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    if (ownClient) client.release();
+  }
+}
+
+/**
+ * Cheap watermark for IOC stats cache invalidation (indexed paths only).
+ * @param {import('pg').Pool} pool
+ */
+export async function fetchIocStatsLastUpdate(pool) {
+  const { rows } = await pool.query(
+    `SELECT MAX(ts) AS last_update
+     FROM (
+       SELECT MAX(last_seen_in_feed) AS ts
+       FROM ioc_feed_memberships
+       WHERE status = 'active' AND purged_at IS NULL
+       UNION ALL
+       SELECT MAX(created_at) AS ts
+       FROM ioc_items
+       WHERE ioc_source_id IS NOT NULL
+     ) u`
+  );
+  return rows[0]?.last_update || null;
+}
+
+/**
+ * Paginated active IOC browse ordered by platform import time (`ioc_items.created_at`).
+ *
+ * Performance notes (prod EXPLAIN ANALYZE, ~3M items / ~3.2M memberships):
+ * - Do NOT use `ORDER BY created_at DESC NULLS LAST` — it disables Merge Append index
+ *   walks and forces full partition scans (~1.5–3.8s). `created_at` is NOT NULL.
+ * - Do NOT drive from `ioc_feed_memberships` then sort by item created_at — planner
+ *   nested-loops ~2.7M membership lookups (~3.8s).
+ * - READ off: index walk newest ioc_items (oversample) → filter active → LIMIT need →
+ *   JS (type|value) slice. Pagination correctness is type|value grain.
+ * - READ on: candidate index walk → SQL identity GROUP BY → browseCap → LIMIT/OFFSET
+ *   on canonical rows. JS canonicalize is NOT used for page slicing.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ limit: number, offset: number, browseCap?: number }} opts
+ */
+export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 2000 }) {
+  const cap = Math.max(Number(browseCap) || 2000, 1);
+  if (offset >= cap) return [];
+
+  const cappedLimit = Math.min(limit, cap - offset);
+  const { isFileArtifactsReadEnabled } = await import('./fileArtifacts/flags.js');
+  const readOn = isFileArtifactsReadEnabled();
+
+  let pageSlice;
+  if (readOn) {
+    pageSlice = await queryActiveIocCanonicalBrowsePage(pool, {
+      limit: cappedLimit,
+      offset,
+      browseCap: cap
+    });
+  } else {
+    const need = Math.min(offset + cappedLimit, cap);
+    // Oversample newest rows so inactive / no-active-membership items among the head
+    // do not under-fill the browse window. Cap keeps the index walk bounded.
+    let oversample = Math.min(Math.max(need * 3, need + 100), Math.max(cap * 2, 4000));
+
+    let ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
+    if (ranked.length < need && oversample < cap * 3) {
+      oversample = Math.min(Math.max(oversample * 2, need * 5), cap * 3);
+      ranked = await queryActiveIocBrowseWindow(pool, { oversample, need });
+    }
+
+    const seenObs = new Set();
+    const unique = [];
+    for (const row of ranked) {
+      const key = `${row.observable_type}|${row.observable}`;
+      if (seenObs.has(key)) continue;
+      seenObs.add(key);
+      unique.push(row);
+      if (unique.length >= need) break;
+    }
+    pageSlice = unique.slice(offset, offset + cappedLimit);
+  }
+
+  const ipObservables = pageSlice.filter((i) => i.observable_type === 'ip').map((i) => i.observable);
+  const geoMap = new Map();
+  if (ipObservables.length > 0) {
+    const geoRes = await pool.query(
+      `SELECT ip::text AS ip, asn, country_code, as_name
+       FROM ioc_ip_geo_cache
+       WHERE ip = ANY($1::inet[])`,
+      [ipObservables]
+    );
+    for (const row of geoRes.rows) geoMap.set(row.ip, row);
+  }
+
+  const out = [];
+  for (const item of pageSlice) {
+    const geo = item.observable_type === 'ip' ? geoMap.get(item.observable) : null;
+    const importedAt = item.created_at || item.imported_at || null;
+    out.push({
+      id: item.id,
+      public_id: item.public_id,
+      observable: item.observable,
+      observable_type: item.observable_type,
+      ip: item.observable,
+      created_at: importedAt,
+      imported_at: importedAt,
+      first_seen_at: importedAt,
+      last_seen_at: importedAt,
+      artifact_id: item.artifact_id || null,
+      identity_key: item.identity_key || null,
+      asn: geo?.asn ?? null,
+      country_code: geo?.country_code ?? null,
+      as_name: geo?.as_name ?? null
+    });
+  }
+  return out;
+}
+
+/**
+ * SQL-before-pagination canonical browse (READ flag on).
+ * Candidate window is an index walk bound only; LIMIT/OFFSET apply after identity GROUP BY.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ limit: number, offset: number, browseCap: number }} opts
+ */
+export async function queryActiveIocCanonicalBrowsePage(pool, { limit, offset, browseCap }) {
+  const { buildCanonicalActiveBrowsePageSql } = await import('./fileArtifacts/canonicalListSql.js');
+  const sql = buildCanonicalActiveBrowsePageSql();
+  // Candidate must cover browseCap identities after collapse; inflate for sibling hashes.
+  const candidateLimit = Math.min(
+    Math.max(browseCap * 8, (offset + limit) * 16, 2000),
+    50000
+  );
+  const { rows } = await pool.query(sql, [candidateLimit, browseCap, limit, offset]);
+  return rows;
+}
+
+/**
+ * Newest-first active browse window (index walk + membership/manual filter).
+ * Exported for SQL contract tests.
+ * @param {import('pg').Pool} pool
+ * @param {{ oversample: number, need: number }} opts
+ */
+export async function queryActiveIocBrowseWindow(pool, { oversample, need }) {
+  const { rows } = await pool.query(
+    `WITH recent AS (
+       SELECT id, public_id, observable, observable_type, created_at, status, ioc_source_id
+         FROM ioc_items
+        ORDER BY created_at DESC
+        LIMIT $1
+     )
+     SELECT r.id, r.public_id, r.observable, r.observable_type, r.created_at
+       FROM recent r
+      WHERE COALESCE(r.status, 'active') = 'active'
+        AND (
+          r.ioc_source_id IS NOT NULL
+          OR EXISTS (
+            SELECT 1
+              FROM ioc_feed_memberships m
+             WHERE m.ioc_item_id = r.id
+               AND m.ioc_observable_type = r.observable_type
+               AND m.status = 'active'
+               AND m.purged_at IS NULL
+          )
+        )
+      ORDER BY r.created_at DESC
+      LIMIT $2`,
+    [oversample, need]
+  );
+  return rows;
+}
+
+/** SQL fragment markers for contract tests (browse must not use NULLS LAST / membership-driven sort). */
+export const IOC_LIST_BROWSE_SQL_CONTRACT = Object.freeze({
+  requiresOrderByCreatedAtDesc: 'ORDER BY created_at DESC',
+  forbidsNullsLast: 'NULLS LAST',
+  requiresOversampleCte: 'WITH recent AS',
+  forbidsMembershipDrivenSort: 'FROM ioc_feed_memberships m\n       INNER JOIN ioc_items',
+  /** READ-on path: identity GROUP BY must precede page LIMIT/OFFSET */
+  requiresCanonicalIdentityGroup: 'GROUP BY',
+  requiresCanonicalPageLimitOffset: 'LIMIT $3 OFFSET $4'
+});
+
+/**
+ * @param {import('pg').Pool} pool
+ * @param {string|undefined|null} statusFilter
+ */
+export async function fetchIocListStats(pool, statusFilter = 'active') {
+  const mode = parseIocListStatusFilter(statusFilter);
+  const cte = statusObservablesCte(mode);
+
+  const [totalRes, byTypeRes] = await Promise.all([
+    queryWithoutParallelWorkers(pool, `${cte} SELECT COUNT(*)::bigint AS count FROM scoped_obs`),
+    queryWithoutParallelWorkers(pool, `${cte}
+      SELECT observable_type, COUNT(*)::bigint AS count
+      FROM scoped_obs
+      GROUP BY observable_type
+      ORDER BY count DESC`)
+  ]);
+
+  let bySource;
+  if (mode === 'active') {
+    bySource = await queryWithoutParallelWorkers(
+      pool,
+      `SELECT source_name, SUM(c)::bigint AS count
+       FROM (
+         SELECT f.name AS source_name,
+                COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+         FROM ioc_feed_memberships m
+         INNER JOIN ioc_items i ON i.id = m.ioc_item_id AND i.observable_type = m.ioc_observable_type
+         INNER JOIN integration_feeds f ON f.integration_id = m.feed_id
+         WHERE m.status = 'active'
+           AND m.purged_at IS NULL
+           AND f.archived_at IS NULL
+           AND COALESCE(i.status, 'active') = 'active'
+         GROUP BY f.name
+         UNION ALL
+         SELECT COALESCE(s.name, i.source_name) AS source_name,
+                COUNT(DISTINCT (i.observable, i.observable_type))::bigint AS c
+         FROM ioc_items i
+         LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
+         WHERE COALESCE(i.status, 'active') = 'active'
+           AND i.ioc_source_id IS NOT NULL
+         GROUP BY COALESCE(s.name, i.source_name)
+       ) src
+       GROUP BY source_name
+       ORDER BY count DESC, source_name ASC
+       LIMIT $1`,
+      [20]
+    ).then((res) => res.rows);
+  } else if (mode === 'all') {
+    bySource = await fetchItemRowTopSources(pool, 'TRUE', 20);
+  } else {
+    const statusClause = iocStatusSqlClause(mode) || 'TRUE';
+    bySource = await fetchItemRowTopSources(pool, statusClause, 20);
+  }
+
+  return {
+    total: Number(totalRes.rows[0]?.count || 0),
+    by_type: byTypeRes.rows,
+    by_source: bySource
+  };
+}

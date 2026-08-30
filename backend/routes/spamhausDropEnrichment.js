@@ -1,0 +1,309 @@
+import { requireRole, ROLES } from '../lib/rbac.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { parseActionReason } from '../lib/reasonValidation.js';
+import { buildEnrichmentAuditScope, resolveSubjectIocFromRequest } from '../lib/enrichmentAuditScope.js';
+import {
+  SPAMHAUS_DROP_PROVIDER,
+  getSpamhausDropConfig,
+  getSpamhausDropSyncState,
+  lookupIpInSpamhausDrop,
+  buildSpamhausLookupResponse,
+  validateSyncIntervalHours
+} from '../lib/spamhausDropSync.js';
+import {
+  getSpamhausDropEnrichmentByIp,
+  persistSpamhausLookupResult,
+  rowToSpamhausApiPayload
+} from '../services/spamhausDropEnrichmentService.js';
+import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
+import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
+
+/**
+ * One logical Enrichment Usage event for a user-triggered Spamhaus DROP lookup.
+ * Local dataset membership is not an external call and not a cache hit; listed and
+ * not_listed are both success. Callers must not invoke this for disabled /
+ * not_applicable / dataset_not_synced / invalid-input rejections.
+ */
+function recordSpamhausLookupUsage(pool, iocType, outcome) {
+  recordEnrichmentUsage(pool, {
+    provider: SPAMHAUS_DROP_PROVIDER,
+    iocType,
+    outcome,
+    external: false,
+    cacheHit: false,
+    rateLimited: false
+  });
+}
+
+export function extractIpFromIoc(iocValue, iocType) {
+  const type = String(iocType || '').trim().toLowerCase();
+  if (type === 'ip' || type === 'ipv4' || type === 'ipv6') {
+    return String(iocValue || '').trim().split('/')[0].trim() || null;
+  }
+  if (type === 'url') {
+    try {
+      const u = new URL(String(iocValue || '').trim());
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+      const host = u.hostname;
+      if (!host) return null;
+      // Only IP hosts — no DNS resolve for domain hosts
+      const IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+      const hostClean = host.replace(/^\[|\]$/g, ''); // strip IPv6 brackets
+      const isIp = IPV4_RE.test(hostClean) || hostClean.includes(':');
+      if (!isIp) return null;
+      return hostClean;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * @param {import('express').Express} app
+ * @param {import('pg').Pool} pool
+ * @param {ReturnType<import('../lib/auditLogService.js').createAuditLogService>} audit
+ * @param {{ importQueue?: import('bullmq').Queue }} options
+ */
+export function registerSpamhausDropEnrichmentRoutes(app, pool, audit, options = {}) {
+  const { importQueue } = options;
+  // -------------------------------------------------------------------------
+  // IOC Detail: hydrate persisted enrichment (no live CIDR re-lookup)
+  // -------------------------------------------------------------------------
+  app.get('/api/enrichment/spamhaus-drop/ioc', async (req, res) => {
+    try {
+      const iocValue = String(req.query?.ioc_value || req.query?.value || '').trim();
+      const iocType = String(req.query?.ioc_type || req.query?.type || '').trim();
+
+      if (!iocValue || !iocType) {
+        return res.status(400).json({ message: 'ioc_value and ioc_type are required' });
+      }
+
+      const config = await getSpamhausDropConfig(pool);
+
+      if (!config.enabled) {
+        return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'disabled', listed: null });
+      }
+
+      const targetIp = extractIpFromIoc(iocValue, iocType);
+      if (targetIp === null) {
+        return res.json({ provider: SPAMHAUS_DROP_PROVIDER, status: 'not_applicable', listed: null });
+      }
+
+      const row = await getSpamhausDropEnrichmentByIp(pool, targetIp);
+      return res.json(rowToSpamhausApiPayload(row));
+    } catch (err) {
+      console.error('[spamhaus-drop] GET ioc lookup failed', err?.message || err);
+      return res.status(500).json({ message: 'Spamhaus DROP lookup failed' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // IOC Detail: refresh = re-lookup from local dataset + persist result
+  // -------------------------------------------------------------------------
+  app.post('/api/enrichment/spamhaus-drop/ioc/refresh', async (req, res) => {
+    try {
+      const iocValue = String(req.body?.ioc_value || req.body?.value || '').trim();
+      const iocType = String(req.body?.ioc_type || req.body?.type || '').trim();
+
+      if (!iocValue || !iocType) {
+        return res.status(400).json({ message: 'ioc_value and ioc_type are required' });
+      }
+
+      const config = await getSpamhausDropConfig(pool);
+      const syncState = await getSpamhausDropSyncState(pool);
+      const targetIp = extractIpFromIoc(iocValue, iocType);
+
+      if (targetIp === null) {
+        const resp = buildSpamhausLookupResponse({ lookup: null, syncState, config, targetIp: null, notApplicable: true });
+        return res.json(resp);
+      }
+
+      let lookup;
+      try {
+        lookup = await lookupIpInSpamhausDrop(pool, targetIp);
+      } catch (err) {
+        if (err?.code === 'invalid_ip') {
+          return res.status(400).json({ message: err.message, code: 'invalid_ip' });
+        }
+        const failResp = {
+          provider: SPAMHAUS_DROP_PROVIDER,
+          status: 'error',
+          listed: null,
+          target_ip: targetIp,
+          error_message: err?.message || 'Spamhaus DROP lookup failed'
+        };
+        await persistSpamhausLookupResult(pool, {
+          targetIp,
+          iocValue,
+          iocType,
+          response: failResp
+        }).catch(() => {});
+        recordSpamhausLookupUsage(pool, iocType, 'failure');
+        throw err;
+      }
+
+      const subject = await resolveSubjectIocFromRequest(pool, req);
+      const scope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || iocValue,
+        subjectIocType: subject?.observable_type || iocType,
+        targetType: 'ip',
+        targetValue: targetIp,
+        provider: SPAMHAUS_DROP_PROVIDER,
+        extraMetadata: {
+          ioc_value: iocValue,
+          ioc_type: iocType,
+          target_ip: targetIp,
+          original_value: iocValue,
+          observable_value: iocValue
+        }
+      });
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.SPAMHAUS_DROP_ENRICHMENT_REFRESH,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: scope.entityId,
+        entityDisplay: scope.entityDisplay,
+        subjectIocId: scope.subjectIocId,
+        subjectIocType: scope.subjectIocType,
+        subjectIocValue: scope.subjectIocValue,
+        targetType: scope.targetType,
+        targetValue: scope.targetValue,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: scope.metadata
+      }).catch(() => {});
+
+      const resp = buildSpamhausLookupResponse({ lookup, syncState, config, targetIp });
+      // listed and not_listed are both a completed lookup. disabled / dataset_not_synced
+      // are preconditions, not usage events (and GET hydrate never records).
+      if (resp.status === 'listed' || resp.status === 'not_listed') {
+        recordSpamhausLookupUsage(pool, iocType, 'success');
+      }
+      await persistSpamhausLookupResult(pool, {
+        targetIp,
+        iocValue,
+        iocType,
+        response: resp
+      }).catch((persistErr) => {
+        console.error('[spamhaus-drop] persist failed', persistErr?.message || persistErr);
+      });
+
+      const enrichedAt = resp.status === 'listed' || resp.status === 'not_listed'
+        ? new Date().toISOString()
+        : null;
+      return res.json(enrichedAt ? { ...resp, last_enriched_at: enrichedAt } : resp);
+    } catch (err) {
+      console.error('[spamhaus-drop] POST refresh failed', err?.message || err);
+      return res.status(500).json({ message: 'Spamhaus DROP refresh failed' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Admin: GET provider config + sync state
+  // -------------------------------------------------------------------------
+  app.get('/api/admin/enrichment-providers/spamhaus-drop', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const config = await getSpamhausDropConfig(pool);
+      const syncState = await getSpamhausDropSyncState(pool);
+      return res.json({
+        provider: SPAMHAUS_DROP_PROVIDER,
+        display_name: 'Spamhaus DROP',
+        enabled: config.enabled,
+        sync_interval_hours: config.sync_interval_hours,
+        timeout_ms: config.timeout_ms,
+        sync_state: syncState
+      });
+    } catch (err) {
+      console.error('[spamhaus-drop] GET admin config failed', err?.message || err);
+      return res.status(500).json({ message: 'Failed to load Spamhaus DROP config' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Admin: PUT update provider config
+  // -------------------------------------------------------------------------
+  app.put('/api/admin/enrichment-providers/spamhaus-drop', requireRole(ROLES.ADMIN), async (req, res) => {
+    const reasonCheck = parseActionReason(req.body);
+    if (!reasonCheck.ok) {
+      return res.status(400).json({ message: reasonCheck.message });
+    }
+
+    const enabled = req.body?.enabled === true;
+    const syncIntervalRaw = req.body?.sync_interval_hours ?? 24;
+    const intervalCheck = validateSyncIntervalHours(syncIntervalRaw);
+    if (!intervalCheck.ok) {
+      return res.status(400).json({ message: intervalCheck.error });
+    }
+    const syncIntervalHours = intervalCheck.value;
+    const timeoutMs = Math.max(5000, Number(req.body?.timeout_ms ?? 30000));
+
+    try {
+      const previous = await getSpamhausDropConfig(pool);
+      await pool.query(
+        `INSERT INTO threat_intel_provider_configs (provider, enabled, ttl_hours, timeout_ms, config, updated_at)
+         VALUES ($1, $2, 24, $3, $4::jsonb, NOW())
+         ON CONFLICT (provider) DO UPDATE SET
+           enabled      = $2,
+           timeout_ms   = $3,
+           config       = $4::jsonb,
+           updated_at   = NOW()`,
+        [SPAMHAUS_DROP_PROVIDER, enabled, timeoutMs, JSON.stringify({ sync_interval_hours: syncIntervalHours })]
+      );
+
+      await auditProviderConfigUpdate(audit, req, {
+        provider: SPAMHAUS_DROP_PROVIDER,
+        displayName: 'Spamhaus DROP',
+        previousEnabled: previous.enabled,
+        newEnabled: enabled,
+        after: { sync_interval_hours: syncIntervalHours, timeout_ms: timeoutMs },
+        metadata: { reason: reasonCheck.reason }
+      });
+
+      const config = await getSpamhausDropConfig(pool);
+      const syncState = await getSpamhausDropSyncState(pool);
+      return res.json({ ok: true, enabled: config.enabled, sync_interval_hours: config.sync_interval_hours, timeout_ms: config.timeout_ms, sync_state: syncState });
+    } catch (err) {
+      console.error('[spamhaus-drop] PUT admin config failed', err?.message || err);
+      return res.status(500).json({ message: 'Failed to update Spamhaus DROP config' });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Admin: POST run sync now (enqueues an immediate BullMQ job)
+  // -------------------------------------------------------------------------
+  app.post('/api/admin/enrichment-providers/spamhaus-drop/sync', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      // Central disable guard: the queue producer must not enqueue a sync job for
+      // a disabled provider.
+      if (!(await guardProviderEnabled(pool, SPAMHAUS_DROP_PROVIDER, res))) return;
+
+      if (!importQueue) {
+        return res.status(503).json({ message: 'Import queue not available' });
+      }
+
+      const jobId = `spamhaus-drop-manual-${Date.now()}`;
+      await importQueue.add(
+        'spamhaus-drop-sync',
+        { triggeredBy: 'admin', integration_key: 'spamhaus-drop' },
+        { jobId, priority: 10 }
+      );
+
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.SPAMHAUS_DROP_SYNC_TRIGGERED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: SPAMHAUS_DROP_PROVIDER,
+        entityDisplay: 'Spamhaus DROP',
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: { provider: SPAMHAUS_DROP_PROVIDER, job_id: jobId, triggered_by: 'admin' }
+      }).catch(() => {});
+
+      return res.json({ ok: true, job_id: jobId });
+    } catch (err) {
+      console.error('[spamhaus-drop] POST sync failed', err?.message || err);
+      return res.status(500).json({ message: 'Failed to enqueue Spamhaus DROP sync' });
+    }
+  });
+}

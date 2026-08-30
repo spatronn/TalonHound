@@ -1,0 +1,24 @@
+{
+  "name": "talonhound-integration",
+  "version": "1.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "scheduler": "node scheduler.js",
+    "worker": "node worker.js",
+    "backfill-ioc-observables": "node backfill-ioc-observables.js",
+    "backfill-file-artifacts": "node backfill-file-artifacts.js",
+    "dry-run:usom": "node scripts/usom-dry-run.js",
+    "dry-run:malwarebazaar": "node scripts/malwarebazaar-historical.js --dry-run",
+    "test:usom": "node --test lib/usomNormalizer.test.js lib/usomOfficialApi.test.js lib/usomImportStore.test.js lib/usomImportPipeline.test.js lib/usomImportNoop.test.js lib/usomImportIo.test.js",
+    "test:urlhaus": "node --test lib/urlhaus.test.js lib/urlhausSkip.test.js",
+    "test:malwarebazaar": "node --test lib/malwarebazaar.test.js lib/malwarebazaarFullExport.test.js lib/malwarebazaarHistoricalRecovery.test.js ../backend/lib/malwarebazaarCoverage.test.js",
+    "test:queue": "node --test lib/queue-recovery.test.js"
+  },
+  "dependencies": {
+    "bullmq": "^5.10.3",
+    "ioredis": "^5.4.1",
+    "pg": "^8.16.3"
+  }
+}
