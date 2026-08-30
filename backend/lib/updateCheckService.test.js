@@ -242,7 +242,30 @@ test('M. no eligible release (404) leaves product usable with clear status', asy
   });
 });
 
-test('N. current version dev discovers latest without SemVer comparison', async () => {
+test('N. non-SemVer current version discovers latest without SemVer comparison', async () => {
+  await withEnv({
+    // Intentionally not the Docker placeholder "dev" (that falls back to VERSION).
+    TALONHOUND_VERSION: 'unversioned-local',
+    UPDATE_CHANNEL: 'beta',
+    UPDATE_MANIFEST_URL: 'https://example.com/updates/beta.json'
+  }, async () => {
+    const service = createUpdateCheckService({
+      fetchImpl: async () => jsonResponse(betaManifest({
+        latest: '0.1.0-beta.1',
+        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.0-beta.1'
+      }))
+    });
+    const status = await service.check({ force: true });
+    assert.equal(status.status, 'development_build');
+    assert.equal(status.currentVersion, 'unversioned-local');
+    assert.equal(status.latestVersion, '0.1.0-beta.1');
+    assert.equal(status.releaseUrl, 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.0-beta.1');
+    assert.equal(status.error, null);
+    assert.notEqual(status.status, 'up_to_date');
+  });
+});
+
+test('N2. Docker placeholder TALONHOUND_VERSION=dev compares using VERSION file SemVer', async () => {
   await withEnv({
     TALONHOUND_VERSION: 'dev',
     UPDATE_CHANNEL: 'beta',
@@ -255,11 +278,9 @@ test('N. current version dev discovers latest without SemVer comparison', async 
       }))
     });
     const status = await service.check({ force: true });
-    assert.equal(status.status, 'development_build');
+    assert.equal(status.currentVersion, '0.1.0-beta.1');
     assert.equal(status.latestVersion, '0.1.0-beta.1');
-    assert.equal(status.releaseUrl, 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.0-beta.1');
-    assert.equal(status.error, null);
-    assert.notEqual(status.status, 'up_to_date');
+    assert.equal(status.status, 'up_to_date');
   });
 });
 
