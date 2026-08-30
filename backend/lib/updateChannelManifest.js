@@ -43,14 +43,13 @@ export function parseUpdateChannelManifest(raw) {
   }
 
   const latestChannel = releaseChannel(latest);
-  if (latestChannel !== channel && !(channel === 'stable' && latestChannel === 'stable')) {
-    // Allow stable channel only for non-prerelease; beta for beta prereleases.
-    if (channel === 'beta' && latestChannel !== 'beta') {
-      return { ok: false, error: `latest version ${latest} is not a beta channel release` };
-    }
-    if (channel === 'stable' && latestChannel !== 'stable') {
-      return { ok: false, error: `latest version ${latest} is not a stable channel release` };
-    }
+  // Stable: non-prerelease only. Beta: beta prereleases and stable releases
+  // (a newer stable may supersede the latest beta on the beta channel pointer).
+  if (channel === 'stable' && latestChannel !== 'stable') {
+    return { ok: false, error: `latest version ${latest} is not a stable channel release` };
+  }
+  if (channel === 'beta' && latestChannel !== 'beta' && latestChannel !== 'stable') {
+    return { ok: false, error: `latest version ${latest} is not eligible for the beta channel` };
   }
 
   const releasedAt = asTrimmedString(data.released_at ?? data.releasedAt);

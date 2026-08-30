@@ -29,10 +29,31 @@ test('parseUpdateChannelManifest rejects invalid JSON shapes and fields', () => 
   assert.equal(parseUpdateChannelManifest(null).ok, false);
   assert.equal(parseUpdateChannelManifest({ ...valid, channel: 'nightly' }).ok, false);
   assert.equal(parseUpdateChannelManifest({ ...valid, latest: 'not-semver' }).ok, false);
-  assert.equal(parseUpdateChannelManifest({ ...valid, latest: '1.0.0' }).ok, false);
+  assert.equal(parseUpdateChannelManifest({ ...valid, latest: '0.2.0-rc.1' }).ok, false);
   assert.equal(parseUpdateChannelManifest({ ...valid, released_at: 'yesterday' }).ok, false);
   assert.equal(parseUpdateChannelManifest({ ...valid, release_url: 'http://insecure.example/x' }).ok, false);
   assert.equal(parseUpdateChannelManifest({ ...valid, schemaVersion: 99 }).ok, false);
+});
+
+test('parseUpdateChannelManifest allows stable latest on beta channel', () => {
+  const result = parseUpdateChannelManifest({
+    ...valid,
+    latest: '1.0.0',
+    release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v1.0.0'
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.manifest.latest, '1.0.0');
+  assert.equal(result.manifest.channel, 'beta');
+});
+
+test('parseUpdateChannelManifest rejects prerelease latest on stable channel', () => {
+  const result = parseUpdateChannelManifest({
+    ...valid,
+    channel: 'stable',
+    latest: '0.2.0-beta.1',
+    release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.2.0-beta.1'
+  });
+  assert.equal(result.ok, false);
 });
 
 test('parseUpdateChannelManifestJson rejects oversized and malformed payloads', () => {

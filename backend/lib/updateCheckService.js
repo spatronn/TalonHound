@@ -4,7 +4,7 @@
  */
 
 import { getProductVersionInfo } from './productVersion.js';
-import { compareSemVer } from './releaseSemver.js';
+import { compareSemVer, isValidSemVer } from './releaseSemver.js';
 import {
   UPDATE_MANIFEST_MAX_BYTES,
   parseUpdateChannelManifestJson
@@ -14,7 +14,9 @@ import {
   validateConfiguredManifestUrl
 } from './updateCheckConfig.js';
 
-/** @typedef {'up_to_date'|'update_available'|'unknown'} UpdateStatus */
+/**
+ * @typedef {'up_to_date'|'update_available'|'check_failed'|'no_release_published'|'development_build'|'unknown'} UpdateStatus
+ */
 
 /**
  * @typedef {object} UpdateCheckSnapshot
@@ -54,6 +56,42 @@ function emptySnapshot(config, extras = {}) {
   };
 }
 
+/**
+ * @param {unknown} err
+ * @returns {string}
+ */
+function publicError(err) {
+  const msg = String(err?.message || err || 'Update check failed');
+  if (/ECONN|ENOTFOUND|ETIMEDOUT|certificate|TLS|network|fetch failed|timed out|AbortError/i.test(msg)) {
+    return 'Unable to reach the update server';
+  }
+  if (/rate.?limit|HTTP 403/i.test(msg)) {
+    return 'Update server rate-limited the request';
+  }
+  if (/HTTP 5\d\d/i.test(msg)) {
+    return 'Update server returned an error';
+  }
+  if (/size limit|valid JSON|schema|channel|released_at|release_url|https|Unsupported|Invalid latest/i.test(msg)) {
+    return 'Update manifest was invalid';
+  }
+  if (/must use https|credentials|not a valid URL|misconfigured/i.test(msg)) {
+    return 'Update check is misconfigured';
+  }
+  return 'Update check failed';
+}
+
+/**
+ * @param {Headers|undefined|null} headers
+ * @returns {{ remaining: string|null, reset: string|null }}
+ */
+function rateLimitMeta(headers) {
+  if (!headers?.get) return { remaining: null, reset: null };
+  return {
+    remaining: headers.get('x-ratelimit-remaining') || headers.get('X-RateLimit-Remaining'),
+    reset: headers.get('x-ratelimit-reset') || headers.get('X-RateLimit-Reset')
+  };
+}
+
 export function createUpdateCheckService(options = {}) {
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   const nowFn = options.nowFn || (() => new Date());
@@ -66,27 +104,13 @@ export function createUpdateCheckService(options = {}) {
   let inFlight = null;
   let timer = null;
 
-  function publicError(message) {
-    const msg = String(message || 'Update check failed');
-    // Never expose stack traces or internal host details to the API surface.
-    if (/ECONN|ENOTFOUND|ETIMEDOUT|certificate|TLS|network|fetch failed/i.test(msg)) {
-      return 'Unable to reach the update server';
-    }
-    if (/size limit|valid JSON|schema|channel|version|released_at|release_url|https/i.test(msg)) {
-      return 'Update manifest was invalid';
-    }
-    if (/must use https|credentials|not a valid URL/i.test(msg)) {
-      return 'Update check is misconfigured';
-    }
-    return 'Update check failed';
-  }
-
   /**
-   * @param {AbortSignal} signal
+   * @param {AbortSignal|undefined} signal
    * @param {string} url
    * @param {number} timeoutMs
+   * @returns {Promise<{ status: number, headers: Headers|null, text: string|null }>}
    */
-  async function fetchManifestText(signal, url, timeoutMs) {
+  async function fetchManifest(signal, url, timeoutMs) {
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal?.addEventListener?.('abort', onAbort, { once: true });
@@ -101,10 +125,10 @@ export function createUpdateCheckService(options = {}) {
           'User-Agent': 'TalonHound-UpdateCheck/1.0'
         }
       });
-        if (!res.ok) {
-        throw new Error(res.status === 404 || res.status === 403
-          ? 'Unable to reach the update server'
-          : `HTTP ${res.status}`);
+
+      const status = Number(res.status) || 0;
+      if (!res.ok) {
+        return { status, headers: res.headers || null, text: null };
       }
 
       const contentLength = Number(res.headers?.get?.('content-length') || 0);
@@ -112,12 +136,11 @@ export function createUpdateCheckService(options = {}) {
         throw new Error(`Manifest exceeds size limit (${maxBytes} bytes)`);
       }
 
-      // Bound body size without requiring streaming support from every mock.
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.byteLength > maxBytes) {
         throw new Error(`Manifest exceeds size limit (${maxBytes} bytes)`);
       }
-      return buf.toString('utf8');
+      return { status, headers: res.headers || null, text: buf.toString('utf8') };
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener?.('abort', onAbort);
@@ -148,60 +171,210 @@ export function createUpdateCheckService(options = {}) {
       if (!urlCheck.ok) {
         cache = {
           ...cache,
-          status: 'unknown',
+          status: 'check_failed',
           lastCheckedAt: checkedAt,
           error: publicError(urlCheck.error),
           automaticChecksEnabled: config.enabled
         };
-        logger.warn?.('[update-check] misconfigured manifest URL');
+        logger.warn?.('[update-check] misconfigured', {
+          channel: config.channel,
+          reason: 'invalid_manifest_url'
+        });
         return cache;
       }
 
+      const manifestUrl = urlCheck.url.toString();
+
       try {
-        const text = await fetchManifestText(undefined, urlCheck.url.toString(), config.timeoutMs);
-        const parsed = parseUpdateChannelManifestJson(text, maxBytes);
-        if (!parsed.ok) {
-          throw new Error(parsed.error);
+        let fetched;
+        try {
+          fetched = await fetchManifest(undefined, manifestUrl, config.timeoutMs);
+        } catch (err) {
+          const timedOut = err?.name === 'AbortError';
+          const reason = timedOut ? 'timeout' : 'network_error';
+          cache = {
+            ...cache,
+            currentVersion: config.currentVersion,
+            channel: config.channel,
+            status: 'check_failed',
+            lastCheckedAt: checkedAt,
+            error: publicError(timedOut ? 'Update check timed out' : err),
+            automaticChecksEnabled: config.enabled
+          };
+          logger.warn?.('[update-check] check failed', {
+            channel: config.channel,
+            repository: 'spatronn/TalonHound',
+            manifestUrlHost: urlCheck.url.host,
+            reason,
+            error: cache.error
+          });
+          return cache;
         }
+
+        if (fetched.status === 404) {
+          cache = {
+            ...cache,
+            currentVersion: config.currentVersion,
+            channel: config.channel,
+            status: 'no_release_published',
+            latestVersion: null,
+            critical: false,
+            releaseUrl: null,
+            releasedAt: null,
+            minimumSupportedVersion: null,
+            lastCheckedAt: checkedAt,
+            lastSuccessfulCheckAt: checkedAt,
+            error: null,
+            automaticChecksEnabled: config.enabled
+          };
+          logger.info?.('[update-check] no release published', {
+            channel: config.channel,
+            httpStatus: 404,
+            manifestUrlHost: urlCheck.url.host
+          });
+          return cache;
+        }
+
+        if (fetched.status !== 200 || fetched.text == null) {
+          const rate = rateLimitMeta(fetched.headers);
+          const reason = fetched.status === 403 ? 'forbidden_or_rate_limited' : `http_${fetched.status}`;
+          cache = {
+            ...cache,
+            currentVersion: config.currentVersion,
+            channel: config.channel,
+            status: 'check_failed',
+            lastCheckedAt: checkedAt,
+            error: publicError(`HTTP ${fetched.status}`),
+            automaticChecksEnabled: config.enabled
+          };
+          logger.warn?.('[update-check] check failed', {
+            channel: config.channel,
+            repository: 'spatronn/TalonHound',
+            manifestUrlHost: urlCheck.url.host,
+            httpStatus: fetched.status,
+            reason,
+            rateLimitRemaining: rate.remaining,
+            rateLimitReset: rate.reset,
+            error: cache.error
+          });
+          return cache;
+        }
+
+        const parsed = parseUpdateChannelManifestJson(fetched.text, maxBytes);
+        if (!parsed.ok) {
+          cache = {
+            ...cache,
+            currentVersion: config.currentVersion,
+            channel: config.channel,
+            status: 'check_failed',
+            lastCheckedAt: checkedAt,
+            error: publicError(parsed.error),
+            automaticChecksEnabled: config.enabled
+          };
+          logger.warn?.('[update-check] check failed', {
+            channel: config.channel,
+            manifestUrlHost: urlCheck.url.host,
+            reason: 'invalid_manifest',
+            error: cache.error
+          });
+          return cache;
+        }
+
         const manifest = parsed.manifest;
         if (manifest.channel !== config.channel) {
-          throw new Error(`Unsupported channel: expected ${config.channel}, got ${manifest.channel}`);
+          cache = {
+            ...cache,
+            currentVersion: config.currentVersion,
+            channel: config.channel,
+            status: 'check_failed',
+            lastCheckedAt: checkedAt,
+            error: publicError(`Unsupported channel: expected ${config.channel}, got ${manifest.channel}`),
+            automaticChecksEnabled: config.enabled
+          };
+          logger.warn?.('[update-check] check failed', {
+            channel: config.channel,
+            reason: 'channel_mismatch',
+            manifestChannel: manifest.channel,
+            error: cache.error
+          });
+          return cache;
+        }
+
+        const discovered = {
+          latestVersion: manifest.latest,
+          critical: Boolean(manifest.critical),
+          releaseUrl: manifest.releaseUrl,
+          releasedAt: manifest.releasedAt,
+          minimumSupportedVersion: manifest.minimumSupportedVersion
+        };
+
+        if (!isValidSemVer(config.currentVersion)) {
+          cache = {
+            currentVersion: config.currentVersion,
+            ...discovered,
+            channel: config.channel,
+            status: 'development_build',
+            lastCheckedAt: checkedAt,
+            lastSuccessfulCheckAt: checkedAt,
+            error: null,
+            automaticChecksEnabled: config.enabled
+          };
+          logger.info?.('[update-check] development build; latest release discovered without comparison', {
+            channel: config.channel,
+            currentVersion: config.currentVersion,
+            latestVersion: manifest.latest
+          });
+          return cache;
         }
 
         const cmp = compareSemVer(manifest.latest, config.currentVersion);
         if (cmp == null) {
-          throw new Error('Unable to compare versions');
+          cache = {
+            currentVersion: config.currentVersion,
+            ...discovered,
+            channel: config.channel,
+            status: 'check_failed',
+            lastCheckedAt: checkedAt,
+            error: 'Update check failed',
+            automaticChecksEnabled: config.enabled
+          };
+          logger.warn?.('[update-check] check failed', {
+            channel: config.channel,
+            reason: 'version_compare_failed',
+            currentVersion: config.currentVersion,
+            latestVersion: manifest.latest
+          });
+          return cache;
         }
+
         /** @type {UpdateStatus} */
         const status = cmp > 0 ? 'update_available' : 'up_to_date';
-
         cache = {
           currentVersion: config.currentVersion,
-          latestVersion: manifest.latest,
+          ...discovered,
           channel: config.channel,
           status,
-          critical: Boolean(manifest.critical),
-          releaseUrl: manifest.releaseUrl,
-          releasedAt: manifest.releasedAt,
           lastCheckedAt: checkedAt,
           lastSuccessfulCheckAt: checkedAt,
           error: null,
-          automaticChecksEnabled: config.enabled,
-          minimumSupportedVersion: manifest.minimumSupportedVersion
+          automaticChecksEnabled: config.enabled
         };
         return cache;
       } catch (err) {
-        const raw = err?.name === 'AbortError' ? 'Update check timed out' : (err?.message || String(err));
         cache = {
           ...cache,
           currentVersion: config.currentVersion,
           channel: config.channel,
-          status: 'unknown',
+          status: 'check_failed',
           lastCheckedAt: checkedAt,
-          error: publicError(raw),
+          error: publicError(err),
           automaticChecksEnabled: config.enabled
         };
-        logger.warn?.('[update-check] check failed', { error: publicError(raw) });
+        logger.warn?.('[update-check] check failed', {
+          channel: config.channel,
+          reason: 'unexpected_error',
+          error: cache.error
+        });
         return cache;
       }
     })();

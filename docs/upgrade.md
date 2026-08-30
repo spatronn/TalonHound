@@ -105,7 +105,7 @@ sudo ./scripts/restore-stack.sh --backup-id pre-upgrade-0.1.0-beta.1-to-0.1.0-be
 
 ## Offline / restricted networks
 
-If GitHub or the configured manifest URL is unreachable, update status shows **Unknown**. The product remains fully usable. Perform upgrades from a host that can reach GitHub/GHCR, or stage images in a private registry and point image env vars accordingly after validating digests.
+If GitHub or the configured manifest URL is unreachable, update status shows **Update check failed**. A development / unversioned build (`dev`) still discovers the latest published channel version but reports **Development build** instead of up-to-date/outdated. A missing channel manifest (HTTP 404) reports **No release published**. The product remains fully usable in all of these cases. Perform upgrades from a host that can reach GitHub/GHCR, or stage images in a private registry and point image env vars accordingly after validating digests.
 
 ### Private GitHub repositories
 

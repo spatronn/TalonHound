@@ -11,7 +11,8 @@ import {
 import {
   formatReleaseChannelLabel,
   formatUpdateAvailabilityNotice,
-  formatUpdateStatusMessage
+  formatUpdateStatusMessage,
+  formatUpdateCheckFeedback
 } from './lib/updateStatusView.js';
 import {
   canManageProductUpdates,
@@ -9774,19 +9775,16 @@ function AdministrationSettingsPage() {
   }
 
   async function checkForUpdates() {
-    if (!canManageUpdates) return;
+    if (!canManageUpdates || updateBusy) return;
     setUpdateBusy(true);
     setUpdateError('');
     try {
       const { data } = await api.post('/system/updates/check');
       setUpdateStatus(data);
-      if (data?.status === 'update_available') {
-        feedback.success(`TalonHound ${data.latestVersion} is available.`);
-      } else if (data?.status === 'up_to_date') {
-        feedback.success("You're up to date.");
-      } else {
-        feedback.info('Update status is unknown. The product remains fully usable.');
-      }
+      const toast = formatUpdateCheckFeedback(data);
+      if (toast.kind === 'success') feedback.success(toast.message);
+      else if (toast.kind === 'error') feedback.error(toast.message);
+      else feedback.info(toast.message);
     } catch (err) {
       setUpdateError(apiErrorMessage(err, 'Failed to check for updates'));
     } finally {
