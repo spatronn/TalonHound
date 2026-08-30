@@ -391,13 +391,20 @@ jobs:
           version="${{ needs.validate.outputs.version }}"
           tag="${{ needs.validate.outputs.git_tag }}"
           notes_file="$(mktemp)"
-          {
-            echo "TalonHound ${version}"
-            echo
-            echo "Official container images, release manifest, and source snapshot for this tag."
-            echo
-            echo "Install using \`docker-compose.release.yml\` with the image digests recorded in \`release-manifest.json\`."
-          } > "$notes_file"
+          curated="docs/releases/${version}.md"
+          if [ -f "$curated" ]; then
+            cp "$curated" "$notes_file"
+          else
+            {
+              echo "TalonHound ${version}"
+              echo
+              echo "Official container images, release manifest, and source snapshot for this tag."
+              echo
+              echo "This is a beta release. Review the deployment and backup documentation before upgrading production environments."
+              echo
+              echo "Install using \`docker-compose.release.yml\` with the image digests recorded in \`release-manifest.json\`."
+            } > "$notes_file"
+          fi
           args=(release create "$tag" --title "TalonHound ${version}" --notes-file "$notes_file" "release-manifest.json")
           if [ -f channel-update-manifest.json ]; then
             args+=("channel-update-manifest.json")

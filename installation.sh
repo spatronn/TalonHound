@@ -235,9 +235,14 @@ start_infra_and_migrate() {
 
   # Stamp the canonical product version (and best-effort commit/date) into the images so the
   # running app reports the real version instead of the "dev" build-arg default.
+  # Persist into .env so later compose rebuilds keep the same product identity without
+  # requiring the operator to export TALONHOUND_VERSION manually.
   export TALONHOUND_VERSION="${PRODUCT_VERSION}"
   export TALONHOUND_COMMIT="$(git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
   export TALONHOUND_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown)"
+  set_or_replace TALONHOUND_VERSION "$TALONHOUND_VERSION"
+  set_or_replace TALONHOUND_COMMIT "$TALONHOUND_COMMIT"
+  set_or_replace TALONHOUND_BUILD_DATE "$TALONHOUND_BUILD_DATE"
 
   info "Building application images (first run can take several minutes)..."
   $COMPOSE --env-file "$ENV_FILE" build backend frontend integration-worker integration-scheduler proxy

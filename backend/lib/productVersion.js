@@ -32,10 +32,24 @@ export function readCanonicalVersion() {
   throw new Error('Canonical VERSION file not found');
 }
 
+/**
+ * Dockerfiles default BUILD_VERSION/BUILD_COMMIT to the placeholder "dev".
+ * Treat that placeholder as unset so the canonical VERSION file wins for
+ * official source installs and any build that did not intentionally stamp a
+ * real SemVer via TALONHOUND_VERSION / BUILD_VERSION.
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isUnsetBuildPlaceholder(value) {
+  const v = String(value || '').trim().toLowerCase();
+  return !v || v === 'dev';
+}
+
 /** @returns {string} */
 function resolveVersion() {
   const fromEnv = String(process.env.TALONHOUND_VERSION || '').trim();
-  if (fromEnv) return fromEnv;
+  if (!isUnsetBuildPlaceholder(fromEnv)) return fromEnv;
   return readCanonicalVersion();
 }
 
@@ -47,7 +61,7 @@ function resolveCommit() {
     || process.env.SOURCE_COMMIT
     || ''
   ).trim();
-  if (fromEnv) return fromEnv;
+  if (!isUnsetBuildPlaceholder(fromEnv)) return fromEnv;
   return 'unknown';
 }
 
