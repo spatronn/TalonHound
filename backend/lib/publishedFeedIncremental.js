@@ -14,9 +14,15 @@ import {
   shouldCanonicalizePublishedHashFeed,
   resolveJsonIncludeFlags,
   isJsonFormatFeed,
-  buildStreamingBaseSql
+  buildStreamingBaseSql,
+  resolveFeedIocTypes
 } from './feedPublisherService.js';
-import { normalizeFeedLine, feedCategoryForObservableType, normalizeFeedIocTypes } from './feedFormatter.js';
+import {
+  normalizeFeedLine,
+  feedCategoryForObservableType,
+  normalizeFeedIocTypes,
+  observableTypesForFeedIocTypes
+} from './feedFormatter.js';
 import { normalizePublishedIoc } from './publishedFeedJson.js';
 import { fetchPublishedFeedItemMetadata, metaKey } from './publishedFeedJsonData.js';
 import { feedHasStixFormat } from './publishedFeedFormats.js';
@@ -37,7 +43,8 @@ import {
   setFeedProjectionState,
   touchFeedRefreshChecked,
   buildProjectionScanSql,
-  clearFeedProjection
+  clearFeedProjection,
+  adjustProjectionItemCount
 } from './publishedFeedProjection.js';
 import {
   SLIDING_WINDOWS,
@@ -82,6 +89,20 @@ export function feedNeedsStructuredSerializerInput(feed) {
  * Collect distinct ioc_item ids touched since cutoff (exclusive). Bounded by LIMIT.
  * Returns { ids: number[], truncated: boolean, sources: object, deletes?: object[] }.
  */
+/**
+ * Observable types this feed can ever emit. Empty → unscoped (query-mode / unknown).
+ * Used to prune dirty polls so Domain ticks do not scan hash/IP partitions and vice versa.
+ */
+export function feedDirtyObservableTypes(feed) {
+  try {
+    const categories = resolveFeedIocTypes(feed);
+    if (!categories.length) return [];
+    return observableTypesForFeedIocTypes(categories);
+  } catch {
+    return [];
+  }
+}
+
 export async function collectDirtyIocIds(db, feed, cutoff, {
   limit = 100000,
   candidateCutoff = captureCutoffNow()
@@ -115,6 +136,9 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
     }
   };
 
+  const typeScope = feedDirtyObservableTypes(feed);
+  const scoped = typeScope.length > 0;
+
   // Catalog watermark: if tags renamed/enabled since cutoff, force full (membership
   // filters + JSON tags can affect unbounded identities).
   const { rows: catRows } = await db.query(
@@ -131,14 +155,22 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
 
   // Hard DELETE tombstones (migration 151). Also expand to living siblings so
   // duplicate-observable / hash-canonical winners can be re-selected.
-  const { rows: delRows } = await db.query(
-    `SELECT ioc_item_id, observable, observable_type, artifact_id, deleted_at
-     FROM published_feed_ioc_deletes
-     WHERE deleted_at > $1 AND deleted_at <= $3
-     ORDER BY deleted_at ASC
-     LIMIT $2`,
-    [cutoff, limit + 1, candidateCutoff]
-  );
+  const delSql = scoped
+    ? `SELECT ioc_item_id, observable, observable_type, artifact_id, deleted_at
+       FROM published_feed_ioc_deletes
+       WHERE deleted_at > $1 AND deleted_at <= $3
+         AND observable_type = ANY($4::text[])
+       ORDER BY deleted_at ASC
+       LIMIT $2`
+    : `SELECT ioc_item_id, observable, observable_type, artifact_id, deleted_at
+       FROM published_feed_ioc_deletes
+       WHERE deleted_at > $1 AND deleted_at <= $3
+       ORDER BY deleted_at ASC
+       LIMIT $2`;
+  const delParams = scoped
+    ? [cutoff, limit + 1, candidateCutoff, typeScope]
+    : [cutoff, limit + 1, candidateCutoff];
+  const { rows: delRows } = await db.query(delSql, delParams);
   if (delRows.length > limit) truncated = true;
   for (const d of delRows.slice(0, limit)) {
     const id = Number(d.ioc_item_id);
@@ -188,67 +220,85 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
     }
   }
 
-  const { rows: iocRows } = await db.query(
-    `SELECT id, observable_type FROM ioc_items
-     WHERE updated_at IS NOT NULL AND updated_at > $1 AND updated_at <= $3
-     ORDER BY updated_at ASC
-     LIMIT $2`,
-    [cutoff, limit + 1, candidateCutoff]
-  );
+  const iocSql = scoped
+    ? `SELECT id, observable_type FROM ioc_items
+       WHERE updated_at IS NOT NULL AND updated_at > $1 AND updated_at <= $3
+         AND observable_type = ANY($4::text[])
+       ORDER BY updated_at ASC
+       LIMIT $2`
+    : `SELECT id, observable_type FROM ioc_items
+       WHERE updated_at IS NOT NULL AND updated_at > $1 AND updated_at <= $3
+       ORDER BY updated_at ASC
+       LIMIT $2`;
+  const iocParams = scoped
+    ? [cutoff, limit + 1, candidateCutoff, typeScope]
+    : [cutoff, limit + 1, candidateCutoff];
+  const { rows: iocRows } = await db.query(iocSql, iocParams);
   if (iocRows.length > limit) truncated = true;
   addRows(iocRows.slice(0, limit), 'ioc_items');
 
   if (!truncated) {
-    const { rows: memRows } = await db.query(
-      `SELECT DISTINCT m.ioc_item_id AS id, m.ioc_observable_type AS observable_type
-       FROM ioc_feed_memberships m
-       WHERE m.updated_at > $1 AND m.updated_at <= $3
-       ORDER BY m.ioc_item_id
-       LIMIT $2`,
-      [cutoff, limit + 1, candidateCutoff]
-    );
+    const memSql = scoped
+      ? `SELECT DISTINCT m.ioc_item_id AS id, m.ioc_observable_type AS observable_type
+         FROM ioc_feed_memberships m
+         WHERE m.updated_at > $1 AND m.updated_at <= $3
+           AND m.ioc_observable_type = ANY($4::text[])
+         ORDER BY m.ioc_item_id
+         LIMIT $2`
+      : `SELECT DISTINCT m.ioc_item_id AS id, m.ioc_observable_type AS observable_type
+         FROM ioc_feed_memberships m
+         WHERE m.updated_at > $1 AND m.updated_at <= $3
+         ORDER BY m.ioc_item_id
+         LIMIT $2`;
+    const memParams = scoped
+      ? [cutoff, limit + 1, candidateCutoff, typeScope]
+      : [cutoff, limit + 1, candidateCutoff];
+    const { rows: memRows } = await db.query(memSql, memParams);
     if (memRows.length > limit) truncated = true;
     addRows(memRows.slice(0, limit), 'memberships');
   }
 
   const flags = resolveJsonIncludeFlags(feed);
   if (!truncated && flags.includeEnrichment) {
+    const typeClause = scoped ? ' AND i.observable_type = ANY($4::text[])' : '';
     const enrichSql = [
       `SELECT i.id, i.observable_type FROM ioc_enrichments e
          JOIN ioc_items i ON lower(i.observable) = lower(e.ioc_value)
-        WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
+        WHERE e.updated_at > $1 AND e.updated_at <= $3${typeClause} LIMIT $2`,
       `SELECT i.id, i.observable_type FROM ioc_ip_enrichment e
          JOIN ioc_items i ON i.observable = e.ip AND i.observable_type = 'ip'
-        WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
+        WHERE e.updated_at > $1 AND e.updated_at <= $3${typeClause} LIMIT $2`,
       `SELECT i.id, i.observable_type FROM ioc_abuseipdb_enrichment e
          JOIN ioc_items i ON i.observable = e.ip AND i.observable_type = 'ip'
-        WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
+        WHERE e.updated_at > $1 AND e.updated_at <= $3${typeClause} LIMIT $2`,
       `SELECT i.id, i.observable_type FROM ioc_domain_enrichment e
          JOIN ioc_items i ON lower(i.observable) = lower(e.observable_value) AND i.observable_type = 'domain'
-        WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`,
+        WHERE e.updated_at > $1 AND e.updated_at <= $3${typeClause} LIMIT $2`,
       `SELECT i.id, i.observable_type FROM ioc_spamhaus_drop_enrichment e
          JOIN ioc_items i ON i.observable = e.lookup_ip AND i.observable_type = 'ip'
-        WHERE e.updated_at > $1 AND e.updated_at <= $3 LIMIT $2`
+        WHERE e.updated_at > $1 AND e.updated_at <= $3${typeClause} LIMIT $2`
     ];
     for (const sql of enrichSql) {
       if (truncated) break;
-      const { rows } = await db.query(sql, [
-        cutoff,
-        Math.max(limit - ids.size, 1),
-        candidateCutoff
-      ]);
+      const params = scoped
+        ? [cutoff, Math.max(limit - ids.size, 1), candidateCutoff, typeScope]
+        : [cutoff, Math.max(limit - ids.size, 1), candidateCutoff];
+      const { rows } = await db.query(sql, params);
       addRows(rows, 'enrichment');
     }
   }
 
   if (!truncated && shouldCanonicalizePublishedHashFeed(feed)) {
+    const faTypeClause = scoped ? ' AND fal.ioc_observable_type = ANY($4::text[])' : '';
     const { rows: faRows } = await db.query(
       `SELECT fal.ioc_item_id AS id, fal.ioc_observable_type AS observable_type
        FROM file_artifacts fa
        JOIN file_artifact_ioc_links fal ON fal.artifact_id = fa.id
-       WHERE fa.updated_at > $1 AND fa.updated_at <= $3
+       WHERE fa.updated_at > $1 AND fa.updated_at <= $3${faTypeClause}
        LIMIT $2`,
-      [cutoff, Math.max(limit - ids.size, 1), candidateCutoff]
+      scoped
+        ? [cutoff, Math.max(limit - ids.size, 1), candidateCutoff, typeScope]
+        : [cutoff, Math.max(limit - ids.size, 1), candidateCutoff]
     );
     addRows(faRows, 'file_artifacts');
   }
@@ -259,7 +309,8 @@ export async function collectDirtyIocIds(db, feed, cutoff, {
     deletes,
     truncated,
     sources,
-    forceFull: truncated
+    forceFull: truncated,
+    type_scope: scoped ? typeScope : null
   };
 }
 
@@ -601,6 +652,12 @@ export async function applyIncrementalProjectionUpdate(db, feed, window, formatT
 
   for (let i = 0; i < toUpsert.length; i += DIRTY_BATCH) {
     await upsertProjectionBatch(db, toUpsert.slice(i, i + DIRTY_BATCH));
+  }
+
+  const netDelta = entered - removed;
+  if (netDelta !== 0 && feed?.id != null) {
+    const nextCount = await adjustProjectionItemCount(db, feed.id, netDelta);
+    if (nextCount != null) feed.projection_item_count = nextCount;
   }
 
   const affectedChunks = new Set();

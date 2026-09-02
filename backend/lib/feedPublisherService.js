@@ -1807,7 +1807,8 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           await setFeedProjectionState(db, id, {
             projection_status: PROJECTION_STATUS.READY,
             projection_pending_cutoff: W,
-            projection_built_at: new Date()
+            projection_built_at: new Date(),
+            projection_item_count: 0
           }).catch(() => {});
           pendingProjectionCutoff = W;
           bootstrapChunkGeneration = Boolean(
@@ -1818,7 +1819,6 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           );
         } else if (mode === 'incremental') {
           const {
-            countProjectionItemsForWindow,
             isSlidingWindowIncrementalEnabled
           } = await import('./publishedFeedIncremental.js');
           const W = incrementalFeedTick?.candidateCutoff || captureCutoffNow();
@@ -1869,8 +1869,10 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             if (populate) {
               await setFeedProjectionState(db, id, {
                 projection_status: PROJECTION_STATUS.READY,
-                projection_built_at: new Date()
+                projection_built_at: new Date(),
+                projection_item_count: Number(art.itemCount || 0)
               });
+              feed.projection_item_count = Number(art.itemCount || 0);
             }
             pendingProjectionCutoff = W;
             changedCount = art.itemCount;
@@ -1899,13 +1901,15 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
             await db.query('BEGIN');
             try {
               changedCount = delta.entered + delta.updated + delta.removed;
-              // Count and chunk streaming must share one frozen bound (candidateCutoff).
-              // Do NOT derive expected from parent.item_count + entered - removed: that
-              // arithmetic drifts when a prior generation stored a stale item_count.
-              const expectedItemCount = await countProjectionItemsForWindow(db, id, window, W);
+              // Prefer durable projection_item_count; recount only on full-chunk rebuild
+              // or when the counter is unset (avoids COUNT(*) over ~1M rows each tick).
               const chunkCount = Number(activeChunkGeneration.chunk_count || feed.chunk_count || 0);
               const allChunksAffected = !windowChunkKeys.length
                 || windowChunkKeys.length >= chunkCount;
+              const { resolveExpectedProjectionItemCount } = await import('./publishedFeedWindowEligibility.js');
+              const expectedItemCount = await resolveExpectedProjectionItemCount(
+                db, feed, window, W, { verify: allChunksAffected }
+              );
               const chunkResult = await buildAndActivateChunkGeneration(db, feed, {
                 window,
                 iocTypeKey,
@@ -2029,8 +2033,10 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           if (populate) {
             await setFeedProjectionState(db, id, {
               projection_status: PROJECTION_STATUS.READY,
-              projection_built_at: new Date()
+              projection_built_at: new Date(),
+              projection_item_count: Number(art.itemCount || 0)
             });
+            feed.projection_item_count = Number(art.itemCount || 0);
             pendingProjectionCutoff = W;
           }
           refreshMode = mode === 'bootstrap' ? 'bootstrap' : 'full';

@@ -88,6 +88,7 @@ export function reconciliationSliceForIdentity(partitionIdentity, sliceCount) {
 
 /**
  * Select the next reconciliation batch within the current slice using indexed buckets.
+ * Bucket-only predicate (no OR null) so PostgreSQL can use idx_pf_items_feed_recon_bucket.
  */
 export function buildReconciliationBatchSql({ includeCursor = true, useBuckets = true } = {}) {
   if (!useBuckets) {
@@ -105,21 +106,23 @@ export function buildReconciliationBatchSql({ includeCursor = true, useBuckets =
     ORDER BY identity_key
     LIMIT $5`;
   }
-  const limitParam = includeCursor ? 6 : 5;
-  const cursorParam = 5;
+  const limitParam = includeCursor ? 5 : 4;
+  const cursorParam = 4;
   const cursorClause = includeCursor ? `AND identity_key > $${cursorParam}` : '';
   return `
     SELECT ioc_item_id AS id, observable_type, identity_key
     FROM published_feed_items
     WHERE feed_id = $1
       AND snapshot_window = $2
-      AND (
-        reconciliation_bucket = ANY($3::smallint[])
-        OR ($4 = 0 AND reconciliation_bucket IS NULL)
-      )
+      AND reconciliation_bucket = ANY($3::smallint[])
       ${cursorClause}
     ORDER BY identity_key
     LIMIT $${limitParam}`;
+}
+
+export function useIndexedReconciliationBuckets() {
+  const v = String(process.env.PUBLISHED_FEED_RECONCILIATION_USE_BUCKETS ?? 'true').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
 }
 
 /**
@@ -160,11 +163,6 @@ export function nextReconciliationProgress({
   };
 }
 
-function useIndexedReconciliationBuckets() {
-  const v = String(process.env.PUBLISHED_FEED_RECONCILIATION_USE_BUCKETS ?? 'true').trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
-}
-
 /**
  * Run one reconciliation batch for a feed with a ready base projection.
  */
@@ -184,8 +182,8 @@ export async function runReconciliationSlice(db, feed, formatTypes, { cutoff, ca
   const sql = buildReconciliationBatchSql({ includeCursor: Boolean(cursor), useBuckets: indexed });
   const params = indexed
     ? (cursor
-      ? [feed.id, BASE_PROJECTION_WINDOW, bucketList, slice, cursor, batchSize]
-      : [feed.id, BASE_PROJECTION_WINDOW, bucketList, slice, batchSize])
+      ? [feed.id, BASE_PROJECTION_WINDOW, bucketList, cursor, batchSize]
+      : [feed.id, BASE_PROJECTION_WINDOW, bucketList, batchSize])
     : (cursor
       ? [feed.id, BASE_PROJECTION_WINDOW, sliceCount, slice, batchSize, cursor]
       : [feed.id, BASE_PROJECTION_WINDOW, sliceCount, slice, batchSize]);
@@ -215,6 +213,15 @@ export async function runReconciliationSlice(db, feed, formatTypes, { cutoff, ca
       cursor: progress.reconciliation_cursor,
       bucket_range: indexed ? { buckets: bucketList } : null
     };
+  }
+
+  if (indexed && rows.length > batchSize * 2) {
+    log.warn('published feed reconciliation batch unexpectedly large', {
+      feed_id: feed.id,
+      slice,
+      inspected: rows.length,
+      batch_size: batchSize
+    });
   }
 
   const dirty = {

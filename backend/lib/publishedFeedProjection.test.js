@@ -424,9 +424,43 @@ describe('OPTION A identity-keyed canonical expansion (self-join removed)', () =
         return { rows: [] };
       }
     };
+    // No ioc_types → unscoped (legacy / query-mode fallback).
     const dirty = await collectDirtyIocIds(db, { include_enrichment: false }, cutoff);
     assert.deepEqual(dirty.typeById, { 5: 'domain', 6: 'ip', 7: 'file_hash' });
     assert.ok(dirty.ids.includes(5) && dirty.ids.includes(6) && dirty.ids.includes(7));
+  });
+
+  it('collectDirtyIocIds scopes ioc_items and memberships to feed observable types', async () => {
+    const cutoff = new Date('2026-08-01T00:00:00Z');
+    const seen = [];
+    const db = {
+      async query(sql, params) {
+        const s = String(sql).replace(/\s+/g, ' ');
+        seen.push({ s, params });
+        if (s.includes('published_feed_global_watermarks')) return { rows: [] };
+        if (s.includes('published_feed_ioc_deletes')) return { rows: [] };
+        if (s.includes('FROM ioc_items') && s.includes('updated_at')) {
+          return { rows: [{ id: 5, observable_type: 'domain' }] };
+        }
+        if (s.includes('FROM ioc_feed_memberships')) {
+          return { rows: [{ id: 8, observable_type: 'domain' }] };
+        }
+        return { rows: [] };
+      }
+    };
+    const dirty = await collectDirtyIocIds(
+      db,
+      { include_enrichment: false, ioc_types: ['domain'] },
+      cutoff
+    );
+    assert.deepEqual(dirty.ids.sort(), [5, 8]);
+    assert.ok(dirty.type_scope?.includes('domain'));
+    const iocCall = seen.find((c) => c.s.includes('FROM ioc_items') && c.s.includes('updated_at'));
+    const memCall = seen.find((c) => c.s.includes('FROM ioc_feed_memberships'));
+    assert.ok(iocCall.s.includes('observable_type = ANY'), 'ioc dirty poll must be type-scoped');
+    assert.ok(memCall.s.includes('ioc_observable_type = ANY'), 'membership dirty poll must be type-scoped');
+    assert.deepEqual(iocCall.params[3], ['domain']);
+    assert.deepEqual(memCall.params[3], ['domain']);
   });
 
   it('never issues the i1 JOIN i2 canonical sibling self-join', async () => {
@@ -530,6 +564,9 @@ describe('clearFeedProjection batching', () => {
     const db = {
       async query(sql, params) {
         calls.push({ sql: String(sql), params });
+        if (String(sql).includes('projection_item_count')) {
+          return { rows: [], rowCount: 1 };
+        }
         assert.match(String(sql), /WITH doomed AS/);
         assert.match(String(sql), /LIMIT \$2/);
         assert.match(String(sql), /p\.ctid = d\.ctid/);
@@ -541,14 +578,16 @@ describe('clearFeedProjection batching', () => {
     };
     const total = await clearFeedProjection(db, 42, { batchSize: 10 });
     assert.equal(total, 23);
-    assert.equal(calls.length, 3); // 10 + 10 + 3
+    assert.equal(calls.filter((c) => c.sql.includes('WITH doomed AS')).length, 3); // 10 + 10 + 3
+    assert.ok(calls.some((c) => c.sql.includes('projection_item_count = 0')));
     assert.equal(calls[0].params[0], 42);
     assert.equal(calls[0].params[1], 10);
   });
 
   it('returns 0 when feed has no projection rows', async () => {
     const db = {
-      async query() {
+      async query(sql) {
+        if (String(sql).includes('projection_item_count')) return { rows: [], rowCount: 1 };
         return { rowCount: 0 };
       }
     };

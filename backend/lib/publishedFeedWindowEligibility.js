@@ -149,6 +149,57 @@ export async function countProjectionItemsForWindow(db, feedId, artifactWindow, 
 }
 
 /**
+ * Resolve expected visible projection size for chunk manifests.
+ * For snapshot_window=all, prefers durable projection_item_count and only COUNT(*) when
+ * verify=true or the counter is unset.
+ */
+export async function resolveExpectedProjectionItemCount(db, feed, artifactWindow, asOf = null, {
+  verify = false
+} = {}) {
+  const window = String(artifactWindow || BASE_PROJECTION_WINDOW).toLowerCase();
+  const cached = feed?.projection_item_count;
+  const canUseCache = window === 'all'
+    && !verify
+    && cached != null
+    && Number.isFinite(Number(cached));
+  if (canUseCache) return Number(cached);
+
+  const n = await countProjectionItemsForWindow(db, feed.id, window, asOf);
+  if (window === 'all' && feed?.id != null) {
+    const { setFeedProjectionState } = await import('./publishedFeedProjection.js');
+    await setFeedProjectionState(db, feed.id, { projection_item_count: n });
+    feed.projection_item_count = n;
+  }
+  return n;
+}
+
+/**
+ * Count window-visible projection rows whose chunk_key is IN `chunkKeys`.
+ * Cheap when the key set is small (affected chunks) vs counting the complement.
+ */
+export async function countProjectionItemsInChunks(
+  db,
+  feedId,
+  artifactWindow,
+  asOf,
+  chunkKeys = []
+) {
+  const base = BASE_PROJECTION_WINDOW;
+  const keys = [...new Set((chunkKeys || []).map(Number).filter(Number.isFinite))];
+  if (!keys.length) return 0;
+  const filter = projectionWindowFilter(artifactWindow, 3, asOf);
+  const keysIdx = 3 + filter.params.length;
+  const { rows } = await db.query(
+    `SELECT COUNT(*)::bigint AS n
+     FROM published_feed_items
+     WHERE feed_id = $1 AND snapshot_window = $2${filter.sql}
+       AND chunk_key = ANY($${keysIdx}::integer[])`,
+    [feedId, base, ...filter.params, keys]
+  );
+  return Number(rows[0]?.n || 0);
+}
+
+/**
  * Count window-visible projection rows whose chunk_key is NOT in `excludeChunkKeys`.
  * Used to verify that unaffected (reused) parent chunks still match projection membership.
  */
@@ -159,9 +210,22 @@ export async function countProjectionItemsOutsideChunks(
   asOf,
   excludeChunkKeys = []
 ) {
-  const base = BASE_PROJECTION_WINDOW;
   const exclude = [...new Set((excludeChunkKeys || []).map(Number).filter(Number.isFinite))];
   const filter = projectionWindowFilter(artifactWindow, 3, asOf);
+  // For base window with no sliding filter: count the small affected set and subtract
+  // from total instead of scanning millions of unaffected rows.
+  if (String(artifactWindow || '').toLowerCase() === 'all' && !filter.sql && exclude.length) {
+    const { rows: totalRows } = await db.query(
+      `SELECT COUNT(*)::bigint AS n
+       FROM published_feed_items
+       WHERE feed_id = $1 AND snapshot_window = $2`,
+      [feedId, BASE_PROJECTION_WINDOW]
+    );
+    const total = Number(totalRows[0]?.n || 0);
+    const inside = await countProjectionItemsInChunks(db, feedId, artifactWindow, asOf, exclude);
+    return Math.max(0, total - inside);
+  }
+  const base = BASE_PROJECTION_WINDOW;
   const excludeIdx = 3 + filter.params.length;
   const { rows } = await db.query(
     `SELECT COUNT(*)::bigint AS n
@@ -211,7 +275,8 @@ export async function canReuseUnaffectedChunks(db, {
   asOf,
   parentGenerationId,
   format = 'txt',
-  excludeChunkKeys = []
+  excludeChunkKeys = [],
+  expectedTotal = null
 } = {}) {
   const exclude = [...new Set((excludeChunkKeys || []).map(Number).filter(Number.isFinite))];
   if (!parentGenerationId || !exclude.length) {
@@ -222,10 +287,21 @@ export async function canReuseUnaffectedChunks(db, {
       parent_reused: null
     };
   }
-  const [projectionReused, parentReused] = await Promise.all([
-    countProjectionItemsOutsideChunks(db, feedId, artifactWindow, asOf, exclude),
-    sumGenerationChunkItemsOutside(db, parentGenerationId, format, exclude)
-  ]);
+  const parentReused = await sumGenerationChunkItemsOutside(db, parentGenerationId, format, exclude);
+  let projectionReused;
+  // Prefer: cached/known total − small in-chunk COUNT (avoids full-table complement scan).
+  if (
+    String(artifactWindow || '').toLowerCase() === 'all'
+    && expectedTotal != null
+    && Number.isFinite(Number(expectedTotal))
+  ) {
+    const inside = await countProjectionItemsInChunks(db, feedId, artifactWindow, asOf, exclude);
+    projectionReused = Math.max(0, Number(expectedTotal) - inside);
+  } else {
+    projectionReused = await countProjectionItemsOutsideChunks(
+      db, feedId, artifactWindow, asOf, exclude
+    );
+  }
   return {
     reusable: projectionReused === parentReused,
     reason: projectionReused === parentReused ? null : 'reused_chunk_membership_drift',

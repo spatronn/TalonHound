@@ -20,6 +20,11 @@ Fresh installations apply the public forward migrations present in the repositor
 009_published_feed_snapshots_chunk_owned.sql
 010_certpl_warning_list.sql
 011_trust_level_english_values.sql
+012_threat_actor_catalog_sources.sql
+013_threat_actor_provenance_finalize.sql
+014_threat_classification_taxonomy_mitre.sql
+015_remap_legacy_c2_classification.sql
+016_published_feed_projection_item_count.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.

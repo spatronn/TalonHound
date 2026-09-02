@@ -224,7 +224,43 @@ export async function clearFeedProjection(db, feedId, { batchSize = CLEAR_FEED_P
     total += n;
     if (n < limit) break;
   }
+  await db.query(
+    `UPDATE published_feeds
+     SET projection_item_count = 0, updated_at = updated_at
+     WHERE id = $1`,
+    [feedId]
+  );
   return total;
+}
+
+/**
+ * Atomically adjust cached base-projection row count. No-op when column is NULL
+ * (unknown / not backfilled) so the next expected-count resolve will recount.
+ * @returns {Promise<number|null>} new count, or null when counter was unset
+ */
+export async function adjustProjectionItemCount(db, feedId, delta) {
+  const n = Number(delta) || 0;
+  if (!n) {
+    const { rows } = await db.query(
+      `SELECT projection_item_count FROM published_feeds WHERE id = $1`,
+      [feedId]
+    );
+    const cur = rows[0]?.projection_item_count;
+    return cur == null ? null : Number(cur);
+  }
+  const { rows } = await db.query(
+    `UPDATE published_feeds
+     SET projection_item_count = CASE
+           WHEN projection_item_count IS NULL THEN NULL
+           ELSE GREATEST(0, projection_item_count + $2)
+         END,
+         updated_at = updated_at
+     WHERE id = $1
+     RETURNING projection_item_count`,
+    [feedId, n]
+  );
+  const cur = rows[0]?.projection_item_count;
+  return cur == null ? null : Number(cur);
 }
 
 export async function setFeedProjectionState(db, feedId, patch) {
@@ -238,6 +274,7 @@ export async function setFeedProjectionState(db, feedId, patch) {
   if (patch.projection_cutoff !== undefined) add('projection_cutoff', patch.projection_cutoff);
   if (patch.projection_pending_cutoff !== undefined) add('projection_pending_cutoff', patch.projection_pending_cutoff);
   if (patch.projection_built_at !== undefined) add('projection_built_at', patch.projection_built_at);
+  if (patch.projection_item_count !== undefined) add('projection_item_count', patch.projection_item_count);
   if (patch.last_refresh_checked_at !== undefined) add('last_refresh_checked_at', patch.last_refresh_checked_at);
   if (patch.last_refresh_mode !== undefined) add('last_refresh_mode', patch.last_refresh_mode);
   if (patch.last_refresh_ms !== undefined) add('last_refresh_ms', patch.last_refresh_ms);

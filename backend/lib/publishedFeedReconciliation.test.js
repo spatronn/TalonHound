@@ -7,7 +7,9 @@ import {
   reconciliationSliceForBucket,
   reconciliationBucketRange,
   RECONCILIATION_BUCKET_COUNT,
-  simulateReconciliationCycle
+  simulateReconciliationCycle,
+  buildReconciliationBatchSql,
+  useIndexedReconciliationBuckets
 } from './publishedFeedReconciliation.js';
 
 describe('publishedFeedReconciliation progress', () => {
@@ -149,14 +151,19 @@ describe('runReconciliationSlice bucket_range', () => {
       const db = {
         query: async (sql, params) => {
           calls.push({ sql, params });
-          if (sql.includes('UPDATE published_feeds')) return { rows: [] };
-          return {
-            rows: [{
-              id: 99,
-              identity_key: 'o:sha256:abc',
-              observable_type: 'sha256'
-            }]
-          };
+          if (sql.includes('UPDATE published_feeds')) {
+            return { rows: [{ projection_item_count: 0 }] };
+          }
+          if (sql.includes('FROM published_feed_items') && sql.includes('reconciliation_bucket')) {
+            return {
+              rows: [{
+                id: 99,
+                identity_key: 'o:sha256:abc',
+                observable_type: 'sha256'
+              }]
+            };
+          }
+          return { rows: [] };
         }
       };
       const feed = {
@@ -171,11 +178,26 @@ describe('runReconciliationSlice bucket_range', () => {
       });
       assert.equal(result.inspected, 1);
       assert.deepEqual(result.bucket_range, { low: 0, high: 4 });
+      const batchCall = calls.find((c) => String(c.sql).includes('reconciliation_bucket = ANY'));
+      assert.ok(batchCall, 'must use bucket ANY predicate');
+      assert.ok(!/reconciliation_bucket IS NULL/.test(batchCall.sql),
+        'bucket SQL must not OR-in NULL buckets (blocks index)');
+      // feed_id, snapshot_window, bucketList, batchSize — no slice ordinal param
+      assert.equal(batchCall.params.length, 4);
     } finally {
       if (prevRecon === undefined) delete process.env.PUBLISHED_FEED_RECONCILIATION_ENABLED;
       else process.env.PUBLISHED_FEED_RECONCILIATION_ENABLED = prevRecon;
       if (prevSlide === undefined) delete process.env.PUBLISHED_FEED_SLIDING_WINDOW_INCREMENTAL_ENABLED;
       else process.env.PUBLISHED_FEED_SLIDING_WINDOW_INCREMENTAL_ENABLED = prevSlide;
     }
+  });
+});
+
+describe('buildReconciliationBatchSql index shape', () => {
+  it('emits bucket-only predicate without NULL OR when useBuckets', () => {
+    const sql = buildReconciliationBatchSql({ includeCursor: false, useBuckets: true });
+    assert.ok(sql.includes('reconciliation_bucket = ANY($3::smallint[])'));
+    assert.ok(!sql.includes('reconciliation_bucket IS NULL'));
+    assert.ok(useIndexedReconciliationBuckets());
   });
 });

@@ -411,7 +411,8 @@ export async function buildAndActivateChunkGeneration(db, feed, {
       asOf: generationAsOf,
       parentGenerationId: parent.id,
       format: reuseFormat,
-      excludeChunkKeys: affected
+      excludeChunkKeys: affected,
+      expectedTotal: generationItemCount
     });
     if (!reuse.reusable) {
       full = true;
