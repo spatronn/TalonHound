@@ -18,21 +18,27 @@ x-talonhound-build-args: &talonhound-build-args
 x-backend-build: &backend-build
   context: .
   dockerfile: backend/Dockerfile
+  # Use host network during image build so Alpine apk can resolve the CDN when the
+  # Docker bridge resolver fails with transient IPv6/DNS errors (seen on aarch64 hosts).
+  network: host
   args: *talonhound-build-args
 
 x-frontend-build: &frontend-build
   context: .
   dockerfile: frontend/Dockerfile
+  network: host
   args: *talonhound-build-args
 
 x-integration-build: &integration-build
   context: .
   dockerfile: integration/Dockerfile
+  network: host
   args: *talonhound-build-args
 
 x-proxy-build: &proxy-build
   context: .
   dockerfile: proxy/Dockerfile
+  network: host
   args: *talonhound-build-args
 
 services:
