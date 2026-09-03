@@ -310,7 +310,8 @@ import {
   VT_NOT_INDEXED_MESSAGE,
   buildVtNotIndexedResponse,
   isVtResourceNotFound,
-  vtHttpErrorMessage
+  vtHttpErrorMessage,
+  ensureVtGuiPermalink
 } from './lib/virustotalEnrichment.js';
 
 const { Pool } = pg;
@@ -6173,11 +6174,14 @@ function normalizeVtSummary(iocValue, iocType, payload) {
     .slice(0, 5)
     .map((v) => ({ engine: v.engine, category: v.category, result: v.result }));
 
-  return {
+  return ensureVtGuiPermalink({
     provider: VT_PROVIDER,
     ioc_value: iocValue,
     ioc_type: iocType,
-    permalink: payload?.data?.links?.self || null,
+    // VirusTotal's canonical object id for this observable (URL/file id, etc.).
+    // Used to build the GUI permalink; never the API `links.self` (an /api/v3 URL).
+    vt_object_id: payload?.data?.id || null,
+    permalink: null,
     last_analysis_date: attr.last_analysis_date ? new Date(Number(attr.last_analysis_date) * 1000).toISOString() : null,
     stats: {
       malicious: Number(stats.malicious || 0), suspicious: Number(stats.suspicious || 0), harmless: Number(stats.harmless || 0), undetected: Number(stats.undetected || 0), timeout: Number(stats.timeout || 0)
@@ -6196,7 +6200,7 @@ function normalizeVtSummary(iocValue, iocType, payload) {
       names: Array.isArray(attr.names) ? attr.names.slice(0, 10) : [],
       type_description: attr.type_description || null
     }
-  };
+  });
 }
 
 app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
@@ -6219,7 +6223,9 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
     return res.json({
       status: row.status,
       provider: VT_PROVIDER,
-      summary: row.normalized_summary,
+      // Self-heal cached summaries: rebuild the GUI permalink so rows stored
+      // before the GUI-URL fix never serve an /api/v3 self-link to the browser.
+      summary: ensureVtGuiPermalink(row.normalized_summary),
       error_message: row.error_message,
       fetched_at: row.fetched_at,
       expires_at: row.expires_at,

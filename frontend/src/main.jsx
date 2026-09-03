@@ -47,6 +47,7 @@ import {
 } from './lib/iocConfidenceCard.js';
 import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnrichmentTarget.js';
 import { isRdapEligibleObservable } from './lib/iocProviderApplicability.js';
+import { virusTotalGuiHref } from './lib/virustotalGuiLink.js';
 import {
   normalizeVisibleClassifications,
   buildThreatClassificationModalState,
@@ -14084,6 +14085,7 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
   }
 
   const s = state.summary || {};
+  const vtGuiHref = virusTotalGuiHref(s);
   const stats = s.stats || {};
   const detected = Number(s?.detection_ratio?.detected || 0);
   const total = Number(s?.detection_ratio?.total || 0);
@@ -14173,7 +14175,7 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
 
       <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:10, flexWrap:'wrap' }}>
         <button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Refreshing...' : 'Refresh'}</button>
-        {s.permalink ? <a href={s.permalink} target='_blank' rel='noopener noreferrer' style={{ padding:'7px 10px', border:'1px solid #334155', borderRadius:8, textDecoration:'none', color:'#93c5fd' }}>Open in VirusTotal</a> : null}
+        {vtGuiHref ? <a href={vtGuiHref} target='_blank' rel='noopener noreferrer' style={{ padding:'7px 10px', border:'1px solid #334155', borderRadius:8, textDecoration:'none', color:'#93c5fd' }}>Open in VirusTotal</a> : null}
       </div>
     </> : null}
   </div>;
