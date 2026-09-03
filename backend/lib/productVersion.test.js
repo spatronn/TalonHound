@@ -20,7 +20,7 @@ function withEnv(vars, fn) {
 }
 
 test('readCanonicalVersion reads repository VERSION file', () => {
-  assert.equal(readCanonicalVersion(), '0.1.0-beta.2');
+  assert.equal(readCanonicalVersion(), '0.1.1-beta.3');
 });
 
 test('Docker placeholder TALONHOUND_VERSION=dev falls back to VERSION file', () => {
@@ -30,7 +30,7 @@ test('Docker placeholder TALONHOUND_VERSION=dev falls back to VERSION file', () 
     TALONHOUND_BUILD_DATE: 'unknown'
   }, () => {
     const info = getProductVersionInfo();
-    assert.equal(info.version, '0.1.0-beta.2');
+    assert.equal(info.version, '0.1.1-beta.3');
     assert.equal(info.channel, 'beta');
     assert.equal(info.commit, 'unknown');
   });

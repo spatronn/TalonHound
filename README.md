@@ -17,7 +17,7 @@ infrastructure you control.
 
 ## Beta status
 
-Current version: [`VERSION`](VERSION) (`0.1.0-beta.2`).
+Current version: [`VERSION`](VERSION) (`0.1.1-beta.3`).
 
 This is a **Beta** release. Core install and day-to-day workflows are usable, but interfaces,
 configuration, and APIs may still evolve. Review release notes before upgrading.
