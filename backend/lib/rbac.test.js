@@ -138,3 +138,18 @@ test('readonly self-edit allowlist uses UUID public ids (not numeric)', () => {
   const prefs = runPolicy({ method: 'PUT', path: '/api/users/me/preferences', role: ROLES.READONLY });
   assert.equal(prefs.nextCalled, true);
 });
+
+test('readonly may PUT/DELETE their own IOC watchlist (user-scoped, not a data mutation)', () => {
+  const uuid = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const put = runPolicy({ method: 'PUT', path: `/api/ioc/${uuid}/watchlist`, role: ROLES.READONLY });
+  assert.equal(put.nextCalled, true);
+  assert.equal(put.statusCode, null);
+
+  const del = runPolicy({ method: 'DELETE', path: `/api/ioc/${uuid}/watchlist`, role: ROLES.READONLY });
+  assert.equal(del.nextCalled, true);
+
+  // The allowlist must not leak to other IOC write paths (e.g. tags) for readonly.
+  const tags = runPolicy({ method: 'POST', path: `/api/ioc/${uuid}/tags`, role: ROLES.READONLY });
+  assert.equal(tags.nextCalled, false);
+  assert.equal(tags.statusCode, 403);
+});

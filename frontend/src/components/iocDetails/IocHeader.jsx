@@ -12,7 +12,8 @@ export function IocHeader({
   onBack,
   onRefresh,
   showMarkFalsePositive,
-  showDelete
+  showDelete,
+  watchlistControl = null
 }) {
   const [copied, setCopied] = useState(false);
   const value = String(observable || '').trim();
@@ -86,7 +87,10 @@ export function IocHeader({
             </button>
           ) : null}
         </div>
-        <div style={{ flexShrink: 0 }}>{statusBadge}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          {watchlistControl}
+          {statusBadge}
+        </div>
       </div>
     </div>
   );

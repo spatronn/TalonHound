@@ -54,7 +54,7 @@ const navSrc = extractSidebarNav(mainSrc);
 const EXPECTED_SECTIONS = ['Operations', 'Threat Intelligence', 'Administration', 'System'];
 
 const EXPECTED_ITEMS = {
-  Operations: ['IOC List', 'Add IOC', 'IOC Suppressions', 'Action Center'],
+  Operations: ['IOC List', 'Add IOC', 'Watchlist', 'IOC Suppressions', 'Action Center'],
   'Threat Intelligence': [
     'Feeds',
     'Custom Threat Feeds',
@@ -73,6 +73,7 @@ const EXPECTED_ITEMS = {
 const EXPECTED_ROUTES = {
   'IOC List': '/ioc',
   'Add IOC': '/ioc/new',
+  Watchlist: '/watchlist',
   'IOC Suppressions': '/operations/ioc-suppressions',
   'Action Center': '/action-center',
   Feeds: '/threat-intelligence/feeds',

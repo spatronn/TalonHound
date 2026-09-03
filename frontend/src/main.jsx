@@ -70,6 +70,8 @@ import {
 import { ThreatClassificationSortableTable } from './components/threatClassifications/ThreatClassificationSortableTable.jsx';
 import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './lib/iocSourceTimestampPresentation.js';
 import { IOC_LIST_TIMESTAMP_PRESENTATION, resolveIocListTimestamp } from './lib/iocListTimestampPresentation.js';
+import { buildWatchlistStarModel, planWatchlistToggle, watchlistToggleErrorMessage } from './lib/watchlistStar.js';
+import { watchlistViewMode, watchlistPageAfterRemoval, WATCHLIST_EMPTY } from './lib/watchlistPageView.js';
 import { formatIocDetailDateTime } from './lib/iocDetailTimestamps.js';
 import { resolveCanonicalDetailRedirect } from './lib/fileArtifactDetailRedirect.js';
 import { buildIntegrationRunNowPayload } from './lib/integrationRunNowPayload.js';
@@ -1743,6 +1745,42 @@ function EmptyState({ title, description, ctaLabel, canWrite, onCta }) {
   );
 }
 
+// Shared Watchlist star toggle. Fixed dimensions so toggling ★/☆ never shifts
+// layout; amber when active, muted otherwise; disabled + dimmed while a mutation
+// is in flight (prevents accidental request spam).
+function WatchlistStarButton({ watchlisted, pending, onToggle, size = 'row' }) {
+  const model = buildWatchlistStarModel({ watchlisted, pending });
+  const box = size === 'lg' ? 34 : 28;
+  const glyphSize = size === 'lg' ? 20 : 16;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={model.disabled}
+      title={model.title}
+      aria-label={model.ariaLabel}
+      aria-pressed={model.ariaPressed}
+      style={{
+        width: box,
+        height: box,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 6,
+        padding: 0,
+        lineHeight: 1,
+        cursor: model.disabled ? 'default' : 'pointer',
+        color: model.active ? '#f59e0b' : '#94a3b8',
+        opacity: model.busy ? 0.55 : 1
+      }}
+    >
+      <span aria-hidden="true" style={{ fontSize: glyphSize, lineHeight: 1 }}>{model.glyph}</span>
+    </button>
+  );
+}
+
 const SAVED_VIEW_STORAGE = {
   detectionEvents: 'demo.savedViews.detectionEvents',
   incidents: 'demo.savedViews.incidents'
@@ -2119,6 +2157,7 @@ function AppShell({ children }) {
             ) : (
               <span className="sidebar-nav-link is-disabled" title="Read-only role">{NavIcons.addIoc}<span>Add IOC</span></span>
             )}
+            <Link to="/watchlist" className={navLinkClass(isActive('/watchlist'))}>{NavIcons.watchlist}<span>Watchlist</span></Link>
             <Link to="/operations/ioc-suppressions" className={navLinkClass(location.pathname.startsWith('/operations/ioc-suppressions'))}>{NavIcons.suppressions}<span>IOC Suppressions</span></Link>
             <Link to="/action-center" className={navLinkClass(location.pathname.startsWith('/action-center'))}>{NavIcons.actionCenter}<span>Action Center</span></Link>
           </div>
@@ -11813,6 +11852,205 @@ function ActionCenterPage() {
   );
 }
 
+// Personal Watchlist page. Reuses the enriched IOC-list item shape returned by
+// GET /api/watchlist and the shared badge/date helpers so a saved IOC renders and
+// navigates exactly like an IOC-list row. Clicking an IOC opens the same details
+// experience; the star removes it from the watchlist.
+function watchlistSourceLabel(row) {
+  return row.display_source || (row.source_names && row.source_names[0]) || 'No active source';
+}
+
+function WatchlistPage() {
+  const navigate = useNavigate();
+  const feedback = useAppFeedback();
+  const [items, setItems] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, page_size: 25, total: 0, page_count: 1, mode: 'watchlist' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [reloadTick, setReloadTick] = useState(0);
+  const [pendingIds, setPendingIds] = useState(() => new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    (async () => {
+      try {
+        const { data } = await api.get('/watchlist', { params: { page, page_size: pageSize } });
+        if (cancelled) return;
+        setItems(Array.isArray(data?.items) ? data.items : []);
+        setPagination(data?.pagination || { page, page_size: pageSize, total: 0, page_count: 1, mode: 'watchlist' });
+      } catch (err) {
+        if (cancelled) return;
+        setError(err);
+        feedback.error(apiErrorMessage(err, 'Failed to load your watchlist.'));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, pageSize, reloadTick]);
+
+  const removeFromWatchlist = async (r) => {
+    const id = Number(r?.id);
+    const publicId = r?.public_id;
+    if (!Number.isInteger(id) || !publicId || pendingIds.has(id)) return;
+    setPendingIds((prev) => { const next = new Set(prev); next.add(id); return next; });
+    const prevItems = items;
+    const remaining = items.filter((it) => Number(it.id) !== id);
+    setItems(remaining); // optimistic removal
+    try {
+      await api.delete(`/ioc/${encodeURIComponent(publicId)}/watchlist`);
+      const nextPage = watchlistPageAfterRemoval({ page, remainingOnPage: remaining.length });
+      if (nextPage !== page) setPage(nextPage);
+      else setReloadTick((t) => t + 1); // refresh totals / pull in the next item
+    } catch (err) {
+      setItems(prevItems); // rollback
+      feedback.error(apiErrorMessage(err, watchlistToggleErrorMessage(false)));
+    } finally {
+      setPendingIds((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
+
+  const mode = watchlistViewMode({ loading, error, itemCount: items.length });
+  const pageCount = pagination.page_count ?? pagination.total_pages ?? 1;
+
+  return (
+    <AppShell>
+      <section className="watchlist-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
+        <h2 style={{ marginTop: 0, color: '#f1f5f9' }}>Watchlist</h2>
+
+        {mode === 'loading' ? (
+          <div style={{ padding: 24, color: '#94a3b8' }}>Loading…</div>
+        ) : null}
+
+        {mode === 'error' ? (
+          <div style={{ padding: 16, border: '1px solid #7f1d1d', borderRadius: 10, background: 'rgba(127,29,29,0.15)', color: '#fca5a5' }}>
+            {apiErrorMessage(error, 'Failed to load your watchlist.')}
+            <div style={{ marginTop: 10 }}>
+              <button type="button" className={buttonClassName({ variant: 'secondary' })} onClick={() => setReloadTick((t) => t + 1)}>Retry</button>
+            </div>
+          </div>
+        ) : null}
+
+        {mode === 'empty' ? (
+          <EmptyState
+            title={WATCHLIST_EMPTY.title}
+            description={WATCHLIST_EMPTY.description}
+            ctaLabel={WATCHLIST_EMPTY.ctaLabel}
+            canWrite
+            onCta={() => navigate('/ioc')}
+          />
+        ) : null}
+
+        {mode === 'list' ? (
+          <>
+            <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
+              <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 900, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+                <colgroup>
+                  <col style={{ width: 44 }} />
+                  <col style={{ width: 340 }} />
+                  <col style={{ width: 120 }} />
+                  <col style={{ width: 220 }} />
+                  <col style={{ width: 110 }} />
+                  <col style={{ width: 240 }} />
+                  <col style={{ width: 120 }} />
+                  <col style={{ width: 170 }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937' }}>
+                    <th style={{ width: 44, textAlign: 'center', color: '#94a3b8' }} title="Watchlist" aria-label="Watchlist">★</th>
+                    <th>IOC</th>
+                    <th>IOC Type</th>
+                    <th>Classifications</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Confidence</th>
+                    <th>{IOC_LIST_TIMESTAMP_PRESENTATION.label}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((r) => {
+                    const obs = r.observable || r.ip;
+                    const classVisible = normalizeVisibleClassifications(r.threat_classifications);
+                    const classExtra = classVisible.length - 1;
+                    const classTitle = classVisible.length
+                      ? classVisible.map((x) => x.label || formatThreatClassificationLabel(x.value)).join(', ')
+                      : 'Unknown';
+                    const confidence = (r.confidence_effective || (r.confidence_set && r.confidence_set[0])) || 'low';
+                    const sourceLabel = watchlistSourceLabel(r);
+                    return (
+                      <tr key={`${r.observable_type}:${obs}`} style={{ borderBottom: '1px solid #334155' }}>
+                        <td style={{ textAlign: 'center' }}>
+                          <WatchlistStarButton
+                            watchlisted
+                            pending={pendingIds.has(Number(r.id))}
+                            onToggle={() => removeFromWatchlist(r)}
+                          />
+                        </td>
+                        <td title={obs} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                          <button
+                            onClick={() => r.public_id && navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`)}
+                            style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
+                          >
+                            {obs}
+                          </button>
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
+                        <td title={classTitle} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
+                          {classVisible.length === 0
+                            ? <span style={{ color: '#94a3b8' }}>Unknown</span>
+                            : (
+                              <>
+                                <span>{classVisible[0].label || formatThreatClassificationLabel(classVisible[0].value)}</span>
+                                {classExtra > 0 ? (
+                                  <span style={{ marginLeft: 5, fontSize: 10, padding: '1px 5px', borderRadius: 999, background: '#1e293b', border: '1px solid #334155', color: '#94a3b8', verticalAlign: 'middle', display: 'inline-block' }}>+{classExtra}</span>
+                                ) : null}
+                              </>
+                            )}
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>{iocStatusBadge(String(r.lifecycle_status || r.status || 'active').toLowerCase())}</td>
+                        <td title={sourceLabel} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>{sourceLabel}</td>
+                        <td><span style={confidenceBadgeStyle(confidence)}>{confidence}</span></td>
+                        <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontVariantNumeric: 'tabular-nums' }}>{formatUserDateTime(resolveIocListTimestamp(r))}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+              <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                {Number(pagination.total || 0).toLocaleString('en-US')} saved · Page {pagination.page ?? page} of {pageCount}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ color: '#94a3b8', fontSize: 12 }}>
+                  Rows
+                  <select
+                    value={pageSize}
+                    onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                    style={{ marginLeft: 6, background: '#0f172a', color: '#e2e8f0', border: '1px solid #334155', borderRadius: 6, padding: '4px 6px' }}
+                  >
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </label>
+                <button type="button" className={buttonClassName({ variant: 'secondary' })} disabled={(pagination.page ?? page) <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Prev</button>
+                <button type="button" className={buttonClassName({ variant: 'secondary' })} disabled={(pagination.page ?? page) >= pageCount} onClick={() => setPage((p) => p + 1)}>Next</button>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </section>
+    </AppShell>
+  );
+}
+
 function IOCListPage() {
   const navigate = useNavigate();
   const { canWrite } = useSession();
@@ -11820,6 +12058,35 @@ function IOCListPage() {
   const feedback = useAppFeedback();
   const sourceColorIndex = useSourceColorIndex();
   const [rows, setRows] = useState([]);
+  // Optimistic per-IOC watchlist state layered over the fetched rows' `watchlisted`.
+  // wlOverrides: id -> boolean (set after a click); wlPending: ids with a mutation in flight.
+  const [wlOverrides, setWlOverrides] = useState({});
+  const [wlPending, setWlPending] = useState(() => new Set());
+  const watchlistStateFor = (r) => {
+    const id = Number(r?.id);
+    if (Number.isInteger(id) && Object.prototype.hasOwnProperty.call(wlOverrides, id)) {
+      return Boolean(wlOverrides[id]);
+    }
+    return Boolean(r?.watchlisted);
+  };
+  const toggleWatchlist = async (r) => {
+    const id = Number(r?.id);
+    const publicId = r?.public_id;
+    if (!Number.isInteger(id) || !publicId || wlPending.has(id)) return;
+    const current = watchlistStateFor(r);
+    const { method, optimistic } = planWatchlistToggle(current);
+    setWlOverrides((prev) => ({ ...prev, [id]: optimistic })); // optimistic update
+    setWlPending((prev) => { const next = new Set(prev); next.add(id); return next; });
+    try {
+      if (method === 'PUT') await api.put(`/ioc/${encodeURIComponent(publicId)}/watchlist`);
+      else await api.delete(`/ioc/${encodeURIComponent(publicId)}/watchlist`);
+    } catch (err) {
+      setWlOverrides((prev) => ({ ...prev, [id]: current })); // rollback on failure
+      feedback.error(apiErrorMessage(err, watchlistToggleErrorMessage(optimistic)));
+    } finally {
+      setWlPending((prev) => { const next = new Set(prev); next.delete(id); return next; });
+    }
+  };
   const [summary, setSummary] = useState({ total: 0, unique_ips: 0, by_source: [], by_type: [] });
   const [statsMeta, setStatsMeta] = useState({ calculated_at: null, stale: true, missing: true, refresh_in_progress: false });
   const [pageSize, setPageSize] = useState(25);
@@ -13429,6 +13696,7 @@ function IOCListPage() {
       <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
         <table className="ioc-table ioc-list-table" width="100%" cellPadding="10" style={{ borderCollapse: 'collapse', minWidth: 980, background: '#0f172a', tableLayout: 'fixed', fontSize: 13, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
           <colgroup>
+            <col style={{ width: 44 }} />
             {canWrite ? <col style={{ width: columnWidths.select }} /> : null}
             <col className="ioc-list-col-secondary" style={{ width: columnWidths.index }} />
             <col style={{ width: columnWidths.ip }} />
@@ -13441,6 +13709,7 @@ function IOCListPage() {
           </colgroup>
           <thead>
             <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937' }}>
+              <th style={{ width: 44, textAlign: 'center', color: '#94a3b8' }} title="Watchlist" aria-label="Watchlist">★</th>
               {canWrite ? (
                 <th style={{ width: columnWidths.select }}>
                   <input
@@ -13488,6 +13757,15 @@ function IOCListPage() {
               const isSelected = rowId != null && (isAllMatching || activeSelectedIds.has(rowId));
               return (
               <tr key={`${obsType}:${obs}`} style={{ borderBottom: '1px solid #334155', background: isSelected ? 'rgba(37,99,235,0.12)' : undefined }}>
+                <td style={{ textAlign: 'center' }}>
+                  {rowId == null ? null : (
+                    <WatchlistStarButton
+                      watchlisted={watchlistStateFor(r)}
+                      pending={wlPending.has(Number(r.id))}
+                      onToggle={() => toggleWatchlist(r)}
+                    />
+                  )}
+                </td>
                 {canWrite ? (
                   <td>
                     <input
@@ -15058,7 +15336,43 @@ function IOCDetailsPage() {
   const requestConfirm = useAppConfirm();
   const detailsPublicId = String(publicId || '').trim();
   const ui = PUBLISHED_FEEDS_UI;
+  const watchlistFeedback = useAppFeedback();
   const aliasNotice = String(searchParams.get('alias_notice') || '').trim();
+  const [watchlisted, setWatchlisted] = useState(false);
+  const [watchlistPending, setWatchlistPending] = useState(false);
+
+  // Per-user watchlist membership for this IOC — fetched separately from the
+  // shared/cached details payload so one user's star state never leaks to another.
+  useEffect(() => {
+    if (!detailsPublicId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: wl } = await api.get(`/ioc/${encodeURIComponent(detailsPublicId)}/watchlist`);
+        if (!cancelled) setWatchlisted(Boolean(wl?.watchlisted));
+      } catch {
+        /* non-fatal: default to not-watchlisted */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [detailsPublicId]);
+
+  const toggleWatchlistDetail = async () => {
+    if (!detailsPublicId || watchlistPending) return;
+    const current = watchlisted;
+    const { method, optimistic } = planWatchlistToggle(current);
+    setWatchlisted(optimistic);
+    setWatchlistPending(true);
+    try {
+      if (method === 'PUT') await api.put(`/ioc/${encodeURIComponent(detailsPublicId)}/watchlist`);
+      else await api.delete(`/ioc/${encodeURIComponent(detailsPublicId)}/watchlist`);
+    } catch (err) {
+      setWatchlisted(current); // rollback
+      watchlistFeedback.error(apiErrorMessage(err, watchlistToggleErrorMessage(optimistic)));
+    } finally {
+      setWatchlistPending(false);
+    }
+  };
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [], suppression: { active: false } });
@@ -15938,6 +16252,14 @@ function IOCDetailsPage() {
           onDelete={() => { setShowDeleteModal(true); setDeleteConfirmText(''); setDeleteError(''); }}
           onBack={() => navigate('/ioc')}
           onRefresh={() => load().catch(() => {})}
+          watchlistControl={summary ? (
+            <WatchlistStarButton
+              watchlisted={watchlisted}
+              pending={watchlistPending}
+              onToggle={toggleWatchlistDetail}
+              size="lg"
+            />
+          ) : null}
         />
 
         {!isAdmin ? (
@@ -17993,6 +18315,7 @@ function App() {
           <Route path="/setup" element={<SetupGatePage />} />
           <Route path="/system" element={<Navigate to="/ioc" replace />} />
           <Route path="/ioc" element={<Protected><IOCListPage /></Protected>} />
+          <Route path="/watchlist" element={<Protected><WatchlistPage /></Protected>} />
           <Route path="/ioc/details/:publicId" element={<Protected><IOCDetailsPage /></Protected>} />
           <Route path="/ioc/details/:type/:observable" element={<Protected><LegacyIOCDetailsRedirect /></Protected>} />
           <Route path="/ioc/new" element={<Protected><IOCAddPage /></Protected>} />

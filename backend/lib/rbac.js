@@ -112,5 +112,14 @@ export function rbacHttpPolicy(req, res, next) {
     return next();
   }
 
+  // Personal IOC watchlist (Favorites) is user-scoped, not an IOC/data mutation:
+  // every authenticated user who can read IOCs may manage their own watchlist.
+  if (
+    (m === 'PUT' || m === 'DELETE')
+    && /^\/api\/ioc\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/watchlist$/i.test(req.path)
+  ) {
+    return next();
+  }
+
   return res.status(403).json({ message: 'Forbidden: read-only role' });
 }

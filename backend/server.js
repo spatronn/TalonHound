@@ -51,6 +51,9 @@ import { registerAuditRetentionRoutes } from './routes/auditRetention.js';
 import { registerIocExportRoutes } from './routes/iocExport.js';
 import { registerIocSearchExportRoutes } from './routes/iocSearchExports.js';
 import { registerIocSavedSearchRoutes } from './routes/iocSavedSearches.js';
+import { registerUserWatchlistRoutes } from './routes/userWatchlist.js';
+import { actorUserId } from './lib/artifactOwnership.js';
+import { annotateItemsWatchlisted } from './lib/userIocWatchlist.js';
 import { EXPORT_QUEUE_NAME } from './lib/iocSearchExport/exportConfig.js';
 import { registerIocDeepSearchRoutes } from './routes/iocDeepSearches.js';
 import { DEEP_SEARCH_QUEUE_NAME } from './lib/iocDeepSearch/deepSearchConfig.js';
@@ -2932,6 +2935,13 @@ registerIocExportRoutes(app, pool);
 registerIocSearchExportRoutes(app, pool, { exportQueue: iocSearchExportQueue, auditLogService });
 registerIocSavedSearchRoutes(app, pool, auditLogService);
 registerRouteModule('ioc_saved_searches');
+registerUserWatchlistRoutes(app, pool, {
+  // Watchlist rows are shaped through the exact same enrichment path as the IOC
+  // List so a saved IOC renders identically, and are annotated for the viewing user.
+  mapPageItems: (p, pageItems, viewerUserId) =>
+    mapIocListPageItems(p, pageItems, { statusFilter: 'all', hasSearch: true, byItemIds: true, viewerUserId })
+});
+registerRouteModule('user_watchlist');
 registerIocDeepSearchRoutes(app, pool, {
   deepSearchQueue: iocDeepSearchQueue,
   auditLogService,
@@ -3702,14 +3712,20 @@ async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   });
 }
 
-async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, byItemIds = false } = {}) {
+async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, byItemIds = false, viewerUserId = null } = {}) {
   const finalized = await finalizeIocListPageItems(pool, pageItems, {
     byItemIds,
     includeInactiveMemberships: hasSearch
   });
   const scoped = hasSearch ? finalized : applyActiveListScope(finalized, statusFilter);
   const withCanonicalTs = await attachCanonicalIocListTimestamps(pool, scoped);
-  return decorateIocListItems(withCanonicalTs);
+  const decorated = decorateIocListItems(withCanonicalTs);
+  // Per-user watchlist membership (one batched query, viewer-scoped). Skipped when
+  // no interactive viewer is supplied, so machine/worker call sites are unchanged.
+  if (viewerUserId != null) {
+    await annotateItemsWatchlisted(pool, viewerUserId, decorated);
+  }
+  return decorated;
 }
 
 async function getCachedIocListGlobalTotal(pool, statusFilter = 'active') {
@@ -3735,6 +3751,8 @@ function resolveIocListMode({ q, fullScan, classificationFilter, source_name, co
 async function handleIocList(req, res) {
   const timingEnabled = IOC_LIST_TIMING || req.query.timing === '1';
   const t = timingEnabled ? { requestReceived: Date.now() } : null;
+  // Per-user watchlist star state for each row (null for non-interactive callers).
+  const viewerUserId = actorUserId(req);
 
   const { source_name, confidence, q, asn, country, page = '1', page_size = '25' } = req.query;
   const qTrimmed = String(q || '').trim();
@@ -3942,7 +3960,8 @@ async function handleIocList(req, res) {
       const items = await mapIocListPageItems(pool, pageItems, {
         statusFilter: browseStatusFilter,
         hasSearch: false,
-        byItemIds: true
+        byItemIds: true,
+        viewerUserId
       });
       if (t) t.afterResultMapping = Date.now();
 
@@ -4050,7 +4069,7 @@ async function handleIocList(req, res) {
             as_name: null
           }));
           const matchCount = canonical.length;
-          const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
+          const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, viewerUserId });
           const payload = {
             items: finalItems,
             pagination: buildIocListPagination({
@@ -4136,7 +4155,7 @@ async function handleIocList(req, res) {
           country_code: null,
           as_name: null
         }));
-        const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
+        const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, viewerUserId });
         const payload = {
           items: finalItems,
           pagination: buildIocListPagination({
@@ -4276,7 +4295,7 @@ async function handleIocList(req, res) {
         t.afterResultMapping = Date.now();
         t.beforeJsonSerialize = Date.now();
       }
-      const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
+      const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, viewerUserId });
       const payload = {
         items: finalItems,
         pagination: buildIocListPagination({
@@ -4392,7 +4411,7 @@ async function handleIocList(req, res) {
           as_name: null
         }));
       })();
-      const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch });
+      const finalItems = await mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, viewerUserId });
       const payload = {
         items: finalItems,
         pagination: buildIocListPagination({
@@ -4546,7 +4565,7 @@ async function handleIocList(req, res) {
     }
     if (t) t.beforeResultMapping = Date.now();
     const itemsRaw = listRes.rows.map(({ total: _drop, ...row }) => row);
-    const items = await mapIocListPageItems(pool, itemsRaw, { statusFilter, hasSearch });
+    const items = await mapIocListPageItems(pool, itemsRaw, { statusFilter, hasSearch, viewerUserId });
     if (t) t.afterResultMapping = Date.now();
     if (t) t.beforeJsonSerialize = Date.now();
 
