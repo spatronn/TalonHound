@@ -94,7 +94,7 @@ export async function validateIocThreatClassificationSlugs(pool, raw, { requireA
   return { ok: true, value: slugs };
 }
 
-function iocPairKey(iocId, observableType) {
+export function iocPairKey(iocId, observableType) {
   return `${Number(iocId)}|${String(observableType || '')}`;
 }
 
@@ -182,6 +182,42 @@ export async function loadEffectiveIocClassificationSlugs(pool, iocId, observabl
     legacy = rows[0]?.threat_classification ?? null;
   }
   return normalizeIocThreatClassificationSlugs(legacy);
+}
+
+/**
+ * Batch form of loadEffectiveIocClassificationSlugs for callers that already
+ * hold a set of IOC rows (e.g. bulk_lookup_iocs, max 100). Applies the SAME
+ * junction-then-legacy semantics per IOC, but resolves the junction table with a
+ * SINGLE query for the whole batch (via loadIocThreatClassificationSlugs) and
+ * reuses each row's already-fetched `threat_classification` column for the
+ * legacy fallback — so classification retrieval never scales with IOC count
+ * (no N+1) and no per-IOC ioc_items read is issued.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {Array<{id:number, observable_type:string, threat_classification?:string|null}>} rows
+ * @returns {Promise<Map<string, string[]>>} keyed by iocPairKey(id, observable_type)
+ */
+export async function loadEffectiveIocClassificationSlugsBatch(pool, rows) {
+  const result = new Map();
+  const list = (Array.isArray(rows) ? rows : [])
+    .map((r) => ({
+      id: Number(r?.id ?? r?.ioc_id),
+      observable_type: String(r?.observable_type ?? r?.ioc_observable_type ?? '').trim(),
+      legacy: r?.threat_classification ?? r?.legacy_threat_classification ?? null
+    }))
+    .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.observable_type);
+  if (!list.length) return result;
+
+  // One batched junction read for every (id, observable_type) pair.
+  const junctionMap = await loadIocThreatClassificationSlugs(pool, list);
+  for (const r of list) {
+    const key = iocPairKey(r.id, r.observable_type);
+    const junction = junctionMap.get(key) || [];
+    // Junction wins when present; otherwise normalize the legacy column (drops
+    // 'unknown'/empty), identical to the single-IOC effective loader.
+    result.set(key, junction.length ? junction : normalizeIocThreatClassificationSlugs(r.legacy));
+  }
+  return result;
 }
 
 export async function replaceIocThreatClassifications(pool, {

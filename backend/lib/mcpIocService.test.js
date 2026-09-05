@@ -10,6 +10,7 @@ import {
   buildMcpSearchDsl
 } from './mcpIocService.js';
 import { parseSearchQuery } from './iocSearchDsl/index.js';
+import { loadEffectiveIocClassificationSlugs } from './iocThreatClassifications.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 import { API_SCOPE } from './apiKeyProfiles.js';
 import { MCP_DEFAULTS } from './mcpConfig.js';
@@ -288,13 +289,18 @@ test('mcpLookupIoc returns found hit', async () => {
   assert.equal(out.body.sources.length, 1);
 });
 
-function makeBulkPool(foundRows) {
+// junctionRows: rows of { ioc_id, ioc_observable_type, classification_slug } for
+// the batched ioc_threat_classifications read (parity with the single-IOC loader).
+function makeBulkPool(foundRows, junctionRows = []) {
   const queries = [];
   return {
     queries,
     query: async (sql, params = []) => {
       const normalized = String(sql).replace(/\s+/g, ' ').trim();
       queries.push({ sql: normalized, params: [...params] });
+      if (/FROM ioc_threat_classifications/i.test(normalized)) {
+        return { rows: junctionRows };
+      }
       assert.match(normalized, /unnest/i);
       return { rows: foundRows };
     }
@@ -342,6 +348,127 @@ test('mcpBulkLookupIocs mixed found/missing/invalid/duplicates and over-limit', 
   assert.equal(out.body.counts.invalid, 1);
   assert.equal(out.body.counts.duplicate_in_request, 1);
   assert.ok(pool.queries.some((q) => /unnest/i.test(q.sql)));
+});
+
+// --- bulk_lookup_iocs classification parity (effective, batched) -----------
+
+function bulkRow(id, observable, observable_type, threat_classification = null) {
+  return {
+    id,
+    public_id: `00000000-0000-4000-8000-${String(id).padStart(12, '0')}`,
+    observable,
+    observable_type,
+    status: 'active',
+    confidence: 'medium',
+    threat_classification,
+    note: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    last_seen_at: null
+  };
+}
+function jrow(id, observable_type, classification_slug) {
+  return { ioc_id: id, ioc_observable_type: observable_type, classification_slug };
+}
+function bulkClassOf(out, value) {
+  return out.body.existing.find((e) => e.value === value)?.classifications;
+}
+
+// Test 1 — junction-only classification (legacy column is 'unknown').
+test('bulk_lookup_iocs: junction classification used when legacy column is unknown', async () => {
+  const rows = [bulkRow(10, 'evil.test', 'domain', 'unknown')];
+  const pool = makeBulkPool(rows, [jrow(10, 'domain', 'command_and_control')]);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'evil.test', type: 'domain' }] }, { config: TEST_CONFIG });
+  assert.deepEqual(bulkClassOf(out, 'evil.test'), ['command_and_control']);
+});
+
+// Test 2 — legacy-only classification (no junction rows).
+test('bulk_lookup_iocs: legacy classification preserved when no junction rows', async () => {
+  const md5 = 'd41d8cd98f00b204e9800998ecf8427e';
+  const rows = [bulkRow(11, md5, 'md5', 'dropper_downloader')];
+  const pool = makeBulkPool(rows, []);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: md5, type: 'hash' }] }, { config: TEST_CONFIG });
+  assert.deepEqual(bulkClassOf(out, md5), ['dropper_downloader']);
+});
+
+// Test 3 — junction + legacy both present: junction wins (canonical semantics).
+test('bulk_lookup_iocs: junction wins over legacy when both present', async () => {
+  const rows = [bulkRow(12, 'both.test', 'domain', 'phishing')];
+  const pool = makeBulkPool(rows, [jrow(12, 'domain', 'command_and_control')]);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'both.test', type: 'domain' }] }, { config: TEST_CONFIG });
+  assert.deepEqual(bulkClassOf(out, 'both.test'), ['command_and_control']);
+});
+
+// Test 4 — no duplicate slugs across multi-slug junction.
+test('bulk_lookup_iocs: multi-slug junction returns deduped, ordered slugs', async () => {
+  const rows = [bulkRow(13, 'multi.test', 'domain', 'unknown')];
+  const pool = makeBulkPool(rows, [
+    jrow(13, 'domain', 'command_and_control'),
+    jrow(13, 'domain', 'phishing')
+  ]);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'multi.test', type: 'domain' }] }, { config: TEST_CONFIG });
+  assert.deepEqual(bulkClassOf(out, 'multi.test'), ['command_and_control', 'phishing']);
+});
+
+// Test 5 — no classification anywhere: [] (not ['unknown']), parity with lookup_ioc.
+test('bulk_lookup_iocs: unclassified IOC returns [] not [unknown]', async () => {
+  const rows = [bulkRow(14, '9.9.9.9', 'ip', 'unknown')];
+  const pool = makeBulkPool(rows, []);
+  const out = await mcpBulkLookupIocs(pool, { iocs: ['9.9.9.9'] }, { config: TEST_CONFIG });
+  assert.deepEqual(bulkClassOf(out, '9.9.9.9'), []);
+});
+
+// Test 6 — multi-IOC batch maps each id to its own classifications.
+test('bulk_lookup_iocs: batch maps each IOC to its own classifications', async () => {
+  const rows = [
+    bulkRow(20, 'a.test', 'domain', 'unknown'),
+    bulkRow(21, 'b.test', 'domain', 'ransomware'),
+    bulkRow(22, 'c.test', 'domain', 'unknown')
+  ];
+  const junction = [jrow(20, 'domain', 'command_and_control')]; // only IOC 20 has junction
+  const pool = makeBulkPool(rows, junction);
+  const out = await mcpBulkLookupIocs(pool, {
+    iocs: [{ value: 'a.test', type: 'domain' }, { value: 'b.test', type: 'domain' }, { value: 'c.test', type: 'domain' }]
+  }, { config: TEST_CONFIG });
+  assert.deepEqual(bulkClassOf(out, 'a.test'), ['command_and_control']); // junction
+  assert.deepEqual(bulkClassOf(out, 'b.test'), ['ransomware']);          // legacy
+  assert.deepEqual(bulkClassOf(out, 'c.test'), []);                      // neither
+});
+
+// Test 7 — N+1 guard: exactly ONE junction query regardless of IOC count.
+test('bulk_lookup_iocs: classification retrieval is a single batched query (no N+1)', async () => {
+  const rows = [
+    bulkRow(30, 'x1.test', 'domain', 'unknown'),
+    bulkRow(31, 'x2.test', 'domain', 'unknown'),
+    bulkRow(32, 'x3.test', 'domain', 'unknown')
+  ];
+  const pool = makeBulkPool(rows, [jrow(30, 'domain', 'phishing'), jrow(32, 'domain', 'ransomware')]);
+  await mcpBulkLookupIocs(pool, {
+    iocs: [{ value: 'x1.test', type: 'domain' }, { value: 'x2.test', type: 'domain' }, { value: 'x3.test', type: 'domain' }]
+  }, { config: TEST_CONFIG });
+  const classQueries = pool.queries.filter((q) => /FROM ioc_threat_classifications/i.test(q.sql));
+  assert.equal(classQueries.length, 1, 'exactly one batched classification query');
+  // And no per-IOC legacy re-read of ioc_items for classification.
+  assert.equal(pool.queries.filter((q) => /SELECT threat_classification FROM ioc_items/i.test(q.sql)).length, 0);
+});
+
+// Test 8 — parity: bulk classifications equal the effective single-IOC loader.
+test('bulk_lookup_iocs: parity with loadEffectiveIocClassificationSlugs', async () => {
+  const rows = [bulkRow(40, 'parity.test', 'domain', 'unknown')];
+  const junction = [jrow(40, 'domain', 'command_and_control')];
+  const bulkPool = makeBulkPool(rows, junction);
+  const out = await mcpBulkLookupIocs(bulkPool, { iocs: [{ value: 'parity.test', type: 'domain' }] }, { config: TEST_CONFIG });
+
+  // Single-IOC effective loader over the same junction + legacy fixture.
+  const singlePool = {
+    query: async (sql) => {
+      const n = String(sql).replace(/\s+/g, ' ');
+      if (/FROM ioc_threat_classifications/i.test(n)) return { rows: junction };
+      if (/SELECT threat_classification FROM ioc_items/i.test(n)) return { rows: [{ threat_classification: 'unknown' }] };
+      return { rows: [] };
+    }
+  };
+  const single = await loadEffectiveIocClassificationSlugs(singlePool, 40, 'domain');
+  assert.deepEqual(bulkClassOf(out, 'parity.test'), single);
 });
 
 // --- search_iocs DSL construction (Findings #1 and #2) ---------------------

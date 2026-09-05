@@ -13,7 +13,7 @@ import { getApiIoc, searchApiIocs, clampApiIocPageSize } from './apiIocReadServi
 import { createManualIoc, inferObservableType } from './manualIocCreate.js';
 import { isIocSourceSelectable, resolveIocSourceState } from './iocSourceLifecycle.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
-import { loadEffectiveIocClassificationSlugs } from './iocThreatClassifications.js';
+import { loadEffectiveIocClassificationSlugs, loadEffectiveIocClassificationSlugsBatch, iocPairKey } from './iocThreatClassifications.js';
 import { fetchFeedSourceEvidenceForItems } from './iocFeedSourceEvidence.js';
 import { buildFeedIntelligence } from './feedTagNormalization.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
@@ -492,6 +492,12 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
     foundRows = rows;
   }
 
+  // Effective classification slugs (junction table, else legacy column) for the
+  // whole batch in ONE query — parity with lookup_ioc / get_ioc_context without
+  // an N+1. The legacy fallback reuses each row's already-selected
+  // threat_classification, so no extra per-IOC read is issued.
+  const effectiveClassMap = await loadEffectiveIocClassificationSlugsBatch(pool, foundRows);
+
   const byKey = new Map(foundRows.map((r) => [`${r.observable_type}\0${r.observable}`, r]));
   const existing = [];
   const missing = [];
@@ -530,7 +536,7 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
         public_id: hit.public_id || null,
         status: hit.status || null,
         confidence: hit.confidence ?? null,
-        classifications: hit.threat_classification ? [hit.threat_classification] : [],
+        classifications: effectiveClassMap.get(iocPairKey(hit.id, hit.observable_type)) || [],
         first_seen: hit.created_at || null
       });
     } else {
