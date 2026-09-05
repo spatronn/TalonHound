@@ -386,7 +386,7 @@ test('manualIocDuplicateLockKey is stable for nullable fields', () => {
     threatActorId: ''
   });
   assert.equal(a, b);
-  assert.match(a, /^manual_ioc\u0000/);
+  assert.match(a, /^manual_ioc\u001f/);
 });
 
 test('createManualIoc takes advisory xact lock before INSERT', async () => {
