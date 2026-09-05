@@ -27,6 +27,7 @@ import {
   DATE_OPERATORS,
   HASH_OPERATORS
 } from './iocSearchDsl/fields.js';
+import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 
 async function findExistingIoc(pool, type, value) {
   const { rows } = await pool.query(
@@ -94,7 +95,24 @@ export function resolveMcpIocInput(rawValue, explicitType, config = getMcpConfig
 
   const norm = normalizeApiIocValue(type, clipped.value);
   if (!norm.ok) return norm;
-  return { ok: true, type: norm.type, value: norm.value, input: clipped.value };
+
+  // API surface uses abstract type "hash"; ioc_items stores concrete md5/sha1/sha256
+  // (ioc_file_hash partition). Exact lookup/bulk/import must use the storage type —
+  // same refinement custom threat feeds apply — or SHA-256 rows are invisible to MCP.
+  let storageType = norm.type;
+  if (storageType === 'hash') {
+    const exact = inferExactHashType(norm.value);
+    if (!exact) {
+      return {
+        ok: false,
+        code: API_ERROR_CODE.INVALID_IOC_VALUE,
+        message: 'The supplied value is not a supported hash (md5/sha1/sha256 hex).'
+      };
+    }
+    storageType = exact;
+  }
+
+  return { ok: true, type: storageType, value: norm.value, input: clipped.value };
 }
 
 function serializeLookupHit(row, extras = {}) {
@@ -199,7 +217,7 @@ function dslQuote(value) {
 }
 
 // The MCP/API `type` notion (ip|domain|url|hash) collapses several stored
-// observable_types, so translate each to the exact valid DSL `type` predicate rather
+// observable_types, so translate each to the exact valid DSL `type` predicate rathe
 // than emitting an invalid `type:value`. `ip` covers IPv4 + IPv6; `hash` covers the
 // three identity hash types.
 const MCP_TYPE_TO_DSL = Object.freeze({

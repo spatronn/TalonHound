@@ -5,7 +5,7 @@ import {
   validateSourceName,
   parseManualExpirationInput
 } from './iocSourceValidation.js';
-import { createManualIoc, inferObservableType, resolveManualExpirationFromSource, manualIocDuplicateLockKey } from './manualIocCreate.js';
+import { createManualIoc, inferObservableType, resolveStorageObservableType, resolveManualExpirationFromSource, manualIocDuplicateLockKey } from './manualIocCreate.js';
 
 const THREAT_HUNTING_SOURCE = {
   id: 7,
@@ -362,6 +362,14 @@ test('inferObservableType detects ip domain url hash', () => {
   assert.equal(inferObservableType('evil.com'), 'domain');
   assert.equal(inferObservableType('https://evil.com/x'), 'url');
   assert.equal(inferObservableType('a'.repeat(64)), 'hash');
+});
+
+test('resolveStorageObservableType maps abstract hash to md5/sha1/sha256', () => {
+  assert.equal(resolveStorageObservableType('a'.repeat(32)).type, 'md5');
+  assert.equal(resolveStorageObservableType('b'.repeat(40)).type, 'sha1');
+  assert.equal(resolveStorageObservableType('c'.repeat(64)).type, 'sha256');
+  assert.equal(resolveStorageObservableType('evil.com').type, 'domain');
+  assert.equal(resolveStorageObservableType('d'.repeat(128)).ok, false);
 });
 
 test('manualIocDuplicateLockKey is stable for nullable fields', () => {

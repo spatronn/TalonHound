@@ -31,6 +31,95 @@ test('resolveMcpIocInput normalizes IP and domain', () => {
   assert.equal(domain.value, 'example.com');
 });
 
+test('resolveMcpIocInput refines hash to concrete md5/sha1/sha256 storage types', () => {
+  const sha256 = 'c5763c9ad5885c5fb7e83b38c373efa7eeb9cc146e524180ab5cce8157e1abd8';
+  const sha1 = 'a'.repeat(40);
+  const md5 = 'b'.repeat(32);
+
+  const h256 = resolveMcpIocInput(sha256, undefined, TEST_CONFIG);
+  assert.equal(h256.ok, true);
+  assert.equal(h256.type, 'sha256');
+  assert.equal(h256.value, sha256);
+
+  const h256Explicit = resolveMcpIocInput(sha256, 'hash', TEST_CONFIG);
+  assert.equal(h256Explicit.ok, true);
+  assert.equal(h256Explicit.type, 'sha256');
+
+  assert.equal(resolveMcpIocInput(sha1, 'hash', TEST_CONFIG).type, 'sha1');
+  assert.equal(resolveMcpIocInput(md5, undefined, TEST_CONFIG).type, 'md5');
+
+  // SHA-512 hex is accepted by the abstract hash validator but is not a storage type.
+  const sha512 = 'c'.repeat(128);
+  assert.equal(resolveMcpIocInput(sha512, 'hash', TEST_CONFIG).ok, false);
+});
+
+test('mcpLookupIoc finds sha256 IOC immediately after storage-type refinement', async () => {
+  const sha256 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const existing = {
+    id: 3394624,
+    public_id: 'd38d8db3-526d-4989-b8c8-e95ae85389d3',
+    observable: sha256,
+    observable_type: 'sha256',
+    status: 'active',
+    confidence: 'high',
+    threat_classification: 'malware',
+    note: null,
+    created_at: '2026-09-05T14:32:01.476Z',
+    last_seen_at: '2026-09-05T14:32:01.476Z'
+  };
+  const pool = makeLookupPool({
+    existing,
+    classifications: ['malware'],
+    tags: [],
+    sources: [{
+      id: existing.id,
+      ioc_source_id: 9,
+      source_name: 'ThreatFox:abuse.ch',
+      catalog_source_name: 'ThreatFox:abuse.ch',
+      status: 'active',
+      created_at: existing.created_at
+    }]
+  });
+
+  const miss = await mcpLookupIoc(pool, { value: sha256 }, { config: TEST_CONFIG });
+  // First call uses makeLookupPool which returns existing for any type match on SQL shape —
+  // assert the query used concrete sha256, not abstract hash.
+  const lookupQuery = pool.queries.find((q) =>
+    q.sql.includes('observable_type = $1 AND observable = $2')
+    && q.sql.includes('ORDER BY created_at ASC')
+  );
+  assert.ok(lookupQuery);
+  assert.deepEqual(lookupQuery.params, ['sha256', sha256]);
+  assert.equal(miss.status, 200);
+  assert.equal(miss.body.found, true);
+  assert.equal(miss.body.id, 3394624);
+  assert.equal(miss.body.type, 'sha256');
+});
+
+test('mcpBulkLookupIocs uses concrete sha256 type in exact match query', async () => {
+  const sha256 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  const foundRows = [{
+    id: 42,
+    public_id: '22222222-2222-4222-8222-222222222222',
+    observable: sha256,
+    observable_type: 'sha256',
+    status: 'active',
+    confidence: 'medium',
+    threat_classification: null,
+    note: null,
+    created_at: '2026-01-01T00:00:00.000Z',
+    last_seen_at: null
+  }];
+  const pool = makeBulkPool(foundRows);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [sha256] }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.counts.existing, 1);
+  assert.equal(out.body.counts.missing, 0);
+  assert.equal(out.body.existing[0].type, 'sha256');
+  assert.deepEqual(pool.queries[0].params[0], ['sha256']);
+  assert.deepEqual(pool.queries[0].params[1], [sha256]);
+});
+
 test('resolveMcpIocInput rejects invalid / empty / overlong', () => {
   assert.equal(resolveMcpIocInput('', undefined, TEST_CONFIG).ok, false);
   assert.equal(resolveMcpIocInput('not an ioc!!!', undefined, TEST_CONFIG).ok, false);

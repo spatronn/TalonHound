@@ -19,6 +19,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js'
 import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
+import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 
 export const API_IOC_TYPES = Object.freeze(['ip', 'domain', 'url', 'hash']);
 
@@ -221,13 +222,18 @@ export function toApiIocResponse(row, extras = {}) {
 }
 
 async function findExistingIoc(pool, type, value) {
+  let lookupType = type;
+  if (lookupType === 'hash') {
+    lookupType = inferExactHashType(value);
+    if (!lookupType) return null;
+  }
   const { rows } = await pool.query(
     `SELECT *
      FROM ioc_items
      WHERE observable_type = $1 AND observable = $2
      ORDER BY created_at ASC, id ASC
      LIMIT 1`,
-    [type, value]
+    [lookupType, value]
   );
   return rows[0] || null;
 }

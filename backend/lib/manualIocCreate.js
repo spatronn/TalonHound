@@ -18,6 +18,7 @@ import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
 import { ensureIocTagAssignment } from './tagCatalogService.js';
 import { parseExcludeTagIds } from './tagHelpers.js';
+import { inferExactHashType, normalizeHashValue } from './fileArtifacts/hashNormalize.js';
 
 export function inferObservableType(value) {
   const v = String(value || '').trim();
@@ -28,6 +29,24 @@ export function inferObservableType(value) {
   if (isIpv4) return 'ip';
   if (/^[a-f0-9]{32,128}$/i.test(v)) return 'hash';
   return 'domain';
+}
+
+/**
+ * Map API/UI abstract "hash" to the concrete ioc_items observable_type
+ * (md5/sha1/sha256) used by feeds and the ioc_file_hash partition.
+ */
+export function resolveStorageObservableType(value, inferredType = null) {
+  const inferred = inferredType || inferObservableType(value);
+  if (inferred !== 'hash') return { ok: true, type: inferred, value: String(value || '').trim() };
+  const normalized = normalizeHashValue(value);
+  const exact = inferExactHashType(normalized);
+  if (!exact) {
+    return {
+      ok: false,
+      error: 'Unsupported or invalid hash (expected md5/sha1/sha256 hex)'
+    };
+  }
+  return { ok: true, type: exact, value: normalized };
 }
 
 export function resolveManualExpirationFromSource(sourceRow, opts = {}) {
@@ -168,10 +187,16 @@ export async function createManualIoc(pool, body, opts = {}) {
     return { status: 400, body: { message: 'Selected IOC source is archived.' } };
   }
 
-  const observableType = inferObservableType(value);
-  if (!observableType) {
+  const inferredType = inferObservableType(value);
+  if (!inferredType) {
     return { status: 400, body: { message: 'Could not infer IOC type from value' } };
   }
+  const storage = resolveStorageObservableType(value, inferredType);
+  if (!storage.ok) {
+    return { status: 400, body: { message: storage.error } };
+  }
+  const observableType = storage.type;
+  const observable = storage.value;
 
   const expiration = resolveManualExpirationFromSource(sourceRow);
   if (!expiration.ok) {
@@ -226,7 +251,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     if (tagQ.rows.length !== requestedTagIds.length) {
       return { status: 400, body: { message: 'One or more tags are invalid or disabled' } };
     }
-    // Preserve request order
+    // Preserve request orde
     const byId = new Map(tagQ.rows.map((row) => [Number(row.id), row]));
     resolvedTags = requestedTagIds.map((id) => byId.get(id)).filter(Boolean);
   }
@@ -260,7 +285,7 @@ export async function createManualIoc(pool, body, opts = {}) {
   `;
 
   const insertParams = [
-    value,
+    observable,
     observableType,
     sourceName,
     sourceUrl,
@@ -280,7 +305,7 @@ export async function createManualIoc(pool, body, opts = {}) {
   ];
 
   const lockKey = manualIocDuplicateLockKey({
-    observable: value,
+    observable,
     observableType,
     sourceName,
     confidence,
