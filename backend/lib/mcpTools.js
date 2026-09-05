@@ -132,12 +132,21 @@ export function registerMcpTools(server, deps) {
     {
       title: 'Search IOCs',
       description:
-        'Search TalonHound IOC inventory using existing search semantics. Results are bounded (server-enforced max page size). Use cursor for pagination. Do not use this tool for unbounded export.',
+        'Search the TalonHound IOC inventory. Provide `query` and/or the structured filters '
+        + '`type`/`classification`/`source` (combined with AND); at least one is required. '
+        + '`query` accepts either TalonHound Search DSL — `field operator "value"` with AND/OR/NOT, '
+        + 'e.g. `ioc contains "evil.com"`, `type equals "domain" AND confidence equals "high"` '
+        + '(fields: ioc, type, source, tag, threat_actor, classification, status, confidence, '
+        + 'first_seen, created_at; operators: contains, equals, not_equals, starts_with, ends_with, '
+        + 'in, not_in) — or plain text, which is treated as a bounded IOC-value contains-search. '
+        + 'Results are bounded (server-enforced max page size); use `cursor` for pagination. '
+        + 'Not for unbounded export.',
       inputSchema: {
-        query: z.string().min(1).max(config.valueMaxChars).describe('Search query'),
-        type: z.enum(['ip', 'domain', 'url', 'hash']).optional(),
-        classification: z.string().max(128).optional(),
-        source: z.string().max(128).optional(),
+        query: z.string().min(1).max(config.valueMaxChars).optional()
+          .describe('Search DSL (e.g. type equals "domain") or plain text (bounded IOC value search)'),
+        type: z.enum(['ip', 'domain', 'url', 'hash']).optional().describe('Filter by IOC type'),
+        classification: z.string().max(128).optional().describe('Filter by threat classification (slug or label)'),
+        source: z.string().max(128).optional().describe('Filter by IOC Source name'),
         limit: z.number().int().min(1).max(config.searchPageMax).optional(),
         cursor: z.string().max(512).optional()
       },

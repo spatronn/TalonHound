@@ -104,7 +104,7 @@ Profile presets:
 | Tool | Required scope(s) | Read-only | Description |
 |------|-------------------|-----------|-------------|
 | `lookup_ioc` | `mcp:ioc:read` | Yes | Exact lookup of one observable. Type optional (auto-detect + normalize). |
-| `search_iocs` | `mcp:ioc:read` | Yes | Search inventory with optional type / classification / source filters; cursor pagination; bounded page size. |
+| `search_iocs` | `mcp:ioc:read` | Yes | Search inventory by DSL or plain-text `query` and/or `type` / `classification` / `source` filters (AND-combined); cursor pagination; bounded page size. See [search semantics](#search_iocs-query-semantics). |
 | `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment. |
 | `bulk_lookup_iocs` | `mcp:ioc:read` | Yes | Batch existence check → `existing` / `missing` / `invalid` (max batch size configurable). |
 | `list_ioc_sources` | `mcp:sources:read` | Yes | Active, selectable IOC Sources usable as `import_iocs` targets. |
@@ -122,6 +122,32 @@ IOC values may be plain strings or `{ "value": "...", "type": "ip"|"domain"|"url
 - `iocs` (required) — array, max = import batch limit
 - `dry_run` (optional boolean)
 - `note` (optional string, applied to newly created IOCs)
+
+### `search_iocs` query semantics
+
+`search_iocs` accepts a free-form `query` and/or the structured filters `type`, `classification`, and `source`. At least one of them is required; when several are given they are combined with `AND`.
+
+**`query`** is interpreted one of two ways:
+
+- **TalonHound Search DSL** — the same engine as the GUI Advanced Search. Syntax is `field operator "value"` with `AND` / `OR` / `NOT` and parentheses. Every value (even enum values) must be double-quoted.
+  - Fields: `ioc` (alias `value`), `type`, `source`, `tag`, `threat_actor`, `classification`, `status`, `confidence`, `first_seen`, `created_at` (plus exact hash fields `md5` / `sha1` / `sha256`).
+  - Operators: `contains`, `equals`, `not_equals`, `starts_with`, `ends_with`, `not_contains`, `in` / `not_in` (list), and `before` / `after` / `between` (dates).
+- **Plain text** — anything that is not valid DSL is treated as a bounded IOC-value search, i.e. `ioc contains "<text>"`. (A string that clearly *attempts* DSL — a known field next to a known operator — but is malformed returns a DSL validation error instead of silently searching.)
+
+**Structured filters** map to DSL as: `type` → `type equals "domain"` (and `hash` → `type in ("md5","sha1","sha256")`, `ip` → `type in ("ip","ipv6")`), `classification` → `classification equals "<value>"`, `source` → `source equals "<name>"`.
+
+Results are bounded by the server-enforced maximum page size; use `cursor` for pagination. `search_iocs` is not an export mechanism.
+
+**Examples**
+
+| Goal | Arguments |
+|------|-----------|
+| Plain-text value search | `{ "query": "evil.com" }` |
+| Explicit DSL | `{ "query": "ioc contains \"evil\" AND confidence equals \"high\"" }` |
+| All domains | `{ "type": "domain" }` |
+| One classification | `{ "classification": "malware" }` |
+| From a source | `{ "source": "Threat Hunting" }` |
+| Combined | `{ "query": "evil.com", "type": "domain", "source": "Threat Hunting" }` |
 
 ## IOC Sources behavior
 

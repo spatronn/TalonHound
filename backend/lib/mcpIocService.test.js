@@ -5,8 +5,10 @@ import {
   mcpLookupIoc,
   mcpBulkLookupIocs,
   mcpListIocSources,
-  mcpImportIocs
+  mcpImportIocs,
+  buildMcpSearchDsl
 } from './mcpIocService.js';
+import { parseSearchQuery } from './iocSearchDsl/index.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 import { MCP_DEFAULTS } from './mcpConfig.js';
 
@@ -168,6 +170,98 @@ test('mcpBulkLookupIocs mixed found/missing/invalid/duplicates and over-limit', 
   assert.equal(out.body.counts.invalid, 1);
   assert.equal(out.body.counts.duplicate_in_request, 1);
   assert.ok(pool.queries.some((q) => /unnest/i.test(q.sql)));
+});
+
+// --- search_iocs DSL construction (Findings #1 and #2) ---------------------
+// Every generated query must be valid IOC Search DSL (parses without throwing).
+
+function assertParses(query) {
+  assert.doesNotThrow(() => parseSearchQuery(query), `should be valid DSL: ${query}`);
+}
+
+test('buildMcpSearchDsl: structured type filter emits valid DSL (not colon syntax)', () => {
+  const domain = buildMcpSearchDsl({ type: 'domain' }, TEST_CONFIG);
+  assert.equal(domain.ok, true);
+  assert.equal(domain.query, 'type equals "domain"');
+  assert.doesNotMatch(domain.query, /:/, 'must not use invalid colon syntax');
+  assertParses(domain.query);
+
+  const hash = buildMcpSearchDsl({ type: 'hash' }, TEST_CONFIG);
+  assert.equal(hash.query, 'type in ("md5", "sha1", "sha256")');
+  assertParses(hash.query);
+
+  const ip = buildMcpSearchDsl({ type: 'ip' }, TEST_CONFIG);
+  assert.equal(ip.query, 'type in ("ip", "ipv6")');
+  assertParses(ip.query);
+});
+
+test('buildMcpSearchDsl: classification and source filters emit valid DSL', () => {
+  const cls = buildMcpSearchDsl({ classification: 'malware' }, TEST_CONFIG);
+  assert.equal(cls.query, 'classification equals "malware"');
+  assertParses(cls.query);
+
+  const src = buildMcpSearchDsl({ source: 'Threat-Hunting' }, TEST_CONFIG);
+  assert.equal(src.query, 'source equals "Threat-Hunting"');
+  assertParses(src.query);
+
+  // A source name with a quote is safely escaped and still parses.
+  const tricky = buildMcpSearchDsl({ source: 'a"b' }, TEST_CONFIG);
+  assert.equal(tricky.query, 'source equals "a\\"b"');
+  assertParses(tricky.query);
+});
+
+test('buildMcpSearchDsl: combined structured filters AND together, valid DSL', () => {
+  const combined = buildMcpSearchDsl({ type: 'domain', source: 'Threat-Hunting' }, TEST_CONFIG);
+  assert.equal(combined.query, '(type equals "domain") AND (source equals "Threat-Hunting")');
+  assertParses(combined.query);
+});
+
+test('buildMcpSearchDsl: plain-text query becomes a bounded ioc value search', () => {
+  const plain = buildMcpSearchDsl({ query: 'com' }, TEST_CONFIG);
+  assert.equal(plain.ok, true);
+  assert.equal(plain.query, 'ioc contains "com"');
+  assertParses(plain.query);
+
+  const bareIoc = buildMcpSearchDsl({ query: 'evil.example.com' }, TEST_CONFIG);
+  assert.equal(bareIoc.query, 'ioc contains "evil.example.com"');
+  assertParses(bareIoc.query);
+});
+
+test('buildMcpSearchDsl: valid DSL query is passed through unchanged', () => {
+  const dsl = buildMcpSearchDsl({ query: 'value contains "com"' }, TEST_CONFIG);
+  assert.equal(dsl.query, 'value contains "com"');
+  assertParses(dsl.query);
+});
+
+test('buildMcpSearchDsl: plain-text query + structured filter combine as valid DSL', () => {
+  const mixed = buildMcpSearchDsl({ query: 'evil.com', type: 'domain' }, TEST_CONFIG);
+  assert.equal(mixed.query, '(ioc contains "evil.com") AND (type equals "domain")');
+  assertParses(mixed.query);
+});
+
+test('buildMcpSearchDsl: broken DSL attempt surfaces a validation error (not silent plaintext)', () => {
+  // known field + operator word but bad/unquoted value => intended DSL, so error.
+  const broken = buildMcpSearchDsl({ query: 'type equals domain' }, TEST_CONFIG);
+  assert.equal(broken.ok, false);
+  assert.equal(broken.error.code, 'VALIDATION_ERROR');
+});
+
+test('buildMcpSearchDsl: invalid type value rejected', () => {
+  const bad = buildMcpSearchDsl({ type: 'wat' }, TEST_CONFIG);
+  assert.equal(bad.ok, false);
+});
+
+test('buildMcpSearchDsl: no query and no filters is rejected', () => {
+  const empty = buildMcpSearchDsl({}, TEST_CONFIG);
+  assert.equal(empty.ok, false);
+  assert.match(empty.error.message, /at least one filter/i);
+});
+
+test('buildMcpSearchDsl: over-long query rejected', () => {
+  const huge = 'a'.repeat(TEST_CONFIG.valueMaxChars + 1);
+  const out = buildMcpSearchDsl({ query: huge }, TEST_CONFIG);
+  assert.equal(out.ok, false);
+  assert.match(out.error.message, /too long/i);
 });
 
 test('mcpListIocSources filters inactive and API system source', async () => {

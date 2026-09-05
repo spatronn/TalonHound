@@ -18,6 +18,15 @@ import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 import { getMcpConfig } from './mcpConfig.js';
 import { effectiveMcpCapabilities } from './mcpPermissions.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
+import { parseSearchQuery, DslError } from './iocSearchDsl/index.js';
+import {
+  canonicalFieldName,
+  TEXT_OPERATORS,
+  LIST_OPERATORS,
+  ENUM_OPERATORS,
+  DATE_OPERATORS,
+  HASH_OPERATORS
+} from './iocSearchDsl/fields.js';
 
 async function findExistingIoc(pool, type, value) {
   const { rows } = await pool.query(
@@ -169,40 +178,134 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
   };
 }
 
+// Every DSL operator word, used only to detect a *broken DSL attempt* vs. plain text.
+const DSL_OPERATOR_WORDS = new Set([
+  ...TEXT_OPERATORS,
+  ...LIST_OPERATORS,
+  ...ENUM_OPERATORS,
+  ...DATE_OPERATORS,
+  ...HASH_OPERATORS,
+  'and',
+  'or',
+  'not',
+  'between'
+]);
+
+// Quote a raw value as a DSL string literal, matching the tokenizer's escape rules
+// (\" and \\). The IOC Search DSL requires every value — even enum values — to be a
+// double-quoted string, so all structured filters are emitted quoted.
+function dslQuote(value) {
+  return `"${String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+// The MCP/API `type` notion (ip|domain|url|hash) collapses several stored
+// observable_types, so translate each to the exact valid DSL `type` predicate rather
+// than emitting an invalid `type:value`. `ip` covers IPv4 + IPv6; `hash` covers the
+// three identity hash types.
+const MCP_TYPE_TO_DSL = Object.freeze({
+  ip: `type in (${dslQuote('ip')}, ${dslQuote('ipv6')})`,
+  domain: `type equals ${dslQuote('domain')}`,
+  url: `type equals ${dslQuote('url')}`,
+  hash: `type in (${dslQuote('md5')}, ${dslQuote('sha1')}, ${dslQuote('sha256')})`
+});
+
+// Heuristic: does this string look like an *attempted* DSL expression (a known field
+// word next to a known operator word)? Used only to decide, when a query fails to
+// parse, whether to surface the DSL error (broken DSL) or fall back to a plain-text
+// value search (bare indicator / free text).
+function looksLikeDslAttempt(raw) {
+  const words = String(raw).toLowerCase().match(/[a-z_][a-z0-9_]*/g) || [];
+  let hasField = false;
+  let hasOperator = false;
+  for (const w of words) {
+    if (canonicalFieldName(w)) hasField = true;
+    if (DSL_OPERATOR_WORDS.has(w)) hasOperator = true;
+  }
+  return hasField && hasOperator;
+}
+
+// Turn a free-form `query` into a single DSL clause.
+//   - valid DSL            -> used verbatim (the real parser is the source of truth)
+//   - broken DSL attempt   -> DSL error surfaced (validation is not weakened)
+//   - plain text / bare IOC -> bounded `ioc contains "<value>"` value search
+function queryToDslClause(rawQuery) {
+  try {
+    parseSearchQuery(rawQuery);
+    return { clause: rawQuery };
+  } catch (err) {
+    if (err instanceof DslError) {
+      if (looksLikeDslAttempt(rawQuery)) {
+        return { error: { code: API_ERROR_CODE.VALIDATION_ERROR, message: err.message } };
+      }
+      return { clause: `ioc contains ${dslQuote(rawQuery)}` };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Build a valid TalonHound IOC Search DSL query from the MCP search_iocs arguments.
+ * Reuses the single IOC search engine — this only assembles the DSL string that the
+ * engine parses; there is no parallel search implementation.
+ *
+ * @returns {{ ok: true, query: string } | { ok: false, error: { code: string, message: string } }}
+ */
+export function buildMcpSearchDsl(args = {}, config = getMcpConfig()) {
+  const rawQuery = args.query != null ? String(args.query).trim() : '';
+  if (rawQuery.length > config.valueMaxChars) {
+    return { ok: false, error: { code: API_ERROR_CODE.VALIDATION_ERROR, message: 'query is too long' } };
+  }
+
+  const clauses = [];
+
+  if (rawQuery) {
+    const q = queryToDslClause(rawQuery);
+    if (q.error) return { ok: false, error: q.error };
+    clauses.push(q.clause);
+  }
+
+  const typeFilter = args.type != null && String(args.type).trim() !== ''
+    ? parseApiIocType(args.type)
+    : null;
+  if (typeFilter && !typeFilter.ok) {
+    return { ok: false, error: { code: typeFilter.code || API_ERROR_CODE.VALIDATION_ERROR, message: typeFilter.message } };
+  }
+  if (typeFilter?.ok) clauses.push(MCP_TYPE_TO_DSL[typeFilter.value]);
+
+  const classification = args.classification != null ? String(args.classification).trim() : '';
+  if (classification) clauses.push(`classification equals ${dslQuote(classification.slice(0, 128))}`);
+
+  const source = args.source != null ? String(args.source).trim() : '';
+  if (source) clauses.push(`source equals ${dslQuote(source.slice(0, 128))}`);
+
+  if (clauses.length === 0) {
+    return {
+      ok: false,
+      error: {
+        code: API_ERROR_CODE.VALIDATION_ERROR,
+        message: 'Provide a query or at least one filter (type, classification, source)'
+      }
+    };
+  }
+
+  // Parenthesize each clause so the AND-combination is unambiguous regardless of any
+  // OR/NOT inside a caller-supplied DSL query.
+  const query = clauses.length === 1 ? clauses[0] : clauses.map((c) => `(${c})`).join(' AND ');
+  return { ok: true, query };
+}
+
 export async function mcpSearchIocs(pool, args = {}, opts = {}) {
   const config = opts.config || getMcpConfig();
   const limit = clampApiIocPageSize(args.limit, Math.min(config.searchPageMax, 50));
   const cappedLimit = Math.min(limit, config.searchPageMax);
 
-  let query = String(args.query || '').trim();
-  if (!query) {
-    return { status: 400, error: { code: API_ERROR_CODE.VALIDATION_ERROR, message: 'query is required' } };
-  }
-  if (query.length > config.valueMaxChars) {
-    return { status: 400, error: { code: API_ERROR_CODE.VALIDATION_ERROR, message: 'query is too long' } };
-  }
-
-  // Optional structured filters appended as DSL-friendly tokens when provided.
-  const typeFilter = args.type != null && String(args.type).trim() !== ''
-    ? parseApiIocType(args.type)
-    : null;
-  if (typeFilter && !typeFilter.ok) {
-    return { status: 400, error: typeFilter };
-  }
-  if (typeFilter?.ok) {
-    query = `(${query}) AND type:${typeFilter.value}`;
-  }
-  if (args.classification != null && String(args.classification).trim() !== '') {
-    const c = String(args.classification).trim().replace(/[^\w:+.-]/g, '');
-    if (c) query = `(${query}) AND classification:${c}`;
-  }
-  if (args.source != null && String(args.source).trim() !== '') {
-    const s = String(args.source).trim().slice(0, 128);
-    if (s) query = `(${query}) AND source:"${s.replace(/"/g, '')}"`;
+  const built = buildMcpSearchDsl(args, config);
+  if (!built.ok) {
+    return { status: 400, error: built.error };
   }
 
   const outcome = await searchApiIocs(pool, {
-    query,
+    query: built.query,
     cursor: args.cursor,
     limit: cappedLimit
   });
