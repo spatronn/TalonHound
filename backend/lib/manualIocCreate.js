@@ -91,7 +91,7 @@ export function manualIocDuplicateLockKey({
     String(sourceUrl ?? ''),
     String(threatClassification ?? 'unknown'),
     threatActorId == null || threatActorId === '' ? '' : String(threatActorId)
-  ].join('\u0000');
+  ].join('\u001f');
 }
 
 export function serializeManualIocResponse(row, source, expiration, classificationFields = null, tags = null, actorFields = null) {
