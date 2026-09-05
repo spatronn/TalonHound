@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "channel": "beta",
-  "latest": "0.1.1-beta.5",
-  "released_at": "2026-09-05T11:00:07Z",
-  "minimum_supported_version": "0.1.1-beta.5",
-  "release_url": "https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.5",
+  "latest": "0.1.1-beta.6",
+  "released_at": "2026-09-05T12:30:00Z",
+  "minimum_supported_version": "0.1.1-beta.6",
+  "release_url": "https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.6",
   "critical": false,
-  "release_manifest_url": "https://github.com/spatronn/TalonHound/releases/download/v0.1.1-beta.5/release-manifest.json"
+  "release_manifest_url": "https://github.com/spatronn/TalonHound/releases/download/v0.1.1-beta.6/release-manifest.json"
 }
