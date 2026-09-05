@@ -195,7 +195,9 @@ import {
   apiKeyCreatePayload,
   accessProfilePermissionSummary,
   accessProfileLabel,
-  API_DOCS_PATH
+  API_DOCS_PATH,
+  MCP_ENDPOINT_PATH,
+  MCP_HELP_TEXT
 } from './lib/apiKeysPage.js';
 import { AppConfirmContext, AppFeedbackContext, useAppConfirm, useAppFeedback } from './lib/appChromeContext.jsx';
 import {
@@ -6866,8 +6868,9 @@ function ApiKeysPage() {
   const ui = PUBLISHED_FEEDS_UI;
   const [loading, setLoading] = useState(true);
   const [keys, setKeys] = useState([]);
+  const [ownerUsers, setOwnerUsers] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [form, setForm] = useState({ name: '', access_profile: 'published_feed', enabled: true });
+  const [form, setForm] = useState({ name: '', access_profile: 'published_feed', enabled: true, owner_public_id: '' });
   const [formError, setFormError] = useState('');
   // Revealed plaintext values live only in component memory — never persisted.
   const [revealed, setRevealed] = useState({});
@@ -6878,6 +6881,8 @@ function ApiKeysPage() {
   const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
+
+  const mcpProfileSelected = form.access_profile === 'mcp_read' || form.access_profile === 'mcp_analyst';
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -6906,12 +6911,24 @@ function ApiKeysPage() {
     }
   }
 
+  async function loadOwnerUsers() {
+    if (!isAdmin) return;
+    try {
+      const { data } = await api.get('/users');
+      setOwnerUsers(Array.isArray(data?.users) ? data.users : []);
+    } catch {
+      setOwnerUsers([]);
+    }
+  }
+
   useEffect(() => { loadAll().catch(() => {}); }, []);
+  useEffect(() => { loadOwnerUsers().catch(() => {}); }, [isAdmin]);
 
   function openCreateModal() {
-    setForm({ name: '', access_profile: 'published_feed', enabled: true });
+    setForm({ name: '', access_profile: 'published_feed', enabled: true, owner_public_id: '' });
     setFormError('');
     setShowCreateModal(true);
+    loadOwnerUsers().catch(() => {});
   }
 
   function copyText(text) {
@@ -6964,10 +6981,13 @@ function ApiKeysPage() {
     const parsed = apiKeyCreatePayload({
       name: form.name,
       accessProfile: form.access_profile,
-      enabled: form.enabled
+      enabled: form.enabled,
+      ownerPublicId: form.owner_public_id || undefined
     });
     if (!parsed.ok) {
-      setFormError(parsed.errors.includes('name') ? 'Enter a key name.' : 'Select an access profile.');
+      if (parsed.errors.includes('name')) setFormError('Enter a key name.');
+      else if (parsed.errors.includes('owner')) setFormError('Select an owner user for MCP credentials.');
+      else setFormError('Select an access profile.');
       setSaving(false);
       return;
     }
@@ -7022,6 +7042,7 @@ function ApiKeysPage() {
           <div>
             <h2 style={ui.pageTitle}>API Keys</h2>
             <p style={ui.pageSub}>{API_KEYS_PAGE_DESCRIPTION}</p>
+            <p style={{ ...ui.pageSub, marginTop: 6 }}>{MCP_HELP_TEXT} Endpoint: <code style={{ color: '#cbd5e1' }}>{MCP_ENDPOINT_PATH}</code></p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
             <a href={API_DOCS_PATH} target="_blank" rel="noreferrer" style={{ ...ui.btn, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
@@ -7042,6 +7063,7 @@ function ApiKeysPage() {
               <tr style={ui.thead}>
                 <th style={ui.th}>Name</th>
                 <th style={ui.th}>Type</th>
+                <th style={ui.th}>Owner</th>
                 <th style={ui.th}>Key</th>
                 <th style={ui.th}>Status</th>
                 <th style={ui.th}>Last Used</th>
@@ -7051,16 +7073,18 @@ function ApiKeysPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr style={ui.tr}><td colSpan={7} style={ui.td}>Loading...</td></tr>
+                <tr style={ui.tr}><td colSpan={8} style={ui.td}>Loading...</td></tr>
               ) : keys.length ? keys.map((k) => {
                 const perm = k.permission_summary || accessProfilePermissionSummary(k.key_type || k.access_profile);
                 const typeLabel = k.key_type_label || accessProfileLabel(k.key_type, 'Published Feed');
-                const isModern = k.key_type === 'published_feed' || k.key_type === 'ioc_management' || k.key_type === 'ioc_read';
+                const isMcpKey = k.key_type === 'mcp_read' || k.key_type === 'mcp_analyst';
                 const typeColors = k.key_type === 'ioc_management'
                   ? { background: 'rgba(16,185,129,0.15)', color: '#6ee7b7', border: '1px solid #065f46' }
                   : k.key_type === 'ioc_read'
                     ? { background: 'rgba(245,158,11,0.15)', color: '#fcd34d', border: '1px solid #92400e' }
-                    : { background: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid #1e40af' };
+                    : isMcpKey
+                      ? { background: 'rgba(14,165,233,0.15)', color: '#7dd3fc', border: '1px solid #0369a1' }
+                      : { background: 'rgba(59,130,246,0.15)', color: '#93c5fd', border: '1px solid #1e40af' };
                 return (
                   <tr key={k.id} style={ui.tr}>
                     <td style={ui.td}>{k.name}</td>
@@ -7075,6 +7099,16 @@ function ApiKeysPage() {
                         </span>
                         {perm ? <span style={{ fontSize: 11, color: '#94a3b8' }}>{perm}</span> : null}
                       </div>
+                    </td>
+                    <td style={ui.td}>
+                      {k.owner_username
+                        ? (
+                          <span style={{ fontSize: 12, color: '#cbd5e1' }}>
+                            {k.owner_username}
+                            {k.owner_role ? <span style={{ color: '#94a3b8' }}> ({k.owner_role})</span> : null}
+                          </span>
+                          )
+                        : <span style={{ color: '#64748b' }}>—</span>}
                     </td>
                     <td style={ui.td}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -7120,7 +7154,7 @@ function ApiKeysPage() {
                 );
               }) : (
                 <tr>
-                  <td colSpan={7} style={{ ...ui.td, padding: 0 }}>
+                  <td colSpan={8} style={{ ...ui.td, padding: 0 }}>
                     <EmptyState
                       title="No API keys yet"
                       description="Create an API key to grant programmatic access with a fixed access profile."
@@ -7179,7 +7213,7 @@ function ApiKeysPage() {
                         name="access_profile"
                         value={opt.id}
                         checked={form.access_profile === opt.id}
-                        onChange={() => setForm((x) => ({ ...x, access_profile: opt.id }))}
+                        onChange={() => setForm((x) => ({ ...x, access_profile: opt.id, owner_public_id: (opt.id === 'mcp_read' || opt.id === 'mcp_analyst') ? x.owner_public_id : '' }))}
                         style={{ marginTop: 3 }}
                       />
                       <span>
@@ -7190,6 +7224,26 @@ function ApiKeysPage() {
                   ))}
                 </div>
               </FeedFormField>
+              {mcpProfileSelected ? (
+                <FeedFormField ui={ui} label="Owner user" fullWidth>
+                  <select
+                    required
+                    value={form.owner_public_id}
+                    onChange={(e) => setForm((x) => ({ ...x, owner_public_id: e.target.value }))}
+                    style={ui.input}
+                  >
+                    <option value="">Select owner…</option>
+                    {ownerUsers.map((u) => (
+                      <option key={u.public_id || u.id} value={u.public_id}>
+                        {u.username} ({u.role})
+                      </option>
+                    ))}
+                  </select>
+                  <span style={{ ...ui.helper, display: 'block', marginTop: 6 }}>
+                    MCP effective permission is the intersection of this key’s scopes and the owner user’s TalonHound role.
+                  </span>
+                </FeedFormField>
+              ) : null}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16, paddingTop: 16, borderTop: '1px solid #334155' }}>
                 <button type="button" style={ui.btn} onClick={() => setShowCreateModal(false)}>Cancel</button>
                 <button type="submit" style={ui.btnPrimary} disabled={!isAdmin || saving}>{saving ? 'Creating…' : 'Create API Key'}</button>
@@ -7209,7 +7263,12 @@ function ApiKeysPage() {
             <code style={ui.code}>{createdKey.token}</code>
             <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copyText(createdKey.token)}>Copy key</button>
             <p style={{ ...ui.helper, marginTop: 12 }}>
-              {createdKey.access_profile === 'ioc_management' || createdKey.access_profile === 'ioc_read' ? (
+              {createdKey.access_profile === 'mcp_read' || createdKey.access_profile === 'mcp_analyst' ? (
+                <>
+                  Connect MCP clients to <code style={{ color: '#cbd5e1' }}>{MCP_ENDPOINT_PATH}</code> with{' '}
+                  <code style={{ color: '#cbd5e1' }}>Authorization: Bearer YOUR_KEY</code>. See docs/MCP.md.
+                </>
+              ) : createdKey.access_profile === 'ioc_management' || createdKey.access_profile === 'ioc_read' ? (
                 <>
                   Authenticate management calls with <code style={{ color: '#cbd5e1' }}>Authorization: Bearer YOUR_KEY</code>.
                   See <a href={API_DOCS_PATH} target="_blank" rel="noreferrer" style={{ color: '#93c5fd' }}>API Documentation</a>.

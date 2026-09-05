@@ -16,6 +16,7 @@ export const IOC_READ_KEY_TYPE = ACCESS_PROFILE.IOC_READ;
 export const PUBLISHED_FEED_KEY_PREFIX = 'th_pf_';
 export const IOC_MANAGEMENT_KEY_PREFIX = 'th_ioc_';
 export const IOC_READ_KEY_PREFIX = 'th_read_';
+export const MCP_KEY_PREFIX = 'th_mcp_';
 
 const SECRET_BYTES = 32;
 const MASK_BODY = '•'.repeat(12);
@@ -84,6 +85,7 @@ export function redactApiKeyInText(text) {
     .replace(/th_pf_[A-Za-z0-9_-]+/g, 'th_pf_[REDACTED]')
     .replace(/th_ioc_[A-Za-z0-9_-]+/g, 'th_ioc_[REDACTED]')
     .replace(/th_read_[A-Za-z0-9_-]+/g, 'th_read_[REDACTED]')
+    .replace(/th_mcp_[A-Za-z0-9_-]+/g, 'th_mcp_[REDACTED]')
     .replace(/(Bearer\s+)\S+/gi, '$1[REDACTED]');
 }
 

@@ -12,6 +12,7 @@ function resolveSource(req, explicit) {
   if (explicit) return String(explicit);
   const via = String(req?.authVia || '').toLowerCase();
   if (via === 'ingest') return 'ingest';
+  if (via === 'mcp') return 'mcp';
   if (via === 'bearer') return 'api';
   if (via === 'api_key') return 'api';
   return 'web';

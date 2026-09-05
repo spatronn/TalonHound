@@ -7,7 +7,11 @@ export const API_SCOPE = Object.freeze({
   IOC_CREATE: 'ioc:create',
   IOC_UPDATE: 'ioc:update',
   IOC_READ: 'ioc:read',
-  IOC_EXPORT: 'ioc:export'
+  IOC_EXPORT: 'ioc:export',
+  MCP_IOC_READ: 'mcp:ioc:read',
+  MCP_IOC_CREATE: 'mcp:ioc:create',
+  MCP_ENRICHMENT_READ: 'mcp:enrichment:read',
+  MCP_SOURCES_READ: 'mcp:sources:read'
 });
 
 export const ALL_API_SCOPES = Object.freeze([
@@ -15,13 +19,19 @@ export const ALL_API_SCOPES = Object.freeze([
   API_SCOPE.IOC_CREATE,
   API_SCOPE.IOC_UPDATE,
   API_SCOPE.IOC_READ,
-  API_SCOPE.IOC_EXPORT
+  API_SCOPE.IOC_EXPORT,
+  API_SCOPE.MCP_IOC_READ,
+  API_SCOPE.MCP_IOC_CREATE,
+  API_SCOPE.MCP_ENRICHMENT_READ,
+  API_SCOPE.MCP_SOURCES_READ
 ]);
 
 export const ACCESS_PROFILE = Object.freeze({
   PUBLISHED_FEED: 'published_feed',
   IOC_MANAGEMENT: 'ioc_management',
   IOC_READ: 'ioc_read',
+  MCP_READ: 'mcp_read',
+  MCP_ANALYST: 'mcp_analyst',
   /** Legacy hash-only per-feed keys — still mapped to feed-read scope. */
   FEED_ACCESS: 'feed_access'
 });
@@ -36,7 +46,8 @@ const PROFILE_DEFS = Object.freeze({
     permission_summary: 'Read feeds',
     key_prefix: 'th_pf_',
     scopes: Object.freeze([API_SCOPE.PUBLISHED_FEEDS_READ]),
-    creatable: true
+    creatable: true,
+    requiresOwner: false
   }),
   [ACCESS_PROFILE.IOC_MANAGEMENT]: Object.freeze({
     id: ACCESS_PROFILE.IOC_MANAGEMENT,
@@ -45,7 +56,8 @@ const PROFILE_DEFS = Object.freeze({
     permission_summary: 'Create + Update IOCs',
     key_prefix: 'th_ioc_',
     scopes: Object.freeze([API_SCOPE.IOC_CREATE, API_SCOPE.IOC_UPDATE]),
-    creatable: true
+    creatable: true,
+    requiresOwner: false
   }),
   [ACCESS_PROFILE.IOC_READ]: Object.freeze({
     id: ACCESS_PROFILE.IOC_READ,
@@ -54,7 +66,37 @@ const PROFILE_DEFS = Object.freeze({
     permission_summary: 'Read + Search + Export IOCs',
     key_prefix: 'th_read_',
     scopes: Object.freeze([API_SCOPE.IOC_READ, API_SCOPE.IOC_EXPORT]),
-    creatable: true
+    creatable: true,
+    requiresOwner: false
+  }),
+  [ACCESS_PROFILE.MCP_READ]: Object.freeze({
+    id: ACCESS_PROFILE.MCP_READ,
+    label: 'MCP Read',
+    description: 'Read-only MCP access for AI clients: lookup, search, context, bulk lookup, and list IOC Sources. Bound to an owner user; cannot import IOCs.',
+    permission_summary: 'MCP read + sources + enrichment',
+    key_prefix: 'th_mcp_',
+    scopes: Object.freeze([
+      API_SCOPE.MCP_IOC_READ,
+      API_SCOPE.MCP_SOURCES_READ,
+      API_SCOPE.MCP_ENRICHMENT_READ
+    ]),
+    creatable: true,
+    requiresOwner: true
+  }),
+  [ACCESS_PROFILE.MCP_ANALYST]: Object.freeze({
+    id: ACCESS_PROFILE.MCP_ANALYST,
+    label: 'MCP Analyst',
+    description: 'MCP access for AI clients with controlled IOC import into existing IOC Sources. Bound to an owner user; effective rights are the intersection of token scopes and the owner role.',
+    permission_summary: 'MCP read + import into IOC Sources',
+    key_prefix: 'th_mcp_',
+    scopes: Object.freeze([
+      API_SCOPE.MCP_IOC_READ,
+      API_SCOPE.MCP_IOC_CREATE,
+      API_SCOPE.MCP_SOURCES_READ,
+      API_SCOPE.MCP_ENRICHMENT_READ
+    ]),
+    creatable: true,
+    requiresOwner: true
   }),
   [ACCESS_PROFILE.FEED_ACCESS]: Object.freeze({
     id: ACCESS_PROFILE.FEED_ACCESS,
@@ -63,7 +105,8 @@ const PROFILE_DEFS = Object.freeze({
     permission_summary: 'Read feeds',
     key_prefix: '',
     scopes: Object.freeze([API_SCOPE.PUBLISHED_FEEDS_READ]),
-    creatable: false
+    creatable: false,
+    requiresOwner: false
   })
 });
 
@@ -101,6 +144,15 @@ export function hasApiScope(scopes, requiredScope) {
   const required = String(requiredScope || '').trim();
   if (!required) return false;
   return normalizeScopes(scopes).includes(required);
+}
+
+export function profileRequiresOwner(profileId) {
+  return Boolean(getAccessProfile(profileId)?.requiresOwner);
+}
+
+export function isMcpAccessProfile(profileId) {
+  const id = String(profileId || '').trim().toLowerCase();
+  return id === ACCESS_PROFILE.MCP_READ || id === ACCESS_PROFILE.MCP_ANALYST;
 }
 
 export function profileLabel(profileId) {

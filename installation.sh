@@ -17,7 +17,7 @@
 #
 set -euo pipefail
 
-PRODUCT_VERSION="$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo '0.1.1-beta.3')"
+PRODUCT_VERSION="$(cat VERSION 2>/dev/null | tr -d '[:space:]' || echo '0.1.1-beta.4')"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 

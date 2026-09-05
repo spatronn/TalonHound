@@ -12,12 +12,13 @@ infrastructure you control.
 - Analyst search, triage, suppression, and bulk operations over large IOC sets
 - Enrichment providers (VirusTotal, AbuseIPDB, IPinfo Lite, RDAP) — all optional and configured after install
 - Published feeds (JSON / CSV / STIX / TAXII 2.1) with per-key access and rate limiting
+- MCP Server for AI clients (lookup, search, bulk check, controlled import) — see [`docs/MCP.md`](docs/MCP.md)
 - Role-based access control, audit logging, and a protected System Administrator account
 - Scheduled backups with restore, and a single canonical system timezone across the whole stack
 
 ## Beta status
 
-Current version: [`VERSION`](VERSION) (`0.1.1-beta.3`).
+Current version: [`VERSION`](VERSION) (`0.1.1-beta.4`).
 
 This is a **Beta** release. Core install and day-to-day workflows are usable, but interfaces,
 configuration, and APIs may still evolve. Review release notes before upgrading.
@@ -110,6 +111,7 @@ beta and stable releases are published through GitHub Releases and GHCR — see
 - **Container operations & tuning:** [`docs/container-operations-and-tuning.md`](docs/container-operations-and-tuning.md)
 - **Built-in threat feeds:** [`docs/built-in-threat-feeds.md`](docs/built-in-threat-feeds.md)
 - **Enrichment providers:** [`docs/enrichment-providers.md`](docs/enrichment-providers.md)
+- **MCP Server (AI clients):** [`docs/MCP.md`](docs/MCP.md)
 
 The installed version is shown in **Administration → Settings** and via authenticated
 `GET /api/system/version`.

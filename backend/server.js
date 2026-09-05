@@ -42,6 +42,8 @@ import { registerUserManagementRoutes } from './routes/users.js';
 import { registerAuthPasswordRoutes } from './routes/authPassword.js';
 import { registerPublishedFeedRoutes } from './routes/publishedFeeds.js';
 import { registerApiKeyRoutes } from './routes/apiKeys.js';
+import { registerMcpRoutes } from './routes/mcp.js';
+import { isMcpEnabled, getMcpConfig } from './lib/mcpConfig.js';
 import { registerPublicFeedRoutes } from './routes/publicFeeds.js';
 import { registerTaxii21Routes } from './routes/taxii21.js';
 import { registerApiV1IocRoutes } from './routes/apiV1Iocs.js';
@@ -455,7 +457,7 @@ function pickIocLifecycleRow(rows, seedRow) {
 
 app.use(cors());
 app.use(cookieParser());
-app.use(express.json());
+app.use(express.json({ limit: '512kb' }));
 app.use(createSetupGate(pool));
 app.use(apiAuthGate);
 app.use(createAuthVersionGate(pool, {
@@ -2929,6 +2931,7 @@ registerPublishedFeedRoutes(app, pool, auditLogService);
 registerRouteModule('published_feeds');
 registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
+registerMcpRoutes(app, pool, auditLogService);
 registerAuditLogRoutes(app, pool);
 registerAuditRetentionRoutes(app, pool, { audit: auditLogService });
 registerRouteModule('audit_retention');
@@ -6660,6 +6663,17 @@ app.get('/api/system/health', async (_req, res) => {
       status: timeHealth ? normalizeComponentStatus(timeHealth.status) : 'unknown',
       reason: timeHealth?.reason || timeHealth?.error || null,
       required: true
+    },
+    {
+      key: 'mcp',
+      name: 'MCP Server',
+      status: isMcpEnabled() ? 'healthy' : 'degraded',
+      enabled: isMcpEnabled(),
+      evidence: isMcpEnabled()
+        ? `Streamable HTTP /mcp (batch max ${getMcpConfig().bulkLookupMax})`
+        : 'Disabled via MCP_ENABLED',
+      required: false,
+      include_in_overall: false
     }
   ];
 

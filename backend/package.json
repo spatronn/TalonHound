@@ -41,6 +41,7 @@
     "test:ioc-suppression": "node --test lib/suppressionInput.test.js lib/manualSuppressionCreate.test.js lib/iocSuppressionEffective.test.js lib/iocSuppressionStatus.test.js",
     "test:ioc-bulk-triage": "node --test lib/iocBulkTriage.test.js lib/iocBulkQueryTriage.test.js lib/iocBulkQueryJob/store.test.js routes/iocBulkQueryTriage.test.js",
     "test:api-v1": "node --test routes/apiV1Iocs.test.js lib/apiIocReadService.test.js lib/apiKeyProfiles.test.js lib/publishedFeedApiKey.test.js routes/apiKeys.test.js routes/apiDocs.test.js",
+    "test:mcp": "node --test lib/mcpConfig.test.js lib/mcpPermissions.test.js lib/mcpAuth.test.js lib/mcpIocService.test.js routes/mcp.test.js lib/apiKeyProfiles.test.js",
     "test:ioc-status-override": "node --test lib/iocStatusOverrideGuards.test.js",
     "test:ioc-confidence": "node --test lib/iocConfidence.test.js lib/iocActiveSources.test.js lib/iocStatsCache.test.js lib/iocListPagination.test.js lib/iocListDisplay.test.js lib/iocListStatsSnapshot.test.js",
     "test:ioc-sources": "node --test lib/iocSourceLifecycle.test.js lib/manualIocCreate.test.js",
@@ -67,6 +68,7 @@
     "smoke:routes": "node scripts/smoke-routes.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.10.3",
     "cookie-parser": "^1.4.7",
@@ -76,6 +78,7 @@
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.16.3",
     "swagger-ui-dist": "^5.17.14",
-    "tldts": "^6.1.86"
+    "tldts": "^6.1.86",
+    "zod": "^3.25.76"
   }
 }

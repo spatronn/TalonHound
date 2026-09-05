@@ -287,7 +287,8 @@ export function csrfProtection(req, res, next) {
   if (!p.startsWith('/api')) return next();
   // Machine API key clients and public docs have no CSRF cookie.
   if (p === '/api/v1' || p.startsWith('/api/v1/')) return next();
-  if (req.authVia === 'ingest' || req.authVia === 'bearer' || req.authVia === 'api_key') return next();
+  if (p === '/mcp' || p.startsWith('/mcp/')) return next();
+  if (req.authVia === 'ingest' || req.authVia === 'bearer' || req.authVia === 'api_key' || req.authVia === 'mcp') return next();
 
   const hdr = req.headers['x-csrf-token'];
   const ck = req.cookies?.[CSRF_COOKIE_NAME];
@@ -306,6 +307,10 @@ function isPublicApiDocsPath(path) {
 
 function isApiV1Path(path) {
   return path === '/api/v1' || path.startsWith('/api/v1/');
+}
+
+function isMcpPath(path) {
+  return path === '/mcp' || path.startsWith('/mcp/');
 }
 
 export function apiAuthGate(req, res, next) {
@@ -345,6 +350,10 @@ export function apiAuthGate(req, res, next) {
   // /api/v1 is authenticated by Bearer API key middleware on those routes —
   // not by session cookies. Do not inherit browser-session roles.
   if (isApiV1Path(req.path)) {
+    return next();
+  }
+  // MCP Streamable HTTP is authenticated by Bearer MCP API key middleware.
+  if (isMcpPath(req.path)) {
     return next();
   }
   // Public Published Feed pull: authorized by ?api_key=, not by a user session.

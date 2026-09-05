@@ -19,7 +19,9 @@ import {
   profileLabel,
   profilePermissionSummary,
   listCreatableAccessProfiles,
-  normalizeScopes
+  normalizeScopes,
+  profileRequiresOwner,
+  isMcpAccessProfile
 } from '../lib/apiKeyProfiles.js';
 import {
   encryptApiKeySecret,
@@ -29,13 +31,22 @@ import {
 import { resolveFeedIocTypes } from '../lib/feedPublisherService.js';
 
 const LEGACY_REVEAL_MESSAGE = 'This legacy key cannot be revealed.';
+const OWNER_PUBLIC_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const LIST_COLUMNS = `
   k.id, k.feed_id, k.name, k.key_type, k.key_prefix, k.last_four, k.scopes,
   k.enabled, k.expires_at, k.last_used_at, k.last_used_ip,
-  k.created_at, k.revoked_at, k.deleted_at,
+  k.created_at, k.revoked_at, k.deleted_at, k.owner_user_id,
   (k.secret_ciphertext IS NOT NULL) AS has_secret,
-  f.name AS feed_name, f.ioc_types AS feed_ioc_types, f.slug AS feed_slug`;
+  f.name AS feed_name, f.ioc_types AS feed_ioc_types, f.slug AS feed_slug,
+  u.public_id AS owner_public_id, u.username AS owner_username,
+  u.username AS owner_email, u.role AS owner_role`;
+
+const LIST_FROM = `
+  FROM published_feed_access_keys k
+  LEFT JOIN published_feeds f ON f.id = k.feed_id
+  LEFT JOIN users u ON u.id = k.owner_user_id`;
 
 /** Public (never includes the plaintext secret). */
 function toPublicApiKey(row) {
@@ -51,7 +62,7 @@ function toPublicApiKey(row) {
   const maskedKey = profile?.key_prefix
     ? maskApiKey({ key_prefix: row.key_prefix || profile.key_prefix, last_four: row.last_four, key_type: keyType })
     : '••••••••';
-  return {
+  const out = {
     id: Number(row.id),
     name: row.name,
     key_type: keyType,
@@ -75,12 +86,73 @@ function toPublicApiKey(row) {
       : (row.feed_ioc_types ? resolveFeedIocTypes({ ioc_types: row.feed_ioc_types }) : null),
     feed_slug: row.feed_slug || null
   };
+  if (row.owner_user_id != null) {
+    out.owner_user_id = Number(row.owner_user_id);
+  }
+  if (row.owner_public_id) out.owner_public_id = row.owner_public_id;
+  if (row.owner_username) out.owner_username = row.owner_username;
+  if (row.owner_role) out.owner_role = row.owner_role;
+  return out;
 }
 
 function apiKeyAuditSnapshot(row) {
   return pickSafeFields(toPublicApiKey(row), [
-    'id', 'name', 'key_type', 'access_profile', 'scopes', 'status', 'revealable', 'enabled', 'feed_id', 'feed_name'
+    'id', 'name', 'key_type', 'access_profile', 'scopes', 'status', 'revealable', 'enabled',
+    'feed_id', 'feed_name', 'owner_user_id', 'owner_public_id', 'owner_username', 'owner_role'
   ]);
+}
+
+/**
+ * Resolve accountable owner for MCP access profiles.
+ * @returns {Promise<{ ok: true, ownerUserId: number|null } | { ok: false, status: number, message: string }>}
+ */
+async function resolveOwnerForCreate(pool, profile, body) {
+  const hasOwnerUserId = body?.owner_user_id != null && String(body.owner_user_id).trim() !== '';
+  const hasOwnerPublicId = body?.owner_public_id != null && String(body.owner_public_id).trim() !== '';
+
+  if (!profileRequiresOwner(profile.id)) {
+    // Non-MCP profiles ignore owner fields when present.
+    return { ok: true, ownerUserId: null };
+  }
+
+  if (!hasOwnerUserId && !hasOwnerPublicId) {
+    return {
+      ok: false,
+      status: 400,
+      message: 'owner_user_id or owner_public_id is required for MCP access profiles'
+    };
+  }
+
+  let rows;
+  if (hasOwnerUserId) {
+    const id = Number(body.owner_user_id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return { ok: false, status: 400, message: 'owner_user_id must be a positive number' };
+    }
+    ({ rows } = await pool.query(
+      `SELECT id, status FROM users WHERE id = $1`,
+      [id]
+    ));
+  } else {
+    const publicId = String(body.owner_public_id).trim();
+    if (!OWNER_PUBLIC_ID_RE.test(publicId)) {
+      return { ok: false, status: 400, message: 'owner_public_id must be a valid UUID' };
+    }
+    ({ rows } = await pool.query(
+      `SELECT id, status FROM users WHERE public_id = $1::uuid`,
+      [publicId]
+    ));
+  }
+
+  const owner = rows[0];
+  if (!owner) {
+    return { ok: false, status: 400, message: 'Owner user not found' };
+  }
+  const status = String(owner.status || '').trim().toLowerCase();
+  if (status && status !== 'active') {
+    return { ok: false, status: 400, message: 'Owner user is not active' };
+  }
+  return { ok: true, ownerUserId: Number(owner.id) };
 }
 
 /** Never cache responses that carry a plaintext secret. */
@@ -102,7 +174,9 @@ export function registerApiKeyRoutes(app, pool, audit) {
         label: p.label,
         description: p.description,
         permission_summary: p.permission_summary,
-        scopes: [...p.scopes]
+        scopes: [...p.scopes],
+        requires_owner: Boolean(p.requiresOwner),
+        is_mcp: isMcpAccessProfile(p.id)
       }))
     });
   });
@@ -112,8 +186,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
     try {
       const { rows } = await pool.query(
         `SELECT ${LIST_COLUMNS}
-         FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         ${LIST_FROM}
          WHERE k.deleted_at IS NULL
          ORDER BY k.created_at DESC`
       );
@@ -145,6 +218,11 @@ export function registerApiKeyRoutes(app, pool, audit) {
     }
 
     try {
+      const ownerResolved = await resolveOwnerForCreate(pool, profile, req.body);
+      if (!ownerResolved.ok) {
+        return res.status(ownerResolved.status).json({ message: ownerResolved.message });
+      }
+
       const rawKey = generateApiKeyForProfile(profile.id);
       const tokenHash = hashApiKey(rawKey);
       const scopes = scopesForAccessProfile(profile.id);
@@ -153,8 +231,8 @@ export function registerApiKeyRoutes(app, pool, audit) {
       const insertQ = await pool.query(
         `INSERT INTO published_feed_access_keys
            (feed_id, name, token_hash, key_type, key_prefix, last_four, scopes,
-            secret_ciphertext, secret_nonce, secret_tag, enabled, created_by)
-         VALUES (NULL, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11)
+            secret_ciphertext, secret_nonce, secret_tag, enabled, created_by, owner_user_id)
+         VALUES (NULL, $1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12)
          RETURNING id`,
         [
           name,
@@ -167,12 +245,12 @@ export function registerApiKeyRoutes(app, pool, audit) {
           nonce,
           tag,
           enabled,
-          req.user?.email || req.user?.username || null
+          req.user?.email || req.user?.username || null,
+          ownerResolved.ownerUserId
         ]
       );
       const { rows } = await pool.query(
-        `SELECT ${LIST_COLUMNS} FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id WHERE k.id = $1`,
+        `SELECT ${LIST_COLUMNS} ${LIST_FROM} WHERE k.id = $1`,
         [insertQ.rows[0].id]
       );
       const key = toPublicApiKey(rows[0]);
@@ -189,7 +267,9 @@ export function registerApiKeyRoutes(app, pool, audit) {
           key_type: profile.id,
           access_profile: profile.id,
           scopes,
-          masked_key: key.masked_key
+          masked_key: key.masked_key,
+          owner_user_id: ownerResolved.ownerUserId,
+          is_mcp: isMcpAccessProfile(profile.id)
         }
       });
 
@@ -208,8 +288,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
     try {
       const { rows } = await pool.query(
         `SELECT ${LIST_COLUMNS}, k.secret_ciphertext, k.secret_nonce, k.secret_tag
-         FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         ${LIST_FROM}
          WHERE k.id = $1 AND k.deleted_at IS NULL`,
         [keyId]
       );
@@ -264,8 +343,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
     try {
       const beforeQ = await pool.query(
         `SELECT ${LIST_COLUMNS}
-         FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         ${LIST_FROM}
          WHERE k.id = $1 AND k.deleted_at IS NULL`,
         [keyId]
       );
@@ -303,8 +381,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
       );
       const afterQ = await pool.query(
         `SELECT ${LIST_COLUMNS}
-         FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         ${LIST_FROM}
          WHERE k.id = $1`,
         [keyId]
       );
@@ -335,8 +412,7 @@ export function registerApiKeyRoutes(app, pool, audit) {
     try {
       const beforeQ = await pool.query(
         `SELECT ${LIST_COLUMNS}
-         FROM published_feed_access_keys k
-         LEFT JOIN published_feeds f ON f.id = k.feed_id
+         ${LIST_FROM}
          WHERE k.id = $1 AND k.deleted_at IS NULL`,
         [keyId]
       );

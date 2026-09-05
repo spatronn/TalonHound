@@ -114,6 +114,8 @@ export const AUDIT_ACTION = Object.freeze({
   // Per-IOC removal of a single manual/custom source membership (distinct from
   // deleting the source catalog entry or globally deleting the IOC).
   IOC_SOURCE_REMOVED: 'ioc.source_removed',
+  MCP_TOOL_CALL: 'mcp.tool_call',
+  MCP_IOC_IMPORT: 'mcp.ioc_import',
   IOC_SEARCH_EXPORT_CREATED: 'ioc.search_export.created',
   IOC_SEARCH_EXPORT_STARTED: 'ioc.search_export.started',
   IOC_SEARCH_EXPORT_COMPLETED: 'ioc.search_export.completed',
@@ -311,6 +313,8 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_SOURCE_MOVE_FAILED]: 'IOC Source Move Failed',
   [AUDIT_ACTION.IOC_SOURCE_ARCHIVED_AFTER_MOVE]: 'IOC Source Archived After Move',
   [AUDIT_ACTION.IOC_SOURCE_REMOVED]: 'IOC Removed From Source',
+  [AUDIT_ACTION.MCP_TOOL_CALL]: 'MCP Tool Call',
+  [AUDIT_ACTION.MCP_IOC_IMPORT]: 'MCP IOC Import',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_CREATED]: 'IOC Saved Search Created',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_UPDATED]: 'IOC Saved Search Updated',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_DELETED]: 'IOC Saved Search Deleted',

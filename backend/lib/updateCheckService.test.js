@@ -273,13 +273,13 @@ test('N2. Docker placeholder TALONHOUND_VERSION=dev compares using VERSION file 
   }, async () => {
     const service = createUpdateCheckService({
       fetchImpl: async () => jsonResponse(betaManifest({
-        latest: '0.1.1-beta.3',
-        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.3'
+        latest: '0.1.1-beta.4',
+        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.4'
       }))
     });
     const status = await service.check({ force: true });
-    assert.equal(status.currentVersion, '0.1.1-beta.3');
-    assert.equal(status.latestVersion, '0.1.1-beta.3');
+    assert.equal(status.currentVersion, '0.1.1-beta.4');
+    assert.equal(status.latestVersion, '0.1.1-beta.4');
     assert.equal(status.status, 'up_to_date');
   });
 });
@@ -292,15 +292,15 @@ test('N4. beta.2 install detects beta.3 update on beta channel', async () => {
   }, async () => {
     const service = createUpdateCheckService({
       fetchImpl: async () => jsonResponse(betaManifest({
-        latest: '0.1.1-beta.3',
-        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.3'
+        latest: '0.1.1-beta.4',
+        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.4'
       }))
     });
     const status = await service.check({ force: true });
     assert.equal(status.currentVersion, '0.1.0-beta.2');
-    assert.equal(status.latestVersion, '0.1.1-beta.3');
+    assert.equal(status.latestVersion, '0.1.1-beta.4');
     assert.equal(status.status, 'update_available');
-    assert.equal(status.releaseUrl, 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.3');
+    assert.equal(status.releaseUrl, 'https://github.com/spatronn/TalonHound/releases/tag/v0.1.1-beta.4');
   });
 });
 
