@@ -42,6 +42,64 @@ export const ACCESS_PROFILE_OPTIONS = Object.freeze([
 
 const MCP_OWNER_PROFILES = new Set(['mcp_read', 'mcp_analyst']);
 
+const OWNER_PUBLIC_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * GET /api/users returns the stable public UUID as `id` (see backend toPublicUser).
+ * Prefer `id`; accept `public_id` only as a defensive fallback.
+ */
+export function ownerPublicIdFromUser(user) {
+  const fromId = String(user?.id || '').trim();
+  if (OWNER_PUBLIC_ID_RE.test(fromId)) return fromId;
+  const fromPublic = String(user?.public_id || '').trim();
+  if (OWNER_PUBLIC_ID_RE.test(fromPublic)) return fromPublic;
+  return '';
+}
+
+export function ownerOptionLabel(user) {
+  const username = String(user?.username || '').trim() || 'unknown';
+  const role = String(user?.role || '').trim();
+  return role ? `${username} (${role})` : username;
+}
+
+/**
+ * Build <select> options so the visible label never becomes the submitted value.
+ * @returns {{ value: string, label: string, status: string }[]}
+ */
+export function buildOwnerSelectOptions(users) {
+  const list = Array.isArray(users) ? users : [];
+  const out = [];
+  const seen = new Set();
+  for (const user of list) {
+    const value = ownerPublicIdFromUser(user);
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push({
+      value,
+      label: ownerOptionLabel(user),
+      status: String(user?.status || 'active').trim().toLowerCase() || 'active'
+    });
+  }
+  return out;
+}
+
+export function accessProfileRequiresOwner(accessProfile) {
+  return MCP_OWNER_PROFILES.has(String(accessProfile || '').trim().toLowerCase());
+}
+
+/**
+ * Keep form.owner_public_id aligned with the selected MCP profile and available options.
+ * Clears owner when leaving MCP profiles; preserves a still-valid selection across MCP switches.
+ */
+export function nextOwnerPublicIdForProfileChange(previousOwnerPublicId, nextAccessProfile, ownerOptions) {
+  if (!accessProfileRequiresOwner(nextAccessProfile)) return '';
+  const prev = String(previousOwnerPublicId || '').trim();
+  const options = Array.isArray(ownerOptions) ? ownerOptions : [];
+  if (prev && options.some((o) => o.value === prev)) return prev;
+  return '';
+}
+
 export function apiKeyCreatePayload({
   name,
   accessProfile,

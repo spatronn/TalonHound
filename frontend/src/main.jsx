@@ -195,6 +195,9 @@ import {
   apiKeyCreatePayload,
   accessProfilePermissionSummary,
   accessProfileLabel,
+  accessProfileRequiresOwner,
+  buildOwnerSelectOptions,
+  nextOwnerPublicIdForProfileChange,
   API_DOCS_PATH,
   MCP_ENDPOINT_PATH,
   MCP_HELP_TEXT
@@ -6882,7 +6885,8 @@ function ApiKeysPage() {
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const mcpProfileSelected = form.access_profile === 'mcp_read' || form.access_profile === 'mcp_analyst';
+  const mcpProfileSelected = accessProfileRequiresOwner(form.access_profile);
+  const ownerSelectOptions = buildOwnerSelectOptions(ownerUsers);
 
   useEffect(() => {
     if (!toast) return undefined;
@@ -7213,7 +7217,15 @@ function ApiKeysPage() {
                         name="access_profile"
                         value={opt.id}
                         checked={form.access_profile === opt.id}
-                        onChange={() => setForm((x) => ({ ...x, access_profile: opt.id, owner_public_id: (opt.id === 'mcp_read' || opt.id === 'mcp_analyst') ? x.owner_public_id : '' }))}
+                        onChange={() => setForm((x) => ({
+                          ...x,
+                          access_profile: opt.id,
+                          owner_public_id: nextOwnerPublicIdForProfileChange(
+                            x.owner_public_id,
+                            opt.id,
+                            ownerSelectOptions
+                          )
+                        }))}
                         style={{ marginTop: 3 }}
                       />
                       <span>
@@ -7233,9 +7245,9 @@ function ApiKeysPage() {
                     style={ui.input}
                   >
                     <option value="">Select owner…</option>
-                    {ownerUsers.map((u) => (
-                      <option key={u.public_id || u.id} value={u.public_id}>
-                        {u.username} ({u.role})
+                    {ownerSelectOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
                     ))}
                   </select>

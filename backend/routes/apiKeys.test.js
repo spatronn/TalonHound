@@ -10,12 +10,39 @@ resetApiKeyEncryptionKeyCache();
 const ADMIN = { role: 'admin', id: 1, email: 'admin@example.com', username: 'admin@example.com' };
 const READONLY = { role: 'readonly', id: 2, email: 'ro@example.com', username: 'ro@example.com' };
 
-function createMockPool(store) {
+const OWNER_PUBLIC = '11111111-1111-4111-8111-111111111111';
+const OWNER_PUBLIC_B = '22222222-2222-4222-8222-222222222222';
+const DEFAULT_USERS = [
+  { id: 10, public_id: OWNER_PUBLIC, username: 'safa@safa.com', role: 'admin', status: 'active' },
+  { id: 11, public_id: OWNER_PUBLIC_B, username: 'analyst@x.com', role: 'analyst', status: 'active' },
+  { id: 12, public_id: '33333333-3333-4333-8333-333333333333', username: 'passive@x.com', role: 'admin', status: 'passive' }
+];
+
+function createMockPool(store, users = DEFAULT_USERS) {
   let seq = store.length + 1;
-  const view = (row) => ({ ...row, has_secret: row.secret_ciphertext != null });
+  const view = (row) => {
+    const owner = users.find((u) => u.id === row.owner_user_id) || null;
+    return {
+      ...row,
+      has_secret: row.secret_ciphertext != null,
+      owner_public_id: owner?.public_id ?? row.owner_public_id ?? null,
+      owner_username: owner?.username ?? row.owner_username ?? null,
+      owner_email: owner?.username ?? row.owner_email ?? null,
+      owner_role: owner?.role ?? row.owner_role ?? null
+    };
+  };
   return {
     async query(sql, params = []) {
       const s = String(sql);
+
+      if (s.includes('SELECT id, status FROM users WHERE id = $1')) {
+        const row = users.find((u) => u.id === Number(params[0]));
+        return { rows: row ? [{ id: row.id, status: row.status }] : [], rowCount: row ? 1 : 0 };
+      }
+      if (s.includes('SELECT id, status FROM users WHERE public_id = $1::uuid')) {
+        const row = users.find((u) => u.public_id === String(params[0]));
+        return { rows: row ? [{ id: row.id, status: row.status }] : [], rowCount: row ? 1 : 0 };
+      }
 
       if (s.includes('INSERT INTO published_feed_access_keys')) {
         const row = {
@@ -345,4 +372,88 @@ test('AUTH-07: GET /api/api-keys is admin-only (analyst/readonly forbidden)', as
   assert.ok(Array.isArray(adminList.body.api_keys));
   assert.equal(adminList.body.api_keys[0].token, undefined);
   assert.equal(adminList.body.api_keys[0].secret, undefined);
+});
+
+test('MCP create rejects missing owner', async () => {
+  const res = await req(makeApp([], () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'mcp-missing',
+    access_profile: 'mcp_analyst'
+  });
+  assert.equal(res.status, 400);
+  assert.match(res.body.message, /owner_user_id or owner_public_id is required/i);
+});
+
+test('MCP create rejects invalid owner_public_id (label/email/non-UUID)', async () => {
+  for (const bad of ['safa@safa.com (admin)', 'safa@safa.com', '10', 'not-a-uuid', '11111111-1111-1111-1111-111111111111']) {
+    const res = await req(makeApp([], () => ADMIN), 'POST', '/api/api-keys', {
+      name: 'mcp-bad-owner',
+      access_profile: 'mcp_read',
+      owner_public_id: bad
+    });
+    assert.equal(res.status, 400, bad);
+    assert.equal(res.body.message, 'owner_public_id must be a valid UUID');
+  }
+});
+
+test('MCP create rejects unknown and inactive owner UUID', async () => {
+  const unknown = await req(makeApp([], () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'mcp-unknown',
+    access_profile: 'mcp_read',
+    owner_public_id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'
+  });
+  assert.equal(unknown.status, 400);
+  assert.equal(unknown.body.message, 'Owner user not found');
+
+  const inactive = await req(makeApp([], () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'mcp-passive',
+    access_profile: 'mcp_analyst',
+    owner_public_id: '33333333-3333-4333-8333-333333333333'
+  });
+  assert.equal(inactive.status, 400);
+  assert.equal(inactive.body.message, 'Owner user is not active');
+});
+
+test('MCP Read + MCP Analyst create succeed with valid owner UUID', async () => {
+  const store = [];
+  const read = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'MCP Owner UUID Smoke Test Read',
+    access_profile: 'mcp_read',
+    owner_public_id: OWNER_PUBLIC
+  });
+  assert.equal(read.status, 201);
+  assert.ok(read.body.token.startsWith('th_mcp_'));
+  assert.equal(read.body.api_key.key_type, 'mcp_read');
+  assert.equal(read.body.api_key.owner_public_id, OWNER_PUBLIC);
+  assert.equal(read.body.api_key.owner_username, 'safa@safa.com');
+  assert.equal(store[0].owner_user_id, 10);
+  assert.ok(!JSON.stringify(read.body.api_key).includes(read.body.token));
+
+  const analyst = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', {
+    name: 'MCP Owner UUID Smoke Test Analyst',
+    access_profile: 'mcp_analyst',
+    owner_public_id: OWNER_PUBLIC_B
+  });
+  assert.equal(analyst.status, 201);
+  assert.equal(analyst.body.api_key.key_type, 'mcp_analyst');
+  assert.equal(analyst.body.api_key.owner_public_id, OWNER_PUBLIC_B);
+  assert.deepEqual(analyst.body.api_key.scopes, [
+    'mcp:ioc:read',
+    'mcp:ioc:create',
+    'mcp:sources:read',
+    'mcp:enrichment:read'
+  ]);
+});
+
+test('non-MCP profiles ignore owner fields and still create', async () => {
+  const store = [];
+  for (const profile of ['published_feed', 'ioc_management', 'ioc_read']) {
+    const res = await req(makeApp(store, () => ADMIN), 'POST', '/api/api-keys', {
+      name: `no-owner-${profile}`,
+      access_profile: profile,
+      owner_public_id: OWNER_PUBLIC
+    });
+    assert.equal(res.status, 201, profile);
+    assert.equal(res.body.api_key.key_type, profile);
+    assert.equal(res.body.api_key.owner_public_id, undefined);
+  }
 });

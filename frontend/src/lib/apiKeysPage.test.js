@@ -6,10 +6,18 @@ import {
   apiKeyCreatePayload,
   accessProfilePermissionSummary,
   accessProfileLabel,
+  accessProfileRequiresOwner,
+  buildOwnerSelectOptions,
+  nextOwnerPublicIdForProfileChange,
+  ownerPublicIdFromUser,
+  ownerOptionLabel,
   API_DOCS_PATH,
   MCP_ENDPOINT_PATH,
   MCP_HELP_TEXT
 } from './apiKeysPage.js';
+
+const OWNER_A = '11111111-1111-4111-8111-111111111111';
+const OWNER_B = '22222222-2222-4222-8222-222222222222';
 
 test('page description is generic (not Published Feed-only)', () => {
   assert.match(API_KEYS_PAGE_DESCRIPTION, /programmatic access/i);
@@ -30,6 +38,84 @@ test('five fixed access profiles are exposed including MCP', () => {
   assert.match(mcpAnalyst.description, /owner/i);
 });
 
+test('owner dropdown uses users API public UUID (id), never label/email', () => {
+  // GET /api/users exposes public UUID as `id` via toPublicUser — not `public_id`.
+  const usersApiShape = [
+    { id: OWNER_A, username: 'safa@safa.com', role: 'admin', status: 'active' },
+    { id: OWNER_B, username: 'analyst@x.com', role: 'analyst', status: 'active' },
+    { id: 'not-a-uuid', username: 'bad', role: 'admin', status: 'active' },
+    { public_id: '33333333-3333-4333-8333-333333333333', username: 'legacy', role: 'admin', status: 'active' }
+  ];
+  assert.equal(ownerPublicIdFromUser(usersApiShape[0]), OWNER_A);
+  assert.equal(ownerOptionLabel(usersApiShape[0]), 'safa@safa.com (admin)');
+  assert.equal(ownerPublicIdFromUser({ username: 'safa@safa.com', role: 'admin' }), '');
+
+  const options = buildOwnerSelectOptions(usersApiShape);
+  assert.deepEqual(options.map((o) => o.value), [OWNER_A, OWNER_B, '33333333-3333-4333-8333-333333333333']);
+  assert.equal(options[0].label, 'safa@safa.com (admin)');
+  assert.notEqual(options[0].value, options[0].label);
+  assert.doesNotMatch(options[0].value, /@/);
+});
+
+test('visible owner selection stays aligned with form owner_public_id state', () => {
+  const options = buildOwnerSelectOptions([
+    { id: OWNER_A, username: 'safa@safa.com', role: 'admin', status: 'active' },
+    { id: OWNER_B, username: 'analyst@x.com', role: 'analyst', status: 'active' }
+  ]);
+
+  // Initial MCP open: placeholder selected — form state empty, not first option.
+  let ownerPublicId = nextOwnerPublicIdForProfileChange('', 'mcp_analyst', options);
+  assert.equal(ownerPublicId, '');
+
+  // Explicit select updates the UUID that will be posted.
+  ownerPublicId = options[0].value;
+  assert.equal(ownerPublicId, OWNER_A);
+
+  const mcpRead = apiKeyCreatePayload({
+    name: 'MCP Owner UUID Smoke Test',
+    accessProfile: 'mcp_read',
+    ownerPublicId
+  });
+  assert.equal(mcpRead.ok, true);
+  assert.equal(mcpRead.body.owner_public_id, OWNER_A);
+  assert.equal(mcpRead.body.access_profile, 'mcp_read');
+
+  const mcpAnalyst = apiKeyCreatePayload({
+    name: 'MCP Owner UUID Smoke Test',
+    accessProfile: 'mcp_analyst',
+    ownerPublicId: options[1].value
+  });
+  assert.equal(mcpAnalyst.ok, true);
+  assert.equal(mcpAnalyst.body.owner_public_id, OWNER_B);
+  assert.equal(mcpAnalyst.body.access_profile, 'mcp_analyst');
+});
+
+test('profile switching does not leave stale or label owner_public_id', () => {
+  const options = buildOwnerSelectOptions([
+    { id: OWNER_A, username: 'safa@safa.com', role: 'admin', status: 'active' },
+    { id: OWNER_B, username: 'analyst@x.com', role: 'analyst', status: 'active' }
+  ]);
+
+  let owner = OWNER_A;
+  owner = nextOwnerPublicIdForProfileChange(owner, 'published_feed', options);
+  assert.equal(owner, '');
+
+  owner = nextOwnerPublicIdForProfileChange(owner, 'mcp_analyst', options);
+  assert.equal(owner, '');
+
+  owner = OWNER_A;
+  owner = nextOwnerPublicIdForProfileChange(owner, 'mcp_read', options);
+  assert.equal(owner, OWNER_A);
+
+  owner = OWNER_B;
+  owner = nextOwnerPublicIdForProfileChange(owner, 'mcp_analyst', options);
+  assert.equal(owner, OWNER_B);
+
+  // Stale / label-as-value must not survive a profile change.
+  owner = nextOwnerPublicIdForProfileChange('safa@safa.com (admin)', 'mcp_analyst', options);
+  assert.equal(owner, '');
+});
+
 test('create payload maps profile selection correctly', () => {
   const pf = apiKeyCreatePayload({ name: 'fw-1', accessProfile: 'published_feed' });
   assert.equal(pf.ok, true);
@@ -47,6 +133,12 @@ test('create payload maps profile selection correctly', () => {
 
   const bad = apiKeyCreatePayload({ name: '', accessProfile: 'published_feed' });
   assert.equal(bad.ok, false);
+
+  assert.equal(accessProfileRequiresOwner('mcp_read'), true);
+  assert.equal(accessProfileRequiresOwner('mcp_analyst'), true);
+  assert.equal(accessProfileRequiresOwner('published_feed'), false);
+  assert.equal(accessProfileRequiresOwner('ioc_management'), false);
+  assert.equal(accessProfileRequiresOwner('ioc_read'), false);
 });
 
 test('MCP create payload requires owner binding', () => {
@@ -66,10 +158,10 @@ test('MCP create payload requires owner binding', () => {
   const byPublic = apiKeyCreatePayload({
     name: 'mcp-2',
     accessProfile: 'mcp_analyst',
-    ownerPublicId: '11111111-1111-4111-8111-111111111111'
+    ownerPublicId: OWNER_A
   });
   assert.equal(byPublic.ok, true);
-  assert.equal(byPublic.body.owner_public_id, '11111111-1111-4111-8111-111111111111');
+  assert.equal(byPublic.body.owner_public_id, OWNER_A);
   assert.equal(byPublic.body.access_profile, 'mcp_analyst');
 });
 
