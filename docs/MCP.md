@@ -229,6 +229,43 @@ Audit metadata typically includes API key id/name, access profile, owner user id
 - **Prompt injection:** treat model-proposed imports as untrusted. Always dry-run, review `source_id`, and prefer human confirmation before write. IOC **values** and optional `note` strings may originate from hostile documents — they are stored as data, not executed as code, but they can pollute inventory if imported blindly.
 - **Secrets:** never paste live `th_mcp_` keys into chats, tickets, or documentation. Revoke compromised keys immediately.
 
+## TLS trust for MCP clients
+
+Certificate trust and MCP authentication are separate:
+
+- **Auth** always uses a TalonHound MCP API key (`Authorization: Bearer th_mcp_…`).
+- **TLS** is the same HTTPS certificate that protects the TalonHound web UI and API (`https://<host>/mcp`).
+
+### Case 1 — certificate already trusted by the client OS/runtime
+
+Connect directly:
+
+`https://<talonhound-host>/mcp`
+
+with the MCP API key. No extra TLS configuration is required.
+
+### Case 2 — TalonHound self-signed certificate
+
+1. Open **Settings → TLS Certificate** (Administration) in the TalonHound UI.
+2. Click **Download Public Certificate** (`talonhound-certificate.pem`). The private key is never downloadable.
+3. Configure the MCP client/runtime to trust that public certificate.
+4. Connect directly to `https://<talonhound-host>/mcp`.
+5. Authenticate with the existing MCP API key.
+
+Example for Node-based clients (including Claude Code toolchains that honor Node CA settings):
+
+```bash
+export NODE_EXTRA_CA_CERTS=/path/to/talonhound-certificate.pem
+```
+
+Do **not** disable TLS verification:
+
+- `NODE_TLS_REJECT_UNAUTHORIZED=0`
+- `curl -k` / `--insecure`
+- localhost TLS bypass proxies
+
+Only the System Administrator can **replace** the active certificate. Admins can view status and download the public certificate.
+
 ## Client configuration
 
 Placeholders only — replace host and token with your values. Do not commit real keys.

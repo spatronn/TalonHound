@@ -190,6 +190,13 @@ import {
 } from './lib/auditLogRetentionUi.js';
 import { canChangeSystemTimezone, formatCurrentUtc, formatCurrentSystemTime } from './lib/systemTimezoneUi.js';
 import {
+  formatTlsStatusLabel,
+  tlsStatusTone,
+  canReplaceTlsCertificate,
+  describeTlsSource,
+  readPemFile
+} from './lib/tlsCertificateUi.js';
+import {
   API_KEYS_PAGE_DESCRIPTION,
   ACCESS_PROFILE_OPTIONS,
   apiKeyCreatePayload,
@@ -9864,6 +9871,14 @@ function AdministrationSettingsPage() {
   const [updateStatus, setUpdateStatus] = useState(null);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateError, setUpdateError] = useState('');
+  const [tlsInfo, setTlsInfo] = useState(null);
+  const [tlsError, setTlsError] = useState('');
+  const [tlsSuccess, setTlsSuccess] = useState('');
+  const [tlsReplaceOpen, setTlsReplaceOpen] = useState(false);
+  const [tlsCertFile, setTlsCertFile] = useState(null);
+  const [tlsKeyFile, setTlsKeyFile] = useState(null);
+  const [tlsChainFile, setTlsChainFile] = useState(null);
+  const [tlsSaving, setTlsSaving] = useState(false);
 
   async function loadProductVersion() {
     try {
@@ -9915,6 +9930,75 @@ function AdministrationSettingsPage() {
     loadTimezone().catch(() => {});
     loadProductVersion().catch(() => {});
   }, []);
+
+  async function loadTlsCertificate() {
+    if (!isAdmin) return;
+    try {
+      const { data } = await api.get('/system/tls-certificate');
+      setTlsInfo(data);
+      setTlsError('');
+    } catch (err) {
+      setTlsInfo(null);
+      setTlsError(apiErrorMessage(err, 'Failed to load TLS certificate status'));
+    }
+  }
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadTlsCertificate().catch(() => {});
+  }, [isAdmin]);
+
+  async function downloadPublicTlsCertificate() {
+    setTlsError('');
+    setTlsSuccess('');
+    try {
+      const res = await api.get('/system/tls-certificate/public', { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'application/x-pem-file' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'talonhound-certificate.pem';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setTlsSuccess('Public certificate downloaded.');
+    } catch (err) {
+      setTlsError(apiErrorMessage(err, 'Failed to download public certificate'));
+    }
+  }
+
+  async function replaceTlsCertificate() {
+    if (!canReplaceTlsCertificate(tlsInfo) || tlsSaving) return;
+    setTlsError('');
+    setTlsSuccess('');
+    if (!tlsCertFile || !tlsKeyFile) {
+      setTlsError('Certificate and private key PEM files are required.');
+      return;
+    }
+    setTlsSaving(true);
+    try {
+      const certificate_pem = await readPemFile(tlsCertFile);
+      const private_key_pem = await readPemFile(tlsKeyFile);
+      const chain_pem = tlsChainFile ? await readPemFile(tlsChainFile) : undefined;
+      const { data } = await api.post('/system/tls-certificate', {
+        certificate_pem,
+        private_key_pem,
+        chain_pem: chain_pem || undefined
+      });
+      setTlsInfo(data);
+      setTlsReplaceOpen(false);
+      setTlsCertFile(null);
+      setTlsKeyFile(null);
+      setTlsChainFile(null);
+      setTlsSuccess('TLS certificate replaced and proxy reloaded.');
+      feedback.success('TLS certificate updated');
+    } catch (err) {
+      setTlsError(apiErrorMessage(err, 'Failed to replace TLS certificate'));
+    } finally {
+      setTlsSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (!canManageUpdates) return;
@@ -10273,6 +10357,119 @@ function AdministrationSettingsPage() {
             </pre>
           ) : null}
         </div>
+
+        {isAdmin ? (
+          <div style={{ ...ui.formPanel, marginTop: 16 }}>
+            <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>TLS Certificate</h2>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+              HTTPS certificate for the TalonHound web UI, API, and MCP endpoint.
+              Use this public certificate when a client needs to explicitly trust TalonHound&apos;s
+              self-signed HTTPS certificate.
+            </p>
+            {tlsInfo ? (
+              <div style={{ fontSize: 14, marginBottom: 12, lineHeight: 1.55 }}>
+                <div>
+                  <strong>Status:</strong>{' '}
+                  <span style={{
+                    color: tlsStatusTone(tlsInfo.status) === 'ok' ? '#86efac'
+                      : tlsStatusTone(tlsInfo.status) === 'warn' ? '#fbbf24'
+                        : tlsStatusTone(tlsInfo.status) === 'error' ? '#fca5a5' : '#94a3b8'
+                  }}>
+                    {formatTlsStatusLabel(tlsInfo.status)}
+                  </span>
+                </div>
+                <div><strong>Issued To:</strong> {tlsInfo.subject_cn || tlsInfo.subject || '—'}</div>
+                <div><strong>Issuer:</strong> {tlsInfo.issuer_cn || tlsInfo.issuer || '—'}</div>
+                <div><strong>Valid From:</strong> {tlsInfo.valid_from ? formatUserDateTime(tlsInfo.valid_from) : '—'}</div>
+                <div><strong>Valid Until:</strong> {tlsInfo.valid_until ? formatUserDateTime(tlsInfo.valid_until) : '—'}</div>
+                <div>
+                  <strong>Subject Alternative Names:</strong>{' '}
+                  {[...(tlsInfo.dns_names || []), ...(tlsInfo.ip_addresses || [])].join(', ') || '—'}
+                </div>
+                <div style={{ wordBreak: 'break-all' }}>
+                  <strong>Fingerprint (SHA-256):</strong> {tlsInfo.fingerprint_sha256 || '—'}
+                </div>
+                <div><strong>Key algorithm:</strong> {tlsInfo.key_algorithm || '—'}</div>
+                <div><strong>Certificate Source:</strong> {describeTlsSource(tlsInfo.source)}</div>
+                {tlsStatusTone(tlsInfo.status) === 'warn' ? (
+                  <div style={{ marginTop: 10, color: '#fbbf24' }}>
+                    This certificate expires soon. Plan a replacement before it becomes invalid.
+                  </div>
+                ) : null}
+                {tlsStatusTone(tlsInfo.status) === 'error' ? (
+                  <div style={{ marginTop: 10, color: '#fca5a5' }}>
+                    This certificate is not valid for new TLS connections. Replace it as soon as possible.
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <p style={{ fontSize: 13, color: '#94a3b8' }}>
+                {tlsError || 'Certificate metadata is unavailable.'}
+              </p>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+              <button type="button" style={ui.btnPrimary} onClick={() => downloadPublicTlsCertificate().catch(() => {})}>
+                Download Public Certificate
+              </button>
+              {canReplaceTlsCertificate(tlsInfo) ? (
+                <button type="button" onClick={() => { setTlsReplaceOpen((v) => !v); setTlsError(''); setTlsSuccess(''); }}>
+                  {tlsReplaceOpen ? 'Cancel Replace' : 'Replace Certificate'}
+                </button>
+              ) : (
+                <span style={{ fontSize: 13, color: '#94a3b8', alignSelf: 'center' }}>
+                  Only the System Administrator can replace the TLS certificate.
+                </span>
+              )}
+            </div>
+            {tlsReplaceOpen && canReplaceTlsCertificate(tlsInfo) ? (
+              <div style={{ marginTop: 14, border: '1px solid #334155', borderRadius: 8, padding: 14, background: '#0b1220' }}>
+                <p style={{ marginTop: 0, color: '#fde68a', fontSize: 13, lineHeight: 1.5 }}>
+                  Upload PEM files only. The private key is validated, then written with restricted permissions
+                  and never returned by the API. A failed activation restores the previous certificate.
+                </p>
+                <label style={ui.label}>Server certificate (PEM) *</label>
+                <input
+                  type="file"
+                  accept=".pem,.crt,.cer,application/x-pem-file,application/x-x509-ca-cert,text/plain"
+                  onChange={(e) => setTlsCertFile(e.target.files?.[0] || null)}
+                  style={{ ...ui.input, maxWidth: 420, marginBottom: 10 }}
+                />
+                <label style={ui.label}>Private key (PEM) *</label>
+                <input
+                  type="file"
+                  accept=".pem,.key,application/x-pem-file,text/plain"
+                  onChange={(e) => setTlsKeyFile(e.target.files?.[0] || null)}
+                  style={{ ...ui.input, maxWidth: 420, marginBottom: 10 }}
+                />
+                <label style={ui.label}>Certificate chain / intermediates (PEM, optional)</label>
+                <input
+                  type="file"
+                  accept=".pem,.crt,.cer,application/x-pem-file,text/plain"
+                  onChange={(e) => setTlsChainFile(e.target.files?.[0] || null)}
+                  style={{ ...ui.input, maxWidth: 420, marginBottom: 12 }}
+                />
+                <button
+                  type="button"
+                  style={ui.btnPrimary}
+                  disabled={tlsSaving || !tlsCertFile || !tlsKeyFile}
+                  onClick={() => replaceTlsCertificate().catch(() => {})}
+                >
+                  {tlsSaving ? 'Validating & applying…' : 'Apply Certificate'}
+                </button>
+              </div>
+            ) : null}
+            {tlsError ? (
+              <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #7f1d1d', color: '#fca5a5', background: 'rgba(127,29,29,0.2)', fontSize: 13 }}>
+                {tlsError}
+              </div>
+            ) : null}
+            {tlsSuccess ? (
+              <div style={{ marginTop: 12, padding: '8px 10px', borderRadius: 8, border: '1px solid #166534', color: '#86efac', background: 'rgba(22,101,52,0.2)', fontSize: 13 }}>
+                {tlsSuccess}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {isAdmin && retention ? (
           <div style={{ ...ui.formPanel, marginTop: 16 }}>

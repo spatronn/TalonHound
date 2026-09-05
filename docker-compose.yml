@@ -157,6 +157,8 @@ services:
       # so a 5m feed is not delayed by a second full tick (~10m effective cadence).
       - PUBLISHED_FEED_TICK_MS=${PUBLISHED_FEED_TICK_MS:-60000}
       - PUBLISHED_FEED_STORAGE_DIR=/data/published-feeds
+      # Shared with proxy for System Administrator TLS certificate management.
+      - TLS_CERT_DIR=/etc/talonhound/certs
     depends_on:
       - db
       - redis
@@ -164,6 +166,8 @@ services:
       - backup_data:/data/backups
       - ioc_export_data:/data/ioc-search-exports
       - published_feed_data:/data/published-feeds
+      # Shared with proxy for System Administrator TLS certificate management.
+      - ./proxy/certs:/etc/talonhound/certs
     healthcheck:
       test:
         [

@@ -157,6 +157,7 @@ import { applySessionTimezoneToPool } from './lib/pgSessionTimezone.js';
 import { registerSetupRoutes, createSetupGate } from './routes/setup.js';
 import { registerSystemVersionRoutes } from './routes/systemVersion.js';
 import { registerSystemUpdatesRoutes } from './routes/systemUpdates.js';
+import { registerSystemTlsCertificateRoutes } from './routes/systemTlsCertificate.js';
 import { updateCheckService } from './lib/updateCheckService.js';
 import { createServiceLogger } from './lib/appLogger.js';
 import { setSystemScheduleTimezoneOverride } from './lib/integrationSchedule.js';
@@ -2894,6 +2895,7 @@ app.put('/api/users/me/preferences', async (req, res) => {
 registerUserManagementRoutes(app, pool, auditLogService);
 registerSystemVersionRoutes(app);
 registerSystemUpdatesRoutes(app, { pool, auditLogService, updateCheck: updateCheckService });
+registerSystemTlsCertificateRoutes(app, { pool, audit: auditLogService });
 registerSetupRoutes(app, pool, {
   audit: auditLogService,
   onTimezoneChanged: async (tz, meta = {}) => {

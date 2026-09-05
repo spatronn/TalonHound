@@ -137,6 +137,8 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_BULK_QUERY_FAILED: 'ioc.bulk_query.failed',
   SETTINGS_UPDATED: 'settings.updated',
   UPDATE_CHECK_REQUESTED: 'system.update_check.requested',
+  TLS_CERTIFICATE_REPLACED: 'system.tls_certificate.replaced',
+  TLS_CERTIFICATE_DOWNLOADED: 'system.tls_certificate.downloaded',
   ENRICHMENT_SETTINGS_UPDATED: 'enrichment.settings.updated',
   ENRICHMENT_KEY_REMOVED: 'enrichment.key.removed',
   RDAP_ENRICHMENT_REQUESTED: 'enrichment.rdap.requested',
