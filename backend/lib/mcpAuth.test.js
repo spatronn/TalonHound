@@ -12,8 +12,9 @@ function makeRes() {
   return {
     get statusCode() { return statusCode; },
     get body() { return body; },
-    set(name, value) { headers[name] = value; return this; },
-    getHeader(name) { return headers[String(name).toLowerCase()] || headers[name]; },
+    set(name, value) { headers[String(name).toLowerCase()] = value; return this; },
+    setHeader(name, value) { headers[String(name).toLowerCase()] = value; return this; },
+    getHeader(name) { return headers[String(name).toLowerCase()]; },
     status(code) { statusCode = code; return this; },
     json(payload) { body = payload; return this; }
   };
