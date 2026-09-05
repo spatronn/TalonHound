@@ -417,10 +417,10 @@ test('createManualIoc takes advisory xact lock before INSERT', async () => {
     confidence: 'high'
   });
   assert.equal(result.status, 201);
-  assert.deepEqual(
-    events.filter((e) => ['BEGIN', 'LOCK', 'INSERT', 'COMMIT'].includes(e)),
-    ['BEGIN', 'LOCK', 'INSERT', 'COMMIT']
-  );
+  const core = events.filter((e) => ['BEGIN', 'LOCK', 'INSERT', 'COMMIT'].includes(e));
+  // Create path must lock before insert; later lifecycle recompute may open another txn.
+  assert.deepEqual(core.slice(0, 4), ['BEGIN', 'LOCK', 'INSERT', 'COMMIT']);
+  assert.ok(core.indexOf('LOCK') < core.indexOf('INSERT'));
 });
 
 test('concurrent createManualIoc serializes on advisory lock', async () => {
