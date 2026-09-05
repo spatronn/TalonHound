@@ -157,6 +157,33 @@ export async function fetchIocThreatClassificationSlugs(pool, iocId, observableT
   return map.get(iocPairKey(iocId, observableType)) || [];
 }
 
+/**
+ * Effective analyst classification slugs for one IOC: the multi-select junction
+ * table when it has rows, otherwise the legacy single-value
+ * `ioc_items.threat_classification` column (written by ingestion / pre-multi
+ * flows). Mirrors the list + details fallback (`mergeIocThreatMetadataItem`,
+ * `resolveAnalystAdditionSlugs`) so an IOC whose classification lives only in
+ * the legacy column is not reported as unclassified. Pass
+ * `legacyThreatClassification` (the row's column value) to avoid a second read
+ * when the caller already holds the row; when it is null/undefined the column
+ * is fetched on demand. Feed-only classifications and analyst suppressions are
+ * NOT applied here — this is the analyst/native slug set, not the full
+ * effective computation used when feed classifications are present.
+ */
+export async function loadEffectiveIocClassificationSlugs(pool, iocId, observableType, legacyThreatClassification) {
+  const junction = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+  if (junction.length) return junction;
+  let legacy = legacyThreatClassification;
+  if (legacy == null) {
+    const { rows } = await pool.query(
+      `SELECT threat_classification FROM ioc_items WHERE id = $1 AND observable_type = $2 LIMIT 1`,
+      [iocId, observableType]
+    );
+    legacy = rows[0]?.threat_classification ?? null;
+  }
+  return normalizeIocThreatClassificationSlugs(legacy);
+}
+
 export async function replaceIocThreatClassifications(pool, {
   iocId,
   observableType,

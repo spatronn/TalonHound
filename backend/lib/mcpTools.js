@@ -117,7 +117,9 @@ export function registerMcpTools(server, deps) {
     {
       title: 'Lookup IOC',
       description:
-        'Exact lookup of a single observable in TalonHound. Provide the raw value; type is optional because TalonHound detects and normalizes it. Returns found/not found with identity, status, classifications, sources, and tags.',
+        'Exact lookup of a single observable in TalonHound. Provide the raw value; type is optional because TalonHound detects and normalizes it. '
+        + 'Returns found/not found with identity, status, confidence, sources, and the IOC\'s TalonHound classifications (slugs) and tags (names) as shown on the IOC Details page — tags include source-integration/feed tags, not only analyst-added ones. '
+        + 'An empty classifications/tags array means TalonHound holds none for this IOC. For per-source provenance and stored enrichment, call get_ioc_context.',
       inputSchema: {
         value: z.string().min(1).max(config.valueMaxChars).describe('IOC value (IP, domain, URL, or hash)'),
         type: z.enum(['ip', 'domain', 'url', 'hash']).optional().describe('Optional explicit IOC type')
@@ -160,7 +162,7 @@ export function registerMcpTools(server, deps) {
     {
       title: 'Get IOC context',
       description:
-        'Return analyst-facing TalonHound context for one IOC (identity, classifications, sources, tags, and stored enrichment when the credential has mcp:enrichment:read). Does not trigger paid/external enrichment.',
+        'Return analyst-facing TalonHound context for one IOC. Includes native TalonHound classifications and tags (with tags_detail carrying per-tag origin: analyst `manual` vs source `integration`/`feed`), sources, and — kept separate under `source_intelligence` so provenance is never ambiguous — the source/feed-provided feed_tags, feed_classifications, and parsed malware/family/threat_type labels. Also returns stored enrichment when the credential has mcp:enrichment:read. Does not trigger paid/external enrichment.',
       inputSchema: {
         value: z.string().min(1).max(config.valueMaxChars).optional(),
         type: z.enum(['ip', 'domain', 'url', 'hash']).optional(),

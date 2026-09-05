@@ -2,7 +2,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import {
   buildMultiThreatClassificationResponseFields,
   diffThreatClassificationSlugs,
-  fetchIocThreatClassificationSlugs,
+  loadEffectiveIocClassificationSlugs,
   loadIocThreatClassificationDetails,
   mergeIocThreatMetadataItem,
   normalizeIocThreatClassificationSlugs,
@@ -107,21 +107,7 @@ async function resolveAnalystAdditionSlugs(pool, iocId, observableType, {
   if (analystSlugs != null) {
     return normalizeIocThreatClassificationSlugs(analystSlugs);
   }
-  const junction = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
-  if (junction.length) return junction;
-
-  let legacy = legacyThreatClassification;
-  if (legacy == null) {
-    const { rows } = await pool.query(
-      `SELECT threat_classification
-       FROM ioc_items
-       WHERE id = $1 AND observable_type = $2
-       LIMIT 1`,
-      [iocId, observableType]
-    );
-    legacy = rows[0]?.threat_classification ?? null;
-  }
-  return normalizeIocThreatClassificationSlugs(legacy);
+  return loadEffectiveIocClassificationSlugs(pool, iocId, observableType, legacyThreatClassification);
 }
 
 async function buildEffectiveClassificationBundle(pool, iocId, observableType, {

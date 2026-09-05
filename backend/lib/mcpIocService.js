@@ -7,13 +7,15 @@ import {
   normalizeApiIocValue,
   parseApiIocType,
   toApiIocResponse,
-  loadManualTags
+  loadCatalogTags
 } from './apiIocService.js';
 import { getApiIoc, searchApiIocs, clampApiIocPageSize } from './apiIocReadService.js';
 import { createManualIoc, inferObservableType } from './manualIocCreate.js';
 import { isIocSourceSelectable, resolveIocSourceState } from './iocSourceLifecycle.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
-import { fetchIocThreatClassificationSlugs } from './iocThreatClassifications.js';
+import { loadEffectiveIocClassificationSlugs } from './iocThreatClassifications.js';
+import { fetchFeedSourceEvidenceForItems } from './iocFeedSourceEvidence.js';
+import { buildFeedIntelligence } from './feedTagNormalization.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 import { getMcpConfig } from './mcpConfig.js';
 import { effectiveMcpCapabilities } from './mcpPermissions.js';
@@ -177,9 +179,13 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
     };
   }
 
+  // classifications: junction table with legacy-column fallback (feed imports
+  // store the classification only on ioc_items.threat_classification).
+  // tags: all enabled catalog assignments, not just origin='manual' — source
+  // integration/feed tags are the ones the IOC Details UI shows.
   const [classifications, tags, sources] = await Promise.all([
-    fetchIocThreatClassificationSlugs(pool, existing.id, existing.observable_type),
-    loadManualTags(pool, existing.id, existing.observable_type),
+    loadEffectiveIocClassificationSlugs(pool, existing.id, existing.observable_type, existing.threat_classification),
+    loadCatalogTags(pool, existing.id, existing.observable_type),
     loadIocSourcesForObservable(pool, existing.observable_type, existing.observable)
   ]);
 
@@ -350,7 +356,38 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   if (rowOutcome.error) return rowOutcome;
 
   const body = rowOutcome.body;
-  const sources = await loadIocSourcesForObservable(pool, body.type, body.value);
+
+  // Recompute native classifications/tags — getApiIoc uses the junction-only +
+  // origin='manual' loaders (public v1 contract), which drop feed-imported
+  // classifications (legacy column) and integration/feed tags. MCP must match
+  // the IOC Details UI, so use the effective-classification + all-origin
+  // catalog-tag loaders here.
+  const [classificationSlugs, catalogTags, sources] = await Promise.all([
+    loadEffectiveIocClassificationSlugs(pool, body.id, body.type),
+    loadCatalogTags(pool, body.id, body.type),
+    loadIocSourcesForObservable(pool, body.type, body.value)
+  ]);
+
+  // source_intelligence: source-/feed-provided context, kept SEPARATE from the
+  // native TalonHound classifications/tags above so provenance is never
+  // ambiguous. feed_tags/feed_classifications carry origin + source_name;
+  // labels expose parsed malware/family/threat_type metadata from the feed note.
+  let sourceIntelligence = { feed_tags: [], feed_classifications: [], labels: [] };
+  try {
+    const evidence = await fetchFeedSourceEvidenceForItems(pool, {
+      iocItemIds: [body.id],
+      observableType: body.type
+    });
+    const fi = buildFeedIntelligence(evidence);
+    sourceIntelligence = {
+      feed_tags: fi.tags,
+      feed_classifications: fi.classifications,
+      labels: fi.source_metadata
+    };
+  } catch (err) {
+    // ioc_feed_source_evidence may be absent on older schemas — non-fatal.
+    if (!String(err?.message || '').includes('ioc_feed_source_evidence')) throw err;
+  }
 
   let enrichment = undefined;
   if (caps.enrichment_read) {
@@ -380,12 +417,18 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       type: body.type,
       status: body.status,
       confidence: body.confidence,
-      classifications: body.classifications || [],
-      tags: body.tags || [],
+      // Native TalonHound classification (effective analyst slugs).
+      classifications: classificationSlugs,
+      // Native TalonHound tag names shown on the IOC (analyst + source-integration).
+      tags: catalogTags.map((t) => t.name),
+      // Same tags with provenance so analyst-authored vs source-provided is explicit.
+      tags_detail: catalogTags,
       note: body.note,
       first_seen: body.created_at,
       last_seen: body.created_at,
       sources,
+      // Source-/feed-provided intelligence, kept distinct from native fields above.
+      source_intelligence: sourceIntelligence,
       enrichment: enrichment === undefined ? undefined : enrichment,
       enrichment_included: caps.enrichment_read
     }

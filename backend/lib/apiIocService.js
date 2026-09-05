@@ -254,6 +254,39 @@ export async function loadManualTags(pool, iocId, observableType) {
 }
 
 /**
+ * All enabled catalog tag assignments for an IOC, regardless of assignment
+ * origin (analyst `manual` tags AND source-provided `integration`/`feed` tags),
+ * deduped by tag name with the distinct origins aggregated. Unlike
+ * loadManualTags (origin='manual' only, kept for the public v1 API contract),
+ * this reflects every tag the IOC Details UI shows, so an IOC tagged only by an
+ * ingestion feed is not reported as untagged. `origin` is the primary
+ * provenance ('manual' wins when present, else the first origin) so a consumer
+ * can distinguish analyst-authored tags from source-provided ones. Single
+ * grouped query — no N+1.
+ */
+export async function loadCatalogTags(pool, iocId, observableType) {
+  const { rows } = await pool.query(
+    `SELECT t.name, t.type,
+            array_agg(DISTINCT it.origin) AS origins,
+            (array_agg(it.source_name ORDER BY it.origin)
+               FILTER (WHERE it.source_name IS NOT NULL))[1] AS source_name
+     FROM ioc_tags it
+     JOIN tags t ON t.id = it.tag_id
+     WHERE it.ioc_id = $1
+       AND it.ioc_observable_type = $2
+       AND t.enabled = TRUE
+     GROUP BY t.name, t.type
+     ORDER BY t.name ASC`,
+    [iocId, observableType]
+  );
+  return rows.map((r) => {
+    const origins = (Array.isArray(r.origins) ? r.origins.filter(Boolean) : []).sort();
+    const origin = origins.includes('manual') ? 'manual' : (origins[0] || 'manual');
+    return { name: r.name, type: r.type || null, origin, origins, source_name: r.source_name || null };
+  });
+}
+
+/**
  * Create (or return existing) IOC via shared domain logic.
  * @returns {Promise<{ status: number, body?: object, error?: { code: string, message: string, details?: unknown } }>}
  */

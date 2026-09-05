@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   resolveMcpIocInput,
   mcpLookupIoc,
+  mcpGetIocContext,
   mcpBulkLookupIocs,
   mcpListIocSources,
   mcpImportIocs,
@@ -10,6 +11,7 @@ import {
 } from './mcpIocService.js';
 import { parseSearchQuery } from './iocSearchDsl/index.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
+import { API_SCOPE } from './apiKeyProfiles.js';
 import { MCP_DEFAULTS } from './mcpConfig.js';
 
 const TEST_CONFIG = Object.freeze({
@@ -140,6 +142,11 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
         && normalized.includes('ORDER BY created_at ASC')) {
         return { rows: existing ? [existing] : [] };
       }
+      // Legacy-column fallback read from loadEffectiveIocClassificationSlugs.
+      if (normalized.includes('SELECT threat_classification FROM ioc_items')
+        && normalized.includes('WHERE id = $1 AND observable_type = $2')) {
+        return { rows: existing ? [{ threat_classification: existing.threat_classification ?? null }] : [] };
+      }
       if (normalized.includes('FROM ioc_threat_classifications')) {
         return {
           rows: classifications.map((slug) => ({
@@ -150,12 +157,79 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
         };
       }
       if (normalized.includes('FROM ioc_tags it')) {
-        return { rows: tags };
+        // loadCatalogTags groups and returns { name, type, origins, source_name }.
+        return {
+          rows: tags.map((t) => ({
+            name: t.name,
+            type: t.type ?? null,
+            origins: t.origins ?? (t.origin ? [t.origin] : ['manual']),
+            source_name: t.source_name ?? null
+          }))
+        };
       }
       if (normalized.includes('FROM ioc_items i') && normalized.includes('LEFT JOIN ioc_sources')) {
         return { rows: sources };
       }
       throw new Error(`Unexpected SQL in lookup pool: ${normalized.slice(0, 120)}`);
+    }
+  };
+}
+
+// Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
+// effective-classification, catalog-tag, source-evidence and enrichment reads.
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [] } = {}) {
+  const queries = [];
+  return {
+    queries,
+    connect: async () => ({ query: async () => ({ rows: [] }), release() {} }),
+    query: async (sql, params = []) => {
+      const normalized = String(sql).replace(/\s+/g, ' ').trim();
+      queries.push({ sql: normalized, params: [...params] });
+      // getApiIoc row load (by public_id or id) and mcpLookupIoc exact match.
+      if (normalized.includes('FROM ioc_items') && normalized.includes('WHERE public_id = $1::uuid')) {
+        return { rows: row ? [row] : [] };
+      }
+      if (normalized.includes('FROM ioc_items')
+        && normalized.includes('observable_type = $1 AND observable = $2')
+        && normalized.includes('ORDER BY created_at ASC')) {
+        return { rows: row ? [row] : [] };
+      }
+      if (normalized.includes('SELECT * FROM ioc_items WHERE id = $1')) {
+        return { rows: row ? [row] : [] };
+      }
+      if (normalized.includes('SELECT threat_classification FROM ioc_items')
+        && normalized.includes('WHERE id = $1 AND observable_type = $2')) {
+        return { rows: row ? [{ threat_classification: row.threat_classification ?? null }] : [] };
+      }
+      if (normalized.includes('FROM ioc_threat_classifications')) {
+        return {
+          rows: classifications.map((slug) => ({
+            ioc_id: row?.id,
+            ioc_observable_type: row?.observable_type,
+            classification_slug: slug
+          }))
+        };
+      }
+      if (normalized.includes('FROM ioc_tags it')) {
+        return {
+          rows: tags.map((t) => ({
+            name: t.name,
+            type: t.type ?? null,
+            origins: t.origins ?? (t.origin ? [t.origin] : ['manual']),
+            source_name: t.source_name ?? null
+          }))
+        };
+      }
+      if (normalized.includes('FROM ioc_items i') && normalized.includes('LEFT JOIN ioc_sources')) {
+        return { rows: sources };
+      }
+      if (normalized.includes('FROM ioc_feed_source_evidence')) {
+        return { rows: evidence };
+      }
+      if (normalized.includes('FROM ioc_enrichments')) {
+        return { rows: enrichment };
+      }
+      throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
   };
 }
@@ -467,4 +541,169 @@ test('mcpImportIocs dry_run does not create; unauthorized source rejected', asyn
   assert.equal(denied.status, 400);
   assert.match(denied.error.message, /not accessible/i);
   assert.equal(createCalls.length, 0);
+});
+
+// --- Regression: feed-imported classifications/tags must not read as empty ----
+// Reproduces production IOC d38d8db3-... (SHA-256, ThreatFox): classification
+// lives only in the legacy ioc_items.threat_classification column and every tag
+// has origin='integration'. Before the fix, lookup_ioc/get_ioc_context reported
+// classifications:[] and tags:[] while the IOC Details UI showed them.
+
+const FEED_SHA256 = 'c5763c9ad5885c5fb7e83b38c373efa7eeb9cc146e524180ab5cce8157e1abd8';
+
+function threatFoxRow(overrides = {}) {
+  return {
+    id: 3394624,
+    public_id: 'd38d8db3-526d-4989-b8c8-e95ae85389d3',
+    observable: FEED_SHA256,
+    observable_type: 'sha256',
+    status: 'active',
+    confidence: 'high',
+    threat_classification: 'dropper_downloader',
+    threat_actor_id: null,
+    note: 'Auto-imported from ThreatFox API | malware=Coruna | tags=Coruna,encrypted,exploit-package,ios',
+    created_at: '2026-09-05T14:32:01.476Z',
+    last_seen_at: '2026-09-05T14:32:01.476Z',
+    ...overrides
+  };
+}
+
+const INTEGRATION_TAGS = [
+  { name: 'coruna', origins: ['integration'], source_name: 'ThreatFox:abuse.ch' },
+  { name: 'encrypted', origins: ['integration'], source_name: 'ThreatFox:abuse.ch' },
+  { name: 'exploit-package', origins: ['integration'], source_name: 'ThreatFox:abuse.ch' },
+  { name: 'ios', origins: ['integration'], source_name: 'ThreatFox:abuse.ch' }
+];
+
+test('mcpLookupIoc: classification falls back to legacy column when junction empty', async () => {
+  const existing = threatFoxRow();
+  const pool = makeLookupPool({
+    existing,
+    classifications: [],
+    tags: INTEGRATION_TAGS,
+    sources: [{
+      id: existing.id, ioc_source_id: null, source_name: 'ThreatFox:abuse.ch',
+      catalog_source_name: 'ThreatFox:abuse.ch', status: 'active', created_at: existing.created_at
+    }]
+  });
+  const out = await mcpLookupIoc(pool, { value: FEED_SHA256, type: 'hash' }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.found, true);
+  assert.equal(out.body.type, 'sha256');
+  assert.deepEqual(out.body.classifications, ['dropper_downloader']);
+  assert.deepEqual(out.body.tags, ['coruna', 'encrypted', 'exploit-package', 'ios']);
+});
+
+test('mcpLookupIoc: junction classifications win over the legacy column', async () => {
+  const existing = threatFoxRow({ threat_classification: 'dropper_downloader' });
+  const pool = makeLookupPool({
+    existing,
+    classifications: ['ransomware', 'trojan'],
+    tags: INTEGRATION_TAGS
+  });
+  const out = await mcpLookupIoc(pool, { value: FEED_SHA256, type: 'hash' }, { config: TEST_CONFIG });
+  assert.deepEqual(out.body.classifications, ['ransomware', 'trojan']);
+  assert.ok(!pool.queries.some((q) => q.sql.includes('SELECT threat_classification FROM ioc_items')));
+});
+
+test('mcpLookupIoc: unclassified/untagged IOC yields correct empty arrays', async () => {
+  const existing = threatFoxRow({ threat_classification: 'unknown', note: null });
+  const pool = makeLookupPool({ existing, classifications: [], tags: [] });
+  const out = await mcpLookupIoc(pool, { value: FEED_SHA256, type: 'hash' }, { config: TEST_CONFIG });
+  assert.equal(out.body.found, true);
+  assert.deepEqual(out.body.classifications, []);
+  assert.deepEqual(out.body.tags, []);
+});
+
+test('mcpLookupIoc: multiple manual + integration tags merge with names deduped', async () => {
+  const existing = threatFoxRow();
+  const pool = makeLookupPool({
+    existing,
+    classifications: [],
+    tags: [
+      { name: 'apt-tracked', origins: ['manual'], source_name: null },
+      ...INTEGRATION_TAGS
+    ]
+  });
+  const out = await mcpLookupIoc(pool, { value: FEED_SHA256, type: 'hash' }, { config: TEST_CONFIG });
+  assert.deepEqual(out.body.tags, ['apt-tracked', 'coruna', 'encrypted', 'exploit-package', 'ios']);
+});
+
+test('mcpGetIocContext: native classifications/tags + separated source_intelligence', async () => {
+  const row = threatFoxRow();
+  const pool = makeContextPool({
+    row,
+    classifications: [],
+    tags: INTEGRATION_TAGS,
+    sources: [{
+      id: row.id, ioc_source_id: null, source_name: 'ThreatFox:abuse.ch',
+      catalog_source_name: 'ThreatFox:abuse.ch', status: 'active', created_at: row.created_at
+    }],
+    evidence: [{
+      id: 1, ioc_item_id: row.id, ioc_observable_type: 'sha256',
+      feed_id: 10, source_name: 'ThreatFox:abuse.ch', category: 'payload',
+      note: 'Auto-imported from ThreatFox API | malware=Coruna | threat_type=payload | tags=Coruna,encrypted,exploit-package,ios',
+      feed_key: 'threatfox'
+    }],
+    enrichment: []
+  });
+  const out = await mcpGetIocContext(pool, { value: FEED_SHA256, type: 'hash' }, {
+    config: TEST_CONFIG,
+    mcpAuth: { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'analyst' }
+  });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.classifications, ['dropper_downloader']);
+  assert.deepEqual(out.body.tags, ['coruna', 'encrypted', 'exploit-package', 'ios']);
+  assert.equal(out.body.tags_detail[0].origin, 'integration');
+  assert.equal(out.body.tags_detail[0].source_name, 'ThreatFox:abuse.ch');
+  assert.ok(Array.isArray(out.body.source_intelligence.feed_tags));
+  assert.ok(out.body.source_intelligence.feed_tags.some((t) => t.normalized === 'coruna'));
+  assert.ok(out.body.source_intelligence.labels.some((l) => l.malware === 'Coruna'));
+  assert.equal(out.body.enrichment_included, false);
+  assert.equal(out.body.enrichment, undefined);
+});
+
+test('mcpGetIocContext: by public_id, enrichment included when scope + role allow', async () => {
+  const row = threatFoxRow();
+  const pool = makeContextPool({
+    row,
+    classifications: [],
+    tags: INTEGRATION_TAGS,
+    evidence: [],
+    enrichment: [{
+      provider: 'virustotal', status: 'ok', normalized_summary: '3/70',
+      fetched_at: '2026-09-05T15:00:00.000Z', expires_at: null, error_message: null
+    }]
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, {
+    config: TEST_CONFIG,
+    mcpAuth: { scopes: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_READ], ownerRole: 'analyst' }
+  });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.classifications, ['dropper_downloader']);
+  assert.equal(out.body.public_id, row.public_id);
+  assert.equal(out.body.enrichment_included, true);
+  assert.equal(out.body.enrichment.length, 1);
+  assert.equal(out.body.enrichment[0].provider, 'virustotal');
+});
+
+test('mcpGetIocContext: readonly owner without enrichment scope omits enrichment', async () => {
+  const row = threatFoxRow();
+  const pool = makeContextPool({ row, classifications: [], tags: [], evidence: [] });
+  const out = await mcpGetIocContext(pool, { value: FEED_SHA256, type: 'hash' }, {
+    config: TEST_CONFIG,
+    mcpAuth: { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'readonly' }
+  });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.enrichment_included, false);
+  assert.equal(out.body.enrichment, undefined);
+});
+
+test('mcpLookupIoc: hash-storage fix preserved (abstract hash resolves to sha256)', async () => {
+  const existing = threatFoxRow();
+  const pool = makeLookupPool({ existing, classifications: [], tags: INTEGRATION_TAGS });
+  await mcpLookupIoc(pool, { value: FEED_SHA256, type: 'hash' }, { config: TEST_CONFIG });
+  const exact = pool.queries.find((q) =>
+    q.sql.includes('observable_type = $1 AND observable = $2') && q.sql.includes('ORDER BY created_at ASC'));
+  assert.deepEqual(exact.params, ['sha256', FEED_SHA256]);
 });
