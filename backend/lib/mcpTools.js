@@ -162,7 +162,7 @@ export function registerMcpTools(server, deps) {
     {
       title: 'Get IOC context',
       description:
-        'Return analyst-facing TalonHound context for one IOC. Includes native TalonHound classifications and tags (with tags_detail carrying per-tag origin: analyst `manual` vs source `integration`/`feed`), sources, and — kept separate under `source_intelligence` so provenance is never ambiguous — the source/feed-provided feed_tags, feed_classifications, and parsed malware/family/threat_type labels. Also returns stored enrichment when the credential has mcp:enrichment:read. Does not trigger paid/external enrichment.',
+        'Return analyst-facing TalonHound context for one IOC. Includes native TalonHound classifications and tags (with tags_detail carrying per-tag origin: analyst `manual` vs source `integration`/`feed`), sources, and — kept separate under `source_intelligence` so provenance is never ambiguous — the source/feed-provided feed_tags, feed_classifications, and parsed malware/family/threat_type labels. When the credential has mcp:enrichment:read, `enrichment` carries every stored enrichment result applicable to the IOC type (each entry: provider, status, summary, fetched_at, expires_at, error_message). A provider appears only when a stored result exists; an absent provider means none is stored. Does not trigger paid/external enrichment.',
       inputSchema: {
         value: z.string().min(1).max(config.valueMaxChars).optional(),
         type: z.enum(['ip', 'domain', 'url', 'hash']).optional(),

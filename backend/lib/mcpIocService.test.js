@@ -177,7 +177,7 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
 // effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [] } = {}) {
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null } = {}) {
   const queries = [];
   return {
     queries,
@@ -228,6 +228,15 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
       }
       if (normalized.includes('FROM ioc_enrichments')) {
         return { rows: enrichment };
+      }
+      if (normalized.includes('FROM ioc_domain_enrichment')) {
+        return { rows: rdap ? [rdap] : [] };
+      }
+      if (normalized.includes('FROM ioc_abuseipdb_enrichment')) {
+        return { rows: abuseipdb ? [abuseipdb] : [] };
+      }
+      if (normalized.includes('FROM ioc_ip_enrichment')) {
+        return { rows: ipinfo ? [ipinfo] : [] };
       }
       throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
@@ -685,6 +694,151 @@ test('mcpGetIocContext: by public_id, enrichment included when scope + role allo
   assert.equal(out.body.enrichment_included, true);
   assert.equal(out.body.enrichment.length, 1);
   assert.equal(out.body.enrichment[0].provider, 'virustotal');
+});
+
+// --- Multi-provider enrichment aggregation (RDAP/AbuseIPDB/IPinfo) ---
+
+function domainRow(overrides = {}) {
+  return {
+    id: 3394712,
+    public_id: 'b1c82f85-342d-4901-8dd9-fc6670e42b3a',
+    observable: 'juangcuan.com',
+    observable_type: 'domain',
+    status: 'active',
+    confidence: 'medium',
+    threat_classification: null,
+    threat_actor_id: null,
+    note: 'Auto-imported from CERT.PL Dangerous Websites',
+    created_at: '2026-09-05T16:08:01.221Z',
+    last_seen_at: '2026-09-05T16:08:01.221Z',
+    ...overrides
+  };
+}
+
+function ipRow(overrides = {}) {
+  return {
+    id: 900001,
+    public_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+    observable: '203.0.113.7',
+    observable_type: 'ip',
+    status: 'active',
+    confidence: 'medium',
+    threat_classification: null,
+    threat_actor_id: null,
+    note: null,
+    created_at: '2026-09-05T10:00:00.000Z',
+    last_seen_at: '2026-09-05T10:00:00.000Z',
+    ...overrides
+  };
+}
+
+const RDAP_ROW = {
+  root_domain: 'juangcuan.com',
+  observable_value: 'juangcuan.com',
+  ioc_type: 'domain',
+  rdap_status: 'success',
+  registrar: 'Dynadot Inc',
+  registration_date: '2022-04-07T10:23:01.000Z',
+  expiration_date: '2027-04-07T10:23:01.000Z',
+  last_changed_date: '2026-05-17T10:25:47.000Z',
+  domain_age_days: 1600,
+  nameservers: ['ns1.dynadot.com'],
+  statuses: ['client transfer prohibited'],
+  derived_signals: { young_domain: false },
+  last_success_at: '2026-09-05T16:21:18.617Z',
+  last_enriched_at: '2026-09-05T16:21:18.617Z',
+  error_message: null,
+  last_error: null
+};
+
+const ENRICH_AUTH = { scopes: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_READ], ownerRole: 'analyst' };
+
+// Test 1 — domain with both VirusTotal and RDAP stored: both surface.
+test('mcpGetIocContext: domain returns VirusTotal AND RDAP enrichment', async () => {
+  const row = domainRow();
+  const pool = makeContextPool({
+    row,
+    enrichment: [{
+      provider: 'virustotal', status: 'success', normalized_summary: { stats: { malicious: 5 } },
+      fetched_at: '2026-09-05T16:21:17.714Z', expires_at: '2026-09-06T16:21:17.714Z', error_message: null
+    }],
+    rdap: RDAP_ROW
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  const providers = out.body.enrichment.map((e) => e.provider);
+  assert.deepEqual(providers, ['rdap', 'virustotal']); // provider-sorted
+  const rdap = out.body.enrichment.find((e) => e.provider === 'rdap');
+  assert.equal(rdap.status, 'success');
+  assert.equal(rdap.summary.registrar, 'Dynadot Inc');
+  assert.equal(rdap.summary.registration_date, '2022-04-07T10:23:01.000Z');
+  assert.equal(rdap.summary.expiration_date, '2027-04-07T10:23:01.000Z');
+  assert.equal(rdap.summary.last_changed_date, '2026-05-17T10:25:47.000Z');
+  assert.equal(rdap.fetched_at, '2026-09-05T16:21:18.617Z');
+});
+
+// Test 2 — RDAP present, VirusTotal absent: RDAP still surfaces (collection is
+// not coupled to VirusTotal).
+test('mcpGetIocContext: domain with RDAP but no VirusTotal still returns RDAP', async () => {
+  const row = domainRow();
+  const pool = makeContextPool({ row, enrichment: [], rdap: RDAP_ROW });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['rdap']);
+});
+
+// Test 3 — RDAP does not leak onto an IOC type it does not support (hash),
+// even if a stale domain row would match had it been queried.
+test('mcpGetIocContext: hash IOC never surfaces RDAP (type-gated)', async () => {
+  const row = threatFoxRow();
+  const pool = makeContextPool({
+    row,
+    tags: INTEGRATION_TAGS,
+    enrichment: [{ provider: 'virustotal', status: 'success', normalized_summary: null, fetched_at: null, expires_at: null, error_message: null }],
+    rdap: RDAP_ROW
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['virustotal']);
+  // The RDAP table must not even be queried for a hash IOC.
+  assert.ok(!pool.queries.some((q) => q.sql.includes('FROM ioc_domain_enrichment')));
+});
+
+// Test 4 — no enrichment anywhere: empty array, no crash.
+test('mcpGetIocContext: domain with no enrichment returns empty array', async () => {
+  const row = domainRow();
+  const pool = makeContextPool({ row, enrichment: [] });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.enrichment_included, true);
+  assert.deepEqual(out.body.enrichment, []);
+});
+
+// Test 5 — IP IOC surfaces the IP-only providers (AbuseIPDB + IPinfo), and RDAP
+// is not queried for an IP.
+test('mcpGetIocContext: IP returns AbuseIPDB and IPinfo, not RDAP', async () => {
+  const row = ipRow();
+  const pool = makeContextPool({
+    row,
+    enrichment: [],
+    abuseipdb: {
+      ip: '203.0.113.7', provider_status: 'success',
+      normalized_summary: { abuse_confidence_score: 42 },
+      last_enriched_at: '2026-09-05T12:00:00.000Z', error_message: null
+    },
+    ipinfo: {
+      ip: '203.0.113.7', normalized_ip: '203.0.113.7', provider_status: 'success',
+      asn: 'AS64500', as_name: 'Example', as_domain: 'example.net',
+      country_code: 'US', country: 'United States', continent_code: 'NA', continent: 'North America',
+      derived_signals: {}, last_enriched_at: '2026-09-05T12:05:00.000Z', error_message: null
+    }
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['abuseipdb', 'ipinfo_lite']);
+  assert.equal(out.body.enrichment.find((e) => e.provider === 'abuseipdb').summary.abuse_confidence_score, 42);
+  assert.equal(out.body.enrichment.find((e) => e.provider === 'ipinfo_lite').summary.asn, 'AS64500');
+  assert.ok(!pool.queries.some((q) => q.sql.includes('FROM ioc_domain_enrichment')));
 });
 
 test('mcpGetIocContext: readonly owner without enrichment scope omits enrichment', async () => {

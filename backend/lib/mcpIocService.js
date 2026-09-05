@@ -30,6 +30,7 @@ import {
   HASH_OPERATORS
 } from './iocSearchDsl/fields.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
+import { collectIocEnrichments } from './iocEnrichmentAggregator.js';
 
 async function findExistingIoc(pool, type, value) {
   const { rows } = await pool.query(
@@ -389,23 +390,17 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
     if (!String(err?.message || '').includes('ioc_feed_source_evidence')) throw err;
   }
 
+  // Enrichment spans multiple stores (generic ioc_enrichments = VirusTotal, plus
+  // provider-specific RDAP/AbuseIPDB/IPinfo tables). Reading only ioc_enrichments
+  // here silently dropped every non-VirusTotal provider — collectIocEnrichments
+  // reads all applicable stores so MCP matches the IOC Details intelligence view.
   let enrichment = undefined;
   if (caps.enrichment_read) {
-    const { rows: enr } = await pool.query(
-      `SELECT provider, status, normalized_summary, fetched_at, expires_at, error_message
-       FROM ioc_enrichments
-       WHERE ioc_id = $1
-       ORDER BY provider ASC`,
-      [body.id]
-    );
-    enrichment = enr.map((e) => ({
-      provider: e.provider,
-      status: e.status,
-      summary: e.normalized_summary || null,
-      fetched_at: e.fetched_at || null,
-      expires_at: e.expires_at || null,
-      error_message: e.error_message || null
-    }));
+    enrichment = await collectIocEnrichments(pool, {
+      iocId: body.id,
+      type: body.type,
+      value: body.value
+    });
   }
 
   return {
