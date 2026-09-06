@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:24-alpine
 
 ARG BUILD_VERSION=dev
 ARG BUILD_COMMIT=unknown
@@ -20,7 +20,7 @@ WORKDIR /app
 
 COPY integration/package*.json ./
 # Build toolchain for compiling optional native deps (e.g. msgpackr-extract) from source on
-# architectures without a published prebuilt for node:22-alpine/musl (e.g. arm64). Removed in
+# architectures without a published prebuilt for node:24-alpine/musl (e.g. arm64). Removed in
 # the same layer to keep the runtime image slim.
 RUN apk add --no-cache --virtual .build-deps python3 make g++ \
  && npm install --omit=dev \

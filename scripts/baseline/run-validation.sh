@@ -50,7 +50,7 @@ run_migrate() {
   docker run --rm --network "$NETWORK" \
     -e DB_HOST="$host" -e DB_PORT=5432 \
     -e DB_USER="$DB_USER" -e DB_PASSWORD="$DB_PASSWORD" -e DB_NAME="$1" \
-    -v "$ROOT/backend:/app" -w /app node:20-alpine node migrate.js
+    -v "$ROOT/backend:/app" -w /app node:24-alpine node migrate.js
 }
 
 echo "=== [1/6] historical reference DB ==="

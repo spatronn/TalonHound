@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="${TALONHOUND_ROOT:-/opt/TalonHound}"
 cd "$ROOT"
 
-NODE_IMAGE="${TALONHOUND_NODE_IMAGE:-node:20-alpine}"
+NODE_IMAGE="${TALONHOUND_NODE_IMAGE:-node:24-alpine}"
 COMPOSE_NETWORK="${TALONHOUND_COMPOSE_NETWORK:-talonhound_default}"
 
 run_repo_node() {
