@@ -1,18 +1,63 @@
 export const VT_PROVIDER = 'virustotal';
 
-export const VT_NOT_INDEXED_MESSAGE =
-  'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.';
+/**
+ * Human label for a VirusTotal "not indexed" message, keyed by canonical /
+ * storage IOC type aliases used across TalonHound.
+ * @param {string|null|undefined} iocType
+ * @returns {'file hash'|'URL'|'domain'|'IP address'|'indicator'}
+ */
+export function virusTotalNotFoundLabel(iocType) {
+  const t = String(iocType || '').toLowerCase().trim();
+  switch (t) {
+    case 'sha256':
+    case 'sha1':
+    case 'md5':
+    case 'hash':
+    case 'file':
+    case 'file_hash':
+      return 'file hash';
+    case 'url':
+      return 'URL';
+    case 'domain':
+      return 'domain';
+    case 'ip':
+    case 'ipv4':
+    case 'ipv6':
+    case 'ip_address':
+    case 'ip-address':
+      return 'IP address';
+    default:
+      return 'indicator';
+  }
+}
+
+/**
+ * Type-aware VirusTotal not-indexed user message. Single source of truth for
+ * API responses, DB `error_message` persistence, and audit metadata.
+ * @param {string|null|undefined} iocType
+ */
+export function buildVirusTotalNotFoundMessage(iocType) {
+  const label = virusTotalNotFoundLabel(iocType);
+  return `VirusTotal has no report for this ${label} yet. The ${label} may not have been submitted or indexed.`;
+}
+
+/** @deprecated Prefer buildVirusTotalNotFoundMessage(iocType). Generic fallback. */
+export const VT_NOT_INDEXED_MESSAGE = buildVirusTotalNotFoundMessage();
 
 /** @param {number} httpStatus */
 export function isVtResourceNotFound(httpStatus) {
   return Number(httpStatus) === 404;
 }
 
-export function buildVtNotIndexedResponse(overrides = {}) {
+/**
+ * Non-error `not_found` payload for VirusTotal (report not indexed yet).
+ * @param {{ iocType?: string|null } & Record<string, unknown>} [args]
+ */
+export function buildVtNotIndexedResponse({ iocType, ...overrides } = {}) {
   return {
     status: 'not_found',
     provider: VT_PROVIDER,
-    message: VT_NOT_INDEXED_MESSAGE,
+    message: buildVirusTotalNotFoundMessage(iocType),
     is_error: false,
     ...overrides
   };

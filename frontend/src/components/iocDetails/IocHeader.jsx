@@ -1,6 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { IocDetailIcons } from './IocDetailIcons.jsx';
 import { buttonClassName } from '../../lib/uiButtons.js';
+import {
+  IOC_COPY_FEEDBACK_MS,
+  IOC_COPY_SUCCESS_COLOR,
+  beginCopiedFeedback,
+  copyTextToClipboard,
+  getIocCopyControlLabels
+} from '../../lib/iocCopyFeedback.js';
 
 export function IocHeader({
   title = 'IOC Details',
@@ -16,17 +23,30 @@ export function IocHeader({
   watchlistControl = null
 }) {
   const [copied, setCopied] = useState(false);
+  const [feedbackEpoch, setFeedbackEpoch] = useState(0);
   const value = String(observable || '').trim();
+  const copyLabels = getIocCopyControlLabels(copied);
+
+  // Drive the temporary success icon from React effect cleanup so remounts,
+  // re-clicks, and unmount all clear the prior timeout without leaving a stale id.
+  useEffect(() => {
+    if (!copied) return undefined;
+    const timerId = globalThis.setTimeout(() => {
+      setCopied(false);
+    }, IOC_COPY_FEEDBACK_MS);
+    return () => globalThis.clearTimeout(timerId);
+  }, [copied, feedbackEpoch]);
 
   async function copyObservable() {
     if (!value || value === '-') return;
-    try {
-      await navigator.clipboard?.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
+    const result = await copyTextToClipboard(value);
+    if (!result.ok) {
       setCopied(false);
+      return;
     }
+    const next = beginCopiedFeedback(feedbackEpoch);
+    setCopied(next.copied);
+    setFeedbackEpoch(next.feedbackEpoch);
   }
 
   return (
@@ -80,10 +100,14 @@ export function IocHeader({
               className={buttonClassName({ variant: 'ghost', size: 'sm', className: 'th-btn--icon' })}
               style={{ flexShrink: 0 }}
               onClick={() => copyObservable().catch(() => {})}
-              aria-label={copied ? 'Copied' : 'Copy IOC value'}
-              title={copied ? 'Copied' : 'Copy'}
+              aria-label={copyLabels.ariaLabel}
+              title={copyLabels.title}
             >
-              <IocDetailIcons.copy size={14} />
+              {copied ? (
+                <IocDetailIcons.check size={14} color={IOC_COPY_SUCCESS_COLOR} />
+              ) : (
+                <IocDetailIcons.copy size={14} />
+              )}
             </button>
           ) : null}
         </div>

@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildVtNotIndexedResponse,
+  buildVirusTotalNotFoundMessage,
+  virusTotalNotFoundLabel,
   isVtResourceNotFound,
   vtHttpErrorMessage,
   buildVirusTotalGuiUrl,
@@ -15,13 +17,62 @@ test('isVtResourceNotFound detects VT 404 only', () => {
   assert.equal(isVtResourceNotFound(429), false);
 });
 
+test('virusTotalNotFoundLabel maps IOC types to display nouns', () => {
+  assert.equal(virusTotalNotFoundLabel('sha256'), 'file hash');
+  assert.equal(virusTotalNotFoundLabel('sha1'), 'file hash');
+  assert.equal(virusTotalNotFoundLabel('md5'), 'file hash');
+  assert.equal(virusTotalNotFoundLabel('hash'), 'file hash');
+  assert.equal(virusTotalNotFoundLabel('file'), 'file hash');
+  assert.equal(virusTotalNotFoundLabel('file_hash'), 'file hash');
+  assert.equal(virusTotalNotFoundLabel('url'), 'URL');
+  assert.equal(virusTotalNotFoundLabel('domain'), 'domain');
+  assert.equal(virusTotalNotFoundLabel('ipv4'), 'IP address');
+  assert.equal(virusTotalNotFoundLabel('ipv6'), 'IP address');
+  assert.equal(virusTotalNotFoundLabel('ip'), 'IP address');
+  assert.equal(virusTotalNotFoundLabel('ip_address'), 'IP address');
+  assert.equal(virusTotalNotFoundLabel('ip-address'), 'IP address');
+  assert.equal(virusTotalNotFoundLabel('unknown'), 'indicator');
+  assert.equal(virusTotalNotFoundLabel(null), 'indicator');
+});
+
+test('buildVirusTotalNotFoundMessage is type-aware', () => {
+  assert.equal(
+    buildVirusTotalNotFoundMessage('sha256'),
+    'VirusTotal has no report for this file hash yet. The file hash may not have been submitted or indexed.'
+  );
+  assert.equal(
+    buildVirusTotalNotFoundMessage('url'),
+    'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.'
+  );
+  assert.equal(
+    buildVirusTotalNotFoundMessage('domain'),
+    'VirusTotal has no report for this domain yet. The domain may not have been submitted or indexed.'
+  );
+  assert.equal(
+    buildVirusTotalNotFoundMessage('ipv4'),
+    'VirusTotal has no report for this IP address yet. The IP address may not have been submitted or indexed.'
+  );
+  assert.equal(
+    buildVirusTotalNotFoundMessage('ipv6'),
+    'VirusTotal has no report for this IP address yet. The IP address may not have been submitted or indexed.'
+  );
+  assert.equal(
+    buildVirusTotalNotFoundMessage('unknown'),
+    'VirusTotal has no report for this indicator yet. The indicator may not have been submitted or indexed.'
+  );
+});
+
 test('buildVtNotIndexedResponse is non-error not_found payload', () => {
-  const body = buildVtNotIndexedResponse({ fetched_at: '2026-05-31T00:00:00.000Z' });
+  const body = buildVtNotIndexedResponse({ iocType: 'sha256', fetched_at: '2026-05-31T00:00:00.000Z' });
   assert.equal(body.status, 'not_found');
   assert.equal(body.provider, 'virustotal');
   assert.equal(body.is_error, false);
-  assert.match(body.message, /no report/i);
+  assert.equal(
+    body.message,
+    'VirusTotal has no report for this file hash yet. The file hash may not have been submitted or indexed.'
+  );
   assert.equal(body.fetched_at, '2026-05-31T00:00:00.000Z');
+  assert.equal('iocType' in body, false);
 });
 
 test('vtHttpErrorMessage distinguishes auth and rate limit', () => {

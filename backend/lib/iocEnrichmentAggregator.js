@@ -35,6 +35,7 @@ import {
   ABUSEIPDB_PROVIDER
 } from '../services/abuseipdbService.js';
 import { getEnrichmentByIp as getIpinfoEnrichmentByIp } from '../services/ipinfoLiteService.js';
+import { VT_PROVIDER, buildVirusTotalNotFoundMessage } from './virustotalEnrichment.js';
 
 const RDAP_PROVIDER = 'rdap';
 const IPINFO_LITE_PROVIDER = 'ipinfo_lite';
@@ -57,23 +58,33 @@ function isMissingRelationError(err, table) {
   return msg.includes(table);
 }
 
-/** VirusTotal (and any future generic-table provider) — keyed by ioc_id. */
+/**
+ * VirusTotal (and any future generic-table provider) — keyed by ioc_id.
+ * For VT `not_found`, rebuild the user message from `ioc_type` so MCP /
+ * get_ioc_context matches the UI GET path even when DB still has a legacy
+ * hardcoded URL-only `error_message` (no backfill required).
+ */
 async function readGenericEnrichments(pool, iocId) {
   const { rows } = await pool.query(
-    `SELECT provider, status, normalized_summary, fetched_at, expires_at, error_message
+    `SELECT provider, status, ioc_type, normalized_summary, fetched_at, expires_at, error_message
      FROM ioc_enrichments
      WHERE ioc_id = $1
      ORDER BY provider ASC`,
     [iocId]
   );
-  return rows.map((e) => ({
-    provider: e.provider,
-    status: e.status,
-    summary: e.normalized_summary || null,
-    fetched_at: e.fetched_at || null,
-    expires_at: e.expires_at || null,
-    error_message: e.error_message || null
-  }));
+  return rows.map((e) => {
+    const isVtNotIndexed = e.provider === VT_PROVIDER && e.status === 'not_found';
+    return {
+      provider: e.provider,
+      status: e.status,
+      summary: e.normalized_summary || null,
+      fetched_at: e.fetched_at || null,
+      expires_at: e.expires_at || null,
+      error_message: isVtNotIndexed
+        ? buildVirusTotalNotFoundMessage(e.ioc_type)
+        : (e.error_message || null)
+    };
+  });
 }
 
 /** RDAP / WHOIS — domain & url only, keyed by root domain. */

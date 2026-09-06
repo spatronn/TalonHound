@@ -14308,7 +14308,8 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
         return setState({
           status: 'vt_not_indexed',
           summary: null,
-          message: data.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.',
+          // Backend builds the type-aware message; keep a generic fallback only.
+          message: data.message || 'VirusTotal has no report for this indicator yet. The indicator may not have been submitted or indexed.',
           fetchedAt: data.fetched_at || null,
           expiresAt: data.expires_at || null
         });
@@ -14337,7 +14338,8 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
         setState({
           status: 'vt_not_indexed',
           summary: null,
-          message: data.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.',
+          // Backend builds the type-aware message; keep a generic fallback only.
+          message: data.message || 'VirusTotal has no report for this indicator yet. The indicator may not have been submitted or indexed.',
           fetchedAt: data.fetched_at || null,
           expiresAt: data.expires_at || null
         });
@@ -14392,7 +14394,7 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
       return (
         <div style={{ ...compactCardStyle, borderColor: '#334155', background: '#0f172a' }}>
           <span style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.5, flex: 1 }}>
-            {state.message || 'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.'}
+            {state.message || 'VirusTotal has no report for this indicator yet. The indicator may not have been submitted or indexed.'}
           </span>
           <button onClick={() => refresh().catch(() => {})} disabled={refreshing}>
             {refreshing ? 'Checking VirusTotal…' : 'Check again'}

@@ -55,6 +55,9 @@ export const IocDetailIcons = {
       <path d="M5 15V5a2 2 0 0 1 2-2h10" />
     </SvgIcon>
   ),
+  check: (props) => (
+    <SvgIcon {...props}><path d="m5 12 5 5L20 7" /></SvgIcon>
+  ),
   refresh: (props) => (
     <SvgIcon {...props}><path d="M21 12a9 9 0 1 1-2.6-6.3" /><path d="M21 3v6h-6" /></SvgIcon>
   ),

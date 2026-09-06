@@ -980,6 +980,35 @@ test('mcpGetIocContext: readonly owner without enrichment scope omits enrichment
   assert.equal(out.body.enrichment, undefined);
 });
 
+test('mcpGetIocContext: VT not_found self-heals stale URL error_message for sha256', async () => {
+  const row = threatFoxRow();
+  const staleUrlMsg =
+    'VirusTotal has no report for this URL yet. The URL may not have been submitted or indexed.';
+  const pool = makeContextPool({
+    row,
+    enrichment: [{
+      provider: 'virustotal',
+      status: 'not_found',
+      ioc_type: 'sha256',
+      normalized_summary: null,
+      fetched_at: '2026-09-05T15:00:00.000Z',
+      expires_at: '2026-09-06T15:00:00.000Z',
+      error_message: staleUrlMsg
+    }]
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.enrichment.length, 1);
+  const vt = out.body.enrichment[0];
+  assert.equal(vt.provider, 'virustotal');
+  assert.equal(vt.status, 'not_found');
+  assert.equal(
+    vt.error_message,
+    'VirusTotal has no report for this file hash yet. The file hash may not have been submitted or indexed.'
+  );
+  assert.notEqual(vt.error_message, staleUrlMsg);
+});
+
 test('mcpLookupIoc: hash-storage fix preserved (abstract hash resolves to sha256)', async () => {
   const existing = threatFoxRow();
   const pool = makeLookupPool({ existing, classifications: [], tags: INTEGRATION_TAGS });

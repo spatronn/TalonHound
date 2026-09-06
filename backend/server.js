@@ -310,7 +310,7 @@ import {
 } from './lib/integrationJobLabels.js';
 import {
   VT_PROVIDER,
-  VT_NOT_INDEXED_MESSAGE,
+  buildVirusTotalNotFoundMessage,
   buildVtNotIndexedResponse,
   isVtResourceNotFound,
   vtHttpErrorMessage,
@@ -6215,12 +6215,15 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
     const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
     const keyConfigured = Boolean(providerCfg.apiKey);
     if (!keyConfigured) return res.json({ status: 'api_key_missing' });
-    const q = `SELECT status, normalized_summary, error_message, fetched_at, expires_at FROM ioc_enrichments WHERE provider=$1 AND ioc_id=$2 LIMIT 1`;
+    const q = `SELECT status, ioc_type, normalized_summary, error_message, fetched_at, expires_at FROM ioc_enrichments WHERE provider=$1 AND ioc_id=$2 LIMIT 1`;
     const r = await pool.query(q, [VT_PROVIDER, iocId]);
     if (!r.rowCount) return res.json({ status: 'not_found' });
     const row = r.rows[0];
     if (row.status === 'not_found') {
+      // Rebuild message from stored ioc_type so legacy rows with a hardcoded
+      // URL-only message self-heal on read (no DB backfill required for UI).
       return res.json(buildVtNotIndexedResponse({
+        iocType: row.ioc_type,
         fetched_at: row.fetched_at,
         expires_at: row.expires_at
       }));
@@ -6318,7 +6321,9 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'success', external: true, responseTimeMs: Date.now() - vtStartedAt });
       const fetchedAt = new Date();
       const expiresAt = new Date(fetchedAt.getTime() + (providerCfg.ttl_hours || VT_TTL_HOURS) * 3600 * 1000);
+      const notFoundMessage = buildVirusTotalNotFoundMessage(iocType);
       const payload = buildVtNotIndexedResponse({
+        iocType,
         fetched_at: fetchedAt.toISOString(),
         expires_at: expiresAt.toISOString()
       });
@@ -6334,7 +6339,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
            fetched_at=EXCLUDED.fetched_at,
            expires_at=EXCLUDED.expires_at,
            updated_at=NOW()`,
-        [iocId, item.ioc_value, iocType, VT_PROVIDER, VT_NOT_INDEXED_MESSAGE, fetchedAt.toISOString(), expiresAt.toISOString()]
+        [iocId, item.ioc_value, iocType, VT_PROVIDER, notFoundMessage, fetchedAt.toISOString(), expiresAt.toISOString()]
       );
       await auditLogService.auditSuccess({
         req,
@@ -6349,7 +6354,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
           observable_value: item.ioc_value,
           ioc_id: iocId,
           http_status: 404,
-          message: VT_NOT_INDEXED_MESSAGE
+          message: notFoundMessage
         }
       }).catch(() => {});
       return res.json(payload);
