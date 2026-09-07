@@ -31,7 +31,7 @@ import {
 } from './iocSearchDsl/fields.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 import { findArtifactLinkedIocsByIocId } from './fileArtifacts/read.js';
-import { collectIocEnrichments } from './iocEnrichmentAggregator.js';
+import { collectDerivedInfrastructure, collectIocEnrichments } from './iocEnrichmentAggregator.js';
 
 async function findExistingIoc(pool, type, value) {
   const { rows } = await pool.query(
@@ -392,10 +392,13 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   }
 
   // Enrichment spans multiple stores (generic ioc_enrichments = VirusTotal, plus
-  // provider-specific RDAP/AbuseIPDB/IPinfo tables). Reading only ioc_enrichments
-  // here silently dropped every non-VirusTotal provider — collectIocEnrichments
-  // reads all applicable stores so MCP matches the IOC Details intelligence view.
+  // provider-specific RDAP/AbuseIPDB/IPinfo/Spamhaus tables). Reading only
+  // ioc_enrichments here silently dropped every non-VirusTotal provider —
+  // collectIocEnrichments reads all applicable *direct* stores so MCP matches
+  // Automated Intelligence. URL host IP enrichments live separately under
+  // derived_infrastructure (UI "Derived Infrastructure" panel).
   let enrichment = undefined;
+  let derivedInfrastructure = undefined;
   if (caps.enrichment_read) {
     // Reuse a VirusTotal file result across exact-hash aliases of the same file
     // artifact (e.g. enriched via SHA1, viewed by SHA256) — no second provider call.
@@ -409,6 +412,10 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       type: body.type,
       value: body.value,
       linkedIocIds
+    });
+    derivedInfrastructure = await collectDerivedInfrastructure(pool, {
+      type: body.type,
+      value: body.value
     });
   }
 
@@ -434,6 +441,8 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       // Source-/feed-provided intelligence, kept distinct from native fields above.
       source_intelligence: sourceIntelligence,
       enrichment: enrichment === undefined ? undefined : enrichment,
+      // Additive: URL IP-host Derived Infrastructure (null when not applicable).
+      derived_infrastructure: derivedInfrastructure === undefined ? undefined : derivedInfrastructure,
       enrichment_included: caps.enrichment_read
     }
   };

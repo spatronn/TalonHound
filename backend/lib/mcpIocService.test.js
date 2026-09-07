@@ -178,7 +178,7 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
 // effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null } = {}) {
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null } = {}) {
   const queries = [];
   return {
     queries,
@@ -238,6 +238,13 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
       }
       if (normalized.includes('FROM ioc_ip_enrichment')) {
         return { rows: ipinfo ? [ipinfo] : [] };
+      }
+      if (normalized.includes('FROM ioc_spamhaus_drop_enrichment')) {
+        return { rows: spamhaus ? [spamhaus] : [] };
+      }
+      // File-artifact link lookup (optional; usually gated off in unit tests).
+      if (normalized.includes('FROM file_artifact_ioc_links') || normalized.includes('FROM file_artifacts')) {
+        return { rows: [] };
       }
       throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
@@ -941,7 +948,7 @@ test('mcpGetIocContext: domain with no enrichment returns empty array', async ()
   assert.deepEqual(out.body.enrichment, []);
 });
 
-// Test 5 — IP IOC surfaces the IP-only providers (AbuseIPDB + IPinfo), and RDAP
+// Test 5 — IP IOC surfaces the IP-only providers (AbuseIPDB + IPinfo + Spamhaus), and RDAP
 // is not queried for an IP.
 test('mcpGetIocContext: IP returns AbuseIPDB and IPinfo, not RDAP', async () => {
   const row = ipRow();
@@ -958,14 +965,230 @@ test('mcpGetIocContext: IP returns AbuseIPDB and IPinfo, not RDAP', async () => 
       asn: 'AS64500', as_name: 'Example', as_domain: 'example.net',
       country_code: 'US', country: 'United States', continent_code: 'NA', continent: 'North America',
       derived_signals: {}, last_enriched_at: '2026-09-05T12:05:00.000Z', error_message: null
+    },
+    spamhaus: {
+      lookup_ip: '203.0.113.7',
+      provider_status: 'listed',
+      listed: true,
+      matched_cidr: '203.0.113.0/24',
+      list_type: 'drop_v4',
+      sblid: 'SBL1',
+      rir: 'arin',
+      dataset_status: 'healthy',
+      last_sync_at: '2026-09-05T00:00:00.000Z',
+      enriched_at: '2026-09-05T12:06:00.000Z',
+      error_message: null
     }
   });
   const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
   assert.equal(out.status, 200);
-  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['abuseipdb', 'ipinfo_lite']);
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['abuseipdb', 'ipinfo_lite', 'spamhaus_drop']);
   assert.equal(out.body.enrichment.find((e) => e.provider === 'abuseipdb').summary.abuse_confidence_score, 42);
   assert.equal(out.body.enrichment.find((e) => e.provider === 'ipinfo_lite').summary.asn, 'AS64500');
+  assert.equal(out.body.enrichment.find((e) => e.provider === 'spamhaus_drop').status, 'listed');
+  assert.equal(out.body.derived_infrastructure, null);
   assert.ok(!pool.queries.some((q) => q.sql.includes('FROM ioc_domain_enrichment')));
+});
+
+test('mcpGetIocContext: Spamhaus not_listed on IP is success-shaped, not an error', async () => {
+  const row = ipRow();
+  const pool = makeContextPool({
+    row,
+    enrichment: [],
+    spamhaus: {
+      lookup_ip: '203.0.113.7',
+      provider_status: 'not_listed',
+      listed: false,
+      dataset_status: 'healthy',
+      last_sync_at: '2026-09-05T00:00:00.000Z',
+      enriched_at: '2026-09-05T12:06:00.000Z'
+    }
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  const sh = out.body.enrichment.find((e) => e.provider === 'spamhaus_drop');
+  assert.equal(sh.status, 'not_listed');
+  assert.equal(sh.summary.listed, false);
+  assert.equal(sh.error_message, null);
+});
+
+function urlWithIpHostRow(overrides = {}) {
+  return {
+    id: 3400854,
+    public_id: '14dd18e0-4dfb-4042-8254-4d672689f39c',
+    observable: 'http://94.154.43.38/main_arm',
+    observable_type: 'url',
+    status: 'active',
+    confidence: 'high',
+    threat_classification: 'dropper_downloader',
+    threat_actor_id: null,
+    note: 'Auto-imported from URLhaus CSV',
+    created_at: '2026-09-07T18:40:04.336Z',
+    last_seen_at: '2026-09-07T18:40:04.336Z',
+    ...overrides
+  };
+}
+
+test('mcpGetIocContext: URL with IP host exposes derived_infrastructure without putting IP providers in enrichment', async () => {
+  const row = urlWithIpHostRow();
+  const pool = makeContextPool({
+    row,
+    classifications: ['dropper_downloader'],
+    enrichment: [{
+      provider: 'virustotal', status: 'success',
+      normalized_summary: { stats: { malicious: 2, suspicious: 5 } },
+      fetched_at: '2026-09-07T18:47:16.604Z', expires_at: '2026-09-08T18:47:16.604Z', error_message: null
+    }],
+    ipinfo: {
+      ip: '94.154.43.38', normalized_ip: '94.154.43.38', provider_status: 'success',
+      asn: 'AS219502', as_name: 'Storm Industries LLC', as_domain: 'stormindustries.llc',
+      country_code: 'TR', country: 'Turkey', continent_code: 'AS', continent: 'Asia',
+      provider: 'ipinfo_lite', derived_signals: {}, last_enriched_at: '2026-09-07T18:47:20.581Z', error_message: null
+    },
+    abuseipdb: {
+      ip: '94.154.43.38', provider_status: 'success',
+      normalized_summary: {
+        abuseConfidenceScore: 100, totalReports: 267, numDistinctUsers: 178,
+        isp: 'Storm Industries LLC', usageType: 'Content Delivery Network', domain: 'stormindustries.llc'
+      },
+      last_enriched_at: '2026-09-07T18:47:19.164Z', error_message: null
+    },
+    spamhaus: {
+      lookup_ip: '94.154.43.38',
+      provider_status: 'listed',
+      listed: true,
+      matched_cidr: '94.154.43.0/24',
+      list_type: 'drop_v4',
+      sblid: 'SBL699296',
+      rir: 'ripencc',
+      dataset_status: 'healthy',
+      last_sync_at: '2026-09-07T00:00:00.000Z',
+      enriched_at: '2026-09-07T18:47:21.000Z',
+      error_message: null
+    }
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.value, 'http://94.154.43.38/main_arm');
+  assert.equal(out.body.type, 'url');
+  // Direct enrichment remains VirusTotal only for URL.
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['virustotal']);
+  assert.equal(out.body.enrichment[0].summary.stats.malicious, 2);
+  // Derived Infrastructure parity with UI panel.
+  assert.ok(out.body.derived_infrastructure);
+  assert.equal(out.body.derived_infrastructure.extracted_host, '94.154.43.38');
+  assert.equal(out.body.derived_infrastructure.host_type, 'ip');
+  assert.deepEqual(
+    out.body.derived_infrastructure.enrichments.map((e) => e.provider),
+    ['abuseipdb', 'ipinfo_lite', 'spamhaus_drop']
+  );
+  const ipinfo = out.body.derived_infrastructure.enrichments.find((e) => e.provider === 'ipinfo_lite');
+  assert.equal(ipinfo.summary.asn, 'AS219502');
+  assert.equal(ipinfo.summary.as_name, 'Storm Industries LLC');
+  assert.equal(ipinfo.summary.country_code, 'TR');
+  const abuse = out.body.derived_infrastructure.enrichments.find((e) => e.provider === 'abuseipdb');
+  assert.equal(abuse.summary.abuseConfidenceScore, 100);
+  assert.equal(abuse.summary.totalReports, 267);
+  const sh = out.body.derived_infrastructure.enrichments.find((e) => e.provider === 'spamhaus_drop');
+  assert.equal(sh.status, 'listed');
+  assert.equal(sh.summary.matched_cidr, '94.154.43.0/24');
+  assert.equal(sh.summary.sblid, 'SBL699296');
+  // Compatibility: previously existing fields remain.
+  assert.equal(out.body.enrichment_included, true);
+  assert.ok(Array.isArray(out.body.classifications));
+  assert.ok(out.body.source_intelligence);
+});
+
+test('mcpGetIocContext: URL derived IP partial providers still succeed', async () => {
+  const row = urlWithIpHostRow();
+  const pool = makeContextPool({
+    row,
+    enrichment: [],
+    abuseipdb: {
+      ip: '94.154.43.38', provider_status: 'success',
+      normalized_summary: { abuseConfidenceScore: 100 },
+      last_enriched_at: '2026-09-07T18:47:19.164Z', error_message: null
+    }
+    // ipinfo + spamhaus absent
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.derived_infrastructure.extracted_host, '94.154.43.38');
+  assert.deepEqual(out.body.derived_infrastructure.enrichments.map((e) => e.provider), ['abuseipdb']);
+});
+
+test('mcpGetIocContext: URL with domain host has no IP derived_infrastructure', async () => {
+  const row = urlWithIpHostRow({
+    id: 77,
+    public_id: 'bbbbbbbb-0000-4000-8000-000000000077',
+    observable: 'https://evil.example.com/path'
+  });
+  const pool = makeContextPool({
+    row,
+    enrichment: [{ provider: 'virustotal', status: 'success', normalized_summary: {}, fetched_at: null, expires_at: null, error_message: null }]
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider), ['virustotal']);
+  assert.equal(out.body.derived_infrastructure, null);
+});
+
+test('mcpGetIocContext: URL with port still extracts derived host IP', async () => {
+  const row = urlWithIpHostRow({ observable: 'http://94.154.43.38:8080/main_arm' });
+  const pool = makeContextPool({
+    row,
+    enrichment: [],
+    ipinfo: {
+      ip: '94.154.43.38', normalized_ip: '94.154.43.38', provider_status: 'success',
+      asn: 'AS219502', as_name: 'Storm Industries LLC', as_domain: 'stormindustries.llc',
+      country_code: 'TR', country: 'Turkey', continent_code: 'AS', continent: 'Asia',
+      derived_signals: {}, last_enriched_at: '2026-09-07T18:47:20.581Z', error_message: null
+    }
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.derived_infrastructure.extracted_host, '94.154.43.38');
+  assert.equal(out.body.derived_infrastructure.enrichments[0].provider, 'ipinfo_lite');
+});
+
+test('mcpGetIocContext: derived infrastructure reads are SELECT-only (no external enrich writes)', async () => {
+  const row = urlWithIpHostRow();
+  const pool = makeContextPool({
+    row,
+    enrichment: [],
+    ipinfo: {
+      ip: '94.154.43.38', normalized_ip: '94.154.43.38', provider_status: 'success',
+      asn: 'AS1', as_name: 'A', as_domain: 'a.test',
+      country_code: 'TR', country: 'Turkey', continent_code: 'AS', continent: 'Asia',
+      derived_signals: {}, last_enriched_at: '2026-09-07T18:47:20.581Z', error_message: null
+    }
+  });
+  await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  for (const q of pool.queries) {
+    assert.match(q.sql, /^SELECT\b/i, `non-SELECT query: ${q.sql.slice(0, 80)}`);
+    assert.doesNotMatch(q.sql, /\b(INSERT|UPDATE|DELETE|UPSERT)\b/i);
+  }
+});
+
+test('mcpGetIocContext: enrichment scope omit also omits derived_infrastructure', async () => {
+  const row = urlWithIpHostRow();
+  const pool = makeContextPool({ row, enrichment: [] });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, {
+    config: TEST_CONFIG,
+    mcpAuth: { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'readonly' }
+  });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.enrichment_included, false);
+  assert.equal(out.body.enrichment, undefined);
+  assert.equal(out.body.derived_infrastructure, undefined);
+});
+
+test('mcpLookupIoc: derived host IP remains found:false when not a standalone IOC', async () => {
+  const pool = makeLookupPool({ existing: null });
+  const out = await mcpLookupIoc(pool, { value: '94.154.43.38', type: 'ip' }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.found, false);
+  assert.equal(out.body.type, 'ip');
 });
 
 test('mcpGetIocContext: readonly owner without enrichment scope omits enrichment', async () => {

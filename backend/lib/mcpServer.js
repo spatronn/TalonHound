@@ -32,6 +32,8 @@ export function createTalonHoundMcpServer(deps) {
       },
       instructions:
         'TalonHound MCP Server. Use lookup_ioc / search_iocs / get_ioc_context / bulk_lookup_iocs for reads. '
+        + 'get_ioc_context may include derived_infrastructure for URL IOCs with an IP host (UI Derived Infrastructure) '
+        + 'without registering that host as an IOC. '
         + 'Use list_ioc_sources then import_iocs to add missing IOCs into an existing IOC Source. '
         + 'Never invent a special MCP/AI source — always use a real IOC Source. '
         + 'import_iocs supports dry_run. There are no delete or admin tools.'

@@ -18,6 +18,7 @@ import {
 import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
+import { extractIpLiteralFromIoc } from '../lib/iocIpExtraction.js';
 
 /**
  * One logical Enrichment Usage event for a user-triggered Spamhaus DROP lookup.
@@ -36,28 +37,9 @@ function recordSpamhausLookupUsage(pool, iocType, outcome) {
   });
 }
 
+/** @deprecated Prefer extractIpLiteralFromIoc — kept for route/test imports */
 export function extractIpFromIoc(iocValue, iocType) {
-  const type = String(iocType || '').trim().toLowerCase();
-  if (type === 'ip' || type === 'ipv4' || type === 'ipv6') {
-    return String(iocValue || '').trim().split('/')[0].trim() || null;
-  }
-  if (type === 'url') {
-    try {
-      const u = new URL(String(iocValue || '').trim());
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
-      const host = u.hostname;
-      if (!host) return null;
-      // Only IP hosts — no DNS resolve for domain hosts
-      const IPV4_RE = /^(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
-      const hostClean = host.replace(/^\[|\]$/g, ''); // strip IPv6 brackets
-      const isIp = IPV4_RE.test(hostClean) || hostClean.includes(':');
-      if (!isIp) return null;
-      return hostClean;
-    } catch {
-      return null;
-    }
-  }
-  return null;
+  return extractIpLiteralFromIoc(iocValue, iocType);
 }
 
 /**

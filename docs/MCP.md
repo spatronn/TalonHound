@@ -105,7 +105,7 @@ Profile presets:
 |------|-------------------|-----------|-------------|
 | `lookup_ioc` | `mcp:ioc:read` | Yes | Exact lookup of one observable. Type optional (auto-detect + normalize). |
 | `search_iocs` | `mcp:ioc:read` | Yes | Search inventory by DSL or plain-text `query` and/or `type` / `classification` / `source` filters (AND-combined); cursor pagination; bounded page size. See [search semantics](#search_iocs-query-semantics). |
-| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment. |
+| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment. For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. |
 | `bulk_lookup_iocs` | `mcp:ioc:read` | Yes | Batch existence check → `existing` / `missing` / `invalid` (max batch size configurable). |
 | `list_ioc_sources` | `mcp:sources:read` | Yes | Active, selectable IOC Sources usable as `import_iocs` targets. |
 | `import_iocs` | `mcp:ioc:create` | No | Import into an existing source via the same manual ingestion path as the GUI. Supports `dry_run`. |
