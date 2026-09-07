@@ -64,15 +64,37 @@ function isMissingRelationError(err, table) {
  * get_ioc_context matches the UI GET path even when DB still has a legacy
  * hardcoded URL-only `error_message` (no backfill required).
  */
-async function readGenericEnrichments(pool, iocId) {
+// Prefer a usable result when the same provider has rows under several linked
+// (exact-hash alias) ioc_ids: success beats "no report" beats error/other, then
+// the freshest. Keeps one entry per provider so a VT result enriched via a SHA1
+// alias surfaces on the canonical SHA256 without a second provider call.
+const GENERIC_STATUS_RANK = { success: 3, not_found: 1 };
+function genericStatusRank(status) {
+  return GENERIC_STATUS_RANK[String(status || '').toLowerCase()] ?? 0;
+}
+
+async function readGenericEnrichments(pool, iocIds) {
+  const ids = (Array.isArray(iocIds) ? iocIds : [iocIds])
+    .map((n) => Number(n))
+    .filter((n) => Number.isFinite(n));
+  if (!ids.length) return [];
   const { rows } = await pool.query(
     `SELECT provider, status, ioc_type, normalized_summary, fetched_at, expires_at, error_message
      FROM ioc_enrichments
-     WHERE ioc_id = $1
+     WHERE ioc_id = ANY($1::bigint[])
      ORDER BY provider ASC`,
-    [iocId]
+    [ids]
   );
-  return rows.map((e) => {
+  // One entry per provider (best status, then freshest).
+  const bestByProvider = new Map();
+  for (const e of rows) {
+    const prev = bestByProvider.get(e.provider);
+    if (!prev) { bestByProvider.set(e.provider, e); continue; }
+    const better = genericStatusRank(e.status) - genericStatusRank(prev.status)
+      || (new Date(e.fetched_at || 0) - new Date(prev.fetched_at || 0));
+    if (better > 0) bestByProvider.set(e.provider, e);
+  }
+  return [...bestByProvider.values()].map((e) => {
     const isVtNotIndexed = e.provider === VT_PROVIDER && e.status === 'not_found';
     return {
       provider: e.provider,
@@ -166,11 +188,16 @@ async function readIpinfoEnrichment(pool, type, value) {
  * @param {{ iocId: number|string, type: string, value: string }} ioc
  * @returns {Promise<Array<{provider:string,status:string,summary:any,fetched_at:any,expires_at:any,error_message:any}>>}
  */
-export async function collectIocEnrichments(pool, { iocId, type, value } = {}) {
+export async function collectIocEnrichments(pool, { iocId, type, value, linkedIocIds } = {}) {
   const entries = [];
 
-  // Generic table (VirusTotal today) — always applicable, keyed by ioc_id.
-  entries.push(...(await readGenericEnrichments(pool, iocId)));
+  // Generic table (VirusTotal today) — keyed by ioc_id, plus any exact-hash alias
+  // ioc_ids of the same file artifact so one VT file result covers every hash.
+  const genericIds = [...new Set([
+    ...(iocId != null ? [iocId] : []),
+    ...(Array.isArray(linkedIocIds) ? linkedIocIds : [])
+  ])];
+  entries.push(...(await readGenericEnrichments(pool, genericIds)));
 
   // Provider-specific stores. Each is type-gated + data-aware; a missing table
   // on an older schema is non-fatal, but any other error propagates.

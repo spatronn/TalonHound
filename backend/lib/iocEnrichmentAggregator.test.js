@@ -91,3 +91,34 @@ test('collectIocEnrichments does not rewrite non-VirusTotal error_message', asyn
   const entries = await collectIocEnrichments(pool, { iocId: 1, type: 'sha256', value: 'x' });
   assert.equal(entries[0].error_message, msg);
 });
+
+test('collectIocEnrichments reuses a VT success across exact-hash aliases (one VT entry, success preferred)', async () => {
+  // Canonical SHA256 (id 100) has no VT row; the SHA1 alias (id 200) holds a success.
+  const pool = makePool([
+    { provider: 'virustotal', status: 'not_found', ioc_type: 'sha256', normalized_summary: null,
+      fetched_at: '2026-09-01T00:00:00.000Z', expires_at: null, error_message: null },
+    { provider: 'virustotal', status: 'success', ioc_type: 'sha1',
+      normalized_summary: { file: { sha256: 'a', sha1: 'b', md5: 'c' } },
+      fetched_at: '2026-09-07T00:00:00.000Z', expires_at: null, error_message: null }
+  ]);
+  const entries = await collectIocEnrichments(pool, {
+    iocId: 100, type: 'sha256', value: 'a', linkedIocIds: [100, 200]
+  });
+  const vt = entries.filter((e) => e.provider === 'virustotal');
+  assert.equal(vt.length, 1, 'exactly one VirusTotal entry after dedup');
+  assert.equal(vt[0].status, 'success', 'success is preferred over not_found');
+  assert.ok(vt[0].summary && vt[0].summary.file, 'the successful summary is surfaced');
+});
+
+test('collectIocEnrichments dedup prefers freshest when statuses tie', async () => {
+  const pool = makePool([
+    { provider: 'virustotal', status: 'success', ioc_type: 'sha256', normalized_summary: { v: 'old' },
+      fetched_at: '2026-09-01T00:00:00.000Z', expires_at: null, error_message: null },
+    { provider: 'virustotal', status: 'success', ioc_type: 'sha1', normalized_summary: { v: 'new' },
+      fetched_at: '2026-09-07T00:00:00.000Z', expires_at: null, error_message: null }
+  ]);
+  const entries = await collectIocEnrichments(pool, { iocId: 100, type: 'sha256', value: 'a', linkedIocIds: [100, 200] });
+  const vt = entries.filter((e) => e.provider === 'virustotal');
+  assert.equal(vt.length, 1);
+  assert.equal(vt[0].summary.v, 'new');
+});

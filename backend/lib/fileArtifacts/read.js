@@ -144,6 +144,67 @@ export async function buildFileArtifactDetailBlock(db, publicId) {
 }
 
 /**
+ * Resolve every ioc_items row (ids + public_ids) linked to the SAME file artifact
+ * as the given ioc_items.id, following merged tombstones. Returns null when the
+ * artifact read path is disabled or the IOC is not linked to any artifact.
+ *
+ * The linked set contains only proven exact-hash members (md5/sha1/sha256) of one
+ * file artifact — established by the attach/merge logic, never by fuzzy matching —
+ * so it is safe to reuse a single VirusTotal file result across them without a
+ * second provider request and without creating new IOC rows.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {number|string} iocItemId
+ * @returns {Promise<{ artifact_id: string, linked_ioc_ids: number[], linked_ioc_public_ids: string[] } | null>}
+ */
+export async function findArtifactLinkedIocsByIocId(db, iocItemId) {
+  if (!isFileArtifactsReadEnabled()) return null;
+  const id = Number(iocItemId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  try {
+    const { rows } = await db.query(
+      `SELECT l.artifact_id, a.status, a.merged_into_artifact_id
+       FROM file_artifact_ioc_links l
+       JOIN file_artifacts a ON a.id = l.artifact_id
+       WHERE l.ioc_item_id = $1
+       LIMIT 1`,
+      [id]
+    );
+    if (!rows.length) return null;
+    let artifactId = rows[0].artifact_id;
+    let status = rows[0].status;
+    let mergedInto = rows[0].merged_into_artifact_id;
+    let guard = 0;
+    while (status === 'merged' && mergedInto && guard < 5) {
+      const next = await db.query(
+        `SELECT id, status, merged_into_artifact_id FROM file_artifacts WHERE id = $1`,
+        [mergedInto]
+      );
+      if (!next.rowCount) break;
+      artifactId = next.rows[0].id;
+      status = next.rows[0].status;
+      mergedInto = next.rows[0].merged_into_artifact_id;
+      guard += 1;
+    }
+    const { rows: links } = await db.query(
+      `SELECT ioc_item_id, ioc_public_id FROM file_artifact_ioc_links WHERE artifact_id = $1`,
+      [artifactId]
+    );
+    return {
+      artifact_id: artifactId,
+      linked_ioc_ids: links.map((l) => Number(l.ioc_item_id)).filter((n) => Number.isFinite(n)),
+      linked_ioc_public_ids: links.map((l) => String(l.ioc_public_id)).filter(Boolean)
+    };
+  } catch (err) {
+    // Schema may not be migrated yet — fail soft.
+    if (err && (err.code === '42P01' || String(err.message || '').includes('file_artifact'))) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
  * Map of public_id → artifact_id for list dedupe.
  * @param {import('pg').Pool|import('pg').PoolClient} db
  * @param {string[]} publicIds

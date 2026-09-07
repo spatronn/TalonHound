@@ -64,6 +64,7 @@ export {
   findArtifactByIocPublicId,
   loadArtifactDetail,
   buildFileArtifactDetailBlock,
+  findArtifactLinkedIocsByIocId,
   mapPublicIdsToArtifactIds,
   dedupeListItemsByArtifact
 } from './read.js';

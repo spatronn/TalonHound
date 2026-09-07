@@ -30,6 +30,7 @@ import {
   HASH_OPERATORS
 } from './iocSearchDsl/fields.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
+import { findArtifactLinkedIocsByIocId } from './fileArtifacts/read.js';
 import { collectIocEnrichments } from './iocEnrichmentAggregator.js';
 
 async function findExistingIoc(pool, type, value) {
@@ -396,10 +397,18 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   // reads all applicable stores so MCP matches the IOC Details intelligence view.
   let enrichment = undefined;
   if (caps.enrichment_read) {
+    // Reuse a VirusTotal file result across exact-hash aliases of the same file
+    // artifact (e.g. enriched via SHA1, viewed by SHA256) — no second provider call.
+    let linkedIocIds = [];
+    try {
+      const linked = await findArtifactLinkedIocsByIocId(pool, body.id);
+      linkedIocIds = linked?.linked_ioc_ids || [];
+    } catch { /* artifact read optional/absent — non-fatal */ }
     enrichment = await collectIocEnrichments(pool, {
       iocId: body.id,
       type: body.type,
-      value: body.value
+      value: body.value,
+      linkedIocIds
     });
   }
 

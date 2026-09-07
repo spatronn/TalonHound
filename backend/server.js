@@ -320,6 +320,8 @@ import {
   extractVtFileMetadata,
   promoteVtFileMetadataIntoFileInformation
 } from './lib/virustotalFileMetadata.js';
+import { resolveVtEnrichmentRow } from './lib/virustotalEnrichmentReuse.js';
+import { findArtifactLinkedIocsByIocId } from './lib/fileArtifacts/read.js';
 
 const { Pool } = pg;
 
@@ -5879,7 +5881,14 @@ app.get('/api/ioc/details', async (req, res) => {
     // no canonical rows are mutated, so an OTX/MalwareBazaar/analyst value can never
     // be clobbered, and the result is stable across reload/restart. Best-effort:
     // never fail IOC detail because of enrichment promotion.
-    if (summary.file_information && Array.isArray(iocItemIds) && iocItemIds.length) {
+    // Include exact-hash alias IOCs of the same file artifact so a VT result stored
+    // against an alias (e.g. enriched via SHA1) still enriches the canonical page.
+    const vtLookupIocIds = [...new Set([
+      ...(Array.isArray(iocItemIds) ? iocItemIds : []),
+      ...((Array.isArray(fileArtifact?.linked_ioc_ids) ? fileArtifact.linked_ioc_ids : [])
+        .map((n) => Number(n)).filter((n) => Number.isFinite(n)))
+    ])];
+    if (summary.file_information && vtLookupIocIds.length) {
       try {
         const vtRow = await pool.query(
           `SELECT normalized_summary
@@ -5887,7 +5896,7 @@ app.get('/api/ioc/details', async (req, res) => {
             WHERE provider = $1 AND status = 'success' AND ioc_id = ANY($2::bigint[])
             ORDER BY fetched_at DESC NULLS LAST
             LIMIT 1`,
-          [VT_PROVIDER, iocItemIds]
+          [VT_PROVIDER, vtLookupIocIds]
         );
         const vtFileMeta = vtRow.rows[0]?.normalized_summary?.file || null;
         if (vtFileMeta) {
@@ -6262,10 +6271,12 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
     const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
     const keyConfigured = Boolean(providerCfg.apiKey);
     if (!keyConfigured) return res.json({ status: 'api_key_missing' });
-    const q = `SELECT status, ioc_type, normalized_summary, error_message, fetched_at, expires_at FROM ioc_enrichments WHERE provider=$1 AND ioc_id=$2 LIMIT 1`;
-    const r = await pool.query(q, [VT_PROVIDER, iocId]);
-    if (!r.rowCount) return res.json({ status: 'not_found' });
-    const row = r.rows[0];
+    // Look up this IOC's VirusTotal row; when absent, reuse a successful result
+    // already stored against an exact-hash alias (md5/sha1/sha256) of the SAME
+    // file artifact — a single VT file report covers every hash of the file, so
+    // the canonical page must not report "not run" or trigger a second request.
+    const { row, reusedFromAlias } = await resolveVtEnrichmentRow(pool, iocId);
+    if (!row) return res.json({ status: 'not_found' });
     if (row.status === 'not_found') {
       // Rebuild message from stored ioc_type so legacy rows with a hardcoded
       // URL-only message self-heal on read (no DB backfill required for UI).
@@ -6284,7 +6295,10 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
       error_message: row.error_message,
       fetched_at: row.fetched_at,
       expires_at: row.expires_at,
-      is_error: row.status === 'error'
+      is_error: row.status === 'error',
+      // True when this result was reused from an exact-hash alias of the same file
+      // artifact (diagnostic; lets clients/telemetry see no new VT call was made).
+      reused_from_alias: reusedFromAlias || undefined
     });
   } catch {
     return res.status(500).json({ message: 'Failed to fetch VirusTotal enrichment' });
@@ -6446,16 +6460,19 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
 
     // A fresh VT report may add hashes / file type / imphash etc. that the IOC
     // detail promotes into File Information. Drop cached detail(s) for every IOC
-    // sharing this observable so a re-run is reflected immediately (bounded query;
-    // detail cache TTL is only ~15s regardless).
+    // sharing this observable AND every exact-hash alias IOC of the same file
+    // artifact (the canonical page has a different observable than the enriched
+    // alias, so it would otherwise serve stale detail). Bounded; TTL is ~15s anyway.
     try {
+      const invalidate = new Set();
       const pidRes = await pool.query(
         `SELECT DISTINCT public_id FROM ioc_items WHERE observable = $1 LIMIT 500`,
         [item.ioc_value]
       );
-      for (const p of pidRes.rows) {
-        if (p.public_id) invalidateIocDetailsCache(String(p.public_id));
-      }
+      for (const p of pidRes.rows) if (p.public_id) invalidate.add(String(p.public_id));
+      const linked = await findArtifactLinkedIocsByIocId(pool, iocId);
+      for (const pid of (linked?.linked_ioc_public_ids || [])) invalidate.add(String(pid));
+      for (const pid of invalidate) invalidateIocDetailsCache(pid);
     } catch { /* cache invalidation is best-effort */ }
 
     // Dual-write: attach VT exact hash set to file artifact when enabled
