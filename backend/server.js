@@ -316,6 +316,10 @@ import {
   vtHttpErrorMessage,
   ensureVtGuiPermalink
 } from './lib/virustotalEnrichment.js';
+import {
+  extractVtFileMetadata,
+  promoteVtFileMetadataIntoFileInformation
+} from './lib/virustotalFileMetadata.js';
 
 const { Pool } = pg;
 
@@ -5868,6 +5872,37 @@ app.get('/api/ioc/details', async (req, res) => {
       }
     }
 
+    // Promote trusted VirusTotal technical file metadata into File Information.
+    // VirusTotal is an enrichment provider (never the IOC source): fill only EMPTY
+    // canonical fields (strict no-overwrite) from the already-persisted VT summary,
+    // and surface observed names separately. Read-time merge over persisted data —
+    // no canonical rows are mutated, so an OTX/MalwareBazaar/analyst value can never
+    // be clobbered, and the result is stable across reload/restart. Best-effort:
+    // never fail IOC detail because of enrichment promotion.
+    if (summary.file_information && Array.isArray(iocItemIds) && iocItemIds.length) {
+      try {
+        const vtRow = await pool.query(
+          `SELECT normalized_summary
+             FROM ioc_enrichments
+            WHERE provider = $1 AND status = 'success' AND ioc_id = ANY($2::bigint[])
+            ORDER BY fetched_at DESC NULLS LAST
+            LIMIT 1`,
+          [VT_PROVIDER, iocItemIds]
+        );
+        const vtFileMeta = vtRow.rows[0]?.normalized_summary?.file || null;
+        if (vtFileMeta) {
+          const promotion = promoteVtFileMetadataIntoFileInformation(
+            summary.file_information,
+            vtFileMeta,
+            { primaryType: observableType, primaryValue: observable }
+          );
+          summary.file_information = promotion.file_information;
+        }
+      } catch (err) {
+        console.warn('[ioc-details] VT file metadata promotion failed', { public_id: requestedPublicId, detail: err?.message || err });
+      }
+    }
+
     // Augment confidence detail with highest_active_source_confidence so the UI
     // can show provenance separately from the effective value when analyst override is active.
     const enrichedConfidenceDetail = confidenceDetail
@@ -6198,13 +6233,25 @@ function normalizeVtSummary(iocValue, iocType, payload) {
     domain: { registrar: attr.registrar || null, categories: Object.values(attr.categories || {}) },
     ip: { asn: attr.asn || null, country: attr.country || null, network: attr.network || null, owner: attr.as_owner || null },
     url: { final_url: attr.last_final_url || null, title: attr.title || null, last_final_url: attr.last_final_url || null },
-    file: {
-      md5: attr.md5 || null,
-      sha1: attr.sha1 || null,
-      sha256: attr.sha256 || null,
-      names: Array.isArray(attr.names) ? attr.names.slice(0, 10) : [],
-      type_description: attr.type_description || null
-    }
+    // Technical file metadata, validated/sanitised for promotion into the IOC
+    // File Information view. `type_description` is kept for backward compatibility;
+    // `file_type` mirrors it (or type_tag) under the File Information field name.
+    file: (() => {
+      const meta = extractVtFileMetadata(payload);
+      return {
+        md5: meta.md5,
+        sha1: meta.sha1,
+        sha256: meta.sha256,
+        names: meta.names,
+        type_description: attr.type_description || null,
+        file_type: meta.file_type,
+        mime: meta.mime,
+        imphash: meta.imphash,
+        tlsh: meta.tlsh,
+        ssdeep: meta.ssdeep,
+        meaningful_name: meta.meaningful_name
+      };
+    })()
   });
 }
 
@@ -6396,6 +6443,20 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       VALUES ($1,$2,$3,$4,'success',$5,$6,NULL,$7,$8,NOW())
       ON CONFLICT (provider,ioc_value,ioc_type) DO UPDATE SET ioc_id=EXCLUDED.ioc_id,status='success',normalized_summary=EXCLUDED.normalized_summary,raw_response=EXCLUDED.raw_response,error_message=NULL,fetched_at=EXCLUDED.fetched_at,expires_at=EXCLUDED.expires_at,updated_at=NOW()`,
       [iocId, item.ioc_value, iocType, VT_PROVIDER, summary, raw, fetchedAt.toISOString(), expiresAt.toISOString()]);
+
+    // A fresh VT report may add hashes / file type / imphash etc. that the IOC
+    // detail promotes into File Information. Drop cached detail(s) for every IOC
+    // sharing this observable so a re-run is reflected immediately (bounded query;
+    // detail cache TTL is only ~15s regardless).
+    try {
+      const pidRes = await pool.query(
+        `SELECT DISTINCT public_id FROM ioc_items WHERE observable = $1 LIMIT 500`,
+        [item.ioc_value]
+      );
+      for (const p of pidRes.rows) {
+        if (p.public_id) invalidateIocDetailsCache(String(p.public_id));
+      }
+    } catch { /* cache invalidation is best-effort */ }
 
     // Dual-write: attach VT exact hash set to file artifact when enabled
     try {

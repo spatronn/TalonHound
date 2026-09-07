@@ -530,6 +530,19 @@ function FileArtifactInformationCard({ fileInformation, fileArtifact }) {
           <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Name</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.file_name || fileArtifact?.file_name || '-'}</td></tr>
           <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>File Type</th><td>{fi.file_type || fileArtifact?.file_type || '-'}</td></tr>
           <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MIME</th><td>{fi.mime || fileArtifact?.mime_type || '-'}</td></tr>
+          {Array.isArray(fi.observed_file_names) && fi.observed_file_names.length ? (
+            <tr style={{ borderTop: '1px solid #334155' }}>
+              <th style={{ width: 180, textAlign: 'left', background: '#111827', verticalAlign: 'top' }}>Observed File Names</th>
+              <td>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  {fi.observed_file_names.map((name) => (
+                    <span key={name} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{name}</span>
+                  ))}
+                </div>
+                <div style={{ marginTop: 4, fontSize: 11, color: '#94a3b8' }}>Observed by VirusTotal — uploader-supplied, not authoritative</div>
+              </td>
+            </tr>
+          ) : null}
           {!known.length ? (
             <>
               <tr style={{ borderTop: '1px solid #334155' }}><th style={{ width: 180, textAlign: 'left', background: '#111827' }}>MD5</th><td style={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>{fi.md5 || '-'}</td></tr>
