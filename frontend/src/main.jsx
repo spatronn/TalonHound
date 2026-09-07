@@ -40,6 +40,12 @@ import {
 import { getIocStatusCardPresentation } from './lib/iocStatusCard.js';
 import { iocDetailHref } from './lib/iocDetailLink.js';
 import {
+  summarizeCustomThreatFeeds,
+  customFeedStatePresentation,
+  customFeedLastResultPresentation,
+  customFeedMetadataParts
+} from './lib/customThreatFeedsView.js';
+import {
   CONFIDENCE_OPTIONS,
   getIocConfidencePresentation,
   formatConfidenceAuditMetadata,
@@ -5087,19 +5093,20 @@ function CustomThreatFeedsPage() {
     }
   }
 
-  const statusLabel = (status) => {
-    if (status === 'partial_success') return 'Partial success';
-    if (status === 'success') return 'Sync completed';
-    if (status === 'failed') return 'Failed';
-    if (status === 'running') return 'Running';
-    return status || '—';
-  };
+  // Last Result tones reuse the shared Feeds palette; 'info' (running/queued) has
+  // no built-in entry, so add a blue matching the built-in runtime accents.
+  const RESULT_TONE_COLORS = { ...FEED_RESULT_TONE_COLORS, info: '#93c5fd' };
+
+  const summaryCounts = summarizeCustomThreatFeeds(feeds);
 
   function renderStateBadge(feed) {
-    const state = feedStatePresentation(feed.active !== false);
+    const st = customFeedStatePresentation(feed);
+    const style = st.kind === 'archived'
+      ? { color: '#cbd5e1', bg: 'rgba(100,116,139,0.18)', border: '#64748b' }
+      : feedStatePresentation(feed.active !== false);
     return (
-      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: state.color, background: state.bg, border: `1px solid ${state.border}` }}>
-        {state.label}
+      <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 700, color: style.color, background: style.bg, border: `1px solid ${style.border}`, whiteSpace: 'nowrap' }}>
+        {st.label}
       </span>
     );
   }
@@ -5107,23 +5114,45 @@ function CustomThreatFeedsPage() {
   return (
     <AppShell>
       <div className="page-content">
-        <section style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <section className="integrations-feeds-page" style={{ border: '1px solid #334155', borderRadius: 12, background: '#111827', padding: 16, marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div>
-              <h2 style={{ margin: 0, color: '#f1f5f9' }}>Custom Threat Feeds</h2>
+              <h2 style={{ marginTop: 0, marginBottom: 0, color: '#f1f5f9' }}>Custom Threat Feeds</h2>
               <p style={{ margin: '6px 0 0', color: '#94a3b8', fontSize: 13 }}>
                 Sync IOCs from TI feed URLs (TXT/CSV).
               </p>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" onClick={() => loadFeeds().catch(() => {})}>Refresh</button>
               {isAdmin ? <button type="button" onClick={openCreate}>Add Custom Threat Feed</button> : null}
             </div>
           </div>
 
-          {toast ? <div style={{ marginBottom: 10, color: '#86efac' }}>{toast}</div> : null}
-          {error ? <div style={{ marginBottom: 10, color: '#fca5a5' }}>{error}</div> : null}
-          {loading ? <p style={{ color: '#94a3b8' }}>Loading…</p> : null}
+          {toast ? <div style={{ marginTop: 10, color: '#86efac' }}>{toast}</div> : null}
+          {error ? <div style={{ marginTop: 10, color: '#fca5a5' }}>{error}</div> : null}
+
+          {!loading && feeds.length > 0 ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginTop: 14, marginBottom: 14 }}>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Total Feeds</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#e2e8f0' }}>{summaryCounts.total}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Enabled</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: '#86efac' }}>{summaryCounts.enabled}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Needs Attention</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: summaryCounts.needs_attention > 0 ? '#fcd34d' : '#e2e8f0' }}>{summaryCounts.needs_attention}</div>
+              </div>
+              <div style={{ border: '1px solid #334155', borderRadius: 10, padding: '10px 12px', background: '#0f172a' }}>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>Running / Queued</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: summaryCounts.running_queued > 0 ? '#93c5fd' : '#e2e8f0' }}>{summaryCounts.running_queued}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {loading ? <div style={{ color: '#94a3b8', marginTop: 12 }}>Loading…</div> : null}
 
           {!loading && feeds.length === 0 ? (
             <EmptyState
@@ -5136,70 +5165,88 @@ function CustomThreatFeedsPage() {
           ) : null}
 
           {!loading && feeds.length > 0 ? (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <div className="integrations-feeds-table-scroll">
+              <table className="ioc-table integrations-feeds-table" width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', background: '#0f172a', fontSize: 12, fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace" }}>
+                <colgroup>
+                  <col className="integrations-feeds-col-feed" />
+                  <col className="integrations-feeds-col-state" />
+                  <col className="integrations-feeds-col-last-run" />
+                  <col className="integrations-feeds-col-metrics" />
+                  <col className="integrations-feeds-col-next-run" />
+                  <col className="integrations-feeds-col-action" />
+                </colgroup>
                 <thead>
-                  <tr style={{ textAlign: 'left', color: '#cbd5e1' }}>
-                    <th style={{ padding: 8 }}>State</th>
-                    <th style={{ padding: 8 }}>Name</th>
-                    <th style={{ padding: 8 }}>URL host</th>
-                    <th style={{ padding: 8 }}>Format</th>
-                    <th style={{ padding: 8 }}>IOC type</th>
-                    <th style={{ padding: 8 }}>Schedule</th>
-                    <th style={{ padding: 8 }}>Confidence</th>
-                    <th style={{ padding: 8 }}>Expiration</th>
-                    <th style={{ padding: 8 }}>Last success</th>
-                    <th style={{ padding: 8 }}>Last run</th>
-                    <th style={{ padding: 8 }}>Last error</th>
-                    <th style={{ padding: 8 }}>Actions</th>
+                  <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', background: '#1f2937', color: '#cbd5e1' }}>
+                    <th>Feed</th>
+                    <th>State</th>
+                    <th>Last Run</th>
+                    <th>Last Result</th>
+                    <th>Schedule</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {feeds.map((feed) => (
-                    <tr key={feed.id} style={{ borderTop: '1px solid #334155', color: '#e2e8f0' }}>
-                      <td style={{ padding: 8 }}>{renderStateBadge(feed)}</td>
-                      <td style={{ padding: 8 }}><span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, ...sourceColorBadgeStyle(feed.color || DEFAULT_SOURCE_COLOR) }}>{feed.name}</span></td>
-                      <td style={{ padding: 8 }}>{feed.url_host || feed.url_display}</td>
-                      <td style={{ padding: 8 }}>{feed.format}</td>
-                      <td style={{ padding: 8 }}>{feed.ioc_type_mode}{feed.fixed_ioc_type ? ` (${feed.fixed_ioc_type})` : ''}</td>
-                      <td style={{ padding: 8 }}>{formatFeedScheduleLabel(feed.schedule)}</td>
-                      <td style={{ padding: 8, textTransform: 'capitalize' }}>{feed.default_confidence || 'medium'}</td>
-                      <td style={{ padding: 8 }}>{feed.expiration_summary || 'Never'}</td>
-                      <td style={{ padding: 8 }}>{feed.last_success_at ? formatUserDateTime(feed.last_success_at) : '—'}</td>
-                      <td style={{ padding: 8 }}>{statusLabel(feed.last_run_status)}</td>
-                      <td style={{ padding: 8, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{feed.last_error || '—'}</td>
-                      <td style={{ padding: 8, whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                          {isAdmin ? (
-                            <button type="button" className={buttonClassName({ size: 'compact' })} disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})}>
-                              Edit
-                            </button>
+                  {feeds.map((feed) => {
+                    const result = customFeedLastResultPresentation(feed);
+                    const resultColor = RESULT_TONE_COLORS[result.tone] || RESULT_TONE_COLORS.neutral;
+                    const metadataParts = customFeedMetadataParts(feed);
+                    const lastRunAt = feed.last_run_finished_at || feed.last_success_at;
+                    const isEnabled = feed.active !== false && !feed.archived_at;
+                    return (
+                      <tr key={feed.id} style={{ borderBottom: '1px solid #1e293b', opacity: isEnabled ? 1 : 0.78 }}>
+                        <td className="integrations-feeds-feed-name" style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                          <span style={{ display: 'inline-flex', borderRadius: 999, padding: '2px 9px', fontSize: 12, fontWeight: 700, ...sourceColorBadgeStyle(feed.color || DEFAULT_SOURCE_COLOR) }}>{feed.name}</span>
+                          {metadataParts.length ? (
+                            <div title={metadataParts.join(' · ')} style={{ marginTop: 4, color: '#64748b', fontSize: 10, lineHeight: 1.4, overflowWrap: 'anywhere' }}>
+                              {metadataParts.join(' · ')}
+                            </div>
                           ) : null}
-                          {canRunActions ? (
-                            <button
-                              type="button"
-                              className={buttonClassName({ size: 'compact' })}
-                              disabled={actionFeedId === feed.id || !feed.active}
-                              onClick={() => runNowFeed(feed)}
-                              title={!feed.active ? 'Enable the feed before running manually.' : undefined}
-                            >
-                              {actionFeedId === feed.id ? 'Queueing...' : 'Run now'}
-                            </button>
-                          ) : null}
-                          {isAdmin ? (
-                            <button
-                              type="button"
-                              className={buttonClassName({ size: 'compact' })}
-                              disabled={deleteLoading && deleteModal?.feed?.id === feed.id}
-                              onClick={() => openDeleteCheck(feed).catch(() => {})}
-                            >
-                              {deleteLoading && deleteModal?.feed?.id === feed.id ? '...' : 'Delete'}
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td>{renderStateBadge(feed)}</td>
+                        <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }} title={lastRunAt ? formatUserDateTime(lastRunAt) : 'No run yet'}>
+                          {lastRunAt ? formatUserDateTime(lastRunAt) : '—'}
+                        </td>
+                        <td>
+                          <div style={{ maxWidth: 280 }} title={result.title}>
+                            <div style={{ color: resultColor, fontSize: 12, fontWeight: 650, lineHeight: 1.35, whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+                              {result.primary}
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap', color: '#94a3b8', fontSize: 11 }}>{formatFeedScheduleLabel(feed.schedule)}</td>
+                        <td className="integrations-feeds-action-cell">
+                          <div className="integrations-feeds-action-buttons" style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                            {canRunActions ? (
+                              <button
+                                type="button"
+                                className={buttonClassName({ size: 'compact' })}
+                                disabled={actionFeedId === feed.id || !feed.active}
+                                onClick={() => runNowFeed(feed)}
+                                title={!feed.active ? 'Enable the feed before running manually.' : undefined}
+                              >
+                                {actionFeedId === feed.id ? 'Queueing...' : 'Run now'}
+                              </button>
+                            ) : null}
+                            {isAdmin ? (
+                              <button type="button" className={buttonClassName({ size: 'compact' })} disabled={actionFeedId === feed.id} onClick={() => openEdit(feed).catch(() => {})}>
+                                Edit
+                              </button>
+                            ) : null}
+                            {isAdmin ? (
+                              <button
+                                type="button"
+                                className={buttonClassName({ size: 'compact' })}
+                                disabled={deleteLoading && deleteModal?.feed?.id === feed.id}
+                                onClick={() => openDeleteCheck(feed).catch(() => {})}
+                              >
+                                {deleteLoading && deleteModal?.feed?.id === feed.id ? '...' : 'Delete'}
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
