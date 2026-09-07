@@ -38,6 +38,7 @@ import {
   chipLabel
 } from './lib/iocSearchDslClient.js';
 import { getIocStatusCardPresentation } from './lib/iocStatusCard.js';
+import { iocDetailHref } from './lib/iocDetailLink.js';
 import {
   CONFIDENCE_OPTIONS,
   getIocConfidencePresentation,
@@ -1791,6 +1792,44 @@ function WatchlistStarButton({ watchlisted, pending, onToggle, size = 'row' }) {
     >
       <span aria-hidden="true" style={{ fontSize: glyphSize, lineHeight: 1 }}>{model.glyph}</span>
     </button>
+  );
+}
+
+// Shared visual for a clickable IOC value: looks exactly like the underlined
+// blue link IOC tables have always used.
+const IOC_LINK_STYLE = {
+  color: '#93c5fd',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+  font: 'inherit',
+  background: 'transparent',
+  wordBreak: 'inherit',
+  overflowWrap: 'inherit'
+};
+
+/**
+ * Semantic link to an IOC detail page.
+ *
+ * Renders a real react-router <Link> (a proper <a href>), so the browser handles
+ * middle-click, Ctrl/Cmd+click, right-click "Open in new tab" and keyboard
+ * activation natively — no onClick+navigate, no window.open, no mouse-button
+ * sniffing. When no public id is available we fall back to plain text (the old
+ * onClick button silently did nothing in that case).
+ */
+function IocLink({ publicId, children, style, ...rest }) {
+  const href = iocDetailHref(publicId);
+  const mergedStyle = style ? { ...IOC_LINK_STYLE, ...style } : IOC_LINK_STYLE;
+  if (!href) {
+    return (
+      <span style={{ ...mergedStyle, color: '#e2e8f0', textDecoration: 'none', cursor: 'default' }}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link to={href} style={mergedStyle} {...rest}>
+      {children}
+    </Link>
   );
 }
 
@@ -12261,12 +12300,7 @@ function WatchlistPage() {
                           />
                         </td>
                         <td title={obs} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                          <button
-                            onClick={() => r.public_id && navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`)}
-                            style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
-                          >
-                            {obs}
-                          </button>
+                          <IocLink publicId={r.public_id}>{obs}</IocLink>
                         </td>
                         <td style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.observable_type || 'ip'}</td>
                         <td title={classTitle} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.35, fontSize: 12 }}>
@@ -14048,12 +14082,7 @@ function IOCListPage() {
                 ) : null}
                 <td className="ioc-list-col-secondary" style={{ fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{(pagination.page - 1) * pagination.page_size + idx + 1}</td>
                 <td title={obs} style={{ whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
-                  <button
-                    onClick={() => r.public_id && navigate(`/ioc/details/${encodeURIComponent(r.public_id)}`)}
-                    style={{ background: 'transparent', border: 'none', color: '#93c5fd', cursor: 'pointer', textDecoration: 'underline', padding: 0, font: 'inherit', textAlign: 'left' }}
-                  >
-                    {obs}
-                  </button>
+                  <IocLink publicId={r.public_id}>{obs}</IocLink>
                   {isSuppressed ? (
                     <>
                       <span style={suppressionBadgeStyle('suppressed')}>Suppressed</span>
