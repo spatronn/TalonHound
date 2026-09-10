@@ -24,6 +24,7 @@ import {
   toAnalystReferenceForm
 } from './lib/analystIntelligenceForm.js';
 import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
+import { buildIntelligenceSectionOrder } from './lib/intelligenceSectionOrder.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -614,9 +615,18 @@ export function IntelligenceTabPanel({
   }), []);
 
   const showFileInfo = isHashObservable && (hasMeaningfulFileInfo || Boolean(fileArtifact?.known_hashes?.length));
+  const hasDerivedInfrastructure = Boolean(derivedContext);
 
-  return (
-    <div style={{ display: 'grid', gap: 14 }}>
+  // Single source of truth for the top-to-bottom section layout. Analyst
+  // Intelligence is guaranteed to be last for every IOC type; type-specific
+  // sections (Derived Infrastructure, File Information) always sit above it.
+  const sectionOrder = buildIntelligenceSectionOrder({
+    showDerivedInfrastructure: hasDerivedInfrastructure,
+    showFileInformation: showFileInfo
+  });
+
+  const sectionRenderers = {
+    summary: () => (
       <IntelligenceSummarySection
         providerSnapshots={providerSnapshots}
         derivedProviderSnapshots={derivedProviderSnapshots}
@@ -625,7 +635,8 @@ export function IntelligenceTabPanel({
         iocType={iocType}
         rdapEligible={isRdapEligible}
       />
-
+    ),
+    automated: () => (
       <div style={sectionShellStyle}>
         <div style={{ marginBottom: 12 }}>
           <div style={sectionTitleStyle}>Automated Intelligence</div>
@@ -648,7 +659,8 @@ export function IntelligenceTabPanel({
           ) : null}
         </div>
       </div>
-
+    ),
+    derivedInfrastructure: () => (
       <DerivedInfrastructureSection
         context={derivedContext}
         providerSnapshots={derivedProviderSnapshots}
@@ -665,7 +677,11 @@ export function IntelligenceTabPanel({
         RdapEnrichmentCard={RdapEnrichmentCard}
         SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
       />
-
+    ),
+    fileInformation: () => (
+      <FileArtifactInformationCard fileInformation={fileInformation} fileArtifact={fileArtifact} />
+    ),
+    analyst: () => (
       <AnalystIntelligenceSection
         iocId={iocId}
         canWrite={canWrite}
@@ -673,10 +689,14 @@ export function IntelligenceTabPanel({
         onSummaryChange={setAnalystSummary}
         formatUserDateTime={formatUserDateTime}
       />
+    )
+  };
 
-      {showFileInfo ? (
-        <FileArtifactInformationCard fileInformation={fileInformation} fileArtifact={fileArtifact} />
-      ) : null}
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      {sectionOrder.map((key) => (
+        <React.Fragment key={key}>{sectionRenderers[key]()}</React.Fragment>
+      ))}
     </div>
   );
 }
