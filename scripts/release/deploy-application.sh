@@ -18,6 +18,8 @@ if [ -f VERSION ]; then
 fi
 
 echo "=== build backend + frontend ==="
+# backend image is shared by all backend-derived workers (see docker-compose.yml
+# x-backend-image). Building `backend` refreshes the tag workers recreate from.
 docker compose build backend frontend proxy integration-worker integration-scheduler
 
 echo "=== recreate application services ==="
@@ -26,6 +28,20 @@ docker compose up -d --no-deps --force-recreate frontend proxy
 docker compose up -d --no-deps --force-recreate \
   ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker threat-library-worker backup-worker \
   integration-worker integration-scheduler
+
+echo "=== verify threat-library-worker shares backend image ==="
+backend_img="$(docker inspect -f '{{.Image}}' talonhound-backend-1)"
+tl_img="$(docker inspect -f '{{.Image}}' talonhound-threat-library-worker-1)"
+echo "backend=$backend_img"
+echo "threat-library-worker=$tl_img"
+if [ "$backend_img" != "$tl_img" ]; then
+  echo "ERROR: threat-library-worker is not running the shared backend image" >&2
+  exit 1
+fi
+if ! docker compose exec -T threat-library-worker test -f /app/lib/threatLibrary/ai/client.js; then
+  echo "ERROR: threat-library-worker missing long-running AI client module" >&2
+  exit 1
+fi
 
 echo "=== wait for backend health ==="
 for i in $(seq 1 30); do

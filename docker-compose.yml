@@ -23,6 +23,13 @@ x-backend-build: &backend-build
   network: host
   args: *talonhound-build-args
 
+# All backend-derived app/worker services MUST share this image tag. Compose otherwise
+# builds a separate image per service (talonhound-threat-library-worker, …). Building
+# only `backend` then force-recreating workers leaves them on a stale image — which is
+# exactly how Threat Library AI timeouts can “look fixed” in the API container while
+# the worker still runs the old AbortController path.
+x-backend-image: &backend-image talonhound-backend:local
+
 x-frontend-build: &frontend-build
   context: .
   dockerfile: frontend/Dockerfile
@@ -81,6 +88,7 @@ services:
     logging: *talonhound-logging
 
   backend:
+    image: *backend-image
     build: *backend-build
     environment:
       - PORT=3000
@@ -293,6 +301,7 @@ services:
     logging: *talonhound-logging
 
   ioc-expiration-worker:
+    image: *backend-image
     build: *backend-build
     command: ["npm", "run", "ioc-expiration-worker"]
     environment:
@@ -317,6 +326,7 @@ services:
     logging: *talonhound-logging
 
   ioc-search-export-worker:
+    image: *backend-image
     build: *backend-build
     command: ["npm", "run", "ioc-search-export-worker"]
     environment:
@@ -350,6 +360,7 @@ services:
     logging: *talonhound-logging
 
   ioc-deep-search-worker:
+    image: *backend-image
     build: *backend-build
     command: ["npm", "run", "ioc-deep-search-worker"]
     environment:
@@ -378,6 +389,7 @@ services:
     logging: *talonhound-logging
 
   ioc-bulk-query-worker:
+    image: *backend-image
     build: *backend-build
     command: ["npm", "run", "ioc-bulk-query-worker"]
     environment:
@@ -403,6 +415,7 @@ services:
     logging: *talonhound-logging
 
   threat-library-worker:
+    image: *backend-image
     build: *backend-build
     command: ["npm", "run", "threat-library-worker"]
     environment:
@@ -429,6 +442,7 @@ services:
     logging: *talonhound-logging
 
   backup-worker:
+    image: *backend-image
     build: *backend-build
     command: ["npm", "run", "backup-worker"]
     environment:

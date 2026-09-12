@@ -1,5 +1,8 @@
 import './lib/ensure-db-password.js';
 import './lib/ensure-redis-password.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import IORedis from 'ioredis';
 import { Worker } from 'bullmq';
@@ -8,6 +11,23 @@ import { createServiceLogger } from './lib/appLogger.js';
 import { getThreatLibraryQueueName, getThreatLibraryWorkerOptions } from './lib/threatLibrary/queueConfig.js';
 import { runAnalysisPipeline } from './lib/threatLibrary/pipeline.js';
 import { updateJob, getReportById, updateReportStatus } from './lib/threatLibrary/store.js';
+
+const log = createServiceLogger('threat-library-worker');
+
+// Refuse to run a stale worker image that still has the pre-streaming AI adapter.
+// Compose used to build a separate image per service; building only `backend` left
+// this worker on the old AbortController(timeout_ms) path.
+const aiDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lib', 'threatLibrary', 'ai');
+for (const required of ['client.js', 'analyze.js', 'timeouts.js']) {
+  if (!fs.existsSync(path.join(aiDir, required))) {
+    log.error('stale threat-library-worker image', {
+      missing: required,
+      aiDir,
+      hint: 'Rebuild/recreate using the shared talonhound-backend:local image'
+    });
+    process.exit(1);
+  }
+}
 
 const { Pool } = pg;
 const pool = new Pool({
@@ -18,7 +38,6 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'talonhound'
 });
 
-const log = createServiceLogger('threat-library-worker');
 const redis = new IORedis(getRedisUrl(), { maxRetriesPerRequest: null });
 const concurrency = Math.min(Math.max(Number(process.env.THREAT_LIBRARY_WORKER_CONCURRENCY || 2), 1), 4);
 
@@ -34,7 +53,8 @@ const worker = new Worker(
       bullmqJobId: job.id,
       reportId,
       jobId,
-      resumeAnalysis: job.data?.resumeAnalysis === true
+      resumeAnalysis: job.data?.resumeAnalysis === true,
+      aiClient: 'streaming-v2'
     });
     await updateJob(pool, jobId, { status: 'running', stage: 'starting', bullmq_job_id: String(job.id) });
     const result = await runAnalysisPipeline(pool, {
@@ -83,7 +103,12 @@ worker.on('failed', async (job, err) => {
 });
 
 worker.on('ready', () => {
-  log.info('worker ready', { queue: getThreatLibraryQueueName(), concurrency });
+  log.info('worker ready', {
+    queue: getThreatLibraryQueueName(),
+    concurrency,
+    aiClient: 'streaming-v2',
+    version: process.env.TALONHOUND_VERSION || null
+  });
 });
 
 async function shutdown() {

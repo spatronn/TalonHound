@@ -152,6 +152,8 @@ Legacy WHITE → CLEAR on ingest. UI displays `TLP:CLEAR` etc. Restricted export
 
 BullMQ queue `threat-library` + `threat-library-worker` service. Stages persist on `threat_reports` / `threat_library_jobs` for real UI progress.
 
+The worker must run the same backend image as the API (`talonhound-backend:local`). Building only the `backend` service and recreating workers without a shared image tag previously left the worker on a stale AbortController timeout path.
+
 ## Future STIX note
 
 Canonical entities/relationships intentionally resemble STIX concepts (threat-actor, malware, indicator, relationship) without implementing STIX 2.1 in V1.

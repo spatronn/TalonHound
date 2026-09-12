@@ -205,6 +205,17 @@ export async function runAnalysisPipeline(pool, ctx) {
     await updateReportStatus(pool, report.id, { clear_cancel: true });
 
     const aiSettings = await getAiSettings(pool);
+    const { resolveAiTimeoutPolicy } = await import('./ai/timeouts.js');
+    const timeoutPolicy = resolveAiTimeoutPolicy(aiSettings);
+    log.info('AI analysis starting', {
+      reportId: report.id,
+      provider: aiSettings?.provider,
+      model: aiSettings?.model,
+      base_url: aiSettings?.base_url,
+      timeout_policy: timeoutPolicy,
+      resume: resumePreferred,
+      candidate_count: candidates.length
+    });
     const analysisRunId = await ensureAnalysisRun(pool, report.id, {
       // Keep same run on retry so completed chunks are reused
       forceNew: false
