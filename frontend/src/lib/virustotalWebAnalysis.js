@@ -133,3 +133,55 @@ export function compactUrlForDisplay(url, maxLen = 72) {
     return `${s.slice(0, maxLen - 1)}…`;
   }
 }
+
+/**
+ * Untrusted Web Analysis URL rows (redirect chain / outgoing links) must NEVER
+ * be rendered as navigable anchors. Analysts need readable, selectable text —
+ * not accidental browser navigation to phishing/payload URLs.
+ *
+ * @param {string} url
+ * @param {{ maxLen?: number }} [opts]
+ * @returns {{
+ *   element: 'span',
+ *   text: string,
+ *   title: string,
+ *   href: null,
+ *   onClick: null,
+ *   role: null,
+ *   tabIndex: null,
+ *   style: Record<string, string|number>
+ * }}
+ */
+export function webAnalysisUntrustedUrlDisplay(url, { maxLen = 72 } = {}) {
+  const full = String(url ?? '').trim();
+  return {
+    element: 'span',
+    text: compactUrlForDisplay(full, maxLen),
+    title: full,
+    href: null,
+    onClick: null,
+    role: null,
+    tabIndex: null,
+    style: {
+      color: '#cbd5e1',
+      fontSize: 13,
+      fontFamily: "'JetBrains Mono', monospace",
+      overflowWrap: 'anywhere',
+      wordBreak: 'break-word',
+      cursor: 'text',
+      userSelect: 'text',
+      display: 'inline-block',
+      maxWidth: '100%'
+    }
+  };
+}
+
+/** True when a Web Analysis URL display model is non-navigable (no href/click). */
+export function isNonNavigableWebAnalysisUrlDisplay(model) {
+  if (!model || typeof model !== 'object') return false;
+  return model.element === 'span'
+    && model.href == null
+    && model.onClick == null
+    && model.role !== 'link'
+    && model.tabIndex == null;
+}

@@ -63,7 +63,7 @@ import {
   formatContentLengthLabel,
   normalizeRedirectChainView,
   normalizeOutgoingLinksView,
-  compactUrlForDisplay
+  webAnalysisUntrustedUrlDisplay
 } from './lib/virustotalWebAnalysis.js';
 import { copyTextToClipboard } from './lib/iocCopyFeedback.js';
 import {
@@ -14644,20 +14644,16 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
               <div>
                 <div style={webFieldLabel}>Redirect Chain</div>
                 <div style={{ display: 'grid', gap: 4 }}>
-                  {redirectChain.items.map((url, idx) => (
-                    <div key={`${idx}-${url}`}>
-                      {idx > 0 ? <div style={{ color: '#64748b', fontSize: 12, paddingLeft: 4 }}>↓</div> : null}
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={url}
-                        style={{ color: '#93c5fd', fontSize: 13, textDecoration: 'none', overflowWrap: 'anywhere', wordBreak: 'break-word', display: 'inline-block', maxWidth: '100%' }}
-                      >
-                        {compactUrlForDisplay(url)}
-                      </a>
-                    </div>
-                  ))}
+                  {redirectChain.items.map((url, idx) => {
+                    // Untrusted VT redirect URLs: plain selectable text only — never <a href>.
+                    const row = webAnalysisUntrustedUrlDisplay(url);
+                    return (
+                      <div key={`${idx}-${url}`}>
+                        {idx > 0 ? <div style={{ color: '#64748b', fontSize: 12, paddingLeft: 4 }}>↓</div> : null}
+                        <span title={row.title} style={row.style}>{row.text}</span>
+                      </div>
+                    );
+                  })}
                   {redirectChain.truncated || redirectChain.total_count > redirectChain.items.length ? (
                     <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
                       + {Math.max(0, redirectChain.total_count - redirectChain.items.length)} more
@@ -14671,18 +14667,13 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
               <div>
                 <div style={webFieldLabel}>Outgoing Links</div>
                 <div style={{ display: 'grid', gap: 6 }}>
-                  {outgoingView.preview.map((url) => (
-                    <a
-                      key={url}
-                      href={url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={url}
-                      style={{ color: '#93c5fd', fontSize: 13, textDecoration: 'none', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
-                    >
-                      {compactUrlForDisplay(url, 96)}
-                    </a>
-                  ))}
+                  {outgoingView.preview.map((url) => {
+                    // Untrusted VT outgoing URLs: plain selectable text only — never <a href>.
+                    const row = webAnalysisUntrustedUrlDisplay(url, { maxLen: 96 });
+                    return (
+                      <span key={url} title={row.title} style={row.style}>{row.text}</span>
+                    );
+                  })}
                   {!showAllOutgoing && outgoingView.remaining > 0 ? (
                     <button type="button" onClick={() => setShowAllOutgoing(true)} style={{ justifySelf: 'start', padding: '4px 8px', fontSize: 12 }}>
                       + {outgoingView.remaining} more
