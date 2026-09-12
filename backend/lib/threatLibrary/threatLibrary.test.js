@@ -70,7 +70,15 @@ test('empty document detection', () => {
   assert.equal(isEffectivelyEmptyDocument(createCanonicalDocument({ blocks: [] })), true);
   assert.equal(
     isEffectivelyEmptyDocument(
-      createCanonicalDocument({ blocks: [{ id: 'b1', type: 'paragraph', text: 'Enough text content here for analysis.' }] })
+      createCanonicalDocument({
+        blocks: [
+          {
+            id: 'b1',
+            type: 'paragraph',
+            text: 'Enough text content here for analysis of the threat report body.'
+          }
+        ]
+      })
     ),
     false
   );

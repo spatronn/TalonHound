@@ -112,7 +112,7 @@ Format: `talonhound-intelligence-bundle`
 File convention: `*.thib.json`  
 Machine-readable schema: [`docs/schema/thib-1.0.schema.json`](./schema/thib-1.0.schema.json)
 
-Integrity: SHA-256 over canonical JSON with sorted object keys, excluding `integrity.content_sha256` itself.
+Integrity: SHA-256 over canonical JSON with sorted object keys. The entire `integrity` object is excluded from the hashed payload (so the hash cannot recurse into itself).
 
 Rules:
 

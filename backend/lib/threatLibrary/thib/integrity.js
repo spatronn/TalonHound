@@ -24,16 +24,13 @@ function sortValue(value) {
 }
 
 /**
- * Compute integrity hash for a THIB object. Strips integrity.hash before hashing.
+ * Compute integrity hash for a THIB object.
+ * Hash excludes the entire `integrity` object so alg/hash fields cannot recurse.
  * @param {object} bundle
  */
 export function computeThibContentSha256(bundle) {
-  const clone = structuredClone ? structuredClone(bundle) : JSON.parse(JSON.stringify(bundle));
-  if (!clone.integrity || typeof clone.integrity !== 'object') {
-    clone.integrity = {};
-  }
-  delete clone.integrity.content_sha256;
-  delete clone.integrity.hash;
+  const clone = JSON.parse(JSON.stringify(bundle));
+  delete clone.integrity;
   const payload = canonicalJsonStringify(clone);
   return crypto.createHash('sha256').update(payload, 'utf8').digest('hex');
 }
@@ -42,8 +39,8 @@ export function computeThibContentSha256(bundle) {
  * @param {object} bundle
  */
 export function attachThibIntegrity(bundle) {
-  const next = { ...bundle, integrity: { ...(bundle.integrity || {}) } };
-  delete next.integrity.content_sha256;
+  const next = JSON.parse(JSON.stringify(bundle));
+  delete next.integrity;
   const hash = computeThibContentSha256(next);
   next.integrity = {
     alg: 'sha256',
