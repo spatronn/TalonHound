@@ -24,7 +24,7 @@ echo "=== recreate application services ==="
 docker compose up -d --no-deps backend
 docker compose up -d --no-deps --force-recreate frontend proxy
 docker compose up -d --no-deps --force-recreate \
-  ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker backup-worker \
+  ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker threat-library-worker backup-worker \
   integration-worker integration-scheduler
 
 echo "=== wait for backend health ==="

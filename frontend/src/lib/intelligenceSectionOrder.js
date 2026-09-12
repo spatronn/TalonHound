@@ -9,17 +9,19 @@
 //   3. IOC-type / provider-specific sections
 //        - Derived Infrastructure        (URL IOCs with an extractable host)
 //        - File Information              (hash IOCs)
-//   4. Analyst Intelligence              (ALWAYS LAST)
+//   4. Threat Context                    (always; Threat Library claims)
+//   5. Analyst Intelligence              (ALWAYS LAST)
 //
 // Analyst Intelligence must be rendered exactly once and always after every
 // other intelligence section, regardless of IOC type.
 
 export const ANALYST_INTELLIGENCE_SECTION = 'analyst';
+export const THREAT_CONTEXT_SECTION = 'threatContext';
 
 // Ordered keys of the type-specific sections that sit between Automated
-// Intelligence and Analyst Intelligence. New type-specific sections should be
-// added here (before 'analyst') so they can never render below the analyst
-// section by accident.
+// Intelligence and Threat Context. New type-specific sections should be
+// added here (before threat context / analyst) so they can never render
+// below Analyst Intelligence by accident.
 const TYPE_SPECIFIC_SECTION_ORDER = ['derivedInfrastructure', 'fileInformation'];
 
 export function buildIntelligenceSectionOrder(flags = {}) {
@@ -37,6 +39,7 @@ export function buildIntelligenceSectionOrder(flags = {}) {
   for (const key of TYPE_SPECIFIC_SECTION_ORDER) {
     if (present[key]) order.push(key);
   }
+  order.push(THREAT_CONTEXT_SECTION);
   // Analyst Intelligence is invariably the final section.
   order.push(ANALYST_INTELLIGENCE_SECTION);
   return order;

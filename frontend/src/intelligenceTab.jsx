@@ -25,6 +25,7 @@ import {
 } from './lib/analystIntelligenceForm.js';
 import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
 import { buildIntelligenceSectionOrder } from './lib/intelligenceSectionOrder.js';
+import IocThreatContextSection from './components/threatLibrary/IocThreatContextSection.jsx';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -618,8 +619,9 @@ export function IntelligenceTabPanel({
   const hasDerivedInfrastructure = Boolean(derivedContext);
 
   // Single source of truth for the top-to-bottom section layout. Analyst
-  // Intelligence is guaranteed to be last for every IOC type; type-specific
-  // sections (Derived Infrastructure, File Information) always sit above it.
+  // Intelligence is guaranteed to be last for every IOC type; Threat Context
+  // sits immediately above it. Type-specific sections (Derived Infrastructure,
+  // File Information) always sit above Threat Context.
   const sectionOrder = buildIntelligenceSectionOrder({
     showDerivedInfrastructure: hasDerivedInfrastructure,
     showFileInformation: showFileInfo
@@ -680,6 +682,9 @@ export function IntelligenceTabPanel({
     ),
     fileInformation: () => (
       <FileArtifactInformationCard fileInformation={fileInformation} fileArtifact={fileArtifact} />
+    ),
+    threatContext: () => (
+      <IocThreatContextSection iocId={iocId} active={active} />
     ),
     analyst: () => (
       <AnalystIntelligenceSection

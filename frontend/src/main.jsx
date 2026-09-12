@@ -250,6 +250,9 @@ import BackupRestorePageView from './components/BackupRestorePage.jsx';
 import InitialSetupPage from './components/InitialSetupPage.jsx';
 import TimezoneSelector from './components/TimezoneSelector.jsx';
 import { NavIcons } from './components/NavIcons.jsx';
+import ThreatLibraryPageView from './components/threatLibrary/ThreatLibraryPage.jsx';
+import ThreatLibraryReportPageView from './components/threatLibrary/ThreatLibraryReportPage.jsx';
+import ThreatLibraryAiSettingsView from './components/threatLibrary/ThreatLibraryAiSettings.jsx';
 import { IocHeader } from './components/iocDetails/IocHeader.jsx';
 import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
 import { ActiveSourcesTable, IocSummaryStrip } from './components/iocDetails/ActiveSourcesTable.jsx';
@@ -2234,6 +2237,7 @@ function AppShell({ children }) {
 
           <div className="sidebar-nav-section">
             <div className="sidebar-nav-section-label">Threat Intelligence</div>
+            <Link to="/threat-intelligence/threat-library" className={navLinkClass(location.pathname.startsWith('/threat-intelligence/threat-library'))}>{NavIcons.threatLibrary}<span>Threat Library</span></Link>
             <Link to="/threat-intelligence/feeds" className={navLinkClass(isActive('/threat-intelligence/feeds') || isActive('/threat-intelligence'))}>{NavIcons.feeds}<span>Feeds</span></Link>
             <Link to="/threat-intelligence/custom-threat-feeds" className={navLinkClass(isActive('/threat-intelligence/custom-threat-feeds'))}>{NavIcons.customFeeds}<span>Custom Threat Feeds</span></Link>
             <Link to="/threat-intelligence/published-feeds" className={navLinkClass(isActive('/threat-intelligence/published-feeds'))}>{NavIcons.publishedFeeds}<span>Published Feeds</span></Link>
@@ -9797,6 +9801,33 @@ function EnrichmentProvidersPage() {
   );
 }
 
+function ThreatLibraryPage() {
+  return (
+    <ThreatLibraryPageView
+      AppShell={AppShell}
+      useSession={useSession}
+    />
+  );
+}
+
+function ThreatLibraryReportPage() {
+  return (
+    <ThreatLibraryReportPageView
+      AppShell={AppShell}
+      useSession={useSession}
+    />
+  );
+}
+
+function ThreatLibraryAiSettingsPage() {
+  return (
+    <ThreatLibraryAiSettingsView
+      AppShell={AppShell}
+      useSession={useSession}
+    />
+  );
+}
+
 function SystemHealthPage() {
   return <SystemHealthPageView AppShell={AppShell} />;
 }
@@ -10261,6 +10292,18 @@ function AdministrationSettingsPage() {
             ) : null}
           </div>
         </div>
+
+        {isAdmin ? (
+          <div style={{ ...ui.formPanel, marginTop: 16 }}>
+            <h2 style={{ ...ui.formTitle, marginBottom: 6 }}>Threat Library AI</h2>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: '#94a3b8', lineHeight: 1.45 }}>
+              Configure the model used to analyze imported reports. External providers receive report text — acknowledge that risk before enabling.
+            </p>
+            <Link to="/threat-intelligence/threat-library/ai-settings" style={{ ...ui.btnPrimary, textDecoration: 'none' }}>
+              Open Threat Library AI Settings
+            </Link>
+          </div>
+        ) : null}
 
         {showUpdatesSection ? (
           <div style={{ ...ui.formPanel, marginTop: 16 }}>
@@ -18882,6 +18925,9 @@ function App() {
           <Route path="/operations/ioc-suppressions" element={<Protected><IOCSuppressionsPage /></Protected>} />
           <Route path="/action-center" element={<Protected><ActionCenterPage /></Protected>} />
           <Route path="/threat-intelligence" element={<Navigate to="/threat-intelligence/feeds" replace />} />
+          <Route path="/threat-intelligence/threat-library" element={<Protected><ThreatLibraryPage /></Protected>} />
+          <Route path="/threat-intelligence/threat-library/ai-settings" element={<Protected><ThreatLibraryAiSettingsPage /></Protected>} />
+          <Route path="/threat-intelligence/threat-library/:reportId" element={<Protected><ThreatLibraryReportPage /></Protected>} />
           <Route path="/threat-intelligence/feeds" element={<Protected><IntegrationsPage /></Protected>} />
           <Route path="/threat-intelligence/enrichment" element={<Navigate to="/administration/enrichment-providers" replace />} />
           <Route path="/threat-intelligence/queue" element={<Protected><IntegrationsQueueStatusPage /></Protected>} />

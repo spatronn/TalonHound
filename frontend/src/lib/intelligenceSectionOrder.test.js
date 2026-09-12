@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ANALYST_INTELLIGENCE_SECTION,
+  THREAT_CONTEXT_SECTION,
   buildIntelligenceSectionOrder
 } from './intelligenceSectionOrder.js';
 
@@ -32,6 +33,16 @@ test('Analyst Intelligence is the final section for every supported IOC type', (
   }
 });
 
+test('Threat Context appears immediately above Analyst Intelligence', () => {
+  for (const [type, flags] of Object.entries(IOC_TYPE_FLAGS)) {
+    const order = buildIntelligenceSectionOrder(flags);
+    const threatIdx = order.indexOf(THREAT_CONTEXT_SECTION);
+    const analystIdx = order.indexOf(ANALYST_INTELLIGENCE_SECTION);
+    assert.ok(threatIdx >= 0, `threat context missing for ${type}`);
+    assert.equal(threatIdx, analystIdx - 1, `threat context must sit above analyst for ${type}`);
+  }
+});
+
 test('Analyst Intelligence appears exactly once for every IOC type', () => {
   for (const [type, flags] of Object.entries(IOC_TYPE_FLAGS)) {
     const order = buildIntelligenceSectionOrder(flags);
@@ -47,23 +58,23 @@ test('every IOC type opens with Summary then Automated Intelligence', () => {
   }
 });
 
-test('domain / IP: summary -> automated -> analyst (no type-specific sections)', () => {
+test('domain / IP: summary -> automated -> threatContext -> analyst', () => {
   for (const type of ['domain', 'ip']) {
     const order = buildIntelligenceSectionOrder(IOC_TYPE_FLAGS[type]);
-    assert.deepEqual(order, ['summary', 'automated', 'analyst']);
+    assert.deepEqual(order, ['summary', 'automated', 'threatContext', 'analyst']);
   }
 });
 
-test('URL: Derived Infrastructure renders above Analyst Intelligence', () => {
+test('URL: Derived Infrastructure renders above Threat Context / Analyst', () => {
   const order = buildIntelligenceSectionOrder(IOC_TYPE_FLAGS.url);
-  assert.deepEqual(order, ['summary', 'automated', 'derivedInfrastructure', 'analyst']);
-  assert.ok(order.indexOf('derivedInfrastructure') < order.indexOf(ANALYST_INTELLIGENCE_SECTION));
+  assert.deepEqual(order, ['summary', 'automated', 'derivedInfrastructure', 'threatContext', 'analyst']);
+  assert.ok(order.indexOf('derivedInfrastructure') < order.indexOf(THREAT_CONTEXT_SECTION));
 });
 
-test('hash: Automated Intelligence -> File Information -> Analyst Intelligence', () => {
+test('hash: Automated Intelligence -> File Information -> Threat Context -> Analyst', () => {
   for (const type of ['md5', 'sha1', 'sha256']) {
     const order = buildIntelligenceSectionOrder(IOC_TYPE_FLAGS[type]);
-    assert.deepEqual(order, ['summary', 'automated', 'fileInformation', 'analyst']);
+    assert.deepEqual(order, ['summary', 'automated', 'fileInformation', 'threatContext', 'analyst']);
     assert.ok(
       order.indexOf('automated') < order.indexOf('fileInformation'),
       `automated must precede file information for ${type}`
@@ -81,14 +92,13 @@ test('Analyst stays last even when all type-specific sections are present', () =
     showFileInformation: true
   });
   assert.equal(lastOf(order), ANALYST_INTELLIGENCE_SECTION);
-  // Every other section sits strictly above analyst.
   const analystIdx = order.indexOf(ANALYST_INTELLIGENCE_SECTION);
-  for (const key of ['summary', 'automated', 'derivedInfrastructure', 'fileInformation']) {
+  for (const key of ['summary', 'automated', 'derivedInfrastructure', 'fileInformation', 'threatContext']) {
     assert.ok(order.indexOf(key) < analystIdx, `${key} must be above analyst`);
   }
 });
 
 test('no-arg call is safe and still ends with analyst', () => {
   const order = buildIntelligenceSectionOrder();
-  assert.deepEqual(order, ['summary', 'automated', 'analyst']);
+  assert.deepEqual(order, ['summary', 'automated', 'threatContext', 'analyst']);
 });

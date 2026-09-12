@@ -56,6 +56,7 @@ const EXPECTED_SECTIONS = ['Operations', 'Threat Intelligence', 'Administration'
 const EXPECTED_ITEMS = {
   Operations: ['IOC List', 'Add IOC', 'Watchlist', 'IOC Suppressions', 'Action Center'],
   'Threat Intelligence': [
+    'Threat Library',
     'Feeds',
     'Custom Threat Feeds',
     'Published Feeds',
@@ -76,6 +77,7 @@ const EXPECTED_ROUTES = {
   Watchlist: '/watchlist',
   'IOC Suppressions': '/operations/ioc-suppressions',
   'Action Center': '/action-center',
+  'Threat Library': '/threat-intelligence/threat-library',
   Feeds: '/threat-intelligence/feeds',
   'Custom Threat Feeds': '/threat-intelligence/custom-threat-feeds',
   'Published Feeds': '/threat-intelligence/published-feeds',

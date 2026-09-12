@@ -87,6 +87,7 @@ import {
   enrichItemsWithAnalystIntelligenceCounts,
   mergeAnalystIntelligenceItem
 } from './routes/analystIntelligence.js';
+import { registerThreatLibraryRoutes } from './routes/threatLibrary.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { registerIocBulkTriageRoutes } from './routes/iocBulkTriage.js';
 import { registerIocBulkQueryTriageRoutes } from './routes/iocBulkQueryTriage.js';
@@ -427,6 +428,7 @@ const iocSearchExportQueue = new Queue(EXPORT_QUEUE_NAME, { connection: redis })
 const iocDeepSearchQueue = new Queue(DEEP_SEARCH_QUEUE_NAME, { connection: redis });
 const iocBulkQueryQueue = new Queue(BULK_QUERY_QUEUE_NAME, { connection: redis });
 const systemBackupQueue = new Queue(BACKUP_QUEUE_NAME, { connection: redis });
+const threatLibraryQueue = new Queue(process.env.THREAT_LIBRARY_QUEUE_NAME || 'threat-library', { connection: redis });
 const auditLogService = createAuditLogService(pool);
 
 // Geo cache refresh tuning (local/kÄ±sÄ±tlÄ± ortam iÃ§in dÃ¼ÅŸÃ¼rÃ¼lebilir)
@@ -2980,6 +2982,7 @@ registerEnrichmentUsageRoutes(app, pool);
 registerRouteModule('enrichment_usage');
 registerAnalystIntelligenceRoutes(app, pool, auditLogService);
 registerRouteModule('analyst_intelligence');
+registerThreatLibraryRoutes(app, pool, auditLogService, { threatLibraryQueue });
 registerRouteModule('ip_enrichment');
 registerIocExpirationRoutes(app, pool, auditLogService);
 registerRouteModule('ioc_expiration');

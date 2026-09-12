@@ -123,6 +123,8 @@ services:
       - IOC_EXPORT_QUEUE_NAME=ioc-search-export
       - IOC_BULK_QUERY_QUEUE_NAME=ioc-bulk-query
       - IOC_EXPORT_STORAGE_DIR=/data/ioc-search-exports
+      - THREAT_LIBRARY_QUEUE_NAME=threat-library
+      - THREAT_LIBRARY_STORAGE_DIR=/data/threat-library
       - BACKUP_ENABLED=${BACKUP_ENABLED:-true}
       - BACKUP_CRON=${BACKUP_CRON:-0 0 * * 0}
       - BACKUP_CRON_TIMEZONE=${BACKUP_CRON_TIMEZONE:-}
@@ -166,6 +168,7 @@ services:
       - backup_data:/data/backups
       - ioc_export_data:/data/ioc-search-exports
       - published_feed_data:/data/published-feeds
+      - threat_library_data:/data/threat-library
       # Shared with proxy for System Administrator TLS certificate management.
       - ./proxy/certs:/etc/talonhound/certs
     healthcheck:
@@ -399,6 +402,32 @@ services:
     restart: unless-stopped
     logging: *talonhound-logging
 
+  threat-library-worker:
+    build: *backend-build
+    command: ["npm", "run", "threat-library-worker"]
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=talonhound
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=talonhound
+      - SYSTEM_TIMEZONE=${SYSTEM_TIMEZONE:-}
+      - TZ=${SYSTEM_TIMEZONE:-}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      - THREAT_LIBRARY_QUEUE_NAME=threat-library
+      - THREAT_LIBRARY_STORAGE_DIR=/data/threat-library
+      - THREAT_LIBRARY_WORKER_CONCURRENCY=${THREAT_LIBRARY_WORKER_CONCURRENCY:-2}
+      - TALONHOUND_VERSION=${TALONHOUND_VERSION:-}
+    volumes:
+      - threat_library_data:/data/threat-library
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    logging: *talonhound-logging
+
   backup-worker:
     build: *backend-build
     command: ["npm", "run", "backup-worker"]
@@ -456,3 +485,4 @@ volumes:
   ioc_export_data:
   backup_data:
   published_feed_data:
+  threat_library_data:

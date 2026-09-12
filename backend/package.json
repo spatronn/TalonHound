@@ -23,6 +23,7 @@
     "ioc-search-export-worker": "node ioc-search-export-worker.js",
     "ioc-deep-search-worker": "node ioc-deep-search-worker.js",
     "ioc-bulk-query-worker": "node ioc-bulk-query-worker.js",
+    "threat-library-worker": "node threat-library-worker.js",
     "backup-worker": "node backup-worker.js",
     "backup:create": "node scripts/backup-cli.js create",
     "backup:list": "node scripts/backup-cli.js list",
@@ -69,6 +70,7 @@
     "test:file-artifacts-db": "node scripts/fileArtifactDbTests.js",
     "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/backup/manifest.test.js lib/backup/checksums.test.js lib/backup/retention.test.js lib/backup/pathSafety.test.js lib/backup/operationLock.test.js lib/backup/encryption.test.js lib/backup/scheduler.test.js routes/backups.test.js lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js lib/setupCode.test.js lib/firstRunSetup.test.js routes/setupWizard.test.js lib/fileArtifacts/hashNormalize.test.js",
     "test:provider-disable-guard": "node --test lib/enrichmentProviderRegistry.test.js routes/enrichmentDisabledGuard.test.js lib/spamhausDropSyncDisabled.test.js lib/enrichmentProviderConfigAudit.test.js",
+    "test:threat-library": "node --test lib/threatLibrary/*.test.js lib/threatLibrary/**/*.test.js routes/threatLibrary.test.js",
     "smoke:routes": "node scripts/smoke-routes.js"
   },
   "dependencies": {
@@ -80,6 +82,8 @@
     "express": "^4.21.2",
     "ioredis": "^5.4.1",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^2.3.0",
+    "pdf-parse": "^1.1.4",
     "pg": "^8.16.3",
     "swagger-ui-dist": "^5.17.14",
     "tldts": "^6.1.86",

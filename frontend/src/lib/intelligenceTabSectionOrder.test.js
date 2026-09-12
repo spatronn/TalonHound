@@ -28,11 +28,19 @@ test('Analyst Intelligence renders after every other intelligence section', () =
   const automated = markerIndex('>Automated Intelligence<');
   const derived = markerIndex('<DerivedInfrastructureSection');
   const fileInfo = markerIndex('<FileArtifactInformationCard');
+  const threatContext = markerIndex('<IocThreatContextSection');
 
   assert.ok(summary < analyst, 'Intelligence Summary must be above Analyst Intelligence');
   assert.ok(automated < analyst, 'Automated Intelligence must be above Analyst Intelligence');
   assert.ok(derived < analyst, 'Derived Infrastructure must be above Analyst Intelligence');
   assert.ok(fileInfo < analyst, 'File Information must be above Analyst Intelligence');
+  assert.ok(threatContext < analyst, 'Threat Context must be above Analyst Intelligence');
+});
+
+test('Threat Context renders above Analyst Intelligence', () => {
+  const threatContext = markerIndex('<IocThreatContextSection');
+  const analyst = markerIndex('<AnalystIntelligenceSection');
+  assert.ok(threatContext < analyst);
 });
 
 test('hash: Automated Intelligence -> File Information order in render', () => {

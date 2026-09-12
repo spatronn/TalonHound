@@ -13,6 +13,7 @@ infrastructure you control.
 - Enrichment providers (VirusTotal, AbuseIPDB, IPinfo Lite, RDAP) — all optional and configured after install
 - Published feeds (JSON / CSV / STIX / TAXII 2.1) with per-key access and rate limiting
 - MCP Server for AI clients (lookup, search, bulk check, controlled import) — see [`docs/MCP.md`](docs/MCP.md)
+- Threat Library — import URL/PDF/THIB reports, AI-assisted analysis, IOC matching, and portable THIB exchange — see [`docs/threat-library.md`](docs/threat-library.md)
 - Role-based access control, audit logging, and a protected System Administrator account
 - Scheduled backups with restore, and a single canonical system timezone across the whole stack
 

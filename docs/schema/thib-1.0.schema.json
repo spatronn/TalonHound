@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://talonhound.local/schema/thib-1.0.schema.json",
+  "title": "TalonHound Intelligence Bundle (THIB) 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "spec_version", "bundle_id", "created_at", "report", "integrity"],
+  "properties": {
+    "format": { "const": "talonhound-intelligence-bundle" },
+    "spec_version": { "type": "string", "pattern": "^1(\\.\\d+)?$" },
+    "bundle_id": { "type": "string", "minLength": 8, "maxLength": 128 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "generator": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": ["string", "null"] }
+      }
+    },
+    "report": {
+      "type": "object",
+      "required": ["id", "title"],
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "source_type": { "type": ["string", "null"] },
+        "source_name": { "type": ["string", "null"] },
+        "source_url": { "type": ["string", "null"] },
+        "source_file_name": { "type": ["string", "null"] },
+        "source_sha256": { "type": ["string", "null"] },
+        "published_at": { "type": ["string", "null"] },
+        "language": { "type": ["string", "null"] },
+        "tlp": {
+          "type": "string",
+          "enum": ["clear", "green", "amber", "amber_strict", "red"]
+        },
+        "confidence": { "type": ["number", "null"] },
+        "report_type": { "type": ["string", "null"] },
+        "summary": { "type": ["string", "null"] }
+      }
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "entity_type", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "entity_type": {
+            "type": "string",
+            "enum": [
+              "threat_actor",
+              "malware",
+              "campaign",
+              "tool",
+              "vulnerability",
+              "infrastructure",
+              "organization",
+              "attack_pattern"
+            ]
+          },
+          "name": { "type": "string" },
+          "aliases": { "type": "array", "items": { "type": "string" } },
+          "description": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "indicators": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "value"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string" },
+          "value": { "type": "string" },
+          "assessment": {
+            "type": "string",
+            "enum": ["malicious", "suspicious", "context_only", "unknown", "invalid"]
+          },
+          "role": { "type": ["string", "null"] },
+          "confidence": { "type": ["number", "null"] },
+          "evidence_text": { "type": ["string", "null"] },
+          "section": { "type": ["string", "null"] },
+          "page_number": { "type": ["integer", "null"] },
+          "block_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "subject_ref", "relationship_type", "object_ref"],
+        "properties": {
+          "id": { "type": "string" },
+          "subject_ref": { "type": "string" },
+          "relationship_type": { "type": "string" },
+          "object_ref": { "type": "string" },
+          "role": { "type": ["string", "null"] },
+          "confidence": { "type": ["number", "null"] },
+          "evidence_text": { "type": ["string", "null"] },
+          "section": { "type": ["string", "null"] },
+          "page_number": { "type": ["integer", "null"] },
+          "block_id": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "references": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["content_sha256"],
+      "properties": {
+        "alg": { "type": "string" },
+        "content_sha256": { "type": "string", "minLength": 64, "maxLength": 64 }
+      }
+    }
+  }
+}
