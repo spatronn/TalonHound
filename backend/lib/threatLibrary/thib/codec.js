@@ -31,7 +31,20 @@ const thibIndicatorSchema = z.object({
   evidence_text: z.string().max(2000).optional().nullable(),
   section: z.string().max(300).optional().nullable(),
   page_number: z.number().int().nullable().optional(),
-  block_id: z.string().max(64).optional().nullable()
+  block_id: z.string().max(64).optional().nullable(),
+  // Optional provenance (spec 1.0 compatible: older readers ignore unknown keys).
+  evidence: z
+    .object({
+      source_assertion: z.string().max(64).optional().nullable(),
+      evidence_strength: z.string().max(32).optional().nullable(),
+      occurrence_count: z.number().int().min(0).optional().nullable(),
+      zones: z.array(z.string().max(64)).max(20).optional().default([]),
+      ports: z.array(z.number().int().min(1).max(65535)).max(32).optional().default([]),
+      url_host: z.string().max(253).optional().nullable(),
+      pages: z.array(z.number().int()).max(64).optional().default([])
+    })
+    .optional()
+    .nullable()
 });
 
 const thibEntitySchema = z.object({
@@ -114,6 +127,29 @@ export const thibBundleSchema = z.object({
     .optional()
 });
 
+/**
+ * Portable provenance for an exported indicator: how the source report asserted
+ * it, where, and (for URLs) the parser-derived host kept as metadata.
+ * @param {object} c candidate row
+ */
+export function thibIndicatorEvidence(c) {
+  const ev = c?.evidence && typeof c.evidence === 'object' ? c.evidence : null;
+  if (!ev && !c?.source_assertion) return null;
+  const occ = Array.isArray(ev?.occurrences) ? ev.occurrences : [];
+  const parsed = ev?.parsed && typeof ev.parsed === 'object' ? ev.parsed : {};
+  const pages = [...new Set(occ.map((o) => o.page).filter((p) => Number.isInteger(p)))].slice(0, 64);
+  const ports = [...new Set([...(Array.isArray(parsed.ports) ? parsed.ports : []), ...occ.map((o) => o.port).filter((p) => Number.isInteger(p))])].slice(0, 32);
+  return {
+    source_assertion: c.source_assertion || ev?.source_assertion || null,
+    evidence_strength: ev?.evidence_strength || null,
+    occurrence_count: ev?.occurrence_count ?? occ.length,
+    zones: Array.isArray(ev?.zones) ? ev.zones.slice(0, 20) : [],
+    ports,
+    url_host: c.candidate_type === 'url' && parsed.host ? String(parsed.host) : null,
+    pages
+  };
+}
+
 function newPortable(prefix) {
   return `${prefix}--${crypto.randomUUID()}`;
 }
@@ -153,6 +189,8 @@ export function exportThibBundle(snapshot) {
   const indicators = (snapshot.candidates || [])
     .filter((c) => ['approved', 'created_ioc', 'context_only'].includes(c.review_status) || c.match_state === 'existing')
     .filter((c) => c.review_status !== 'ignored' && c.review_status !== 'rejected')
+    // Parser-derived metadata (a URL's host) is never a separate indicator object.
+    .filter((c) => !(c.evidence && typeof c.evidence === 'object' && c.evidence.is_parser_derived_metadata === true))
     .map((c) => {
       const id = c.portable_id || newPortable('indicator');
       indicatorIdMap.set(c.id, id);
@@ -167,7 +205,8 @@ export function exportThibBundle(snapshot) {
         evidence_text: c.evidence_text ? String(c.evidence_text).slice(0, 500) : null,
         section: c.section || null,
         page_number: c.page_number ?? null,
-        block_id: c.block_id || null
+        block_id: c.block_id || null,
+        evidence: thibIndicatorEvidence(c)
       };
     });
 

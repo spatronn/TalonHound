@@ -46,6 +46,7 @@ THIB imports skip AI entirely.
 
 - `application/pdf` validation, size limit, safe filename, SHA-256
 - Text extraction via `pdf-parse` with page-aware block ids (`p17-b08`)
+- Layout reconstruction (`threat_library_pdf_v2`) rebuilds lines from pdf.js item geometry: headings (non-body font / size / numbering), indicator rows (one observable per line), wrapped URLs, letter-spaced headings (`I O C` → `IOC`) and printed header/footer lines (page-edge band + repetition). No language keywords are needed for this step. Canonical documents stored by the v1 extractor are re-extracted from the stored PDF on the next Retry.
 - Scanned/image-only PDFs are detected and **fail clearly** with `requires_ocr` (OCR not in V1)
 
 Storage: `/data/threat-library` (not web-executable). Storage keys are relative; absolute paths are never returned to clients.
@@ -73,11 +74,25 @@ Secrets:
 
 TalonHound is self-hosted. Enabling an **external** provider means selected report text may leave the instance. The UI requires an explicit privacy acknowledgement before enablement. Local Ollama/compatible endpoints can keep processing on-prem. No report content is sent until an administrator configures and enables a provider.
 
+### Evidence model (deterministic before AI)
+
+Candidate extraction (`tl-candidates-v3`) produces one candidate per observable identity (type + normalized value) that aggregates **occurrences** — real text spans with block id, page, zone, section heading and form (`standalone`, `url`, `ip_port`, `list_row`).
+
+- A URL occurrence creates a URL candidate only. Its host/port/path basename are kept as `parsed` metadata; the host is **not** promoted to a separate IP/domain candidate unless the report mentions it outside URL syntax (independent occurrence).
+- `1.2.3.4:443` is an IP candidate whose occurrence carries `port=443` (faithful original value, no fake URL).
+- Zones: explicit IOC / C&C / sample tables are **strong** (heading hints in several languages, or any run of ≥ 3 indicator-only rows); references, printed source URL, header/footer, navigation and vendor boilerplate are **negative**. An unrecognised heading closes the current zone.
+- Deterministic decisions: strong-zone occurrence → `malicious` with `source_assertion = explicit_ioc | explicit_c2` (the model may only refine the role); only negative occurrences → `context_only`; filenames / code identifiers → excluded. Everything else is a `body_mention` the model must classify (`ai_needed`).
+- Provenance is persisted per candidate (`evidence` JSONB) and shown in review; THIB indicators carry `evidence.source_assertion / pages / ports / url_host`. No vendor or domain allowlists are used anywhere.
+
 ### Chunking / limits
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
 - Long reports are split into canonical-document chunks and processed sequentially
-- Completed chunks are checkpointed with `threat-library-semantic-v2`; **Retry analysis** resumes unfinished chunks without re-fetching the URL/PDF or re-running deterministic IOC extraction
+- Body chunks exclude header/footer, navigation, source-provenance and reference rows; each chunk prompt carries the resolved indicator list (compact) plus only the `ai_needed` candidates whose occurrences fall in that chunk
+- Completed chunks are checkpointed with `threat-library-semantic-v4` and their block-id fingerprint; **Retry analysis** resumes unfinished, compatible chunks without re-fetching the URL/PDF. A contract bump (document extractor, candidate extraction or semantic schema) invalidates only the incompatible layer
+- The optional final synthesis runs over validated chunk results only, is skipped when the remaining budget is short, and never fails the run; repair calls are likewise budget-bounded (one per chunk)
+- Ollama requests set `think: false` — reasoning models otherwise spend minutes on hidden chain-of-thought before the schema-constrained JSON starts; structured output is the contract
+- Every provider call is timed (headers / first token / output chars) into `analysis_progress.timing` and the worker log; a total-deadline failure records completed/remaining chunks so the UI can explain what a Retry will resume
 - AI responses go through: provider structured output → JSON extraction → deterministic normalization → Zod schema → reference checks → persist
 - Categorical confidence words such as `high` map to documented numeric values; invalid items in optional relationships are dropped with diagnostics rather than discarding an entire valid chunk
 - Separate timeouts: connection, first-token, inactivity (resets on stream activity), and total analysis ceiling

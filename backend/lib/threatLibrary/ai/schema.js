@@ -20,6 +20,7 @@ export const roleEnum = z.enum([
   'tracking',
   'malicious_infrastructure',
   'delivery',
+  'malware_sample',
   'legitimate_service',
   'hosting_platform',
   'victim',

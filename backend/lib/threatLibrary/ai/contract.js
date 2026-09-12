@@ -1,7 +1,30 @@
 /**
  * Threat Library semantic AI contract version (independent of product VERSION).
+ *
+ * v4: evidence-model input (source_assertion / occurrences / parser-derived
+ * metadata), deterministic candidates are sent as resolved context and the
+ * model classifies only `ai_needed` candidates; candidate_id is mandatory in
+ * candidate_updates; body prompts exclude header/footer/navigation blocks.
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v3';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v4';
+
+export const CANDIDATE_ROLE_VALUES = Object.freeze([
+  'command_and_control',
+  'redirector',
+  'payload_hosting',
+  'malware_download',
+  'phishing',
+  'tracking',
+  'malicious_infrastructure',
+  'delivery',
+  'malware_sample',
+  'legitimate_service',
+  'hosting_platform',
+  'victim',
+  'reference',
+  'security_tool',
+  'unknown'
+]);
 
 /**
  * JSON Schema for provider structured-output (Ollama `format` object).
@@ -52,7 +75,8 @@ export function buildProviderJsonSchema() {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['assessment'],
+          // candidate_id is the join key — a grammar-constrained model must not omit it.
+          required: ['candidate_id', 'assessment'],
           properties: {
             candidate_id: { type: 'string' },
             candidate_type: { type: 'string' },
@@ -61,7 +85,7 @@ export function buildProviderJsonSchema() {
               type: 'string',
               enum: ['malicious', 'suspicious', 'context_only', 'unknown', 'invalid']
             },
-            role: { type: 'string' },
+            role: { type: 'string', enum: [...CANDIDATE_ROLE_VALUES] },
             confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
             evidence_block_ids: { type: 'array', items: { type: 'string' } },
             evidence_text: { type: ['string', 'null'] },

@@ -54,7 +54,7 @@ const worker = new Worker(
       reportId,
       jobId,
       resumeAnalysis: job.data?.resumeAnalysis === true,
-      aiClient: 'streaming-v2'
+      aiClient: 'streaming-v3'
     });
     await updateJob(pool, jobId, { status: 'running', stage: 'starting', bullmq_job_id: String(job.id) });
     const result = await runAnalysisPipeline(pool, {
@@ -106,7 +106,7 @@ worker.on('ready', () => {
   log.info('worker ready', {
     queue: getThreatLibraryQueueName(),
     concurrency,
-    aiClient: 'streaming-v2',
+    aiClient: 'streaming-v3',
     version: process.env.TALONHOUND_VERSION || null
   });
 });

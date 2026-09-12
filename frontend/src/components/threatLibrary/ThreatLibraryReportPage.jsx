@@ -15,26 +15,34 @@ import {
   shouldShowFailedPanel,
   shouldShowProcessingPanel
 } from './reportRetryUi.js';
+import {
+  REVIEW_FILTERS,
+  DEFAULT_REVIEW_FILTER,
+  matchReviewFilter,
+  describeCandidateProvenance,
+  describeAnalysisFailureDetail
+} from './candidateReview.js';
 import { TlpBadge, isElevatedTlp, normalizeTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
 
-const REVIEW_FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'existing', label: 'Existing' },
-  { id: 'new', label: 'New' },
-  { id: 'context_only', label: 'Context Only' },
-  { id: 'needs_review', label: 'Needs Review' }
-];
-
-function matchFilter(candidate, filter) {
-  if (filter === 'all') return true;
-  const state = String(candidate.match_state || '').toLowerCase();
-  const review = String(candidate.review_status || '').toLowerCase();
-  if (filter === 'existing') return state === 'existing' || Boolean(candidate.matched_ioc_id);
-  if (filter === 'new') return state === 'new';
-  if (filter === 'context_only') return state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only';
-  if (filter === 'needs_review') return state === 'needs_review' || review === 'pending';
-  return true;
+function CandidateProvenance({ candidate }) {
+  const p = describeCandidateProvenance(candidate);
+  const parts = [];
+  if (p.section) parts.push(p.section);
+  if (p.pages) parts.push(p.pages);
+  parts.push(`${p.occurrences} occurrence${p.occurrences === 1 ? '' : 's'}`);
+  if (p.ports) parts.push(`port ${p.ports}`);
+  return (
+    <div>
+      <div style={{ color: '#e2e8f0' }}>
+        {p.assertion}
+        {p.decision ? <span style={{ color: '#94a3b8' }}> · {p.decision}</span> : null}
+        {!p.direct ? <span style={{ color: '#fbbf24' }}> · derived</span> : null}
+      </div>
+      <div style={{ color: '#94a3b8' }}>{parts.join(' · ')}</div>
+      {p.urlHost ? <div style={{ color: '#64748b' }}>host {p.urlHost} (URL metadata)</div> : null}
+    </div>
+  );
 }
 
 function ProgressChecklist({ report, job }) {
@@ -54,6 +62,9 @@ function ProgressChecklist({ report, job }) {
       parts.push(`Last provider activity: ${ago}s ago`);
     }
     if (progress.synthesizing) parts.push('Synthesizing final summary');
+    if (progress.repairing) parts.push('Repairing model output');
+    if (Number.isFinite(Number(progress.ai_calls)) && Number(progress.ai_calls) > 0) parts.push(`AI calls: ${Number(progress.ai_calls)}`);
+    if (Number.isFinite(Number(progress.ai_needed_candidates))) parts.push(`Candidates for AI: ${Number(progress.ai_needed_candidates)}`);
     if (parts.length) activityNote = parts.join(' · ');
   }
   return (
@@ -110,7 +121,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [artifacts, setArtifacts] = useState([]);
   const [documentMeta, setDocumentMeta] = useState(null);
   const [job, setJob] = useState(null);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(DEFAULT_REVIEW_FILTER);
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState('');
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
@@ -183,7 +194,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }, [processing, reportId, loadStatus, loadDetail]);
 
   const filtered = useMemo(
-    () => candidates.filter((c) => matchFilter(c, filter)),
+    () => candidates.filter((c) => matchReviewFilter(c, filter)),
     [candidates, filter]
   );
 
@@ -437,6 +448,13 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
               {report.failure_code ? <strong style={{ display: 'block', marginBottom: 4 }}>{report.failure_code}</strong> : null}
               {report.failure_reason || job?.error_message || 'Analysis failed'}
               {report.failure_stage ? ` (stage: ${report.failure_stage})` : ''}
+              {describeAnalysisFailureDetail(report).length ? (
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                  {describeAnalysisFailureDetail(report).map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              ) : null}
               {Array.isArray(report.failure_details?.issues) && report.failure_details.issues.length ? (
                 <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
                   {report.failure_details.issues.slice(0, 8).map((issue, idx) => (
@@ -514,13 +532,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                     <th style={ui.th}>Assessment</th>
                     <th style={ui.th}>Role</th>
                     <th style={ui.th}>Confidence</th>
+                    <th style={ui.th}>Evidence</th>
                     <th style={ui.th}>Match</th>
                     <th style={ui.th}>Review</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr style={ui.tr}><td colSpan={canWrite ? 8 : 7} style={{ ...ui.td, color: '#94a3b8' }}>No candidates in this filter.</td></tr>
+                    <tr style={ui.tr}><td colSpan={canWrite ? 9 : 8} style={{ ...ui.td, color: '#94a3b8' }}>No candidates in this filter.</td></tr>
                   ) : filtered.map((c) => (
                     <tr key={c.id || c.public_id} style={ui.tr}>
                       {canWrite ? (
@@ -542,6 +561,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                       <td style={ui.td}>{c.role || '—'}</td>
                       <td style={ui.td}>
                         {c.confidence == null ? '—' : `${Math.round(Number(c.confidence) * 100)}%`}
+                      </td>
+                      <td style={{ ...ui.td, fontSize: 12, color: '#cbd5e1', maxWidth: 260 }}>
+                        <CandidateProvenance candidate={c} />
                       </td>
                       <td style={ui.td}>
                         {c.matched_ioc_id

@@ -12,7 +12,7 @@ test('threat-library-worker refuses to start without streaming AI modules', () =
   const workerSrc = fs.readFileSync(path.join(root, 'threat-library-worker.js'), 'utf8');
   assert.match(workerSrc, /client\.js/);
   assert.match(workerSrc, /stale threat-library-worker image/);
-  assert.match(workerSrc, /streaming-v2/);
+  assert.match(workerSrc, /streaming-v3/);
   for (const f of ['client.js', 'analyze.js', 'timeouts.js']) {
     assert.equal(fs.existsSync(path.join(root, 'lib', 'threatLibrary', 'ai', f)), true, f);
   }

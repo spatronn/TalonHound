@@ -3,7 +3,12 @@
  * Language-agnostic intent with optional multilingual heading hints (not the sole authority).
  */
 
+import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from './pdfLayout.js';
+
 /** @typedef {'report_body'|'explicit_ioc_section'|'c2_section'|'sample_table'|'reference_section'|'source_metadata'|'header_footer'|'navigation'|'vendor_about'|'code'|'unknown'} DocumentZone */
+
+/** Minimum consecutive indicator-only rows that form a structural IOC list without a heading. */
+export const OBSERVABLE_LIST_MIN_ROWS = 3;
 
 export const DOCUMENT_ZONES = Object.freeze([
   'report_body',
@@ -51,7 +56,8 @@ const HEADING_HINTS = Object.freeze({
     /\bc2\b/i,
     /command\s*(and|&)\s*control/i,
     /c&c/i,
-    /远控|控制端|回连|通信地址/i,
+    // Label-like CJK C2 headings only — "远控" alone also names RAT malware in titles.
+    /控制端|回连地址|通信地址|远控地址|c2地址|c2服务器/i,
     /komuta\s*kontrol/i
   ],
   sample_table: [
@@ -93,10 +99,22 @@ const HEADING_HINTS = Object.freeze({
  * @param {string} text
  * @returns {DocumentZone|null}
  */
-export function classifyHeadingText(text) {
-  const t = String(text || '').trim();
+/** Strong / code hints must be label-like headings, not long titles or prose. */
+const LABEL_MAX_CHARS = Object.freeze({
+  explicit_ioc_section: 48,
+  c2_section: 40,
+  sample_table: 40,
+  code: 40
+});
+
+export function classifyHeadingText(text, opts = {}) {
+  const t = collapseLetterSpacing(String(text || '').trim());
   if (!t || t.length > 160) return null;
   for (const [zone, patterns] of Object.entries(HEADING_HINTS)) {
+    const max = LABEL_MAX_CHARS[zone];
+    if (max && t.length > max) continue;
+    // Code hints only apply to real headings (prose mentioning C#/.NET is body text).
+    if (zone === 'code' && opts.isHeading === false) continue;
     for (const re of patterns) {
       if (re.test(t)) return /** @type {DocumentZone} */ (zone);
     }
@@ -142,12 +160,14 @@ export function detectRepeatedHeaderFooterBlockIds(blocks) {
   const flagged = new Set();
 
   for (const [, group] of byNorm) {
+    // A block is only "repeated" when the same normalized text occurs more than once.
+    if (group.length < 2) continue;
     const distinctPages = new Set(group.map((b) => b.page).filter((p) => p != null));
     const repeatPages = distinctPages.size || group.length;
-    // Appear on many pages OR >= 3 times when multi-page
+    // Appear on many pages OR on both pages of a two-page document (short text only)
     if (
       (pageCount >= 3 && repeatPages >= Math.min(3, Math.ceil(pageCount * 0.4))) ||
-      (pageCount >= 2 && repeatPages >= pageCount - 1 && group.every((b) => String(b.text || '').length < 180))
+      (pageCount === 2 && repeatPages === 2 && group.every((b) => String(b.text || '').length < 180))
     ) {
       for (const b of group) {
         if (b.id) flagged.add(b.id);
@@ -167,17 +187,22 @@ export function annotateDocumentZones(doc, opts = {}) {
   const footerIds = detectRepeatedHeaderFooterBlockIds(blocks);
   /** @type {DocumentZone} */
   let currentZone = 'report_body';
+  let currentHeading = null;
 
   for (const b of blocks) {
     const text = String(b.text || '').trim();
+    const pageEdge = b.layout === 'page_edge';
+    if (b.type === 'heading' && !pageEdge) currentHeading = collapseLetterSpacing(text).slice(0, 120);
+    else if (!pageEdge) b.section_heading = currentHeading;
     const isHeadingLike =
-      b.type === 'heading' ||
-      (text.length > 0 &&
-        text.length <= 72 &&
-        !/https?:\/\//i.test(text) &&
-        !/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) &&
-        !/\b[a-f0-9]{32}\b/i.test(text));
-    const headingZone = isHeadingLike ? classifyHeadingText(text) : null;
+      !pageEdge &&
+      (b.type === 'heading' ||
+        (text.length > 0 &&
+          text.length <= 72 &&
+          !/https?:\/\//i.test(text) &&
+          !/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) &&
+          !/\b[a-f0-9]{32}\b/i.test(text)));
+    const headingZone = isHeadingLike ? classifyHeadingText(text, { isHeading: b.type === 'heading' }) : null;
 
     if (
       headingZone &&
@@ -186,22 +211,35 @@ export function annotateDocumentZones(doc, opts = {}) {
       )
     ) {
       currentZone = headingZone;
+      b.zone_reason = 'heading_hint';
+    } else if (b.type === 'heading' && !pageEdge) {
+      // A structural heading the hints do not recognise closes the current
+      // section: strong / negative zones must be explicitly delimited.
+      currentZone = 'report_body';
+      b.zone_reason = 'heading_reset';
     }
 
     /** @type {DocumentZone} */
     let zone = currentZone;
-    if (footerIds.has(b.id)) {
+    if (pageEdge || footerIds.has(b.id)) {
       zone = 'header_footer';
+      b.zone_reason = pageEdge ? 'page_edge' : 'repeated_block';
     } else if (opts.sourceUrl && text.includes(String(opts.sourceUrl).slice(0, 40))) {
       zone = zone === 'report_body' ? 'source_metadata' : zone;
+      if (zone === 'source_metadata') b.zone_reason = 'source_url';
     } else if (opts.sourceHost && /\bhttps?:\/\//i.test(text) && text.toLowerCase().includes(String(opts.sourceHost).toLowerCase()) && text.length < 200) {
       // Short blocks mentioning source host tend to be printed provenance
-      if (footerIds.has(b.id) || text.length < 160) zone = 'source_metadata';
+      if (footerIds.has(b.id) || text.length < 160) {
+        zone = 'source_metadata';
+        b.zone_reason = 'source_host';
+      }
     }
 
     b.zone = zone;
     b.section = b.section || zone;
   }
+
+  applyObservableListZones(blocks);
 
   return {
     ...doc,
@@ -213,6 +251,41 @@ export function annotateDocumentZones(doc, opts = {}) {
       source_host: opts.sourceHost || doc.meta?.source_host || null
     }
   };
+}
+
+/**
+ * Structural IOC-list detection (no headings needed): >= OBSERVABLE_LIST_MIN_ROWS
+ * consecutive indicator-only rows in body text form an explicit IOC list;
+ * a run made of citation-marked rows ("[1] https://…") is a reference list.
+ * Header/footer rows in between (page breaks) do not interrupt a run.
+ * @param {object[]} blocks — zone-annotated, mutated in place
+ */
+export function applyObservableListZones(blocks) {
+  let run = [];
+  const flush = () => {
+    if (run.length >= OBSERVABLE_LIST_MIN_ROWS) {
+      const cited = run.filter((b) => hasCitationMarker(b.text)).length;
+      const zone = cited * 2 >= run.length ? 'reference_section' : 'explicit_ioc_section';
+      for (const b of run) {
+        if (b.zone === 'report_body' || b.zone === 'unknown') {
+          b.zone = zone;
+          b.section = zone;
+          b.zone_reason = zone === 'reference_section' ? 'citation_list' : 'observable_list';
+        }
+      }
+    }
+    run = [];
+  };
+  for (const b of blocks || []) {
+    if (b.zone === 'header_footer') continue;
+    const row = b.type === 'list_item' || b.layout === 'observable_row' || isObservableOnlyLine(b.text);
+    if (row && String(b.text || '').length <= 400) {
+      run.push(b);
+    } else {
+      flush();
+    }
+  }
+  flush();
 }
 
 /**

@@ -5,8 +5,12 @@
 
 import crypto from 'node:crypto';
 import { ingestUrlToCanonicalDocument } from './urlIngest.js';
-import { pdfToCanonicalDocument } from './pdfIngest.js';
-import { extractCandidatesFromDocument, THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
+import { pdfToCanonicalDocument, THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
+import {
+  extractCandidatesFromDocument,
+  summarizeCandidateSet,
+  THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
+} from './candidateExtraction.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { hostnameFromUrl } from './candidateTyping.js';
 import { bulkMatchCandidates } from './iocMatch.js';
@@ -30,6 +34,7 @@ import {
   saveAnalysisChunkResult,
   markAnalysisChunkFailed,
   countReportCandidates,
+  loadReportCandidatesForAnalysis,
   isAnalysisCancelRequested
 } from './store.js';
 import { createServiceLogger } from '../appLogger.js';
@@ -38,6 +43,22 @@ const log = createServiceLogger('threat-library');
 
 function hasUsableDocument(doc) {
   return Boolean(doc && Array.isArray(doc.blocks) && doc.blocks.length > 0);
+}
+
+/**
+ * A stored canonical document is reusable only when its extractor contract is
+ * current. PDF block segmentation changed in v2 (line/heading/footer-aware), so
+ * older PDF documents are re-extracted from the stored PDF artifact — the
+ * upload itself is always reused.
+ * @param {object} report
+ * @param {object} doc
+ */
+export function isDocumentContractCurrent(report, doc) {
+  if (!hasUsableDocument(doc)) return false;
+  if (report?.source_type === 'pdf') {
+    return doc.meta?.extractor === THREAT_LIBRARY_PDF_EXTRACTOR_VERSION;
+  }
+  return true;
 }
 
 /**
@@ -68,9 +89,19 @@ export async function runAnalysisPipeline(pool, ctx) {
   try {
     let document = report.canonical_document;
     const resumePreferred = ctx.resumeAnalysis === true || ctx.jobType === 'retry' || hasUsableDocument(document);
+    const documentContractCurrent = isDocumentContractCurrent(report, document);
+    let documentRebuilt = false;
+    if (hasUsableDocument(document) && !documentContractCurrent) {
+      log.info('canonical document contract outdated; re-extracting from stored artifact', {
+        reportId: report.id,
+        stored_extractor: document?.meta?.extractor || null,
+        current_extractor: THREAT_LIBRARY_PDF_EXTRACTOR_VERSION
+      });
+      documentRebuilt = true;
+    }
 
     // --- Fetch / extract (skip when reusable artifacts exist) ---
-    if (!hasUsableDocument(document)) {
+    if (!hasUsableDocument(document) || !documentContractCurrent) {
       if (report.source_type === 'url') {
         await setStage('fetching');
         log.info('report import started', { reportId: report.id, sourceType: 'url' });
@@ -181,23 +212,18 @@ export async function runAnalysisPipeline(pool, ctx) {
     let candidates;
     const existingCount = await countReportCandidates(pool, report.id);
     const priorExtractionVersion = report.analysis_progress?.candidate_extraction_version || null;
-    const extractionChanged = priorExtractionVersion !== THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
+    const extractionChanged =
+      priorExtractionVersion !== THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION || documentRebuilt;
     const shouldReuseCandidates =
       resumePreferred && existingCount > 0 && !extractionChanged && !ctx.refreshCandidates;
 
     if (shouldReuseCandidates) {
-      const { rows } = await pool.query(
-        `SELECT candidate_type, original_value, normalized_value, assessment, role, confidence,
-                evidence_text, section, block_id, page_number, match_state, matched_ioc_id,
-                matched_ioc_observable_type, review_status
-         FROM threat_report_candidates WHERE report_id = $1 ORDER BY id`,
-        [report.id]
-      );
-      candidates = rows.map((r) => ({
-        ...r,
-        is_ioc: !['cve', 'attack_technique'].includes(String(r.candidate_type))
-      }));
-      log.info('reusing candidates', { reportId: report.id, count: candidates.length });
+      candidates = await loadReportCandidatesForAnalysis(pool, report.id);
+      log.info('reusing candidates', {
+        reportId: report.id,
+        count: candidates.length,
+        ...summarizeCandidateSet(candidates)
+      });
     } else {
       await setStage('candidates');
       // Ensure source provenance is on the document for zone/source marking
@@ -225,9 +251,12 @@ export async function runAnalysisPipeline(pool, ctx) {
         reportId: report.id,
         count: candidates.length,
         extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
-        refreshed: extractionChanged || Boolean(ctx.refreshCandidates)
+        refreshed: extractionChanged || Boolean(ctx.refreshCandidates),
+        document_rebuilt: documentRebuilt,
+        ...summarizeCandidateSet(candidates)
       });
     }
+    const candidateSet = summarizeCandidateSet(candidates);
 
     // --- AI semantics (chunked, checkpointed) ---
     await setStage('analyzing', {
@@ -246,7 +275,11 @@ export async function runAnalysisPipeline(pool, ctx) {
       base_url: aiSettings?.base_url,
       timeout_policy: timeoutPolicy,
       resume: resumePreferred,
-      candidate_count: candidates.length
+      candidate_count: candidates.length,
+      ai_needed_candidates: candidateSet.ai_needed,
+      explicit_assertions: candidateSet.explicit_assertions,
+      context_only: candidateSet.context_only,
+      schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
     });
     const analysisRunId = await ensureAnalysisRun(pool, report.id, {
       // Keep same run on retry so completed chunks are reused
@@ -259,6 +292,7 @@ export async function runAnalysisPipeline(pool, ctx) {
         : analysisRunId;
 
     let aiValue = null;
+    let aiMeta = null;
     try {
       const ai = await analyzeThreatDocument(
         aiSettings,
@@ -298,9 +332,17 @@ export async function runAnalysisPipeline(pool, ctx) {
         });
       }
       aiValue = ai.value;
+      aiMeta = ai.meta || null;
       log.info('AI analysis completed', {
         reportId: report.id,
-        chunks: ai.meta?.chunks_total
+        chunks: ai.meta?.chunks_total,
+        chunks_from_cache: ai.meta?.chunks_from_cache,
+        ai_calls: ai.meta?.ai_calls,
+        ai_needed_candidates: ai.meta?.ai_needed_candidates,
+        prompt_chars_total: ai.meta?.prompt_chars_total,
+        elapsed_ms: ai.meta?.elapsed_ms,
+        synthesis: ai.meta?.synthesis,
+        timing: ai.meta?.timing
       });
     } catch (aiErr) {
       const code = aiErr.code || 'ai_failed';
@@ -330,6 +372,12 @@ export async function runAnalysisPipeline(pool, ctx) {
         return { ok: false, code, error: message };
       }
 
+      const progressDetail = aiErr.progress && typeof aiErr.progress === 'object' ? aiErr.progress : null;
+      log.warn('AI analysis failed', {
+        reportId: report.id,
+        code,
+        progress: progressDetail
+      });
       await updateReportStatus(pool, report.id, {
         analysis_status: 'failed',
         import_status: 'failed',
@@ -339,7 +387,19 @@ export async function runAnalysisPipeline(pool, ctx) {
         failure_details: {
           issues: Array.isArray(aiErr.details) ? aiErr.details.slice(0, 30) : [],
           schema_version: aiErr.schema_version || null,
-          rejected: Array.isArray(aiErr.rejected) ? aiErr.rejected.slice(0, 30) : []
+          rejected: Array.isArray(aiErr.rejected) ? aiErr.rejected.slice(0, 30) : [],
+          progress: progressDetail
+            ? {
+                analysis_chunks_total: progressDetail.analysis_chunks_total ?? null,
+                analysis_chunks_completed: progressDetail.analysis_chunks_completed ?? null,
+                analysis_chunks_remaining: progressDetail.analysis_chunks_remaining ?? null,
+                ai_calls: progressDetail.ai_calls ?? null,
+                elapsed_ms: progressDetail.elapsed_ms ?? null,
+                total_analysis_timeout_ms: progressDetail.total_analysis_timeout_ms ?? null,
+                timing: Array.isArray(progressDetail.timing) ? progressDetail.timing.slice(-24) : [],
+                resumable: true
+              }
+            : null
         },
         canonical_document: document
       });
@@ -396,6 +456,11 @@ export async function runAnalysisPipeline(pool, ctx) {
     for (const c of matched.candidates) {
       if (summary[c.match_state] != null) summary[c.match_state] += 1;
     }
+    const finalSet = summarizeCandidateSet(matched.candidates);
+    summary.explicit_assertions = finalSet.explicit_assertions;
+    summary.ai_classified = matched.candidates.filter((c) => c.decision_source === 'ai').length;
+    summary.raw_occurrences = finalSet.raw_occurrences;
+    summary.non_ioc = finalSet.non_ioc;
 
     const savedCandidates = await replaceCandidates(pool, report.id, matched.candidates);
 
@@ -455,7 +520,13 @@ export async function runAnalysisPipeline(pool, ctx) {
       ai_result: {
         entity_count: (aiValue.entities || []).length,
         relationship_count: relRows.length,
-        candidate_update_count: (aiValue.candidate_updates || []).length
+        candidate_update_count: (aiValue.candidate_updates || []).length,
+        ai_calls: aiMeta?.ai_calls ?? null,
+        chunks_total: aiMeta?.chunks_total ?? null,
+        chunks_from_cache: aiMeta?.chunks_from_cache ?? null,
+        prompt_chars_total: aiMeta?.prompt_chars_total ?? null,
+        elapsed_ms: aiMeta?.elapsed_ms ?? null,
+        synthesis: aiMeta?.synthesis ?? null
       },
       canonical_document: document,
       analysis_status: 'review_required',
@@ -464,7 +535,14 @@ export async function runAnalysisPipeline(pool, ctx) {
         stage: 'review_required',
         completed: true,
         candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
-        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+        document_extractor: document.meta?.extractor || null,
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+        analysis_chunks_total: aiMeta?.chunks_total ?? null,
+        analysis_chunks_completed: aiMeta?.chunks_total ?? null,
+        ai_calls: aiMeta?.ai_calls ?? null,
+        ai_needed_candidates: aiMeta?.ai_needed_candidates ?? null,
+        elapsed_ms: aiMeta?.elapsed_ms ?? null,
+        timing: Array.isArray(aiMeta?.timing) ? aiMeta.timing.slice(-24) : []
       },
       clear_failure: true,
       clear_cancel: true

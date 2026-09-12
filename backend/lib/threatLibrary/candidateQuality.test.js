@@ -46,7 +46,8 @@ test('URL path basename does not become standalone domain', () => {
   const cands = extractCandidatesFromDocument(doc);
   const types = cands.map((c) => `${c.candidate_type}:${c.normalized_value}`);
   assert.ok(types.some((t) => t.startsWith('url:http://217.60.36.94/unicorn/mort.php')));
-  assert.ok(types.some((t) => t === 'ip:217.60.36.94'));
+  // URL host is parser-derived metadata — no standalone IP without independent evidence
+  assert.equal(types.some((t) => t === 'ip:217.60.36.94'), false);
   assert.equal(types.includes('domain:mort.php'), false);
   assert.equal(types.includes('domain:uni.txt'), false);
 });
@@ -198,13 +199,15 @@ test('explicit IOC zone candidate remains eligible when malicious + strong evide
   assert.equal(isEligibleForHighConfidenceMalicious(c), true);
 });
 
-test('semantic prompt teaches evidence rules and uses v3 contract', () => {
+test('semantic prompt teaches evidence rules and uses v4 contract', () => {
   const sys = buildSystemPrompt();
   assert.match(sys, /NOT malicious merely/i);
   assert.match(sys, /context_only/);
   assert.match(sys, /any language/i);
   assert.ok(sys.includes(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION));
-  assert.match(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, /v3$/);
+  assert.match(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, /v4$/);
+  assert.match(sys, /parser-derived metadata/i);
+  assert.match(sys, /authoritative/i);
   const line = formatCandidateEvidenceLine({
     candidate_id: 'cand-001',
     candidate_type: 'url',

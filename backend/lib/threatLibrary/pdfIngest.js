@@ -11,6 +11,10 @@ import {
   isEffectivelyEmptyDocument
 } from './canonicalDocument.js';
 import { meaningfulCharCount } from './extract/quality.js';
+import { pagesToBlocks, plainTextToBlocks, PDF_LAYOUT_VERSION } from './pdfLayout.js';
+
+/** Bump when block segmentation changes; older canonical documents are re-extracted from the stored PDF. */
+export const THREAT_LIBRARY_PDF_EXTRACTOR_VERSION = PDF_LAYOUT_VERSION;
 
 const require = createRequire(import.meta.url);
 
@@ -106,60 +110,6 @@ export function sanitizePdfFileName(name) {
   return cleaned.toLowerCase().endsWith('.pdf') ? cleaned : `${cleaned}.pdf`;
 }
 
-/**
- * Split page text into blocks.
- * @param {string} pageText
- * @param {number} pageNum
- * @param {number} startIdx
- */
-function pageTextToBlocks(pageText, pageNum, startIdx) {
-  const blocks = [];
-  let idx = startIdx;
-  const lines = String(pageText || '').split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  let para = [];
-  const flush = (type = 'paragraph') => {
-    if (!para.length) return;
-    const text = para.join(' ').replace(/\s+/g, ' ').trim();
-    para = [];
-    if (!text) return;
-    blocks.push({
-      id: `p${pageNum}-b${String(idx).padStart(2, '0')}`,
-      type,
-      text,
-      page: pageNum,
-      section: null
-    });
-    idx += 1;
-  };
-
-  for (const line of lines) {
-    // Latin ALL-CAPS heading heuristic — skip for CJK-heavy lines
-    const cjk = (line.match(/[\u4e00-\u9fff]/g) || []).length;
-    const isHeading =
-      cjk === 0
-      && line.length < 80
-      && !/[.!?]$/.test(line)
-      && /^[A-Z0-9]/.test(line)
-      && line === line.toUpperCase();
-    if (isHeading) {
-      flush('paragraph');
-      blocks.push({
-        id: `p${pageNum}-b${String(idx).padStart(2, '0')}`,
-        type: 'heading',
-        text: line,
-        page: pageNum,
-        section: line.slice(0, 200)
-      });
-      idx += 1;
-      continue;
-    }
-    para.push(line);
-    if (para.join(' ').length > 600) flush('paragraph');
-  }
-  flush('paragraph');
-  return { blocks, nextIdx: idx };
-}
-
 function classifyPdfParseError(err) {
   const msg = String(err?.message || err || '');
   if (/password|encrypted|EncryptDict|No password given/i.test(msg)) {
@@ -186,20 +136,37 @@ function classifyPdfParseError(err) {
  * @param {Buffer} buffer
  * @param {{ page: number, text: string }[]} pages
  */
+/**
+ * pdf.js (as bundled by pdf-parse 1.x) reads `buffer.buffer` and ignores
+ * byteOffset. Node Buffers from fs.readFileSync / multer memory storage are
+ * often slices of a shared pool, so the parser saw unrelated bytes and failed
+ * with "Illegal character" / "bad XRef" — the source of the flaky first-parse
+ * behaviour. A detached, exact-length copy is deterministic.
+ * @param {Buffer|Uint8Array} buffer
+ */
+export function detachPdfBuffer(buffer) {
+  const copy = new Uint8Array(buffer.length);
+  copy.set(buffer);
+  return copy;
+}
+
 async function extractPdfWithFallback(pdfParse, buffer, pages) {
   try {
-    return await pdfParse(buffer, {
+    return await pdfParse(detachPdfBuffer(buffer), {
       pagerender: async (pageData) => {
         const textContent = await pageData.getTextContent();
-        const strings = (textContent.items || []).map((it) => it.str || '').join(' ');
-        pages.push({ page: pages.length + 1, text: strings });
+        const items = textContent.items || [];
+        const strings = items.map((it) => it.str || '').join(' ');
+        const view = Array.isArray(pageData.view) ? pageData.view : pageData.pageInfo?.view || null;
+        const pageHeight = view && view.length >= 4 ? Math.abs(Number(view[3]) - Number(view[1])) : 0;
+        pages.push({ page: pages.length + 1, text: strings, items, pageHeight });
         return strings;
       }
     });
   } catch {
     // Some browser-generated PDFs fail only on custom pagerender; plain parse still works.
     pages.length = 0;
-    return pdfParse(buffer);
+    return pdfParse(detachPdfBuffer(buffer));
   }
 }
 
@@ -238,22 +205,19 @@ export async function pdfToCanonicalDocument(buffer, opts = {}) {
 
   // If pagerender did not populate (some pdf-parse versions), fall back to whole text
   let blocks = [];
+  let layoutMode = 'geometry';
   if (pages.length === 0) {
+    layoutMode = 'plain_text';
     const full = String(data.text || '');
-    const approxPages = full.split(/\f/);
+    const approxPages = full.split(//);
     let idx = 1;
     approxPages.forEach((pageText, i) => {
-      const r = pageTextToBlocks(pageText, i + 1, idx);
+      const r = plainTextToBlocks(pageText, i + 1, idx);
       blocks = blocks.concat(r.blocks);
       idx = r.nextIdx;
     });
   } else {
-    let idx = 1;
-    for (const p of pages) {
-      const r = pageTextToBlocks(p.text, p.page, idx);
-      blocks = blocks.concat(r.blocks);
-      idx = r.nextIdx;
-    }
+    blocks = pagesToBlocks(pages).blocks;
   }
 
   const title =
@@ -271,7 +235,8 @@ export async function pdfToCanonicalDocument(buffer, opts = {}) {
     language,
     blocks,
     meta: {
-      extractor: 'threat_library_pdf_v1',
+      extractor: THREAT_LIBRARY_PDF_EXTRACTOR_VERSION,
+      layout_mode: layoutMode,
       adapter: 'pdf',
       file_name: validation.fileName,
       sha256: validation.sha256,

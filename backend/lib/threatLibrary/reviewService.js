@@ -34,16 +34,22 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
       [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
     );
     ids = rows
-      .filter((r) =>
-        isEligibleForHighConfidenceMalicious({
+      .filter((r) => {
+        const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {};
+        if (ev.is_parser_derived_metadata === true || r.is_ioc === false) return false;
+        const occurrences = Array.isArray(ev.occurrences) && ev.occurrences.length
+          ? ev.occurrences
+          : r.section
+            ? [{ zone: r.section, section_kind: r.section }]
+            : [];
+        return isEligibleForHighConfidenceMalicious({
           ...r,
           is_ioc: true,
           zone: r.section,
-          occurrences: r.section
-            ? [{ zone: r.section, section_kind: r.section }]
-            : []
-        })
-      )
+          policy_decision: ev.policy_decision || undefined,
+          occurrences
+        });
+      })
       .map((r) => Number(r.id));
   }
 

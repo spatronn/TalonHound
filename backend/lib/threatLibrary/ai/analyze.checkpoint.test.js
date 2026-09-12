@@ -124,7 +124,8 @@ test('checkpoint resume skips completed chunks on retry', async () => {
   assert.ok(providerCalls.length >= 1);
   // Completed first 3 must not be re-sent (+ optional final synthesis call)
   assert.ok(providerCalls.length <= chunks.length - 3 + 1);
-  assert.equal(completed.size, chunks.length);
+  const chunkKeys = [...completed.keys()].filter((k) => k.startsWith('chunk-'));
+  assert.equal(chunkKeys.length, chunks.length);
 });
 
 test('browser-independent analysis: analyzeThreatDocument does not require an open HTTP request', async () => {

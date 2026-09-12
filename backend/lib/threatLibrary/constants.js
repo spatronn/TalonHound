@@ -34,6 +34,7 @@ export const CANDIDATE_ROLES = Object.freeze([
   'tracking',
   'malicious_infrastructure',
   'delivery',
+  'malware_sample',
   'legitimate_service',
   'hosting_platform',
   'victim',

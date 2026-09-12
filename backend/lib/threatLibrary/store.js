@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.js';
 import { deleteReportArtifacts } from './artifactStore.js';
+import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 
 export async function getAiSettings(pool) {
   const { rows } = await pool.query(`SELECT * FROM threat_library_ai_settings WHERE id = 1`);
@@ -257,24 +258,29 @@ export async function ensureAnalysisRun(pool, reportId, { forceNew = false } = {
 
 export async function loadCompletedChunkResult(pool, reportId, analysisRunId, chunkKey) {
   const { rows } = await pool.query(
-    `SELECT result, schema_version FROM threat_library_analysis_chunks
+    `SELECT result, schema_version, block_ids FROM threat_library_analysis_chunks
      WHERE report_id = $1 AND analysis_run_id = $2::uuid AND chunk_key = $3 AND status = 'completed'
      LIMIT 1`,
     [reportId, analysisRunId, chunkKey]
   );
   const row = rows[0];
   if (!row?.result) return null;
-  return { ok: true, value: row.result, schema_version: row.schema_version || null };
+  return {
+    ok: true,
+    value: row.result,
+    schema_version: row.schema_version || null,
+    block_ids: Array.isArray(row.block_ids) ? row.block_ids : null
+  };
 }
 
 export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chunk, result, meta = {}) {
   await pool.query(
     `INSERT INTO threat_library_analysis_chunks (
        report_id, analysis_run_id, chunk_index, chunk_key, status, block_ids, result,
-       schema_version, rejected_items, attempt_count, started_at, completed_at, updated_at
+       schema_version, rejected_items, timing, attempt_count, started_at, completed_at, updated_at
      ) VALUES (
        $1, $2::uuid, $3, $4, 'completed', $5::jsonb, $6::jsonb,
-       $7, $8::jsonb, 1, NOW(), NOW(), NOW()
+       $7, $8::jsonb, $9::jsonb, 1, NOW(), NOW(), NOW()
      )
      ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
        status = 'completed',
@@ -282,6 +288,7 @@ export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chu
        block_ids = EXCLUDED.block_ids,
        schema_version = EXCLUDED.schema_version,
        rejected_items = EXCLUDED.rejected_items,
+       timing = EXCLUDED.timing,
        validation_details = '[]'::jsonb,
        raw_output_sample = NULL,
        error_code = NULL,
@@ -297,7 +304,8 @@ export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chu
       JSON.stringify(chunk.block_ids || []),
       JSON.stringify(result),
       meta.schema_version || null,
-      JSON.stringify(meta.rejected_items || [])
+      JSON.stringify(meta.rejected_items || []),
+      JSON.stringify(meta.timing || [])
     ]
   );
 }
@@ -371,51 +379,117 @@ export async function insertArtifact(pool, reportId, artifact) {
 
 /**
  * Replace candidates for a report (idempotent retry).
+ * Runs as one transaction so a failed rebuild never leaves the report with a
+ * half-swapped (or empty) pending review set.
  */
 export async function replaceCandidates(pool, reportId, candidates) {
-  await pool.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
-  const inserted = [];
-  for (const c of candidates) {
-    const { rows } = await pool.query(
-      `INSERT INTO threat_report_candidates (
-         report_id, portable_id, candidate_type, original_value, normalized_value,
-         assessment, role, confidence, evidence_text, section, block_id, page_number,
-         review_status, match_state, matched_ioc_id, matched_ioc_observable_type
-       ) VALUES (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
-       )
-       ON CONFLICT (report_id, candidate_type, normalized_value) DO UPDATE SET
-         assessment = EXCLUDED.assessment,
-         role = EXCLUDED.role,
-         confidence = EXCLUDED.confidence,
-         evidence_text = COALESCE(EXCLUDED.evidence_text, threat_report_candidates.evidence_text),
-         match_state = EXCLUDED.match_state,
-         matched_ioc_id = EXCLUDED.matched_ioc_id,
-         matched_ioc_observable_type = EXCLUDED.matched_ioc_observable_type,
-         updated_at = NOW()
-       RETURNING *`,
-      [
-        reportId,
-        c.portable_id || `indicator--${crypto.randomUUID()}`,
-        c.candidate_type,
-        c.original_value,
-        c.normalized_value,
-        c.assessment || 'unknown',
-        c.role || 'unknown',
-        c.confidence ?? null,
-        c.evidence_text || null,
-        c.section || null,
-        c.block_id || null,
-        c.page_number ?? null,
-        c.review_status || 'pending',
-        c.match_state || 'new',
-        c.matched_ioc_id ?? null,
-        c.matched_ioc_observable_type || null
-      ]
-    );
-    inserted.push(rows[0]);
+  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
+  const owned = client !== pool;
+  try {
+    if (owned) await client.query('BEGIN');
+    await client.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
+    const inserted = [];
+    for (const c of candidates) {
+      const evidence = buildCandidateEvidenceRecord(c);
+      const { rows } = await client.query(
+        `INSERT INTO threat_report_candidates (
+           report_id, portable_id, candidate_type, original_value, normalized_value,
+           assessment, role, confidence, evidence_text, section, block_id, page_number,
+           review_status, match_state, matched_ioc_id, matched_ioc_observable_type,
+           is_ioc, source_assertion, evidence
+         ) VALUES (
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb
+         )
+         ON CONFLICT (report_id, candidate_type, normalized_value) DO UPDATE SET
+           assessment = EXCLUDED.assessment,
+           role = EXCLUDED.role,
+           confidence = EXCLUDED.confidence,
+           evidence_text = COALESCE(EXCLUDED.evidence_text, threat_report_candidates.evidence_text),
+           match_state = EXCLUDED.match_state,
+           matched_ioc_id = EXCLUDED.matched_ioc_id,
+           matched_ioc_observable_type = EXCLUDED.matched_ioc_observable_type,
+           is_ioc = EXCLUDED.is_ioc,
+           source_assertion = EXCLUDED.source_assertion,
+           evidence = EXCLUDED.evidence,
+           updated_at = NOW()
+         RETURNING *`,
+        [
+          reportId,
+          c.portable_id || `indicator--${crypto.randomUUID()}`,
+          c.candidate_type,
+          c.original_value,
+          c.normalized_value,
+          c.assessment || 'unknown',
+          c.role || 'unknown',
+          c.confidence ?? null,
+          c.evidence_text || null,
+          c.section || null,
+          c.block_id || null,
+          c.page_number ?? null,
+          c.review_status || 'pending',
+          c.match_state || 'new',
+          c.matched_ioc_id ?? null,
+          c.matched_ioc_observable_type || null,
+          c.is_ioc !== false,
+          c.source_assertion || null,
+          JSON.stringify(evidence)
+        ]
+      );
+      inserted.push(rows[0]);
+    }
+    if (owned) await client.query('COMMIT');
+    return inserted;
+  } catch (err) {
+    if (owned) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+    }
+    throw err;
+  } finally {
+    if (owned) client.release();
   }
-  return inserted;
+}
+
+/**
+ * Rehydrate persisted candidates (with evidence/occurrences) for a retry that
+ * reuses the deterministic candidate set.
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ */
+export async function loadReportCandidatesForAnalysis(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT candidate_type, original_value, normalized_value, assessment, role, confidence,
+            evidence_text, section, block_id, page_number, match_state, matched_ioc_id,
+            matched_ioc_observable_type, review_status, is_ioc, source_assertion, evidence
+     FROM threat_report_candidates WHERE report_id = $1 ORDER BY id`,
+    [reportId]
+  );
+  return rows.map((r) => {
+    const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {};
+    return {
+      ...r,
+      confidence: r.confidence == null ? null : Number(r.confidence),
+      is_ioc: r.is_ioc !== false && !['cve', 'attack_technique'].includes(String(r.candidate_type)),
+      zone: r.section || null,
+      occurrences: Array.isArray(ev.occurrences) ? ev.occurrences : [],
+      parsed: ev.parsed || {},
+      source_assertion: r.source_assertion || ev.source_assertion || null,
+      evidence_strength: ev.evidence_strength || null,
+      evidence_tier: ev.evidence_tier || null,
+      policy_decision: ev.policy_decision || null,
+      decision_source: ev.decision_source || null,
+      ai_needed: ev.ai_needed === true,
+      resolved_type: ev.resolved_type || r.candidate_type,
+      typing_reason: ev.typing_reason || null,
+      occurrence_count: ev.occurrence_count || 0,
+      is_direct_source_observable: ev.is_direct_source_observable !== false,
+      is_parser_derived_metadata: ev.is_parser_derived_metadata === true,
+      derived_from: ev.derived_from || null
+    };
+  });
 }
 
 export async function upsertEntity(pool, entity) {

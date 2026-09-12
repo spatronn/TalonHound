@@ -44,6 +44,38 @@ const upload = multer({
   limits: { fileSize: Math.max(PDF_MAX_BYTES, THIB_MAX_BYTES), files: 1 }
 });
 
+/**
+ * Compact provenance for the review UI (occurrence list capped; no raw DB ids).
+ * @param {object|null} evidence
+ */
+function publicCandidateEvidence(evidence) {
+  if (!evidence || typeof evidence !== 'object') return null;
+  const occurrences = Array.isArray(evidence.occurrences) ? evidence.occurrences.slice(0, 12) : [];
+  return {
+    source_assertion: evidence.source_assertion || null,
+    evidence_strength: evidence.evidence_strength || null,
+    evidence_tier: evidence.evidence_tier || null,
+    policy_decision: evidence.policy_decision || null,
+    decision_source: evidence.decision_source || null,
+    ai_needed: evidence.ai_needed === true,
+    is_direct_source_observable: evidence.is_direct_source_observable !== false,
+    is_parser_derived_metadata: evidence.is_parser_derived_metadata === true,
+    derived_from: evidence.derived_from || null,
+    occurrence_count: evidence.occurrence_count ?? occurrences.length,
+    zones: Array.isArray(evidence.zones) ? evidence.zones : [],
+    parsed: evidence.parsed && typeof evidence.parsed === 'object' ? evidence.parsed : {},
+    occurrences: occurrences.map((o) => ({
+      block_id: o.block_id || null,
+      page: o.page ?? null,
+      zone: o.zone || null,
+      section_heading: o.section_heading || null,
+      form: o.form || null,
+      port: o.port ?? null,
+      surrounding_text: o.surrounding_text || null
+    }))
+  };
+}
+
 function publicReport(row) {
   if (!row) return null;
   return {
@@ -232,7 +264,10 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           review_status: c.review_status,
           match_state: c.match_state,
           matched_ioc_id: c.matched_ioc_id,
-          matched_ioc_observable_type: c.matched_ioc_observable_type
+          matched_ioc_observable_type: c.matched_ioc_observable_type,
+          is_ioc: c.is_ioc !== false,
+          source_assertion: c.source_assertion || c.evidence?.source_assertion || null,
+          evidence: publicCandidateEvidence(c.evidence)
         })),
         entities: snap.entities.map((e) => ({
           id: e.public_id,

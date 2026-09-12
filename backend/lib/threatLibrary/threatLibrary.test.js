@@ -43,7 +43,11 @@ test('HTML extracts canonical blocks', () => {
   assert.equal(doc.language, 'en');
   assert.ok(doc.blocks.length >= 2);
   const cands = extractCandidatesFromDocument(doc);
-  assert.ok(cands.some((c) => c.candidate_type === 'domain' && c.normalized_value.includes('evil.example')));
+  const url = cands.find((c) => c.candidate_type === 'url' && c.normalized_value.includes('evil.example/path'));
+  assert.ok(url, 'refanged URL becomes a URL candidate');
+  assert.equal(url.parsed.host, 'evil.example');
+  // Host of a URL is parser metadata, never a separate domain candidate on its own.
+  assert.equal(cands.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'evil.example'), false);
   assert.ok(cands.some((c) => c.candidate_type === 'ip' && c.normalized_value === '203.0.113.10'));
 });
 

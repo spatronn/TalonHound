@@ -88,7 +88,9 @@ export async function consumeProviderStream(body, opts) {
   const decoder = new TextDecoder();
   let buffer = '';
   let text = '';
+  let thinking = 0;
   let gotFirst = false;
+  let firstTokenAt = null;
   let lastActivity = Date.now();
   const started = Date.now();
   const tickMs = Math.min(
@@ -146,6 +148,7 @@ export async function consumeProviderStream(body, opts) {
 
       if (!gotFirst) {
         gotFirst = true;
+        firstTokenAt = Date.now();
         opts.onActivity?.({ bytes: value.byteLength, firstToken: true });
       } else {
         opts.onActivity?.({ bytes: value.byteLength, firstToken: false });
@@ -160,9 +163,10 @@ export async function consumeProviderStream(body, opts) {
         if (!trimmed) continue;
         if (opts.parseLine) {
           const before = text;
-          const acc = { text };
+          const acc = { text, thinking };
           opts.parseLine(trimmed, acc);
           text = acc.text;
+          thinking = acc.thinking || thinking;
           if (text !== before) {
             lastActivity = Date.now();
             opts.onChunkText?.(text.slice(before.length));
@@ -175,9 +179,10 @@ export async function consumeProviderStream(body, opts) {
     }
     if (buffer.trim()) {
       if (opts.parseLine) {
-        const acc = { text };
+        const acc = { text, thinking };
         opts.parseLine(buffer.trim(), acc);
         text = acc.text;
+        thinking = acc.thinking || thinking;
       } else {
         text += buffer;
       }
@@ -192,6 +197,11 @@ export async function consumeProviderStream(body, opts) {
 
   if (!gotFirst) {
     throw aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
+  }
+  if (opts.stats) {
+    opts.stats.first_token_ms = firstTokenAt ? firstTokenAt - started : null;
+    opts.stats.thinking_chars = thinking;
+    opts.stats.output_chars = text.length;
   }
   return text;
 }
@@ -232,6 +242,8 @@ function parseOllamaNdjsonLine(line, acc) {
     const json = JSON.parse(line);
     const piece = json.message?.content || json.response || '';
     if (piece) acc.text += piece;
+    // Reasoning models stream "thinking" separately; it never reaches the JSON output.
+    if (json.message?.thinking) acc.thinking = (acc.thinking || 0) + String(json.message.thinking).length;
     if (json.error) {
       const err = aiFailure(AI_FAILURE_CODES.PROVIDER_HTTP_ERROR, String(json.error));
       throw err;
@@ -269,6 +281,8 @@ export async function callAiProvider(settings, messages, hooks = {}) {
   if (remainingTotal <= 1000) {
     throw aiFailure(AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
   }
+  const callStartedAt = Date.now();
+  const promptChars = String(messages.system || '').length + String(messages.user || '').length;
 
   try {
     let fetchPromise;
@@ -281,6 +295,10 @@ export async function callAiProvider(settings, messages, hooks = {}) {
           stream: true,
           // Prefer JSON Schema when provided (Ollama structured outputs); else json mode.
           format: hooks.formatSchema || 'json',
+          // Reasoning models (qwen3.x, deepseek-r1, …) otherwise spend minutes on
+          // hidden "thinking" before the constrained JSON starts. Extraction does
+          // not need chain-of-thought; older Ollama versions ignore the field.
+          think: false,
           keep_alive: hooks.keepAlive || '15m',
           options: { temperature: 0.1 },
           messages: [
@@ -328,6 +346,7 @@ export async function callAiProvider(settings, messages, hooks = {}) {
     }
 
     let res;
+    let headersAt = null;
     try {
       // Local Ollama may delay HTTP headers until prompt ingest/model load finishes.
       const headerWaitMs = Math.min(
@@ -335,6 +354,7 @@ export async function callAiProvider(settings, messages, hooks = {}) {
         Math.max(totalDeadlineAt - Date.now(), 1000)
       );
       res = await waitForHeaders(fetchPromise, headerWaitMs, controller.signal);
+      headersAt = Date.now();
     } catch (err) {
       if (err?.code === AI_FAILURE_CODES.CONNECTION_TIMEOUT && policy.is_local) {
         // Headers never arrived within first-token budget (model load / long prompt).
@@ -367,16 +387,27 @@ export async function callAiProvider(settings, messages, hooks = {}) {
           ? parseAnthropicSseLine
           : parseOpenAiSseLine;
 
+    const stats = {};
     const text = await consumeProviderStream(res.body, {
       firstTokenTimeoutMs: policy.first_token_timeout_ms,
       inactivityTimeoutMs: policy.inactivity_timeout_ms,
       totalDeadlineAt,
       signal: controller.signal,
       onActivity: hooks.onActivity,
-      parseLine
+      parseLine,
+      stats
     });
 
-    return { text, policy };
+    const timing = {
+      total_ms: Date.now() - callStartedAt,
+      headers_ms: headersAt ? headersAt - callStartedAt : null,
+      first_token_ms: headersAt && stats.first_token_ms != null ? headersAt - callStartedAt + stats.first_token_ms : null,
+      prompt_chars: promptChars,
+      output_chars: stats.output_chars ?? text.length,
+      thinking_chars: stats.thinking_chars ?? 0,
+      provider: endpoint.kind
+    };
+    return { text, policy, timing };
   } catch (err) {
     if (err?.code) throw err;
     if (err?.name === 'AbortError') {

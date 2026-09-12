@@ -1,0 +1,2109 @@
+{
+ "note": "pdf.js getTextContent items (rounded geometry) for pages 11/16/17 of the sanitized Kimsuky fixture PDF.",
+ "pages": [
+  {
+   "page": 11,
+   "pageHeight": 612,
+   "items": [
+    {
+     "str": "3",
+     "width": 7,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      570
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": ".",
+     "width": 3,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      175,
+      570
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "攻击组件分析",
+     "width": 70,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      179,
+      570
+     ],
+     "fontName": "g_d0_f2"
+    },
+    {
+     "str": "由",
+     "width": 11,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      191,
+      545
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "test.bef_fri",
+     "width": 57,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      203,
+      545
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "文件修复解压后得到载荷信息如下：",
+     "width": 189,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      260,
+      545
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "MD5",
+     "width": 27,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      174,
+      526
+     ],
+     "fontName": "g_d0_f8"
+    },
+    {
+     "str": "7479bedf5813a1527199f8958e898d19",
+     "width": 206,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      283,
+      526
+     ],
+     "fontName": "g_d0_f8"
+    },
+    {
+     "str": "文件大小",
+     "width": 51,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      174,
+      507
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "61.50KB (62976 ",
+     "width": 93,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      283,
+      507
+     ],
+     "fontName": "g_d0_f8"
+    },
+    {
+     "str": "字节",
+     "width": 25,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      376,
+      507
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": ")",
+     "width": 4,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      402,
+      507
+     ],
+     "fontName": "g_d0_f8"
+    },
+    {
+     "str": "文件名",
+     "width": 38,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      174,
+      487
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "test.bef_fri",
+     "width": 59,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      283,
+      487
+     ],
+     "fontName": "g_d0_f8"
+    },
+    {
+     "str": "该载荷是一个经过高度混淆的",
+     "width": 153,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      191,
+      458
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "C#",
+     "width": 14,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      345,
+      458
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "模块化后门框架，采用了随机",
+     "width": 153,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      360,
+      458
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "/",
+     "width": 4,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      513,
+      458
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "乱码标识符、方法名",
+     "width": 106,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      518,
+      458
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "混淆以及大量无意义字符串拼接等手段来对抗静态分析。程序的入口位于",
+     "width": 455,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      439
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "loader.Program.Main",
+     "width": 112,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      421
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "， 它 先 挂 载",
+     "width": 94,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      290,
+      421
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "  AssemblyResolve ",
+     "width": 107,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      393,
+      421
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "回 调 ， 再 调 用",
+     "width": 115,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      509,
+      421
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "Stella_Gary.Program.Main().GetAwaiter().GetResult()",
+     "width": 275,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      402
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "，表明主程序在托管层实现了反射",
+     "width": 180,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      444,
+      402
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "装载。",
+     "width": 35,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      384
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "Program.Main ",
+     "width": 78,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      191,
+      193
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "会在循环中创建",
+     "width": 82,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      270,
+      193
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": " Socket",
+     "width": 39,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      353,
+      193
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "，固定连接到",
+     "width": 70,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      392,
+      193
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": " 107.172.249.140:443",
+     "width": 112,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      462,
+      193
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "。",
+     "width": 11,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      575,
+      193
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "9/12/26, 9:05 PM",
+     "width": 61,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      24,
+      590
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "APT-C-55",
+     "width": 35,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      317,
+      589
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "（",
+     "width": 8,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      352,
+      589
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "Kimsuky",
+     "width": 30,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      360,
+      589
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "）组织利用伪装安装包植入远控木马的攻击链分析",
+     "width": 176,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      390,
+      589
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "https://mp.weixin.qq.com/s/9ilhH-WUqeNCStDfbrBsrw",
+     "width": 191,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      24,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "11",
+     "width": 8,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      749,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "/",
+     "width": 2,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      757,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "18",
+     "width": 9,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      759,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    }
+   ]
+  },
+  {
+   "page": 16,
+   "pageHeight": 612,
+   "items": [
+    {
+     "str": "2.",
+     "width": 9,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      191,
+      570
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "从",
+     "width": 11,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      201,
+      570
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "lnk",
+     "width": 16,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      213,
+      570
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "样本读取自身数据并单字节解密出",
+     "width": 181,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      230,
+      570
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "powershell",
+     "width": 58,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      412,
+      570
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "脚本的攻击手法和",
+     "width": 96,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      470,
+      570
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "Kimsuky",
+     "width": 44,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      568,
+      570
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "组",
+     "width": 11,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      612,
+      570
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "织相同。",
+     "width": 47,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      552
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "3.",
+     "width": 9,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      191,
+      518
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "本次攻击行动和相关报告",
+     "width": 131,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      201,
+      518
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "[2][3]",
+     "width": 25,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      332,
+      523
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "的攻击方式也相似，具体表现在",
+     "width": 167,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      358,
+      518
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "lnk",
+     "width": 16,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      525,
+      518
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "攻击方式，解密",
+     "width": 83,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      541,
+      518
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "方式和环境检查以及调试器检测等均相似，而这类报告也将这类似行动归属到",
+     "width": 411,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      500
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "Kimsuky",
+     "width": 44,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      580,
+      500
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "组织。",
+     "width": 35,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      169,
+      482
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "综上，我们较有把握将本轮攻击行动归属到",
+     "width": 224,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      191,
+      452
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "APT-C-55",
+     "width": 51,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      416,
+      452
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "（",
+     "width": 11,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      468,
+      452
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "Kimsuky",
+     "width": 44,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      480,
+      452
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "）组织。",
+     "width": 47,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      524,
+      452
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "本次本次捕获的",
+     "width": 86,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      206,
+      386
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": " Kimsuky",
+     "width": 52,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      293,
+      386
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "（",
+     "width": 11,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      346,
+      386
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "APT-C-55",
+     "width": 55,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      358,
+      386
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "）攻击行动展现了一条从恶意投递、",
+     "width": 198,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      415,
+      386
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "多阶段加载到持久化远控的完整攻击链，并在此前已知载荷的基础上进行了明",
+     "width": 430,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      183,
+      365
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "显升级。攻击者全程大量滥用合法平台充当通信与分发通道，结合",
+     "width": 370,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      183,
+      346
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "JavaScript",
+     "width": 59,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      554,
+      346
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "反机器人验证绕过、模块化插件架构、内存。",
+     "width": 248,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      183,
+      326
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "加载等手法，使恶意流量与正常业务通信高度趋同，大幅降低了传统检测",
+     "width": 408,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      206,
+      300
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "机制的识别概率。这些特征表明，该组织的工具链正朝着更隐蔽、更灵活的方",
+     "width": 430,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      183,
+      280
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "向持续演进。因此在这里提醒用户提升安全意识，警惕来历不明的链接和文",
+     "width": 430,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      183,
+      260
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "件，避免因一次无防备的点击而导致机密情报与核心数据泄露。",
+     "width": 348,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      183,
+      240
+     ],
+     "fontName": "g_d0_f5"
+    },
+    {
+     "str": "附录",
+     "width": 21,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      375,
+      198
+     ],
+     "fontName": "g_d0_f2"
+    },
+    {
+     "str": " ",
+     "width": 3,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      396,
+      198
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "I",
+     "width": 3,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      399,
+      198
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "O",
+     "width": 8,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      403,
+      198
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "C",
+     "width": 6,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      411,
+      198
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "M",
+     "width": 10,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      170
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "D",
+     "width": 7,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      179,
+      170
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "5",
+     "width": 6,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      186,
+      170
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "04272144d33668f99f7cf2255289e351",
+     "width": 178,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      148
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "3c64c75c9e6a3da7fbc766deb2081219",
+     "width": 181,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      126
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "7479bedf5813a1527199f8958e898d19",
+     "width": 182,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      105
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "9ae48e0ce0dfcac0245237fa220dd52d",
+     "width": 179,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      83
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "7479bedf5813a1527199f8958e898d19",
+     "width": 182,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      62
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "C",
+     "width": 6,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      39
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "&",
+     "width": 9,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      175,
+      39
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "C",
+     "width": 6,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      184,
+      39
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": ":",
+     "width": 3,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      191,
+      39
+     ],
+     "fontName": "g_d0_f1"
+    },
+    {
+     "str": "总结",
+     "width": 24,
+     "height": 8,
+     "transform": [
+      8,
+      0,
+      0,
+      8,
+      179,
+      421
+     ],
+     "fontName": "g_d0_f2"
+    },
+    {
+     "str": "9/12/26, 9:05 PM",
+     "width": 61,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      24,
+      590
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "APT-C-55",
+     "width": 35,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      317,
+      589
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "（",
+     "width": 8,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      352,
+      589
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "Kimsuky",
+     "width": 30,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      360,
+      589
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "）组织利用伪装安装包植入远控木马的攻击链分析",
+     "width": 176,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      390,
+      589
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "https://mp.weixin.qq.com/s/9ilhH-WUqeNCStDfbrBsrw",
+     "width": 191,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      24,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "16",
+     "width": 9,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      748,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "/",
+     "width": 2,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      757,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "18",
+     "width": 9,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      759,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    }
+   ]
+  },
+  {
+   "page": 17,
+   "pageHeight": 612,
+   "items": [
+    {
+     "str": "http[:]//217[.]60[.]36[.]94/unicorn/uni.txt",
+     "width": 193,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      571
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "http[:]//217[.]60[.]36[.]94/unicorn/mort[.]php",
+     "width": 214,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      550
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "http[:]//38[.]180[.]204[.]13/unicorn/mort[.]php",
+     "width": 220,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      528
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "http[:]//38[.]180[.]204[.]13/unicorn/uni.txt",
+     "width": 199,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      507
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "107[.]172[.]249[.]140[:]443",
+     "width": 124,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      485
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "参考链接",
+     "width": 41,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      375,
+      456
+     ],
+     "fontName": "g_d0_f2"
+    },
+    {
+     "str": "[1]https://mp.weixin.qq.com/s/Ibz3FeA7twg-VCujA3cV_g",
+     "width": 270,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      425
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "[2]https://dev.to/excalibra/north-korea-linked-hackers-use-github-as-c2-infrastructure-to-",
+     "width": 434,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      404
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "attack-south-korea-47aa",
+     "width": 118,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      388
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "[3]https://www.fortinet.com/fr/blog/threat-research/dprk-related-campaigns-with-lnk-and-",
+     "width": 438,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      366
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "github-c2",
+     "width": 46,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      350
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "360高级威胁研究院",
+     "width": 98,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      285
+     ],
+     "fontName": "g_d0_f9"
+    },
+    {
+     "str": "360 高级威胁研究院隶属于360安全能力中心，负责高级威胁高位能力研究。集结顶尖 APT 威胁狩",
+     "width": 455,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      268
+     ],
+     "fontName": "g_d0_f10"
+    },
+    {
+     "str": "猎专家，专注于高级威胁的发现、防御、处置和研究，曾在全球范围内率先捕获双杀、双星、噩梦",
+     "width": 455,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      254
+     ],
+     "fontName": "g_d0_f10"
+    },
+    {
+     "str": "公式等多起业界知名的 0day 在野攻击，独家披露多个国家级 APT 组织的高级行动，赢得业内外的",
+     "width": 455,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      240
+     ],
+     "fontName": "g_d0_f10"
+    },
+    {
+     "str": "广泛认可，为 360 保障国家网络安全提供有力支撑。",
+     "width": 244,
+     "height": 7,
+     "transform": [
+      7,
+      0,
+      0,
+      7,
+      169,
+      226
+     ],
+     "fontName": "g_d0_f10"
+    },
+    {
+     "str": "APT · Table of Contents",
+     "width": 104,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      182,
+      165
+     ],
+     "fontName": "g_d0_f4"
+    },
+    {
+     "str": "P",
+     "width": 6,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      286,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "r",
+     "width": 3,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      292,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "e",
+     "width": 5,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      296,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "v",
+     "width": 5,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      301,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "i",
+     "width": 2,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      306,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "o",
+     "width": 6,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      309,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "u",
+     "width": 5,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      315,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "s",
+     "width": 4,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      321,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "·",
+     "width": 2,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      328,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "A",
+     "width": 6,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      334,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "P",
+     "width": 6,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      340,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "T",
+     "width": 5,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      346,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "-",
+     "width": 4,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      352,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "C",
+     "width": 6,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      356,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "-",
+     "width": 4,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      362,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "5",
+     "width": 5,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      366,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "6",
+     "width": 5,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      372,
+      131
+     ],
+     "fontName": "g_d0_f11"
+    },
+    {
+     "str": "（透明部落）近期攻击活动分析",
+     "width": 137,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      377,
+      131
+     ],
+     "fontName": "g_d0_f12"
+    },
+    {
+     "str": "9/12/26, 9:05 PM",
+     "width": 61,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      24,
+      590
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "APT-C-55",
+     "width": 35,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      317,
+      589
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "（",
+     "width": 8,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      352,
+      589
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "Kimsuky",
+     "width": 30,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      360,
+      589
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "）组织利用伪装安装包植入远控木马的攻击链分析",
+     "width": 176,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      390,
+      589
+     ],
+     "fontName": "g_d0_f7"
+    },
+    {
+     "str": "https://mp.weixin.qq.com/s/9ilhH-WUqeNCStDfbrBsrw",
+     "width": 191,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      24,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "17",
+     "width": 9,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      748,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "/",
+     "width": 2,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      757,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    },
+    {
+     "str": "18",
+     "width": 9,
+     "height": 6,
+     "transform": [
+      6,
+      0,
+      0,
+      6,
+      759,
+      17
+     ],
+     "fontName": "g_d0_f6"
+    }
+   ]
+  }
+ ]
+}
