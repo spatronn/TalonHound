@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import { analyzeThreatDocument, buildAnalysisChunks } from './analyze.js';
 import { createCanonicalDocument } from '../canonicalDocument.js';
 import { AI_FAILURE_CODES } from './timeouts.js';
+import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';
 
 function sampleDoc(blockCount = 6) {
   const blocks = [];
@@ -56,6 +57,7 @@ test('checkpoint resume skips completed chunks on retry', async () => {
   for (let i = 0; i < 3; i += 1) {
     completed.set(chunks[i].chunk_key, {
       ok: true,
+      schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
       value: {
         summary: `Cached ${i + 1}`,
         report_type: 'malware',
@@ -75,7 +77,11 @@ test('checkpoint resume skips completed chunks on retry', async () => {
     {
       loadCompletedChunk: async (key) => completed.get(key) || null,
       saveChunkResult: async (chunk, value) => {
-        completed.set(chunk.chunk_key, { ok: true, value });
+        completed.set(chunk.chunk_key, {
+          ok: true,
+          value,
+          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+        });
       },
       callProvider: async (_s, messages) => {
         providerCalls.push(messages.user.slice(0, 80));
@@ -101,7 +107,11 @@ test('checkpoint resume skips completed chunks on retry', async () => {
     {
       loadCompletedChunk: async (key) => completed.get(key) || null,
       saveChunkResult: async (chunk, value) => {
-        completed.set(chunk.chunk_key, { ok: true, value });
+        completed.set(chunk.chunk_key, {
+          ok: true,
+          value,
+          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+        });
       },
       callProvider: async () => {
         providerCalls.push('call');
