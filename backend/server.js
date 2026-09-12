@@ -320,6 +320,10 @@ import {
   extractVtFileMetadata,
   promoteVtFileMetadataIntoFileInformation
 } from './lib/virustotalFileMetadata.js';
+import {
+  extractWebAnalysisFromVt,
+  ensureVtWebAnalysis
+} from './lib/virustotalWebAnalysis.js';
 import { resolveVtEnrichmentRow } from './lib/virustotalEnrichmentReuse.js';
 import { findArtifactLinkedIocsByIocId } from './lib/fileArtifacts/read.js';
 
@@ -6223,6 +6227,12 @@ function normalizeVtSummary(iocValue, iocType, payload) {
     .slice(0, 5)
     .map((v) => ({ engine: v.engine, category: v.category, result: v.result }));
 
+  const webAnalysis = extractWebAnalysisFromVt({
+    iocType,
+    attributes: attr,
+    rawResponse: payload
+  });
+
   return ensureVtGuiPermalink({
     provider: VT_PROVIDER,
     ioc_value: iocValue,
@@ -6242,6 +6252,9 @@ function normalizeVtSummary(iocValue, iocType, payload) {
     domain: { registrar: attr.registrar || null, categories: Object.values(attr.categories || {}) },
     ip: { asn: attr.asn || null, country: attr.country || null, network: attr.network || null, owner: attr.as_owner || null },
     url: { final_url: attr.last_final_url || null, title: attr.title || null, last_final_url: attr.last_final_url || null },
+    // Provider-independent URL web signals (phishing / credential-harvesting).
+    // Absent for non-URL IOCs and when VT returned no useful web fields.
+    ...(webAnalysis ? { web_analysis: webAnalysis } : {}),
     // Technical file metadata, validated/sanitised for promotion into the IOC
     // File Information view. `type_description` is kept for backward compatibility;
     // `file_type` mirrors it (or type_tag) under the File Information field name.
@@ -6291,7 +6304,9 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
       provider: VT_PROVIDER,
       // Self-heal cached summaries: rebuild the GUI permalink so rows stored
       // before the GUI-URL fix never serve an /api/v3 self-link to the browser.
-      summary: ensureVtGuiPermalink(row.normalized_summary),
+      // Also derive web_analysis from stored raw_response when a legacy URL row
+      // predates that field (no extra VirusTotal API call).
+      summary: ensureVtWebAnalysis(ensureVtGuiPermalink(row.normalized_summary), row.raw_response),
       error_message: row.error_message,
       fetched_at: row.fetched_at,
       expires_at: row.expires_at,

@@ -21,6 +21,7 @@
     "test:threat-actors": "node --test src/lib/threatActorManagerList.test.js src/lib/threatActorTableDisplay.test.js",
     "test:ioc-search": "node --test src/lib/iocSearchDslClient.test.js src/lib/actionCenter.test.js src/lib/deepSearch.test.js",
     "test:file-artifacts": "node --test src/lib/fileArtifactDetailRedirect.test.js src/lib/intelligenceTabNoSourceEvidence.test.js",
+    "test:virustotal": "node --test src/lib/virustotalGuiLink.test.js src/lib/virustotalWebAnalysis.test.js",
     "test:password-change": "node --test src/lib/passwordChangeGate.test.js",
     "test:audit-logs": "node --test src/lib/auditLogsView.test.js",
     "test:ux-phase1": "node --test src/lib/uiButtons.test.js src/lib/modalOverlay.test.js src/lib/createUserForm.test.js src/lib/feedFormField.test.js src/lib/publishedFeedForm.test.js src/lib/deleteUserConfirm.test.js src/lib/userRowControls.test.js",

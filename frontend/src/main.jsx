@@ -56,6 +56,17 @@ import { getIpEnrichmentEligibility, getAbuseIpdbEligibility } from './lib/ipEnr
 import { isRdapEligibleObservable } from './lib/iocProviderApplicability.js';
 import { virusTotalGuiHref } from './lib/virustotalGuiLink.js';
 import {
+  hasUsefulWebAnalysis,
+  formatBehaviorTagLabel,
+  shortenContentSha256,
+  formatHttpStatusLabel,
+  formatContentLengthLabel,
+  normalizeRedirectChainView,
+  normalizeOutgoingLinksView,
+  compactUrlForDisplay
+} from './lib/virustotalWebAnalysis.js';
+import { copyTextToClipboard } from './lib/iocCopyFeedback.js';
+import {
   normalizeVisibleClassifications,
   buildThreatClassificationModalState,
   buildThreatClassificationSavePayload,
@@ -14392,8 +14403,10 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
   const [open, setOpen] = useState(true);
   const [showDetails, setShowDetails] = useState(false);
   const [showAll, setShowAll] = useState(false);
+  const [showAllOutgoing, setShowAllOutgoing] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [copiedSha, setCopiedSha] = useState(false);
 
   const load = useCallback(async () => {
     if (!iocId || !active) return;
@@ -14460,6 +14473,12 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
   const severityDetected = detected > 0;
   const vendorResults = Array.isArray(s.vendor_results) ? s.vendor_results : [];
   const topDetections = (vendorResults.length ? vendorResults.filter((v) => v.category === 'malicious' || v.category === 'suspicious').slice(0, 5) : (Array.isArray(s.top_engines) ? s.top_engines : []));
+  const isUrlIoc = String(s.ioc_type || '').toLowerCase() === 'url';
+  const webAnalysis = isUrlIoc && hasUsefulWebAnalysis(s.web_analysis) ? s.web_analysis : null;
+  const redirectChain = webAnalysis ? normalizeRedirectChainView(webAnalysis.redirection_chain) : null;
+  const outgoingView = webAnalysis
+    ? normalizeOutgoingLinksView(webAnalysis.outgoing_links, showAllOutgoing ? 50 : undefined)
+    : null;
 
   const chip = (label, value, c) => <span key={label} style={{ padding:'6px 10px', borderRadius:999, border:`1px solid ${c.b}`, background:c.bg, color:c.t, fontSize:12 }}>{label}: <b>{value}</b></span>;
 
@@ -14504,6 +14523,19 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
     return <div style={{ ...compactCardStyle, borderColor:'#7f1d1d' }}><span style={{ color:'#fca5a5', fontSize:13 }}>{state.message || 'VirusTotal enrichment failed.'}</span><button onClick={() => refresh().catch(()=>{})} disabled={refreshing}>{refreshing ? 'Running VirusTotal enrichment...' : 'Retry'}</button></div>;
   }
 
+  async function copyContentSha() {
+    const full = webAnalysis?.content_sha256;
+    if (!full) return;
+    const result = await copyTextToClipboard(full);
+    if (result.ok) {
+      setCopiedSha(true);
+      setTimeout(() => setCopiedSha(false), 2000);
+    }
+  }
+
+  const webFieldLabel = { color: '#94a3b8', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 };
+  const webFieldValue = { color: '#e2e8f0', fontSize: 13, overflowWrap: 'anywhere', wordBreak: 'break-word' };
+
   return <div style={cardShellStyle}>
     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10 }}>
       <div>
@@ -14530,6 +14562,173 @@ function VirusTotalEnrichmentCard({ iocId, active = true, compact = false, onSna
           <div style={{ marginTop:10, fontSize:12, color:'#94a3b8' }}>Last analysis: {formatUserDateTime(s.last_analysis_date)} · Fetched: {formatUserDateTime(state.fetchedAt)}</div>
         </div>
       </div>
+
+      {webAnalysis ? (
+        <div style={{ marginTop: 12, border: '1px solid #334155', borderRadius: 10, overflow: 'hidden', background: '#0b1220' }}>
+          <div style={{ padding: 10, background: '#111827', borderBottom: '1px solid #334155', fontWeight: 700, color: '#e2e8f0' }}>Web Analysis</div>
+          <div style={{ padding: 12, display: 'grid', gap: 14 }}>
+            {webAnalysis.targeted_brand?.value ? (
+              <div>
+                <div style={webFieldLabel}>Targeted Brand</div>
+                <div style={{ ...webFieldValue, fontSize: 16, fontWeight: 700 }}>{webAnalysis.targeted_brand.value}</div>
+                {webAnalysis.targeted_brand.source ? (
+                  <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>Source: {webAnalysis.targeted_brand.source}</div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {Array.isArray(webAnalysis.behavior_tags) && webAnalysis.behavior_tags.length ? (
+              <div>
+                <div style={webFieldLabel}>Behavior</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {webAnalysis.behavior_tags.map((tag) => (
+                    <span
+                      key={tag}
+                      title={tag}
+                      style={{
+                        padding: '4px 10px',
+                        borderRadius: 999,
+                        border: '1px solid #475569',
+                        background: 'rgba(71,85,105,.18)',
+                        color: '#cbd5e1',
+                        fontSize: 12
+                      }}
+                    >
+                      {formatBehaviorTagLabel(tag)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {webAnalysis.http && (webAnalysis.http.status_code != null || webAnalysis.http.server || webAnalysis.http.content_length != null) ? (
+              <div>
+                <div style={webFieldLabel}>HTTP</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  {webAnalysis.http.status_code != null ? (
+                    <span style={{ ...webFieldValue, fontWeight: 700 }}>{formatHttpStatusLabel(webAnalysis.http.status_code)}</span>
+                  ) : null}
+                  {webAnalysis.http.server ? (
+                    <span style={{ color: '#94a3b8', fontSize: 13 }}>{webAnalysis.http.server}</span>
+                  ) : null}
+                  {webAnalysis.http.content_length != null ? (
+                    <span
+                      title={`${webAnalysis.http.content_length} bytes`}
+                      style={{ color: '#94a3b8', fontSize: 13 }}
+                    >
+                      {formatContentLengthLabel(webAnalysis.http.content_length)}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {webAnalysis.content_sha256 ? (
+              <div>
+                <div style={webFieldLabel}>Content SHA256</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <code
+                    title={webAnalysis.content_sha256}
+                    style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: '#e2e8f0', overflowWrap: 'anywhere' }}
+                  >
+                    {shortenContentSha256(webAnalysis.content_sha256)}
+                  </code>
+                  <button type="button" onClick={() => copyContentSha().catch(() => {})} style={{ padding: '4px 8px', fontSize: 12 }}>
+                    {copiedSha ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {redirectChain && redirectChain.items.length ? (
+              <div>
+                <div style={webFieldLabel}>Redirect Chain</div>
+                <div style={{ display: 'grid', gap: 4 }}>
+                  {redirectChain.items.map((url, idx) => (
+                    <div key={`${idx}-${url}`}>
+                      {idx > 0 ? <div style={{ color: '#64748b', fontSize: 12, paddingLeft: 4 }}>↓</div> : null}
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={url}
+                        style={{ color: '#93c5fd', fontSize: 13, textDecoration: 'none', overflowWrap: 'anywhere', wordBreak: 'break-word', display: 'inline-block', maxWidth: '100%' }}
+                      >
+                        {compactUrlForDisplay(url)}
+                      </a>
+                    </div>
+                  ))}
+                  {redirectChain.truncated || redirectChain.total_count > redirectChain.items.length ? (
+                    <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+                      + {Math.max(0, redirectChain.total_count - redirectChain.items.length)} more
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {outgoingView && outgoingView.preview.length ? (
+              <div>
+                <div style={webFieldLabel}>Outgoing Links</div>
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {outgoingView.preview.map((url) => (
+                    <a
+                      key={url}
+                      href={url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={url}
+                      style={{ color: '#93c5fd', fontSize: 13, textDecoration: 'none', overflowWrap: 'anywhere', wordBreak: 'break-word' }}
+                    >
+                      {compactUrlForDisplay(url, 96)}
+                    </a>
+                  ))}
+                  {!showAllOutgoing && outgoingView.remaining > 0 ? (
+                    <button type="button" onClick={() => setShowAllOutgoing(true)} style={{ justifySelf: 'start', padding: '4px 8px', fontSize: 12 }}>
+                      + {outgoingView.remaining} more
+                    </button>
+                  ) : null}
+                  {showAllOutgoing && outgoingView.total_count > outgoingView.preview.length ? (
+                    <div style={{ color: '#94a3b8', fontSize: 12 }}>
+                      Showing {outgoingView.preview.length} of {outgoingView.total_count}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {Array.isArray(webAnalysis.categories) && webAnalysis.categories.length ? (
+              <div>
+                <div style={webFieldLabel}>Categories</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {webAnalysis.categories.map((cat) => (
+                    <span
+                      key={cat}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: 999,
+                        border: '1px solid #334155',
+                        background: '#111827',
+                        color: '#cbd5e1',
+                        fontSize: 12
+                      }}
+                    >
+                      {cat}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {webAnalysis.times_submitted != null ? (
+              <div>
+                <div style={webFieldLabel}>Times Submitted</div>
+                <div style={webFieldValue}>{webAnalysis.times_submitted}</div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {(!compact || showDetails) ? (
       <div style={{ marginTop:12, border:'1px solid #334155', borderRadius:10, overflow:'hidden' }}>

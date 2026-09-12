@@ -33,7 +33,8 @@ import {
   rowToSpamhausApiPayload
 } from '../services/spamhausDropEnrichmentService.js';
 import { SPAMHAUS_DROP_PROVIDER } from './spamhausDropSync.js';
-import { VT_PROVIDER, buildVirusTotalNotFoundMessage } from './virustotalEnrichment.js';
+import { VT_PROVIDER, buildVirusTotalNotFoundMessage, ensureVtGuiPermalink } from './virustotalEnrichment.js';
+import { ensureVtWebAnalysis } from './virustotalWebAnalysis.js';
 import { extractIpLiteralFromIoc } from './iocIpExtraction.js';
 import { resolveIpEnrichmentTarget } from './ipEnrichmentEligibility.js';
 
@@ -88,7 +89,15 @@ async function readGenericEnrichments(pool, iocIds) {
     .filter((n) => Number.isFinite(n));
   if (!ids.length) return [];
   const { rows } = await pool.query(
-    `SELECT provider, status, ioc_type, normalized_summary, fetched_at, expires_at, error_message
+    `SELECT provider, status, ioc_type, normalized_summary, fetched_at, expires_at, error_message,
+            CASE
+              WHEN provider = 'virustotal'
+               AND status = 'success'
+               AND lower(coalesce(ioc_type, '')) = 'url'
+               AND (normalized_summary IS NULL OR NOT (normalized_summary ? 'web_analysis'))
+              THEN raw_response
+              ELSE NULL
+            END AS raw_response
      FROM ioc_enrichments
      WHERE ioc_id = ANY($1::bigint[])
      ORDER BY provider ASC`,
@@ -105,10 +114,14 @@ async function readGenericEnrichments(pool, iocIds) {
   }
   return [...bestByProvider.values()].map((e) => {
     const isVtNotIndexed = e.provider === VT_PROVIDER && e.status === 'not_found';
+    let summary = e.normalized_summary || null;
+    if (e.provider === VT_PROVIDER && summary) {
+      summary = ensureVtWebAnalysis(ensureVtGuiPermalink(summary), e.raw_response);
+    }
     return {
       provider: e.provider,
       status: e.status,
-      summary: e.normalized_summary || null,
+      summary,
       fetched_at: e.fetched_at || null,
       expires_at: e.expires_at || null,
       error_message: isVtNotIndexed

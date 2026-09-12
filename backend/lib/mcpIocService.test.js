@@ -1099,6 +1099,71 @@ test('mcpGetIocContext: URL with IP host exposes derived_infrastructure without 
   assert.ok(out.body.source_intelligence);
 });
 
+test('mcpGetIocContext: URL VT enrichment exposes additive web_analysis (bounded, no secrets)', async () => {
+  const row = urlWithIpHostRow({
+    observable: 'https://phish.example.invalid/login',
+    id: 9001,
+    public_id: 'cccccccc-0000-4000-8000-000000009001'
+  });
+  const sha = '235195e7aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacd04f3e1';
+  const pool = makeContextPool({
+    row,
+    enrichment: [{
+      provider: 'virustotal',
+      status: 'success',
+      ioc_type: 'url',
+      normalized_summary: {
+        provider: 'virustotal',
+        ioc_type: 'url',
+        ioc_value: row.observable,
+        stats: { malicious: 2, suspicious: 1, harmless: 10, undetected: 50, timeout: 0 },
+        detection_ratio: { detected: 3, total: 63 },
+        url: { final_url: 'https://phish.example.invalid/login', title: 'Login' },
+        web_analysis: {
+          targeted_brand: { value: 'Allegro', source: 'PhishTank' },
+          behavior_tags: ['password-input', 'iframes'],
+          http: { status_code: 200, server: 'cloudflare', content_length: 764388 },
+          content_sha256: sha,
+          redirection_chain: {
+            items: ['https://phish.example.invalid/listing', 'https://phish.example.invalid/logowanie'],
+            total_count: 2,
+            truncated: false
+          },
+          outgoing_links: {
+            items: Array.from({ length: 20 }, (_, i) => `https://allegro.pl/${i}`),
+            total_count: 34,
+            truncated: true
+          },
+          times_submitted: 1,
+          categories: ['shopping', 'phishing']
+        }
+      },
+      fetched_at: '2026-09-07T18:47:16.604Z',
+      expires_at: '2026-09-08T18:47:16.604Z',
+      error_message: null
+    }]
+  });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  const vt = out.body.enrichment.find((e) => e.provider === 'virustotal');
+  assert.ok(vt);
+  // Backward-compatible existing fields remain.
+  assert.equal(vt.summary.stats.malicious, 2);
+  assert.equal(vt.summary.url.final_url, 'https://phish.example.invalid/login');
+  const wa = vt.summary.web_analysis;
+  assert.equal(wa.targeted_brand.value, 'Allegro');
+  assert.deepEqual(wa.behavior_tags, ['password-input', 'iframes']);
+  assert.equal(wa.content_sha256, sha);
+  assert.equal(wa.http.status_code, 200);
+  assert.equal(wa.redirection_chain.items.length, 2);
+  assert.equal(wa.outgoing_links.truncated, true);
+  assert.ok(wa.outgoing_links.items.length <= 20);
+  const blob = JSON.stringify(out.body);
+  assert.equal(blob.includes('set-cookie'), false);
+  assert.equal(blob.includes('javascript_variables'), false);
+  assert.equal(blob.includes('raw_response'), false);
+});
+
 test('mcpGetIocContext: URL derived IP partial providers still succeed', async () => {
   const row = urlWithIpHostRow();
   const pool = makeContextPool({

@@ -62,7 +62,74 @@ test('collectIocEnrichments self-heals VT not_found messages by ioc_type matrix'
   }
 });
 
-test('collectIocEnrichments leaves non-not_found VT error_message unchanged', async () => {
+test('collectIocEnrichments self-heals URL web_analysis from raw_response', async () => {
+  const sha = '235195e7aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacd04f3e1';
+  const pool = makePool([{
+    provider: 'virustotal',
+    status: 'success',
+    ioc_type: 'url',
+    normalized_summary: {
+      provider: 'virustotal',
+      ioc_type: 'url',
+      ioc_value: 'https://example.invalid/phish',
+      stats: { malicious: 3, suspicious: 1, harmless: 0, undetected: 0, timeout: 0 },
+      detection_ratio: { detected: 4, total: 4 }
+    },
+    raw_response: {
+      data: {
+        attributes: {
+          targeted_brand: { PhishTank: 'Allegro' },
+          tags: ['password-input', 'iframes'],
+          last_http_response_content_sha256: sha,
+          last_http_response_code: 200,
+          last_http_response_headers: { server: 'cloudflare', 'set-cookie': 'session=SECRET' },
+          outgoing_links: Array.from({ length: 30 }, (_, i) => `https://out.example/${i}`),
+          cookies: [{ value: 'SECRET' }]
+        }
+      }
+    },
+    fetched_at: '2026-09-07T00:00:00.000Z',
+    expires_at: null,
+    error_message: null
+  }]);
+  const entries = await collectIocEnrichments(pool, {
+    iocId: 1,
+    type: 'url',
+    value: 'https://example.invalid/phish'
+  });
+  const wa = entries[0].summary.web_analysis;
+  assert.equal(wa.targeted_brand.value, 'Allegro');
+  assert.deepEqual(wa.behavior_tags, ['password-input', 'iframes']);
+  assert.equal(wa.content_sha256, sha);
+  assert.equal(wa.http.server, 'cloudflare');
+  assert.equal(wa.outgoing_links.truncated, true);
+  assert.ok(wa.outgoing_links.items.length <= 20);
+  // Existing VT fields preserved.
+  assert.equal(entries[0].summary.stats.malicious, 3);
+  assert.equal(JSON.stringify(wa).includes('SECRET'), false);
+});
+
+test('collectIocEnrichments does not invent web_analysis for hash VT rows', async () => {
+  const pool = makePool([{
+    provider: 'virustotal',
+    status: 'success',
+    ioc_type: 'sha256',
+    normalized_summary: {
+      provider: 'virustotal',
+      ioc_type: 'sha256',
+      stats: { malicious: 1, suspicious: 0, harmless: 0, undetected: 0, timeout: 0 }
+    },
+    raw_response: {
+      data: { attributes: { tags: ['password-input'], targeted_brand: { PhishTank: 'X' } } }
+    },
+    fetched_at: null,
+    expires_at: null,
+    error_message: null
+  }]);
+  const entries = await collectIocEnrichments(pool, { iocId: 1, type: 'sha256', value: 'a'.repeat(64) });
+  assert.equal(entries[0].summary.web_analysis, undefined);
+});
+
   const msg = 'VirusTotal rate limit reached. Try again later.';
   const pool = makePool([{
     provider: 'virustotal',

@@ -23,7 +23,16 @@
 import { VT_PROVIDER } from './virustotalEnrichment.js';
 import { findArtifactLinkedIocsByIocId } from './fileArtifacts/read.js';
 
-const VT_ROW_COLUMNS = 'ioc_id, status, ioc_type, normalized_summary, error_message, fetched_at, expires_at';
+// Include raw_response only when web_analysis is missing so legacy URL rows can
+// self-heal on read without loading full VT JSON for every request.
+const VT_ROW_COLUMNS = `ioc_id, status, ioc_type, normalized_summary, error_message, fetched_at, expires_at,
+  CASE
+    WHEN status = 'success'
+     AND lower(coalesce(ioc_type, '')) = 'url'
+     AND (normalized_summary IS NULL OR NOT (normalized_summary ? 'web_analysis'))
+    THEN raw_response
+    ELSE NULL
+  END AS raw_response`;
 
 /**
  * @param {import('pg').Pool|import('pg').PoolClient} db
