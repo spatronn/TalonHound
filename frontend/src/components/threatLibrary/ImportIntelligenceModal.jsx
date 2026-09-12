@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { api } from '../../lib/api.js';
 import ThreatLibraryModal, { ModalCancelButton } from './ThreatLibraryModal.jsx';
+import { formatUploadBytes, importErrorMessage, multipartFormConfig } from './multipartUpload.js';
 import { ui } from './styles.js';
+
+/** Keep in sync with backend PDF_MAX_BYTES default (25_165_824). */
+const PDF_MAX_BYTES_UI = 25_165_824;
 
 const TABS = [
   { id: 'url', label: 'URL' },
@@ -16,7 +20,9 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
   const [thibFile, setThibFile] = useState(null);
   const [thibPreview, setThibPreview] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState('');
   const [error, setError] = useState('');
+  const [errorCode, setErrorCode] = useState('');
 
   function reset() {
     setTab('url');
@@ -25,7 +31,9 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
     setThibFile(null);
     setThibPreview(null);
     setBusy(false);
+    setBusyLabel('');
     setError('');
+    setErrorCode('');
   }
 
   function handleClose() {
@@ -34,41 +42,58 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
     onClose?.();
   }
 
+  function setImportError(err, fallback) {
+    const data = err?.response?.data;
+    setError(importErrorMessage(err, fallback));
+    setErrorCode(typeof data?.code === 'string' ? data.code : '');
+  }
+
   async function submitUrl() {
     setBusy(true);
+    setBusyLabel('Importing URL…');
     setError('');
+    setErrorCode('');
     try {
       const { data } = await api.post('/threat-library/import/url', { url: url.trim() });
       onImported?.(data?.report);
       reset();
       onClose?.();
     } catch (err) {
-      setError(err?.response?.data?.message || 'URL import failed');
+      setImportError(err, 'URL import failed');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
   async function submitPdf() {
     if (!pdfFile) {
       setError('Choose a PDF file');
+      setErrorCode('pdf_upload_failed');
+      return;
+    }
+    if (pdfFile.size > PDF_MAX_BYTES_UI) {
+      setError(`PDF exceeds maximum size (${formatUploadBytes(PDF_MAX_BYTES_UI)}).`);
+      setErrorCode('pdf_too_large');
       return;
     }
     setBusy(true);
+    setBusyLabel('Uploading PDF…');
     setError('');
+    setErrorCode('');
     try {
       const form = new FormData();
       form.append('file', pdfFile);
-      const { data } = await api.post('/threat-library/import/pdf', form, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Do NOT set Content-Type manually — boundary must come from the browser.
+      const { data } = await api.post('/threat-library/import/pdf', form, multipartFormConfig());
       onImported?.(data?.report);
       reset();
       onClose?.();
     } catch (err) {
-      setError(err?.response?.data?.message || 'PDF import failed');
+      setImportError(err, 'PDF import failed');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
@@ -76,20 +101,21 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
     setThibFile(file || null);
     setThibPreview(null);
     setError('');
+    setErrorCode('');
     if (!file) return;
     setBusy(true);
+    setBusyLabel('Validating bundle…');
     try {
       const form = new FormData();
       form.append('file', file);
-      const { data } = await api.post('/threat-library/import/thib/validate', form, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const { data } = await api.post('/threat-library/import/thib/validate', form, multipartFormConfig());
       setThibPreview(data);
     } catch (err) {
       setThibPreview(null);
-      setError(err?.response?.data?.message || 'Bundle validation failed');
+      setImportError(err, 'Bundle validation failed');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
@@ -99,25 +125,27 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
       return;
     }
     setBusy(true);
+    setBusyLabel('Importing bundle…');
     setError('');
+    setErrorCode('');
     try {
       const form = new FormData();
       form.append('file', thibFile);
-      const { data } = await api.post('/threat-library/import/thib', form, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      const { data } = await api.post('/threat-library/import/thib', form, multipartFormConfig());
       onImported?.(data?.report, { alreadyImported: data?.already_imported === true });
       reset();
       onClose?.();
     } catch (err) {
-      setError(err?.response?.data?.message || 'Bundle import failed');
+      setImportError(err, 'Bundle import failed');
     } finally {
       setBusy(false);
+      setBusyLabel('');
     }
   }
 
   function onSubmit(e) {
     e.preventDefault();
+    if (busy) return;
     if (tab === 'url') submitUrl().catch(() => {});
     else if (tab === 'pdf') submitPdf().catch(() => {});
     else submitThib().catch(() => {});
@@ -140,7 +168,7 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
         <>
           <ModalCancelButton onClick={handleClose} disabled={busy} />
           <button type="submit" form="threat-library-import-form" style={ui.btnPrimary} disabled={busy || !canSubmit}>
-            {busy ? 'Working…' : tab === 'thib' ? 'Import Bundle' : 'Start Import'}
+            {busy ? (busyLabel || 'Working…') : tab === 'thib' ? 'Import Bundle' : 'Start Import'}
           </button>
         </>
       )}
@@ -152,14 +180,19 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
             type="button"
             style={ui.tab(tab === t.id)}
             disabled={busy}
-            onClick={() => { setTab(t.id); setError(''); }}
+            onClick={() => { setTab(t.id); setError(''); setErrorCode(''); }}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {error ? <div style={{ ...ui.error, marginBottom: 10 }} role="alert">{error}</div> : null}
+      {error ? (
+        <div style={{ ...ui.error, marginBottom: 10 }} role="alert">
+          {errorCode ? <strong style={{ display: 'block', marginBottom: 4 }}>{errorCode}</strong> : null}
+          {error}
+        </div>
+      ) : null}
 
       <form id="threat-library-import-form" onSubmit={onSubmit}>
         {tab === 'url' ? (
@@ -192,8 +225,15 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
               onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
             />
             <span style={ui.helper}>
-              Text is extracted server-side, then analyzed for IOC candidates. Do not upload documents you are not authorized to share with configured AI providers.
+              Maximum size {formatUploadBytes(PDF_MAX_BYTES_UI)}. Text is extracted server-side, then analyzed for IOC candidates.
+              Browser “Print to PDF” exports are supported. Password-protected and image-only/scanned PDFs are rejected with a specific error.
+              Do not upload documents you are not authorized to share with configured AI providers.
             </span>
+            {pdfFile ? (
+              <div style={{ marginTop: 8, fontSize: 12, color: '#94a3b8' }}>
+                Selected: {pdfFile.name} ({formatUploadBytes(pdfFile.size)})
+              </div>
+            ) : null}
           </div>
         ) : null}
 

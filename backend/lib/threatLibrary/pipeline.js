@@ -132,16 +132,16 @@ export async function runAnalysisPipeline(pool, ctx) {
             analysis_status: 'failed',
             import_status: 'failed',
             failure_stage: 'extracting',
-            failure_code: 'requires_ocr',
+            failure_code: 'pdf_ocr_required',
             failure_reason:
-              'Scanned or image-only PDF: no usable text extracted. OCR is not enabled in V1.'
+              'The PDF appears to contain only scanned images or no extractable text layer. OCR is not enabled in V1.'
           });
           await updateJob(pool, ctx.jobId, {
             status: 'failed',
             stage: 'extracting',
-            error_message: 'requires_ocr'
+            error_message: 'pdf_ocr_required'
           });
-          return { ok: false, code: 'requires_ocr' };
+          return { ok: false, code: 'pdf_ocr_required' };
         }
         log.info('document extracted', { reportId: report.id, blocks: document.blocks?.length || 0 });
       } else {
@@ -509,6 +509,11 @@ const EXTRACT_FAILURE_CODES = new Set([
   'unsupported_content_type',
   'pdf_via_url_unsupported',
   'requires_ocr',
+  'pdf_ocr_required',
+  'pdf_password_required',
+  'pdf_parse_failed',
+  'pdf_invalid',
+  'pdf_empty_document',
   'missing_pdf'
 ]);
 

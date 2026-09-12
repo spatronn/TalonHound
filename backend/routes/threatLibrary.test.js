@@ -66,3 +66,10 @@ test('AI settings accept multi-timeout fields', () => {
   assert.match(routeSrc, /total_analysis_timeout_ms/);
   assert.match(routeSrc, /defaultTimeoutsForProvider/);
 });
+
+test('PDF import returns structured failure codes and multer size mapping', () => {
+  assert.match(routeSrc, /pdf_too_large/);
+  assert.match(routeSrc, /pdf_upload_failed/);
+  assert.match(routeSrc, /isAcceptablePdfUploadMeta/);
+  assert.match(routeSrc, /LIMIT_FILE_SIZE/);
+});

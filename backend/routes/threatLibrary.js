@@ -8,7 +8,7 @@ import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstant
 import { registerRouteModule } from '../lib/routeRegistry.js';
 import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY } from '../lib/threatLibrary/constants.js';
 import { validateThreatLibraryUrl } from '../lib/threatLibrary/urlIngest.js';
-import { validatePdfBuffer } from '../lib/threatLibrary/pdfIngest.js';
+import { validatePdfBuffer, isAcceptablePdfUploadMeta } from '../lib/threatLibrary/pdfIngest.js';
 import { maskAiSettingsForClient } from '../lib/threatLibrary/ai/providers.js';
 import { exportThibBundle, validateThibBundle, previewThibImport } from '../lib/threatLibrary/thib/codec.js';
 import { importThibBundle } from '../lib/threatLibrary/thibImport.js';
@@ -318,16 +318,53 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   app.post(
     '/api/threat-library/import/pdf',
     requireRole(ROLES.ADMIN, ROLES.ANALYST),
-    upload.single('file'),
+    (req, res, next) => {
+      upload.single('file')(req, res, (err) => {
+        if (!err) return next();
+        if (err instanceof multer.MulterError) {
+          if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({
+              message: `PDF exceeds maximum size (${PDF_MAX_BYTES} bytes)`,
+              code: 'pdf_too_large'
+            });
+          }
+          return res.status(400).json({
+            message: 'PDF upload failed',
+            code: 'pdf_upload_failed',
+            detail: err.code
+          });
+        }
+        return res.status(400).json({
+          message: 'PDF upload failed',
+          code: 'pdf_upload_failed'
+        });
+      });
+    },
     async (req, res) => {
       try {
         const file = req.file;
-        if (!file?.buffer) return res.status(400).json({ message: 'PDF file is required' });
-        if (file.mimetype && file.mimetype !== 'application/pdf' && !file.originalname?.toLowerCase().endsWith('.pdf')) {
-          return res.status(400).json({ message: 'Only application/pdf uploads are allowed' });
+        if (!file?.buffer) {
+          return res.status(400).json({
+            message: 'PDF file is required. Ensure the upload uses multipart field name "file".',
+            code: 'pdf_upload_failed'
+          });
         }
-        const validation = validatePdfBuffer(file.buffer, { fileName: file.originalname });
-        if (!validation.ok) return res.status(400).json({ message: validation.error });
+        if (!isAcceptablePdfUploadMeta(file.mimetype, file.originalname)) {
+          return res.status(400).json({
+            message: 'Only PDF uploads are allowed',
+            code: 'pdf_invalid'
+          });
+        }
+        const validation = validatePdfBuffer(file.buffer, {
+          fileName: file.originalname,
+          mimeType: file.mimetype
+        });
+        if (!validation.ok) {
+          return res.status(400).json({
+            message: validation.error,
+            code: validation.code || 'pdf_invalid'
+          });
+        }
 
         const report = await createThreatReport(pool, {
           title: validation.fileName.replace(/\.pdf$/i, ''),
@@ -339,10 +376,19 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           created_by: req.user?.publicId
         });
 
-        const stored = await storeArtifactBuffer(report.id, file.buffer, {
-          fileName: validation.fileName,
-          ext: '.pdf'
-        });
+        let stored;
+        try {
+          stored = await storeArtifactBuffer(report.id, file.buffer, {
+            fileName: validation.fileName,
+            ext: '.pdf'
+          });
+        } catch (storeErr) {
+          return res.status(500).json({
+            message: 'Failed to store the uploaded PDF',
+            code: 'pdf_storage_failed',
+            detail: storeErr.message
+          });
+        }
         await insertArtifact(pool, report.id, {
           artifact_type: 'pdf_upload',
           file_name: validation.fileName,
@@ -370,7 +416,11 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
 
         return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
       } catch (err) {
-        return res.status(500).json({ message: 'PDF import failed', detail: err.message });
+        return res.status(500).json({
+          message: 'PDF import failed',
+          code: err.code || 'pdf_upload_failed',
+          detail: err.message
+        });
       }
     }
   );

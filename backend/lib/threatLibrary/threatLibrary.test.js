@@ -214,9 +214,15 @@ test('THIB export omits local DB ids', () => {
 
 test('PDF validation and filename sanitization', () => {
   assert.equal(validatePdfBuffer(Buffer.from('notpdf')).ok, false);
+  assert.equal(validatePdfBuffer(Buffer.from('notpdf')).code, 'pdf_invalid');
   const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n'), Buffer.alloc(100)]);
   assert.equal(validatePdfBuffer(pdf, { fileName: '../../etc/passwd.pdf' }).ok, true);
   assert.equal(sanitizePdfFileName('../../x.pdf'), 'x.pdf');
+});
+
+test('PDF upload meta accepts octet-stream with .pdf name', async () => {
+  const { isAcceptablePdfUploadMeta } = await import('./pdfIngest.js');
+  assert.equal(isAcceptablePdfUploadMeta('application/octet-stream', 'tlp_clear_01.pdf'), true);
 });
 
 test('TLP normalize and match state policy', () => {
