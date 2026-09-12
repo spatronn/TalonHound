@@ -28,9 +28,16 @@ import {
   updateJob,
   insertArtifact,
   getIocThreatContext,
-  requestAnalysisCancel
+  requestAnalysisCancel,
+  updateReportStatus,
+  countReportCandidates
 } from '../lib/threatLibrary/store.js';
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
+import {
+  isActiveAnalysisStatus,
+  resolveRetryStartStatus,
+  buildRetryProgress
+} from '../lib/threatLibrary/retryState.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -535,10 +542,77 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (report.source_type === 'thib') {
           return res.status(400).json({ message: 'THIB imports do not use the AI analysis pipeline' });
         }
+
+        // Idempotent: do not enqueue a second concurrent analysis for the same report.
+        if (isActiveAnalysisStatus(report.analysis_status)) {
+          const { rows: activeJobs } = await pool.query(
+            `SELECT public_id, status, stage, progress, error_message, created_at
+             FROM threat_library_jobs
+             WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
+             ORDER BY id DESC LIMIT 1`,
+            [report.id]
+          );
+          return res.status(202).json({
+            report: publicReport(report),
+            job_id: activeJobs[0]?.public_id || null,
+            job: activeJobs[0] || null,
+            already_running: true,
+            code: 'analysis_already_running',
+            resumed: true
+          });
+        }
+
+        const { rows: activeJobs } = await pool.query(
+          `SELECT public_id FROM threat_library_jobs
+           WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
+           ORDER BY id DESC LIMIT 1`,
+          [report.id]
+        );
+        if (activeJobs[0]) {
+          // Job queued/running but report still terminal (race) — promote report to active.
+          const candidateCount = await countReportCandidates(pool, report.id);
+          const hasDocument = Boolean(report.canonical_document?.blocks?.length);
+          const startStatus = resolveRetryStartStatus({ hasDocument, candidateCount });
+          const progress = buildRetryProgress(startStatus);
+          const updated = await updateReportStatus(pool, report.id, {
+            analysis_status: startStatus,
+            import_status: 'processing',
+            analysis_progress: progress,
+            clear_failure: true,
+            clear_cancel: true
+          });
+          return res.status(202).json({
+            report: publicReport(updated),
+            job_id: activeJobs[0].public_id,
+            already_running: true,
+            code: 'analysis_already_running',
+            resumed: true
+          });
+        }
+
+        const candidateCount = await countReportCandidates(pool, report.id);
+        const hasDocument = Boolean(report.canonical_document?.blocks?.length);
+        const startStatus = resolveRetryStartStatus({ hasDocument, candidateCount });
+        const progress = buildRetryProgress(startStatus);
+
+        // Commit active status + clear stale failure BEFORE enqueue/202 so UI polling sees analyzing.
+        const updated = await updateReportStatus(pool, report.id, {
+          analysis_status: startStatus,
+          import_status: 'processing',
+          analysis_progress: progress,
+          clear_failure: true,
+          clear_cancel: true
+        });
+
         const jobRow = await createJob(pool, {
           reportId: report.id,
           jobType: 'retry',
           requestedBy: req.user?.publicId
+        });
+        await updateJob(pool, jobRow.id, {
+          status: 'queued',
+          stage: startStatus,
+          progress
         });
         await enqueueAnalyze(report.id, jobRow, {
           sourceUrl: report.source_url || undefined,
@@ -547,7 +621,18 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           // Keep analysis_run_id so completed chunks resume
           newAnalysisRun: req.body?.reset_checkpoints === true
         });
-        return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
+        return res.status(202).json({
+          report: publicReport(updated),
+          job_id: jobRow.public_id,
+          job: {
+            public_id: jobRow.public_id,
+            status: 'queued',
+            stage: startStatus,
+            progress
+          },
+          resumed: true,
+          already_running: false
+        });
       } catch (err) {
         return res.status(500).json({ message: 'Retry failed', detail: err.message });
       }

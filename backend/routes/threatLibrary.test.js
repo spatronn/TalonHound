@@ -46,6 +46,15 @@ test('retry resumes analysis without resetting checkpoints by default', () => {
   assert.match(routeSrc, /newAnalysisRun:\s*req\.body\?\.reset_checkpoints\s*===\s*true/);
 });
 
+test('retry commits active analysis_status and clears failure before 202', () => {
+  assert.match(routeSrc, /updateReportStatus/);
+  assert.match(routeSrc, /clear_failure:\s*true/);
+  assert.match(routeSrc, /resolveRetryStartStatus/);
+  assert.match(routeSrc, /analysis_already_running/);
+  assert.match(routeSrc, /already_running:\s*true/);
+  assert.match(routeSrc, /resumed:\s*true/);
+});
+
 test('cancel analysis endpoint exists and is analyst-gated', () => {
   assert.match(routeSrc, /\/api\/threat-library\/reports\/:publicId\/cancel[\s\S]*?requireRole\(ROLES\.ADMIN, ROLES\.ANALYST\)/);
   assert.match(routeSrc, /requestAnalysisCancel/);

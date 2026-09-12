@@ -29,7 +29,8 @@
     "test:integration-queue": "node --test src/lib/integrationJobDuration.test.js src/lib/integrationQueueStatusView.test.js src/lib/feedLastResult.test.js src/lib/jobQueueResult.test.js",
     "test:enrichment-providers": "node --test src/components/enrichmentProviders/removeKeyConfirm.test.js src/components/enrichmentProviders/confirmActionController.test.js src/components/enrichmentProviders/providerMeta.test.js src/lib/intelligenceSummaryDisabled.test.js src/lib/systemHealthView.test.js",
     "test:product-version": "node --test src/lib/productVersionView.test.js src/lib/updateStatusView.test.js src/lib/updateManagementUi.test.js",
-    "test": "node --test src/lib/*.test.js src/components/enrichmentProviders/*.test.js"
+    "test:threat-library": "node --test src/components/threatLibrary/*.test.js",
+    "test": "node --test src/lib/*.test.js src/components/enrichmentProviders/*.test.js src/components/threatLibrary/*.test.js"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

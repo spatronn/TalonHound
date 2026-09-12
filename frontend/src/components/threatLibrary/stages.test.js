@@ -24,3 +24,11 @@ test('failed analyzing stage marks prior stages done', () => {
   assert.equal(byKey.candidates, 'done');
   assert.equal(byKey.analyzing, 'failed');
 });
+
+test('isProcessingStatus is false for failed and true for analyzing', async () => {
+  const { isProcessingStatus } = await import('./stages.js');
+  assert.equal(isProcessingStatus({ analysis_status: 'failed' }), false);
+  assert.equal(isProcessingStatus({ analysis_status: 'analyzing' }), true);
+  assert.equal(isProcessingStatus({ analysis_status: 'pending' }), true);
+  assert.equal(isProcessingStatus({ analysis_status: 'review_required' }), false);
+});

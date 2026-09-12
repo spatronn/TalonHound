@@ -7,6 +7,14 @@ import {
   isProcessingStatus,
   statusLabel
 } from './stages.js';
+import {
+  applyRetryAcceptedState,
+  canShowRetryButton,
+  processingSectionTitle,
+  shouldIgnoreStaleFailedPoll,
+  shouldShowFailedPanel,
+  shouldShowProcessingPanel
+} from './reportRetryUi.js';
 import { TlpBadge, isElevatedTlp, normalizeTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
 
@@ -105,6 +113,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState('');
+  const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
+  const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
 
   const loadDetail = useCallback(async () => {
     const { data } = await api.get(`/threat-library/reports/${reportId}`);
@@ -121,10 +131,23 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
 
   const loadStatus = useCallback(async () => {
     const { data } = await api.get(`/threat-library/reports/${reportId}/status`);
-    if (data?.report) setReport(data.report);
-    setJob(data?.job || null);
-    return data;
-  }, [reportId]);
+    const polled = data?.report || null;
+    let ignoredStaleFailure = false;
+    setReport((prev) => {
+      if (shouldIgnoreStaleFailedPoll(prev, polled, {
+        retryAcceptedAt,
+        acceptedUpdatedAt: retryAcceptedUpdatedAt
+      })) {
+        ignoredStaleFailure = true;
+        return prev;
+      }
+      return polled || prev;
+    });
+    if (!ignoredStaleFailure) {
+      setJob(data?.job || null);
+    }
+    return { ...data, _ignoredStaleFailure: ignoredStaleFailure };
+  }, [reportId, retryAcceptedAt, retryAcceptedUpdatedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -147,8 +170,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     const timer = window.setInterval(() => {
       loadStatus()
         .then((data) => {
+          if (data?._ignoredStaleFailure) return null;
           const next = data?.report;
-          if (!isProcessingStatus(next)) {
+          if (next && !isProcessingStatus(next)) {
             return loadDetail();
           }
           return null;
@@ -226,15 +250,35 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }
 
   async function retry() {
-    if (!canWrite) return;
+    if (!canWrite || busy || isProcessingStatus(report)) return;
     setBusy('retry');
     setError('');
     try {
-      await api.post(`/threat-library/reports/${reportId}/retry`);
-      setFeedback('Analysis resumed from saved document and candidates (AI stage only).');
-      await loadStatus();
+      const { data } = await api.post(`/threat-library/reports/${reportId}/retry`);
+      const applied = applyRetryAcceptedState(data);
+      if (applied.report) setReport(applied.report);
+      if (applied.job) setJob(applied.job);
+      setRetryAcceptedAt(Date.now());
+      setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
+      setFeedback(
+        applied.alreadyRunning
+          ? 'Analysis is already running. Showing live progress.'
+          : 'Analysis resumed from saved document and candidates (AI stage only).'
+      );
+      // Authoritative state already applied from 202; poll continues via processing effect.
+      await loadStatus().catch(() => {});
     } catch (err) {
-      setError(err?.response?.data?.message || 'Retry failed');
+      const code = err?.response?.data?.code;
+      if (code === 'analysis_already_running' && err?.response?.data?.report) {
+        const applied = applyRetryAcceptedState(err.response.data);
+        if (applied.report) setReport(applied.report);
+        if (applied.job) setJob(applied.job);
+        setRetryAcceptedAt(Date.now());
+        setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
+        setFeedback('Analysis is already running. Showing live progress.');
+      } else {
+        setError(err?.response?.data?.message || 'Retry failed');
+      }
     } finally {
       setBusy('');
     }
@@ -342,14 +386,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
             ) : null}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {canWrite && processing && ['analyzing', 'matching', 'fetching', 'extracting', 'candidates'].includes(String(report?.analysis_status || '')) ? (
+            {canWrite && processing && ['analyzing', 'matching', 'fetching', 'extracting', 'candidates', 'pending'].includes(String(report?.analysis_status || '')) ? (
               <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => cancelAnalysis().catch(() => {})}>
                 Cancel analysis
               </button>
             ) : null}
-            {canWrite && report?.analysis_status === 'failed' ? (
+            {canShowRetryButton(report, { busy: Boolean(busy), canWrite }) ? (
               <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => retry().catch(() => {})}>
-                Retry analysis
+                {busy === 'retry' ? 'Starting…' : 'Retry analysis'}
               </button>
             ) : null}
             {canWrite ? (
@@ -377,40 +421,32 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         {loading ? <div style={ui.muted}>Loading report…</div> : null}
         {!loading && !report ? <div style={ui.muted}>Report not found.</div> : null}
 
-        {report && processing ? (
-          <SectionCard title="Processing">
+        {report && shouldShowProcessingPanel(report) ? (
+          <SectionCard title={processingSectionTitle(report)}>
             <p style={{ margin: '0 0 12px', fontSize: 13, color: '#94a3b8' }}>
               Analysis is running. Progress updates every few seconds from the worker — not a fake timer.
             </p>
             <ProgressChecklist report={report} job={job} />
-            {report.failure_reason ? (
-              <div style={{ ...ui.error, marginTop: 12 }}>
-                {report.failure_code ? <strong style={{ display: 'block', marginBottom: 4 }}>{report.failure_code}</strong> : null}
-                {report.failure_reason}
-                {Array.isArray(report.failure_details?.issues) && report.failure_details.issues.length ? (
-                  <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
-                    {report.failure_details.issues.slice(0, 8).map((issue, idx) => (
-                      <li key={`${issue.path || 'p'}-${idx}`}>
-                        <code>{issue.path || '(root)'}</code>: {issue.message}
-                        {issue.received ? ` (received ${issue.received})` : ''}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-            {job?.error_message ? (
-              <div style={{ ...ui.error, marginTop: 8 }}>{job.error_message}</div>
-            ) : null}
           </SectionCard>
         ) : null}
 
-        {report && report.analysis_status === 'failed' && !processing ? (
-          <SectionCard title="Processing failed">
+        {report && shouldShowFailedPanel(report) ? (
+          <SectionCard title={processingSectionTitle(report)}>
             <ProgressChecklist report={report} job={job} />
             <div style={{ ...ui.error, marginTop: 12 }}>
+              {report.failure_code ? <strong style={{ display: 'block', marginBottom: 4 }}>{report.failure_code}</strong> : null}
               {report.failure_reason || job?.error_message || 'Analysis failed'}
               {report.failure_stage ? ` (stage: ${report.failure_stage})` : ''}
+              {Array.isArray(report.failure_details?.issues) && report.failure_details.issues.length ? (
+                <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                  {report.failure_details.issues.slice(0, 8).map((issue, idx) => (
+                    <li key={`${issue.path || 'p'}-${idx}`}>
+                      <code>{issue.path || '(root)'}</code>: {issue.message}
+                      {issue.received ? ` (received ${issue.received})` : ''}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </div>
           </SectionCard>
         ) : null}
