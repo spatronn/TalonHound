@@ -112,7 +112,11 @@ test('Chinese no-space text passes quality gate', () => {
   const q = assessDocumentQuality({
     title: '测试',
     language: 'zh',
-    blocks: [{ id: 'b001', type: 'paragraph', text: '这是一段没有空格的中文威胁情报正文内容用于验证字符阈值。' }]
+    blocks: [{
+      id: 'b001',
+      type: 'paragraph',
+      text: '这是一段没有空格的中文威胁情报正文内容用于验证字符阈值以及CJK文本在质量门禁中的正确处理方式。'
+    }]
   });
   assert.equal(q.ok, true);
   assert.ok(q.chars >= 40);
