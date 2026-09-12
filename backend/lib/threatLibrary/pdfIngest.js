@@ -143,13 +143,13 @@ function pageTextToBlocks(pageText, pageNum, startIdx) {
 
 function classifyPdfParseError(err) {
   const msg = String(err?.message || err || '');
-  if (/password|encrypt|encrypted|Invalid PDF structure.*Encrypt/i.test(msg)) {
+  if (/password|encrypted|EncryptDict|No password given/i.test(msg)) {
     return {
       code: 'pdf_password_required',
       message: 'PDF is encrypted or password-protected and cannot be imported.'
     };
   }
-  if (/Invalid PDF|format Error|xref|trailer|Expected/i.test(msg)) {
+  if (/Invalid PDF structure|FormatError|bad XRef|Missing PDF header/i.test(msg)) {
     return {
       code: 'pdf_parse_failed',
       message: 'The PDF could not be parsed. The file may be corrupt or use an unsupported structure.'

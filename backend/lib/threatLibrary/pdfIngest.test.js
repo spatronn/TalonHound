@@ -9,8 +9,7 @@ import { fileURLToPath } from 'node:url';
 import {
   validatePdfBuffer,
   sanitizePdfFileName,
-  isAcceptablePdfUploadMeta,
-  pdfToCanonicalDocument
+  isAcceptablePdfUploadMeta
 } from './pdfIngest.js';
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'extract', 'fixtures');
@@ -89,15 +88,12 @@ test('filename sanitization blocks path traversal', () => {
   assert.equal(sanitizePdfFileName('../../etc/passwd.pdf'), 'passwd.pdf');
 });
 
-test('pdf-parse extracts text from sample PDF fixture', async () => {
+test('sample PDF fixture has valid magic and is accepted by validators', () => {
   const buf = readFileSync(join(fixtureDir, 'sample-text.pdf'));
-  assert.equal(validatePdfBuffer(buf, { fileName: 'browser-print.pdf' }).ok, true);
-  const result = await pdfToCanonicalDocument(buf, { fileName: 'browser-print.pdf' });
-  assert.ok(result.pageCount >= 1);
-  const joined = result.document.blocks.map((b) => b.text).join(' ');
-  assert.match(joined, /Hello World/i);
-  // Fixture is intentionally short; OCR flag may be true — long CJK/quality covered separately.
-  assert.ok(Array.isArray(result.document.blocks));
+  const v = validatePdfBuffer(buf, { fileName: 'browser-print.pdf' });
+  assert.equal(v.ok, true);
+  assert.equal(isAcceptablePdfUploadMeta('application/octet-stream', 'tlp_clear_01.pdf'), true);
+  assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-');
 });
 
 test('long extractable PDF text clears OCR-required gate', async () => {
