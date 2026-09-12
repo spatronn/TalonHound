@@ -130,6 +130,7 @@ test('collectIocEnrichments does not invent web_analysis for hash VT rows', asyn
   assert.equal(entries[0].summary.web_analysis, undefined);
 });
 
+test('collectIocEnrichments leaves non-not_found VT error_message unchanged', async () => {
   const msg = 'VirusTotal rate limit reached. Try again later.';
   const pool = makePool([{
     provider: 'virustotal',
