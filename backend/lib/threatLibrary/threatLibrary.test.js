@@ -248,9 +248,15 @@ test('AI settings mask never returns raw key', () => {
     api_key: 'sk-secret-value-123456',
     model: 'gpt-4o',
     timeout_ms: 60000,
+    inactivity_timeout_ms: 180000,
+    first_token_timeout_ms: 120000,
+    connection_timeout_ms: 15000,
+    total_analysis_timeout_ms: 900000,
     max_input_chars: 10000
   });
   assert.equal(masked.api_key_configured, true);
   assert.equal(masked.api_key, undefined);
   assert.ok(!String(masked.masked_key).includes('sk-secret-value'));
+  assert.equal(masked.inactivity_timeout_ms, 180000);
+  assert.ok(masked.timeout_policy);
 });

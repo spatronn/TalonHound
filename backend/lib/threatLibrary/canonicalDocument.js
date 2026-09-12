@@ -72,21 +72,28 @@ export function isEffectivelyEmptyDocument(doc) {
 export function chunkCanonicalDocument(doc, opts = {}) {
   const maxChars = opts.maxCharsPerChunk || 12000;
   const maxChunks = opts.maxChunks || 8;
+  /** @type {import('./canonicalDocument.js').CanonicalBlock[][]} */
   const chunks = [];
   let current = [];
   let size = 0;
 
+  const flush = () => {
+    if (!current.length) return;
+    chunks.push(current);
+    current = [];
+    size = 0;
+  };
+
   for (const b of doc.blocks || []) {
     const len = (b.text || '').length + 32;
-    if (current.length && size + len > maxChars) {
-      chunks.push(current);
-      if (chunks.length >= maxChunks) break;
-      current = [];
-      size = 0;
+    if (current.length && size + len > maxChars && chunks.length < maxChunks - 1) {
+      flush();
     }
     current.push(b);
     size += len;
   }
-  if (current.length && chunks.length < maxChunks) chunks.push(current);
-  return chunks;
+  flush();
+
+  // Never discard leftover content: if somehow empty, return [].
+  return chunks.length ? chunks : [];
 }

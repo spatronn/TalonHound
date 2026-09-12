@@ -40,3 +40,20 @@ test('masked settings never include api_key field', () => {
   assert.equal('api_key' in m, false);
   assert.ok(!JSON.stringify(m).includes('super-secret-key-value'));
 });
+
+test('retry resumes analysis without resetting checkpoints by default', () => {
+  assert.match(routeSrc, /resumeAnalysis:\s*true/);
+  assert.match(routeSrc, /newAnalysisRun:\s*req\.body\?\.reset_checkpoints\s*===\s*true/);
+});
+
+test('cancel analysis endpoint exists and is analyst-gated', () => {
+  assert.match(routeSrc, /\/api\/threat-library\/reports\/:publicId\/cancel[\s\S]*?requireRole\(ROLES\.ADMIN, ROLES\.ANALYST\)/);
+  assert.match(routeSrc, /requestAnalysisCancel/);
+});
+
+test('AI settings accept multi-timeout fields', () => {
+  assert.match(routeSrc, /first_token_timeout_ms/);
+  assert.match(routeSrc, /inactivity_timeout_ms/);
+  assert.match(routeSrc, /total_analysis_timeout_ms/);
+  assert.match(routeSrc, /defaultTimeoutsForProvider/);
+});

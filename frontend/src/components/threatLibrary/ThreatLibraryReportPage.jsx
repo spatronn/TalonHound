@@ -31,25 +31,47 @@ function matchFilter(candidate, filter) {
 
 function ProgressChecklist({ report, job }) {
   const items = buildProgressChecklist(report, job);
+  const progress = report?.analysis_progress || job?.progress || {};
+  const analyzing = String(report?.analysis_status || job?.stage || '').toLowerCase() === 'analyzing';
+  let activityNote = null;
+  if (analyzing) {
+    const total = progress.analysis_chunks_total;
+    const done = progress.analysis_chunks_completed;
+    const current = progress.current_chunk_index;
+    const parts = [];
+    if (total && current) parts.push(`Chunk ${current} of ${total}`);
+    else if (total != null && done != null) parts.push(`${done} / ${total} sections complete`);
+    if (progress.last_provider_activity_at) {
+      const ago = Math.max(0, Math.round((Date.now() - new Date(progress.last_provider_activity_at).getTime()) / 1000));
+      parts.push(`Last provider activity: ${ago}s ago`);
+    }
+    if (progress.synthesizing) parts.push('Synthesizing final summary');
+    if (parts.length) activityNote = parts.join(' · ');
+  }
   return (
-    <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
-      {items.map((item) => {
-        const color = item.state === 'done' ? '#86efac'
-          : item.state === 'active' ? '#5eead4'
-            : item.state === 'failed' ? '#fca5a5'
-              : '#64748b';
-        const mark = item.state === 'done' ? '✓'
-          : item.state === 'active' ? '●'
-            : item.state === 'failed' ? '✕'
-              : '○';
-        return (
-          <li key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, color, fontSize: 13 }}>
-            <span style={{ width: 18, textAlign: 'center', fontWeight: 700 }}>{mark}</span>
-            <span style={{ fontWeight: item.state === 'active' ? 700 : 500 }}>{item.label}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <div>
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 8 }}>
+        {items.map((item) => {
+          const color = item.state === 'done' ? '#86efac'
+            : item.state === 'active' ? '#5eead4'
+              : item.state === 'failed' ? '#fca5a5'
+                : '#64748b';
+          const mark = item.state === 'done' ? '✓'
+            : item.state === 'active' ? '●'
+              : item.state === 'failed' ? '✕'
+                : '○';
+          return (
+            <li key={item.key} style={{ display: 'flex', alignItems: 'center', gap: 10, color, fontSize: 13 }}>
+              <span style={{ width: 18, textAlign: 'center', fontWeight: 700 }}>{mark}</span>
+              <span style={{ fontWeight: item.state === 'active' ? 700 : 500 }}>{item.label}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {activityNote ? (
+        <div style={{ marginTop: 10, fontSize: 12, color: '#94a3b8' }}>{activityNote}</div>
+      ) : null}
+    </div>
   );
 }
 
@@ -209,10 +231,25 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     setError('');
     try {
       await api.post(`/threat-library/reports/${reportId}/retry`);
-      setFeedback('Analysis restarted.');
+      setFeedback('Analysis resumed from saved document and candidates (AI stage only).');
       await loadStatus();
     } catch (err) {
       setError(err?.response?.data?.message || 'Retry failed');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function cancelAnalysis() {
+    if (!canWrite) return;
+    setBusy('cancel');
+    setError('');
+    try {
+      await api.post(`/threat-library/reports/${reportId}/cancel`);
+      setFeedback('Cancel requested. The worker will stop at the next checkpoint.');
+      await loadStatus();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Cancel failed');
     } finally {
       setBusy('');
     }
@@ -305,6 +342,11 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
             ) : null}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {canWrite && processing && ['analyzing', 'matching', 'fetching', 'extracting', 'candidates'].includes(String(report?.analysis_status || '')) ? (
+              <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => cancelAnalysis().catch(() => {})}>
+                Cancel analysis
+              </button>
+            ) : null}
             {canWrite && report?.analysis_status === 'failed' ? (
               <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => retry().catch(() => {})}>
                 Retry analysis
@@ -342,7 +384,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
             </p>
             <ProgressChecklist report={report} job={job} />
             {report.failure_reason ? (
-              <div style={{ ...ui.error, marginTop: 12 }}>{report.failure_reason}</div>
+              <div style={{ ...ui.error, marginTop: 12 }}>
+                {report.failure_code ? <strong style={{ display: 'block', marginBottom: 4 }}>{report.failure_code}</strong> : null}
+                {report.failure_reason}
+              </div>
             ) : null}
             {job?.error_message ? (
               <div style={{ ...ui.error, marginTop: 8 }}>{job.error_message}</div>

@@ -27,8 +27,10 @@ import {
   createJob,
   updateJob,
   insertArtifact,
-  getIocThreatContext
+  getIocThreatContext,
+  requestAnalysisCancel
 } from '../lib/threatLibrary/store.js';
+import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -56,6 +58,8 @@ function publicReport(row) {
     analysis_status: row.analysis_status,
     failure_stage: row.failure_stage,
     failure_reason: row.failure_reason,
+    failure_code: row.failure_code || null,
+    analysis_progress: row.analysis_progress || {},
     candidate_summary: row.candidate_summary || {},
     indicator_count: row.indicator_count,
     matched_count: row.matched_count,
@@ -84,7 +88,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       throw err;
     }
     const job = await queue.add(
-      'analyze',
+      extra.jobType || 'analyze',
       { reportId, jobId: jobRow.id, ...extra },
       getThreatLibraryJobOptions()
     );
@@ -108,7 +112,6 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       if (body.enabled === true && body.privacy_ack !== true) {
         const current = await getAiSettings(pool);
         if (!current?.privacy_ack_at && ['openai', 'anthropic', 'openai_compatible'].includes(body.provider || current?.provider)) {
-          // Allow ollama without ack; require ack for external-ish providers when enabling
           if ((body.provider || current?.provider) !== 'ollama') {
             return res.status(400).json({
               message:
@@ -116,6 +119,15 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             });
           }
         }
+      }
+      // When switching provider without explicit timeouts, apply provider-appropriate defaults.
+      if (body.provider && body.inactivity_timeout_ms == null && body.first_token_timeout_ms == null) {
+        const defaults = defaultTimeoutsForProvider(body.provider);
+        body.connection_timeout_ms = body.connection_timeout_ms ?? defaults.connection_timeout_ms;
+        body.first_token_timeout_ms = body.first_token_timeout_ms ?? defaults.first_token_timeout_ms;
+        body.inactivity_timeout_ms = body.inactivity_timeout_ms ?? defaults.inactivity_timeout_ms;
+        body.total_analysis_timeout_ms = body.total_analysis_timeout_ms ?? defaults.total_analysis_timeout_ms;
+        body.timeout_ms = body.timeout_ms ?? defaults.inactivity_timeout_ms;
       }
       const updated = await updateAiSettings(pool, body, req.user?.publicId);
       await audit.auditSuccess({
@@ -127,7 +139,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           enabled: updated.enabled,
           provider: updated.provider,
           model: updated.model,
-          api_key_updated: Boolean(body.api_key)
+          api_key_updated: Boolean(body.api_key),
+          inactivity_timeout_ms: updated.inactivity_timeout_ms,
+          total_analysis_timeout_ms: updated.total_analysis_timeout_ms
         }
       });
       return res.json({ settings: maskAiSettingsForClient(updated) });
@@ -500,11 +514,34 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           requestedBy: req.user?.publicId
         });
         await enqueueAnalyze(report.id, jobRow, {
-          sourceUrl: report.source_url || undefined
+          sourceUrl: report.source_url || undefined,
+          resumeAnalysis: true,
+          jobType: 'retry',
+          // Keep analysis_run_id so completed chunks resume
+          newAnalysisRun: req.body?.reset_checkpoints === true
         });
         return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
       } catch (err) {
         return res.status(500).json({ message: 'Retry failed', detail: err.message });
+      }
+    }
+  );
+
+  app.post(
+    '/api/threat-library/reports/:publicId/cancel',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const updated = await requestAnalysisCancel(pool, report.id);
+        return res.json({
+          ok: true,
+          report: publicReport(updated),
+          message: 'Cancel requested. The worker will stop at the next safe checkpoint.'
+        });
+      } catch (err) {
+        return res.status(500).json({ message: 'Cancel failed', detail: err.message });
       }
     }
   );

@@ -7,7 +7,7 @@ export const PROGRESS_CHECKLIST = Object.freeze([
   { key: 'fetching', label: 'Source fetched' },
   { key: 'extracting', label: 'Document extracted' },
   { key: 'candidates', label: 'IOC candidates' },
-  { key: 'analyzing', label: 'Analyzing' },
+  { key: 'analyzing', label: 'Analyzing threat context' },
   { key: 'matching', label: 'Matching' },
   { key: 'review_required', label: 'Preparing review' }
 ]);
@@ -76,7 +76,16 @@ export function statusLabel(report) {
   if (a === 'skipped') return 'Imported (bundle)';
   if (a === 'fetching') return 'Fetching';
   if (a === 'extracting' || a === 'candidates') return 'Extracting';
-  if (a === 'analyzing') return 'Analyzing';
+  if (a === 'analyzing') {
+    const p = report?.analysis_progress || {};
+    if (p.analysis_chunks_total && p.current_chunk_index) {
+      return `Analyzing ${p.current_chunk_index}/${p.analysis_chunks_total}`;
+    }
+    if (p.analysis_chunks_total && p.analysis_chunks_completed != null) {
+      return `Analyzing ${p.analysis_chunks_completed}/${p.analysis_chunks_total}`;
+    }
+    return 'Analyzing';
+  }
   if (a === 'matching') return 'Matching';
   if (a === 'pending') return 'Queued';
   return a || i || 'Unknown';

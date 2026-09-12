@@ -61,7 +61,7 @@ Supported providers:
 - Ollama / local
 - OpenAI-compatible endpoint
 
-Settings: provider, base URL, model, API key, timeout, max input chars.
+Settings: provider, base URL, model, API key, connection / first-response / inactivity / total analysis timeouts, max characters per chunk.
 
 Secrets:
 
@@ -75,10 +75,12 @@ TalonHound is self-hosted. Enabling an **external** provider means selected repo
 
 ### Chunking / limits
 
-- Max input chars (default 120000)
-- Document chunked (bounded chunks) before prompt construction
-- Provider timeout; AI output validated with Zod before persistence
-- Deterministic candidates are passed to the model for classification (not rediscovery)
+- `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
+- Long reports are split into canonical-document chunks and processed sequentially
+- Completed chunks are checkpointed; **Retry analysis** resumes unfinished chunks without re-fetching the URL/PDF or re-running deterministic IOC extraction
+- Separate timeouts: connection, first-token, inactivity (resets on stream activity), and total analysis ceiling
+- Ollama uses native streaming (`/api/chat` + `keep_alive`) so long local generations are not mistaken for hung connections
+- Provider API keys are never logged; progress is persisted server-side (browser navigation does not cancel the job)
 
 Prompt injection: report text is labeled UNTRUSTED DATA; the model cannot redefine tasks, request secrets, or invoke tools.
 

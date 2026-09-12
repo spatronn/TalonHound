@@ -17,13 +17,28 @@ export async function updateAiSettings(pool, patch, userPublicId) {
   const provider = patch.provider != null ? String(patch.provider) : current?.provider || 'openai_compatible';
   const baseUrl = patch.base_url !== undefined ? (patch.base_url ? String(patch.base_url).trim() : null) : current?.base_url;
   const model = patch.model !== undefined ? (patch.model ? String(patch.model).trim() : null) : current?.model;
-  const timeoutMs = patch.timeout_ms != null ? Number(patch.timeout_ms) : current?.timeout_ms || 60000;
   const maxInput = patch.max_input_chars != null ? Number(patch.max_input_chars) : current?.max_input_chars || 120000;
   const privacyAck = patch.privacy_ack === true;
   const hasKeyPatch = Object.prototype.hasOwnProperty.call(patch, 'api_key');
   const nextKey = hasKeyPatch
     ? (patch.api_key === '' || patch.api_key == null ? null : String(patch.api_key))
     : null;
+
+  // Prefer explicit multi-timeout fields; legacy timeout_ms updates inactivity.
+  const connectionTimeoutMs =
+    patch.connection_timeout_ms != null ? Number(patch.connection_timeout_ms) : current?.connection_timeout_ms;
+  const firstTokenTimeoutMs =
+    patch.first_token_timeout_ms != null ? Number(patch.first_token_timeout_ms) : current?.first_token_timeout_ms;
+  let inactivityTimeoutMs =
+    patch.inactivity_timeout_ms != null ? Number(patch.inactivity_timeout_ms) : current?.inactivity_timeout_ms;
+  const totalTimeoutMs =
+    patch.total_analysis_timeout_ms != null
+      ? Number(patch.total_analysis_timeout_ms)
+      : current?.total_analysis_timeout_ms;
+  if (patch.timeout_ms != null && patch.inactivity_timeout_ms == null) {
+    inactivityTimeoutMs = Number(patch.timeout_ms);
+  }
+  const legacyTimeoutMs = inactivityTimeoutMs ?? current?.timeout_ms ?? 60000;
 
   const { rows } = await pool.query(
     `UPDATE threat_library_ai_settings SET
@@ -36,6 +51,10 @@ export async function updateAiSettings(pool, patch, userPublicId) {
        api_key = CASE WHEN $7 THEN $8 ELSE api_key END,
        privacy_ack_at = CASE WHEN $9 THEN NOW() ELSE privacy_ack_at END,
        privacy_ack_by = CASE WHEN $9 THEN $10::uuid ELSE privacy_ack_by END,
+       connection_timeout_ms = COALESCE($11, connection_timeout_ms),
+       first_token_timeout_ms = COALESCE($12, first_token_timeout_ms),
+       inactivity_timeout_ms = COALESCE($13, inactivity_timeout_ms),
+       total_analysis_timeout_ms = COALESCE($14, total_analysis_timeout_ms),
        updated_at = NOW(),
        updated_by = $10::uuid
      WHERE id = 1
@@ -45,12 +64,16 @@ export async function updateAiSettings(pool, patch, userPublicId) {
       provider,
       baseUrl,
       model,
-      timeoutMs,
+      legacyTimeoutMs,
       maxInput,
       hasKeyPatch,
       nextKey,
       privacyAck,
-      userPublicId || null
+      userPublicId || null,
+      Number.isFinite(connectionTimeoutMs) ? connectionTimeoutMs : null,
+      Number.isFinite(firstTokenTimeoutMs) ? firstTokenTimeoutMs : null,
+      Number.isFinite(inactivityTimeoutMs) ? inactivityTimeoutMs : null,
+      Number.isFinite(totalTimeoutMs) ? totalTimeoutMs : null
     ]
   );
   return rows[0];
@@ -148,13 +171,21 @@ export async function updateReportStatus(pool, reportId, patch) {
        summary = COALESCE($7, summary),
        import_status = COALESCE($8, import_status),
        analysis_status = COALESCE($9, analysis_status),
-       failure_stage = $10,
-       failure_reason = $11,
+       failure_stage = CASE WHEN $22 THEN NULL ELSE COALESCE($10, failure_stage) END,
+       failure_reason = CASE WHEN $22 THEN NULL ELSE COALESCE($11, failure_reason) END,
        candidate_summary = COALESCE($12, candidate_summary),
        canonical_document = COALESCE($13, canonical_document),
        ai_result = COALESCE($14, ai_result),
        published_at = COALESCE($15, published_at),
        source_name = COALESCE($16, source_name),
+       analysis_progress = COALESCE($18, analysis_progress),
+       failure_code = CASE WHEN $22 THEN NULL ELSE COALESCE($19, failure_code) END,
+       analysis_run_id = COALESCE($20::uuid, analysis_run_id),
+       cancel_requested_at = CASE
+         WHEN $21 = true THEN NOW()
+         WHEN $21 = false THEN NULL
+         ELSE cancel_requested_at
+       END,
        updated_at = NOW(),
        finalized_at = CASE WHEN $17 THEN NOW() ELSE finalized_at END
      WHERE id = $1
@@ -176,10 +207,120 @@ export async function updateReportStatus(pool, reportId, patch) {
       patch.ai_result ?? null,
       patch.published_at ?? null,
       patch.source_name ?? null,
-      patch.finalize === true
+      patch.finalize === true,
+      patch.analysis_progress ?? null,
+      patch.failure_code ?? null,
+      patch.analysis_run_id ?? null,
+      patch.clear_cancel === true ? false : patch.request_cancel === true ? true : null,
+      patch.clear_failure === true
     ]
   );
   return rows[0];
+}
+
+export async function requestAnalysisCancel(pool, reportId) {
+  const { rows } = await pool.query(
+    `UPDATE threat_reports
+     SET cancel_requested_at = NOW(), updated_at = NOW()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING *`,
+    [reportId]
+  );
+  return rows[0] || null;
+}
+
+export async function isAnalysisCancelRequested(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT cancel_requested_at FROM threat_reports WHERE id = $1`,
+    [reportId]
+  );
+  return Boolean(rows[0]?.cancel_requested_at);
+}
+
+export async function ensureAnalysisRun(pool, reportId, { forceNew = false } = {}) {
+  const report = await getReportById(pool, reportId);
+  if (!report) return null;
+  if (!forceNew && report.analysis_run_id) return report.analysis_run_id;
+  const runId = crypto.randomUUID();
+  await pool.query(
+    `UPDATE threat_reports SET analysis_run_id = $2::uuid, cancel_requested_at = NULL, updated_at = NOW() WHERE id = $1`,
+    [reportId, runId]
+  );
+  return runId;
+}
+
+export async function loadCompletedChunkResult(pool, reportId, analysisRunId, chunkKey) {
+  const { rows } = await pool.query(
+    `SELECT result FROM threat_library_analysis_chunks
+     WHERE report_id = $1 AND analysis_run_id = $2::uuid AND chunk_key = $3 AND status = 'completed'
+     LIMIT 1`,
+    [reportId, analysisRunId, chunkKey]
+  );
+  const result = rows[0]?.result;
+  if (!result) return null;
+  return { ok: true, value: result };
+}
+
+export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chunk, result) {
+  await pool.query(
+    `INSERT INTO threat_library_analysis_chunks (
+       report_id, analysis_run_id, chunk_index, chunk_key, status, block_ids, result,
+       attempt_count, started_at, completed_at, updated_at
+     ) VALUES (
+       $1, $2::uuid, $3, $4, 'completed', $5::jsonb, $6::jsonb, 1, NOW(), NOW(), NOW()
+     )
+     ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
+       status = 'completed',
+       result = EXCLUDED.result,
+       block_ids = EXCLUDED.block_ids,
+       attempt_count = threat_library_analysis_chunks.attempt_count + 1,
+       completed_at = NOW(),
+       error_code = NULL,
+       error_message = NULL,
+       updated_at = NOW()`,
+    [
+      reportId,
+      analysisRunId,
+      chunk.chunk_index,
+      chunk.chunk_key,
+      JSON.stringify(chunk.block_ids || []),
+      JSON.stringify(result)
+    ]
+  );
+}
+
+export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chunk, code, message) {
+  await pool.query(
+    `INSERT INTO threat_library_analysis_chunks (
+       report_id, analysis_run_id, chunk_index, chunk_key, status, block_ids,
+       error_code, error_message, attempt_count, started_at, updated_at
+     ) VALUES (
+       $1, $2::uuid, $3, $4, 'failed', $5::jsonb, $6, $7, 1, NOW(), NOW()
+     )
+     ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
+       status = 'failed',
+       error_code = EXCLUDED.error_code,
+       error_message = EXCLUDED.error_message,
+       attempt_count = threat_library_analysis_chunks.attempt_count + 1,
+       updated_at = NOW()`,
+    [
+      reportId,
+      analysisRunId,
+      chunk.chunk_index,
+      chunk.chunk_key,
+      JSON.stringify(chunk.block_ids || []),
+      code || null,
+      message || null
+    ]
+  );
+}
+
+export async function countReportCandidates(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS n FROM threat_report_candidates WHERE report_id = $1`,
+    [reportId]
+  );
+  return rows[0]?.n || 0;
 }
 
 export async function insertArtifact(pool, reportId, artifact) {
