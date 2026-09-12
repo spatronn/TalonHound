@@ -29,6 +29,7 @@ Fresh installations apply the public forward migrations present in the repositor
 018_mcp_server.sql
 019_threat_library.sql
 020_threat_library_ai_long_running.sql
+021_threat_library_ai_validation.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.

@@ -235,10 +235,10 @@ export async function runAnalysisPipeline(pool, ctx) {
           shouldCancel: async () => isAnalysisCancelRequested(pool, report.id),
           loadCompletedChunk: async (chunkKey) =>
             loadCompletedChunkResult(pool, report.id, runId, chunkKey),
-          saveChunkResult: async (chunk, result) =>
-            saveAnalysisChunkResult(pool, report.id, runId, chunk, result),
-          markChunkFailed: async (chunk, code, message) =>
-            markAnalysisChunkFailed(pool, report.id, runId, chunk, code, message),
+          saveChunkResult: async (chunk, result, meta) =>
+            saveAnalysisChunkResult(pool, report.id, runId, chunk, result, meta || {}),
+          markChunkFailed: async (chunk, code, message, meta) =>
+            markAnalysisChunkFailed(pool, report.id, runId, chunk, code, message, meta || {}),
           onProgress: async (progress) => {
             if (await isAnalysisCancelRequested(pool, report.id)) {
               abort.abort();
@@ -302,12 +302,22 @@ export async function runAnalysisPipeline(pool, ctx) {
         failure_stage: 'analyzing',
         failure_code: code,
         failure_reason: message,
+        failure_details: {
+          issues: Array.isArray(aiErr.details) ? aiErr.details.slice(0, 30) : [],
+          schema_version: aiErr.schema_version || null,
+          rejected: Array.isArray(aiErr.rejected) ? aiErr.rejected.slice(0, 30) : []
+        },
         canonical_document: document
       });
       await updateJob(pool, ctx.jobId, {
         status: 'failed',
         stage: 'analyzing',
-        error_message: message
+        error_message: message,
+        progress: {
+          stage: 'analyzing',
+          failure_code: code,
+          issues: Array.isArray(aiErr.details) ? aiErr.details.slice(0, 10) : []
+        }
       });
       return { ok: false, code, error: message };
     }

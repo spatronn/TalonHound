@@ -15,7 +15,10 @@ export const AI_FAILURE_CODES = Object.freeze({
   CONTEXT_TOO_LARGE: 'context_too_large',
   JOB_CANCELLED: 'job_cancelled',
   AI_NOT_CONFIGURED: 'ai_not_configured',
-  AI_VALIDATION: 'ai_validation'
+  AI_VALIDATION: 'ai_validation',
+  AI_OUTPUT_PARSE_ERROR: 'ai_output_parse_error',
+  AI_OUTPUT_SCHEMA_ERROR: 'ai_output_schema_error',
+  AI_OUTPUT_REFERENCE_ERROR: 'ai_output_reference_error'
 });
 
 export const AI_FAILURE_MESSAGES = Object.freeze({
@@ -30,7 +33,10 @@ export const AI_FAILURE_MESSAGES = Object.freeze({
   [AI_FAILURE_CODES.CONTEXT_TOO_LARGE]: 'Report context exceeded the provider/model limit',
   [AI_FAILURE_CODES.JOB_CANCELLED]: 'Analysis was cancelled',
   [AI_FAILURE_CODES.AI_NOT_CONFIGURED]: 'AI analysis is not configured or enabled',
-  [AI_FAILURE_CODES.AI_VALIDATION]: 'AI response failed schema validation'
+  [AI_FAILURE_CODES.AI_VALIDATION]: 'AI response failed schema validation',
+  [AI_FAILURE_CODES.AI_OUTPUT_PARSE_ERROR]: 'Could not parse AI response as JSON',
+  [AI_FAILURE_CODES.AI_OUTPUT_SCHEMA_ERROR]: 'AI returned JSON that does not match the required schema',
+  [AI_FAILURE_CODES.AI_OUTPUT_REFERENCE_ERROR]: 'AI response referenced unknown or forbidden identifiers'
 });
 
 /**

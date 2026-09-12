@@ -278,7 +278,8 @@ export async function callAiProvider(settings, messages, hooks = {}) {
         body: JSON.stringify({
           model: settings.model,
           stream: true,
-          format: 'json',
+          // Prefer JSON Schema when provided (Ollama structured outputs); else json mode.
+          format: hooks.formatSchema || 'json',
           keep_alive: hooks.keepAlive || '15m',
           options: { temperature: 0.1 },
           messages: [

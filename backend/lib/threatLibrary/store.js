@@ -186,6 +186,11 @@ export async function updateReportStatus(pool, reportId, patch) {
          WHEN $21 = false THEN NULL
          ELSE cancel_requested_at
        END,
+       failure_details = CASE
+         WHEN $22 THEN '{}'::jsonb
+         WHEN $23::jsonb IS NOT NULL THEN $23::jsonb
+         ELSE failure_details
+       END,
        updated_at = NOW(),
        finalized_at = CASE WHEN $17 THEN NOW() ELSE finalized_at END
      WHERE id = $1
@@ -212,7 +217,8 @@ export async function updateReportStatus(pool, reportId, patch) {
       patch.failure_code ?? null,
       patch.analysis_run_id ?? null,
       patch.clear_cancel === true ? false : patch.request_cancel === true ? true : null,
-      patch.clear_failure === true
+      patch.clear_failure === true,
+      patch.failure_details != null ? JSON.stringify(patch.failure_details) : null
     ]
   );
   return rows[0];
@@ -251,32 +257,37 @@ export async function ensureAnalysisRun(pool, reportId, { forceNew = false } = {
 
 export async function loadCompletedChunkResult(pool, reportId, analysisRunId, chunkKey) {
   const { rows } = await pool.query(
-    `SELECT result FROM threat_library_analysis_chunks
+    `SELECT result, schema_version FROM threat_library_analysis_chunks
      WHERE report_id = $1 AND analysis_run_id = $2::uuid AND chunk_key = $3 AND status = 'completed'
      LIMIT 1`,
     [reportId, analysisRunId, chunkKey]
   );
-  const result = rows[0]?.result;
-  if (!result) return null;
-  return { ok: true, value: result };
+  const row = rows[0];
+  if (!row?.result) return null;
+  return { ok: true, value: row.result, schema_version: row.schema_version || null };
 }
 
-export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chunk, result) {
+export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chunk, result, meta = {}) {
   await pool.query(
     `INSERT INTO threat_library_analysis_chunks (
        report_id, analysis_run_id, chunk_index, chunk_key, status, block_ids, result,
-       attempt_count, started_at, completed_at, updated_at
+       schema_version, rejected_items, attempt_count, started_at, completed_at, updated_at
      ) VALUES (
-       $1, $2::uuid, $3, $4, 'completed', $5::jsonb, $6::jsonb, 1, NOW(), NOW(), NOW()
+       $1, $2::uuid, $3, $4, 'completed', $5::jsonb, $6::jsonb,
+       $7, $8::jsonb, 1, NOW(), NOW(), NOW()
      )
      ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
        status = 'completed',
        result = EXCLUDED.result,
        block_ids = EXCLUDED.block_ids,
-       attempt_count = threat_library_analysis_chunks.attempt_count + 1,
-       completed_at = NOW(),
+       schema_version = EXCLUDED.schema_version,
+       rejected_items = EXCLUDED.rejected_items,
+       validation_details = '[]'::jsonb,
+       raw_output_sample = NULL,
        error_code = NULL,
        error_message = NULL,
+       attempt_count = threat_library_analysis_chunks.attempt_count + 1,
+       completed_at = NOW(),
        updated_at = NOW()`,
     [
       reportId,
@@ -284,23 +295,30 @@ export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chu
       chunk.chunk_index,
       chunk.chunk_key,
       JSON.stringify(chunk.block_ids || []),
-      JSON.stringify(result)
+      JSON.stringify(result),
+      meta.schema_version || null,
+      JSON.stringify(meta.rejected_items || [])
     ]
   );
 }
 
-export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chunk, code, message) {
+export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chunk, code, message, meta = {}) {
   await pool.query(
     `INSERT INTO threat_library_analysis_chunks (
        report_id, analysis_run_id, chunk_index, chunk_key, status, block_ids,
-       error_code, error_message, attempt_count, started_at, updated_at
+       error_code, error_message, schema_version, validation_details, raw_output_sample, rejected_items,
+       attempt_count, started_at, updated_at
      ) VALUES (
-       $1, $2::uuid, $3, $4, 'failed', $5::jsonb, $6, $7, 1, NOW(), NOW()
+       $1, $2::uuid, $3, $4, 'failed', $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11::jsonb, 1, NOW(), NOW()
      )
      ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
        status = 'failed',
        error_code = EXCLUDED.error_code,
        error_message = EXCLUDED.error_message,
+       schema_version = EXCLUDED.schema_version,
+       validation_details = EXCLUDED.validation_details,
+       raw_output_sample = EXCLUDED.raw_output_sample,
+       rejected_items = EXCLUDED.rejected_items,
        attempt_count = threat_library_analysis_chunks.attempt_count + 1,
        updated_at = NOW()`,
     [
@@ -310,7 +328,11 @@ export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chu
       chunk.chunk_key,
       JSON.stringify(chunk.block_ids || []),
       code || null,
-      message || null
+      message || null,
+      meta.schema_version || null,
+      JSON.stringify(meta.validation_details || []),
+      meta.raw_output_sample || null,
+      JSON.stringify(meta.rejected_items || [])
     ]
   );
 }

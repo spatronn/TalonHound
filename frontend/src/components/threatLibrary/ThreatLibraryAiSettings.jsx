@@ -23,6 +23,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [probing, setProbing] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [settings, setSettings] = useState(null);
@@ -130,6 +131,25 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
       setError(err?.response?.data?.message || 'Failed to clear API key');
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function probeProvider() {
+    setProbing(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await api.post('/threat-library/ai-settings/probe');
+      const p = data?.probe;
+      if (p?.ok) {
+        setSuccess(`Provider probe OK (${p.elapsed_ms || 0}ms). Structured output validated.`);
+      } else {
+        setError(p?.error || 'Provider probe failed structured-output validation');
+      }
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Provider probe failed');
+    } finally {
+      setProbing(false);
     }
   }
 
@@ -296,11 +316,14 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
             </label>
 
             <div style={{ display: 'flex', gap: 8, marginTop: 18, flexWrap: 'wrap' }}>
-              <button type="button" style={ui.btnPrimary} disabled={saving || clearing} onClick={() => save().catch(() => {})}>
+              <button type="button" style={ui.btnPrimary} disabled={saving || clearing || probing} onClick={() => save().catch(() => {})}>
                 {saving ? 'Saving…' : 'Save settings'}
               </button>
+              <button type="button" style={ui.btn} disabled={saving || clearing || probing} onClick={() => probeProvider().catch(() => {})}>
+                {probing ? 'Testing…' : 'Test provider'}
+              </button>
               {settings?.api_key_configured ? (
-                <button type="button" style={ui.btnDanger} disabled={saving || clearing} onClick={() => clearKey().catch(() => {})}>
+                <button type="button" style={ui.btnDanger} disabled={saving || clearing || probing} onClick={() => clearKey().catch(() => {})}>
                   {clearing ? 'Clearing…' : 'Clear API key'}
                 </button>
               ) : null}

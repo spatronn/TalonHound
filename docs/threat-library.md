@@ -77,9 +77,12 @@ TalonHound is self-hosted. Enabling an **external** provider means selected repo
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
 - Long reports are split into canonical-document chunks and processed sequentially
-- Completed chunks are checkpointed; **Retry analysis** resumes unfinished chunks without re-fetching the URL/PDF or re-running deterministic IOC extraction
+- Completed chunks are checkpointed with `threat-library-semantic-v2`; **Retry analysis** resumes unfinished chunks without re-fetching the URL/PDF or re-running deterministic IOC extraction
+- AI responses go through: provider structured output → JSON extraction → deterministic normalization → Zod schema → reference checks → persist
+- Categorical confidence words such as `high` map to documented numeric values; invalid items in optional relationships are dropped with diagnostics rather than discarding an entire valid chunk
 - Separate timeouts: connection, first-token, inactivity (resets on stream activity), and total analysis ceiling
-- Ollama uses native streaming (`/api/chat` + `keep_alive`) so long local generations are not mistaken for hung connections
+- Ollama uses native streaming (`/api/chat` + JSON Schema `format` when supported + `keep_alive`) so long local generations are not mistaken for hung connections
+- Failed AI validation stores capped model-output samples and issue paths on the analysis chunk for diagnosis (not full report prompts)
 - Provider API keys are never logged; progress is persisted server-side (browser navigation does not cancel the job)
 
 Prompt injection: report text is labeled UNTRUSTED DATA; the model cannot redefine tasks, request secrets, or invoke tools.

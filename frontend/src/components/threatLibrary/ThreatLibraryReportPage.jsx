@@ -387,6 +387,16 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
               <div style={{ ...ui.error, marginTop: 12 }}>
                 {report.failure_code ? <strong style={{ display: 'block', marginBottom: 4 }}>{report.failure_code}</strong> : null}
                 {report.failure_reason}
+                {Array.isArray(report.failure_details?.issues) && report.failure_details.issues.length ? (
+                  <ul style={{ margin: '8px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                    {report.failure_details.issues.slice(0, 8).map((issue, idx) => (
+                      <li key={`${issue.path || 'p'}-${idx}`}>
+                        <code>{issue.path || '(root)'}</code>: {issue.message}
+                        {issue.received ? ` (received ${issue.received})` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </div>
             ) : null}
             {job?.error_message ? (

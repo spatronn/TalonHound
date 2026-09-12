@@ -1,37 +1,20 @@
 /**
  * Chunked Threat Library AI analysis with merge + checkpoint hooks.
- * Deterministic candidates drive classification; AI does not rediscover IOCs.
+ * Pipeline: provider → extract → normalize → structure → references → persist.
  */
 
-import { buildSystemPrompt } from './prompts.js';
-import { validateAiAnalysis } from './schema.js';
+import { buildSystemPrompt, buildRepairPrompt } from './prompts.js';
+import { processAiResponseText, validateAiAnalysis } from './schema.js';
 import { callAiProvider } from './client.js';
 import { assertAiReady } from './settings.js';
 import { AI_FAILURE_CODES, aiFailure, resolveAiTimeoutPolicy } from './timeouts.js';
+import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, buildProviderJsonSchema } from './contract.js';
+import { capRawOutputSample } from './extract.js';
 import {
   chunkCanonicalDocument,
   flattenCanonicalText,
   collectBlockIds
 } from '../canonicalDocument.js';
-
-function extractJsonObject(text) {
-  const raw = String(text || '').trim();
-  if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start >= 0 && end > start) {
-      try {
-        return JSON.parse(raw.slice(start, end + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
 
 /**
  * Build analysis chunks covering the full document.
@@ -41,7 +24,6 @@ function extractJsonObject(text) {
  */
 export function buildAnalysisChunks(document, opts = {}) {
   const maxInputChars = Math.max(Number(opts.maxInputChars || 120000), 4000);
-  // Reserve room for system prompt + candidate list (~8k)
   const maxCharsPerChunk = Math.min(14_000, Math.max(4000, maxInputChars - 8000));
   const maxChunks = Math.min(Math.max(Number(opts.maxChunks || 24), 1), 40);
   const blockChunks = chunkCanonicalDocument(document, {
@@ -67,10 +49,37 @@ export function candidatesForChunk(candidates, chunk, isFirst) {
   });
 }
 
+/**
+ * Assign stable request-scoped candidate IDs for prompting/joining.
+ * @param {object[]} candidates
+ */
+export function withCandidateIds(candidates) {
+  return (candidates || []).map((c, idx) => ({
+    ...c,
+    candidate_id: c.candidate_id || `cand-${String(idx + 1).padStart(3, '0')}`
+  }));
+}
+
+function buildCandidateIdMap(candidates) {
+  const map = new Map();
+  for (const c of candidates || []) {
+    if (c.candidate_id) {
+      map.set(String(c.candidate_id), {
+        candidate_type: c.candidate_type,
+        normalized_value: c.normalized_value
+      });
+    }
+  }
+  return map;
+}
+
 function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chunkTotal, candidates, mode }) {
   const candidateList = (candidates || [])
     .slice(0, 250)
-    .map((c) => `- ${c.candidate_type}: ${c.normalized_value} (original: ${c.original_value})`)
+    .map((c) => {
+      const id = c.candidate_id || `${c.candidate_type}:${c.normalized_value}`;
+      return `- candidate_id=${id} type=${c.candidate_type} value=${c.normalized_value} (original: ${c.original_value}) block=${c.block_id || 'n/a'}`;
+    })
     .join('\n');
 
   const blocksText = flattenCanonicalText(
@@ -82,7 +91,7 @@ function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chun
     return [
       'Synthesize a final Threat Library JSON object from the PARTIAL chunk analyses below.',
       'Return keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships.',
-      'Do not invent indicators. Merge duplicates. Prefer higher-confidence assessments when merging.',
+      'confidence must be a number 0..1. Do not invent indicators. Merge duplicates.',
       '',
       `DOCUMENT TITLE: ${documentTitle}`,
       '',
@@ -99,11 +108,14 @@ function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chun
     'entity_type values: threat_actor, malware, campaign, tool, vulnerability, infrastructure, organization, attack_pattern',
     'assessment values: malicious, suspicious, context_only, unknown, invalid',
     'role values: command_and_control, redirector, payload_hosting, malware_download, phishing, tracking, malicious_infrastructure, delivery, legitimate_service, hosting_platform, victim, reference, security_tool, unknown',
-    'candidate_updates must reference candidate_type + normalized_value from the list.',
+    'candidate_updates must include candidate_id from the list when possible.',
     'evidence_block_ids must reference block ids present in this chunk.',
+    'confidence must be a number between 0 and 1 (never "high"/"medium"/"low").',
+    'No markdown fences. No explanations.',
     '',
     `DOCUMENT TITLE: ${documentTitle}`,
     `DETECTED LANGUAGE HINT: ${language || 'unknown'}`,
+    `Allowed block ids: ${(chunk.block_ids || []).join(', ') || '(none)'}`,
     '',
     '=== BEGIN UNTRUSTED REPORT CHUNK DATA ===',
     blocksText,
@@ -164,52 +176,88 @@ function mergeAnalyses(parts, ctx) {
   return validateAiAnalysis(merged, ctx);
 }
 
+function failChunk(code, message, extra = {}) {
+  const err = aiFailure(code, message);
+  err.details = extra.details || null;
+  err.raw_sample = extra.raw_sample || null;
+  err.rejected = extra.rejected || null;
+  err.schema_version = THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION;
+  return err;
+}
+
+/**
+ * Process one provider text response with optional single AI repair.
+ */
+async function processChunkText(text, ctx, hooks, callProvider, settings, analysisStartedAt) {
+  let processed = processAiResponseText(text, ctx);
+  if (processed.ok) return { ...processed, repair_attempted: false };
+
+  if (hooks.allowRepair !== false && callProvider) {
+    const repairUser = buildRepairPrompt({
+      errors: processed.details || [{ message: processed.error }],
+      previousOutputSample: processed.raw_sample || capRawOutputSample(text)
+    });
+    const { text: repairedText } = await callProvider(
+      settings,
+      { system: buildSystemPrompt(), user: repairUser },
+      {
+        analysisStartedAt,
+        signal: hooks.signal,
+        keepAlive: '0',
+        formatSchema: buildProviderJsonSchema(),
+        onActivity: hooks.onActivity
+      }
+    );
+    processed = processAiResponseText(repairedText, ctx);
+    return { ...processed, repair_attempted: true };
+  }
+  return { ...processed, repair_attempted: false };
+}
+
 /**
  * @param {object} settings
  * @param {{ document: object, candidates: object[] }} input
- * @param {{
- *   onProgress?: (p: object) => Promise<void>|void,
- *   shouldCancel?: () => Promise<boolean>|boolean,
- *   loadCompletedChunk?: (chunkKey: string) => Promise<object|null>,
- *   saveChunkResult?: (chunk: object, result: object) => Promise<void>,
- *   markChunkFailed?: (chunk: object, code: string, message: string) => Promise<void>,
- *   callProvider?: typeof callAiProvider,
- *   analysisStartedAt?: number,
- *   signal?: AbortSignal
- * }} [hooks]
+ * @param {object} [hooks]
  */
 export async function analyzeThreatDocument(settings, input, hooks = {}) {
   assertAiReady(settings);
   const policy = resolveAiTimeoutPolicy(settings);
   const analysisStartedAt = hooks.analysisStartedAt || Date.now();
   const callProvider = hooks.callProvider || callAiProvider;
+  const allCandidates = withCandidateIds(input.candidates || []);
   const knownBlockIds = collectBlockIds(input.document);
   const knownCandidateKeys = new Set(
-    (input.candidates || []).map((c) => `${c.candidate_type}\0${c.normalized_value}`)
+    allCandidates.map((c) => `${c.candidate_type}\0${c.normalized_value}`)
   );
-  const ctx = { knownBlockIds, knownCandidateKeys };
+  const candidateIdMap = buildCandidateIdMap(allCandidates);
+  const ctx = { knownBlockIds, knownCandidateKeys, candidateIdMap };
 
   const chunks = buildAnalysisChunks(input.document, {
     maxInputChars: settings.max_input_chars || 120000
   });
   if (!chunks.length) {
-    throw aiFailure(AI_FAILURE_CODES.INVALID_AI_RESPONSE, 'No document chunks available for analysis');
+    throw failChunk(AI_FAILURE_CODES.INVALID_AI_RESPONSE, 'No document chunks available for analysis');
   }
 
   const system = buildSystemPrompt();
+  const formatSchema = buildProviderJsonSchema();
   const partials = [];
 
   for (let i = 0; i < chunks.length; i += 1) {
     if (Date.now() - analysisStartedAt > policy.total_analysis_timeout_ms) {
-      throw aiFailure(AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
+      throw failChunk(AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
     }
     if (hooks.shouldCancel && (await hooks.shouldCancel())) {
-      throw aiFailure(AI_FAILURE_CODES.JOB_CANCELLED);
+      throw failChunk(AI_FAILURE_CODES.JOB_CANCELLED);
     }
 
     const chunk = chunks[i];
     const cached = hooks.loadCompletedChunk ? await hooks.loadCompletedChunk(chunk.chunk_key) : null;
-    if (cached?.ok && cached.value) {
+    if (
+      cached?.ok &&
+      cached.value &&
+      cached.schema_version === THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+    ) {
       partials.push(cached.value);
       await hooks.onProgress?.({
         stage: 'analyzing',
@@ -217,6 +265,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         analysis_chunks_completed: i + 1,
         current_chunk: chunk.chunk_key,
         resumed: true,
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
         last_provider_activity_at: new Date().toISOString()
       });
       continue;
@@ -228,10 +277,11 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       analysis_chunks_completed: i,
       current_chunk: chunk.chunk_key,
       current_chunk_index: i + 1,
+      schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
       last_provider_activity_at: new Date().toISOString()
     });
 
-    const cands = candidatesForChunk(input.candidates, chunk, i === 0);
+    const cands = candidatesForChunk(allCandidates, chunk, i === 0);
     const user = buildChunkUserPrompt({
       documentTitle: input.document.title,
       language: input.document.language,
@@ -251,6 +301,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           analysisStartedAt,
           signal: hooks.signal,
           keepAlive: i < chunks.length - 1 ? '15m' : '0',
+          formatSchema,
           onActivity: async () => {
             await hooks.onProgress?.({
               stage: 'analyzing',
@@ -264,48 +315,94 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         }
       ));
     } catch (err) {
-      await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || 'chunk failed');
+      await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || 'chunk failed', {
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+      });
       throw err;
     }
 
-    const json = extractJsonObject(text);
-    if (!json) {
-      const err = aiFailure(AI_FAILURE_CODES.INVALID_AI_RESPONSE, 'AI returned malformed JSON for a chunk');
-      await hooks.markChunkFailed?.(chunk, err.code, err.message);
-      throw err;
-    }
-    const validated = validateAiAnalysis(json, {
+    const chunkCtx = {
       knownBlockIds: new Set(chunk.block_ids),
-      knownCandidateKeys
-    });
-    if (!validated.ok) {
-      const err = aiFailure(AI_FAILURE_CODES.AI_VALIDATION, validated.error || 'Chunk validation failed');
-      await hooks.markChunkFailed?.(chunk, err.code, err.message);
+      knownCandidateKeys,
+      candidateIdMap: buildCandidateIdMap(cands)
+    };
+
+    let processed;
+    try {
+      processed = await processChunkText(
+        text,
+        chunkCtx,
+        {
+          allowRepair: true,
+          signal: hooks.signal,
+          onActivity: async () => {
+            await hooks.onProgress?.({
+              stage: 'analyzing',
+              analysis_chunks_total: chunks.length,
+              analysis_chunks_completed: i,
+              current_chunk: chunk.chunk_key,
+              current_chunk_index: i + 1,
+              repairing: true,
+              last_provider_activity_at: new Date().toISOString()
+            });
+          }
+        },
+        callProvider,
+        settings,
+        analysisStartedAt
+      );
+    } catch (err) {
+      await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || 'repair failed', {
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+        raw_output_sample: capRawOutputSample(text)
+      });
       throw err;
     }
 
-    partials.push(validated.value);
-    await hooks.saveChunkResult?.(chunk, validated.value);
+    if (!processed.ok) {
+      const code = processed.code || AI_FAILURE_CODES.AI_VALIDATION;
+      const err = failChunk(code, processed.error || 'Chunk validation failed', {
+        details: processed.details,
+        raw_sample: processed.raw_sample,
+        rejected: processed.rejected
+      });
+      await hooks.markChunkFailed?.(chunk, err.code, err.message, {
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+        validation_details: processed.details || [],
+        raw_output_sample: processed.raw_sample || capRawOutputSample(text),
+        rejected_items: processed.rejected || []
+      });
+      throw err;
+    }
+
+    partials.push(processed.value);
+    await hooks.saveChunkResult?.(chunk, processed.value, {
+      schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+      rejected_items: processed.rejected || [],
+      normalization_notes: processed.normalization_notes || []
+    });
     await hooks.onProgress?.({
       stage: 'analyzing',
       analysis_chunks_total: chunks.length,
       analysis_chunks_completed: i + 1,
       current_chunk: chunk.chunk_key,
       current_chunk_index: i + 1,
+      repair_attempted: processed.repair_attempted === true,
       last_provider_activity_at: new Date().toISOString()
     });
   }
 
-  // Optional synthesis when many chunks — keep small, no full report resend
   let merged = mergeAnalyses(partials, ctx);
   if (!merged.ok) {
-    throw aiFailure(AI_FAILURE_CODES.AI_VALIDATION, merged.error || 'Merged AI validation failed');
+    throw failChunk(merged.code || AI_FAILURE_CODES.AI_VALIDATION, merged.error || 'Merged AI validation failed', {
+      details: merged.details
+    });
   }
 
   if (partials.length > 1) {
     try {
       if (hooks.shouldCancel && (await hooks.shouldCancel())) {
-        throw aiFailure(AI_FAILURE_CODES.JOB_CANCELLED);
+        throw failChunk(AI_FAILURE_CODES.JOB_CANCELLED);
       }
       const synthBlocks = partials.map((p, idx) => ({
         id: `synth-${idx + 1}`,
@@ -333,6 +430,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           analysisStartedAt,
           signal: hooks.signal,
           keepAlive: '0',
+          formatSchema,
           onActivity: async () => {
             await hooks.onProgress?.({
               stage: 'analyzing',
@@ -344,13 +442,9 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           }
         }
       );
-      const json = extractJsonObject(text);
-      if (json) {
-        const validated = validateAiAnalysis(json, ctx);
-        if (validated.ok) merged = validated;
-      }
+      const processed = processAiResponseText(text, ctx);
+      if (processed.ok) merged = processed;
     } catch (err) {
-      // Synthesis is best-effort; keep merged chunk results if it fails for non-cancel reasons
       if (err?.code === AI_FAILURE_CODES.JOB_CANCELLED || err?.code === AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE) {
         throw err;
       }
@@ -362,11 +456,13 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     meta: {
       chunks_total: chunks.length,
       chunks_completed: chunks.length,
-      timeout_policy: policy
+      timeout_policy: policy,
+      schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
     }
   };
 }
 
-// Re-export for older imports
 export { callAiProvider } from './client.js';
 export { maskAiSettingsForClient, assertAiReady } from './settings.js';
+export { processAiResponseText, validateAiAnalysis } from './schema.js';
+export { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';

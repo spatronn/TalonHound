@@ -59,6 +59,7 @@ function publicReport(row) {
     failure_stage: row.failure_stage,
     failure_reason: row.failure_reason,
     failure_code: row.failure_code || null,
+    failure_details: row.failure_details || {},
     analysis_progress: row.analysis_progress || {},
     candidate_summary: row.candidate_summary || {},
     indicator_count: row.indicator_count,
@@ -156,6 +157,32 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       return res.json({ settings: maskAiSettingsForClient(updated) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to clear API key', detail: err.message });
+    }
+  });
+
+  app.post('/api/threat-library/ai-settings/probe', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const settings = await getAiSettings(pool);
+      const { probeAiProvider } = await import('../lib/threatLibrary/ai/probe.js');
+      const result = await probeAiProvider(settings);
+      await pool.query(
+        `UPDATE threat_library_ai_settings
+         SET last_probe_at = NOW(), last_probe_ok = $2, last_probe_detail = $3::jsonb, updated_at = NOW()
+         WHERE id = 1`,
+        [result.ok === true, JSON.stringify({
+          ok: result.ok,
+          elapsed_ms: result.elapsed_ms,
+          error: result.error,
+          details: result.details,
+          schema_version: result.schema_version
+        })]
+      );
+      return res.json({ probe: result });
+    } catch (err) {
+      return res.status(400).json({
+        message: err.message || 'Provider probe failed',
+        code: err.code || 'probe_failed'
+      });
     }
   });
 
