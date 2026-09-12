@@ -96,6 +96,23 @@ test('sample PDF fixture has valid magic and is accepted by validators', () => {
   assert.equal(buf.subarray(0, 5).toString('latin1'), '%PDF-');
 });
 
+test('Chromium Print-to-PDF fixture extracts English + CJK text', async () => {
+  const { pdfToCanonicalDocument } = await import('./pdfIngest.js');
+  const buf = readFileSync(join(fixtureDir, 'browser-print-cjk.pdf'));
+  assert.equal(isAcceptablePdfUploadMeta('application/octet-stream', 'tlp_clear_01.pdf'), true);
+  const result = await pdfToCanonicalDocument(buf, {
+    fileName: 'tlp_clear_01.pdf',
+    mimeType: 'application/octet-stream'
+  });
+  assert.equal(result.requiresOcr, false);
+  assert.ok(result.pageCount >= 1);
+  assert.ok(result.document.blocks.length >= 1);
+  assert.ok(result.meaningfulChars >= 40);
+  const text = result.document.blocks.map((b) => b.text).join('\n');
+  assert.match(text, /Threat Library PDF Smoke/);
+  assert.match(text, /[\u4e00-\u9fff]/);
+});
+
 test('long extractable PDF text clears OCR-required gate', async () => {
   // Simulate a successful parse result shape without depending on a large binary fixture.
   const { createCanonicalDocument, isEffectivelyEmptyDocument } = await import('./canonicalDocument.js');

@@ -4,12 +4,31 @@
  */
 
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 import { PDF_MAX_BYTES } from './constants.js';
 import {
   createCanonicalDocument,
   isEffectivelyEmptyDocument
 } from './canonicalDocument.js';
 import { meaningfulCharCount } from './extract/quality.js';
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Load pdf-parse via its library entry (avoids package root side effects).
+ * @returns {(buf: Buffer, opts?: object) => Promise<object>}
+ */
+function loadPdfParse() {
+  // Prefer the implementation module; package root historically ran debug probes.
+  try {
+    return require('pdf-parse/lib/pdf-parse.js');
+  } catch {
+    // Fallback for alternate layouts
+    // eslint-disable-next-line import/no-commonjs
+    const mod = require('pdf-parse');
+    return mod?.default || mod;
+  }
+}
 
 /**
  * @param {Buffer} buffer
@@ -174,22 +193,26 @@ export async function pdfToCanonicalDocument(buffer, opts = {}) {
     throw err;
   }
 
-  // Dynamic import so unit tests can mock and Docker image installs the dep.
-  const pdfParseMod = await import('pdf-parse');
-  const pdfParse = pdfParseMod.default || pdfParseMod;
+  const pdfParse = loadPdfParse();
 
   /** @type {{ page: number, text: string }[]} */
   const pages = [];
   let data;
   try {
-    data = await pdfParse(buffer, {
-      pagerender: async (pageData) => {
-        const textContent = await pageData.getTextContent();
-        const strings = (textContent.items || []).map((it) => it.str || '').join(' ');
-        pages.push({ page: pages.length + 1, text: strings });
-        return strings;
-      }
-    });
+    try {
+      data = await pdfParse(buffer, {
+        pagerender: async (pageData) => {
+          const textContent = await pageData.getTextContent();
+          const strings = (textContent.items || []).map((it) => it.str || '').join(' ');
+          pages.push({ page: pages.length + 1, text: strings });
+          return strings;
+        }
+      });
+    } catch (pageRenderErr) {
+      // Some browser-generated PDFs fail only on custom pagerender; plain parse still works.
+      pages.length = 0;
+      data = await pdfParse(buffer);
+    }
   } catch (parseErr) {
     const classified = classifyPdfParseError(parseErr);
     const err = new Error(classified.message);
