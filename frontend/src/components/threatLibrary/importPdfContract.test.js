@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modalSrc = readFileSync(join(here, 'ImportIntelligenceModal.jsx'), 'utf8');
-const frontendNginx = readFileSync(join(here, '../../nginx.conf'), 'utf8');
+const frontendNginx = readFileSync(join(here, '../../../nginx.conf'), 'utf8');
 const proxyNginxPath = join(here, '../../../../proxy/nginx.conf');
 
 test('ImportIntelligenceModal uses multipartFormConfig and does not hardcode multipart Content-Type', () => {
