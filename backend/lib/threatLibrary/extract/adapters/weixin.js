@@ -3,14 +3,14 @@
  * No network, no cookies, no CAPTCHA bypass.
  */
 
-import { createCanonicalDocument, blockId } from '../canonicalDocument.js';
+import { createCanonicalDocument, blockId } from '../../canonicalDocument.js';
 import {
   decodeEntities,
   extractBlocksFromHtmlFragment,
   extractHtmlLanguage,
   stripTags
-} from './htmlBlocks.js';
-import { meaningfulCharCount } from './quality.js';
+} from '../htmlBlocks.js';
+import { meaningfulCharCount } from '../quality.js';
 
 /**
  * @param {string} html
