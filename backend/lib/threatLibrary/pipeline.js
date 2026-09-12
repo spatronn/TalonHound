@@ -442,22 +442,82 @@ export async function runAnalysisPipeline(pool, ctx) {
     log.info('matching complete', { reportId: report.id, ...summary });
     return { ok: true, summary };
   } catch (err) {
-    const stage = err.code === 'invalid_url' || err.code === 'destination_blocked' ? 'fetching' : 'failed';
+    const stage = resolvePipelineFailureStage(err);
+    const failureDetails = {
+      ...(err.fetchMeta && typeof err.fetchMeta === 'object' ? { fetch: err.fetchMeta } : {}),
+      ...(err.extraction && typeof err.extraction === 'object' ? { extraction: err.extraction } : {})
+    };
+    // Persist a url_fetch diagnostic row when fetch happened but extraction failed (no raw HTML body).
+    if (err.fetchMeta && report?.source_type === 'url') {
+      try {
+        await insertArtifact(pool, report.id, {
+          artifact_type: 'url_fetch',
+          mime_type: err.fetchMeta.content_type || 'text/html',
+          size_bytes: err.fetchMeta.fetched_bytes || null,
+          source_metadata: {
+            ...err.fetchMeta,
+            failure_code: err.code || null,
+            extraction: err.extraction || null
+          },
+          text_excerpt: null,
+          fetched_at: new Date().toISOString()
+        });
+      } catch {
+        /* non-fatal */
+      }
+    }
     await updateReportStatus(pool, ctx.reportId, {
       analysis_status: 'failed',
       import_status: 'failed',
       failure_stage: stage,
       failure_code: err.code || null,
-      failure_reason: err.message || 'Pipeline failed'
+      failure_reason: err.message || 'Pipeline failed',
+      failure_details: Object.keys(failureDetails).length ? failureDetails : undefined
     });
     await updateJob(pool, ctx.jobId, {
       status: 'failed',
       stage,
-      error_message: err.message || 'Pipeline failed'
+      error_message: err.message || 'Pipeline failed',
+      progress: { stage, failure_code: err.code || null, ...failureDetails }
     });
     log.warn('pipeline failed', { reportId: ctx.reportId, stage: err.code || stage, error: err.message });
     return { ok: false, error: err.message, code: err.code };
   }
+}
+
+const FETCH_FAILURE_CODES = new Set([
+  'invalid_url',
+  'destination_blocked',
+  'dns_lookup_failed',
+  'timeout',
+  'response_too_large',
+  'redirect_invalid',
+  'redirect_limit',
+  'redirect_blocked',
+  'fetch_http_error'
+]);
+
+const EXTRACT_FAILURE_CODES = new Set([
+  'empty_document',
+  'document_empty_after_extraction',
+  'document_below_quality_threshold',
+  'source_verification_required',
+  'source_blocked',
+  'source_access_denied',
+  'article_not_found',
+  'html_parse_failed',
+  'unsupported_content_type',
+  'pdf_via_url_unsupported',
+  'requires_ocr',
+  'missing_pdf'
+]);
+
+function resolvePipelineFailureStage(err) {
+  const code = String(err?.code || '');
+  if (FETCH_FAILURE_CODES.has(code)) return 'fetching';
+  if (EXTRACT_FAILURE_CODES.has(code)) return 'extracting';
+  if (code.startsWith('ai_') || code === 'ai_validation') return 'analyzing';
+  return 'failed';
 }
 
 function resolveRef(kind, ref, entityByRef, candByKey) {

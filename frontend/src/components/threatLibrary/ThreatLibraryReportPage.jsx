@@ -447,6 +447,13 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                   ))}
                 </ul>
               ) : null}
+              {['source_verification_required', 'source_blocked', 'source_access_denied', 'article_not_found'].includes(
+                String(report.failure_code || '')
+              ) ? (
+                <p style={{ margin: '10px 0 0', fontSize: 12, color: '#fecaca' }}>
+                  Tip: if the publisher blocks automated fetch, import a PDF export or a THIB bundle instead of Retrying the same URL.
+                </p>
+              ) : null}
             </div>
           </SectionCard>
         ) : null}

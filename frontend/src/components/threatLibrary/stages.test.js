@@ -25,6 +25,22 @@ test('failed analyzing stage marks prior stages done', () => {
   assert.equal(byKey.analyzing, 'failed');
 });
 
+test('fetch success + extraction failure marks source done and extract failed', () => {
+  const items = buildProgressChecklist(
+    {
+      analysis_status: 'failed',
+      failure_stage: 'extracting',
+      failure_code: 'source_verification_required'
+    },
+    { status: 'failed', stage: 'extracting' }
+  );
+  const byKey = Object.fromEntries(items.map((i) => [i.key, i.state]));
+  assert.equal(byKey.fetching, 'done');
+  assert.equal(byKey.extracting, 'failed');
+  assert.equal(byKey.candidates, 'pending');
+  assert.equal(byKey.analyzing, 'pending');
+});
+
 test('isProcessingStatus is false for failed and true for analyzing', async () => {
   const { isProcessingStatus } = await import('./stages.js');
   assert.equal(isProcessingStatus({ analysis_status: 'failed' }), false);

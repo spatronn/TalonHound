@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>某APT组织利用钓鱼邮件投递木马分析 - 微信公众平台</title>
+  <meta property="og:title" content="某APT组织利用钓鱼邮件投递木马分析" />
+  <meta property="og:locale" content="zh_CN" />
+</head>
+<body>
+  <div id="img-content">
+    <h1 id="activity-name">某APT组织利用钓鱼邮件投递木马分析</h1>
+    <div class="rich_media_meta_list">
+      <span class="rich_media_meta_text">安全研究团队</span>
+      <em id="publish_time">2026-03-01</em>
+    </div>
+    <div id="js_content" class="rich_media_content">
+      <h2>概述</h2>
+      <p>本文分析一起针对关键机构的钓鱼攻击活动。攻击者使用域名 evil-phish.example 作为投递基础设施。</p>
+      <p>相关命令与控制服务器地址为 203.0.113.88，样本哈希为 aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899。</p>
+      <h2>攻击流程</h2>
+      <ul>
+        <li>钓鱼邮件携带宏文档</li>
+        <li>宏下载载荷并建立持久化</li>
+        <li>回连 C2 通道传输凭据</li>
+      </ul>
+      <table>
+        <tr><th>IOC</th><th>类型</th></tr>
+        <tr><td>evil-phish.example</td><td>域名</td></tr>
+        <tr><td>203.0.113.88</td><td>IP</td></tr>
+      </table>
+      <p>防御建议包括阻断上述域名与IP，并加强邮件附件审计。</p>
+      <img alt="攻击链路示意图" src="https://example.com/x.png" />
+    </div>
+  </div>
+</body>
+</html>

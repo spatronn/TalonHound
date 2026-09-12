@@ -1,5 +1,5 @@
 /**
- * SSRF-safe URL fetch + HTML → canonical document for Threat Library.
+ * SSRF-safe URL fetch + layered HTML → canonical document for Threat Library.
  * Reuses custom threat feed SSRF policy and DNS pinning.
  */
 
@@ -15,6 +15,8 @@ import {
   blockId,
   isEffectivelyEmptyDocument
 } from './canonicalDocument.js';
+import { extractCanonicalDocumentFromHtml, extractGenericArticleDocument } from './extract/extractHtml.js';
+import { assessDocumentQuality } from './extract/quality.js';
 
 /**
  * @param {string} url
@@ -38,114 +40,23 @@ export function isAllowedUrlContentType(contentTypeHeader) {
 }
 
 /**
- * Strip scripts/styles and extract readable blocks from HTML.
- * Intentionally vendor-agnostic (not tied to a specific blog layout).
+ * HTML → canonical document (layered extraction).
+ * Kept as a named export for unit tests / callers.
  * @param {string} html
- * @param {{ url?: string, titleHint?: string }} [meta]
+ * @param {{ url?: string, titleHint?: string, finalUrl?: string, httpStatus?: number }} [meta]
  */
 export function htmlToCanonicalDocument(html, meta = {}) {
-  const raw = String(html || '');
-  let title = meta.titleHint || '';
-  const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (!title && titleMatch) {
-    title = decodeEntities(stripTags(titleMatch[1])).trim();
-  }
-
-  // Prefer <article> / <main> when present
-  let body = raw;
-  const articleMatch = raw.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
-  const mainMatch = raw.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
-  if (articleMatch) body = articleMatch[1];
-  else if (mainMatch) body = mainMatch[1];
-  else {
-    const bodyMatch = raw.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-    if (bodyMatch) body = bodyMatch[1];
-  }
-
-  body = body
-    .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, ' ')
-    .replace(/<nav\b[\s\S]*?<\/nav>/gi, ' ')
-    .replace(/<footer\b[\s\S]*?<\/footer>/gi, ' ')
-    .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ');
-
-  const blocks = [];
-  let idx = 1;
-  const push = (type, text, section = null) => {
-    const t = decodeEntities(text).replace(/\s+/g, ' ').trim();
-    if (!t) return;
-    blocks.push({
-      id: blockId('b', idx++),
-      type,
-      text: t,
-      page: null,
-      section
-    });
-  };
-
-  // Headings
-  const headingRe = /<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi;
-  const paragraphRe = /<(p|li|pre|code|td|th|caption|blockquote)\b[^>]*>([\s\S]*?)<\/\1>/gi;
-
-  /** @type {{ pos: number, type: string, text: string }[]} */
-  const found = [];
-  let m;
-  while ((m = headingRe.exec(body)) !== null) {
-    found.push({ pos: m.index, type: 'heading', text: stripTags(m[2]) });
-  }
-  while ((m = paragraphRe.exec(body)) !== null) {
-    const tag = m[1].toLowerCase();
-    let type = 'paragraph';
-    if (tag === 'li') type = 'list';
-    else if (tag === 'pre' || tag === 'code') type = 'code';
-    else if (tag === 'td' || tag === 'th') type = 'table';
-    else if (tag === 'caption') type = 'caption';
-    found.push({ pos: m.index, type, text: stripTags(m[2]) });
-  }
-  found.sort((a, b) => a.pos - b.pos);
-
-  let currentSection = null;
-  for (const item of found) {
-    if (item.type === 'heading') currentSection = item.text.slice(0, 200);
-    push(item.type, item.text, currentSection);
-  }
-
-  if (blocks.length === 0) {
-    const fallback = decodeEntities(stripTags(body)).replace(/\s+/g, ' ').trim();
-    if (fallback) {
-      // Split into ~800-char paragraphs
-      for (let i = 0; i < fallback.length; i += 800) {
-        push('paragraph', fallback.slice(i, i + 800));
-      }
-    }
-  }
-
-  const langMatch = raw.match(/<html[^>]*\slang=["']?([a-zA-Z-]{2,10})/i);
-  const doc = createCanonicalDocument({
-    title: title || 'Untitled',
-    language: langMatch ? langMatch[1].toLowerCase().slice(0, 8) : null,
-    blocks,
-    meta: { source_url: meta.url || null, extractor: 'threat_library_html_v1' }
+  const extracted = extractCanonicalDocumentFromHtml(html, {
+    url: meta.url,
+    finalUrl: meta.finalUrl || meta.url,
+    titleHint: meta.titleHint,
+    httpStatus: meta.httpStatus
   });
-  return doc;
-}
-
-function stripTags(s) {
-  return String(s || '').replace(/<[^>]+>/g, ' ');
-}
-
-function decodeEntities(s) {
-  return String(s || '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  if (extracted.ok && extracted.document) return extracted.document;
+  // For callers that only want a best-effort document object (tests may check empty),
+  // return the partial document or a generic pass.
+  if (extracted.document) return extracted.document;
+  return extractGenericArticleDocument(html, meta);
 }
 
 /**
@@ -168,21 +79,45 @@ export async function ingestUrlToCanonicalDocument(url, opts = {}) {
   });
 
   const contentType = result.contentType || '';
-  // fetchFeedUrl returns bodyText + contentType; reject non-text when present
+  const bodyText = result.bodyText || '';
+  const finalUrl = result.finalUrl || policy.url;
+  const fetchMeta = {
+    url: policy.url,
+    final_url: finalUrl,
+    http_status: result.httpStatus ?? null,
+    content_type: contentType || null,
+    fetched_bytes: result.fetchedBytes ?? bodyText.length,
+    fetch_ok: result.ok !== false
+  };
+
   if (contentType && !isAllowedUrlContentType(contentType) && !String(contentType).includes('text/')) {
     const err = new Error(`Unsupported content type: ${String(contentType).split(';')[0]}`);
     err.code = 'unsupported_content_type';
+    err.fetchMeta = fetchMeta;
     throw err;
   }
 
-  const bodyText = result.bodyText || '';
   const ct = String(contentType).toLowerCase();
-  let document;
   if (ct.includes('application/pdf') || bodyText.startsWith('%PDF')) {
     const err = new Error('URL resolved to a PDF; upload the PDF via the PDF import tab instead');
     err.code = 'pdf_via_url_unsupported';
+    err.fetchMeta = fetchMeta;
     throw err;
   }
+
+  // Prefer classifying HTTP failures after we can inspect body (captcha pages are often 200).
+  if (result.ok === false && (result.httpStatus === 401 || result.httpStatus === 403)) {
+    const err = new Error(`Source returned HTTP ${result.httpStatus}; article content is not accessible.`);
+    err.code = 'source_access_denied';
+    err.fetchMeta = fetchMeta;
+    throw err;
+  }
+
+  let document;
+  /** @type {string[]} */
+  let extractionPath = [];
+  let extractionAdapter = null;
+
   if (ct.includes('text/plain') && !ct.includes('html')) {
     document = createCanonicalDocument({
       title: policy.parsed.hostname,
@@ -193,29 +128,72 @@ export async function ingestUrlToCanonicalDocument(url, opts = {}) {
         text: t.trim(),
         page: null
       })),
-      meta: { source_url: policy.url, extractor: 'threat_library_text_v1' }
+      meta: { source_url: policy.url, extractor: 'threat_library_text_v1', adapter: 'text_plain' }
     });
+    extractionPath = ['text_plain'];
+    extractionAdapter = 'text_plain';
+    const quality = assessDocumentQuality(document);
+    if (!quality.ok) {
+      const err = new Error(quality.message);
+      err.code = quality.code || 'document_empty_after_extraction';
+      err.fetchMeta = fetchMeta;
+      err.extraction = { path: extractionPath, adapter: extractionAdapter, quality };
+      throw err;
+    }
   } else {
-    document = htmlToCanonicalDocument(bodyText, { url: policy.url });
+    const extracted = extractCanonicalDocumentFromHtml(bodyText, {
+      url: policy.url,
+      finalUrl,
+      httpStatus: result.httpStatus
+    });
+    extractionPath = extracted.path || [];
+    extractionAdapter = extracted.document?.meta?.adapter || null;
+
+    if (!extracted.ok) {
+      const err = new Error(extracted.message || 'Document extraction failed');
+      // Map classic empty extraction to legacy empty_document for existing UI/filters.
+      err.code = extracted.code === 'document_empty_after_extraction'
+        ? 'empty_document'
+        : (extracted.code || 'empty_document');
+      err.fetchMeta = fetchMeta;
+      err.extraction = {
+        path: extractionPath,
+        adapter: extractionAdapter,
+        classification: extracted.classification || null,
+        quality: extracted.quality || null
+      };
+      throw err;
+    }
+    document = extracted.document;
   }
 
   if (isEffectivelyEmptyDocument(document)) {
     const err = new Error('Fetched page had no extractable article content');
     err.code = 'empty_document';
+    err.fetchMeta = fetchMeta;
+    err.extraction = { path: extractionPath, adapter: extractionAdapter };
     throw err;
   }
 
   if (result.ok === false) {
     const err = new Error(`Upstream fetch returned HTTP ${result.httpStatus || 'error'}`);
     err.code = 'fetch_http_error';
+    err.fetchMeta = fetchMeta;
     throw err;
   }
 
   return {
     url: policy.url,
-    finalUrl: result.finalUrl || policy.url,
+    finalUrl,
     fetchedBytes: result.fetchedBytes ?? bodyText.length,
     contentType: contentType || 'text/html',
-    document
+    httpStatus: result.httpStatus ?? null,
+    document,
+    extraction: {
+      path: extractionPath,
+      adapter: document.meta?.adapter || extractionAdapter,
+      block_count: document.blocks?.length || 0,
+      meaningful_chars: assessDocumentQuality(document).chars
+    }
   };
 }
