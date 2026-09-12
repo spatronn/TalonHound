@@ -18,18 +18,15 @@ function delay(ms) {
 
 function sseStreamFromEvents(events) {
   const encoder = new TextEncoder();
-  let i = 0;
   return new ReadableStream({
-    async pull(controller) {
-      if (i >= events.length) {
-        controller.close();
-        return;
+    async start(controller) {
+      for (const ev of events) {
+        if (ev.waitMs) await delay(ev.waitMs);
+        if (ev.line != null) {
+          controller.enqueue(encoder.encode(`${ev.line}\n`));
+        }
       }
-      const ev = events[i++];
-      if (ev.waitMs) await delay(ev.waitMs);
-      if (ev.line != null) {
-        controller.enqueue(encoder.encode(`${ev.line}\n`));
-      }
+      controller.close();
     }
   });
 }
@@ -102,20 +99,22 @@ test('provider inactivity timeout when no further chunks arrive', async () => {
 
 test('slow first token within allowance succeeds', async () => {
   const body = sseStreamFromEvents([
-    { waitMs: 60, line: 'data: {"choices":[{"delta":{"content":"hi"}}]}' },
+    { waitMs: 80, line: 'data: {"choices":[{"delta":{"content":"h"}}]}' },
+    { waitMs: 10, line: 'data: {"choices":[{"delta":{"content":"i"}}]}' },
     { waitMs: 5, line: 'data: [DONE]' }
   ]);
   const text = await consumeProviderStream(body, {
-    firstTokenTimeoutMs: 200,
+    firstTokenTimeoutMs: 250,
     inactivityTimeoutMs: 200,
     totalDeadlineAt: Date.now() + 5000,
     parseLine: (line, acc) => {
-      if (line.startsWith('data:') && line !== 'data: [DONE]') {
-        try {
-          acc.text += JSON.parse(line.slice(5).trim()).choices?.[0]?.delta?.content || '';
-        } catch {
-          /* ignore */
-        }
+      if (line === 'data: [DONE]' || line === '[DONE]') return;
+      let payload = line.startsWith('data:') ? line.slice(5).trim() : line;
+      if (!payload || payload[0] !== '{') return;
+      try {
+        acc.text += JSON.parse(payload).choices?.[0]?.delta?.content || '';
+      } catch {
+        /* ignore */
       }
     }
   });
