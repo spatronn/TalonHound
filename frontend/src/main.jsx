@@ -340,6 +340,7 @@ import {
   deepSearchMatchLabel,
   deepSearchDurationLabel
 } from './lib/deepSearch.js';
+import { buildIocListEffectivePagination } from './lib/iocListEffectivePagination.js';
 import {
   EXPIRATION_MODE_OPTIONS,
   EXPIRATION_TYPE_OVERRIDE_TYPES,
@@ -13495,6 +13496,27 @@ function IOCListPage() {
   const isSearchMode = Boolean(search) || dslActive;
   const deepSearchPending = isDeepSearchPending({ deepNotice, deepResult });
   const showIocListResultChrome = shouldShowIocListResultChrome({ deepNotice, deepResult });
+  // Single effective pagination model for the currently displayed result set. Both the top
+  // (results-summary) control and the bottom control consume this so they can never diverge:
+  // Deep Search cursor paging when a completed result set is being browsed, otherwise normal
+  // offset paging. DSL search keeps its own top control (bottom is hidden for DSL).
+  const normalPageCount = pagination.page_count ?? pagination.total_pages ?? 1;
+  const iocListPagination = buildIocListEffectivePagination({
+    deepSearchReady,
+    deep: {
+      hasPrevious: deepCursorStack.length > 0,
+      hasNext: Boolean(deepResult?.has_more),
+      loading: deepLoading,
+      goPrevious: deepResultsPrevPage,
+      goNext: deepResultsNextPage
+    },
+    normal: {
+      page: pagination.page,
+      pageCount: normalPageCount,
+      goPrevious: () => setPage((p) => Math.max(p - 1, 1)),
+      goNext: () => setPage((p) => Math.min(p + 1, normalPageCount))
+    }
+  });
   const savedDeleteCopy = savedSearchDeleteConfirmCopy(savedDeleteConfirm.target?.name);
 
   return (
@@ -13844,8 +13866,8 @@ function IOCListPage() {
                 {deepResult.match_count == null ? '—' : `${Number(deepResult.match_count).toLocaleString('en-US')} matching IOCs`}
               </span>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
-                <button onClick={deepResultsPrevPage} disabled={deepCursorStack.length === 0 || deepLoading}>Prev</button>
-                <button onClick={deepResultsNextPage} disabled={!deepResult.has_more || deepLoading}>Next</button>
+                <button onClick={iocListPagination.goPrevious} disabled={!iocListPagination.canGoPrevious}>Prev</button>
+                <button onClick={iocListPagination.goNext} disabled={!iocListPagination.canGoNext}>Next</button>
                 <button onClick={() => { setAppliedQuery(deepResult.normalized_query || ''); setExportScope('all'); setExportModalOpen(true); }} disabled={exportBusy}>Export matching IOCs</button>
               </div>
             </div>
@@ -14186,11 +14208,11 @@ function IOCListPage() {
 
       {showIocListResultChrome && !dslActive && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
-          <button style={{ minWidth: 92, fontWeight: 600 }} disabled={pagination.page <= 1} onClick={() => setPage((p) => Math.max(p - 1, 1))}>Previous</button>
+          <button style={{ minWidth: 92, fontWeight: 600 }} disabled={!iocListPagination.canGoPrevious} onClick={iocListPagination.goPrevious}>Previous</button>
           <button
             style={{ minWidth: 92, fontWeight: 600 }}
-            disabled={pagination.page >= (pagination.page_count ?? pagination.total_pages ?? 1)}
-            onClick={() => setPage((p) => Math.min(p + 1, pagination.page_count ?? pagination.total_pages ?? 1))}
+            disabled={!iocListPagination.canGoNext}
+            onClick={iocListPagination.goNext}
           >
             Next
           </button>
