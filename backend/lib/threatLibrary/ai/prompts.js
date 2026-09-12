@@ -15,6 +15,18 @@ export function buildSystemPrompt() {
     'Do not invent TalonHound database IDs. Do not invent indicators that are not present.',
     'Prefer classifying the provided deterministic IOC candidates over rediscovering them.',
     'Preserve original-language evidence excerpts; do not replace them with translations.',
+    'An IOC-like string is NOT malicious merely because it looks like an IP, domain, URL, or hash.',
+    'Classify each candidate from what THIS REPORT asserts about that exact observable.',
+    'Use assessment=malicious only with report evidence that the observable is a malicious sample/hash,',
+    'C2/C&C, attacker infrastructure, payload download location, phishing/delivery host, or an explicitly listed IOC.',
+    'Use assessment=context_only for: report source URL/host, bibliography/references, vendor citation links,',
+    'filenames, code/class/method identifiers, navigation/footer/about text, and platforms merely discussed.',
+    'Use unknown only when evidence is genuinely ambiguous — not for obvious references/footers.',
+    'Never reinterpret a filename, URL path basename, or class/method identifier as a DNS/network domain',
+    'unless the report clearly states it is a host/server/domain.',
+    'Prefer explicit IOC/C2/sample appendix evidence over incidental mentions.',
+    'Reason from semantic meaning in any language; do not require English keywords.',
+    'Do not invent maliciousness from general cybersecurity knowledge outside the report.',
     'confidence must be a number between 0 and 1 (not words like high/medium/low).',
     'Return ONLY a single JSON object matching the schema. No markdown fences. No explanations.',
     `Contract: ${THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION}`
@@ -31,17 +43,19 @@ export function buildSystemPrompt() {
  *     candidate_type: string,
  *     normalized_value: string,
  *     original_value: string,
- *     block_id?: string|null
+ *     block_id?: string|null,
+ *     zone?: string|null,
+ *     section?: string|null,
+ *     occurrences?: Array<object>,
+ *     evidence_tier?: string|null
  *   }>,
+ *   sourceHost?: string|null
  * }} input
  */
 export function buildUserPrompt(input) {
   const candidateList = (input.candidates || [])
     .slice(0, 400)
-    .map((c) => {
-      const id = c.candidate_id || `${c.candidate_type}:${c.normalized_value}`;
-      return `- candidate_id=${id} type=${c.candidate_type} value=${c.normalized_value} (original: ${c.original_value}) block=${c.block_id || 'unknown'}`;
-    })
+    .map((c) => formatCandidateEvidenceLine(c))
     .join('\n');
 
   return [
@@ -58,15 +72,36 @@ export function buildUserPrompt(input) {
     '',
     `DOCUMENT TITLE: ${input.documentTitle}`,
     `DETECTED LANGUAGE HINT: ${input.language || 'unknown'}`,
+    `REPORT SOURCE HOST (provenance, not automatically an IOC): ${input.sourceHost || 'unknown'}`,
     '',
     '=== BEGIN UNTRUSTED REPORT DATA ===',
     input.blocksText,
     '=== END UNTRUSTED REPORT DATA ===',
     '',
-    '=== DETERMINISTIC IOC CANDIDATES ===',
+    '=== DETERMINISTIC IOC CANDIDATES (with occurrence evidence) ===',
     candidateList || '(none)',
     '=== END CANDIDATES ==='
   ].join('\n');
+}
+
+/**
+ * @param {object} c
+ */
+export function formatCandidateEvidenceLine(c) {
+  const id = c.candidate_id || `${c.candidate_type}:${c.normalized_value}`;
+  const occ = Array.isArray(c.occurrences) ? c.occurrences : [];
+  const occSummary = occ
+    .slice(0, 4)
+    .map((o) => {
+      const zone = o.zone || o.section_kind || c.zone || 'unknown';
+      const page = o.page != null ? `p${o.page}` : 'p?';
+      const snip = String(o.surrounding_text || '')
+        .replace(/\s+/g, ' ')
+        .slice(0, 100);
+      return `${zone}@${page}${snip ? `(${snip})` : ''}`;
+    })
+    .join(' | ');
+  return `- candidate_id=${id} type=${c.candidate_type} value=${c.normalized_value} (original: ${c.original_value}) zone=${c.zone || c.section || 'unknown'} tier=${c.evidence_tier || '?'} occurrences=[${occSummary || c.block_id || 'n/a'}]`;
 }
 
 /**

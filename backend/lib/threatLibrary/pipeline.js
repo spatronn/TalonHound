@@ -6,10 +6,13 @@
 import crypto from 'node:crypto';
 import { ingestUrlToCanonicalDocument } from './urlIngest.js';
 import { pdfToCanonicalDocument } from './pdfIngest.js';
-import { extractCandidatesFromDocument } from './candidateExtraction.js';
+import { extractCandidatesFromDocument, THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
+import { applyEvidencePolicy } from './evidencePolicy.js';
+import { hostnameFromUrl } from './candidateTyping.js';
 import { bulkMatchCandidates } from './iocMatch.js';
 import { analyzeThreatDocument } from './ai/providers.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
+import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
 import { normalizeTlp, deriveMatchState, normalizeEntityName } from './constants.js';
 import { storeArtifactBuffer } from './artifactStore.js';
 import {
@@ -174,10 +177,15 @@ export async function runAnalysisPipeline(pool, ctx) {
       });
     }
 
-    // --- Deterministic candidates (reuse when present on retry) ---
+    // --- Deterministic candidates (refresh when extraction contract changes) ---
     let candidates;
     const existingCount = await countReportCandidates(pool, report.id);
-    if (resumePreferred && existingCount > 0) {
+    const priorExtractionVersion = report.analysis_progress?.candidate_extraction_version || null;
+    const extractionChanged = priorExtractionVersion !== THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
+    const shouldReuseCandidates =
+      resumePreferred && existingCount > 0 && !extractionChanged && !ctx.refreshCandidates;
+
+    if (shouldReuseCandidates) {
       const { rows } = await pool.query(
         `SELECT candidate_type, original_value, normalized_value, assessment, role, confidence,
                 evidence_text, section, block_id, page_number, match_state, matched_ioc_id,
@@ -192,9 +200,33 @@ export async function runAnalysisPipeline(pool, ctx) {
       log.info('reusing candidates', { reportId: report.id, count: candidates.length });
     } else {
       await setStage('candidates');
-      candidates = extractCandidatesFromDocument(document);
+      // Ensure source provenance is on the document for zone/source marking
+      let sourceUrl = report.source_url || document.meta?.source_url || null;
+      let sourceHost = document.meta?.source_host || null;
+      if (!sourceHost && sourceUrl) {
+        try {
+          sourceHost = hostnameFromUrl(sourceUrl);
+        } catch {
+          sourceHost = null;
+        }
+      }
+      document = {
+        ...document,
+        meta: {
+          ...(document.meta || {}),
+          source_url: sourceUrl,
+          source_host: sourceHost,
+          candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
+        }
+      };
+      candidates = extractCandidatesFromDocument(document, { sourceUrl });
       await replaceCandidates(pool, report.id, candidates);
-      log.info('candidate count', { reportId: report.id, count: candidates.length });
+      log.info('candidate count', {
+        reportId: report.id,
+        count: candidates.length,
+        extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+        refreshed: extractionChanged || Boolean(ctx.refreshCandidates)
+      });
     }
 
     // --- AI semantics (chunked, checkpointed) ---
@@ -220,9 +252,11 @@ export async function runAnalysisPipeline(pool, ctx) {
       // Keep same run on retry so completed chunks are reused
       forceNew: false
     });
-    // If previous run fully failed with no completed chunks, still reuse run id — OK.
-    // Start a new run only when explicitly requested via ctx.newAnalysisRun
-    const runId = ctx.newAnalysisRun ? await ensureAnalysisRun(pool, report.id, { forceNew: true }) : analysisRunId;
+    // New run when extraction/typing contract changed or caller requests reset
+    const runId =
+      ctx.newAnalysisRun || extractionChanged || ctx.refreshCandidates
+        ? await ensureAnalysisRun(pool, report.id, { forceNew: true })
+        : analysisRunId;
 
     let aiValue = null;
     try {
@@ -322,20 +356,22 @@ export async function runAnalysisPipeline(pool, ctx) {
       return { ok: false, code, error: message };
     }
 
-    // Merge AI candidate updates onto deterministic set
+    // Merge AI candidate updates onto deterministic set, then enforce evidence policy
     const byKey = new Map(candidates.map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c]));
     for (const u of aiValue.candidate_updates || []) {
       const key = `${u.candidate_type}\0${u.normalized_value}`;
       const existing = byKey.get(key);
       if (!existing) continue;
-      existing.assessment = u.assessment;
-      existing.role = u.role || existing.role;
-      existing.confidence = u.confidence ?? existing.confidence;
+      applyEvidencePolicy(existing, {
+        assessment: u.assessment,
+        role: u.role || existing.role,
+        confidence: u.confidence ?? existing.confidence
+      });
       if (u.evidence_text) existing.evidence_text = u.evidence_text;
       if (u.section) existing.section = u.section;
       if (u.evidence_block_ids?.[0]) existing.block_id = u.evidence_block_ids[0];
     }
-    candidates = [...byKey.values()];
+    candidates = [...byKey.values()].map((c) => applyEvidencePolicy(c));
 
     // --- Match local IOCs ---
     await setStage('matching');
@@ -426,7 +462,9 @@ export async function runAnalysisPipeline(pool, ctx) {
       import_status: 'review_required',
       analysis_progress: {
         stage: 'review_required',
-        completed: true
+        completed: true,
+        candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
       },
       clear_failure: true,
       clear_cancel: true

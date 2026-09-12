@@ -1,6 +1,6 @@
 /**
  * Deterministic IOC / identifier candidate extraction from canonical documents.
- * Reuses TalonHound observable normalization; adds defang prep only.
+ * Discovery stays broad; typing + zones prevent non-IOC promotion.
  */
 
 import { normalizeObservable } from '../observable-normalization.js';
@@ -8,6 +8,15 @@ import { normalizeIpAddress, isValidIpAddress } from '../publicIp.js';
 import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
 import { resolveStorageObservableType, inferObservableType } from '../manualIocCreate.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
+import { annotateDocumentZones, NEGATIVE_ZONES, STRONG_IOC_ZONES } from './documentZones.js';
+import {
+  resolveDottedTokenType,
+  hostnameFromUrl,
+  pathBasenameFromUrl
+} from './candidateTyping.js';
+import { applyEvidencePolicy } from './evidencePolicy.js';
+
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v2';
 
 const IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b/g;
 const IPV6_RE = /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b/g;
@@ -19,45 +28,23 @@ const SHA256_RE = /\b[a-fA-F0-9]{64}\b/g;
 const CVE_RE = /\bCVE-\d{4}-\d{4,7}\b/gi;
 const ATTACK_RE = /\bT\d{4}(?:\.\d{3})?\b/g;
 
-const COMMON_FALSE_POSITIVE_DOMAINS = new Set([
-  'example.com',
-  'example.org',
-  'example.net',
-  'localhost',
-  'github.com',
-  'gitlab.com',
-  'microsoft.com',
-  'google.com',
-  'googleapis.com',
-  'wikipedia.org',
-  'w3.org',
-  'schema.org',
-  'pages.dev',
-  'cloudflare.com',
-  'amazonaws.com'
-]);
+/** RFC documentation / loopback only — not vendor safety allowlists. */
+const RFC_EXAMPLE_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'localhost', 'invalid', 'test']);
 
-/**
- * @param {string} domain
- */
-function isLikelyFalsePositiveDomain(domain) {
+function isRfcExampleDomain(domain) {
   const d = String(domain || '').toLowerCase();
-  if (COMMON_FALSE_POSITIVE_DOMAINS.has(d)) return true;
-  for (const fp of COMMON_FALSE_POSITIVE_DOMAINS) {
+  if (RFC_EXAMPLE_DOMAINS.has(d)) return true;
+  for (const fp of RFC_EXAMPLE_DOMAINS) {
     if (d.endsWith(`.${fp}`)) return true;
   }
   return false;
 }
 
-/**
- * @param {string} urlish
- */
 function stripUrlTrailingPunct(urlish) {
   return String(urlish || '').replace(/[),.;:!?\]]+$/g, '');
 }
 
 /**
- * Normalize a candidate value into a TalonHound storage type + value.
  * @param {string} raw
  * @param {string} [hintType]
  */
@@ -128,7 +115,6 @@ export function normalizeCandidateValue(raw, hintType = null) {
     };
   }
 
-  // domain
   const domain = normalizeObservable('domain', refanged.replace(/\.$/, ''));
   if (!domain || !domain.includes('.')) return { ok: false, error: 'invalid_domain' };
   return {
@@ -137,85 +123,170 @@ export function normalizeCandidateValue(raw, hintType = null) {
     originalValue: String(raw).trim(),
     normalizedValue: domain,
     isIoc: true,
-    likelyContextOnly: isLikelyFalsePositiveDomain(domain)
+    likelyContextOnly: isRfcExampleDomain(domain)
   };
 }
 
 /**
- * Extract candidates from a canonical document.
  * @param {import('./canonicalDocument.js').CanonicalDocument} doc
+ * @param {{ sourceUrl?: string|null }} [opts]
  */
-export function extractCandidatesFromDocument(doc) {
-  /** @type {Map<string, object>} */
-  const byKey = new Map();
-
-  function add(raw, hintType, block) {
-    const n = normalizeCandidateValue(raw, hintType);
-    if (!n.ok) return;
-    const key = `${n.candidateType}\0${n.normalizedValue}`;
-    const existing = byKey.get(key);
-    if (existing) {
-      if (!existing.evidence_text && block?.text) {
-        existing.evidence_text = String(block.text).slice(0, 500);
-        existing.block_id = block.id;
-        existing.page_number = block.page ?? null;
-        existing.section = block.section || null;
-      }
-      return;
-    }
-    byKey.set(key, {
-      candidate_type: n.candidateType,
-      original_value: n.originalValue,
-      normalized_value: n.normalizedValue,
-      assessment: n.isIoc === false ? 'context_only' : n.likelyContextOnly ? 'context_only' : 'unknown',
-      role: n.likelyContextOnly ? 'legitimate_service' : n.isIoc === false ? 'reference' : 'unknown',
-      confidence: n.likelyContextOnly || n.isIoc === false ? 0.7 : null,
-      evidence_text: block?.text ? String(block.text).slice(0, 500) : null,
-      block_id: block?.id || null,
-      page_number: block?.page ?? null,
-      section: block?.section || null,
-      is_ioc: n.isIoc !== false && n.candidateType !== 'cve' && n.candidateType !== 'attack_technique'
-    });
+export function extractCandidatesFromDocument(doc, opts = {}) {
+  const sourceUrl = opts.sourceUrl || doc.meta?.source_url || doc.meta?.sourceUrl || null;
+  let sourceHost = '';
+  try {
+    if (sourceUrl) sourceHost = hostnameFromUrl(sourceUrl);
+  } catch {
+    sourceHost = '';
   }
 
-  for (const block of doc.blocks || []) {
+  const annotated = annotateDocumentZones(doc, { sourceUrl, sourceHost });
+  /** @type {Map<string, object>} */
+  const byKey = new Map();
+  const urlPathBasenames = new Set();
+  const knownUrlHosts = new Set();
+  if (sourceHost) knownUrlHosts.add(sourceHost.toLowerCase());
+
+  function pushOccurrence(entry, block, extra = {}) {
+    const occ = {
+      block_id: block?.id || null,
+      page: block?.page ?? null,
+      section_kind: block?.zone || block?.section || 'unknown',
+      zone: block?.zone || 'unknown',
+      surrounding_text: block?.text ? String(block.text).slice(0, 280) : null,
+      ...extra
+    };
+    if (!Array.isArray(entry.occurrences)) entry.occurrences = [];
+    // Dedup same block
+    if (!entry.occurrences.some((o) => o.block_id && o.block_id === occ.block_id)) {
+      entry.occurrences.push(occ);
+    }
+  }
+
+  function add(raw, hintType, block, typingMeta = {}) {
+    const n = normalizeCandidateValue(raw, hintType);
+    if (!n.ok) return;
+
+    // Domain typing gate
+    if (n.candidateType === 'domain') {
+      const typed = resolveDottedTokenType(n.normalizedValue, {
+        surroundingText: block?.text || '',
+        urlPathBasenames,
+        knownUrlHosts
+      });
+      if (typed.kind === 'file_artifact' || typed.kind === 'code_identifier' || typed.kind === 'skip') {
+        // Do not promote as network IOC candidate
+        return;
+      }
+      typingMeta.typing_reason = typed.reason;
+      typingMeta.resolved_type = 'domain';
+    }
+
+    const key = `${n.candidateType}\0${n.normalizedValue}`;
+    let entry = byKey.get(key);
+    if (!entry) {
+      const zone = block?.zone || 'unknown';
+      const negativeOnlySeed = NEGATIVE_ZONES.has(zone);
+      const strongSeed = STRONG_IOC_ZONES.has(zone);
+      entry = {
+        candidate_type: n.candidateType,
+        original_value: n.originalValue,
+        normalized_value: n.normalizedValue,
+        assessment:
+          n.isIoc === false || n.likelyContextOnly || negativeOnlySeed
+            ? 'context_only'
+            : strongSeed
+              ? 'unknown'
+              : 'unknown',
+        role: n.likelyContextOnly
+          ? 'legitimate_service'
+          : negativeOnlySeed
+            ? zone === 'reference_section'
+              ? 'reference'
+              : 'legitimate_service'
+            : n.isIoc === false
+              ? 'reference'
+              : 'unknown',
+        confidence: n.likelyContextOnly || negativeOnlySeed ? 0.75 : null,
+        evidence_text: block?.text ? String(block.text).slice(0, 500) : null,
+        block_id: block?.id || null,
+        page_number: block?.page ?? null,
+        section: zone,
+        zone,
+        is_ioc: n.isIoc !== false && n.candidateType !== 'cve' && n.candidateType !== 'attack_technique',
+        resolved_type: typingMeta.resolved_type || n.candidateType,
+        typing_reason: typingMeta.typing_reason || null,
+        occurrences: [],
+        extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
+      };
+      // Source host / URL provenance
+      if (
+        (n.candidateType === 'domain' && sourceHost && n.normalizedValue === sourceHost) ||
+        (n.candidateType === 'url' && sourceUrl && n.normalizedValue === normalizeObservable('url', sourceUrl))
+      ) {
+        entry.assessment = 'context_only';
+        entry.role = 'reference';
+        entry.zone = 'source_metadata';
+      }
+      byKey.set(key, entry);
+    }
+    pushOccurrence(entry, block, typingMeta);
+    // Prefer strong-zone evidence text
+    if (STRONG_IOC_ZONES.has(block?.zone) && block?.text) {
+      entry.evidence_text = String(block.text).slice(0, 500);
+      entry.block_id = block.id;
+      entry.page_number = block.page ?? null;
+      entry.section = block.zone;
+      entry.zone = block.zone;
+    }
+  }
+
+  // Pass 1: URLs — record hosts + path basenames before domain scan
+  for (const block of annotated.blocks || []) {
+    const text = refangTextForExtraction(block.text || '');
+    if (!text.trim()) continue;
+    for (const m of text.matchAll(URL_RE)) {
+      const url = stripUrlTrailingPunct(m[0]);
+      const host = hostnameFromUrl(url);
+      const base = pathBasenameFromUrl(url);
+      if (host) knownUrlHosts.add(host);
+      if (base && base.includes('.')) urlPathBasenames.add(base.toLowerCase());
+      add(url, 'url', block);
+      // Host from URL is a real domain signal
+      if (host && isValidIpAddress(host)) {
+        add(host, 'ip', block);
+      } else if (host && host.includes('.')) {
+        add(host, 'domain', block, { resolved_type: 'domain', typing_reason: 'url_host' });
+      }
+    }
+  }
+
+  // Pass 2: other observables + domains
+  for (const block of annotated.blocks || []) {
     const text = refangTextForExtraction(block.text || '');
     if (!text.trim()) continue;
 
-    for (const m of text.matchAll(URL_RE)) {
-      add(stripUrlTrailingPunct(m[0]), 'url', block);
-    }
-    for (const m of text.matchAll(IPV4_RE)) {
-      add(m[0], 'ip', block);
-    }
-    for (const m of text.matchAll(IPV6_RE)) {
-      add(m[0], 'ipv6', block);
-    }
-    for (const m of text.matchAll(SHA256_RE)) {
-      add(m[0], 'sha256', block);
-    }
-    for (const m of text.matchAll(SHA1_RE)) {
-      add(m[0], 'sha1', block);
-    }
-    for (const m of text.matchAll(MD5_RE)) {
-      add(m[0], 'md5', block);
-    }
-    for (const m of text.matchAll(CVE_RE)) {
-      add(m[0], 'cve', block);
-    }
+    for (const m of text.matchAll(IPV4_RE)) add(m[0], 'ip', block);
+    for (const m of text.matchAll(IPV6_RE)) add(m[0], 'ipv6', block);
+    for (const m of text.matchAll(SHA256_RE)) add(m[0], 'sha256', block);
+    for (const m of text.matchAll(SHA1_RE)) add(m[0], 'sha1', block);
+    for (const m of text.matchAll(MD5_RE)) add(m[0], 'md5', block);
+    for (const m of text.matchAll(CVE_RE)) add(m[0], 'cve', block);
     for (const m of text.matchAll(ATTACK_RE)) {
-      // Avoid matching lone "T1234" noise in prose when not ATT&CK-like context — still useful
-      if (/^T1\d{3}/.test(m[0]) || /^T10\d{2}/.test(m[0]) || /^T11\d{2}/.test(m[0]) || /^T12\d{2}/.test(m[0]) || /^T15\d{2}/.test(m[0]) || /^T16\d{2}/.test(m[0])) {
+      if (/^T(1\d{3}|10\d{2}|11\d{2}|12\d{2}|15\d{2}|16\d{2})/.test(m[0])) {
         add(m[0], 'attack_technique', block);
       }
     }
     for (const m of text.matchAll(DOMAIN_RE)) {
       const d = m[0].toLowerCase();
-      // Skip if already captured as URL host noise-heavy TLDs from file extensions
-      if (/\.(png|jpg|jpeg|gif|css|js|html|htm|exe|dll|zip|pdf)$/i.test(d)) continue;
       add(d, 'domain', block);
     }
   }
 
-  return [...byKey.values()];
+  const out = [];
+  for (const entry of byKey.values()) {
+    applyEvidencePolicy(entry);
+    out.push(entry);
+  }
+  return out;
 }

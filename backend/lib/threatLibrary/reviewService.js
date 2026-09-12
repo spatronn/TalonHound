@@ -5,6 +5,7 @@
 import { createManualIoc } from '../manualIocCreate.js';
 import { getThreatLibraryIocSourceId, getReportById, updateReportStatus } from './store.js';
 import { CONFIDENCE_POLICY } from './constants.js';
+import { isEligibleForHighConfidenceMalicious } from './evidencePolicy.js';
 
 /**
  * @param {import('pg').Pool} pool
@@ -25,14 +26,25 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
 
   if (action === 'approve_high_confidence_malicious') {
     const { rows } = await pool.query(
-      `SELECT id FROM threat_report_candidates
+      `SELECT * FROM threat_report_candidates
        WHERE report_id = $1
          AND assessment = 'malicious'
          AND confidence IS NOT NULL AND confidence >= $2
          AND review_status = 'pending'`,
       [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
     );
-    ids = rows.map((r) => Number(r.id));
+    ids = rows
+      .filter((r) =>
+        isEligibleForHighConfidenceMalicious({
+          ...r,
+          is_ioc: true,
+          zone: r.section,
+          occurrences: r.section
+            ? [{ zone: r.section, section_kind: r.section }]
+            : []
+        })
+      )
+      .map((r) => Number(r.id));
   }
 
   if (!ids.length && action !== 'finalize') {

@@ -3,7 +3,7 @@
  * Pipeline: provider → extract → normalize → structure → references → persist.
  */
 
-import { buildSystemPrompt, buildRepairPrompt } from './prompts.js';
+import { buildSystemPrompt, buildRepairPrompt, formatCandidateEvidenceLine } from './prompts.js';
 import { processAiResponseText, validateAiAnalysis } from './schema.js';
 import { callAiProvider } from './client.js';
 import { assertAiReady } from './settings.js';
@@ -73,13 +73,10 @@ function buildCandidateIdMap(candidates) {
   return map;
 }
 
-function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chunkTotal, candidates, mode }) {
+function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chunkTotal, candidates, mode, sourceHost }) {
   const candidateList = (candidates || [])
     .slice(0, 250)
-    .map((c) => {
-      const id = c.candidate_id || `${c.candidate_type}:${c.normalized_value}`;
-      return `- candidate_id=${id} type=${c.candidate_type} value=${c.normalized_value} (original: ${c.original_value}) block=${c.block_id || 'n/a'}`;
-    })
+    .map((c) => formatCandidateEvidenceLine(c))
     .join('\n');
 
   const blocksText = flattenCanonicalText(
@@ -92,6 +89,7 @@ function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chun
       'Synthesize a final Threat Library JSON object from the PARTIAL chunk analyses below.',
       'Return keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships.',
       'confidence must be a number 0..1. Do not invent indicators. Merge duplicates.',
+      'Keep context_only for references/source/footers; keep malicious only with report evidence.',
       '',
       `DOCUMENT TITLE: ${documentTitle}`,
       '',
@@ -105,6 +103,10 @@ function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chun
     `Analyze chunk ${chunkIndex + 1} of ${chunkTotal} from a threat report.`,
     'Return JSON with keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships.',
     'Focus on THIS chunk only. Classify the provided deterministic candidates; do not rediscover observables.',
+    'An IOC-like string is NOT malicious merely because it looks like an IP/domain/URL/hash.',
+    'Use malicious only when THIS REPORT asserts C2/sample/IOC/attacker infrastructure for that observable.',
+    'Use context_only for source URL/host, references/citations, filenames, code identifiers, footers.',
+    'Prefer explicit IOC/C2 appendix evidence over weaker mentions. Any language — reason by meaning.',
     'entity_type values: threat_actor, malware, campaign, tool, vulnerability, infrastructure, organization, attack_pattern',
     'assessment values: malicious, suspicious, context_only, unknown, invalid',
     'role values: command_and_control, redirector, payload_hosting, malware_download, phishing, tracking, malicious_infrastructure, delivery, legitimate_service, hosting_platform, victim, reference, security_tool, unknown',
@@ -115,6 +117,7 @@ function buildChunkUserPrompt({ documentTitle, language, chunk, chunkIndex, chun
     '',
     `DOCUMENT TITLE: ${documentTitle}`,
     `DETECTED LANGUAGE HINT: ${language || 'unknown'}`,
+    `REPORT SOURCE HOST (provenance): ${sourceHost || 'unknown'}`,
     `Allowed block ids: ${(chunk.block_ids || []).join(', ') || '(none)'}`,
     '',
     '=== BEGIN UNTRUSTED REPORT CHUNK DATA ===',
@@ -289,7 +292,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       chunkIndex: i,
       chunkTotal: chunks.length,
       candidates: cands,
-      mode: 'chunk'
+      mode: 'chunk',
+      sourceHost: input.document.meta?.source_host || input.sourceHost || null
     });
 
     let text;

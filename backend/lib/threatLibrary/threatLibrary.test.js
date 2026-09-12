@@ -63,7 +63,10 @@ test('normalizeCandidateValue reuses hash/domain rules', () => {
   assert.equal(h.candidateType, 'sha256');
 
   const github = normalizeCandidateValue('github.com');
-  assert.equal(github.likelyContextOnly, true);
+  assert.equal(github.ok, true);
+  assert.equal(github.candidateType, 'domain');
+  // Vendor domains are NOT globally allowlisted; context/zones decide promotion.
+  assert.equal(github.likelyContextOnly, false);
 });
 
 test('empty document detection', () => {

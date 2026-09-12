@@ -1,7 +1,7 @@
 /**
  * Threat Library semantic AI contract version (independent of product VERSION).
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v2';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v3';
 
 /**
  * JSON Schema for provider structured-output (Ollama `format` object).
