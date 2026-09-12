@@ -11,7 +11,7 @@ import {
   sanitizePdfFileName,
   isAcceptablePdfUploadMeta,
   pdfToCanonicalDocument
-} from '../pdfIngest.js';
+} from './pdfIngest.js';
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 
@@ -99,7 +99,7 @@ test('pdf-parse extracts text from minimal browser-like PDF', async () => {
 });
 
 test('CJK text blocks are not empty under character quality gate', async () => {
-  const { assessDocumentQuality } = await import('../extract/quality.js');
+  const { assessDocumentQuality } = await import('./extract/quality.js');
   const q = assessDocumentQuality({
     title: '微信报告',
     language: 'zh',
