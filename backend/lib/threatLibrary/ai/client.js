@@ -117,12 +117,19 @@ export async function consumeProviderStream(body, opts) {
     }
   };
 
-  // Poll watchdogs while waiting on read()
+  // Poll watchdogs while waiting on read() — never call read() concurrently.
+  let pendingRead = null;
   const readWithWatchdog = async () => {
     while (true) {
       checkWatchdogs();
+      if (!pendingRead) {
+        pendingRead = reader.read().then((r) => {
+          pendingRead = null;
+          return { type: 'read', r };
+        });
+      }
       const race = await Promise.race([
-        reader.read().then((r) => ({ type: 'read', r })),
+        pendingRead,
         new Promise((resolve) => setTimeout(() => resolve({ type: 'tick' }), tickMs))
       ]);
       if (race.type === 'tick') continue;
