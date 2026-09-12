@@ -7,7 +7,8 @@ import {
   AI_FAILURE_CODES,
   aiFailure,
   classifyProviderHttpError,
-  resolveAiTimeoutPolicy
+  resolveAiTimeoutPolicy,
+  resolveHeaderWaitMs
 } from './timeouts.js';
 import { assertAiReady } from './settings.js';
 
@@ -328,8 +329,17 @@ export async function callAiProvider(settings, messages, hooks = {}) {
 
     let res;
     try {
-      res = await waitForHeaders(fetchPromise, policy.connection_timeout_ms, controller.signal);
+      // Local Ollama may delay HTTP headers until prompt ingest/model load finishes.
+      const headerWaitMs = Math.min(
+        resolveHeaderWaitMs(policy),
+        Math.max(totalDeadlineAt - Date.now(), 1000)
+      );
+      res = await waitForHeaders(fetchPromise, headerWaitMs, controller.signal);
     } catch (err) {
+      if (err?.code === AI_FAILURE_CODES.CONNECTION_TIMEOUT && policy.is_local) {
+        // Headers never arrived within first-token budget (model load / long prompt).
+        throw aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
+      }
       if (err?.code) throw err;
       if (err?.name === 'AbortError') throw aiFailure(AI_FAILURE_CODES.CONNECTION_TIMEOUT);
       const msg = String(err?.message || err);

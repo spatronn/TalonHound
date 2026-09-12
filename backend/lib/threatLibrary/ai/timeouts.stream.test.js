@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   resolveAiTimeoutPolicy,
+  resolveHeaderWaitMs,
   isLocalAiProvider,
   AI_FAILURE_CODES
 } from './timeouts.js';
@@ -39,6 +40,22 @@ test('local Ollama defaults are much more tolerant than hosted', () => {
   assert.ok(local.first_token_timeout_ms >= 300000);
   assert.ok(local.total_analysis_timeout_ms >= 1_800_000);
   assert.ok(hosted.first_token_timeout_ms < local.first_token_timeout_ms);
+});
+
+test('local header wait uses first-token budget (Ollama delays headers on large prompts)', () => {
+  const local = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    base_url: 'http://192.168.1.3:11434',
+    connection_timeout_ms: 30_000,
+    first_token_timeout_ms: 300_000
+  });
+  const hosted = resolveAiTimeoutPolicy({
+    provider: 'openai',
+    connection_timeout_ms: 15_000,
+    first_token_timeout_ms: 120_000
+  });
+  assert.equal(resolveHeaderWaitMs(local), 300_000);
+  assert.equal(resolveHeaderWaitMs(hosted), 15_000);
 });
 
 test('legacy timeout_ms seeds inactivity for local providers', () => {

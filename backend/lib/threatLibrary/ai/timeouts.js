@@ -135,6 +135,22 @@ export function resolveAiTimeoutPolicy(settings) {
 }
 
 /**
+ * How long to wait for HTTP response headers from the provider.
+ * Local Ollama often withholds headers until prompt processing / model load
+ * completes — that latency belongs to first-token budget, not TCP connect.
+ * @param {ReturnType<typeof resolveAiTimeoutPolicy>} policy
+ */
+export function resolveHeaderWaitMs(policy) {
+  if (policy?.is_local) {
+    return Math.max(
+      Number(policy.connection_timeout_ms) || 0,
+      Number(policy.first_token_timeout_ms) || 0
+    );
+  }
+  return Number(policy.connection_timeout_ms) || 15_000;
+}
+
+/**
  * Provider defaults suggested in Settings UI when switching provider.
  * @param {string} provider
  */
