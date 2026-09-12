@@ -181,6 +181,29 @@ function classifyPdfParseError(err) {
 }
 
 /**
+ * Prefer page-aware pagerender; fall back to plain text extract.
+ * @param {(buf: Buffer, opts?: object) => Promise<object>} pdfParse
+ * @param {Buffer} buffer
+ * @param {{ page: number, text: string }[]} pages
+ */
+async function extractPdfWithFallback(pdfParse, buffer, pages) {
+  try {
+    return await pdfParse(buffer, {
+      pagerender: async (pageData) => {
+        const textContent = await pageData.getTextContent();
+        const strings = (textContent.items || []).map((it) => it.str || '').join(' ');
+        pages.push({ page: pages.length + 1, text: strings });
+        return strings;
+      }
+    });
+  } catch {
+    // Some browser-generated PDFs fail only on custom pagerender; plain parse still works.
+    pages.length = 0;
+    return pdfParse(buffer);
+  }
+}
+
+/**
  * Extract text by page using pdf-parse.
  * @param {Buffer} buffer
  * @param {{ fileName?: string }} [opts]
@@ -199,25 +222,18 @@ export async function pdfToCanonicalDocument(buffer, opts = {}) {
   const pages = [];
   let data;
   try {
-    try {
-      data = await pdfParse(buffer, {
-        pagerender: async (pageData) => {
-          const textContent = await pageData.getTextContent();
-          const strings = (textContent.items || []).map((it) => it.str || '').join(' ');
-          pages.push({ page: pages.length + 1, text: strings });
-          return strings;
-        }
-      });
-    } catch (pageRenderErr) {
-      // Some browser-generated PDFs fail only on custom pagerender; plain parse still works.
-      pages.length = 0;
-      data = await pdfParse(buffer);
-    }
+    data = await extractPdfWithFallback(pdfParse, buffer, pages);
   } catch (parseErr) {
-    const classified = classifyPdfParseError(parseErr);
-    const err = new Error(classified.message);
-    err.code = classified.code;
-    throw err;
+    // pdf.js occasionally throws transient "bad XRef" on first open of browser PDFs.
+    pages.length = 0;
+    try {
+      data = await extractPdfWithFallback(pdfParse, buffer, pages);
+    } catch (retryErr) {
+      const classified = classifyPdfParseError(retryErr);
+      const err = new Error(classified.message);
+      err.code = classified.code;
+      throw err;
+    }
   }
 
   // If pagerender did not populate (some pdf-parse versions), fall back to whole text
