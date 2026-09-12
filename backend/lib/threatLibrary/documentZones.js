@@ -170,10 +170,21 @@ export function annotateDocumentZones(doc, opts = {}) {
 
   for (const b of blocks) {
     const text = String(b.text || '').trim();
-    const headingZone =
-      b.type === 'heading' || text.length < 80 ? classifyHeadingText(text) : classifyHeadingText(text);
+    const isHeadingLike =
+      b.type === 'heading' ||
+      (text.length > 0 &&
+        text.length <= 72 &&
+        !/https?:\/\//i.test(text) &&
+        !/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) &&
+        !/\b[a-f0-9]{32}\b/i.test(text));
+    const headingZone = isHeadingLike ? classifyHeadingText(text) : null;
 
-    if (headingZone && ['explicit_ioc_section', 'c2_section', 'sample_table', 'reference_section', 'vendor_about', 'code'].includes(headingZone)) {
+    if (
+      headingZone &&
+      ['explicit_ioc_section', 'c2_section', 'sample_table', 'reference_section', 'vendor_about', 'code'].includes(
+        headingZone
+      )
+    ) {
       currentZone = headingZone;
     }
 

@@ -203,7 +203,7 @@ test('semantic prompt teaches evidence rules and uses v3 contract', () => {
   assert.match(sys, /NOT malicious merely/i);
   assert.match(sys, /context_only/);
   assert.match(sys, /any language/i);
-  assert.match(sys, THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION);
+  assert.ok(sys.includes(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION));
   assert.match(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, /v3$/);
   const line = formatCandidateEvidenceLine({
     candidate_id: 'cand-001',
