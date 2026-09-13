@@ -140,9 +140,12 @@ test('unknown-language headings: structural observable list still yields explici
     assert.equal(k.get(key).source_assertion, SOURCE_ASSERTIONS.REFERENCE_ONLY, key);
   }
   assert.equal(k.has('domain:update.schlecht-beispiel.de'), false);
-  // Body-only IP with no list support → the one thing the model must judge
+  // Body-only IP in a report that already has an authoritative indicator list
+  // stays context — it is not promoted merely because it is a valid address.
+  const bodyIp = k.get('ip:198.51.100.77');
+  assert.equal(bodyIp.assessment, 'context_only');
   const part = partitionCandidatesForAi(cands);
-  assert.deepEqual(part.toClassify.map((c) => c.normalized_value), ['198.51.100.77']);
+  assert.deepEqual(part.toClassify.map((c) => c.normalized_value), []);
   assert.equal(part.explicit.length, 3);
 });
 

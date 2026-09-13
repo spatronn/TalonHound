@@ -521,7 +521,9 @@ export async function loadReportCandidatesForAnalysis(pool, reportId) {
       occurrence_count: ev.occurrence_count || 0,
       is_direct_source_observable: ev.is_direct_source_observable !== false,
       is_parser_derived_metadata: ev.is_parser_derived_metadata === true,
-      derived_from: ev.derived_from || null
+      derived_from: ev.derived_from || null,
+      source_relation: ev.source_relation || null,
+      document_has_authoritative_scope: ev.document_has_authoritative_scope === true
     };
   });
 }

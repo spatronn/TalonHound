@@ -105,7 +105,9 @@ test('only ai_needed candidates are asked for; explicit assertions cannot be dow
     title: 'Mixed',
     language: 'en',
     blocks: [
-      { id: 'b1', type: 'paragraph', page: 1, text: 'Traffic to 198.51.100.44, beacons to https://drop.badactor-example.net/gate and a fetch from https://cdn.some-host-example.org/update.bin were seen.' },
+      { id: 'b1', type: 'paragraph', page: 1, text: 'Traffic to 198.51.100.44 was blocked by the proxy.' },
+      { id: 'b1b', type: 'paragraph', page: 1, text: 'Beacons to https://drop.badactor-example.net/gate were seen.' },
+      { id: 'b1c', type: 'paragraph', page: 1, text: 'A fetch from https://cdn.some-host-example.org/update.bin was observed.' },
       { id: 'h', type: 'heading', page: 2, text: 'Indicators of Compromise' },
       { id: 'r1', type: 'list_item', layout: 'observable_row', page: 2, text: 'https://drop.badactor-example.net/gate' },
       { id: 'r2', type: 'list_item', layout: 'observable_row', page: 2, text: '203.0.113.77' },
@@ -114,8 +116,15 @@ test('only ai_needed candidates are asked for; explicit assertions cannot be dow
   });
   const cands = extractCandidatesFromDocument(doc);
   const part = partitionCandidatesForAi(cands);
-  assert.deepEqual(part.toClassify.map((c) => c.normalized_value).sort(), ['198.51.100.44', 'https://cdn.some-host-example.org/update.bin']);
+  assert.deepEqual(part.toClassify.map((c) => c.normalized_value).sort(), [
+    'https://cdn.some-host-example.org/update.bin'
+  ]);
   assert.equal(part.explicit.length, 3);
+  assert.equal(
+    cands.find((c) => c.normalized_value === '198.51.100.44')?.assessment,
+    'context_only',
+    'narrative-only IP stays context when an IOC appendix exists'
+  );
 
   const calls = [];
   const result = await analyzeThreatDocument(
@@ -125,13 +134,10 @@ test('only ai_needed candidates are asked for; explicit assertions cannot be dow
       callProvider: fakeProvider(calls, {
         respond: (messages) => {
           const ids = [...messages.user.matchAll(/candidate_id=(cand-\d+) type=(\w+) value=(\S+)/g)].map((m) => ({ id: m[1], type: m[2], value: m[3] }));
-          const ip = ids.find((x) => x.value === '198.51.100.44');
-          const url = ids.find((x) => x.value === 'https://drop.badactor-example.net/gate');
+          const fetchUrl = ids.find((x) => x.value === 'https://cdn.some-host-example.org/update.bin');
           return okPayload({
             candidate_updates: [
-              { candidate_id: ip.id, assessment: 'suspicious', role: 'malicious_infrastructure', confidence: 0.6 },
-              // model tries to downgrade an explicit IOC — must be ignored by policy
-              { candidate_id: url.id, assessment: 'context_only', role: 'reference', confidence: 0.3 }
+              { candidate_id: fetchUrl.id, assessment: 'malicious', role: 'malware_download', confidence: 0.8 }
             ]
           });
         }
@@ -141,11 +147,11 @@ test('only ai_needed candidates are asked for; explicit assertions cannot be dow
   assert.equal(result.ok, true);
   const user = calls[0].user;
   const toClassify = user.split('=== TO CLASSIFY')[1];
-  assert.ok(toClassify.includes('198.51.100.44'));
+  assert.equal(toClassify.includes('198.51.100.44'), false);
   assert.equal(toClassify.includes('203.0.113.77'), false);
   assert.ok(toClassify.includes('url_host=cdn.some-host-example.org(parser-derived, not a separate IOC)'));
   assert.ok(user.split('=== RESOLVED INDICATORS')[1].includes('value=https://drop.badactor-example.net/gate status=malicious'));
-  assert.equal(result.value.candidate_updates.length, 2);
+  assert.equal(result.value.candidate_updates.length, 1);
 });
 
 test('total deadline after partial progress → failure carries checkpoint progress; retry resumes', async () => {

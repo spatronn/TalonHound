@@ -50,7 +50,9 @@ export function matchReviewFilter(candidate, filter) {
 const SOURCE_ASSERTION_LABELS = Object.freeze({
   explicit_ioc: 'Explicit IOC',
   explicit_c2: 'Explicit C2',
+  explicit_operational_infrastructure: 'Operational infrastructure',
   body_mention: 'Body assertion',
+  provider_service: 'Provider/service',
   reference_only: 'Reference',
   source_metadata: 'Source/footer',
   non_ioc: 'Not an IOC'
@@ -61,7 +63,7 @@ export function sourceAssertionLabel(value) {
   return SOURCE_ASSERTION_LABELS[key] || (key ? key.replace(/_/g, ' ') : 'Ambiguous');
 }
 
-const EXPLICIT_ASSERTIONS = new Set(['explicit_ioc', 'explicit_c2']);
+const EXPLICIT_ASSERTIONS = new Set(['explicit_ioc', 'explicit_c2', 'explicit_operational_infrastructure']);
 
 /**
  * True when the row is a publisher assertion resolved without the model — its

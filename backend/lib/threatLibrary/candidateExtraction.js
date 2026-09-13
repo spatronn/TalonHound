@@ -29,17 +29,17 @@ import { applyEvidencePolicy } from './evidencePolicy.js';
 import { isObservableOnlyLine } from './pdfLayout.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
+import { discoverDocumentIndicatorScope } from './indicatorScope.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
 
 /**
  * Bump when derivation / evidence semantics change. Older candidate sets are
  * rebuilt from the canonical document on the next analysis run.
- * v4: typed table rows are explicit source assertions with row provenance;
- * description-cell values are related context only; reserved addresses are
- * context_only deterministically.
+ * v5: source-scope promotion (authoritative indicator sections vs narrative
+ * context), provider/service relation, CIDR as a first-class candidate type.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v4';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v5';
 
 const IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b/g;
 const IPV4_PORT_RE = /\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
@@ -129,6 +129,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const normalizedSourceUrl = sourceUrl ? normalizeObservable('url', refangObservable(sourceUrl)) : null;
 
   const annotated = annotateDocumentZones(doc, { sourceUrl, sourceHost });
+  const documentScope = discoverDocumentIndicatorScope(annotated.blocks || []);
   /** @type {Map<string, object>} */
   const byKey = new Map();
   const urlPathBasenames = new Set();
@@ -252,7 +253,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         resolved_type: typingMeta.resolved_type || n.candidateType,
         typing_reason: typingMeta.typing_reason || null,
         occurrences: [],
-        parsed: {},
+        parsed: n.parsed && typeof n.parsed === 'object' ? { ...n.parsed } : {},
         table_rows: [],
         derived_from: null,
         is_direct_source_observable: true,
@@ -441,7 +442,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
-      add(m[0], 'ip', block, { form: standaloneForm });
+      if (String(m[0]).includes('/')) add(m[0], 'cidr', block, { form: standaloneForm });
+      else add(m[0], 'ip', block, { form: standaloneForm });
     }
     for (const m of text.matchAll(IPV6_RE)) {
       const start = m.index;
@@ -484,6 +486,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       delete entry.table_rows;
     }
     entry.occurrence_count = entry.occurrences.length;
+    entry.document_has_authoritative_scope = documentScope.has_authoritative_indicator_scope;
     applyEvidencePolicy(entry);
     out.push(entry);
   }
@@ -498,6 +501,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   t.missing_identities = [...explicitTableKeys].filter((k) => !createdKeys.has(k)).map((k) => k.replace('\0', ':'));
   t.inconsistent = t.missing_identities.length > 0;
   t.explicit_identities = explicitTableKeys.size;
+  diagnostics.document_scope = documentScope;
 
   return { candidates: out, diagnostics };
 }
@@ -538,7 +542,7 @@ export function summarizeCandidateSet(candidates) {
       continue;
     }
     s.ioc_candidates += 1;
-    if (c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2') s.explicit_assertions += 1;
+    if (c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2' || c.source_assertion === 'explicit_operational_infrastructure') s.explicit_assertions += 1;
     else s.body_assertions += 1;
     if (Array.isArray(c.table_rows) ? c.table_rows.length : c.parsed?.table_rows) s.table_assertions += 1;
     if (c.ai_needed) s.ai_needed += 1;

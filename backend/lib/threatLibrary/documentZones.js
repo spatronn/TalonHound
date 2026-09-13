@@ -5,8 +5,10 @@
 
 import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from './pdfLayout.js';
 import { interpretIocTable, looksLikeIocTableHeader } from './tableSemantics.js';
+import { classifySectionRole, zoneForSectionRole } from './indicatorScope.js';
+import { isPrivateOrReservedAddress } from './candidateValue.js';
 
-/** @typedef {'report_body'|'explicit_ioc_section'|'c2_section'|'sample_table'|'reference_section'|'source_metadata'|'header_footer'|'navigation'|'vendor_about'|'code'|'unknown'} DocumentZone */
+/** @typedef {'report_body'|'explicit_ioc_section'|'c2_section'|'sample_table'|'operational_infrastructure'|'reference_section'|'source_metadata'|'header_footer'|'navigation'|'vendor_about'|'code'|'unknown'} DocumentZone */
 
 /** Minimum consecutive indicator-only rows that form a structural IOC list without a heading. */
 export const OBSERVABLE_LIST_MIN_ROWS = 3;
@@ -16,6 +18,7 @@ export const DOCUMENT_ZONES = Object.freeze([
   'explicit_ioc_section',
   'c2_section',
   'sample_table',
+  'operational_infrastructure',
   'reference_section',
   'source_metadata',
   'header_footer',
@@ -34,8 +37,13 @@ export const NEGATIVE_ZONES = new Set([
   'vendor_about'
 ]);
 
-/** Strong positive assertion zones */
-export const STRONG_IOC_ZONES = new Set(['explicit_ioc_section', 'c2_section', 'sample_table']);
+/** Strong positive assertion zones (publisher-curated operational indicator sets). */
+export const STRONG_IOC_ZONES = new Set([
+  'explicit_ioc_section',
+  'c2_section',
+  'sample_table',
+  'operational_infrastructure'
+]);
 
 /**
  * Multilingual heading hints (optimization only — semantic AI still required).
@@ -111,10 +119,12 @@ const LABEL_MAX_CHARS = Object.freeze({
 
 export function classifyHeadingText(text, opts = {}) {
   const t = collapseLetterSpacing(String(text || '').trim());
-  if (!t || t.length > 160) return null;
+  if (!t || t.length > 200) return null;
   // A table header row that survived only as a heading ("Type Indicator
   // Description", "Tür Gösterge Açıklama") opens an explicit IOC table.
   if (looksLikeIocTableHeader(t)) return 'explicit_ioc_section';
+  const roleZone = zoneForSectionRole(classifySectionRole(t));
+  if (roleZone) return /** @type {DocumentZone} */ (roleZone);
   for (const [zone, patterns] of Object.entries(HEADING_HINTS)) {
     const max = LABEL_MAX_CHARS[zone];
     if (max && t.length > max) continue;
@@ -135,6 +145,9 @@ export function normalizeForRepetition(text) {
   return String(text || '')
     .toLowerCase()
     .replace(/https?:\/\/\S+/gi, 'URL')
+    .replace(/\bwww\.[a-z0-9.-]+\b/gi, 'HOST')
+    .replace(/^\d{1,3}\s+/, '')
+    .replace(/\b[a-z]{2,6}[-–—]\w+[-–—]\d{4}[-–—]\d+\b/gi, 'DOCID')
     .replace(/\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4}/g, 'DATE')
     .replace(/\d{1,2}:\d{2}(:\d{2})?/g, 'TIME')
     .replace(/\bpage\s*\d+\b/gi, 'PAGE')
@@ -182,8 +195,46 @@ export function detectRepeatedHeaderFooterBlockIds(blocks) {
   return flagged;
 }
 
+const ZONE_OPENING_HEADINGS = new Set([
+  'explicit_ioc_section',
+  'c2_section',
+  'sample_table',
+  'operational_infrastructure',
+  'reference_section',
+  'vendor_about',
+  'code'
+]);
+
+const CIDR_IN_TEXT_RE =
+  /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\/(?:3[0-2]|[12]?\d)\b/g;
+
+/**
+ * Join a wrapped heading with the next same-page heading when a title split
+ * across visual lines (e.g. "...Administering PurpleBravo" + "Infrastructure").
+ * @param {object[]} blocks
+ * @param {number} index
+ */
+export function combinedHeadingText(blocks, index) {
+  const b = blocks[index];
+  if (!b || b.type !== 'heading') return String(b?.text || '').trim();
+  const a = collapseLetterSpacing(String(b.text || '').trim());
+  const next = blocks[index + 1];
+  if (
+    next &&
+    next.type === 'heading' &&
+    next.page === b.page &&
+    next.layout !== 'page_edge' &&
+    String(next.text || '').trim().length <= 40 &&
+    !/[.!?。]$/.test(a)
+  ) {
+    return `${a} ${collapseLetterSpacing(String(next.text || '').trim())}`.trim();
+  }
+  return a;
+}
+
 /**
  * Annotate canonical blocks with zone metadata (mutates copies).
+ * Repeated running headers/footers never close an open indicator section.
  * @param {import('./canonicalDocument.js').CanonicalDocument} doc
  * @param {{ sourceUrl?: string|null, sourceHost?: string|null }} [opts]
  */
@@ -193,48 +244,65 @@ export function annotateDocumentZones(doc, opts = {}) {
   /** @type {DocumentZone} */
   let currentZone = 'report_body';
   let currentHeading = null;
+  let currentRole = null;
 
-  for (const b of blocks) {
+  for (let i = 0; i < blocks.length; i += 1) {
+    const b = blocks[i];
     const text = String(b.text || '').trim();
     const pageEdge = b.layout === 'page_edge';
-    if (b.type === 'heading' && !pageEdge) currentHeading = collapseLetterSpacing(text).slice(0, 120);
-    else if (!pageEdge) b.section_heading = currentHeading;
+    const isRepeatedChrome = footerIds.has(b.id);
+    if (b.type === 'heading' && !pageEdge && !isRepeatedChrome) {
+      currentHeading = collapseLetterSpacing(text).slice(0, 160);
+    } else if (!pageEdge && !isRepeatedChrome) {
+      b.section_heading = currentHeading;
+    }
     const isHeadingLike =
       !pageEdge &&
+      !isRepeatedChrome &&
       b.type !== 'table' &&
       (b.type === 'heading' ||
         (text.length > 0 &&
           text.length <= 72 &&
-          !/https?:\/\//i.test(text) &&
+          !/[.!?。]$/.test(text) &&
+          !/\b(?:hxxps?|https?):\/\//i.test(text) &&
           !/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) &&
           !/\b[a-f0-9]{32}\b/i.test(text)));
-    const headingZone = isHeadingLike ? classifyHeadingText(text, { isHeading: b.type === 'heading' }) : null;
+    const headingText = isHeadingLike && b.type === 'heading' ? combinedHeadingText(blocks, i) : text;
+    const headingZone = isHeadingLike ? classifyHeadingText(headingText, { isHeading: b.type === 'heading' }) : null;
+    const headingRole = isHeadingLike ? classifySectionRole(headingText) : null;
 
-    if (
-      headingZone &&
-      ['explicit_ioc_section', 'c2_section', 'sample_table', 'reference_section', 'vendor_about', 'code'].includes(
-        headingZone
-      )
-    ) {
+    if (headingZone && ZONE_OPENING_HEADINGS.has(headingZone)) {
       currentZone = headingZone;
+      currentRole = headingRole;
       b.zone_reason = 'heading_hint';
-    } else if (b.type === 'heading' && !pageEdge) {
-      // A structural heading the hints do not recognise closes the current
-      // section: strong / negative zones must be explicitly delimited.
-      currentZone = 'report_body';
-      b.zone_reason = 'heading_reset';
+      b.section_role = headingRole;
+    } else if (b.type === 'heading' && !pageEdge && !isRepeatedChrome) {
+      const continuation =
+        STRONG_IOC_ZONES.has(currentZone) &&
+        text.length <= 40 &&
+        !/[.!?。]$/.test(text) &&
+        i > 0 &&
+        blocks[i - 1].type === 'heading' &&
+        blocks[i - 1].page === b.page;
+      if (!continuation) {
+        currentZone = 'report_body';
+        currentRole = null;
+        b.zone_reason = 'heading_reset';
+      } else {
+        b.zone_reason = 'heading_continuation';
+        b.section_role = currentRole;
+      }
     }
 
     /** @type {DocumentZone} */
     let zone = currentZone;
-    if (pageEdge || footerIds.has(b.id)) {
+    if (pageEdge || isRepeatedChrome) {
       zone = 'header_footer';
       b.zone_reason = pageEdge ? 'page_edge' : 'repeated_block';
     } else if (opts.sourceUrl && text.includes(String(opts.sourceUrl).slice(0, 40))) {
       zone = zone === 'report_body' ? 'source_metadata' : zone;
       if (zone === 'source_metadata') b.zone_reason = 'source_url';
     } else if (opts.sourceHost && /\bhttps?:\/\//i.test(text) && text.toLowerCase().includes(String(opts.sourceHost).toLowerCase()) && text.length < 200) {
-      // Short blocks mentioning source host tend to be printed provenance
       if (footerIds.has(b.id) || text.length < 160) {
         zone = 'source_metadata';
         b.zone_reason = 'source_host';
@@ -243,10 +311,8 @@ export function annotateDocumentZones(doc, opts = {}) {
 
     b.zone = zone;
     b.section = b.section || zone;
+    if (currentRole && !b.section_role && zone === currentZone) b.section_role = currentRole;
 
-    // A typed indicator table proves IOC semantics by its own structure —
-    // headings in an unknown language are not required. Negative zones
-    // (references, vendor chrome) still win.
     if (b.type === 'table' && b.table) {
       const negative = NEGATIVE_ZONES.has(zone);
       const interpretation = interpretIocTable(b, { negativeZone: negative });
@@ -260,6 +326,7 @@ export function annotateDocumentZones(doc, opts = {}) {
   }
 
   applyObservableListZones(blocks);
+  applyCidrParagraphZones(blocks);
 
   return {
     ...doc,
@@ -306,6 +373,27 @@ export function applyObservableListZones(blocks) {
     }
   }
   flush();
+}
+
+/**
+ * A paragraph packed with CIDR ranges is a structural indicator list even
+ * when PDF layout did not split it into one-row-per-CIDR.
+ * @param {object[]} blocks
+ */
+export function applyCidrParagraphZones(blocks) {
+  for (const b of blocks || []) {
+    if (NEGATIVE_ZONES.has(b.zone) || b.zone === 'header_footer' || STRONG_IOC_ZONES.has(b.zone)) continue;
+    const text = String(b.text || '');
+    const matches = text.match(CIDR_IN_TEXT_RE);
+    if (!matches || matches.length < 2) continue;
+    const publicCidrs = matches.filter((m) => !isPrivateOrReservedAddress(m.split('/')[0]));
+    if (publicCidrs.length < 2) continue;
+    if (matches.length < 3 && String(b.text || '').length > 220) continue;
+    b.zone = 'operational_infrastructure';
+    b.section = b.section && b.section !== 'report_body' ? b.section : 'operational_infrastructure';
+    b.zone_reason = 'cidr_list';
+    if (!b.section_role) b.section_role = 'operational_infrastructure';
+  }
 }
 
 /**

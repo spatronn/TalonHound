@@ -12,6 +12,11 @@
 
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES, evidenceTierForZone } from './documentZones.js';
 import { CONFIDENCE_POLICY } from './constants.js';
+import {
+  SOURCE_RELATIONS,
+  attachOccurrenceRelations,
+  strongestSourceRelation
+} from './indicatorScope.js';
 
 export const EVIDENCE_TIERS = Object.freeze({
   A: 'explicit_ioc_assertion',
@@ -23,7 +28,9 @@ export const EVIDENCE_TIERS = Object.freeze({
 export const SOURCE_ASSERTIONS = Object.freeze({
   EXPLICIT_IOC: 'explicit_ioc',
   EXPLICIT_C2: 'explicit_c2',
+  EXPLICIT_OPERATIONAL: 'explicit_operational_infrastructure',
   BODY_MENTION: 'body_mention',
+  PROVIDER_SERVICE: 'provider_service',
   REFERENCE_ONLY: 'reference_only',
   SOURCE_METADATA: 'source_metadata',
   NON_IOC: 'non_ioc'
@@ -75,6 +82,7 @@ export function summarizeOccurrenceEvidence(candidate) {
 
   const hasStrong = zones.some((z) => STRONG_IOC_ZONES.has(z));
   const hasC2 = zones.some((z) => z === 'c2_section');
+  const hasOperational = zones.some((z) => z === 'operational_infrastructure');
   const hasBody = zones.some((z) => z === 'report_body' || z === 'unknown' || z === 'code');
   const onlyNegative = zones.length > 0 && zones.every((z) => NEGATIVE_ZONES.has(z));
   const hasEndpoint = occ.some((o) => o.form === 'ip_port' || o.port != null);
@@ -83,6 +91,7 @@ export function summarizeOccurrenceEvidence(candidate) {
     zones,
     hasStrong,
     hasC2,
+    hasOperational,
     hasBody,
     hasEndpoint,
     onlyNegative,
@@ -93,8 +102,11 @@ export function summarizeOccurrenceEvidence(candidate) {
 function deterministicRole(candidate, summary) {
   if (HASH_TYPES.has(String(candidate.candidate_type))) return 'malware_sample';
   if (summary.hasC2 || summary.hasEndpoint) return 'command_and_control';
+  if (summary.hasOperational) return 'hosting_platform';
   return 'malicious_infrastructure';
 }
+
+const EXPLICIT_ROLES = new Set([...MALICIOUS_ROLES, 'hosting_platform']);
 
 /**
  * Apply structural evidence constraints (optionally merging an AI update).
@@ -145,15 +157,23 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     return candidate;
   }
 
+  attachOccurrenceRelations(candidate);
+  const relation = candidate.source_relation || strongestSourceRelation(candidate);
+  const hasAuthoritativeScope = candidate.document_has_authoritative_scope === true;
   const explicit = summary.hasStrong;
   const reportSource = candidate.is_report_source === true;
 
   if (aiUpdate) {
     if (explicit) {
-      // The report already asserts this observable; the model may only refine role.
-      if (aiUpdate.role && MALICIOUS_ROLES.has(String(aiUpdate.role))) candidate.role = aiUpdate.role;
+      if (aiUpdate.role && EXPLICIT_ROLES.has(String(aiUpdate.role))) candidate.role = aiUpdate.role;
       if (aiUpdate.confidence != null) {
         candidate.confidence = Math.max(Number(aiUpdate.confidence) || 0, EXPLICIT_ASSERTION_CONFIDENCE);
+      }
+      candidate.ai_role_suggestion = aiUpdate.role || null;
+    } else if (relation === SOURCE_RELATIONS.PROVIDER_SERVICE || (hasAuthoritativeScope && relation === SOURCE_RELATIONS.CONTEXTUAL)) {
+      // Source-scope / provider relation dominate AI maliciousness guesses.
+      if (aiUpdate.role === 'hosting_platform' || aiUpdate.role === 'legitimate_service' || aiUpdate.role === 'reference') {
+        candidate.role = aiUpdate.role;
       }
       candidate.ai_role_suggestion = aiUpdate.role || null;
     } else {
@@ -166,7 +186,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
 
   if (explicit && !reportSource) {
     candidate.assessment = 'malicious';
-    if (!candidate.role || candidate.role === 'unknown' || !MALICIOUS_ROLES.has(String(candidate.role))) {
+    if (!candidate.role || candidate.role === 'unknown' || !EXPLICIT_ROLES.has(String(candidate.role))) {
       candidate.role = deterministicRole(candidate, summary);
     }
     if (candidate.confidence == null || Number(candidate.confidence) < EXPLICIT_ASSERTION_CONFIDENCE) {
@@ -174,15 +194,15 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     }
     candidate.source_assertion = summary.hasC2 || summary.hasEndpoint
       ? SOURCE_ASSERTIONS.EXPLICIT_C2
-      : SOURCE_ASSERTIONS.EXPLICIT_IOC;
+      : summary.hasOperational
+        ? SOURCE_ASSERTIONS.EXPLICIT_OPERATIONAL
+        : SOURCE_ASSERTIONS.EXPLICIT_IOC;
     candidate.evidence_strength = 'strong';
     candidate.policy_decision = 'explicit_report_assertion';
     candidate.ai_needed = false;
     candidate.decision_source = candidate.decision_source === 'ai' ? 'deterministic' : (candidate.decision_source || 'deterministic');
     candidate.match_state = undefined;
   } else if (reportSource || summary.onlyNegative || candidate.rfc_example === true || candidate.reserved_address === true) {
-    // Only negative zones (references / source / footer), RFC example names and
-    // private / reserved address space → context_only
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
       const onlyVendorNav = summary.zones.length > 0 && summary.zones.every((z) => z === 'vendor_about' || z === 'navigation');
@@ -203,18 +223,43 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = 'deterministic';
     if (candidate.confidence == null) candidate.confidence = 0.75;
-  } else {
-    // Body mention: semantic classification required unless the model already decided.
+  } else if (relation === SOURCE_RELATIONS.PROVIDER_SERVICE) {
+    candidate.assessment = 'context_only';
+    candidate.role = candidate.role && (candidate.role === 'hosting_platform' || candidate.role === 'legitimate_service')
+      ? candidate.role
+      : 'hosting_platform';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_provider_service';
+    candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
+  } else if (hasAuthoritativeScope && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS) {
+    // Publisher already curated the operational indicator set. Narrative-only
+    // mentions stay evidence/context and do not enter the review set.
+    candidate.assessment = 'context_only';
+    if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
+      candidate.role = 'reference';
+    }
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_narrative_with_authoritative_scope';
     candidate.source_assertion = SOURCE_ASSERTIONS.BODY_MENTION;
-    candidate.evidence_strength = summary.hasEndpoint ? 'medium' : 'weak';
+    candidate.evidence_strength = 'weak';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.7;
+  } else {
+    candidate.source_assertion = SOURCE_ASSERTIONS.BODY_MENTION;
+    candidate.evidence_strength = summary.hasEndpoint || relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS ? 'medium' : 'weak';
     candidate.policy_decision = 'pass';
     const decided = candidate.decision_source === 'ai' && candidate.assessment && candidate.assessment !== 'unknown';
     candidate.ai_needed = !decided;
     if (!candidate.decision_source) candidate.decision_source = 'pending';
 
-    // AI said malicious but evidence is only Tier D → demote
     if (
       (candidate.assessment === 'malicious' || candidate.assessment === 'suspicious') &&
+      relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS &&
       summary.tier === 'D' &&
       !summary.hasStrong &&
       !summary.hasBody
@@ -223,6 +268,17 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
       candidate.role = 'reference';
       candidate.match_state = 'context_only';
       candidate.policy_decision = 'demoted_weak_evidence';
+      candidate.ai_needed = false;
+    }
+    if (
+      (candidate.assessment === 'malicious' || candidate.assessment === 'suspicious') &&
+      relation === SOURCE_RELATIONS.PROVIDER_SERVICE
+    ) {
+      candidate.assessment = 'context_only';
+      candidate.role = 'hosting_platform';
+      candidate.match_state = 'context_only';
+      candidate.policy_decision = 'demoted_provider_service';
+      candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
       candidate.ai_needed = false;
     }
   }
@@ -280,7 +336,8 @@ export function buildCandidateEvidenceRecord(c) {
     form: o.form || 'standalone',
     port: o.port ?? null,
     table_row: o.table_row ?? null,
-    surrounding_text: o.surrounding_text ? String(o.surrounding_text).slice(0, 200) : null
+    surrounding_text: o.surrounding_text ? String(o.surrounding_text).slice(0, 200) : null,
+    source_relation: o.source_relation || null
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
     table_id: r.table_id || null,
@@ -310,6 +367,8 @@ export function buildCandidateEvidenceRecord(c) {
     typing_reason: c.typing_reason || null,
     occurrence_count: occurrences.length || c.occurrence_count || 0,
     zones: [...new Set(occurrences.map((o) => o.zone).filter(Boolean))],
+    source_relation: c.source_relation || null,
+    document_has_authoritative_scope: c.document_has_authoritative_scope === true,
     parsed: c.parsed && typeof c.parsed === 'object' ? c.parsed : {},
     ai_role_suggestion: c.ai_role_suggestion || null,
     table_rows: tableRows,

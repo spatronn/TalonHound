@@ -1,5 +1,5 @@
 /**
- * Chunked Threat Library AI analysis with merge + checkpoint hooks (semantic-v4).
+ * Chunked Threat Library AI analysis with merge + checkpoint hooks (semantic-v5).
  *
  * Work split:
  *  - deterministic layer (candidateExtraction / evidencePolicy) decides explicit
@@ -126,7 +126,7 @@ export function partitionCandidatesForAi(candidates) {
     if (c.is_ioc === false && c.candidate_type !== 'cve' && c.candidate_type !== 'attack_technique') continue;
     if (c.ai_needed) {
       toClassify.push(c);
-    } else if (c.assessment === 'malicious' || c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2') {
+    } else if (c.assessment === 'malicious' || c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2' || c.source_assertion === 'explicit_operational_infrastructure') {
       explicit.push(c);
     } else {
       resolvedOther.push(c);

@@ -14,6 +14,34 @@ import { refangObservable } from './defang.js';
 /** RFC documentation / loopback only — not vendor safety allowlists. */
 const RFC_EXAMPLE_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'localhost', 'invalid', 'test']);
 
+const IPV4_CIDR_RE =
+  /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\/(?:3[0-2]|[12]?\d)$/;
+const IPV6_CIDR_RE = /^[0-9a-f:]+\/(?:1[0-2]\d|[1-9]?\d)$/i;
+
+function ipv4ToInt(ip) {
+  return String(ip)
+    .split('.')
+    .reduce((acc, part) => ((acc << 8) + Number(part)) >>> 0, 0);
+}
+
+function intToIpv4(n) {
+  return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.');
+}
+
+/**
+ * Canonical CIDR string: network address + prefix. Never explodes to hosts.
+ * @param {string} ip
+ * @param {number} prefix
+ */
+export function canonicalizeIpv4Cidr(ip, prefix) {
+  const host = normalizeIpAddress(ip);
+  if (!host || host.includes(':')) return null;
+  const p = Number(prefix);
+  if (!Number.isInteger(p) || p < 0 || p > 32) return null;
+  const mask = p === 0 ? 0 : (0xffffffff << (32 - p)) >>> 0;
+  return `${intToIpv4(ipv4ToInt(host) & mask)}/${p}`;
+}
+
 export function isRfcExampleDomain(domain) {
   const d = String(domain || '').toLowerCase();
   if (RFC_EXAMPLE_DOMAINS.has(d)) return true;
@@ -64,6 +92,44 @@ export function normalizeCandidateValue(raw, hintType = null) {
 
   let inferred = hintType || inferObservableType(refanged);
   if (hintType === 'ipv6') inferred = 'ip';
+  if (hintType === 'cidr') inferred = 'cidr';
+
+  const slash = refanged.indexOf('/');
+  const looksCidr =
+    inferred === 'cidr' ||
+    hintType === 'cidr' ||
+    (slash > 0 && (IPV4_CIDR_RE.test(refanged) || (refanged.includes(':') && IPV6_CIDR_RE.test(refanged))));
+  if (looksCidr && slash > 0) {
+    const addr = refanged.slice(0, slash);
+    const prefix = Number(refanged.slice(slash + 1));
+    if (addr.includes(':')) {
+      if (!isValidIpAddress(addr) || !Number.isInteger(prefix) || prefix < 0 || prefix > 128) {
+        return { ok: false, error: 'invalid_cidr' };
+      }
+      return {
+        ok: true,
+        candidateType: 'cidr',
+        originalValue: String(raw).trim(),
+        normalizedValue: `${normalizeIpAddress(addr)}/${prefix}`,
+        isIoc: true,
+        parsed: { prefix, family: 'ipv6' }
+      };
+    }
+    const canonical = canonicalizeIpv4Cidr(addr, prefix);
+    if (!canonical) return { ok: false, error: 'invalid_cidr' };
+    const network = canonical.split('/')[0];
+    const reserved = isPrivateOrReservedAddress(network);
+    return {
+      ok: true,
+      candidateType: 'cidr',
+      originalValue: String(raw).trim(),
+      normalizedValue: canonical,
+      isIoc: true,
+      likelyContextOnly: reserved,
+      reservedAddress: reserved,
+      parsed: { prefix, family: 'ipv4' }
+    };
+  }
   if (!inferred) return { ok: false, error: 'unrecognized' };
 
   if (inferred === 'ip' || inferred === 'ipv6') {

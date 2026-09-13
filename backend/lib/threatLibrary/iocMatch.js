@@ -6,7 +6,10 @@
 import { normalizeObservable } from '../observable-normalization.js';
 import { deriveMatchState } from './constants.js';
 
-const IOC_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
+const MATCHABLE_IOC_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
+/** Reviewable network/file types that are not stored in ioc_items yet (prefix preserved). */
+const REVIEW_ONLY_TYPES = new Set(['cidr']);
+const IOC_TYPES = new Set([...MATCHABLE_IOC_TYPES, ...REVIEW_ONLY_TYPES]);
 
 /**
  * @param {import('pg').Pool|import('pg').PoolClient} pool
@@ -14,7 +17,7 @@ const IOC_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256
  */
 export async function bulkMatchCandidates(pool, candidates) {
   const iocCandidates = candidates.filter(
-    (c) => c.is_ioc !== false && IOC_TYPES.has(String(c.candidate_type || '').toLowerCase())
+    (c) => c.is_ioc !== false && MATCHABLE_IOC_TYPES.has(String(c.candidate_type || '').toLowerCase())
   );
 
   /** @type {Map<string, { id: number, public_id: string, observable: string, observable_type: string, status: string }>} */

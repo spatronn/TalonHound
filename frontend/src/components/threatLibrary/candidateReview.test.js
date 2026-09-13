@@ -150,3 +150,35 @@ test('table-row provenance: description, declared type and row position are surf
   // A reviewer / AI decision on an explicit row still shows the number it produced
   assert.equal(confidenceLabel({ confidence: 0.95, source_assertion: 'explicit_ioc', evidence: { decision_source: 'ai' } }), '95%');
 });
+
+test('CIDR appendix rows stay in the review set; provider-service domains do not', () => {
+  const cidr = {
+    candidate_type: 'cidr',
+    normalized_value: '36.35.56.0/24',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'explicit_operational_infrastructure',
+    evidence: {
+      source_assertion: 'explicit_operational_infrastructure',
+      decision_source: 'deterministic',
+      occurrence_count: 1,
+      zones: ['operational_infrastructure']
+    }
+  };
+  const provider = {
+    candidate_type: 'domain',
+    normalized_value: 'residentialvps.example',
+    assessment: 'context_only',
+    match_state: 'context_only',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'provider_service',
+    evidence: { source_assertion: 'provider_service', decision_source: 'deterministic' }
+  };
+  assert.equal(isReviewIndicator(cidr), true);
+  assert.equal(isReviewIndicator(provider), false);
+  assert.equal(describeCandidateProvenance(cidr).assertion, 'Operational infrastructure');
+  assert.equal(describeCandidateProvenance(provider).assertion, 'Provider/service');
+});

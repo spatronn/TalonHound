@@ -132,7 +132,7 @@ function extractFromHtml(html, url = 'https://socradar.example/blog/cve-2025-252
 test('internal contracts bumped for structured table extraction (product VERSION untouched)', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v3');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v2');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v4');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v5');
   const version = fs.readFileSync(path.join(here, '..', '..', '..', 'VERSION'), 'utf8').trim();
   assert.equal(version, '0.1.1-beta.11');
 });
@@ -276,10 +276,14 @@ test('English HTML: DOM tables give the identical explicit set; nav / advisory /
   assert.equal(own.assessment, 'context_only');
   assert.equal(own.is_report_source, true);
   // RFC1918 example ranges are context-only without AI; hunting command IP aggregates onto the explicit candidate
-  const rfc = candidates.find((c) => c.normalized_value === '10.0.0.0');
+  const rfc = candidates.find((c) => c.normalized_value === '10.0.0.0/24' || c.normalized_value === '10.0.0.0');
+  assert.ok(rfc, 'private example range extracted');
   assert.equal(rfc.assessment, 'context_only');
   assert.equal(rfc.ai_needed, false);
-  assert.equal(rfc.policy_decision, 'context_only_reserved_address');
+  assert.equal(rfc.reserved_address, true);
+  assert.ok(
+    rfc.policy_decision === 'context_only_reserved_address' || rfc.policy_decision === 'context_only_narrative_with_authoritative_scope'
+  );
   const node1 = candidates.find((c) => c.normalized_value === '46.151.29.58');
   assert.ok(node1.occurrences.some((o) => o.form === 'table_row'));
   assert.ok(node1.occurrences.some((o) => o.block_type === 'code'), 'hunting command occurrence aggregated');
@@ -461,7 +465,10 @@ test('AI partition: explicit table rows are resolved context, only body mentions
   // reference-list URL and the permalink are resolved deterministically as context.
   assert.ok(toClassify.has('url:https://146.103.99.177:8443/0c5b767095'));
   for (const k of toClassify) assert.equal(k.startsWith('url:'), true, `${k} unexpectedly needs AI`);
-  assert.equal(toClassify.size, 4);
+  assert.equal(toClassify.size, 1, 'only the operational body stager URL needs the model when tables already curate IOCs');
+  assert.equal(toClassify.has('url:https://docs.vendor.example/hardening'), false);
+  assert.equal(toClassify.has('url:https://fortiguard.example/psirt/FG-IR-25-000'), false);
+  assert.equal(toClassify.has('url:https://attack.mitre.org/techniques/T1190/'), false);
   assert.equal(toClassify.has('url:https://www.fortinet.example/blog/psirt-blogs/analysis'), false, 'reference list row is context');
   assert.equal(toClassify.has('url:https://socradar.example/blog/cve-2025-25249-pivotc2-fortigate-rat/'), false, 'permalink is source metadata');
 });

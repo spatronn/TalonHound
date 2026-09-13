@@ -5,8 +5,10 @@
  * metadata), deterministic candidates are sent as resolved context and the
  * model classifies only `ai_needed` candidates; candidate_id is mandatory in
  * candidate_updates; body prompts exclude header/footer/navigation blocks.
+ * v5: source-scope + relation semantics (authoritative indicator sections vs
+ * provider/service usage vs direct malicious assertions).
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v4';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v5';
 
 export const CANDIDATE_ROLE_VALUES = Object.freeze([
   'command_and_control',
