@@ -99,6 +99,19 @@ Every canonical table block (HTML `<table>`, PDF geometry, Markdown / aligned te
 - Review UI: explicit rows show `Explicit IOC · <declared type> · Report evidence`, the row description, table / row position and **Source asserted** instead of a percentage; AI-classified rows keep their model confidence.
 - Provenance is persisted per candidate (`evidence` JSONB) and shown in review; THIB indicators carry `evidence.source_assertion / pages / ports / url_host`. No vendor or domain allowlists are used anywhere.
 
+### Presentation phases (candidate rows are not a review set until committed)
+
+Deterministic candidates are persisted before the AI stage and rewritten by the pipeline until `review_required`, so the API derives one phase from `analysis_status` (`backend/lib/threatLibrary/reportPhase.js`) and exposes it on every report payload as `review_phase` / `candidate_state`, together with `raw_candidate_count` (persisted rows) and `review_candidate_count` (rows that belong in the analyst review set):
+
+| `analysis_status` | `review_phase` | `candidate_state` | UI |
+|---|---|---|---|
+| `pending`, `fetching`, `extracting`, `analyzing`, `matching` | `preparing` | `preliminary` | progress checklist + **Indicators are being refined** card (preliminary count, current stage, chunk progress; collapsed "Show preliminary observables" list, no actions) |
+| `review_required` | `review_ready` | `review_ready` | **Review indicators** (`Review candidates: N`), review actions, Finalize |
+| `ready`, `skipped` | `finalized` | `finalized` | **Indicators** (persisted set, no Finalize) |
+| `failed` | `failed` | `preliminary` | "Analysis failed before the final indicator set was prepared", Retry, no review actions |
+
+Review actions (`POST …/review`) and `POST …/finalize` are refused server-side with `409 { code: "report_not_ready_for_review", phase, report }` while the phase is `preparing` or `failed`; the page adopts the returned report state and keeps polling. Polling ignores responses older than the report on screen (`updated_at`), overlapping detail fetches apply latest-only, and Retry clears the previous rows immediately.
+
 ### Chunking / limits
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)

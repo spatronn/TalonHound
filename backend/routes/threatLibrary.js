@@ -30,8 +30,10 @@ import {
   getIocThreatContext,
   requestAnalysisCancel,
   updateReportStatus,
-  countReportCandidates
+  countReportCandidates,
+  attachReportCounts
 } from '../lib/threatLibrary/store.js';
+import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
 import {
   isActiveAnalysisStatus,
@@ -113,7 +115,13 @@ function publicReport(row) {
     failure_details: row.failure_details || {},
     analysis_progress: row.analysis_progress || {},
     candidate_summary: row.candidate_summary || {},
+    // Presentation phase derived from analysis_status (single source of truth).
+    review_phase: resolveReportPhase(row),
+    candidate_state: resolveCandidateState(row),
     indicator_count: row.indicator_count,
+    // Raw persisted rows vs. rows that belong in the analyst review set.
+    raw_candidate_count: row.indicator_count ?? null,
+    review_candidate_count: row.review_candidate_count ?? null,
     matched_count: row.matched_count,
     entity_count: row.entity_count,
     created_at: row.created_at,
@@ -259,7 +267,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       if (!report) return res.status(404).json({ message: 'Report not found' });
       const snap = await loadReportSnapshot(pool, report.id);
       return res.json({
-        report: publicReport(snap.report),
+        report: publicReport(await attachReportCounts(pool, snap.report)),
         candidates: snap.candidates.map((c) => ({
           id: c.id,
           public_id: c.public_id,
@@ -316,7 +324,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         [report.id]
       );
       return res.json({
-        report: publicReport(report),
+        report: publicReport(await attachReportCounts(pool, report)),
         job: jobs[0] || null
       });
     } catch (err) {
@@ -557,7 +565,14 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           user: req.user,
           audit
         });
-        if (!result.ok) return res.status(result.status || 400).json({ message: result.error });
+        if (!result.ok) {
+          return res.status(result.status || 400).json({
+            message: result.error,
+            code: result.code || null,
+            phase: result.phase || null,
+            report: result.code ? publicReport(await attachReportCounts(pool, report)) : undefined
+          });
+        }
         return res.json(result);
       } catch (err) {
         return res.status(500).json({ message: 'Review action failed', detail: err.message });
@@ -572,9 +587,17 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       try {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
-        await finalizeReport(pool, report.id);
+        const result = await finalizeReport(pool, report.id);
+        if (!result.ok) {
+          return res.status(result.status || 400).json({
+            message: result.error,
+            code: result.code || null,
+            phase: result.phase || null,
+            report: publicReport(await attachReportCounts(pool, report))
+          });
+        }
         const updated = await getReportByPublicId(pool, req.params.publicId);
-        return res.json({ report: publicReport(updated) });
+        return res.json({ report: publicReport(await attachReportCounts(pool, updated)) });
       } catch (err) {
         return res.status(500).json({ message: 'Finalize failed', detail: err.message });
       }
@@ -679,7 +702,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             clear_cancel: true
           });
           return res.status(202).json({
-            report: publicReport(updated),
+            report: publicReport(await attachReportCounts(pool, updated)),
             job_id: activeJobs[0].public_id,
             already_running: true,
             code: 'analysis_already_running',
@@ -719,7 +742,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           newAnalysisRun: req.body?.reset_checkpoints === true
         });
         return res.status(202).json({
-          report: publicReport(updated),
+          report: publicReport(await attachReportCounts(pool, updated)),
           job_id: jobRow.public_id,
           job: {
             public_id: jobRow.public_id,
@@ -746,7 +769,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const updated = await requestAnalysisCancel(pool, report.id);
         return res.json({
           ok: true,
-          report: publicReport(updated),
+          report: publicReport(await attachReportCounts(pool, updated)),
           message: 'Cancel requested. The worker will stop at the next safe checkpoint.'
         });
       } catch (err) {

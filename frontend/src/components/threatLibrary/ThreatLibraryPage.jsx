@@ -4,6 +4,7 @@ import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
 import ImportIntelligenceModal from './ImportIntelligenceModal.jsx';
 import { statusLabel } from './stages.js';
+import { indicatorListCell } from './reportPhase.js';
 import { TlpBadge, isElevatedTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
 
@@ -130,7 +131,7 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                   <td style={ui.td}><TlpBadge tlp={row.tlp} display={row.tlp_display} /></td>
                   <td style={ui.td}>{row.report_type || '—'}</td>
                   <td style={ui.td}>{row.entity_count ?? 0}</td>
-                  <td style={ui.td}>{row.indicator_count ?? 0}</td>
+                  <td style={ui.td}>{indicatorListCell(row)}</td>
                   <td style={ui.td}>{row.matched_count ?? 0}</td>
                   <td style={ui.td}>
                     <span style={badgeStyle(statusColors(row))}>{statusLabel(row)}</span>

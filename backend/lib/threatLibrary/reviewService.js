@@ -6,6 +6,7 @@ import { createManualIoc } from '../manualIocCreate.js';
 import { getThreatLibraryIocSourceId, getReportById, updateReportStatus } from './store.js';
 import { CONFIDENCE_POLICY } from './constants.js';
 import { isEligibleForHighConfidenceMalicious } from './evidencePolicy.js';
+import { isFinalizeAllowed, isReviewMutationAllowed, reviewNotReadyError } from './reportPhase.js';
 
 /**
  * @param {import('pg').Pool} pool
@@ -21,6 +22,9 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   const action = opts.action;
   const report = await getReportById(pool, reportId);
   if (!report) return { ok: false, status: 404, error: 'Report not found' };
+  // The candidate set is rewritten by the pipeline until review_required; a
+  // decision applied to a moving set would be lost or land on the wrong row.
+  if (!isReviewMutationAllowed(report)) return reviewNotReadyError(report);
 
   let ids = Array.isArray(opts.candidateIds) ? opts.candidateIds.map(Number).filter((n) => n > 0) : [];
 
@@ -147,6 +151,7 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
 export async function finalizeReport(pool, reportId) {
   const report = await getReportById(pool, reportId);
   if (!report) return { ok: false, status: 404, error: 'Report not found' };
+  if (!isFinalizeAllowed(report)) return reviewNotReadyError(report);
   await updateReportStatus(pool, reportId, {
     import_status: 'ready',
     analysis_status: 'ready',

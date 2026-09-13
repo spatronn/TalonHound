@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
@@ -19,10 +19,24 @@ import {
   REVIEW_FILTERS,
   DEFAULT_REVIEW_FILTER,
   matchReviewFilter,
+  isReviewIndicator,
   describeCandidateProvenance,
   describeAnalysisFailureDetail,
   confidenceLabel
 } from './candidateReview.js';
+import {
+  REPORT_PHASES,
+  REVIEW_NOT_READY_CODE,
+  resolveReportPhase,
+  canShowReviewTable,
+  canFinalize,
+  indicatorSectionTitle,
+  describeIndicatorCount,
+  describePreliminaryState,
+  shouldIgnoreStalePoll,
+  shouldRefetchDetail,
+  createLatestOnly
+} from './reportPhase.js';
 import { TlpBadge, isElevatedTlp, normalizeTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
 
@@ -110,6 +124,64 @@ function SectionCard({ title, children, actions }) {
   );
 }
 
+/**
+ * Indicator area while the candidate set is still moving (preparing) or
+ * after a failure: progress copy, the preliminary count and an explicitly
+ * labelled, collapsed diagnostic list. No review actions, never "Review".
+ */
+function PreliminaryIndicatorsCard({ report, job, candidates, onRetry, retryEnabled, busy }) {
+  const state = describePreliminaryState(report, job, { rawCount: candidates.length || report?.raw_candidate_count || null });
+  const failed = state.phase === REPORT_PHASES.FAILED;
+  return (
+    <SectionCard
+      title={indicatorSectionTitle(report)}
+      actions={(
+        <span
+          style={badgeStyle(failed
+            ? { border: '#7f1d1d', bg: '#450a0a', color: '#fecaca' }
+            : { border: '#0f766e', bg: '#134e4a', color: '#99f6e4' })}
+          role="status"
+          aria-live="polite"
+        >
+          {failed ? '✕ Analysis failed' : '● Analysis in progress'}
+        </span>
+      )}
+    >
+      <div aria-busy={!failed} data-phase={state.phase}>
+        <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 6 }}>{state.title}</div>
+        {state.lines.map((line) => (
+          <div key={line} style={{ fontSize: 13, color: line === state.countText ? '#e2e8f0' : '#94a3b8', marginBottom: 4 }}>
+            {line}
+          </div>
+        ))}
+        {failed && retryEnabled ? (
+          <button type="button" style={{ ...ui.btn, marginTop: 8 }} disabled={Boolean(busy)} onClick={onRetry}>
+            {busy === 'retry' ? 'Starting…' : 'Retry analysis'}
+          </button>
+        ) : null}
+        {candidates.length > 0 ? (
+          <details style={{ marginTop: 12 }}>
+            <summary style={{ cursor: 'pointer', color: '#94a3b8', fontSize: 12 }}>
+              Show preliminary observables ({candidates.length})
+            </summary>
+            <div style={{ fontSize: 12, color: '#fbbf24', margin: '8px 0 6px' }}>
+              These values are not final and may be removed, retyped or reclassified during analysis.
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', fontSize: 13 }}>
+              {candidates.slice(0, 60).map((c) => (
+                <li key={c.id || c.public_id} style={{ marginBottom: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', wordBreak: 'break-all' }}>
+                  [{c.candidate_type}] {c.normalized_value || c.original_value}
+                </li>
+              ))}
+              {candidates.length > 60 ? <li style={{ color: '#64748b' }}>… {candidates.length - 60} more</li> : null}
+            </ul>
+          </details>
+        ) : null}
+      </div>
+    </SectionCard>
+  );
+}
+
 export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const { reportId } = useParams();
   const navigate = useNavigate();
@@ -130,10 +202,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [busy, setBusy] = useState('');
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
   const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
+  // Overlapping detail fetches: only the most recently issued response may land.
+  const latestDetail = useRef(createLatestOnly());
 
   const loadDetail = useCallback(async () => {
+    const token = latestDetail.current.next();
     const { data } = await api.get(`/threat-library/reports/${reportId}`);
-    setReport(data?.report || null);
+    if (!latestDetail.current.isLatest(token)) return data;
+    setReport((prev) => (shouldIgnoreStalePoll(prev, data?.report) ? prev : (data?.report || null)));
     setCandidates(data?.candidates || []);
     setEntities(data?.entities || []);
     setRelationships(data?.relationships || []);
@@ -147,21 +223,23 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const loadStatus = useCallback(async () => {
     const { data } = await api.get(`/threat-library/reports/${reportId}/status`);
     const polled = data?.report || null;
-    let ignoredStaleFailure = false;
+    let ignored = false;
+    let previous = null;
     setReport((prev) => {
+      previous = prev;
       if (shouldIgnoreStaleFailedPoll(prev, polled, {
         retryAcceptedAt,
         acceptedUpdatedAt: retryAcceptedUpdatedAt
-      })) {
-        ignoredStaleFailure = true;
+      }) || shouldIgnoreStalePoll(prev, polled)) {
+        ignored = true;
         return prev;
       }
       return polled || prev;
     });
-    if (!ignoredStaleFailure) {
+    if (!ignored) {
       setJob(data?.job || null);
     }
-    return { ...data, _ignoredStaleFailure: ignoredStaleFailure };
+    return { ...data, _ignoredStaleFailure: ignored, _previous: previous };
   }, [reportId, retryAcceptedAt, retryAcceptedUpdatedAt]);
 
   useEffect(() => {
@@ -186,8 +264,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       loadStatus()
         .then((data) => {
           if (data?._ignoredStaleFailure) return null;
-          const next = data?.report;
-          if (next && !isProcessingStatus(next)) {
+          // Phase change (analyzing → matching → review_required) swaps the
+          // preliminary card for the committed review set without a reload.
+          if (shouldRefetchDetail(data?._previous, data?.report)) {
             return loadDetail();
           }
           return null;
@@ -243,10 +322,26 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       setSelected(new Set());
       await loadDetail();
     } catch (err) {
-      setError(err?.response?.data?.message || 'Review action failed');
+      if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Review action failed');
     } finally {
       setBusy('');
     }
+  }
+
+  /**
+   * Backend refused because the candidate set is still moving: adopt the
+   * authoritative report state (polling resumes) instead of a generic error.
+   */
+  function applyNotReadyRejection(err) {
+    const data = err?.response?.data;
+    if (data?.code !== REVIEW_NOT_READY_CODE) return false;
+    if (data.report) {
+      setReport((prev) => (shouldIgnoreStalePoll(prev, data.report) ? prev : data.report));
+      setCandidates([]);
+    }
+    setSelected(new Set());
+    setError(data.message || 'The indicator set is still being refined. Review actions are available once analysis completes.');
+    return true;
   }
 
   async function finalize() {
@@ -258,7 +353,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       setFeedback('Report finalized.');
       await loadDetail();
     } catch (err) {
-      setError(err?.response?.data?.message || 'Finalize failed');
+      if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Finalize failed');
     } finally {
       setBusy('');
     }
@@ -273,6 +368,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       const applied = applyRetryAcceptedState(data);
       if (applied.report) setReport(applied.report);
       if (applied.job) setJob(applied.job);
+      // The review set is being rebuilt: previous rows are no longer current.
+      setCandidates([]);
+      setSelected(new Set());
       setRetryAcceptedAt(Date.now());
       setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
       setFeedback(
@@ -288,6 +386,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         const applied = applyRetryAcceptedState(err.response.data);
         if (applied.report) setReport(applied.report);
         if (applied.job) setJob(applied.job);
+        setCandidates([]);
+        setSelected(new Set());
         setRetryAcceptedAt(Date.now());
         setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
         setFeedback('Analysis is already running. Showing live progress.');
@@ -375,7 +475,11 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }
   }
 
-  const showReview = report && !processing && ['review_required', 'ready', 'skipped'].includes(String(report.analysis_status || ''));
+  const phase = resolveReportPhase(report);
+  const showReview = Boolean(report) && canShowReviewTable(report);
+  const showPreliminary = Boolean(report) && !loading && (phase === REPORT_PHASES.PREPARING || phase === REPORT_PHASES.FAILED);
+  const reviewCount = useMemo(() => candidates.filter((c) => isReviewIndicator(c)).length, [candidates]);
+  const indicatorCount = describeIndicatorCount(report, showReview ? { reviewCount } : { rawCount: candidates.length || null });
 
   return (
     <AppShell>
@@ -480,14 +584,32 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           </SectionCard>
         ) : null}
 
+        {showPreliminary ? (
+          <PreliminaryIndicatorsCard
+            report={report}
+            job={job}
+            candidates={candidates}
+            onRetry={() => retry().catch(() => {})}
+            retryEnabled={canShowRetryButton(report, { busy: Boolean(busy), canWrite })}
+            busy={busy}
+          />
+        ) : null}
+
         {showReview ? (
           <SectionCard
-            title="Review indicators"
-            actions={canWrite ? (
-              <button type="button" style={ui.btnPrimary} disabled={Boolean(busy)} onClick={() => finalize().catch(() => {})}>
-                {busy === 'finalize' ? 'Finalizing…' : 'Finalize report'}
-              </button>
-            ) : null}
+            title={indicatorSectionTitle(report)}
+            actions={(
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: '#94a3b8' }} data-testid="indicator-count">
+                  {indicatorCount.text}
+                </span>
+                {canWrite && canFinalize(report) ? (
+                  <button type="button" style={ui.btnPrimary} disabled={Boolean(busy)} onClick={() => finalize().catch(() => {})}>
+                    {busy === 'finalize' ? 'Finalizing…' : 'Finalize report'}
+                  </button>
+                ) : null}
+              </div>
+            )}
           >
             <div style={ui.tabRow}>
               {REVIEW_FILTERS.map((f) => (
@@ -593,7 +715,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 <Meta label="Imported" value={report.created_at ? formatUserDateTime(report.created_at) : null} />
                 <Meta label="Finalized" value={report.finalized_at ? formatUserDateTime(report.finalized_at) : null} />
                 <Meta label="Entities" value={report.entity_count} />
-                <Meta label="Indicators" value={report.indicator_count} />
+                <Meta label={indicatorCount.label} value={indicatorCount.value} />
                 <Meta label="Matched" value={report.matched_count} />
               </div>
             </SectionCard>
@@ -631,22 +753,6 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                   </table>
                 </div>
               )}
-            </SectionCard>
-
-            <SectionCard title="Indicators">
-              <div style={ui.muted}>
-                {candidates.length} candidate{candidates.length === 1 ? '' : 's'}
-                {showReview ? ' — use the review table above for actions.' : '.'}
-              </div>
-              {!showReview && candidates.length > 0 ? (
-                <ul style={{ margin: '10px 0 0', paddingLeft: 18, color: '#cbd5e1', fontSize: 13 }}>
-                  {candidates.slice(0, 25).map((c) => (
-                    <li key={c.id || c.public_id} style={{ marginBottom: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}>
-                      [{c.candidate_type}] {c.normalized_value || c.original_value}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
             </SectionCard>
 
             <SectionCard title="Relationships">

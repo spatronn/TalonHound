@@ -141,14 +141,47 @@ export async function getReportById(pool, id) {
   return rows[0] || null;
 }
 
+/**
+ * A candidate row that belongs in the analyst review set: a network / file
+ * observable with a direct source occurrence that was not resolved as context
+ * or invalid (mirrors the frontend `isReviewIndicator`). Raw row count and
+ * review count are therefore two different numbers and are labelled as such.
+ */
+const REVIEW_CANDIDATE_WHERE = `
+  c.is_ioc <> false
+  AND c.candidate_type NOT IN ('cve', 'attack_technique')
+  AND COALESCE(c.evidence->>'is_parser_derived_metadata', 'false') <> 'true'
+  AND COALESCE(c.evidence->>'is_direct_source_observable', 'true') <> 'false'
+  AND COALESCE(c.assessment, '') NOT IN ('context_only', 'invalid')
+  AND COALESCE(c.match_state, '') NOT IN ('context_only', 'invalid')
+  AND COALESCE(c.review_status, '') <> 'context_only'`;
+
+const REPORT_COUNT_COLUMNS = `
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id) AS indicator_count,
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${REVIEW_CANDIDATE_WHERE}) AS review_candidate_count,
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND c.matched_ioc_id IS NOT NULL) AS matched_count,
+  (SELECT COUNT(*)::int FROM threat_report_entities e WHERE e.report_id = r.id) AS entity_count`;
+
+/**
+ * Attach raw / review / matched / entity counts to a report row (detail,
+ * status polling, retry and finalize responses all use the same numbers).
+ * @param {import('pg').Pool} pool
+ * @param {object|null} report
+ */
+export async function attachReportCounts(pool, report) {
+  if (!report?.id) return report;
+  const { rows } = await pool.query(
+    `SELECT ${REPORT_COUNT_COLUMNS} FROM threat_reports r WHERE r.id = $1`,
+    [report.id]
+  );
+  return { ...report, ...(rows[0] || {}) };
+}
+
 export async function listThreatReports(pool, { limit = 50, offset = 0 } = {}) {
   const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
   const off = Math.max(Number(offset) || 0, 0);
   const { rows } = await pool.query(
-    `SELECT r.*,
-       (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id) AS indicator_count,
-       (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND c.matched_ioc_id IS NOT NULL) AS matched_count,
-       (SELECT COUNT(*)::int FROM threat_report_entities e WHERE e.report_id = r.id) AS entity_count
+    `SELECT r.*, ${REPORT_COUNT_COLUMNS}
      FROM threat_reports r
      WHERE r.deleted_at IS NULL
      ORDER BY r.created_at DESC
