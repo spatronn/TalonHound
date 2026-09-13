@@ -12,6 +12,9 @@ import {
 } from '../htmlBlocks.js';
 import { meaningfulCharCount } from '../quality.js';
 
+/** Bumped with the shared block extractor (v2: DOM walk + structured tables). */
+export const WEIXIN_EXTRACTOR_VERSION = 'threat_library_weixin_v2';
+
 /**
  * @param {string} html
  * @returns {string|null} inner HTML of #js_content / rich_media_content
@@ -139,7 +142,7 @@ export function extractWeixinDocument(html, meta = {}) {
     blocks,
     meta: {
       source_url: meta.url || null,
-      extractor: 'threat_library_weixin_v1',
+      extractor: WEIXIN_EXTRACTOR_VERSION,
       adapter: 'weixin'
     }
   });

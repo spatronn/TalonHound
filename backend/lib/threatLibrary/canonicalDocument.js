@@ -3,9 +3,70 @@
  */
 
 /**
- * @typedef {{ id: string, type: string, text: string, page?: number|null, section?: string|null }} CanonicalBlock
+ * @typedef {{ headers: string[]|null, rows: string[][], caption?: string|null, source?: string|null }} CanonicalTable
+ * @typedef {{ id: string, type: string, text: string, page?: number|null, section?: string|null, table?: CanonicalTable }} CanonicalBlock
  * @typedef {{ title: string, language: string|null, blocks: CanonicalBlock[], meta?: object }} CanonicalDocument
  */
+
+/** Cell / row separators used when a table is flattened to one text line. */
+export const TABLE_CELL_SEPARATOR = ' | ';
+export const TABLE_ROW_SEPARATOR = ' ¶ ';
+
+/**
+ * Flatten table cells to one text line (rows in order, cells in order) so every
+ * consumer that only reads `text` (AI chunks, evidence excerpts, quality gate)
+ * still sees the full content, while `table` keeps the structure.
+ * @param {CanonicalTable} table
+ */
+export function flattenTableText(table) {
+  const lines = [];
+  const clean = (c) => String(c ?? '').replace(/\s+/g, ' ').trim();
+  if (Array.isArray(table?.headers) && table.headers.length) {
+    lines.push(table.headers.map(clean).join(TABLE_CELL_SEPARATOR));
+  }
+  for (const row of table?.rows || []) {
+    lines.push((Array.isArray(row) ? row : []).map(clean).join(TABLE_CELL_SEPARATOR));
+  }
+  return lines.join(TABLE_ROW_SEPARATOR).trim();
+}
+
+/**
+ * Build a canonical table block. Cell values are always strings (hashes with
+ * leading zeros are never numbers). Empty rows are dropped, ragged rows padded.
+ * @param {{ id: string, page?: number|null, section?: string|null, headers?: string[]|null, rows: string[][], caption?: string|null, source?: string|null, layout?: string }} input
+ * @returns {CanonicalBlock|null}
+ */
+export function createTableBlock(input) {
+  const toCell = (c) => (c == null ? '' : String(c)).replace(/\s+/g, ' ').trim();
+  const rows = (input.rows || [])
+    .map((r) => (Array.isArray(r) ? r.map(toCell) : []))
+    .filter((r) => r.some((c) => c.length > 0));
+  const headers = Array.isArray(input.headers) && input.headers.some((h) => toCell(h)) ? input.headers.map(toCell) : null;
+  const width = Math.max(headers ? headers.length : 0, ...rows.map((r) => r.length), 0);
+  if (!width || !rows.length) return null;
+  const padded = rows.map((r) => {
+    const out = r.slice(0, width);
+    while (out.length < width) out.push('');
+    return out;
+  });
+  const table = {
+    headers: headers ? headers.slice(0, width).concat(Array(Math.max(0, width - headers.length)).fill('')) : null,
+    rows: padded,
+    caption: input.caption ? toCell(input.caption) : null,
+    source: input.source || null
+  };
+  const text = flattenTableText(table);
+  if (!text) return null;
+  return {
+    id: input.id,
+    type: 'table',
+    text,
+    page: input.page ?? null,
+    section: input.section ?? null,
+    layout: input.layout || 'table',
+    table
+  };
+}
 
 /**
  * @param {Partial<CanonicalDocument>} doc

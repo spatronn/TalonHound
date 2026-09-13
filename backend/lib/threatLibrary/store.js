@@ -475,6 +475,7 @@ export async function loadReportCandidatesForAnalysis(pool, reportId) {
       is_ioc: r.is_ioc !== false && !['cve', 'attack_technique'].includes(String(r.candidate_type)),
       zone: r.section || null,
       occurrences: Array.isArray(ev.occurrences) ? ev.occurrences : [],
+      table_rows: Array.isArray(ev.table_rows) ? ev.table_rows : [],
       parsed: ev.parsed || {},
       source_assertion: r.source_assertion || ev.source_assertion || null,
       evidence_strength: ev.evidence_strength || null,

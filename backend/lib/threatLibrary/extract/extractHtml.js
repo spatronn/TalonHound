@@ -4,8 +4,8 @@
  * Flow:
  *   classify page
  *   → Weixin adapter (when host matches)
- *   → generic article/main/body extractor
- *   → structured content-root fallback
+ *   → generic article/main/body extractor (DOM)
+ *   → structured content-root fallback (DOM)
  *   → quality gate
  */
 
@@ -17,12 +17,28 @@ import {
 } from './classifySourcePage.js';
 import { assessDocumentQuality, meaningfulCharCount } from './quality.js';
 import {
-  cleanNoiseHtml,
-  extractBlocksFromHtmlFragment,
+  extractBlocksFromNode,
   extractHtmlLanguage,
-  extractHtmlTitle
+  extractHtmlTitle,
+  findElement,
+  findElements,
+  parseHtml,
+  HTML_BLOCKS_VERSION
 } from './htmlBlocks.js';
-import { extractWeixinDocument } from './adapters/weixin.js';
+import { extractWeixinDocument, WEIXIN_EXTRACTOR_VERSION } from './adapters/weixin.js';
+
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = HTML_BLOCKS_VERSION;
+export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v2';
+
+/** Every extractor id a stored URL-sourced canonical document may carry and still be current. */
+export const CURRENT_HTML_EXTRACTOR_VERSIONS = Object.freeze([
+  THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
+  THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION,
+  WEIXIN_EXTRACTOR_VERSION,
+  'threat_library_text_v2'
+]);
+
+const tagOf = (el) => String(el?.name || '').toLowerCase();
 
 /**
  * Primary generic extractor (article → main → body).
@@ -32,30 +48,31 @@ import { extractWeixinDocument } from './adapters/weixin.js';
 export function extractGenericArticleDocument(html, meta = {}) {
   const raw = String(html || '');
   const title = extractHtmlTitle(raw, meta.titleHint);
-  let body = raw;
-  const articleMatch = raw.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
-  const mainMatch = raw.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
-  if (articleMatch) body = articleMatch[1];
-  else if (mainMatch) body = mainMatch[1];
-  else {
-    const bodyMatch = raw.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-    if (bodyMatch) body = bodyMatch[1];
+  const dom = parseHtml(raw);
+  const article = findElement(dom, (el) => tagOf(el) === 'article');
+  const main = article ? null : findElement(dom, (el) => tagOf(el) === 'main');
+  let root = article || main;
+  let skipTags;
+  if (!root) {
+    root = findElement(dom, (el) => tagOf(el) === 'body') || dom;
     // Strip site chrome headers when falling back to full body
-    body = body.replace(/<header\b[\s\S]*?<\/header>/gi, ' ');
+    skipTags = new Set(['header']);
   }
 
-  const blocks = extractBlocksFromHtmlFragment(body, { blockId });
+  const blocks = extractBlocksFromNode(root, { blockId }, { skipTags });
   return createCanonicalDocument({
     title: title || 'Untitled',
     language: extractHtmlLanguage(raw),
     blocks,
     meta: {
       source_url: meta.url || null,
-      extractor: 'threat_library_html_v1',
+      extractor: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
       adapter: 'generic_html'
     }
   });
 }
+
+const CONTENT_ROOT_HINT_RE = /(article-body|post-content|entry-content|article_content|content-body|story-body|main-content)/i;
 
 /**
  * Structured DOM fallback: content-like containers when article/main empty.
@@ -65,23 +82,24 @@ export function extractGenericArticleDocument(html, meta = {}) {
 export function extractStructuredFallbackDocument(html, meta = {}) {
   const raw = String(html || '');
   const title = extractHtmlTitle(raw, meta.titleHint);
-  const candidates = [];
+  const dom = parseHtml(raw);
 
-  const patterns = [
-    /<(?:div|section)\b[^>]*(?:id|class)=["'][^"']*(?:article-body|post-content|entry-content|article_content|content-body|story-body|main-content)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|section)>/i,
-    /<(?:div|section)\b[^>]*itemprop=["']articleBody["'][^>]*>([\s\S]*?)<\/(?:div|section)>/i,
-    /<(?:div|section)\b[^>]*role=["']main["'][^>]*>([\s\S]*?)<\/(?:div|section)>/i
-  ];
-
-  for (const re of patterns) {
-    const m = raw.match(re);
-    if (m?.[1]) candidates.push(m[1]);
-  }
+  const candidates = findElements(dom, (el) => {
+    const tag = tagOf(el);
+    if (tag !== 'div' && tag !== 'section') return false;
+    const a = el.attribs || {};
+    return (
+      CONTENT_ROOT_HINT_RE.test(String(a.id || '')) ||
+      CONTENT_ROOT_HINT_RE.test(String(a.class || '')) ||
+      String(a.itemprop || '').toLowerCase() === 'articlebody' ||
+      String(a.role || '').toLowerCase() === 'main'
+    );
+  });
 
   let bestBlocks = [];
   let bestScore = 0;
-  for (const frag of candidates) {
-    const blocks = extractBlocksFromHtmlFragment(frag, { blockId });
+  for (const el of candidates) {
+    const blocks = extractBlocksFromNode(el, { blockId });
     const score = blocks.map((b) => (b.text || '').replace(/\s+/g, '').length).reduce((a, b) => a + b, 0);
     if (score > bestScore) {
       bestScore = score;
@@ -91,11 +109,8 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
 
   // Last resort: cleaned body text density — only if substantial
   if (bestBlocks.length === 0) {
-    const bodyMatch = raw.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-    const body = cleanNoiseHtml(bodyMatch ? bodyMatch[1] : raw)
-      .replace(/<header\b[\s\S]*?<\/header>/gi, ' ')
-      .replace(/<aside\b[\s\S]*?<\/aside>/gi, ' ');
-    bestBlocks = extractBlocksFromHtmlFragment(body, { blockId });
+    const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
+    bestBlocks = extractBlocksFromNode(body, { blockId }, { skipTags: new Set(['header', 'aside']) });
   }
 
   return createCanonicalDocument({
@@ -104,7 +119,7 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
     blocks: bestBlocks,
     meta: {
       source_url: meta.url || null,
-      extractor: 'threat_library_html_fallback_v1',
+      extractor: THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION,
       adapter: 'structured_fallback'
     }
   });

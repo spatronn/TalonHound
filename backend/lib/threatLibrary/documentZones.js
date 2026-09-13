@@ -4,6 +4,7 @@
  */
 
 import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from './pdfLayout.js';
+import { interpretIocTable, looksLikeIocTableHeader } from './tableSemantics.js';
 
 /** @typedef {'report_body'|'explicit_ioc_section'|'c2_section'|'sample_table'|'reference_section'|'source_metadata'|'header_footer'|'navigation'|'vendor_about'|'code'|'unknown'} DocumentZone */
 
@@ -42,9 +43,10 @@ export const STRONG_IOC_ZONES = new Set(['explicit_ioc_section', 'c2_section', '
  */
 const HEADING_HINTS = Object.freeze({
   explicit_ioc_section: [
-    /\bioc\b/i,
+    /\biocs?\b/i,
     /indicators?\s+of\s+compromise/i,
     /compromise\s+indicators?/i,
+    /^(?:host|network|file|atomic|additional|other|related)?\s*indicators?\s*[:：]?$/i,
     /附录\s*ioc/i,
     /威胁指标/i,
     /compromisso|indicadores/i,
@@ -110,6 +112,9 @@ const LABEL_MAX_CHARS = Object.freeze({
 export function classifyHeadingText(text, opts = {}) {
   const t = collapseLetterSpacing(String(text || '').trim());
   if (!t || t.length > 160) return null;
+  // A table header row that survived only as a heading ("Type Indicator
+  // Description", "Tür Gösterge Açıklama") opens an explicit IOC table.
+  if (looksLikeIocTableHeader(t)) return 'explicit_ioc_section';
   for (const [zone, patterns] of Object.entries(HEADING_HINTS)) {
     const max = LABEL_MAX_CHARS[zone];
     if (max && t.length > max) continue;
@@ -196,6 +201,7 @@ export function annotateDocumentZones(doc, opts = {}) {
     else if (!pageEdge) b.section_heading = currentHeading;
     const isHeadingLike =
       !pageEdge &&
+      b.type !== 'table' &&
       (b.type === 'heading' ||
         (text.length > 0 &&
           text.length <= 72 &&
@@ -237,6 +243,20 @@ export function annotateDocumentZones(doc, opts = {}) {
 
     b.zone = zone;
     b.section = b.section || zone;
+
+    // A typed indicator table proves IOC semantics by its own structure —
+    // headings in an unknown language are not required. Negative zones
+    // (references, vendor chrome) still win.
+    if (b.type === 'table' && b.table) {
+      const negative = NEGATIVE_ZONES.has(zone);
+      const interpretation = interpretIocTable(b, { negativeZone: negative });
+      b.ioc_table = interpretation;
+      if (interpretation.kind === 'ioc_table' && interpretation.explicit && !negative) {
+        b.zone = 'explicit_ioc_section';
+        b.section = b.section === zone ? 'explicit_ioc_section' : b.section;
+        b.zone_reason = 'ioc_table';
+      }
+    }
   }
 
   applyObservableListZones(blocks);

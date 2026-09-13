@@ -116,3 +116,37 @@ test('deadline failure shows checkpoint progress and resume hint', () => {
   assert.deepEqual(describeAnalysisFailureDetail({ failure_code: 'ai_validation', failure_details: {} }), []);
   assert.deepEqual(describeAnalysisFailureDetail(null), []);
 });
+
+test('table-row provenance: description, declared type and row position are surfaced; explicit rows are source-asserted, not a percentage', async () => {
+  const { confidenceLabel, isSourceAsserted } = await import('./candidateReview.js');
+  const tableHash = {
+    candidate_type: 'sha256',
+    normalized_value: '005e6014fb8fd47249691756f5af3b3d53bfae82df88a71277e53e13fe94cb9f',
+    assessment: 'malicious',
+    confidence: 0.9,
+    source_assertion: 'explicit_ioc',
+    evidence: {
+      source_assertion: 'explicit_ioc',
+      decision_source: 'deterministic',
+      occurrence_count: 1,
+      zones: ['explicit_ioc_section'],
+      parsed: {},
+      table_rows: [{ table_id: 'p46-b317', page: 46, row_index: 5, declared_type: 'sha256', type_cell: 'SHA256', raw_value: '005e6014fb8fd47249691756f5af3b3d53bfae82df88a71277e53e13fe94cb9f', description: 'PivotC2 client (encoded) on 46.151.29[.]58:8443', explicit: true, related_values: ['46.151.29.58:8443'] }],
+      occurrences: [{ page: 46, zone: 'explicit_ioc_section', section_heading: 'Host Indicators', form: 'table_row', table_row: 5 }]
+    }
+  };
+  const p = describeCandidateProvenance(tableHash);
+  assert.equal(p.assertion, 'Explicit IOC');
+  assert.equal(p.description, 'PivotC2 client (encoded) on 46.151.29[.]58:8443');
+  assert.equal(p.declaredType, 'SHA256');
+  assert.equal(p.tableRow, 'table p46-b317 row 6');
+  assert.equal(p.section, 'Host Indicators');
+  assert.equal(p.sourceAsserted, true);
+  assert.equal(confidenceLabel(tableHash), 'Source asserted');
+  assert.equal(isSourceAsserted(explicitUrl), true);
+  // AI-classified body mention keeps its percentage; missing confidence shows a dash
+  assert.equal(confidenceLabel({ confidence: 0.85, source_assertion: 'body_mention', evidence: { decision_source: 'ai' } }), '85%');
+  assert.equal(confidenceLabel({ confidence: null, source_assertion: 'body_mention', evidence: {} }), '—');
+  // A reviewer / AI decision on an explicit row still shows the number it produced
+  assert.equal(confidenceLabel({ confidence: 0.95, source_assertion: 'explicit_ioc', evidence: { decision_source: 'ai' } }), '95%');
+});

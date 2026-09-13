@@ -1,5 +1,5 @@
 /**
- * Geometry-based PDF layout reconstruction (threat_library_pdf_v2).
+ * Geometry-based PDF layout reconstruction (threat_library_pdf_v3).
  * Fixture: pdf.js text items for three pages of a browser-printed CJK report.
  */
 import test from 'node:test';
@@ -24,7 +24,7 @@ const ITEMS = JSON.parse(fs.readFileSync(path.join(here, 'fixtures', 'kimsuky-ap
 
 test('extractor version is the layout version (documents from v1 are rebuilt)', () => {
   assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, PDF_LAYOUT_VERSION);
-  assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v2');
+  assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v3');
 });
 
 test('letter-spaced headings collapse; prose is untouched', () => {
@@ -115,10 +115,10 @@ test('plain-text fallback keeps observable rows and collapses letter spacing', (
   assert.ok(texts.some((t) => t.endsWith('MD5')));
 });
 
-test('checked-in browser print PDF still extracts under the v2 layout path', async () => {
+test('checked-in browser print PDF still extracts under the v3 layout path', async () => {
   const buf = fs.readFileSync(path.join(here, 'extract', 'fixtures', 'browser-print-cjk.pdf'));
   const r = await pdfToCanonicalDocument(buf, { fileName: 'browser-print-cjk.pdf' });
-  assert.equal(r.document.meta.extractor, 'threat_library_pdf_v2');
+  assert.equal(r.document.meta.extractor, 'threat_library_pdf_v3');
   assert.equal(r.document.meta.layout_mode, 'geometry');
   assert.ok(r.document.blocks.length >= 1);
   assert.equal(r.requiresOcr, false);

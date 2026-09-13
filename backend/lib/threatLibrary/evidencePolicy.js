@@ -180,15 +180,22 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = candidate.decision_source === 'ai' ? 'deterministic' : (candidate.decision_source || 'deterministic');
     candidate.match_state = undefined;
-  } else if (reportSource || summary.onlyNegative || candidate.rfc_example === true) {
-    // Only negative zones (references / source / footer) → context_only
+  } else if (reportSource || summary.onlyNegative || candidate.rfc_example === true || candidate.reserved_address === true) {
+    // Only negative zones (references / source / footer), RFC example names and
+    // private / reserved address space → context_only
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
       const onlyVendorNav = summary.zones.length > 0 && summary.zones.every((z) => z === 'vendor_about' || z === 'navigation');
       candidate.role = onlyVendorNav && !reportSource ? 'legitimate_service' : 'reference';
     }
     candidate.match_state = 'context_only';
-    candidate.policy_decision = reportSource ? 'context_only_report_source' : 'context_only_negative_zone';
+    candidate.policy_decision = reportSource
+      ? 'context_only_report_source'
+      : candidate.reserved_address === true
+        ? 'context_only_reserved_address'
+        : candidate.rfc_example === true
+          ? 'context_only_rfc_example'
+          : 'context_only_negative_zone';
     candidate.source_assertion = reportSource || summary.zones.every((z) => z === 'source_metadata' || z === 'header_footer')
       ? SOURCE_ASSERTIONS.SOURCE_METADATA
       : SOURCE_ASSERTIONS.REFERENCE_ONLY;
@@ -272,7 +279,22 @@ export function buildCandidateEvidenceRecord(c) {
     section_heading: o.section_heading || null,
     form: o.form || 'standalone',
     port: o.port ?? null,
+    table_row: o.table_row ?? null,
     surrounding_text: o.surrounding_text ? String(o.surrounding_text).slice(0, 200) : null
+  }));
+  const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
+    table_id: r.table_id || null,
+    page: r.page ?? null,
+    row_index: r.row_index ?? null,
+    column_index: r.column_index ?? null,
+    declared_type: r.declared_type || null,
+    type_cell: r.type_cell ? String(r.type_cell).slice(0, 80) : null,
+    indicator_cell: r.indicator_cell ? String(r.indicator_cell).slice(0, 300) : null,
+    raw_value: r.raw_value ? String(r.raw_value).slice(0, 300) : null,
+    description: r.description ? String(r.description).slice(0, 300) : null,
+    explicit: r.explicit === true,
+    declared_type_mismatch: r.declared_type_mismatch === true || undefined,
+    related_values: Array.isArray(r.related_values) ? r.related_values.slice(0, 8) : undefined
   }));
   return {
     source_assertion: c.source_assertion || null,
@@ -290,6 +312,7 @@ export function buildCandidateEvidenceRecord(c) {
     zones: [...new Set(occurrences.map((o) => o.zone).filter(Boolean))],
     parsed: c.parsed && typeof c.parsed === 'object' ? c.parsed : {},
     ai_role_suggestion: c.ai_role_suggestion || null,
+    table_rows: tableRows,
     occurrences
   };
 }

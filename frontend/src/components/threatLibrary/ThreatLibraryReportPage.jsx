@@ -20,7 +20,8 @@ import {
   DEFAULT_REVIEW_FILTER,
   matchReviewFilter,
   describeCandidateProvenance,
-  describeAnalysisFailureDetail
+  describeAnalysisFailureDetail,
+  confidenceLabel
 } from './candidateReview.js';
 import { TlpBadge, isElevatedTlp, normalizeTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
@@ -30,15 +31,18 @@ function CandidateProvenance({ candidate }) {
   const parts = [];
   if (p.section) parts.push(p.section);
   if (p.pages) parts.push(p.pages);
+  if (p.tableRow) parts.push(p.tableRow);
   parts.push(`${p.occurrences} occurrence${p.occurrences === 1 ? '' : 's'}`);
   if (p.ports) parts.push(`port ${p.ports}`);
   return (
     <div>
       <div style={{ color: '#e2e8f0' }}>
         {p.assertion}
+        {p.declaredType ? <span style={{ color: '#94a3b8' }}> · {p.declaredType}</span> : null}
         {p.decision ? <span style={{ color: '#94a3b8' }}> · {p.decision}</span> : null}
         {!p.direct ? <span style={{ color: '#fbbf24' }}> · derived</span> : null}
       </div>
+      {p.description ? <div style={{ color: '#cbd5e1' }}>{p.description}</div> : null}
       <div style={{ color: '#94a3b8' }}>{parts.join(' · ')}</div>
       {p.urlHost ? <div style={{ color: '#64748b' }}>host {p.urlHost} (URL metadata)</div> : null}
     </div>
@@ -559,9 +563,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                       </td>
                       <td style={ui.td}>{c.assessment || '—'}</td>
                       <td style={ui.td}>{c.role || '—'}</td>
-                      <td style={ui.td}>
-                        {c.confidence == null ? '—' : `${Math.round(Number(c.confidence) * 100)}%`}
-                      </td>
+                      <td style={ui.td}>{confidenceLabel(c)}</td>
                       <td style={{ ...ui.td, fontSize: 12, color: '#cbd5e1', maxWidth: 260 }}>
                         <CandidateProvenance candidate={c} />
                       </td>

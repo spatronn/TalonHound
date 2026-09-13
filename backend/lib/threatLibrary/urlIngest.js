@@ -17,6 +17,31 @@ import {
 } from './canonicalDocument.js';
 import { extractCanonicalDocumentFromHtml, extractGenericArticleDocument } from './extract/extractHtml.js';
 import { assessDocumentQuality } from './extract/quality.js';
+import { textToBlocksWithTables } from './extract/textTables.js';
+
+export const THREAT_LIBRARY_TEXT_EXTRACTOR_VERSION = 'threat_library_text_v2';
+
+/**
+ * Plain text → canonical document (paragraphs split on blank lines; Markdown /
+ * aligned tables become structured table blocks).
+ * @param {string} text
+ * @param {{ title?: string, sourceUrl?: string|null }} [meta]
+ */
+export function plainTextToCanonicalDocument(text, meta = {}) {
+  let idx = 0;
+  const ids = { nextIndex: () => blockId('b', (idx += 1)), page: null, section: null };
+  const blocks = [];
+  for (const part of String(text || '').split(/\n{2,}/)) {
+    if (!part.trim()) continue;
+    blocks.push(...textToBlocksWithTables(part, ids));
+  }
+  return createCanonicalDocument({
+    title: meta.title || 'Text report',
+    language: null,
+    blocks,
+    meta: { source_url: meta.sourceUrl || null, extractor: THREAT_LIBRARY_TEXT_EXTRACTOR_VERSION, adapter: 'text_plain' }
+  });
+}
 
 /**
  * @param {string} url
@@ -57,6 +82,22 @@ export function htmlToCanonicalDocument(html, meta = {}) {
   // return the partial document or a generic pass.
   if (extracted.document) return extracted.document;
   return extractGenericArticleDocument(html, meta);
+}
+
+/**
+ * Re-extract a canonical document from retained source HTML (no network).
+ * Returns null when the stored HTML no longer yields a usable document.
+ * @param {string} html
+ * @param {{ url: string, finalUrl?: string, httpStatus?: number|null }} meta
+ */
+export function reextractStoredHtmlDocument(html, meta) {
+  const extracted = extractCanonicalDocumentFromHtml(String(html || ''), {
+    url: meta.url,
+    finalUrl: meta.finalUrl || meta.url,
+    httpStatus: meta.httpStatus ?? 200
+  });
+  if (!extracted.ok || !extracted.document || isEffectivelyEmptyDocument(extracted.document)) return null;
+  return { document: extracted.document, extraction: { path: extracted.path || [], adapter: extracted.document.meta?.adapter || null } };
 }
 
 /**
@@ -119,17 +160,7 @@ export async function ingestUrlToCanonicalDocument(url, opts = {}) {
   let extractionAdapter = null;
 
   if (ct.includes('text/plain') && !ct.includes('html')) {
-    document = createCanonicalDocument({
-      title: policy.parsed.hostname,
-      language: null,
-      blocks: bodyText.split(/\n{2,}/).filter(Boolean).map((t, i) => ({
-        id: blockId('b', i + 1),
-        type: 'paragraph',
-        text: t.trim(),
-        page: null
-      })),
-      meta: { source_url: policy.url, extractor: 'threat_library_text_v1', adapter: 'text_plain' }
-    });
+    document = plainTextToCanonicalDocument(bodyText, { title: policy.parsed.hostname, sourceUrl: policy.url });
     extractionPath = ['text_plain'];
     extractionAdapter = 'text_plain';
     const quality = assessDocumentQuality(document);
@@ -188,6 +219,9 @@ export async function ingestUrlToCanonicalDocument(url, opts = {}) {
     fetchedBytes: result.fetchedBytes ?? bodyText.length,
     contentType: contentType || 'text/html',
     httpStatus: result.httpStatus ?? null,
+    // Raw body is retained as an artifact so a later extractor contract change
+    // can re-extract without a network fetch.
+    bodyText,
     document,
     extraction: {
       path: extractionPath,

@@ -1,5 +1,5 @@
 /**
- * Candidate identity vs. occurrence provenance (tl-candidates-v3).
+ * Candidate identity vs. occurrence provenance (tl-candidates-v4).
  *
  * Rules under test:
  *  - a URL occurrence creates a URL candidate only; its host is parsed metadata
@@ -39,7 +39,7 @@ function keyOf(c) {
 }
 
 test('extraction contract version bumped for evidence model', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v3');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v4');
 });
 
 test('URL with IP host only → URL candidate, no parser-derived IP candidate', () => {

@@ -64,6 +64,17 @@ function publicCandidateEvidence(evidence) {
     occurrence_count: evidence.occurrence_count ?? occurrences.length,
     zones: Array.isArray(evidence.zones) ? evidence.zones : [],
     parsed: evidence.parsed && typeof evidence.parsed === 'object' ? evidence.parsed : {},
+    table_rows: (Array.isArray(evidence.table_rows) ? evidence.table_rows : []).slice(0, 6).map((r) => ({
+      table_id: r.table_id || null,
+      page: r.page ?? null,
+      row_index: r.row_index ?? null,
+      declared_type: r.declared_type || null,
+      type_cell: r.type_cell || null,
+      raw_value: r.raw_value || null,
+      description: r.description || null,
+      explicit: r.explicit === true,
+      related_values: Array.isArray(r.related_values) ? r.related_values : []
+    })),
     occurrences: occurrences.map((o) => ({
       block_id: o.block_id || null,
       page: o.page ?? null,
@@ -71,6 +82,7 @@ function publicCandidateEvidence(evidence) {
       section_heading: o.section_heading || null,
       form: o.form || null,
       port: o.port ?? null,
+      table_row: o.table_row ?? null,
       surrounding_text: o.surrounding_text || null
     }))
   };

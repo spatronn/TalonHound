@@ -4,11 +4,18 @@
  * Does not invent conflicting normalization — output is fed into normalizeObservable / etc.
  */
 
-const HXXP_RE = /\bhxxps?:\/\//gi;
+// hxxp://, hxxp[://], hxxp[:]//, hxxp[:][//]
+const HXXP_RE = /\bhxxps?(?::\/\/|\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
+// http[://], http[:]//, http[:][//]
+const SCHEME_BRACKET_RE = /\b(https?)(?:\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
 const BRACKET_DOT_RE = /\[\.\]|\(\.\)|\{\.\}/g;
 const BRACKET_COLON_RE = /\[:\]|\(:\)|\{:\}/g;
-const DOT_WORD_RE = /\s+dot\s+/gi;
-const AT_WORD_RE = /\s+\[?at\]?\s+/gi;
+
+function refangSchemes(text) {
+  return String(text || '')
+    .replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'))
+    .replace(SCHEME_BRACKET_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
+}
 
 /**
  * Refang a single token or short string.
@@ -17,7 +24,7 @@ const AT_WORD_RE = /\s+\[?at\]?\s+/gi;
 export function refangObservable(value) {
   let v = String(value || '').trim();
   if (!v) return '';
-  v = v.replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'));
+  v = refangSchemes(v);
   v = v.replace(BRACKET_DOT_RE, '.');
   v = v.replace(BRACKET_COLON_RE, ':');
   // meow:// → http:// (rare vendor defang)
@@ -31,8 +38,7 @@ export function refangObservable(value) {
  * @param {string} text
  */
 export function refangTextForExtraction(text) {
-  let t = String(text || '');
-  t = t.replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'));
+  let t = refangSchemes(text);
   t = t.replace(BRACKET_DOT_RE, '.');
   t = t.replace(BRACKET_COLON_RE, ':');
   t = t.replace(/\bmeow:\/\//gi, 'http://');
@@ -44,5 +50,5 @@ export function refangTextForExtraction(text) {
  */
 export function looksDefanged(value) {
   const v = String(value || '');
-  return /hxxps?:\/\//i.test(v) || /\[\.\]|\(\.\)|\{\.\}/.test(v) || /\[:\]/.test(v);
+  return /hxxps?(?::\/\/|\[:)/i.test(v) || /\[\.\]|\(\.\)|\{\.\}/.test(v) || /\[:\]|\[:\/\/\]/.test(v);
 }

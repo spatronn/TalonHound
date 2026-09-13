@@ -61,13 +61,37 @@ export function sourceAssertionLabel(value) {
   return SOURCE_ASSERTION_LABELS[key] || (key ? key.replace(/_/g, ' ') : 'Ambiguous');
 }
 
+const EXPLICIT_ASSERTIONS = new Set(['explicit_ioc', 'explicit_c2']);
+
+/**
+ * True when the row is a publisher assertion resolved without the model — its
+ * confidence is source-asserted, not an AI estimate.
+ */
+export function isSourceAsserted(candidate) {
+  const ev = (candidate && candidate.evidence) || {};
+  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
+  return EXPLICIT_ASSERTIONS.has(assertion) && ev.decision_source !== 'ai';
+}
+
+/**
+ * Confidence cell text: a percentage only when the model (or a reviewer) produced
+ * one; explicit source assertions show their provenance instead of a number.
+ */
+export function confidenceLabel(candidate) {
+  if (isSourceAsserted(candidate)) return 'Source asserted';
+  if (candidate?.confidence == null) return '—';
+  return `${Math.round(Number(candidate.confidence) * 100)}%`;
+}
+
 /**
  * Compact provenance summary for one candidate row.
- * @returns {{ assertion: string, section: string|null, pages: string|null, occurrences: number, direct: boolean, ports: string|null, decision: string|null }}
+ * @returns {{ assertion: string, section: string|null, pages: string|null, occurrences: number, direct: boolean, ports: string|null, decision: string|null, description: string|null, tableRow: string|null, declaredType: string|null, sourceAsserted: boolean }}
  */
 export function describeCandidateProvenance(candidate) {
   const ev = (candidate && candidate.evidence) || {};
   const occurrences = Array.isArray(ev.occurrences) ? ev.occurrences : [];
+  const tableRows = Array.isArray(ev.table_rows) ? ev.table_rows : [];
+  const firstRow = tableRows[0] || null;
   const pages = [...new Set(occurrences.map((o) => o.page).filter((p) => p != null))].sort((a, b) => a - b);
   const heading = occurrences.map((o) => o.section_heading).find(Boolean) || null;
   const zones = Array.isArray(ev.zones) && ev.zones.length ? ev.zones : occurrences.map((o) => o.zone).filter(Boolean);
@@ -81,7 +105,11 @@ export function describeCandidateProvenance(candidate) {
     direct: ev.is_direct_source_observable !== false && ev.is_parser_derived_metadata !== true,
     ports,
     decision,
-    urlHost: candidate?.candidate_type === 'url' && ev.parsed?.host ? ev.parsed.host : null
+    urlHost: candidate?.candidate_type === 'url' && ev.parsed?.host ? ev.parsed.host : null,
+    description: firstRow?.description || null,
+    tableRow: firstRow ? `table ${firstRow.table_id || '?'} row ${Number.isInteger(firstRow.row_index) ? firstRow.row_index + 1 : '?'}` : null,
+    declaredType: firstRow?.type_cell || null,
+    sourceAsserted: isSourceAsserted(candidate)
   };
 }
 

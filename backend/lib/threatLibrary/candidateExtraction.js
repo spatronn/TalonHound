@@ -8,12 +8,16 @@
  * and never become occurrences of another candidate. A standalone host
  * candidate therefore only exists when the report itself mentions the host
  * outside URL syntax (independent evidence).
+ *
+ * Typed indicator tables (canonical `table` blocks interpreted by
+ * tableSemantics) are extracted row by row: the indicator cell is the
+ * assertion, the declared-type cell is a typing hint, the description cell is
+ * provenance. A value that appears only inside a description cell is related
+ * context of that row, never a standalone candidate (same rule as URL hosts).
  */
 
 import { normalizeObservable } from '../observable-normalization.js';
-import { normalizeIpAddress, isValidIpAddress } from '../publicIp.js';
-import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
-import { resolveStorageObservableType, inferObservableType } from '../manualIocCreate.js';
+import { isValidIpAddress } from '../publicIp.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
 import { annotateDocumentZones, NEGATIVE_ZONES, STRONG_IOC_ZONES } from './documentZones.js';
 import {
@@ -23,12 +27,19 @@ import {
 } from './candidateTyping.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { isObservableOnlyLine } from './pdfLayout.js';
+import { normalizeCandidateValue } from './candidateValue.js';
+import { parseIndicatorCell } from './tableSemantics.js';
+
+export { normalizeCandidateValue } from './candidateValue.js';
 
 /**
  * Bump when derivation / evidence semantics change. Older candidate sets are
  * rebuilt from the canonical document on the next analysis run.
+ * v4: typed table rows are explicit source assertions with row provenance;
+ * description-cell values are related context only; reserved addresses are
+ * context_only deterministically.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v3';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v4';
 
 const IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b/g;
 const IPV4_PORT_RE = /\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
@@ -41,110 +52,18 @@ const SHA256_RE = /\b[a-fA-F0-9]{64}\b/g;
 const CVE_RE = /\bCVE-\d{4}-\d{4,7}\b/gi;
 const ATTACK_RE = /\bT\d{4}(?:\.\d{3})?\b/g;
 
-/** RFC documentation / loopback only — not vendor safety allowlists. */
-const RFC_EXAMPLE_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'localhost', 'invalid', 'test']);
+const MAX_TABLE_ROWS_PER_CANDIDATE = 20;
 
 export const OCCURRENCE_FORMS = Object.freeze({
   STANDALONE: 'standalone',
   URL: 'url',
   IP_PORT: 'ip_port',
-  LIST_ROW: 'list_row'
+  LIST_ROW: 'list_row',
+  TABLE_ROW: 'table_row'
 });
-
-function isRfcExampleDomain(domain) {
-  const d = String(domain || '').toLowerCase();
-  if (RFC_EXAMPLE_DOMAINS.has(d)) return true;
-  for (const fp of RFC_EXAMPLE_DOMAINS) {
-    if (d.endsWith(`.${fp}`)) return true;
-  }
-  return false;
-}
 
 function stripUrlTrailingPunct(urlish) {
   return String(urlish || '').replace(/[),.;:!?\]。，；]+$/g, '');
-}
-
-/**
- * @param {string} raw
- * @param {string} [hintType]
- */
-export function normalizeCandidateValue(raw, hintType = null) {
-  const refanged = refangObservable(raw);
-  if (!refanged) return { ok: false, error: 'empty' };
-
-  if (hintType === 'cve' || /^CVE-\d{4}-\d{4,7}$/i.test(refanged)) {
-    return {
-      ok: true,
-      candidateType: 'cve',
-      originalValue: String(raw).trim(),
-      normalizedValue: refanged.toUpperCase(),
-      isIoc: false
-    };
-  }
-  if (hintType === 'attack_technique' || /^T\d{4}(?:\.\d{3})?$/i.test(refanged)) {
-    return {
-      ok: true,
-      candidateType: 'attack_technique',
-      originalValue: String(raw).trim(),
-      normalizedValue: refanged.toUpperCase(),
-      isIoc: false
-    };
-  }
-
-  let inferred = hintType || inferObservableType(refanged);
-  if (hintType === 'ipv6') inferred = 'ip';
-  if (!inferred) return { ok: false, error: 'unrecognized' };
-
-  if (inferred === 'ip' || inferred === 'ipv6') {
-    if (!isValidIpAddress(refanged.split('/')[0])) {
-      return { ok: false, error: 'invalid_ip' };
-    }
-    const norm = normalizeIpAddress(refanged.split('/')[0]);
-    const isV6 = norm.includes(':');
-    return {
-      ok: true,
-      candidateType: isV6 ? 'ipv6' : 'ip',
-      originalValue: String(raw).trim(),
-      normalizedValue: norm,
-      isIoc: true
-    };
-  }
-
-  if (inferred === 'url' || /^https?:\/\//i.test(refanged)) {
-    const storage = resolveStorageObservableType(refanged, 'url');
-    if (!storage.ok) return { ok: false, error: storage.error };
-    return {
-      ok: true,
-      candidateType: 'url',
-      originalValue: String(raw).trim(),
-      normalizedValue: normalizeObservable('url', storage.value),
-      isIoc: true
-    };
-  }
-
-  if (inferred === 'hash' || hintType === 'md5' || hintType === 'sha1' || hintType === 'sha256') {
-    const normalized = normalizeHashValue(refanged);
-    const exact = inferExactHashType(normalized) || (hintType && ['md5', 'sha1', 'sha256'].includes(hintType) ? hintType : null);
-    if (!exact) return { ok: false, error: 'invalid_hash' };
-    return {
-      ok: true,
-      candidateType: exact,
-      originalValue: String(raw).trim(),
-      normalizedValue: normalized,
-      isIoc: true
-    };
-  }
-
-  const domain = normalizeObservable('domain', refanged.replace(/\.$/, ''));
-  if (!domain || !domain.includes('.')) return { ok: false, error: 'invalid_domain' };
-  return {
-    ok: true,
-    candidateType: 'domain',
-    originalValue: String(raw).trim(),
-    normalizedValue: domain,
-    isIoc: true,
-    likelyContextOnly: isRfcExampleDomain(domain)
-  };
 }
 
 /**
@@ -182,10 +101,24 @@ export function candidateKey(type, value) {
 }
 
 /**
+ * Values mentioned inside a description cell (related context, not assertions).
+ * @param {string|null} description
+ */
+function relatedValuesFromDescription(description) {
+  if (!description) return [];
+  const parsed = parseIndicatorCell(description, null);
+  return parsed.values
+    .filter((v) => v.candidate_type !== 'domain' || v.normalized_value.includes('.'))
+    .map((v) => (v.port ? `${v.normalized_value}:${v.port}` : v.normalized_value))
+    .slice(0, 8);
+}
+
+/**
  * @param {import('./canonicalDocument.js').CanonicalDocument} doc
  * @param {{ sourceUrl?: string|null }} [opts]
+ * @returns {{ candidates: object[], diagnostics: object }}
  */
-export function extractCandidatesFromDocument(doc, opts = {}) {
+export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const sourceUrl = opts.sourceUrl || doc.meta?.source_url || doc.meta?.sourceUrl || null;
   let sourceHost = '';
   try {
@@ -204,8 +137,29 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
   const urlHostIndex = new Map();
   if (sourceHost) knownUrlHosts.add(sourceHost.toLowerCase());
 
+  const diagnostics = {
+    extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+    explicit_tables: {
+      tables_seen: 0,
+      ioc_tables: 0,
+      explicit_tables: 0,
+      rows_seen: 0,
+      rows_valid: 0,
+      rows_rejected: 0,
+      values_asserted: 0,
+      candidates_created: 0,
+      rejection_reasons: {},
+      inconsistent: false,
+      missing_identities: [],
+      tables: []
+    }
+  };
+  /** identities asserted by explicit tables → must exist as candidates */
+  const explicitTableKeys = new Set();
+
   function occurrenceFor(block, extra = {}) {
     const zone = block?.zone || 'unknown';
+    const text = extra.rowText || (block?.text ? String(block.text) : null);
     return {
       block_id: block?.id || null,
       page: block?.page ?? null,
@@ -215,28 +169,35 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
       block_type: block?.type || null,
       form: extra.form || OCCURRENCE_FORMS.STANDALONE,
       port: extra.port ?? null,
-      surrounding_text: block?.text ? String(block.text).slice(0, 280) : null
+      table_row: extra.tableRow ? extra.tableRow.row_index : null,
+      surrounding_text: text ? text.slice(0, 280) : null
     };
   }
 
   function pushOccurrence(entry, block, extra = {}) {
     const occ = occurrenceFor(block, extra);
     if (!Array.isArray(entry.occurrences)) entry.occurrences = [];
-    const dup = entry.occurrences.find((o) => o.block_id && o.block_id === occ.block_id);
+    const dup = entry.occurrences.find(
+      (o) => o.block_id && o.block_id === occ.block_id && (o.table_row == null || o.table_row === occ.table_row)
+    );
     if (dup) {
       // Same block: keep one occurrence but remember a stronger assertion form / port.
       if (occ.port != null && dup.port == null) dup.port = occ.port;
       if (dup.form === OCCURRENCE_FORMS.STANDALONE && occ.form !== OCCURRENCE_FORMS.STANDALONE) dup.form = occ.form;
+      if (occ.port != null) rememberPort(entry, occ.port);
       return;
     }
     entry.occurrences.push(occ);
-    if (occ.port != null) {
-      if (!Array.isArray(entry.parsed.ports)) entry.parsed.ports = [];
-      if (!entry.parsed.ports.includes(occ.port)) entry.parsed.ports.push(occ.port);
-    }
+    if (occ.port != null) rememberPort(entry, occ.port);
   }
 
-  function evidenceTextFor(block) {
+  function rememberPort(entry, port) {
+    if (!Array.isArray(entry.parsed.ports)) entry.parsed.ports = [];
+    if (!entry.parsed.ports.includes(port)) entry.parsed.ports.push(port);
+  }
+
+  function evidenceTextFor(block, extra = {}) {
+    if (extra.rowText) return String(extra.rowText).slice(0, 500);
     if (!block?.text) return null;
     const text = String(block.text).slice(0, 500);
     if ((block.type === 'list_item' || block.layout === 'observable_row') && block.section_heading) {
@@ -249,7 +210,7 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
    * @param {string} raw
    * @param {string|null} hintType
    * @param {object} block
-   * @param {{ form?: string, port?: number|null, typing?: object }} [extra]
+   * @param {{ form?: string, port?: number|null, typing?: object, originalValue?: string, tableRow?: object, rowText?: string }} [extra]
    */
   function add(raw, hintType, block, extra = {}) {
     const n = normalizeCandidateValue(raw, hintType);
@@ -259,7 +220,7 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
     // Domain typing gate (filename / code identifier / hostname shape)
     if (n.candidateType === 'domain') {
       const typed = resolveDottedTokenType(n.normalizedValue, {
-        surroundingText: block?.text || '',
+        surroundingText: extra.rowText || block?.text || '',
         urlPathBasenames,
         knownUrlHosts
       });
@@ -277,12 +238,12 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
       const isIoc = n.isIoc !== false && n.candidateType !== 'cve' && n.candidateType !== 'attack_technique';
       entry = {
         candidate_type: n.candidateType,
-        original_value: n.originalValue,
+        original_value: extra.originalValue || n.originalValue,
         normalized_value: n.normalizedValue,
         assessment: isIoc && !n.likelyContextOnly ? 'unknown' : 'context_only',
-        role: n.likelyContextOnly ? 'legitimate_service' : isIoc ? 'unknown' : 'reference',
+        role: n.likelyContextOnly ? (n.reservedAddress ? 'reference' : 'legitimate_service') : isIoc ? 'unknown' : 'reference',
         confidence: n.likelyContextOnly ? 0.75 : null,
-        evidence_text: evidenceTextFor(block),
+        evidence_text: evidenceTextFor(block, extra),
         block_id: block?.id || null,
         page_number: block?.page ?? null,
         section: zone,
@@ -292,12 +253,14 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
         typing_reason: typingMeta.typing_reason || null,
         occurrences: [],
         parsed: {},
+        table_rows: [],
         derived_from: null,
         is_direct_source_observable: true,
         is_parser_derived_metadata: false,
         extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
       };
-      if (n.likelyContextOnly) entry.rfc_example = true;
+      if (n.likelyContextOnly && !n.reservedAddress) entry.rfc_example = true;
+      if (n.reservedAddress) entry.reserved_address = true;
       // Report's own source URL / host is provenance, never a finding.
       if (
         (n.candidateType === 'domain' && sourceHost && n.normalizedValue === sourceHost) ||
@@ -308,17 +271,21 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
       byKey.set(key, entry);
     }
     pushOccurrence(entry, block, extra);
+    if (extra.tableRow && entry.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) {
+      entry.table_rows.push(extra.tableRow);
+    }
     // Prefer strong-zone evidence text / anchor block
     const anchorIsStrong = STRONG_IOC_ZONES.has(entry.zone);
-    if (STRONG_IOC_ZONES.has(block?.zone) && block?.text && !anchorIsStrong) {
-      entry.evidence_text = evidenceTextFor(block);
+    if (STRONG_IOC_ZONES.has(block?.zone) && (block?.text || extra.rowText) && !anchorIsStrong) {
+      entry.evidence_text = evidenceTextFor(block, extra);
       entry.block_id = block.id;
       entry.page_number = block.page ?? null;
       entry.section = block.zone;
       entry.zone = block.zone;
+      if (extra.originalValue) entry.original_value = extra.originalValue;
     } else if (NEGATIVE_ZONES.has(entry.zone) && !NEGATIVE_ZONES.has(block?.zone) && block?.text) {
       // Body mention beats a footer/reference anchor for display purposes
-      entry.evidence_text = evidenceTextFor(block);
+      entry.evidence_text = evidenceTextFor(block, extra);
       entry.block_id = block.id;
       entry.page_number = block.page ?? null;
       entry.section = block.zone || 'unknown';
@@ -334,10 +301,83 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
     block.layout === 'observable_row' ||
     ((block.type === 'list' || block.type === 'table') && isObservableOnlyLine(block.text || ''));
 
+  /** Blocks handled row-by-row (typed indicator tables) — skipped by the regex passes. */
+  const tableHandled = new Set();
+
+  // Pass 0: typed indicator tables — every valid row is a source assertion with row provenance.
+  for (const block of blocks) {
+    if (block.type !== 'table' || !block.table) continue;
+    const t = diagnostics.explicit_tables;
+    t.tables_seen += 1;
+    const interp = block.ioc_table;
+    const summary = {
+      table_id: block.id,
+      page: block.page ?? null,
+      zone: block.zone || null,
+      section_heading: block.section_heading || null,
+      kind: interp?.kind || 'not_ioc_table',
+      explicit: Boolean(interp?.explicit),
+      reason: interp?.reason || null,
+      columns: Array.isArray(interp?.columns) ? interp.columns.map((c) => ({ index: c.index, header: c.header, intent: c.intent, method: c.method })) : [],
+      rows_seen: interp?.stats?.rows_seen ?? 0,
+      rows_valid: interp?.stats?.rows_valid ?? 0,
+      rows_rejected: interp?.stats?.rows_rejected ?? 0,
+      rejection_reasons: interp?.stats?.rejection_reasons || {},
+      rejected_rows: []
+    };
+    t.tables.push(summary);
+    if (!interp || interp.kind !== 'ioc_table') continue;
+    t.ioc_tables += 1;
+    if (interp.explicit) t.explicit_tables += 1;
+    tableHandled.add(block.id);
+    t.rows_seen += summary.rows_seen;
+    t.rows_valid += summary.rows_valid;
+    t.rows_rejected += summary.rows_rejected;
+    for (const [reason, n] of Object.entries(summary.rejection_reasons)) {
+      t.rejection_reasons[reason] = (t.rejection_reasons[reason] || 0) + n;
+    }
+    for (const row of interp.rows || []) {
+      if (row.status !== 'valid') {
+        if (summary.rejected_rows.length < 12) summary.rejected_rows.push({ row_index: row.row_index, reason: row.reason });
+        continue;
+      }
+      const rowText = [row.type_cell, row.values[0]?.indicator_cell, row.description].filter(Boolean).join(' | ');
+      const related = relatedValuesFromDescription(row.description);
+      for (const v of row.values) {
+        t.values_asserted += 1;
+        const tableRow = {
+          table_id: block.id,
+          page: block.page ?? null,
+          row_index: row.row_index,
+          column_index: v.column_index,
+          declared_type: v.declared_type || null,
+          type_cell: row.type_cell,
+          indicator_cell: v.indicator_cell,
+          raw_value: v.raw,
+          description: row.description,
+          explicit: Boolean(interp.explicit),
+          declared_type_mismatch: v.declared_type_mismatch === true || undefined,
+          related_values: related.length ? related : undefined
+        };
+        const entry = add(v.refanged, v.candidate_type, block, {
+          form: OCCURRENCE_FORMS.TABLE_ROW,
+          port: v.port ?? null,
+          originalValue: v.raw,
+          tableRow,
+          rowText
+        });
+        if (entry && interp.explicit && entry.is_ioc !== false) {
+          explicitTableKeys.add(candidateKey(entry.candidate_type, entry.normalized_value));
+        }
+      }
+    }
+  }
+
   // Pass 1: URLs — one candidate per URL; host/port/basename are parsed metadata only.
   /** @type {Map<string, Array<[number, number]>>} block id → URL spans */
   const urlSpansByBlock = new Map();
   for (const block of blocks) {
+    if (tableHandled.has(block.id)) continue;
     const text = refangTextForExtraction(block.text || '');
     if (!text.trim()) continue;
     const spans = [];
@@ -357,10 +397,7 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
           entry.parsed.host_kind = isValidIpAddress(host) ? 'ip' : 'domain';
         }
         const port = portFromUrl(url);
-        if (port != null) {
-          if (!Array.isArray(entry.parsed.ports)) entry.parsed.ports = [];
-          if (!entry.parsed.ports.includes(port)) entry.parsed.ports.push(port);
-        }
+        if (port != null) rememberPort(entry, port);
         if (base && !entry.parsed.path_basename) entry.parsed.path_basename = base;
         if (host) {
           if (!urlHostIndex.has(host)) urlHostIndex.set(host, new Set());
@@ -374,6 +411,7 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
   // Pass 2: other observables. Host-like matches inside a URL span are the URL's
   // own host component — not an independent assertion — and are skipped.
   for (const block of blocks) {
+    if (tableHandled.has(block.id)) continue;
     const text = refangTextForExtraction(block.text || '');
     if (!text.trim()) continue;
     const urlSpans = urlSpansByBlock.get(block.id) || [];
@@ -439,11 +477,37 @@ export function extractCandidatesFromDocument(doc, opts = {}) {
     if ((entry.candidate_type === 'ip' || entry.candidate_type === 'domain') && urlHostIndex.has(entry.normalized_value)) {
       entry.parsed.also_url_host_of = [...urlHostIndex.get(entry.normalized_value)].map((k) => k.split('\0')[1]).slice(0, 20);
     }
+    if (entry.table_rows.length) {
+      entry.parsed.table_rows = entry.table_rows.length;
+      entry.parsed.declared_types = [...new Set(entry.table_rows.map((r) => r.declared_type).filter(Boolean))];
+    } else {
+      delete entry.table_rows;
+    }
     entry.occurrence_count = entry.occurrences.length;
     applyEvidencePolicy(entry);
     out.push(entry);
   }
-  return out;
+
+  // Completeness gate: every identity a valid explicit table row asserted must
+  // be a persisted candidate. A mismatch is an internal extraction bug, not a
+  // source problem, and is surfaced for diagnosis rather than hidden.
+  const t = diagnostics.explicit_tables;
+  const created = out.filter((c) => Array.isArray(c.table_rows) && c.table_rows.some((r) => r.explicit));
+  t.candidates_created = created.length;
+  const createdKeys = new Set(created.map((c) => candidateKey(c.candidate_type, c.normalized_value)));
+  t.missing_identities = [...explicitTableKeys].filter((k) => !createdKeys.has(k)).map((k) => k.replace('\0', ':'));
+  t.inconsistent = t.missing_identities.length > 0;
+  t.explicit_identities = explicitTableKeys.size;
+
+  return { candidates: out, diagnostics };
+}
+
+/**
+ * @param {import('./canonicalDocument.js').CanonicalDocument} doc
+ * @param {{ sourceUrl?: string|null }} [opts]
+ */
+export function extractCandidatesFromDocument(doc, opts = {}) {
+  return extractCandidatesWithDiagnostics(doc, opts).candidates;
 }
 
 /**
@@ -455,6 +519,7 @@ export function summarizeCandidateSet(candidates) {
     total: 0,
     ioc_candidates: 0,
     explicit_assertions: 0,
+    table_assertions: 0,
     body_assertions: 0,
     context_only: 0,
     non_ioc: 0,
@@ -475,6 +540,7 @@ export function summarizeCandidateSet(candidates) {
     s.ioc_candidates += 1;
     if (c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2') s.explicit_assertions += 1;
     else s.body_assertions += 1;
+    if (Array.isArray(c.table_rows) ? c.table_rows.length : c.parsed?.table_rows) s.table_assertions += 1;
     if (c.ai_needed) s.ai_needed += 1;
   }
   return s;

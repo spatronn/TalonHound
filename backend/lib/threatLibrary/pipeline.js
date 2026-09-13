@@ -4,10 +4,11 @@
  */
 
 import crypto from 'node:crypto';
-import { ingestUrlToCanonicalDocument } from './urlIngest.js';
+import { ingestUrlToCanonicalDocument, reextractStoredHtmlDocument } from './urlIngest.js';
 import { pdfToCanonicalDocument, THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
+import { CURRENT_HTML_EXTRACTOR_VERSIONS, THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } from './extract/extractHtml.js';
 import {
-  extractCandidatesFromDocument,
+  extractCandidatesWithDiagnostics,
   summarizeCandidateSet,
   THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
 } from './candidateExtraction.js';
@@ -18,7 +19,7 @@ import { analyzeThreatDocument } from './ai/providers.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
 import { normalizeTlp, deriveMatchState, normalizeEntityName } from './constants.js';
-import { storeArtifactBuffer } from './artifactStore.js';
+import { storeArtifactBuffer, readArtifactBuffer } from './artifactStore.js';
 import {
   getAiSettings,
   updateReportStatus,
@@ -47,9 +48,11 @@ function hasUsableDocument(doc) {
 
 /**
  * A stored canonical document is reusable only when its extractor contract is
- * current. PDF block segmentation changed in v2 (line/heading/footer-aware), so
- * older PDF documents are re-extracted from the stored PDF artifact — the
- * upload itself is always reused.
+ * current. PDF block segmentation changed in v2 (line/heading/footer-aware) and
+ * v3 (table reconstruction); HTML extraction changed in v2 (DOM walk, structured
+ * tables). Outdated documents are re-extracted from the stored artifact (PDF
+ * upload / retained HTML) — the upload itself is always reused, and a URL is
+ * only re-fetched when no HTML was retained.
  * @param {object} report
  * @param {object} doc
  */
@@ -58,7 +61,25 @@ export function isDocumentContractCurrent(report, doc) {
   if (report?.source_type === 'pdf') {
     return doc.meta?.extractor === THREAT_LIBRARY_PDF_EXTRACTOR_VERSION;
   }
+  if (report?.source_type === 'url') {
+    return CURRENT_HTML_EXTRACTOR_VERSIONS.includes(String(doc.meta?.extractor || ''));
+  }
   return true;
+}
+
+/**
+ * Latest retained source HTML for a URL report (null when never retained).
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ */
+async function loadRetainedHtmlArtifact(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT id, storage_key, source_metadata FROM threat_report_artifacts
+     WHERE report_id = $1 AND artifact_type = 'url_fetch' AND storage_key IS NOT NULL
+     ORDER BY id DESC LIMIT 1`,
+    [reportId]
+  );
+  return rows[0] || null;
 }
 
 /**
@@ -95,7 +116,8 @@ export async function runAnalysisPipeline(pool, ctx) {
       log.info('canonical document contract outdated; re-extracting from stored artifact', {
         reportId: report.id,
         stored_extractor: document?.meta?.extractor || null,
-        current_extractor: THREAT_LIBRARY_PDF_EXTRACTOR_VERSION
+        current_extractor:
+          report.source_type === 'pdf' ? THREAT_LIBRARY_PDF_EXTRACTOR_VERSION : THREAT_LIBRARY_HTML_EXTRACTOR_VERSION
       });
       documentRebuilt = true;
     }
@@ -103,20 +125,65 @@ export async function runAnalysisPipeline(pool, ctx) {
     // --- Fetch / extract (skip when reusable artifacts exist) ---
     if (!hasUsableDocument(document) || !documentContractCurrent) {
       if (report.source_type === 'url') {
-        await setStage('fetching');
-        log.info('report import started', { reportId: report.id, sourceType: 'url' });
-        const fetched = await ingestUrlToCanonicalDocument(ctx.sourceUrl || report.source_url);
-        document = fetched.document;
-        await insertArtifact(pool, report.id, {
-          artifact_type: 'url_fetch',
-          mime_type: fetched.contentType,
-          size_bytes: fetched.fetchedBytes,
-          source_metadata: { url: fetched.url, final_url: fetched.finalUrl },
-          text_excerpt: (document.blocks || []).slice(0, 3).map((b) => b.text).join('\n').slice(0, 1000),
-          fetched_at: new Date().toISOString()
-        });
-        await setStage('extracting', { blocks: document.blocks?.length || 0 });
-        log.info('fetch completed', { reportId: report.id, blocks: document.blocks?.length || 0 });
+        // Retained source HTML lets a contract change re-extract without touching the network.
+        const retained = documentRebuilt ? await loadRetainedHtmlArtifact(pool, report.id) : null;
+        let reextracted = null;
+        if (retained?.storage_key) {
+          try {
+            const html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
+            reextracted = reextractStoredHtmlDocument(html, {
+              url: report.source_url,
+              finalUrl: retained.source_metadata?.final_url || report.source_url,
+              httpStatus: retained.source_metadata?.http_status ?? 200
+            });
+          } catch (err) {
+            log.warn('retained HTML unusable; falling back to fetch', { reportId: report.id, error: err.message });
+            reextracted = null;
+          }
+        }
+        if (reextracted) {
+          await setStage('extracting');
+          document = reextracted.document;
+          log.info('document re-extracted from retained HTML', {
+            reportId: report.id,
+            blocks: document.blocks?.length || 0,
+            extractor: document.meta?.extractor || null
+          });
+        } else {
+          await setStage('fetching');
+          log.info('report import started', { reportId: report.id, sourceType: 'url' });
+          const fetched = await ingestUrlToCanonicalDocument(ctx.sourceUrl || report.source_url);
+          document = fetched.document;
+          let stored = null;
+          if (fetched.bodyText) {
+            try {
+              stored = await storeArtifactBuffer(report.id, Buffer.from(fetched.bodyText, 'utf8'), {
+                fileName: 'source.html',
+                ext: '.html'
+              });
+            } catch (err) {
+              log.warn('source HTML retention failed (non-fatal)', { reportId: report.id, error: err.message });
+            }
+          }
+          await insertArtifact(pool, report.id, {
+            artifact_type: 'url_fetch',
+            file_name: stored ? 'source.html' : null,
+            mime_type: fetched.contentType,
+            size_bytes: fetched.fetchedBytes,
+            sha256: stored?.sha256 || null,
+            storage_key: stored?.storageKey || null,
+            source_metadata: {
+              url: fetched.url,
+              final_url: fetched.finalUrl,
+              http_status: fetched.httpStatus ?? null,
+              extraction: fetched.extraction || null
+            },
+            text_excerpt: (document.blocks || []).slice(0, 3).map((b) => b.text).join('\n').slice(0, 1000),
+            fetched_at: new Date().toISOString()
+          });
+          await setStage('extracting', { blocks: document.blocks?.length || 0 });
+          log.info('fetch completed', { reportId: report.id, blocks: document.blocks?.length || 0 });
+        }
       } else if (report.source_type === 'pdf') {
         await setStage('extracting');
         log.info('report import started', { reportId: report.id, sourceType: 'pdf' });
@@ -210,12 +277,16 @@ export async function runAnalysisPipeline(pool, ctx) {
 
     // --- Deterministic candidates (refresh when extraction contract changes) ---
     let candidates;
+    let extractionDiagnostics = report.analysis_progress?.extraction_diagnostics || null;
     const existingCount = await countReportCandidates(pool, report.id);
-    const priorExtractionVersion = report.analysis_progress?.candidate_extraction_version || null;
-    const extractionChanged =
-      priorExtractionVersion !== THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION || documentRebuilt;
-    const shouldReuseCandidates =
-      resumePreferred && existingCount > 0 && !extractionChanged && !ctx.refreshCandidates;
+    const reuse = decideCandidateReuse({
+      priorExtractionVersion: report.analysis_progress?.candidate_extraction_version || null,
+      documentRebuilt,
+      existingCount,
+      resumePreferred,
+      refreshCandidates: Boolean(ctx.refreshCandidates)
+    });
+    const { extractionChanged, shouldReuseCandidates } = reuse;
 
     if (shouldReuseCandidates) {
       candidates = await loadReportCandidatesForAnalysis(pool, report.id);
@@ -245,16 +316,34 @@ export async function runAnalysisPipeline(pool, ctx) {
           candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
         }
       };
-      candidates = extractCandidatesFromDocument(document, { sourceUrl });
+      const extracted = extractCandidatesWithDiagnostics(document, { sourceUrl });
+      candidates = extracted.candidates;
+      extractionDiagnostics = extracted.diagnostics;
       await replaceCandidates(pool, report.id, candidates);
+      const tables = extracted.diagnostics?.explicit_tables || {};
       log.info('candidate count', {
         reportId: report.id,
         count: candidates.length,
         extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
         refreshed: extractionChanged || Boolean(ctx.refreshCandidates),
         document_rebuilt: documentRebuilt,
-        ...summarizeCandidateSet(candidates)
+        ...summarizeCandidateSet(candidates),
+        explicit_ioc_tables: tables.explicit_tables ?? 0,
+        explicit_ioc_rows_seen: tables.rows_seen ?? 0,
+        explicit_ioc_rows_valid: tables.rows_valid ?? 0,
+        explicit_ioc_rows_rejected: tables.rows_rejected ?? 0,
+        explicit_ioc_rejection_reasons: tables.rejection_reasons || {},
+        explicit_ioc_candidates_created: tables.candidates_created ?? 0
       });
+      if (tables.inconsistent) {
+        // Valid explicit rows that produced no candidate: an extractor bug, never a source problem.
+        log.warn('explicit IOC extraction inconsistency', {
+          reportId: report.id,
+          explicit_identities: tables.explicit_identities,
+          candidates_created: tables.candidates_created,
+          missing_identities: (tables.missing_identities || []).slice(0, 40)
+        });
+      }
     }
     const candidateSet = summarizeCandidateSet(candidates);
 
@@ -416,22 +505,8 @@ export async function runAnalysisPipeline(pool, ctx) {
       return { ok: false, code, error: message };
     }
 
-    // Merge AI candidate updates onto deterministic set, then enforce evidence policy
-    const byKey = new Map(candidates.map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c]));
-    for (const u of aiValue.candidate_updates || []) {
-      const key = `${u.candidate_type}\0${u.normalized_value}`;
-      const existing = byKey.get(key);
-      if (!existing) continue;
-      applyEvidencePolicy(existing, {
-        assessment: u.assessment,
-        role: u.role || existing.role,
-        confidence: u.confidence ?? existing.confidence
-      });
-      if (u.evidence_text) existing.evidence_text = u.evidence_text;
-      if (u.section) existing.section = u.section;
-      if (u.evidence_block_ids?.[0]) existing.block_id = u.evidence_block_ids[0];
-    }
-    candidates = [...byKey.values()].map((c) => applyEvidencePolicy(c));
+    // Merge AI candidate updates onto the deterministic set (never the reverse).
+    candidates = mergeAiCandidateUpdates(candidates, aiValue);
 
     // --- Match local IOCs ---
     await setStage('matching');
@@ -537,6 +612,7 @@ export async function runAnalysisPipeline(pool, ctx) {
         candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
         document_extractor: document.meta?.extractor || null,
         schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+        extraction_diagnostics: compactExtractionDiagnostics(extractionDiagnostics),
         analysis_chunks_total: aiMeta?.chunks_total ?? null,
         analysis_chunks_completed: aiMeta?.chunks_total ?? null,
         ai_calls: aiMeta?.ai_calls ?? null,
@@ -599,6 +675,92 @@ export async function runAnalysisPipeline(pool, ctx) {
     log.warn('pipeline failed', { reportId: ctx.reportId, stage: err.code || stage, error: err.message });
     return { ok: false, error: err.message, code: err.code };
   }
+}
+
+/**
+ * Candidate reuse on Retry: stored candidates are reused only when the
+ * extraction contract that produced them is current and the document was not
+ * rebuilt; otherwise they are rebuilt from the canonical document and the
+ * semantic analysis starts a new run (older chunk checkpoints are incompatible).
+ * @param {{ priorExtractionVersion: string|null, documentRebuilt: boolean, existingCount: number, resumePreferred: boolean, refreshCandidates: boolean }} input
+ */
+export function decideCandidateReuse(input) {
+  const extractionChanged =
+    input.priorExtractionVersion !== THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION || input.documentRebuilt === true;
+  const shouldReuseCandidates =
+    input.resumePreferred === true && Number(input.existingCount) > 0 && !extractionChanged && !input.refreshCandidates;
+  return { extractionChanged, shouldReuseCandidates };
+}
+
+/**
+ * Final candidate set = deterministic candidates ∪ AI classification of the
+ * `ai_needed` subset. The model output is never the list of indicators: an
+ * update only refines a candidate that already exists, explicit assertions can
+ * only gain a malicious role, and every candidate passes the evidence policy
+ * again. A missing / empty AI result leaves the deterministic set intact.
+ * @param {object[]} candidates
+ * @param {{ candidate_updates?: object[] }|null} aiValue
+ */
+export function mergeAiCandidateUpdates(candidates, aiValue) {
+  const byKey = new Map((candidates || []).map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c]));
+  for (const u of aiValue?.candidate_updates || []) {
+    const key = `${u.candidate_type}\0${u.normalized_value}`;
+    const existing = byKey.get(key);
+    if (!existing) continue;
+    applyEvidencePolicy(existing, {
+      assessment: u.assessment,
+      role: u.role || existing.role,
+      confidence: u.confidence ?? existing.confidence
+    });
+    if (u.evidence_text) existing.evidence_text = u.evidence_text;
+    if (u.section) existing.section = u.section;
+    if (u.evidence_block_ids?.[0]) existing.block_id = u.evidence_block_ids[0];
+  }
+  return [...byKey.values()].map((c) => applyEvidencePolicy(c));
+}
+
+/**
+ * Admin-facing extraction diagnostics persisted with the report (bounded).
+ * @param {object|null} diagnostics
+ */
+export function compactExtractionDiagnostics(diagnostics) {
+  const t = diagnostics?.explicit_tables;
+  if (!t) return diagnostics && typeof diagnostics === 'object' && diagnostics.explicit_tables === undefined ? diagnostics : null;
+  return {
+    extraction_version: diagnostics.extraction_version || null,
+    explicit_tables: {
+      tables_seen: t.tables_seen ?? 0,
+      ioc_tables: t.ioc_tables ?? 0,
+      explicit_tables: t.explicit_tables ?? 0,
+      rows_seen: t.rows_seen ?? 0,
+      rows_valid: t.rows_valid ?? 0,
+      rows_rejected: t.rows_rejected ?? 0,
+      values_asserted: t.values_asserted ?? 0,
+      candidates_created: t.candidates_created ?? 0,
+      explicit_identities: t.explicit_identities ?? 0,
+      rejection_reasons: t.rejection_reasons || {},
+      inconsistent: t.inconsistent === true,
+      missing_identities: (t.missing_identities || []).slice(0, 40),
+      tables: (t.tables || [])
+        .filter((x) => x.kind === 'ioc_table' || x.kind === 'identifier_table')
+        .slice(0, 60)
+        .map((x) => ({
+          table_id: x.table_id,
+          page: x.page ?? null,
+          zone: x.zone || null,
+          section_heading: x.section_heading || null,
+          kind: x.kind,
+          explicit: x.explicit === true,
+          reason: x.reason || null,
+          columns: x.columns || [],
+          rows_seen: x.rows_seen ?? 0,
+          rows_valid: x.rows_valid ?? 0,
+          rows_rejected: x.rows_rejected ?? 0,
+          rejection_reasons: x.rejection_reasons || {},
+          rejected_rows: (x.rejected_rows || []).slice(0, 12)
+        }))
+    }
+  };
 }
 
 const FETCH_FAILURE_CODES = new Set([

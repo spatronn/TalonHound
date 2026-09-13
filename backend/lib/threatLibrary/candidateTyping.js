@@ -5,7 +5,7 @@
 
 /** Common file extensions that often appear in threat reports as artifacts (not TLDs). */
 const FILE_EXT_HINT = new Set([
-  'exe', 'dll', 'sys', 'scr', 'bat', 'cmd', 'ps1', 'vbs', 'js', 'jse', 'wsf',
+  'exe', 'dll', 'sys', 'scr', 'bat', 'cmd', 'ps1', 'psm1', 'vbs', 'vbe', 'hta', 'js', 'jse', 'wsf', 'py', 'sh', 'elf', 'so', 'dylib',
   'lnk', 'url', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf', 'pdf',
   'zip', 'rar', '7z', 'gz', 'tar', 'iso', 'img',
   'php', 'asp', 'aspx', 'jsp', 'cgi',
