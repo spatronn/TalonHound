@@ -31,8 +31,10 @@ import {
   requestAnalysisCancel,
   updateReportStatus,
   countReportCandidates,
-  attachReportCounts
+  attachReportCounts,
+  updateReportSourceUrl
 } from '../lib/threatLibrary/store.js';
+import { validateReportSourceUrl } from '../lib/threatLibrary/sourceUrl.js';
 import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
 import {
@@ -281,10 +283,13 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           section: c.section,
           block_id: c.block_id,
           page_number: c.page_number,
-          review_status: c.review_status,
+          review_status: c.review_status === 'created_ioc' ? 'approved' : c.review_status,
           match_state: c.match_state,
           matched_ioc_id: c.matched_ioc_id,
           matched_ioc_observable_type: c.matched_ioc_observable_type,
+          promotion_outcome: c.promotion_outcome || (c.review_status === 'created_ioc' ? 'created' : null),
+          promotion_detail: c.promotion_detail || null,
+          promoted_at: c.promoted_at || null,
           is_ioc: c.is_ioc !== false,
           source_assertion: c.source_assertion || c.evidence?.source_assertion || null,
           evidence: publicCandidateEvidence(c.evidence)
@@ -562,6 +567,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const result = await applyCandidateReviewActions(pool, report.id, {
           action: req.body?.action,
           candidateIds: req.body?.candidate_ids,
+          confirm: req.body?.confirm === true,
           user: req.user,
           audit
         });
@@ -570,6 +576,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             message: result.error,
             code: result.code || null,
             phase: result.phase || null,
+            summary: result.summary || undefined,
+            results: result.results || undefined,
+            pending_count: result.pending_count,
             report: result.code ? publicReport(await attachReportCounts(pool, report)) : undefined
           });
         }
@@ -593,6 +602,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             message: result.error,
             code: result.code || null,
             phase: result.phase || null,
+            pending_count: result.pending_count,
             report: publicReport(await attachReportCounts(pool, report))
           });
         }
@@ -774,6 +784,41 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         });
       } catch (err) {
         return res.status(500).json({ message: 'Cancel failed', detail: err.message });
+      }
+    }
+  );
+
+  // --- Provenance: source URL (does not reanalyze) ---
+  app.patch(
+    '/api/threat-library/reports/:publicId',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'source_url')) {
+          return res.status(400).json({ message: 'source_url is required' });
+        }
+        const parsed = validateReportSourceUrl(req.body.source_url);
+        if (!parsed.ok) {
+          return res.status(400).json({ message: parsed.message, code: parsed.error });
+        }
+        const updated = await updateReportSourceUrl(pool, report.id, parsed.value);
+        if (!updated) return res.status(404).json({ message: 'Report not found' });
+        await audit.auditSuccess({
+          action: 'threat_library.report.source_url.updated',
+          entityType: 'threat_report',
+          entityId: report.public_id,
+          severity: AUDIT_SEVERITY.INFO,
+          actor: req.user,
+          before: { source_url: report.source_url || null },
+          after: { source_url: parsed.value }
+        });
+        return res.json({
+          report: publicReport(await attachReportCounts(pool, updated))
+        });
+      } catch (err) {
+        return res.status(500).json({ message: 'Failed to update source URL', detail: err.message });
       }
     }
   );

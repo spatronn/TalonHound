@@ -73,3 +73,18 @@ test('PDF import returns structured failure codes and multer size mapping', () =
   assert.match(routeSrc, /isAcceptablePdfUploadMeta/);
   assert.match(routeSrc, /LIMIT_FILE_SIZE/);
 });
+
+test('source URL patch is analyst-gated, validates http(s), and does not reanalyze', () => {
+  assert.match(routeSrc, /app\.patch\(\s*'\/api\/threat-library\/reports\/:publicId',\s*requireRole\(ROLES\.ADMIN, ROLES\.ANALYST\)/);
+  assert.match(routeSrc, /validateReportSourceUrl/);
+  assert.match(routeSrc, /updateReportSourceUrl/);
+  assert.match(routeSrc, /threat_library\.report\.source_url\.updated/);
+  const patchBlock = routeSrc.slice(routeSrc.indexOf("app.patch("), routeSrc.indexOf("app.delete("));
+  assert.doesNotMatch(patchBlock, /enqueueAnalyze|runAnalysisPipeline|analyzeThreatDocument/);
+});
+
+test('create IOCs passes confirm and returns structured promotion results', () => {
+  assert.match(routeSrc, /confirm: req\.body\?\.confirm === true/);
+  assert.match(routeSrc, /summary: result\.summary \|\| undefined/);
+  assert.match(routeSrc, /pending_count: result\.pending_count/);
+});

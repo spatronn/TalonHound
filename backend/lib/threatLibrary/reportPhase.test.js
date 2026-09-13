@@ -72,13 +72,18 @@ test('review mutations and finalize are allowed only on a committed review set',
   assert.match(reviewNotReadyError({ analysis_status: 'failed' }).error, /Retry analysis/);
 });
 
-/** Fake pool: first query returns the report row; any write is recorded. */
-function fakePool(report) {
+/** Fake pool: lookups return rows; UPDATE/INSERT/DELETE are recorded as writes. */
+function fakePool(report, candidates = []) {
   const writes = [];
   return {
     writes,
     async query(sql, params) {
-      if (/FROM threat_reports WHERE id = \$1/.test(sql)) return { rows: report ? [report] : [] };
+      if (/FROM threat_reports WHERE id = \$1/.test(sql) && /^\s*SELECT/i.test(sql)) {
+        return { rows: report ? [report] : [] };
+      }
+      if (/FROM threat_report_candidates/.test(sql) && /^\s*SELECT/i.test(sql)) {
+        return { rows: candidates };
+      }
       writes.push({ sql, params });
       return { rows: [] };
     }

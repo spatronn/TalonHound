@@ -269,6 +269,21 @@ export async function requestAnalysisCancel(pool, reportId) {
   return rows[0] || null;
 }
 
+/**
+ * Provenance-only source URL update. Does not change analysis status or enqueue work.
+ * Allowed after finalize — this is metadata, not intelligence content.
+ */
+export async function updateReportSourceUrl(pool, reportId, sourceUrl) {
+  const { rows } = await pool.query(
+    `UPDATE threat_reports
+     SET source_url = $2, updated_at = NOW()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING *`,
+    [reportId, sourceUrl]
+  );
+  return rows[0] || null;
+}
+
 export async function isAnalysisCancelRequested(pool, reportId) {
   const { rows } = await pool.query(
     `SELECT cancel_requested_at FROM threat_reports WHERE id = $1`,

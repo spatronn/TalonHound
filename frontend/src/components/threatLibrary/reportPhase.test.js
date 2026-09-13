@@ -185,3 +185,17 @@ test('page structure: review table and actions are gated on the phase, prelimina
   assert.match(card, /not final and may be removed, retyped or reclassified/);
   assert.match(card, /aria-busy=\{!failed\}/);
 });
+
+test('report detail hides Relationships and exposes review workflow controls', () => {
+  assert.doesNotMatch(pageSrc, /SectionCard title="Relationships"/);
+  assert.doesNotMatch(pageSrc, /relationships\.map/);
+  assert.match(pageSrc, /Search indicators…/);
+  assert.match(pageSrc, /IOC Result/);
+  assert.match(pageSrc, /selected on this page/);
+  assert.match(pageSrc, /function SourceUrlEditor/);
+  assert.match(pageSrc, /Add source URL/);
+  assert.match(pageSrc, /confirm: true/);
+  assert.match(pageSrc, /Approve indicators first/);
+  assert.match(pageSrc, /pending_review_remaining/);
+  assert.match(pageSrc, /Show Needs Review/);
+});

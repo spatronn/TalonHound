@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
+import { useAppConfirm } from '../../lib/appChromeContext.jsx';
 import {
   buildProgressChecklist,
   isProcessingStatus,
@@ -18,11 +19,21 @@ import {
 import {
   REVIEW_FILTERS,
   DEFAULT_REVIEW_FILTER,
-  matchReviewFilter,
+  TYPE_FILTERS,
+  RESULT_FILTERS,
+  PAGE_SIZES,
+  DEFAULT_PAGE_SIZE,
   isReviewIndicator,
   describeCandidateProvenance,
   describeAnalysisFailureDetail,
-  confidenceLabel
+  confidenceLabel,
+  filterReviewCandidates,
+  paginateRows,
+  parseReviewTableUrlState,
+  serializeReviewTableUrlState,
+  iocResultLabel,
+  applyPromotionResults,
+  formatCreateIocSummary
 } from './candidateReview.js';
 import {
   REPORT_PHASES,
@@ -112,6 +123,111 @@ function ProgressChecklist({ report, job }) {
   );
 }
 
+function compactBtn(base, disabled) {
+  return {
+    ...base,
+    ...(disabled ? { opacity: 0.5, cursor: 'not-allowed' } : null)
+  };
+}
+
+const compactTh = {
+  ...ui.th,
+  position: 'sticky',
+  top: 0,
+  zIndex: 1,
+  background: '#0f172a',
+  padding: '8px 8px'
+};
+const compactTd = { ...ui.td, padding: '6px 8px', fontSize: 12 };
+const compactInput = { ...ui.input, padding: '8px 10px', fontSize: 13, minHeight: 36 };
+const compactSelect = { ...ui.select, width: 'auto', minWidth: 140, padding: '8px 10px', fontSize: 13, minHeight: 36 };
+
+function SourceUrlEditor({ value, canWrite, busy, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || '');
+  const [localError, setLocalError] = useState('');
+
+  useEffect(() => {
+    if (!editing) setDraft(value || '');
+  }, [value, editing]);
+
+  if (!editing) {
+    return (
+      <div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 2 }}>Source URL</div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {value ? (
+            <a
+              href={String(value)}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#5eead4', wordBreak: 'break-all' }}
+            >
+              {String(value)}
+            </a>
+          ) : (
+            <span style={{ color: '#94a3b8' }}>—</span>
+          )}
+          {canWrite ? (
+            <button
+              type="button"
+              style={ui.btn}
+              disabled={Boolean(busy)}
+              onClick={() => { setLocalError(''); setDraft(value || ''); setEditing(true); }}
+            >
+              {value ? 'Edit' : 'Add source URL'}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label htmlFor="tl-source-url" style={{ color: '#94a3b8', fontSize: 12, marginBottom: 2, display: 'block' }}>
+        Source URL
+      </label>
+      <input
+        id="tl-source-url"
+        type="url"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="https://"
+        style={{ ...compactInput, maxWidth: 560, marginBottom: 8 }}
+        autoFocus
+      />
+      {localError ? <div style={{ ...ui.error, marginBottom: 8 }} role="alert">{localError}</div> : null}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          type="button"
+          style={ui.btnPrimary}
+          disabled={Boolean(busy)}
+          onClick={async () => {
+            setLocalError('');
+            try {
+              await onSave(draft);
+              setEditing(false);
+            } catch (err) {
+              setLocalError(err?.response?.data?.message || err?.message || 'Could not save source URL');
+            }
+          }}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          style={ui.btn}
+          disabled={Boolean(busy)}
+          onClick={() => { setEditing(false); setDraft(value || ''); setLocalError(''); }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SectionCard({ title, children, actions }) {
   return (
     <div style={{ ...ui.formPanel, marginBottom: 14 }}>
@@ -185,7 +301,10 @@ function PreliminaryIndicatorsCard({ report, job, candidates, onRetry, retryEnab
 export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const { reportId } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestConfirm = useAppConfirm();
   const { isAdmin, canWrite } = useSession();
+  const urlState = useMemo(() => parseReviewTableUrlState(searchParams), [searchParams]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -193,11 +312,15 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [report, setReport] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [entities, setEntities] = useState([]);
-  const [relationships, setRelationships] = useState([]);
   const [artifacts, setArtifacts] = useState([]);
   const [documentMeta, setDocumentMeta] = useState(null);
   const [job, setJob] = useState(null);
-  const [filter, setFilter] = useState(DEFAULT_REVIEW_FILTER);
+  const [filter, setFilter] = useState(urlState.tab || DEFAULT_REVIEW_FILTER);
+  const [search, setSearch] = useState(urlState.q || '');
+  const [typeFilter, setTypeFilter] = useState(urlState.type || 'all');
+  const [resultFilter, setResultFilter] = useState(urlState.result || 'all');
+  const [page, setPage] = useState(urlState.page || 1);
+  const [pageSize, setPageSize] = useState(urlState.pageSize || DEFAULT_PAGE_SIZE);
   const [selected, setSelected] = useState(() => new Set());
   const [busy, setBusy] = useState('');
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
@@ -212,7 +335,6 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     setReport((prev) => (shouldIgnoreStalePoll(prev, data?.report) ? prev : (data?.report || null)));
     setCandidates(data?.candidates || []);
     setEntities(data?.entities || []);
-    setRelationships(data?.relationships || []);
     setArtifacts(data?.artifacts || []);
     setDocumentMeta(data?.document_meta || null);
     const jobs = data?.jobs || [];
@@ -277,9 +399,67 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }, [processing, reportId, loadStatus, loadDetail]);
 
   const filtered = useMemo(
-    () => candidates.filter((c) => matchReviewFilter(c, filter)),
-    [candidates, filter]
+    () => filterReviewCandidates(candidates, { tab: filter, q: search, type: typeFilter, result: resultFilter }),
+    [candidates, filter, search, typeFilter, resultFilter]
   );
+  const paged = useMemo(
+    () => paginateRows(filtered, page, pageSize),
+    [filtered, page, pageSize]
+  );
+  const pageRows = paged.rows;
+
+  useEffect(() => {
+    const next = serializeReviewTableUrlState({
+      tab: filter,
+      q: search,
+      type: typeFilter,
+      result: resultFilter,
+      page: paged.page,
+      pageSize: paged.pageSize
+    });
+    if (next.toString() !== searchParams.toString()) {
+      setSearchParams(next, { replace: true });
+    }
+  }, [filter, search, typeFilter, resultFilter, paged.page, paged.pageSize, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (paged.page !== page) setPage(paged.page);
+  }, [paged.page, page]);
+
+  function changeFilter(next) {
+    setFilter(next);
+    setPage(1);
+    setSelected(new Set());
+  }
+
+  function changeSearch(next) {
+    setSearch(next);
+    setPage(1);
+    setSelected(new Set());
+  }
+
+  function changeType(next) {
+    setTypeFilter(next);
+    setPage(1);
+    setSelected(new Set());
+  }
+
+  function changeResult(next) {
+    setResultFilter(next);
+    setPage(1);
+    setSelected(new Set());
+  }
+
+  function changePageSize(next) {
+    setPageSize(Number(next) || DEFAULT_PAGE_SIZE);
+    setPage(1);
+    setSelected(new Set());
+  }
+
+  function goToPage(next) {
+    setPage(next);
+    setSelected(new Set());
+  }
 
   function toggleOne(id) {
     setSelected((prev) => {
@@ -290,19 +470,22 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     });
   }
 
-  function toggleAllFiltered() {
+  function toggleAllOnPage() {
     setSelected((prev) => {
-      const ids = filtered.map((c) => c.id);
+      const ids = pageRows.map((c) => c.id);
       const allOn = ids.length > 0 && ids.every((id) => prev.has(id));
-      const next = new Set(prev);
-      if (allOn) ids.forEach((id) => next.delete(id));
-      else ids.forEach((id) => next.add(id));
+      const next = new Set();
+      if (!allOn) ids.forEach((id) => next.add(id));
       return next;
     });
   }
 
   async function runReview(action) {
     if (!canWrite) return;
+    if (action === 'create_iocs') {
+      await createIocs();
+      return;
+    }
     setBusy(action);
     setFeedback('');
     setError('');
@@ -315,13 +498,90 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       if (data?.errors?.length) {
         setFeedback(`Completed with ${data.errors.length} error(s).`);
       } else {
-        setFeedback(action === 'create_iocs'
-          ? `Created ${data?.created?.length || 0} IOC(s).`
-          : 'Review action applied.');
+        setFeedback('Review action applied.');
       }
       setSelected(new Set());
       await loadDetail();
     } catch (err) {
+      if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Review action failed');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function createIocs() {
+    if (!canWrite || !selected.size) return;
+    setBusy('create_iocs');
+    setFeedback('');
+    setError('');
+    const ids = [...selected];
+    try {
+      const { data: preview } = await api.post(`/threat-library/reports/${reportId}/review`, {
+        action: 'create_iocs',
+        candidate_ids: ids,
+        confirm: false
+      });
+      const summary = preview?.summary || {};
+      const eligible = Number(summary.eligible || 0);
+      if (eligible <= 0 && Number(summary.not_approved || 0) === Number(summary.selected || 0)) {
+        await requestConfirm({
+          title: 'Approve indicators first',
+          description: 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
+          confirmLabel: 'OK',
+          cancelLabel: 'Close',
+          variant: 'warning'
+        });
+        return;
+      }
+      if (eligible <= 0) {
+        await requestConfirm({
+          title: 'Create approved IOCs?',
+          description: 'None of the selected indicators can be created as IOC records.',
+          detail: formatCreateIocSummary(summary),
+          confirmLabel: 'OK',
+          cancelLabel: 'Close',
+          variant: 'warning'
+        });
+        return;
+      }
+      const ok = await requestConfirm({
+        title: eligible < (summary.selected || 0) ? 'Create approved IOCs?' : 'Create IOC records?',
+        description: eligible < (summary.selected || 0)
+          ? `Only the ${eligible} eligible approved indicators will be created.`
+          : `${eligible} new IOC record${eligible === 1 ? '' : 's'} will be created.`,
+        detail: formatCreateIocSummary(summary),
+        confirmLabel: `Create ${eligible} IOC${eligible === 1 ? '' : 's'}`,
+        cancelLabel: 'Cancel'
+      });
+      if (!ok) return;
+      const { data } = await api.post(`/threat-library/reports/${reportId}/review`, {
+        action: 'create_iocs',
+        candidate_ids: ids,
+        confirm: true
+      });
+      if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
+      const created = data?.summary?.created ?? data?.created?.length ?? 0;
+      const existing = data?.summary?.already_existing ?? 0;
+      if (data?.errors?.length) {
+        setFeedback(`Created ${created} IOC(s); ${data.errors.length} error(s).`);
+      } else {
+        setFeedback(`Created ${created} IOC(s). ${existing} already existed.`);
+      }
+      setSelected(new Set());
+      await loadDetail();
+    } catch (err) {
+      if (err?.response?.data?.code === 'create_iocs_none_eligible') {
+        await requestConfirm({
+          title: 'Approve indicators first',
+          description: err.response.data.message
+            || 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
+          detail: err.response.data.summary ? formatCreateIocSummary(err.response.data.summary) : '',
+          confirmLabel: 'OK',
+          cancelLabel: 'Close',
+          variant: 'warning'
+        });
+        return;
+      }
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Review action failed');
     } finally {
       setBusy('');
@@ -353,10 +613,30 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       setFeedback('Report finalized.');
       await loadDetail();
     } catch (err) {
+      if (err?.response?.data?.code === 'pending_review_remaining') {
+        const count = err.response.data.pending_count;
+        const ok = await requestConfirm({
+          title: `${count} indicator${count === 1 ? '' : 's'} still need review.`,
+          description: err.response.data.message || 'Review remaining indicators before finalizing.',
+          confirmLabel: 'Show Needs Review',
+          cancelLabel: 'Close',
+          variant: 'warning'
+        });
+        if (ok) changeFilter('needs_review');
+        return;
+      }
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Finalize failed');
     } finally {
       setBusy('');
     }
+  }
+
+  async function saveSourceUrl(nextUrl) {
+    const { data } = await api.patch(`/threat-library/reports/${reportId}`, { source_url: nextUrl });
+    if (data?.report) {
+      setReport((prev) => ({ ...prev, ...data.report }));
+    }
+    setFeedback('Source URL saved.');
   }
 
   async function retry() {
@@ -611,94 +891,192 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
               </div>
             )}
           >
-            <div style={ui.tabRow}>
+            <div style={ui.tabRow} role="tablist" aria-label="Indicator filters">
               {REVIEW_FILTERS.map((f) => (
-                <button key={f.id} type="button" style={ui.tab(filter === f.id)} onClick={() => setFilter(f.id)}>
+                <button
+                  key={f.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === f.id}
+                  style={ui.tab(filter === f.id)}
+                  onClick={() => changeFilter(f.id)}
+                >
                   {f.label}
                 </button>
               ))}
             </div>
 
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
+              <label htmlFor="tl-indicator-search" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                Search indicators
+              </label>
+              <input
+                id="tl-indicator-search"
+                type="search"
+                value={search}
+                onChange={(e) => changeSearch(e.target.value)}
+                placeholder="Search indicators…"
+                style={{ ...compactInput, maxWidth: 280 }}
+              />
+              <label htmlFor="tl-type-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                Type
+              </label>
+              <select
+                id="tl-type-filter"
+                value={typeFilter}
+                onChange={(e) => changeType(e.target.value)}
+                style={compactSelect}
+              >
+                {TYPE_FILTERS.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+              <label htmlFor="tl-result-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                IOC Result
+              </label>
+              <select
+                id="tl-result-filter"
+                value={resultFilter}
+                onChange={(e) => changeResult(e.target.value)}
+                style={compactSelect}
+              >
+                {RESULT_FILTERS.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+
             {canWrite ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                <button type="button" style={ui.btn} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('approve').catch(() => {})}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center', position: 'sticky', top: 0, zIndex: 2, background: '#0f172a', padding: '6px 0' }}>
+                <button type="button" style={compactBtn(ui.btn, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('approve').catch(() => {})}>
                   Approve
                 </button>
-                <button type="button" style={ui.btn} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('context_only').catch(() => {})}>
+                <button type="button" style={compactBtn(ui.btn, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('context_only').catch(() => {})}>
                   Context only
                 </button>
-                <button type="button" style={ui.btn} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('ignore').catch(() => {})}>
+                <button type="button" style={compactBtn(ui.btn, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('ignore').catch(() => {})}>
                   Ignore
                 </button>
-                <button type="button" style={ui.btnPrimary} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('create_iocs').catch(() => {})}>
+                <button type="button" style={compactBtn(ui.btnPrimary, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('create_iocs').catch(() => {})}>
                   Create IOCs
                 </button>
-                <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => runReview('approve_high_confidence_malicious').catch(() => {})}>
+                <button type="button" style={compactBtn(ui.btn, Boolean(busy))} disabled={Boolean(busy)} onClick={() => runReview('approve_high_confidence_malicious').catch(() => {})}>
                   Approve high-confidence malicious
                 </button>
+                <span style={{ fontSize: 12, color: '#94a3b8' }} aria-live="polite">
+                  {selected.size} selected on this page
+                </span>
               </div>
             ) : null}
 
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflow: 'auto', maxHeight: 'min(70vh, 720px)', border: '1px solid #1e293b', borderRadius: 8 }}>
               <table width="100%" cellPadding="0" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={ui.thead}>
                     {canWrite ? (
-                      <th style={ui.th}>
+                      <th style={compactTh}>
                         <input
                           type="checkbox"
-                          checked={filtered.length > 0 && filtered.every((c) => selected.has(c.id))}
-                          onChange={toggleAllFiltered}
-                          aria-label="Select all filtered"
+                          checked={pageRows.length > 0 && pageRows.every((c) => selected.has(c.id))}
+                          onChange={toggleAllOnPage}
+                          aria-label="Select all on this page"
                         />
                       </th>
                     ) : null}
-                    <th style={ui.th}>Type</th>
-                    <th style={ui.th}>Value</th>
-                    <th style={ui.th}>Assessment</th>
-                    <th style={ui.th}>Role</th>
-                    <th style={ui.th}>Confidence</th>
-                    <th style={ui.th}>Evidence</th>
-                    <th style={ui.th}>Match</th>
-                    <th style={ui.th}>Review</th>
+                    <th style={compactTh}>Type</th>
+                    <th style={compactTh}>Value</th>
+                    <th style={compactTh}>Assessment</th>
+                    <th style={compactTh}>Role</th>
+                    <th style={compactTh}>Confidence</th>
+                    <th style={compactTh}>Evidence</th>
+                    <th style={compactTh}>Match</th>
+                    <th style={compactTh}>Review</th>
+                    <th style={compactTh}>IOC Result</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.length === 0 ? (
-                    <tr style={ui.tr}><td colSpan={canWrite ? 9 : 8} style={{ ...ui.td, color: '#94a3b8' }}>No candidates in this filter.</td></tr>
-                  ) : filtered.map((c) => (
+                  {pageRows.length === 0 ? (
+                    <tr style={ui.tr}><td colSpan={canWrite ? 10 : 9} style={{ ...compactTd, color: '#94a3b8' }}>No candidates in this filter.</td></tr>
+                  ) : pageRows.map((c) => (
                     <tr key={c.id || c.public_id} style={ui.tr}>
                       {canWrite ? (
-                        <td style={ui.td}>
+                        <td style={compactTd}>
                           <input
                             type="checkbox"
                             checked={selected.has(c.id)}
                             onChange={() => toggleOne(c.id)}
-                            aria-label={`Select candidate ${c.id}`}
+                            aria-label={`Select ${c.candidate_type} ${c.normalized_value || c.original_value || c.id}`}
                           />
                         </td>
                       ) : null}
-                      <td style={ui.td}>{c.candidate_type}</td>
-                      <td style={{ ...ui.td, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', wordBreak: 'break-all' }}>
+                      <td style={compactTd}>{c.candidate_type}</td>
+                      <td style={{ ...compactTd, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', wordBreak: 'break-all' }}>
                         {/* Intentionally plain text — do not auto-link potentially malicious values */}
                         {c.normalized_value || c.original_value || '—'}
                       </td>
-                      <td style={ui.td}>{c.assessment || '—'}</td>
-                      <td style={ui.td}>{c.role || '—'}</td>
-                      <td style={ui.td}>{confidenceLabel(c)}</td>
-                      <td style={{ ...ui.td, fontSize: 12, color: '#cbd5e1', maxWidth: 260 }}>
+                      <td style={compactTd}>{c.assessment || '—'}</td>
+                      <td style={compactTd}>{c.role || '—'}</td>
+                      <td style={compactTd}>{confidenceLabel(c)}</td>
+                      <td style={{ ...compactTd, color: '#cbd5e1', maxWidth: 260 }}>
                         <CandidateProvenance candidate={c} />
                       </td>
-                      <td style={ui.td}>
+                      <td style={compactTd}>
                         {c.matched_ioc_id
                           ? `Matched (${c.matched_ioc_observable_type || c.candidate_type})`
                           : (c.match_state || '—')}
                       </td>
-                      <td style={ui.td}>{c.review_status || '—'}</td>
+                      <td style={compactTd}>{c.review_status || '—'}</td>
+                      <td style={compactTd} title={c.promotion_detail || undefined}>
+                        {iocResultLabel(c)}
+                        {c.candidate_type === 'cidr' && (!c.promotion_outcome || c.promotion_outcome === 'unsupported') ? (
+                          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                            {c.promotion_detail || 'Preserved in Threat Library; not an IOC record.'}
+                          </div>
+                        ) : c.promotion_detail && c.promotion_outcome === 'unsupported' ? (
+                          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>{c.promotion_detail}</div>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10, fontSize: 13, color: '#94a3b8' }}>
+              <span>
+                Page {paged.page} of {paged.totalPages} · {paged.total} total
+              </span>
+              <button
+                type="button"
+                style={compactBtn(ui.btn, paged.page <= 1)}
+                disabled={paged.page <= 1}
+                aria-label="Previous page"
+                onClick={() => goToPage(paged.page - 1)}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                style={compactBtn(ui.btn, paged.page >= paged.totalPages)}
+                disabled={paged.page >= paged.totalPages}
+                aria-label="Next page"
+                onClick={() => goToPage(paged.page + 1)}
+              >
+                Next
+              </button>
+              <label htmlFor="tl-page-size" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                Page size
+                <select
+                  id="tl-page-size"
+                  value={paged.pageSize}
+                  onChange={(e) => changePageSize(e.target.value)}
+                  style={{ ...compactSelect, minWidth: 80 }}
+                >
+                  {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
             </div>
           </SectionCard>
         ) : null}
@@ -755,24 +1133,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
               )}
             </SectionCard>
 
-            <SectionCard title="Relationships">
-              {relationships.length === 0 ? (
-                <div style={ui.muted}>No relationships recorded.</div>
-              ) : (
-                <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
-                  {relationships.map((rel) => (
-                    <li key={rel.id || `${rel.relationship_type}-${rel.subject_entity_id}-${rel.object_candidate_id}`}>
-                      {rel.relationship_type || 'related'}
-                      {rel.confidence != null ? ` (${Math.round(Number(rel.confidence) * 100)}%)` : ''}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </SectionCard>
-
             <SectionCard title="Source">
               <div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
-                <Meta label="Source URL" value={report.source_url} asSafeUrl />
+                <SourceUrlEditor
+                  value={report.source_url}
+                  canWrite={canWrite}
+                  busy={busy}
+                  onSave={saveSourceUrl}
+                />
                 <Meta label="File name" value={report.source_file_name} />
                 <Meta label="SHA-256" value={report.source_sha256} mono />
                 {documentMeta ? (

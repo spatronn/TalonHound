@@ -10,7 +10,16 @@ import {
   describeAnalysisFailureDetail,
   describeCandidateProvenance,
   isReviewIndicator,
-  matchReviewFilter
+  matchReviewFilter,
+  DEFAULT_PAGE_SIZE,
+  PAGE_SIZES,
+  filterReviewCandidates,
+  paginateRows,
+  parseReviewTableUrlState,
+  serializeReviewTableUrlState,
+  iocResultLabel,
+  applyPromotionResults,
+  formatCreateIocSummary
 } from './candidateReview.js';
 
 const explicitUrl = {
@@ -181,4 +190,65 @@ test('CIDR appendix rows stay in the review set; provider-service domains do not
   assert.equal(isReviewIndicator(provider), false);
   assert.equal(describeCandidateProvenance(cidr).assertion, 'Operational infrastructure');
   assert.equal(describeCandidateProvenance(provider).assertion, 'Provider/service');
+});
+
+test('search, type filter, pagination, and URL state', () => {
+  const rows = [
+    { id: 1, candidate_type: 'ip', normalized_value: '38.92.47.91', original_value: '38.92.47.91', match_state: 'new', review_status: 'pending', is_ioc: true, assessment: 'malicious' },
+    { id: 2, candidate_type: 'domain', normalized_value: 'recordedfuture.com', original_value: 'RecordedFuture.com', match_state: 'new', review_status: 'approved', is_ioc: true, assessment: 'malicious' },
+    { id: 3, candidate_type: 'sha256', normalized_value: 'bb167fc8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', original_value: 'BB167FC8aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', match_state: 'new', review_status: 'pending', is_ioc: true, assessment: 'malicious' },
+    { id: 4, candidate_type: 'cidr', normalized_value: '36.35.56.0/24', original_value: '36.35.56.0/24', match_state: 'new', review_status: 'approved', is_ioc: true, assessment: 'malicious' },
+    { id: 5, candidate_type: 'url', normalized_value: 'https://example.com/x', match_state: 'context_only', review_status: 'context_only', assessment: 'context_only', is_ioc: true }
+  ];
+  assert.equal(DEFAULT_PAGE_SIZE, 50);
+  assert.deepEqual(PAGE_SIZES, [25, 50, 100]);
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', q: '38.92.47.91' }).map((c) => c.id).join(), '1');
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', q: 'recordedfuture' }).map((c) => c.id).join(), '2');
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', q: 'bb167fc8' }).map((c) => c.id).join(), '3');
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', q: '/24' }).map((c) => c.id).join(), '4');
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', type: 'cidr' }).map((c) => c.id).join(), '4');
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', type: 'hash' }).map((c) => c.id).join(), '3');
+  assert.equal(filterReviewCandidates(rows, { tab: 'indicators', q: 'no-such-value' }).length, 0);
+
+  const paged = paginateRows(Array.from({ length: 120 }, (_, i) => ({ id: i })), 3, 50);
+  assert.equal(paged.page, 3);
+  assert.equal(paged.total, 120);
+  assert.equal(paged.totalPages, 3);
+  assert.equal(paged.rows.length, 20);
+  assert.equal(paged.rows[0].id, 100);
+
+  const parsed = parseReviewTableUrlState('page=3&pageSize=50&type=ip&q=38.92&tab=needs_review');
+  assert.equal(parsed.page, 3);
+  assert.equal(parsed.pageSize, 50);
+  assert.equal(parsed.type, 'ip');
+  assert.equal(parsed.q, '38.92');
+  assert.equal(parsed.tab, 'needs_review');
+  const serial = serializeReviewTableUrlState(parsed);
+  assert.equal(serial.get('page'), '3');
+  assert.equal(serial.get('q'), '38.92');
+  assert.equal(serial.get('type'), 'ip');
+});
+
+test('IOC Result labels stay separate from review and match', () => {
+  assert.equal(iocResultLabel({ promotion_outcome: null, review_status: 'pending', match_state: 'new' }), '—');
+  assert.equal(iocResultLabel({ promotion_outcome: 'created', review_status: 'approved', match_state: 'existing' }), 'Created');
+  assert.equal(iocResultLabel({ promotion_outcome: 'already_existing' }), 'Already exists');
+  assert.equal(iocResultLabel({ promotion_outcome: 'unsupported', promotion_detail: 'CIDR' }), 'Not supported');
+  const merged = applyPromotionResults(
+    [{ id: 9, match_state: 'new', promotion_outcome: null }],
+    [{ candidate_id: 9, outcome: 'created', ioc_id: 123 }]
+  );
+  assert.equal(merged[0].promotion_outcome, 'created');
+  assert.equal(merged[0].matched_ioc_id, 123);
+  assert.equal(merged[0].match_state, 'existing');
+  const text = formatCreateIocSummary({
+    selected: 40,
+    eligible: 12,
+    already_existing: 20,
+    not_approved: 6,
+    unsupported: 2
+  });
+  assert.match(text, /Selected: 40/);
+  assert.match(text, /Approved \+ new \+ supported: 12/);
+  assert.match(text, /Only the 12 eligible approved indicators will be created/);
 });
