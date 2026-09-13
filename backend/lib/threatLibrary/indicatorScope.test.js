@@ -185,6 +185,32 @@ test('mixed occurrence: provider mention + explicit appendix → appendix wins',
   assert.equal(d.occurrences.length, 2);
 });
 
+test('occurrence window: C2 prose at the start of a long block does not taint a publisher domain at the end', () => {
+  const cands = extractCandidatesFromDocument(
+    doc([
+      {
+        id: 'p',
+        text:
+          'From the persistent connection, the C2 server can issue operational commands, such as ssh_obj. ' +
+          'x '.repeat(80) +
+          'Insikt Group observed the operator using services such as residentialvps.example, likely to purchase infrastructure. ' +
+          'Learn more at publisher-research.example.com'
+      },
+      { id: 'h', type: 'heading', text: 'C2 Servers' },
+      { id: 'r1', type: 'list_item', layout: 'observable_row', text: '203.0.113.10' },
+      { id: 'r2', type: 'list_item', layout: 'observable_row', text: '198.51.100.20' },
+      { id: 'r3', type: 'list_item', layout: 'observable_row', text: '192.0.2.30' }
+    ])
+  );
+  const vendor = byVal(cands, 'residentialvps.example');
+  assert.equal(vendor.assessment, 'context_only');
+  assert.equal(vendor.source_assertion, SOURCE_ASSERTIONS.PROVIDER_SERVICE);
+  const pub = byVal(cands, 'publisher-research.example.com');
+  assert.equal(pub.assessment, 'context_only');
+  assert.notEqual(pub.source_relation, SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
+  assert.equal(pub.ai_needed, false);
+});
+
 test('narrative-only report without appendix still classifies body C2 via AI path', () => {
   const cands = extractCandidatesFromDocument(
     doc([{ text: 'The backdoor connects to 203.0.113.88:8443 for command and control.' }], { title: 'Narrative only' })

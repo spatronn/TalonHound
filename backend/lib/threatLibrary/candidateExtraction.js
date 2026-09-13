@@ -41,6 +41,37 @@ export { normalizeCandidateValue } from './candidateValue.js';
  */
 export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v5';
 
+/**
+ * Relation classification must see the clause around THIS observable, not the
+ * first 280 characters of a long PDF paragraph (which may be a different
+ * sentence, or a running footer glued onto a C2 discussion).
+ * @param {string} text
+ * @param {string} value
+ */
+export function surroundingWindow(text, value, radius = 140) {
+  const hay = String(text || '');
+  if (!hay) return null;
+  const needles = [...new Set([
+    String(value || ''),
+    String(value || '').replace(/\./g, '[.]'),
+    String(value || '').replace(/\[\.\]/g, '.')
+  ])].filter(Boolean);
+  const low = hay.toLowerCase();
+  let idx = -1;
+  let nlen = 0;
+  for (const n of needles) {
+    const i = low.indexOf(String(n).toLowerCase());
+    if (i >= 0) {
+      idx = i;
+      nlen = String(n).length;
+      break;
+    }
+  }
+  if (idx < 0) return hay.slice(0, Math.min(280, hay.length));
+  const start = Math.max(0, idx - radius);
+  return hay.slice(start, idx + nlen + radius);
+}
+
 const IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b/g;
 const IPV4_PORT_RE = /\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
 const IPV6_RE = /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b/g;
@@ -158,9 +189,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   /** identities asserted by explicit tables → must exist as candidates */
   const explicitTableKeys = new Set();
 
-  function occurrenceFor(block, extra = {}) {
+  function occurrenceFor(block, extra = {}, focusValue = '') {
     const zone = block?.zone || 'unknown';
     const text = extra.rowText || (block?.text ? String(block.text) : null);
+    const focus = extra.originalValue || focusValue;
     return {
       block_id: block?.id || null,
       page: block?.page ?? null,
@@ -171,12 +203,12 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       form: extra.form || OCCURRENCE_FORMS.STANDALONE,
       port: extra.port ?? null,
       table_row: extra.tableRow ? extra.tableRow.row_index : null,
-      surrounding_text: text ? text.slice(0, 280) : null
+      surrounding_text: text ? surroundingWindow(text, focus) : null
     };
   }
 
   function pushOccurrence(entry, block, extra = {}) {
-    const occ = occurrenceFor(block, extra);
+    const occ = occurrenceFor(block, extra, entry.normalized_value || entry.original_value);
     if (!Array.isArray(entry.occurrences)) entry.occurrences = [];
     const dup = entry.occurrences.find(
       (o) => o.block_id && o.block_id === occ.block_id && (o.table_row == null || o.table_row === occ.table_row)
