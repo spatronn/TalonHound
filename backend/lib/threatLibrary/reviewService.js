@@ -167,9 +167,11 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   );
 
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {
+    // Non-IOC artifacts (mutex names, relative paths, code identifiers) are
+    // context rows: they can never be approved into the IOC set.
     await pool.query(
       `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
-       WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+       WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true`,
       [reportId, ids]
     );
   } else if (action === 'context_only') {

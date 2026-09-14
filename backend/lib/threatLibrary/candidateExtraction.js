@@ -30,6 +30,12 @@ import { isObservableOnlyLine } from './pdfLayout.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
 import { discoverDocumentIndicatorScope } from './indicatorScope.js';
+import {
+  NON_NETWORK_RESOLVED_TYPES,
+  RESOLVED_TYPES,
+  buildTypeResolutionRecord,
+  validateCanonicalIocValue
+} from './observableTypeResolver.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
 
@@ -38,8 +44,14 @@ export { normalizeCandidateValue } from './candidateValue.js';
  * rebuilt from the canonical document on the next analysis run.
  * v5: source-scope promotion (authoritative indicator sections vs narrative
  * context), provider/service relation, CIDR as a first-class candidate type.
+ * v6: central observable-type resolver — dotted technical identifiers
+ * (mutex / class / config keys) and relative paths / routes are never domain /
+ * URL candidates; they are retained as non-IOC `technical_artifact` /
+ * `relative_path` / `file_path` context with an explainable `type_resolution`
+ * record; canonical-shape gate on every network candidate; declared-type
+ * sub-headings ("Domain", "IP Addresses") continue an open IOC section.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v5';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v6';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -139,6 +151,7 @@ function relatedValuesFromDescription(description) {
   if (!description) return [];
   const parsed = parseIndicatorCell(description, null);
   return parsed.values
+    .filter((v) => v.is_ioc !== false)
     .filter((v) => v.candidate_type !== 'domain' || v.normalized_value.includes('.'))
     .map((v) => (v.port ? `${v.normalized_value}:${v.port}` : v.normalized_value))
     .slice(0, 8);
@@ -184,7 +197,26 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       inconsistent: false,
       missing_identities: [],
       tables: []
+    },
+    /** Observable-type resolution: what the syntax guessed vs what the source supports. */
+    type_resolution: {
+      syntactic_occurrences: 0,
+      network_ioc_candidates: 0,
+      artifact_candidates: 0,
+      artifact_occurrences_dropped: 0,
+      relative_paths: 0,
+      canonical_rejections: 0,
+      rejected_values: {},
+      excluded_reasons: {},
+      examples: []
     }
+  };
+  const typeDiag = diagnostics.type_resolution;
+  const countReason = (bucket, reason) => {
+    bucket[reason] = (bucket[reason] || 0) + 1;
+  };
+  const rememberExample = (record) => {
+    if (typeDiag.examples.length < 24) typeDiag.examples.push(record);
   };
   /** identities asserted by explicit tables → must exist as candidates */
   const explicitTableKeys = new Set();
@@ -203,7 +235,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       form: extra.form || OCCURRENCE_FORMS.STANDALONE,
       port: extra.port ?? null,
       table_row: extra.tableRow ? extra.tableRow.row_index : null,
-      surrounding_text: text ? surroundingWindow(text, focus) : null
+      surrounding_text: text ? surroundingWindow(text, focus) : null,
+      typing_reason: extra.typingReason || null
     };
   }
 
@@ -240,39 +273,20 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   }
 
   /**
-   * @param {string} raw
-   * @param {string|null} hintType
-   * @param {object} block
-   * @param {{ form?: string, port?: number|null, typing?: object, originalValue?: string, tableRow?: object, rowText?: string }} [extra]
+   * Create-or-get the candidate entry for a resolved identity and attach one
+   * occurrence (row provenance, evidence anchor preference).
+   * @param {object} spec
    */
-  function add(raw, hintType, block, extra = {}) {
-    const n = normalizeCandidateValue(raw, hintType);
-    if (!n.ok) return null;
-    const typingMeta = { ...(extra.typing || {}) };
-
-    // Domain typing gate (filename / code identifier / hostname shape)
-    if (n.candidateType === 'domain') {
-      const typed = resolveDottedTokenType(n.normalizedValue, {
-        surroundingText: extra.rowText || block?.text || '',
-        urlPathBasenames,
-        knownUrlHosts
-      });
-      if (typed.kind === 'file_artifact' || typed.kind === 'code_identifier' || typed.kind === 'skip') {
-        return null; // never a network IOC candidate
-      }
-      typingMeta.typing_reason = typed.reason;
-      typingMeta.resolved_type = 'domain';
-    }
-
-    const key = candidateKey(n.candidateType, n.normalizedValue);
+  function materialize(spec) {
+    const { candidateType, normalizedValue, originalValue, n, block, extra, typingMeta, isIoc, artifactKind, typingSignals, syntaxGuess } = spec;
+    const zone = block?.zone || 'unknown';
+    const key = candidateKey(candidateType, normalizedValue);
     let entry = byKey.get(key);
     if (!entry) {
-      const zone = block?.zone || 'unknown';
-      const isIoc = n.isIoc !== false && n.candidateType !== 'cve' && n.candidateType !== 'attack_technique';
       entry = {
-        candidate_type: n.candidateType,
-        original_value: extra.originalValue || n.originalValue,
-        normalized_value: n.normalizedValue,
+        candidate_type: candidateType,
+        original_value: originalValue,
+        normalized_value: normalizedValue,
         assessment: isIoc && !n.likelyContextOnly ? 'unknown' : 'context_only',
         role: n.likelyContextOnly ? (n.reservedAddress ? 'reference' : 'legitimate_service') : isIoc ? 'unknown' : 'reference',
         confidence: n.likelyContextOnly ? 0.75 : null,
@@ -282,8 +296,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         section: zone,
         zone,
         is_ioc: isIoc,
-        resolved_type: typingMeta.resolved_type || n.candidateType,
+        resolved_type: typingMeta.resolved_type || candidateType,
         typing_reason: typingMeta.typing_reason || null,
+        artifact_kind: isIoc ? null : artifactKind || null,
+        syntax_guess: syntaxGuess,
+        typing_signals: typingSignals || null,
         occurrences: [],
         parsed: n.parsed && typeof n.parsed === 'object' ? { ...n.parsed } : {},
         table_rows: [],
@@ -296,14 +313,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (n.reservedAddress) entry.reserved_address = true;
       // Report's own source URL / host is provenance, never a finding.
       if (
-        (n.candidateType === 'domain' && sourceHost && n.normalizedValue === sourceHost) ||
-        (n.candidateType === 'url' && normalizedSourceUrl && n.normalizedValue === normalizedSourceUrl)
+        (candidateType === 'domain' && sourceHost && normalizedValue === sourceHost) ||
+        (candidateType === 'url' && normalizedSourceUrl && normalizedValue === normalizedSourceUrl)
       ) {
         entry.is_report_source = true;
       }
       byKey.set(key, entry);
     }
-    pushOccurrence(entry, block, extra);
+    pushOccurrence(entry, block, { ...extra, typingReason: typingMeta.typing_reason || null });
     if (extra.tableRow && entry.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) {
       entry.table_rows.push(extra.tableRow);
     }
@@ -325,6 +342,184 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       entry.zone = block.zone || 'unknown';
     }
     return entry;
+  }
+
+  /**
+   * Dotted tokens are typed once per document: every occurrence is resolved
+   * against its own context (label, clause, zone, form) and the readings are
+   * weighed together, so "Exploit.in" mentioned beside the word "module" in
+   * one sentence does not split the same token into two identities.
+   * @type {Map<string, { token: string, occurrences: object[] }>}
+   */
+  const pendingDotted = new Map();
+
+  /**
+   * @param {string} raw
+   * @param {string|null} hintType
+   * @param {object} block
+   * @param {{ form?: string, port?: number|null, typing?: object, originalValue?: string, tableRow?: object, rowText?: string, typeLabel?: string|null, declaredType?: string|null, explicitTable?: boolean }} [extra]
+   */
+  function add(raw, hintType, block, extra = {}) {
+    typeDiag.syntactic_occurrences += 1;
+    const n = normalizeCandidateValue(raw, hintType);
+    if (!n.ok) {
+      countReason(typeDiag.rejected_values, n.error || 'unrecognized');
+      return null;
+    }
+    const typingMeta = { ...(extra.typing || {}) };
+    const zone = block?.zone || 'unknown';
+    const strongZone = STRONG_IOC_ZONES.has(zone);
+
+    // Dotted tokens: resolve per occurrence, decide per document (see pendingDotted).
+    if (n.candidateType === 'domain') {
+      const token = String(extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
+      const typed = resolveDottedTokenType(token, {
+        surroundingText: surroundingWindow(extra.rowText || block?.text || '', token, 160),
+        typeLabel: extra.typeLabel || block?.type_label || null,
+        declaredType: extra.declaredType || block?.declared_type_label || null,
+        zone,
+        blockType: block?.type || null,
+        form: extra.form || OCCURRENCE_FORMS.STANDALONE,
+        strongZone,
+        urlPathBasenames,
+        knownUrlHosts
+      });
+      if (typed.kind === 'skip') {
+        countReason(typeDiag.rejected_values, typed.reason);
+        return null;
+      }
+      const id = n.normalizedValue;
+      if (!pendingDotted.has(id)) pendingDotted.set(id, { token, occurrences: [] });
+      pendingDotted.get(id).occurrences.push({ n, block, extra, typed, token, strongZone });
+      return { deferred: true, candidate_type: 'domain', normalized_value: n.normalizedValue, is_ioc: true, typed };
+    }
+
+    let candidateType = n.candidateType;
+    let isIoc = n.isIoc !== false && candidateType !== 'cve' && candidateType !== 'attack_technique';
+    let artifactKind = typingMeta.artifact_kind || null;
+    const syntaxGuess = NON_NETWORK_RESOLVED_TYPES.has(candidateType)
+      ? candidateType === RESOLVED_TYPES.TECHNICAL_ARTIFACT
+        ? 'domain'
+        : 'url'
+      : candidateType;
+    if (NON_NETWORK_RESOLVED_TYPES.has(candidateType)) {
+      isIoc = false;
+      typingMeta.resolved_type = candidateType;
+      typingMeta.typing_reason = typingMeta.typing_reason || n.typingReason || null;
+      artifactKind = artifactKind || (candidateType === RESOLVED_TYPES.TECHNICAL_ARTIFACT ? 'identifier' : 'path');
+      countReason(typeDiag.excluded_reasons, typingMeta.typing_reason || candidateType);
+    } else if (candidateType === 'url') {
+      typingMeta.resolved_type = 'url';
+      typingMeta.typing_reason = typingMeta.typing_reason || n.typingReason || 'absolute_url';
+    }
+    return materialize({
+      candidateType,
+      normalizedValue: n.normalizedValue,
+      originalValue: extra.originalValue || n.originalValue,
+      n,
+      block,
+      extra,
+      typingMeta,
+      isIoc,
+      artifactKind,
+      typingSignals: typingMeta.typing_signals || null,
+      syntaxGuess
+    });
+  }
+
+  /** Evidence weight of one occurrence reading (domain vs artifact). */
+  const READING_WEIGHT = Object.freeze({
+    declared_network_type: 100,
+    mutex_label: 100, code_label: 100, config_label: 100, registry_label: 100, file_label: 100, path_label: 100,
+    command_label: 100, process_label: 100, metadata_label: 100,
+    network_relation: 50,
+    single_instance_identifier_context: 50, inline_artifact_label: 50,
+    url_host: 40, explicit_indicator_row: 40, url_path_basename: 40,
+    code_identifier_shape: 30, code_context: 30, multi_dot_ext: 30, file_extension: 30, extension_without_host_context: 20,
+    method_suffix: 30, code_block_weak_suffix: 20,
+    network_context: 10, network_context_mixed_case: 10,
+    artifact_context: 10, code_context_label: 10, config_context: 10, registry_context: 10, path_context: 10,
+    command_context: 10, process_context: 10, metadata_context: 10, file_context: 10,
+    hostname_shape: 1,
+    no_network_semantics: 1
+  });
+
+  /**
+   * Decide every deferred dotted token and materialize its candidate.
+   */
+  function resolvePendingDotted() {
+    for (const [, pending] of pendingDotted) {
+      let domainScore = 0;
+      let artifactScore = 0;
+      let best = null;
+      for (const occ of pending.occurrences) {
+        const w = READING_WEIGHT[occ.typed.reason] ?? 5;
+        if (occ.typed.kind === 'domain') domainScore += w;
+        else artifactScore += w;
+        if (!best || w > best.w) best = { w, occ };
+      }
+      const isDomain = domainScore > artifactScore;
+      const winning = pending.occurrences
+        .filter((o) => (o.typed.kind === 'domain') === isDomain)
+        .sort((a, b) => (READING_WEIGHT[b.typed.reason] ?? 5) - (READING_WEIGHT[a.typed.reason] ?? 5))[0] || best.occ;
+      const typed = winning.typed;
+      const labelled = pending.occurrences.some((o) => (o.typed.kind === 'domain') === isDomain && o.typed.labelled);
+      const asserted = pending.occurrences.some(
+        (o) => o.extra.form === OCCURRENCE_FORMS.TABLE_ROW || o.extra.form === OCCURRENCE_FORMS.LIST_ROW || o.strongZone
+      );
+      if (!isDomain) {
+        countReason(typeDiag.excluded_reasons, typed.reason);
+        const retain = labelled || asserted;
+        if (!retain) {
+          // Incidental identifiers in prose (bytes.Index, Foo.Bar.Baz) are not report intelligence.
+          typeDiag.artifact_occurrences_dropped += pending.occurrences.length;
+          rememberExample(
+            buildTypeResolutionRecord({
+              raw: pending.token,
+              syntaxGuess: 'domain',
+              resolvedType: RESOLVED_TYPES.TECHNICAL_ARTIFACT,
+              reason: typed.reason,
+              promotion: 'excluded',
+              signals: typed.signals
+            })
+          );
+          continue;
+        }
+      }
+      const candidateType = isDomain ? 'domain' : RESOLVED_TYPES.TECHNICAL_ARTIFACT;
+      for (const occ of pending.occurrences) {
+        const typingMeta = {
+          ...(occ.extra.typing || {}),
+          resolved_type: candidateType,
+          typing_reason: typed.reason,
+          occurrence_reason: occ.typed.reason
+        };
+        const entry = materialize({
+          candidateType,
+          normalizedValue: isDomain ? occ.n.normalizedValue : pending.token,
+          originalValue: occ.extra.originalValue || occ.n.originalValue,
+          n: occ.n,
+          block: occ.block,
+          extra: { ...occ.extra, typing: { ...(occ.extra.typing || {}), typing_reason: occ.typed.reason } },
+          typingMeta: { ...typingMeta, typing_reason: typed.reason },
+          isIoc: isDomain,
+          artifactKind: isDomain ? null : typed.artifact_kind,
+          typingSignals: typed.signals,
+          syntaxGuess: 'domain'
+        });
+        // pushOccurrence recorded the document-level reason; keep the per-occurrence one too.
+        const last = entry.occurrences[entry.occurrences.length - 1];
+        if (last && last.block_id === (occ.block?.id || null)) last.typing_reason = occ.typed.reason;
+        if (occ.extra.explicitTable && entry.is_ioc !== false) {
+          explicitTableKeys.add(candidateKey(entry.candidate_type, entry.normalized_value));
+        }
+      }
+      const entry = byKey.get(candidateKey(candidateType, isDomain ? pending.occurrences[0].n.normalizedValue : pending.token));
+      if (entry) {
+        entry.type_scores = { domain: domainScore, artifact: artifactScore };
+      }
+    }
+    pendingDotted.clear();
   }
 
   const blocks = annotated.blocks || [];
@@ -359,8 +554,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       rejected_rows: []
     };
     t.tables.push(summary);
-    if (!interp || interp.kind !== 'ioc_table') continue;
-    t.ioc_tables += 1;
+    if (!interp || (interp.kind !== 'ioc_table' && interp.kind !== 'artifact_table')) continue;
+    if (interp.kind === 'ioc_table') t.ioc_tables += 1;
     if (interp.explicit) t.explicit_tables += 1;
     tableHandled.add(block.id);
     t.rows_seen += summary.rows_seen;
@@ -390,16 +585,26 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           description: row.description,
           explicit: Boolean(interp.explicit),
           declared_type_mismatch: v.declared_type_mismatch === true || undefined,
-          related_values: related.length ? related : undefined
+          related_values: related.length ? related : undefined,
+          resolved_type: v.resolved_type || v.candidate_type,
+          typing_reason: v.typing_reason || undefined
         };
         const entry = add(v.refanged, v.candidate_type, block, {
           form: OCCURRENCE_FORMS.TABLE_ROW,
           port: v.port ?? null,
           originalValue: v.raw,
           tableRow,
-          rowText
+          rowText,
+          typeLabel: row.type_cell || null,
+          declaredType: v.declared_type || null,
+          typing: {
+            typing_reason: v.typing_reason || null,
+            artifact_kind: v.artifact_kind || null,
+            typing_signals: v.typing_signals || null
+          },
+          explicitTable: Boolean(interp.explicit)
         });
-        if (entry && interp.explicit && entry.is_ioc !== false) {
+        if (entry && !entry.deferred && interp.explicit && entry.is_ioc !== false) {
           explicitTableKeys.add(candidateKey(entry.candidate_type, entry.normalized_value));
         }
       }
@@ -496,9 +701,13 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
-      add(m[0].toLowerCase(), 'domain', block, { form: standaloneForm });
+      // Original spelling: identifier segmentation (Loader.Program.Main) is case-visible.
+      add(m[0], 'domain', block, { form: standaloneForm, originalValue: m[0] });
     }
   }
+
+  // Decide deferred dotted tokens (domain vs technical artifact) per document.
+  resolvePendingDotted();
 
   // Finalize: evidence policy + parser-derived host cross references
   const out = [];
@@ -520,6 +729,31 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     entry.occurrence_count = entry.occurrences.length;
     entry.document_has_authoritative_scope = documentScope.has_authoritative_indicator_scope;
     applyEvidencePolicy(entry);
+    const canonical = entry.is_ioc !== false ? validateCanonicalIocValue(entry.candidate_type, entry.normalized_value) : null;
+    if (canonical && !canonical.ok) typeDiag.canonical_rejections += 1;
+    entry.type_resolution = buildTypeResolutionRecord({
+      raw: entry.original_value,
+      syntaxGuess: entry.syntax_guess || entry.candidate_type,
+      resolvedType: entry.resolved_type || entry.candidate_type,
+      reason: entry.typing_reason || (entry.is_ioc === false ? entry.policy_decision : 'syntax_valid'),
+      promotion: entry.is_ioc === false || entry.assessment === 'context_only' ? 'excluded' : 'eligible',
+      signals: entry.typing_signals || undefined,
+      normalizedPath: entry.parsed?.normalized_path || null,
+      port: entry.parsed?.port ?? null,
+      canonical
+    });
+    if (entry.artifact_kind) entry.type_resolution.artifact_kind = entry.artifact_kind;
+    if (entry.type_scores) entry.type_resolution.scores = entry.type_scores;
+    delete entry.typing_signals;
+    delete entry.syntax_guess;
+    delete entry.type_scores;
+    if (NON_NETWORK_RESOLVED_TYPES.has(entry.candidate_type)) {
+      typeDiag.artifact_candidates += 1;
+      if (entry.candidate_type === RESOLVED_TYPES.RELATIVE_PATH || entry.candidate_type === RESOLVED_TYPES.FILE_PATH) typeDiag.relative_paths += 1;
+      rememberExample(entry.type_resolution);
+    } else if (entry.is_ioc !== false) {
+      typeDiag.network_ioc_candidates += 1;
+    }
     out.push(entry);
   }
 

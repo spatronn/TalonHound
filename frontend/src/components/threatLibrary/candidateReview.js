@@ -65,6 +65,46 @@ export function sourceAssertionLabel(value) {
 
 const EXPLICIT_ASSERTIONS = new Set(['explicit_ioc', 'explicit_c2', 'explicit_operational_infrastructure']);
 
+const ARTIFACT_KIND_LABELS = Object.freeze({
+  mutex: 'Mutex / single-instance name',
+  code: 'Code identifier',
+  config: 'Configuration key',
+  registry: 'Registry path',
+  file: 'File name',
+  path: 'Path',
+  command: 'Command',
+  process: 'Process / service name',
+  metadata: 'Metadata',
+  identifier: 'Technical identifier'
+});
+
+const RESOLVED_TYPE_LABELS = Object.freeze({
+  technical_artifact: 'Not a network IOC',
+  relative_path: 'Relative path (no scheme / host)',
+  file_path: 'File system path'
+});
+
+/**
+ * Why a row was kept out of the IOC set: resolved type, artifact family and
+ * the resolver reason (e.g. "Not a network IOC · Mutex / single-instance name ·
+ * mutex_label"). Null for real network / file observables.
+ */
+export function describeTypeResolution(candidate) {
+  const ev = (candidate && candidate.evidence) || {};
+  const tr = ev.type_resolution || null;
+  const resolved = String(tr?.resolved_type || ev.resolved_type || candidate?.candidate_type || '').toLowerCase();
+  if (!RESOLVED_TYPE_LABELS[resolved]) return null;
+  const parts = [RESOLVED_TYPE_LABELS[resolved]];
+  const kind = ev.artifact_kind || tr?.artifact_kind || null;
+  if (kind && ARTIFACT_KIND_LABELS[kind] && resolved === 'technical_artifact') parts.push(ARTIFACT_KIND_LABELS[kind]);
+  const reason = tr?.reason || ev.typing_reason || null;
+  if (reason) parts.push(String(reason).replace(/_/g, ' '));
+  const details = [];
+  if (tr?.normalized_path && tr.normalized_path !== candidate?.normalized_value) details.push(`path ${tr.normalized_path}`);
+  if (tr?.port != null) details.push(`port ${tr.port}`);
+  return { label: parts.join(' · '), detail: details.length ? details.join(' · ') : null, syntaxGuess: tr?.syntax_guess || null };
+}
+
 /**
  * True when the row is a publisher assertion resolved without the model — its
  * confidence is source-asserted, not an AI estimate.
@@ -87,7 +127,7 @@ export function confidenceLabel(candidate) {
 
 /**
  * Compact provenance summary for one candidate row.
- * @returns {{ assertion: string, section: string|null, pages: string|null, occurrences: number, direct: boolean, ports: string|null, decision: string|null, description: string|null, tableRow: string|null, declaredType: string|null, sourceAsserted: boolean }}
+ * @returns {{ assertion: string, section: string|null, pages: string|null, occurrences: number, direct: boolean, ports: string|null, decision: string|null, description: string|null, tableRow: string|null, declaredType: string|null, sourceAsserted: boolean, resolution: { label: string, detail: string|null, syntaxGuess: string|null }|null }}
  */
 export function describeCandidateProvenance(candidate) {
   const ev = (candidate && candidate.evidence) || {};
@@ -111,7 +151,8 @@ export function describeCandidateProvenance(candidate) {
     description: firstRow?.description || null,
     tableRow: firstRow ? `table ${firstRow.table_id || '?'} row ${Number.isInteger(firstRow.row_index) ? firstRow.row_index + 1 : '?'}` : null,
     declaredType: firstRow?.type_cell || null,
-    sourceAsserted: isSourceAsserted(candidate)
+    sourceAsserted: isSourceAsserted(candidate),
+    resolution: describeTypeResolution(candidate)
   };
 }
 

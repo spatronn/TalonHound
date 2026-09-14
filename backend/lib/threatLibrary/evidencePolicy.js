@@ -17,6 +17,7 @@ import {
   attachOccurrenceRelations,
   strongestSourceRelation
 } from './indicatorScope.js';
+import { NON_NETWORK_RESOLVED_TYPES, NETWORK_IOC_TYPES, validateCanonicalIocValue } from './observableTypeResolver.js';
 
 export const EVIDENCE_TIERS = Object.freeze({
   A: 'explicit_ioc_assertion',
@@ -99,6 +100,28 @@ export function summarizeOccurrenceEvidence(candidate) {
   };
 }
 
+/**
+ * Terminal exclusion from the IOC review set (context retained, never promoted).
+ * @param {object} candidate
+ * @param {object} summary
+ * @param {{ role: string, policy: string }} opts
+ */
+function excludeFromIoc(candidate, summary, opts) {
+  candidate.assessment = 'context_only';
+  candidate.role = opts.role;
+  candidate.match_state = 'context_only';
+  candidate.is_ioc = false;
+  candidate.evidence_tier = summary.tier;
+  candidate.evidence_summary = summary;
+  candidate.policy_decision = opts.policy;
+  candidate.source_assertion = SOURCE_ASSERTIONS.NON_IOC;
+  candidate.evidence_strength = 'none';
+  candidate.ai_needed = false;
+  candidate.decision_source = 'deterministic';
+  candidate.ai_role_suggestion = null;
+  return candidate;
+}
+
 function deterministicRole(candidate, summary) {
   if (HASH_TYPES.has(String(candidate.candidate_type))) return 'malware_sample';
   if (summary.hasC2 || summary.hasEndpoint) return 'command_and_control';
@@ -120,23 +143,18 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     ? candidate.occurrences.length
     : candidate.occurrence_count || 0;
 
-  // Non-network artifacts never promote as IOC
-  if (resolvedType === 'file_artifact' || resolvedType === 'code_identifier' || candidate.is_ioc === false) {
-    candidate.assessment = 'context_only';
-    candidate.role = resolvedType === 'code_identifier' ? 'tool' : 'reference';
-    candidate.match_state = 'context_only';
-    candidate.is_ioc = false;
-    candidate.evidence_tier = summary.tier;
-    candidate.evidence_summary = summary;
-    candidate.policy_decision = 'ioc_excluded_non_network';
-    candidate.source_assertion = SOURCE_ASSERTIONS.NON_IOC;
-    candidate.evidence_strength = 'none';
-    candidate.ai_needed = false;
-    candidate.decision_source = 'deterministic';
-    return candidate;
+  // Gate 1 — non-network artifacts (mutex / code / config identifiers, relative
+  // paths, filenames) never promote as IOC, whatever zone or AI says.
+  const nonNetworkType =
+    NON_NETWORK_RESOLVED_TYPES.has(String(resolvedType)) || NON_NETWORK_RESOLVED_TYPES.has(String(candidate.candidate_type));
+  if (nonNetworkType || candidate.is_ioc === false) {
+    return excludeFromIoc(candidate, summary, {
+      role: resolvedType === 'code_identifier' || candidate.artifact_kind === 'code' ? 'tool' : 'reference',
+      policy: 'ioc_excluded_non_network'
+    });
   }
 
-  // Filename/code mis-typed as domain that slipped through
+  // Gate 2 — legacy typing reasons that mark a mis-typed domain.
   if (
     candidate.candidate_type === 'domain' &&
     (candidate.typing_reason === 'file_extension' ||
@@ -144,17 +162,22 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
       candidate.typing_reason === 'camel_method' ||
       candidate.typing_reason === 'method_suffix')
   ) {
-    candidate.assessment = 'context_only';
-    candidate.is_ioc = false;
-    candidate.match_state = 'context_only';
-    candidate.policy_decision = 'ioc_excluded_typing';
-    candidate.source_assertion = SOURCE_ASSERTIONS.NON_IOC;
-    candidate.evidence_strength = 'none';
-    candidate.ai_needed = false;
-    candidate.decision_source = 'deterministic';
-    candidate.evidence_tier = summary.tier;
-    candidate.evidence_summary = summary;
-    return candidate;
+    return excludeFromIoc(candidate, summary, { role: 'reference', policy: 'ioc_excluded_typing' });
+  }
+
+  // Gate 3 — canonical shape. Only a supported IOC type with a valid canonical
+  // value can enter review; a syntactic guess (relative path typed "url", a
+  // sentence typed "domain") is excluded here even if an earlier stage or the
+  // model called it malicious. AI confidence never bypasses this gate.
+  if (candidate.candidate_type !== 'cve' && candidate.candidate_type !== 'attack_technique') {
+    const type = String(candidate.candidate_type || '').toLowerCase();
+    const canonical = NETWORK_IOC_TYPES.has(type)
+      ? validateCanonicalIocValue(type, candidate.normalized_value)
+      : { ok: false, reason: 'unsupported_ioc_type' };
+    if (!canonical.ok) {
+      candidate.canonical_rejection = canonical.reason;
+      return excludeFromIoc(candidate, summary, { role: 'reference', policy: 'ioc_excluded_invalid_canonical' });
+    }
   }
 
   attachOccurrenceRelations(candidate);
@@ -305,6 +328,8 @@ export function isEligibleForHighConfidenceMalicious(candidate) {
   if (!['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256'].includes(String(candidate.candidate_type))) {
     return false;
   }
+  if (NON_NETWORK_RESOLVED_TYPES.has(String(candidate.resolved_type || candidate.evidence?.resolved_type || ''))) return false;
+  if (!validateCanonicalIocValue(candidate.candidate_type, candidate.normalized_value).ok) return false;
   const conf = Number(candidate.confidence);
   if (!Number.isFinite(conf) || conf < CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST) return false;
 
@@ -337,7 +362,8 @@ export function buildCandidateEvidenceRecord(c) {
     port: o.port ?? null,
     table_row: o.table_row ?? null,
     surrounding_text: o.surrounding_text ? String(o.surrounding_text).slice(0, 200) : null,
-    source_relation: o.source_relation || null
+    source_relation: o.source_relation || null,
+    typing_reason: o.typing_reason || undefined
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
     table_id: r.table_id || null,
@@ -365,6 +391,9 @@ export function buildCandidateEvidenceRecord(c) {
     derived_from: c.derived_from || null,
     resolved_type: c.resolved_type || c.candidate_type,
     typing_reason: c.typing_reason || null,
+    artifact_kind: c.artifact_kind || null,
+    canonical_rejection: c.canonical_rejection || null,
+    type_resolution: c.type_resolution && typeof c.type_resolution === 'object' ? c.type_resolution : null,
     occurrence_count: occurrences.length || c.occurrence_count || 0,
     zones: [...new Set(occurrences.map((o) => o.zone).filter(Boolean))],
     source_relation: c.source_relation || null,

@@ -4,9 +4,27 @@
  */
 
 import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from './pdfLayout.js';
-import { interpretIocTable, looksLikeIocTableHeader } from './tableSemantics.js';
+import { interpretIocTable, looksLikeIocTableHeader, parseDeclaredType } from './tableSemantics.js';
 import { classifySectionRole, zoneForSectionRole } from './indicatorScope.js';
 import { isPrivateOrReservedAddress } from './candidateValue.js';
+import { classifyTypeLabel } from './observableTypeResolver.js';
+
+/**
+ * A short heading that is itself an observable-type label ("Domain", "IP
+ * Addresses", "Hash Values (SHA-256)", "Mutex") types the blocks beneath it.
+ * Inside an open indicator section such a sub-heading continues the section
+ * instead of closing it (publisher lists per type under one IOC heading).
+ * @param {string} text
+ * @returns {{ label: string, declared_type: string|null, semantics: 'network'|'artifact'|'neutral' }|null}
+ */
+export function typeLabelHeading(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 40 || /[.!?。]$/.test(t)) return null;
+  const declared = parseDeclaredType(t);
+  const label = classifyTypeLabel(t);
+  if (!declared && label.semantics === 'neutral') return null;
+  return { label: t, declared_type: declared ? declared.type : null, semantics: declared ? 'network' : label.semantics };
+}
 
 /** @typedef {'report_body'|'explicit_ioc_section'|'c2_section'|'sample_table'|'operational_infrastructure'|'reference_section'|'source_metadata'|'header_footer'|'navigation'|'vendor_about'|'code'|'unknown'} DocumentZone */
 
@@ -245,6 +263,8 @@ export function annotateDocumentZones(doc, opts = {}) {
   let currentZone = 'report_body';
   let currentHeading = null;
   let currentRole = null;
+  /** @type {{ label: string, declared_type: string|null, semantics: string }|null} */
+  let currentTypeLabel = null;
 
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i];
@@ -266,32 +286,42 @@ export function annotateDocumentZones(doc, opts = {}) {
           !/[.!?。]$/.test(text) &&
           !/\b(?:hxxps?|https?):\/\//i.test(text) &&
           !/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) &&
-          !/\b[a-f0-9]{32}\b/i.test(text)));
+          !/\b[a-f0-9]{32}\b/i.test(text) &&
+          // A single observable value ("c2.evil.example") is a row, never a heading.
+          !isObservableOnlyLine(text)));
     const headingText = isHeadingLike && b.type === 'heading' ? combinedHeadingText(blocks, i) : text;
     const headingZone = isHeadingLike ? classifyHeadingText(headingText, { isHeading: b.type === 'heading' }) : null;
     const headingRole = isHeadingLike ? classifySectionRole(headingText) : null;
+    const isRealHeading = b.type === 'heading' && !pageEdge && !isRepeatedChrome;
+    const labelHeading = isRealHeading ? typeLabelHeading(text) : null;
 
     if (headingZone && ZONE_OPENING_HEADINGS.has(headingZone)) {
       currentZone = headingZone;
       currentRole = headingRole;
+      currentTypeLabel = null;
       b.zone_reason = 'heading_hint';
       b.section_role = headingRole;
-    } else if (b.type === 'heading' && !pageEdge && !isRepeatedChrome) {
-      const continuation =
+    } else if (isRealHeading) {
+      const wrappedContinuation =
         STRONG_IOC_ZONES.has(currentZone) &&
         text.length <= 40 &&
         !/[.!?。]$/.test(text) &&
         i > 0 &&
         blocks[i - 1].type === 'heading' &&
         blocks[i - 1].page === b.page;
-      if (!continuation) {
+      // "Domain" / "IP Addresses" / "Hash Values" under an open IOC heading are
+      // per-type sub-lists of the same publisher-curated section.
+      const typedContinuation = Boolean(labelHeading) && STRONG_IOC_ZONES.has(currentZone);
+      if (!wrappedContinuation && !typedContinuation) {
         currentZone = 'report_body';
         currentRole = null;
         b.zone_reason = 'heading_reset';
       } else {
-        b.zone_reason = 'heading_continuation';
+        b.zone_reason = typedContinuation ? 'typed_subheading' : 'heading_continuation';
         b.section_role = currentRole;
       }
+      currentTypeLabel = labelHeading;
+      if (labelHeading) b.type_label_heading = labelHeading;
     }
 
     /** @type {DocumentZone} */
@@ -312,6 +342,19 @@ export function annotateDocumentZones(doc, opts = {}) {
     b.zone = zone;
     b.section = b.section || zone;
     if (currentRole && !b.section_role && zone === currentZone) b.section_role = currentRole;
+    // A type-label heading types the value rows beneath it (list items,
+    // observable-only lines, single-token code blocks) — never prose paragraphs.
+    if (
+      currentTypeLabel &&
+      b.type !== 'heading' &&
+      b.type !== 'table' &&
+      !pageEdge &&
+      !isRepeatedChrome &&
+      (b.type === 'list_item' || isObservableOnlyLine(text) || (b.type === 'code' && !/\s/.test(text)))
+    ) {
+      b.type_label = currentTypeLabel.label;
+      if (currentTypeLabel.declared_type) b.declared_type_label = currentTypeLabel.declared_type;
+    }
 
     if (b.type === 'table' && b.table) {
       const negative = NEGATIVE_ZONES.has(zone);

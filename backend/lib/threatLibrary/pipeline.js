@@ -321,6 +321,7 @@ export async function runAnalysisPipeline(pool, ctx) {
       extractionDiagnostics = extracted.diagnostics;
       await replaceCandidates(pool, report.id, candidates);
       const tables = extracted.diagnostics?.explicit_tables || {};
+      const typing = extracted.diagnostics?.type_resolution || {};
       log.info('candidate count', {
         reportId: report.id,
         count: candidates.length,
@@ -333,7 +334,14 @@ export async function runAnalysisPipeline(pool, ctx) {
         explicit_ioc_rows_valid: tables.rows_valid ?? 0,
         explicit_ioc_rows_rejected: tables.rows_rejected ?? 0,
         explicit_ioc_rejection_reasons: tables.rejection_reasons || {},
-        explicit_ioc_candidates_created: tables.candidates_created ?? 0
+        explicit_ioc_candidates_created: tables.candidates_created ?? 0,
+        type_syntactic_occurrences: typing.syntactic_occurrences ?? 0,
+        type_network_ioc_candidates: typing.network_ioc_candidates ?? 0,
+        type_artifact_candidates: typing.artifact_candidates ?? 0,
+        type_artifact_occurrences_dropped: typing.artifact_occurrences_dropped ?? 0,
+        type_relative_paths: typing.relative_paths ?? 0,
+        type_canonical_rejections: typing.canonical_rejections ?? 0,
+        type_excluded_reasons: typing.excluded_reasons || {}
       });
       if (tables.inconsistent) {
         // Valid explicit rows that produced no candidate: an extractor bug, never a source problem.
@@ -726,8 +734,22 @@ export function mergeAiCandidateUpdates(candidates, aiValue) {
 export function compactExtractionDiagnostics(diagnostics) {
   const t = diagnostics?.explicit_tables;
   if (!t) return diagnostics && typeof diagnostics === 'object' && diagnostics.explicit_tables === undefined ? diagnostics : null;
+  const tr = diagnostics.type_resolution;
   return {
     extraction_version: diagnostics.extraction_version || null,
+    type_resolution: tr
+      ? {
+          syntactic_occurrences: tr.syntactic_occurrences ?? 0,
+          network_ioc_candidates: tr.network_ioc_candidates ?? 0,
+          artifact_candidates: tr.artifact_candidates ?? 0,
+          artifact_occurrences_dropped: tr.artifact_occurrences_dropped ?? 0,
+          relative_paths: tr.relative_paths ?? 0,
+          canonical_rejections: tr.canonical_rejections ?? 0,
+          rejected_values: tr.rejected_values || {},
+          excluded_reasons: tr.excluded_reasons || {},
+          examples: (tr.examples || []).slice(0, 24)
+        }
+      : null,
     explicit_tables: {
       tables_seen: t.tables_seen ?? 0,
       ioc_tables: t.ioc_tables ?? 0,

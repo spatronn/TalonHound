@@ -26,7 +26,8 @@ test('dotted filenames are not domains', () => {
       surroundingText: 'filename resource payload download 文件名',
       urlPathBasenames: new Set(['mort.php', 'uni.txt'])
     });
-    assert.equal(r.kind, 'file_artifact', token);
+    assert.equal(r.kind, 'technical_artifact', token);
+    assert.equal(r.artifact_kind, 'file', token);
   }
 });
 
@@ -57,7 +58,8 @@ test('.NET style identifiers are not domains', () => {
     const r = resolveDottedTokenType(token, {
       surroundingText: '.NET class method Program.Main 反编译'
     });
-    assert.equal(r.kind, 'code_identifier', token);
+    assert.equal(r.kind, 'technical_artifact', token);
+    assert.equal(r.artifact_kind, 'code', token);
   }
   const doc = createCanonicalDocument({
     blocks: [

@@ -252,3 +252,51 @@ test('IOC Result labels stay separate from review and match', () => {
   assert.match(text, /Approved \+ new \+ supported: 12/);
   assert.match(text, /Only the 12 eligible approved indicators will be created/);
 });
+
+test('non-IOC artifacts are excluded from the review set and explain their resolution', () => {
+  const mutex = {
+    id: 90,
+    candidate_type: 'technical_artifact',
+    normalized_value: 'LocalFoo.Client.SingleInstance',
+    assessment: 'context_only',
+    match_state: 'context_only',
+    review_status: 'pending',
+    is_ioc: false,
+    source_assertion: 'non_ioc',
+    evidence: {
+      resolved_type: 'technical_artifact',
+      artifact_kind: 'mutex',
+      typing_reason: 'mutex_label',
+      type_resolution: { syntax_guess: 'domain', resolved_type: 'technical_artifact', reason: 'mutex_label', promotion: 'excluded' },
+      table_rows: [{ table_id: 'b142', row_index: 0, type_cell: 'Mutex' }],
+      occurrences: [{ zone: 'report_body', section_heading: 'Host and Network Artifacts' }]
+    }
+  };
+  const path = {
+    id: 91,
+    candidate_type: 'relative_path',
+    normalized_value: '/clickfix/abc/file',
+    assessment: 'context_only',
+    match_state: 'context_only',
+    review_status: 'pending',
+    is_ioc: false,
+    evidence: {
+      resolved_type: 'relative_path',
+      type_resolution: { syntax_guess: 'url', resolved_type: 'relative_path', reason: 'relative_path_without_scheme_or_host', promotion: 'excluded', normalized_path: '/clickfix/abc/file', port: 8081 }
+    }
+  };
+  const ioc = { id: 92, candidate_type: 'domain', normalized_value: 'c2.evil-example.com', assessment: 'malicious', match_state: 'new', review_status: 'pending', is_ioc: true, evidence: { resolved_type: 'domain' } };
+  assert.equal(isReviewIndicator(mutex), false);
+  assert.equal(isReviewIndicator(path), false);
+  assert.equal(isReviewIndicator(ioc), true);
+  assert.deepEqual(filterReviewCandidates([mutex, path, ioc], { tab: 'indicators' }).map((c) => c.id), [92]);
+  assert.deepEqual(filterReviewCandidates([mutex, path, ioc], { tab: 'context_only' }).map((c) => c.id), [90, 91]);
+  const m = describeCandidateProvenance(mutex);
+  assert.equal(m.assertion, 'Not an IOC');
+  assert.equal(m.resolution.label, 'Not a network IOC · Mutex / single-instance name · mutex label');
+  assert.equal(m.resolution.syntaxGuess, 'domain');
+  const p = describeCandidateProvenance(path);
+  assert.equal(p.resolution.label, 'Relative path (no scheme / host) · relative path without scheme or host');
+  assert.equal(p.resolution.detail, 'port 8081');
+  assert.equal(describeCandidateProvenance(ioc).resolution, null);
+});

@@ -68,6 +68,12 @@ function CandidateProvenance({ candidate }) {
         {!p.direct ? <span style={{ color: '#fbbf24' }}> · derived</span> : null}
       </div>
       {p.description ? <div style={{ color: '#cbd5e1' }}>{p.description}</div> : null}
+      {p.resolution ? (
+        <div style={{ color: '#fbbf24' }}>
+          {p.resolution.label}
+          {p.resolution.detail ? <span style={{ color: '#94a3b8' }}> · {p.resolution.detail}</span> : null}
+        </div>
+      ) : null}
       <div style={{ color: '#94a3b8' }}>{parts.join(' · ')}</div>
       {p.urlHost ? <div style={{ color: '#64748b' }}>host {p.urlHost} (URL metadata)</div> : null}
     </div>

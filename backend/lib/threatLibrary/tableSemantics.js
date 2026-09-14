@@ -20,8 +20,15 @@
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
 import { resolveDottedTokenType } from './candidateTyping.js';
+import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
 
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v1';
+/**
+ * v2: row type labels feed the observable-type resolver (a "Mutex" / "Path"
+ * row never yields a domain / URL), relative paths and technical artifacts
+ * are retained as non-IOC row values, tables made only of such artifacts are
+ * `artifact_table` (row provenance kept, never explicit).
+ */
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v2';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -158,8 +165,9 @@ const TRAILING_PUNCT_RE = /[,;:.，；。]+$/;
  * Parse one token (already refanged) as an observable.
  * @param {string} token
  * @param {{ type: string, endpoint: boolean }|null} declared
+ * @param {{ typeLabel?: string|null }} [ctx] raw row type cell / column label (source semantics)
  */
-function parseToken(token, declared) {
+function parseToken(token, declared, ctx = {}) {
   let t = String(token || '').trim().replace(TRAILING_PUNCT_RE, '');
   if (!t) return null;
   let port = null;
@@ -184,15 +192,31 @@ function parseToken(token, declared) {
   } else if (n.ok && hint && n.candidateType !== hint && hint !== 'hash') {
     mismatch = true;
   }
-  if (!n.ok) return { ok: false, raw: token, error: n.error || 'unrecognized' };
+  if (!n.ok) return { ok: false, raw: token, error: n.error || 'unrecognized', resolved_type: n.resolvedType || null };
+  let typing = null;
   if (n.candidateType === 'domain') {
     if (!DOMAIN_SHAPE_RE.test(t)) return { ok: false, raw: token, error: 'invalid_domain' };
-    // Same typing gate as the generic pass: filenames / code identifiers are not
-    // network IOCs — unless the source declared the cell a domain / hostname.
-    const declaredHost = declared && (declared.type === 'domain' || declared.type === 'url');
-    if (!declaredHost) {
-      const typed = resolveDottedTokenType(n.normalizedValue, { surroundingText: '' });
-      if (typed.kind !== 'domain') return { ok: false, raw: token, error: typed.kind === 'skip' ? 'invalid_domain' : typed.kind };
+    // Central typing gate: the row's type label ("Mutex", "Domain", "Class") and
+    // the value's own shape decide domain vs technical artifact. The cell text
+    // keeps its original case so identifier segmentation is visible.
+    typing = resolveDottedTokenType(t, {
+      surroundingText: '',
+      typeLabel: ctx.typeLabel || null,
+      declaredType: declared ? declared.type : null,
+      form: 'table_row'
+    });
+    if (typing.kind === 'skip') return { ok: false, raw: token, error: 'invalid_domain' };
+    if (typing.kind !== 'domain') {
+      n = {
+        ...n,
+        candidateType: typing.kind,
+        normalizedValue: t,
+        isIoc: false,
+        resolvedType: typing.kind,
+        typingReason: typing.reason
+      };
+    } else {
+      n = { ...n, typingReason: typing.reason };
     }
   }
   return {
@@ -204,7 +228,12 @@ function parseToken(token, declared) {
     is_ioc: n.isIoc !== false,
     likely_context_only: n.likelyContextOnly === true,
     port,
-    declared_type_mismatch: mismatch || undefined
+    declared_type_mismatch: mismatch || undefined,
+    resolved_type: n.resolvedType || n.candidateType,
+    typing_reason: n.typingReason || null,
+    artifact_kind: typing?.artifact_kind || (NON_NETWORK_RESOLVED_TYPES.has(n.candidateType) ? n.candidateType : null),
+    typing_signals: typing?.signals || undefined,
+    parsed: n.parsed && typeof n.parsed === 'object' ? n.parsed : undefined
   };
 }
 
@@ -213,12 +242,13 @@ function parseToken(token, declared) {
  * then token split for cells that list several indicators.
  * @param {string} cellText
  * @param {{ type: string, endpoint: boolean }|null} declared
+ * @param {{ typeLabel?: string|null }} [ctx] row type cell / column label
  */
-export function parseIndicatorCell(cellText, declared = null) {
+export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   const source = String(cellText || '').replace(/\s+/g, ' ').trim();
   const refanged = refangObservable(source);
   if (!refanged) return { values: [], rejected: [], reason: 'empty_indicator' };
-  const whole = parseToken(refanged, declared);
+  const whole = parseToken(refanged, declared, ctx);
   if (whole?.ok && !(whole.candidate_type === 'domain' && /\s/.test(refanged))) {
     // `raw` is the faithful source spelling (defanged form kept for provenance).
     return { values: [{ ...whole, raw: source }], rejected: [], reason: null };
@@ -232,7 +262,7 @@ export function parseIndicatorCell(cellText, declared = null) {
   for (let i = 0; i < refangedTokens.length; i += 1) {
     const tok = refangedTokens[i];
     if (!tok) continue;
-    let parsed = parseToken(tok, declared);
+    let parsed = parseToken(tok, declared, ctx);
     if (!parsed) continue;
     if (parsed.ok && aligned) parsed = { ...parsed, raw: sourceTokens[i] };
     if (parsed.ok) {
@@ -449,7 +479,8 @@ export function interpretIocTable(block, opts = {}) {
       const cell = String(cells[col.index] || '');
       if (!cell.trim()) continue;
       const declared = col.declared_type || declaredRow;
-      const parsed = parseIndicatorCell(cell, declared);
+      const typeLabel = (typeCol ? String(cells[typeCol.index] || '').trim() : '') || col.header || null;
+      const parsed = parseIndicatorCell(cell, declared, { typeLabel });
       for (const v of parsed.values) {
         row.values.push({
           ...v,
@@ -482,11 +513,16 @@ export function interpretIocTable(block, opts = {}) {
   }
 
   // A table of CVE ids / ATT&CK techniques is an identifier table: its rows are
-  // never IOC assertions and the generic pass handles them as before.
+  // never IOC assertions and the generic pass handles them as before. A table
+  // whose values are host / code artifacts (mutex names, paths, config keys)
+  // is an artifact table: rows keep their provenance but never assert IOCs.
   const iocValues = result.rows.some((r) => r.status === 'valid' && r.values.some((v) => v.is_ioc));
   if (!iocValues) {
-    result.kind = 'identifier_table';
-    result.reason = 'no_ioc_values';
+    const artifactValues = result.rows.some(
+      (r) => r.status === 'valid' && r.values.some((v) => NON_NETWORK_RESOLVED_TYPES.has(v.candidate_type))
+    );
+    result.kind = artifactValues ? 'artifact_table' : 'identifier_table';
+    result.reason = artifactValues ? 'no_network_values' : 'no_ioc_values';
     return result;
   }
 

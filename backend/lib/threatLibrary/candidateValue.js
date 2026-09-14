@@ -8,8 +8,15 @@
 import { normalizeObservable } from '../observable-normalization.js';
 import { normalizeIpAddress, isValidIpAddress, validatePublicIp } from '../publicIp.js';
 import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
-import { resolveStorageObservableType, inferObservableType } from '../manualIocCreate.js';
+import { inferObservableType } from '../manualIocCreate.js';
 import { refangObservable } from './defang.js';
+import {
+  classifyPathLikeShape,
+  isHostnameSyntax,
+  validateUrlCandidate,
+  NON_NETWORK_RESOLVED_TYPES,
+  RESOLVED_TYPES
+} from './observableTypeResolver.js';
 
 /** RFC documentation / loopback only — not vendor safety allowlists. */
 const RFC_EXAMPLE_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'localhost', 'invalid', 'test']);
@@ -90,6 +97,40 @@ export function normalizeCandidateValue(raw, hintType = null) {
     };
   }
 
+  // Path-like values: only an absolute URL is a network URL. Relative paths,
+  // routes and filesystem paths are retained as non-network context (path +
+  // any prose-stated port), never promoted, never synthesised into a URL.
+  const pathShape = classifyPathLikeShape(refanged);
+  if (pathShape === 'relative_path' || pathShape === 'file_path' || hintType === RESOLVED_TYPES.RELATIVE_PATH || hintType === RESOLVED_TYPES.FILE_PATH) {
+    const v = validateUrlCandidate(refanged);
+    return {
+      ok: true,
+      candidateType: v.resolved_type,
+      originalValue: String(raw).trim(),
+      normalizedValue: v.normalized_path || refanged.split(/\s+/)[0],
+      isIoc: false,
+      resolvedType: v.resolved_type,
+      typingReason: v.reason,
+      parsed: {
+        normalized_path: v.normalized_path || null,
+        ...(v.port != null ? { port: v.port } : {}),
+        ...(v.trailing_text ? { trailing_text: v.trailing_text } : {})
+      }
+    };
+  }
+
+  // Non-network artifacts asserted by a typed source row keep their resolved type.
+  if (hintType && NON_NETWORK_RESOLVED_TYPES.has(hintType)) {
+    return {
+      ok: true,
+      candidateType: hintType,
+      originalValue: String(raw).trim(),
+      normalizedValue: refanged,
+      isIoc: false,
+      resolvedType: hintType
+    };
+  }
+
   let inferred = hintType || inferObservableType(refanged);
   if (hintType === 'ipv6') inferred = 'ip';
   if (hintType === 'cidr') inferred = 'cidr';
@@ -150,15 +191,19 @@ export function normalizeCandidateValue(raw, hintType = null) {
     };
   }
 
-  if (inferred === 'url' || /^https?:\/\//i.test(refanged)) {
-    const storage = resolveStorageObservableType(refanged, 'url');
-    if (!storage.ok) return { ok: false, error: storage.error };
+  if (inferred === 'url' || /^[a-z][a-z0-9+.-]*:\/\//i.test(refanged)) {
+    // Canonical URL gate: scheme + hostname-compatible host, no embedded prose.
+    const v = validateUrlCandidate(refanged);
+    if (!v.ok) return { ok: false, error: v.reason || 'invalid_url', resolvedType: v.resolved_type, trailingText: v.trailing_text || null };
     return {
       ok: true,
-      candidateType: 'url',
+      candidateType: RESOLVED_TYPES.URL,
       originalValue: String(raw).trim(),
-      normalizedValue: normalizeObservable('url', storage.value),
-      isIoc: true
+      normalizedValue: normalizeObservable('url', v.url),
+      isIoc: true,
+      resolvedType: RESOLVED_TYPES.URL,
+      typingReason: v.reason,
+      parsed: { host: v.host, host_kind: v.host_kind, ...(v.port != null ? { url_port: v.port } : {}) }
     };
   }
 
@@ -177,6 +222,8 @@ export function normalizeCandidateValue(raw, hintType = null) {
 
   const domain = normalizeObservable('domain', refanged.replace(/\.$/, ''));
   if (!domain || !domain.includes('.')) return { ok: false, error: 'invalid_domain' };
+  // Hostname-compatible syntax is necessary (not sufficient) for a domain candidate.
+  if (!isHostnameSyntax(domain)) return { ok: false, error: 'not_hostname_compatible' };
   return {
     ok: true,
     candidateType: 'domain',
