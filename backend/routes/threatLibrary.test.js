@@ -78,7 +78,7 @@ test('source URL patch is analyst-gated, validates http(s), and does not reanaly
   assert.match(routeSrc, /app\.patch\(\s*'\/api\/threat-library\/reports\/:publicId',\s*requireRole\(ROLES\.ADMIN, ROLES\.ANALYST\)/);
   assert.match(routeSrc, /validateReportSourceUrl/);
   assert.match(routeSrc, /updateReportSourceUrl/);
-  assert.match(routeSrc, /threat_library\.report\.source_url\.updated/);
+  assert.match(routeSrc, /buildSourceUrlAuditEvent/);
   const patchBlock = routeSrc.slice(routeSrc.indexOf("app.patch("), routeSrc.indexOf("app.delete("));
   assert.doesNotMatch(patchBlock, /enqueueAnalyze|runAnalysisPipeline|analyzeThreatDocument/);
 });
@@ -87,4 +87,46 @@ test('create IOCs passes confirm and returns structured promotion results', () =
   assert.match(routeSrc, /confirm: req\.body\?\.confirm === true/);
   assert.match(routeSrc, /summary: result\.summary \|\| undefined/);
   assert.match(routeSrc, /pending_count: result\.pending_count/);
+});
+
+// --- Audit trail contract -------------------------------------------------
+
+test('every Threat Library audit call carries the request (actor, IP, request id, source)', () => {
+  // `actor: req.user` was silently ignored by auditLogService and produced Actor = "—".
+  assert.equal(routeSrc.includes('actor: req.user'), false);
+  const auditCalls = routeSrc.match(/audit\.auditSuccess\(\{[\s\S]*?\}\);/g) || [];
+  for (const call of auditCalls) {
+    assert.match(call, /\{\s*req,/, `audit call must pass req: ${call}`);
+  }
+  assert.match(routeSrc, /async function writeAudit\(req, event\)[\s\S]*?audit\.auditLog\(\{ req, \.\.\.event \}\)/);
+});
+
+test('import, delete, source URL, THIB export and finalize use the audit builders', () => {
+  assert.match(routeSrc, /buildImportAuditEvent\(\{\s*sourceType: 'url'/);
+  assert.match(routeSrc, /buildImportAuditEvent\(\{\s*sourceType: 'pdf'/);
+  assert.match(routeSrc, /buildImportAuditEvent\(\{\s*sourceType: 'thib'/);
+  assert.match(routeSrc, /buildImportFailedAuditEvent/);
+  assert.match(routeSrc, /buildDeleteAuditEvent\(\{ report, user: req\.user \}\)/);
+  assert.match(routeSrc, /buildThibExportAuditEvent/);
+  assert.match(routeSrc, /finalizeReport\(pool, report\.id, \{ user: await actorOf\(req\), audit, req \}\)/);
+});
+
+test('review actions receive the resolved actor, audit service and request', () => {
+  const block = routeSrc.slice(routeSrc.indexOf('applyCandidateReviewActions(pool, report.id, {'));
+  assert.match(block.slice(0, 400), /user: await actorOf\(req\)/);
+  assert.match(block.slice(0, 400), /audit,\s*req\s*\}/);
+});
+
+test('a thrown Create IOCs error is audited as failed with a safe error category', () => {
+  const block = routeSrc.slice(routeSrc.indexOf("'Review action failed'") - 1500, routeSrc.indexOf("'Review action failed'"));
+  assert.match(block, /AUDIT_ACTION\.THREAT_LIBRARY_IOCS_CREATED/);
+  assert.match(block, /status: AUDIT_STATUS\.FAILED/);
+  assert.match(block, /error_code: safeErrorCategory\(err\)/);
+  assert.doesNotMatch(block, /err\.message|err\.stack/);
+});
+
+test('created_by / requested_by are stamped from the resolved actor public id, not req.user.publicId', () => {
+  assert.equal(routeSrc.includes('req.user?.publicId'), false);
+  assert.match(routeSrc, /created_by: actor\?\.publicId/);
+  assert.match(routeSrc, /requestedBy: actor\?\.publicId/);
 });

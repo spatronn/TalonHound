@@ -188,6 +188,39 @@ Legacy WHITE → CLEAR on ingest. UI displays `TLP:CLEAR` etc. Restricted export
 | AI settings | admin |
 | Create IOCs from candidates | admin, analyst (existing IOC create path) |
 
+## Audit trail
+
+Every Threat Library write operation produces **one** `audit_logs` row per user action
+(never one per candidate), attributed to the authenticated user with the request IP,
+`source` (web / api / mcp / worker) and the per-request `request_id`.
+
+| Action | When | Notable metadata |
+|--------|------|------------------|
+| `threat_library.report.imported.pdf` / `.url` / `.thib` | import request accepted | report id/title, TLP, file name + sha256 (pdf), redacted source URL (url), count summary (thib), job id |
+| `threat_library.report.import_failed` | import request threw | safe `error_code` only |
+| `threat_library.report.analysis.completed` / `.failed` | worker finished the job | actor = user from `threat_library_jobs.requested_by`, `executed_by: threat-library-worker`, `source: worker`, candidate counts |
+| `threat_library.candidates.approved` / `.context_only` / `.ignored` | review action (grouped) | selected / changed / already_in_state, type distribution, candidate ids (bounded) |
+| `threat_library.iocs.created` | **Create IOCs** committed | selected / eligible / created / already_existing / not_approved / unsupported / failed, `candidate_types`, `created_ioc_ids`, bounded per-candidate `results` with `results_total` / `results_shown` / `results_omitted`, `operation_id`; `status` = success / partial / failed |
+| `threat_library.report.finalized` | report finalized | final review summary |
+| `threat_library.report.source_url.updated` | provenance edit | old / new URL with credentials and token-like query values masked |
+| `threat_library.report.deleted` | report deleted | title / public id / source type snapshot (no live join needed) |
+| `threat_library.thib.exported` | THIB downloaded | TLP, indicator / entity counts, `confirm_red` |
+
+IOC-level traceability: each IOC created by Create IOCs also gets the normal `ioc.created`
+row (visible in the IOC's own audit history) carrying `origin: threat_library`,
+`threat_report_public_id`, `threat_report_title`, `threat_report_candidate_id` and
+`threat_library_operation_id`, and it shares the parent's `request_id`. Candidates that
+already match an IOC are counted as `already_existing` (with the matched `ioc_id`) and
+never emit `ioc.created`; the link is persisted on the candidate (`matched_ioc_id`) and
+in `threat_relationships` only — no source membership is added to the existing IOC.
+
+Never stored in audit metadata: report body / summary, canonical document, evidence
+paragraphs, PDF bytes, AI prompts or raw outputs, the THIB payload, API keys or
+URL-embedded tokens. Indicator values and IOC ids are stored (same policy as `ioc.created`).
+
+Historical rows written before this model (`threat_library.import.*`, actor `—`) are not
+rewritten; they only receive a readable label.
+
 ## Limitations (V1)
 
 - No OCR for scanned PDFs (architected for later)

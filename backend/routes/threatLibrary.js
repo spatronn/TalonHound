@@ -4,7 +4,18 @@
 
 import multer from 'multer';
 import { requireRole, ROLES } from '../lib/rbac.js';
-import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
+import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from '../lib/auditConstants.js';
+import {
+  buildDeleteAuditEvent,
+  buildImportAuditEvent,
+  buildImportFailedAuditEvent,
+  buildSourceUrlAuditEvent,
+  buildThibExportAuditEvent,
+  reportAuditEntity,
+  reportAuditSnapshot,
+  initiatedBy,
+  safeErrorCategory
+} from '../lib/threatLibrary/audit.js';
 import { registerRouteModule } from '../lib/routeRegistry.js';
 import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY } from '../lib/threatLibrary/constants.js';
 import { validateThreatLibraryUrl } from '../lib/threatLibrary/urlIngest.js';
@@ -135,13 +146,31 @@ function publicReport(row) {
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
- * @param {{ auditSuccess: Function, auditFailure?: Function }} audit
+ * @param {{ auditLog: Function, auditSuccess: Function, auditFailure?: Function, resolveActor?: Function }} audit
  * @param {{ threatLibraryQueue?: import('bullmq').Queue }} deps
  */
 export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   registerRouteModule('threat_library');
 
   const queue = deps.threatLibraryQueue || null;
+
+  /**
+   * Session principal with its persisted public id. Interactive sessions only
+   * carry the numeric user id, so this is what stamps created_by /
+   * requested_by and what the service layer receives as the initiating user.
+   */
+  async function actorOf(req) {
+    if (typeof audit?.resolveActor === 'function') {
+      const actor = await audit.resolveActor(req);
+      if (actor) return actor;
+    }
+    return req.user || null;
+  }
+
+  async function writeAudit(req, event) {
+    if (typeof audit?.auditLog !== 'function') return;
+    await audit.auditLog({ req, ...event });
+  }
 
   async function enqueueAnalyze(reportId, jobRow, extra = {}) {
     if (!queue) {
@@ -191,12 +220,14 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         body.total_analysis_timeout_ms = body.total_analysis_timeout_ms ?? defaults.total_analysis_timeout_ms;
         body.timeout_ms = body.timeout_ms ?? defaults.inactivity_timeout_ms;
       }
-      const updated = await updateAiSettings(pool, body, req.user?.publicId);
+      const actor = await actorOf(req);
+      const updated = await updateAiSettings(pool, body, actor?.publicId);
       await audit.auditSuccess({
-        action: AUDIT_ACTION.THREAT_LIBRARY_AI_SETTINGS_UPDATED || 'threat_library.ai_settings.updated',
-        entityType: AUDIT_ENTITY.SYSTEM || 'system',
+        req,
+        action: AUDIT_ACTION.THREAT_LIBRARY_AI_SETTINGS_UPDATED,
+        entityType: AUDIT_ENTITY.SYSTEM,
+        entityDisplay: 'Threat Library AI settings',
         severity: AUDIT_SEVERITY.WARNING,
-        actor: req.user,
         after: {
           enabled: updated.enabled,
           provider: updated.provider,
@@ -214,7 +245,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
 
   app.delete('/api/threat-library/ai-settings/api-key', requireRole(ROLES.ADMIN), async (req, res) => {
     try {
-      const updated = await clearAiApiKey(pool, req.user?.publicId);
+      const actor = await actorOf(req);
+      const updated = await clearAiApiKey(pool, actor?.publicId);
       return res.json({ settings: maskAiSettingsForClient(updated) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to clear API key', detail: err.message });
@@ -344,32 +376,38 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       const policy = validateThreatLibraryUrl(url);
       if (!policy.ok) return res.status(400).json({ message: policy.error });
 
+      const actor = await actorOf(req);
       const report = await createThreatReport(pool, {
         title: policy.parsed.hostname || 'URL report',
         source_type: 'url',
         source_url: policy.url,
         source_name: policy.parsed.hostname,
         tlp: normalizeTlp(req.body?.tlp || 'clear'),
-        created_by: req.user?.publicId
+        created_by: actor?.publicId
       });
       const jobRow = await createJob(pool, {
         reportId: report.id,
         jobType: 'analyze',
-        requestedBy: req.user?.publicId
+        requestedBy: actor?.publicId
       });
       await enqueueAnalyze(report.id, jobRow, { sourceUrl: policy.url });
 
-      await audit.auditSuccess({
-        action: 'threat_library.import.url',
-        entityType: 'threat_report',
-        entityId: report.public_id,
-        severity: AUDIT_SEVERITY.INFO,
-        actor: req.user,
-        after: { source_type: 'url', host: policy.parsed.hostname }
-      });
+      await writeAudit(req, buildImportAuditEvent({
+        sourceType: 'url',
+        report,
+        user: actor,
+        jobPublicId: jobRow.public_id,
+        details: { source_url: policy.url, host: policy.parsed.hostname }
+      }));
 
       return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
     } catch (err) {
+      await writeAudit(req, buildImportFailedAuditEvent({
+        sourceType: 'url',
+        user: req.user,
+        code: safeErrorCategory(err),
+        details: { host: (() => { try { return new URL(String(req.body?.url || '')).hostname; } catch { return null; } })() }
+      })).catch(() => {});
       return res.status(500).json({ message: 'URL import failed', detail: err.message });
     }
   });
@@ -426,6 +464,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           });
         }
 
+        const actor = await actorOf(req);
         const report = await createThreatReport(pool, {
           title: validation.fileName.replace(/\.pdf$/i, ''),
           source_type: 'pdf',
@@ -433,7 +472,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           source_sha256: validation.sha256,
           source_name: validation.fileName,
           tlp: normalizeTlp(req.body?.tlp || 'clear'),
-          created_by: req.user?.publicId
+          created_by: actor?.publicId
         });
 
         let stored;
@@ -461,21 +500,30 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const jobRow = await createJob(pool, {
           reportId: report.id,
           jobType: 'analyze',
-          requestedBy: req.user?.publicId
+          requestedBy: actor?.publicId
         });
         await enqueueAnalyze(report.id, jobRow);
 
-        await audit.auditSuccess({
-          action: 'threat_library.import.pdf',
-          entityType: 'threat_report',
-          entityId: report.public_id,
-          severity: AUDIT_SEVERITY.INFO,
-          actor: req.user,
-          after: { source_type: 'pdf', sha256: validation.sha256, size_bytes: validation.sizeBytes }
-        });
+        await writeAudit(req, buildImportAuditEvent({
+          sourceType: 'pdf',
+          report,
+          user: actor,
+          jobPublicId: jobRow.public_id,
+          details: {
+            file_name: validation.fileName,
+            sha256: validation.sha256,
+            size_bytes: validation.sizeBytes
+          }
+        }));
 
         return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
       } catch (err) {
+        await writeAudit(req, buildImportFailedAuditEvent({
+          sourceType: 'pdf',
+          user: req.user,
+          code: safeErrorCategory(err),
+          details: { file_name: req.file?.originalname ? String(req.file.originalname).slice(0, 255) : null }
+        })).catch(() => {});
         return res.status(500).json({
           message: 'PDF import failed',
           code: err.code || 'pdf_upload_failed',
@@ -528,22 +576,26 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         } else if (typeof raw === 'string') {
           raw = JSON.parse(raw);
         }
+        const actor = await actorOf(req);
         const result = await importThibBundle(pool, raw, {
-          createdBy: req.user?.publicId,
+          createdBy: actor?.publicId,
           conflictMode: req.body?.conflict_mode || 'keep_both'
         });
         if (!result.ok) return res.status(400).json(result);
-        await audit.auditSuccess({
-          action: 'threat_library.import.thib',
-          entityType: 'threat_report',
-          entityId: result.report?.public_id,
-          severity: AUDIT_SEVERITY.INFO,
-          actor: req.user,
-          after: {
+        await writeAudit(req, buildImportAuditEvent({
+          sourceType: 'thib',
+          report: result.report,
+          user: actor,
+          details: {
+            file_name: req.file?.originalname ? String(req.file.originalname).slice(0, 255) : null,
             already_imported: result.already_imported === true,
-            summary: result.summary || null
+            conflict_mode: req.body?.conflict_mode || 'keep_both',
+            // Counts only — the THIB payload itself is never stored in audit.
+            summary: result.summary && typeof result.summary === 'object'
+              ? Object.fromEntries(Object.entries(result.summary).filter(([, v]) => typeof v === 'number' || typeof v === 'boolean'))
+              : null
           }
-        });
+        }));
         return res.status(result.already_imported ? 200 : 201).json({
           already_imported: result.already_imported === true,
           message: result.message,
@@ -568,8 +620,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           action: req.body?.action,
           candidateIds: req.body?.candidate_ids,
           confirm: req.body?.confirm === true,
-          user: req.user,
-          audit
+          user: await actorOf(req),
+          audit,
+          req
         });
         if (!result.ok) {
           return res.status(result.status || 400).json({
@@ -584,6 +637,27 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         }
         return res.json(result);
       } catch (err) {
+        // The operation aborted before its summary event could be written:
+        // record the failure itself (safe category only) so it is never silent.
+        if (req.body?.action === 'create_iocs' && req.body?.confirm === true) {
+          const report = await getReportByPublicId(pool, req.params.publicId).catch(() => null);
+          await writeAudit(req, {
+            action: AUDIT_ACTION.THREAT_LIBRARY_IOCS_CREATED,
+            ...reportAuditEntity(report || { public_id: req.params.publicId, title: null }),
+            severity: AUDIT_SEVERITY.WARNING,
+            status: AUDIT_STATUS.FAILED,
+            metadata: {
+              ...reportAuditSnapshot(report),
+              initiated_by: initiatedBy(req.user),
+              selected: Array.isArray(req.body?.candidate_ids) ? req.body.candidate_ids.length : 0,
+              created: 0,
+              already_existing: 0,
+              failed: 0,
+              result: 'operation_failed',
+              error_code: safeErrorCategory(err)
+            }
+          }).catch(() => {});
+        }
         return res.status(500).json({ message: 'Review action failed', detail: err.message });
       }
     }
@@ -596,7 +670,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       try {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
-        const result = await finalizeReport(pool, report.id);
+        const result = await finalizeReport(pool, report.id, { user: await actorOf(req), audit, req });
         if (!result.ok) {
           return res.status(result.status || 400).json({
             message: result.error,
@@ -651,6 +725,12 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           }
           throw err;
         }
+        await writeAudit(req, buildThibExportAuditEvent({
+          report,
+          bundle,
+          user: req.user,
+          confirmRed: req.query.confirm_red === '1'
+        }));
         const name = `${String(report.title || 'report').replace(/[^\w.\-]+/g, '_').slice(0, 80)}.thib.json`;
         res.setHeader('content-type', 'application/json');
         res.setHeader('content-disposition', `attachment; filename="${name}"`);
@@ -737,7 +817,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const jobRow = await createJob(pool, {
           reportId: report.id,
           jobType: 'retry',
-          requestedBy: req.user?.publicId
+          requestedBy: (await actorOf(req))?.publicId
         });
         await updateJob(pool, jobRow.id, {
           status: 'queued',
@@ -805,15 +885,12 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         }
         const updated = await updateReportSourceUrl(pool, report.id, parsed.value);
         if (!updated) return res.status(404).json({ message: 'Report not found' });
-        await audit.auditSuccess({
-          action: 'threat_library.report.source_url.updated',
-          entityType: 'threat_report',
-          entityId: report.public_id,
-          severity: AUDIT_SEVERITY.INFO,
-          actor: req.user,
-          before: { source_url: report.source_url || null },
-          after: { source_url: parsed.value }
-        });
+        await writeAudit(req, buildSourceUrlAuditEvent({
+          report,
+          oldUrl: report.source_url || null,
+          newUrl: parsed.value,
+          user: req.user
+        }));
         return res.json({
           report: publicReport(await attachReportCounts(pool, updated))
         });
@@ -832,14 +909,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
         await deleteThreatReport(pool, report.id);
-        await audit.auditSuccess({
-          action: 'threat_library.report.deleted',
-          entityType: 'threat_report',
-          entityId: report.public_id,
-          severity: AUDIT_SEVERITY.WARNING,
-          actor: req.user,
-          before: { title: report.title, source_type: report.source_type }
-        });
+        // Snapshot the report identity: the row is gone, the audit must stand alone.
+        await writeAudit(req, buildDeleteAuditEvent({ report, user: req.user }));
         return res.json({ ok: true });
       } catch (err) {
         return res.status(500).json({ message: 'Delete failed', detail: err.message });

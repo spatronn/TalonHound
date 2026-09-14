@@ -1,5 +1,5 @@
 /** @typedef {'info' | 'warning' | 'critical'} AuditSeverity */
-/** @typedef {'success' | 'failed'} AuditStatus */
+/** @typedef {'success' | 'partial' | 'failed'} AuditStatus */
 
 export const AUDIT_SEVERITY = Object.freeze({
   INFO: 'info',
@@ -9,6 +9,8 @@ export const AUDIT_SEVERITY = Object.freeze({
 
 export const AUDIT_STATUS = Object.freeze({
   SUCCESS: 'success',
+  // Bulk operation committed, but at least one row failed (e.g. Create IOCs).
+  PARTIAL: 'partial',
   FAILED: 'failed'
 });
 
@@ -194,6 +196,22 @@ export const AUDIT_ACTION = Object.freeze({
   FILE_ARTIFACT_PROVIDER_MERGE: 'file_artifact.provider_merge',
   FILE_ARTIFACT_CONFLICT_DETECTED: 'file_artifact.conflict_detected',
   FILE_ARTIFACT_OBSERVATION_ATTACHED: 'file_artifact.observation_attached',
+  // Threat Library: one event per user action (never one per candidate).
+  THREAT_LIBRARY_AI_SETTINGS_UPDATED: 'threat_library.ai_settings.updated',
+  THREAT_LIBRARY_REPORT_IMPORTED_PDF: 'threat_library.report.imported.pdf',
+  THREAT_LIBRARY_REPORT_IMPORTED_URL: 'threat_library.report.imported.url',
+  THREAT_LIBRARY_REPORT_IMPORTED_THIB: 'threat_library.report.imported.thib',
+  THREAT_LIBRARY_REPORT_IMPORT_FAILED: 'threat_library.report.import_failed',
+  THREAT_LIBRARY_REPORT_ANALYSIS_COMPLETED: 'threat_library.report.analysis.completed',
+  THREAT_LIBRARY_REPORT_ANALYSIS_FAILED: 'threat_library.report.analysis.failed',
+  THREAT_LIBRARY_CANDIDATES_APPROVED: 'threat_library.candidates.approved',
+  THREAT_LIBRARY_CANDIDATES_CONTEXT_ONLY: 'threat_library.candidates.context_only',
+  THREAT_LIBRARY_CANDIDATES_IGNORED: 'threat_library.candidates.ignored',
+  THREAT_LIBRARY_IOCS_CREATED: 'threat_library.iocs.created',
+  THREAT_LIBRARY_REPORT_FINALIZED: 'threat_library.report.finalized',
+  THREAT_LIBRARY_REPORT_SOURCE_URL_UPDATED: 'threat_library.report.source_url.updated',
+  THREAT_LIBRARY_REPORT_DELETED: 'threat_library.report.deleted',
+  THREAT_LIBRARY_THIB_EXPORTED: 'threat_library.thib.exported',
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -216,7 +234,9 @@ export const AUDIT_ENTITY = Object.freeze({
   SYSTEM_RESTORE: 'system_restore',
   FILE_ARTIFACT: 'file_artifact',
   IOC_SAVED_SEARCH: 'ioc_saved_search',
-  IOC_BULK_QUERY: 'ioc_bulk_query'
+  IOC_BULK_QUERY: 'ioc_bulk_query',
+  THREAT_REPORT: 'threat_report',
+  SYSTEM: 'system'
 });
 
 /** Human-readable labels for UI */
@@ -377,7 +397,27 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.FILE_ARTIFACT_MANUAL_MERGE]: 'File Artifact Manual Merge',
   [AUDIT_ACTION.FILE_ARTIFACT_PROVIDER_MERGE]: 'File Artifact Provider Merge',
   [AUDIT_ACTION.FILE_ARTIFACT_CONFLICT_DETECTED]: 'File Artifact Conflict Detected',
-  [AUDIT_ACTION.FILE_ARTIFACT_OBSERVATION_ATTACHED]: 'File Artifact Observation Attached'
+  [AUDIT_ACTION.FILE_ARTIFACT_OBSERVATION_ATTACHED]: 'File Artifact Observation Attached',
+  [AUDIT_ACTION.THREAT_LIBRARY_AI_SETTINGS_UPDATED]: 'Threat Library › AI Settings Updated',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORTED_PDF]: 'Threat Library › Report Imported (PDF)',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORTED_URL]: 'Threat Library › Report Imported (URL)',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORTED_THIB]: 'Threat Library › Report Imported (THIB)',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORT_FAILED]: 'Threat Library › Import Failed',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_ANALYSIS_COMPLETED]: 'Threat Library › Analysis Completed',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_ANALYSIS_FAILED]: 'Threat Library › Analysis Failed',
+  [AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_APPROVED]: 'Threat Library › Indicators Approved',
+  [AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_CONTEXT_ONLY]: 'Threat Library › Indicators Marked Context Only',
+  [AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_IGNORED]: 'Threat Library › Indicators Ignored',
+  [AUDIT_ACTION.THREAT_LIBRARY_IOCS_CREATED]: 'Threat Library › Create IOCs',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_FINALIZED]: 'Threat Library › Report Finalized',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_SOURCE_URL_UPDATED]: 'Threat Library › Source URL Updated',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_DELETED]: 'Threat Library › Report Deleted',
+  [AUDIT_ACTION.THREAT_LIBRARY_THIB_EXPORTED]: 'Threat Library › THIB Exported',
+  // Legacy action names written before the Threat Library audit model existed.
+  // Historical rows are never rewritten; they only get a readable label.
+  'threat_library.import.pdf': 'Threat Library › Report Imported (PDF)',
+  'threat_library.import.url': 'Threat Library › Report Imported (URL)',
+  'threat_library.import.thib': 'Threat Library › Report Imported (THIB)'
 });
 
 export function auditActionLabel(action) {

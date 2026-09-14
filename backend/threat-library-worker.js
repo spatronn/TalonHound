@@ -11,6 +11,8 @@ import { createServiceLogger } from './lib/appLogger.js';
 import { getThreatLibraryQueueName, getThreatLibraryWorkerOptions } from './lib/threatLibrary/queueConfig.js';
 import { runAnalysisPipeline } from './lib/threatLibrary/pipeline.js';
 import { updateJob, getReportById, updateReportStatus } from './lib/threatLibrary/store.js';
+import { createAuditLogService } from './lib/auditLogService.js';
+import { auditAnalysisOutcome } from './lib/threatLibrary/audit.js';
 
 const log = createServiceLogger('threat-library-worker');
 
@@ -38,6 +40,7 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'talonhound'
 });
 
+const auditService = createAuditLogService(pool);
 const redis = new IORedis(getRedisUrl(), { maxRetriesPerRequest: null });
 const concurrency = Math.min(Math.max(Number(process.env.THREAT_LIBRARY_WORKER_CONCURRENCY || 2), 1), 4);
 
@@ -66,6 +69,15 @@ const worker = new Worker(
       newAnalysisRun: job.data?.newAnalysisRun === true
     });
     log.info('job finished', { bullmqJobId: job.id, reportId, ok: result?.ok === true, code: result?.code });
+    // Audit the committed outcome with the initiating user as actor and this
+    // worker as executor (source=worker).
+    await auditAnalysisOutcome(pool, auditService, {
+      reportId,
+      jobId,
+      ok: result?.ok === true,
+      code: result?.code || null,
+      summary: result?.summary || null
+    });
     return result;
   },
   {
@@ -96,6 +108,13 @@ worker.on('failed', async (job, err) => {
           error_message: err?.message || 'worker failed'
         });
       }
+      await auditAnalysisOutcome(pool, auditService, {
+        reportId,
+        jobId,
+        ok: false,
+        code: 'worker_failed',
+        summary: null
+      });
     } catch (e) {
       log.warn('failed to mark report after worker failure', { error: e?.message });
     }

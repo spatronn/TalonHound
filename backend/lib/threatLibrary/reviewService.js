@@ -8,8 +8,16 @@
  * Finalize closes the report lifecycle and never creates IOCs.
  */
 
+import crypto from 'node:crypto';
 import { createManualIoc } from '../manualIocCreate.js';
 import { getThreatLibraryIocSourceId, getReportById, updateReportStatus } from './store.js';
+import {
+  buildCreateIocsAuditEvent,
+  buildFinalizeAuditEvent,
+  buildReviewAuditEvent,
+  iocCreatedOriginMetadata,
+  safeErrorCategory
+} from './audit.js';
 import { CONFIDENCE_POLICY } from './constants.js';
 import { isEligibleForHighConfidenceMalicious } from './evidencePolicy.js';
 import { isFinalizeAllowed, isReviewMutationAllowed, reviewNotReadyError } from './reportPhase.js';
@@ -74,6 +82,19 @@ async function linkCandidateRelationships(pool, reportId, candidateId, iocId) {
 }
 
 /**
+ * Write one audit row for a user-initiated review operation. Audit failures
+ * are observable (auditLogService logs them) but never fail the operation.
+ */
+async function emitAudit(opts, event) {
+  if (!event || typeof opts?.audit?.auditLog !== 'function') return;
+  try {
+    await opts.audit.auditLog({ req: opts.req, actor: opts.user, ...event });
+  } catch {
+    /* auditLogService already reports insert failures */
+  }
+}
+
+/**
  * @param {import('pg').Pool} pool
  * @param {number} reportId
  * @param {{
@@ -129,6 +150,22 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
     return { ok: false, status: 400, error: 'No candidates selected' };
   }
 
+  if (action === 'create_iocs') {
+    return createIocsFromCandidates(pool, report, ids, opts);
+  }
+
+  if (!['approve', 'approve_high_confidence_malicious', 'context_only', 'ignore'].includes(action)) {
+    return { ok: false, status: 400, error: 'Unknown action' };
+  }
+
+  // Pre-update snapshot of the selection: the grouped audit event reports
+  // changed vs already-in-state counts and the type distribution from it.
+  const { rows: selectedBefore } = await pool.query(
+    `SELECT id, candidate_type, review_status FROM threat_report_candidates
+     WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+    [reportId, ids]
+  );
+
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {
     await pool.query(
       `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
@@ -148,11 +185,15 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
        WHERE report_id = $1 AND id = ANY($2::bigint[])`,
       [reportId, ids]
     );
-  } else if (action === 'create_iocs') {
-    return createIocsFromCandidates(pool, report, ids, opts);
-  } else {
-    return { ok: false, status: 400, error: 'Unknown action' };
   }
+
+  await emitAudit(opts, buildReviewAuditEvent({
+    report,
+    action,
+    requestedIds: ids,
+    candidates: selectedBefore,
+    user: opts.user
+  }));
 
   return { ok: true, updated: ids.length };
 }
@@ -202,91 +243,33 @@ async function createIocsFromCandidates(pool, report, ids, opts) {
 
   const createIoc = opts.createIoc || createManualIoc;
   const findExisting = opts.findExistingIoc || findIocByTypeAndValue;
+  // Correlates the parent bulk audit event with every ioc.created row it produced.
+  const operationId = opts.operationId || crypto.randomUUID();
   const created = [];
   const errors = [];
   const results = [];
+  const ctx = { createIoc, findExisting, sourceId, operationId, opts, created, errors, results };
 
   for (const candidate of ordered) {
     const classified = classifyCreateEligibility(candidate);
     if (classified.outcome === PROMOTION_OUTCOMES.WILL_CREATE) {
-      let existing = await findExisting(pool, candidate.candidate_type, candidate.normalized_value);
-      if (existing) {
-        await persistPromotionRow(pool, report.id, candidate.id, {
-          outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
-          detail: 'An IOC record already exists for this indicator.',
-          ioc_id: Number(existing.id),
-          observable_type: existing.observable_type || candidate.candidate_type
-        });
-        await linkCandidateRelationships(pool, report.id, candidate.id, Number(existing.id));
-        results.push({
-          candidate_id: candidate.id,
-          outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
-          ioc_id: Number(existing.id),
-          detail: 'An IOC record already exists for this indicator.'
-        });
-        continue;
-      }
-
-      const result = await createIoc(
-        pool,
-        {
-          observable: candidate.normalized_value,
-          source_id: sourceId,
-          confidence: candidate.confidence != null && candidate.confidence >= 0.85 ? 'high' : 'medium',
-          note: `Threat Library report ${report.public_id}: ${candidate.role || 'unknown'} (${candidate.assessment})`,
-          source_url: report.source_url || null
-        },
-        { user: opts.user, audit: opts.audit }
-      );
-
-      if (result.status >= 200 && result.status < 300 && result.body?.id) {
-        await persistPromotionRow(pool, report.id, candidate.id, {
-          outcome: PROMOTION_OUTCOMES.CREATED,
-          detail: null,
-          ioc_id: result.body.id,
-          observable_type: result.body.observable_type || candidate.candidate_type
-        });
-        await linkCandidateRelationships(pool, report.id, candidate.id, result.body.id);
-        created.push({ candidate_id: candidate.id, ioc_id: result.body.id, public_id: result.body.public_id });
-        results.push({
-          candidate_id: candidate.id,
-          outcome: PROMOTION_OUTCOMES.CREATED,
-          ioc_id: result.body.id
-        });
-        continue;
-      }
-
-      if (result.body?.skipped && result.body?.reason === 'duplicate_tuple') {
-        existing = await findExisting(pool, candidate.candidate_type, candidate.normalized_value);
-        if (existing) {
+      try {
+        await promoteCandidate(pool, report, candidate, ctx);
+      } catch (err) {
+        // A thrown error must not abort the batch or hide already-committed rows:
+        // record this candidate as failed with a safe category and continue.
+        const message = `create failed (${safeErrorCategory(err)})`;
+        try {
           await persistPromotionRow(pool, report.id, candidate.id, {
-            outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
-            detail: 'An IOC record already exists for this indicator.',
-            ioc_id: Number(existing.id),
-            observable_type: existing.observable_type || candidate.candidate_type
+            outcome: PROMOTION_OUTCOMES.FAILED,
+            detail: message
           });
-          await linkCandidateRelationships(pool, report.id, candidate.id, Number(existing.id));
-          results.push({
-            candidate_id: candidate.id,
-            outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
-            ioc_id: Number(existing.id),
-            detail: 'An IOC record already exists for this indicator.'
-          });
-          continue;
+        } catch {
+          /* row state stays as-is; the audit summary still counts the failure */
         }
+        errors.push({ candidate_id: candidate.id, message });
+        results.push({ candidate_id: candidate.id, outcome: PROMOTION_OUTCOMES.FAILED, detail: message });
       }
-
-      const message = result.body?.message || `create failed (${result.status})`;
-      await persistPromotionRow(pool, report.id, candidate.id, {
-        outcome: PROMOTION_OUTCOMES.FAILED,
-        detail: message
-      });
-      errors.push({ candidate_id: candidate.id, message });
-      results.push({
-        candidate_id: candidate.id,
-        outcome: PROMOTION_OUTCOMES.FAILED,
-        detail: message
-      });
       continue;
     }
 
@@ -309,14 +292,110 @@ async function createIocsFromCandidates(pool, report, ids, opts) {
   const summary = summarizePromotionResults(results);
   summary.selected = ordered.length;
   summary.eligible = preview.summary.eligible;
-  return { ok: true, preview: false, summary, results, created, errors };
+
+  // Every row above is persisted (autocommit) before this event is written, so
+  // the audit describes committed state, not intent.
+  await emitAudit(opts, buildCreateIocsAuditEvent({
+    report,
+    summary,
+    results,
+    candidates: ordered,
+    operationId,
+    user: opts.user
+  }));
+
+  return { ok: true, preview: false, summary, results, created, errors, operation_id: operationId };
+}
+
+/** Create-or-link one eligible candidate; records its outcome in `ctx.results`. */
+async function promoteCandidate(pool, report, candidate, ctx) {
+  const { createIoc, findExisting, sourceId, operationId, opts, created, errors, results } = ctx;
+  const existingDetail = 'An IOC record already exists for this indicator.';
+
+  async function linkExisting(existing) {
+    await persistPromotionRow(pool, report.id, candidate.id, {
+      outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
+      detail: existingDetail,
+      ioc_id: Number(existing.id),
+      observable_type: existing.observable_type || candidate.candidate_type
+    });
+    await linkCandidateRelationships(pool, report.id, candidate.id, Number(existing.id));
+    results.push({
+      candidate_id: candidate.id,
+      outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
+      ioc_id: Number(existing.id),
+      detail: existingDetail
+    });
+  }
+
+  let existing = await findExisting(pool, candidate.candidate_type, candidate.normalized_value);
+  if (existing) {
+    await linkExisting(existing);
+    return;
+  }
+
+  const result = await createIoc(
+    pool,
+    {
+      observable: candidate.normalized_value,
+      source_id: sourceId,
+      confidence: candidate.confidence != null && candidate.confidence >= 0.85 ? 'high' : 'medium',
+      note: `Threat Library report ${report.public_id}: ${candidate.role || 'unknown'} (${candidate.assessment})`,
+      source_url: report.source_url || null
+    },
+    {
+      user: opts.user,
+      audit: opts.audit,
+      // `req` lets createManualIoc emit its own ioc.created row (actor, IP,
+      // request id); the origin metadata ties that row back to this report.
+      req: opts.req,
+      auditMetadata: iocCreatedOriginMetadata({ report, candidate, operationId, user: opts.user })
+    }
+  );
+
+  if (result.status >= 200 && result.status < 300 && result.body?.id) {
+    await persistPromotionRow(pool, report.id, candidate.id, {
+      outcome: PROMOTION_OUTCOMES.CREATED,
+      detail: null,
+      ioc_id: result.body.id,
+      observable_type: result.body.observable_type || candidate.candidate_type
+    });
+    await linkCandidateRelationships(pool, report.id, candidate.id, result.body.id);
+    created.push({ candidate_id: candidate.id, ioc_id: result.body.id, public_id: result.body.public_id });
+    results.push({
+      candidate_id: candidate.id,
+      outcome: PROMOTION_OUTCOMES.CREATED,
+      ioc_id: result.body.id
+    });
+    return;
+  }
+
+  if (result.body?.skipped && result.body?.reason === 'duplicate_tuple') {
+    existing = await findExisting(pool, candidate.candidate_type, candidate.normalized_value);
+    if (existing) {
+      await linkExisting(existing);
+      return;
+    }
+  }
+
+  const message = result.body?.message || `create failed (${result.status})`;
+  await persistPromotionRow(pool, report.id, candidate.id, {
+    outcome: PROMOTION_OUTCOMES.FAILED,
+    detail: message
+  });
+  errors.push({ candidate_id: candidate.id, message });
+  results.push({
+    candidate_id: candidate.id,
+    outcome: PROMOTION_OUTCOMES.FAILED,
+    detail: message
+  });
 }
 
 /**
  * Finalize report after review (marks ready/imported without creating IOCs implicitly).
  * Blocked while any actionable indicator is still pending analyst review.
  */
-export async function finalizeReport(pool, reportId) {
+export async function finalizeReport(pool, reportId, opts = {}) {
   const report = await getReportById(pool, reportId);
   if (!report) return { ok: false, status: 404, error: 'Report not found' };
   if (!isFinalizeAllowed(report)) return reviewNotReadyError(report);
@@ -341,5 +420,6 @@ export async function finalizeReport(pool, reportId) {
     analysis_status: 'ready',
     finalize: true
   });
+  await emitAudit(opts, buildFinalizeAuditEvent({ report, candidates, user: opts.user }));
   return { ok: true };
 }

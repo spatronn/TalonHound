@@ -292,6 +292,12 @@ import {
   goNext,
   goPrevious
 } from './lib/auditLogsView.js';
+import {
+  auditActorLabel,
+  isThreatLibraryAuditRow,
+  threatLibraryDetailRows,
+  threatLibraryOutcomeSample
+} from './lib/auditThreatLibraryDetail.js';
 import './AppShell.css';
 import './components/LoginPage.css';
 import './components/enrichmentProviders/enrichmentProviders.css';
@@ -1059,6 +1065,7 @@ function auditStatusBadgeStyle(status) {
   const s = String(status || 'success').toLowerCase();
   const base = { display: 'inline-block', borderRadius: 999, padding: '4px 10px', fontSize: 11, fontWeight: 700, textTransform: 'capitalize' };
   if (s === 'failed') return { ...base, background: 'rgba(239,68,68,0.18)', color: '#fca5a5', border: '1px solid #991b1b' };
+  if (s === 'partial') return { ...base, background: 'rgba(234,179,8,0.15)', color: '#fcd34d', border: '1px solid #854d0e' };
   return { ...base, background: 'rgba(34,197,94,0.15)', color: '#86efac', border: '1px solid #166534' };
 }
 
@@ -1238,6 +1245,57 @@ function formatAuditStatusTransition(metadata) {
   if (!oldStatus && !newStatus) return '—';
   if (oldStatus && newStatus) return `${oldStatus} ? ${newStatus}`;
   return oldStatus || newStatus;
+}
+
+function AuditThreatLibrarySummary({ item }) {
+  if (!isThreatLibraryAuditRow(item)) return null;
+  const rows = threatLibraryDetailRows(item);
+  const sample = threatLibraryOutcomeSample(item);
+  if (!rows.length && !sample.rows.length) return null;
+  return (
+    <div style={{ border: '1px solid #334155', borderRadius: 10, padding: 12, background: '#111827' }}>
+      <div style={{ fontWeight: 700, marginBottom: 10, color: '#f8fafc' }}>Threat Library operation</div>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {rows.map(([label, value]) => (
+          <div key={label} style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 10, fontSize: 13 }}>
+            <span style={{ color: '#94a3b8' }}>{label}</span>
+            <span style={{ color: '#e2e8f0', overflowWrap: 'anywhere' }}>{value}</span>
+          </div>
+        ))}
+      </div>
+      {sample.rows.length ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>
+            Per-indicator outcomes{sample.note ? ` · ${sample.note}` : ''}
+          </div>
+          <div style={{ maxHeight: 220, overflow: 'auto', border: '1px solid #1f2937', borderRadius: 8 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8' }}>Candidate</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8' }}>Type</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8' }}>Value</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8' }}>Outcome</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', color: '#94a3b8' }}>IOC</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sample.rows.map((r, idx) => (
+                  <tr key={`${r.candidate_id ?? idx}-${idx}`} style={{ borderTop: '1px solid #1f2937' }}>
+                    <td style={{ padding: '6px 8px', color: '#e2e8f0' }}>#{r.candidate_id ?? '—'}</td>
+                    <td style={{ padding: '6px 8px', color: '#e2e8f0' }}>{r.type || '—'}</td>
+                    <td style={{ padding: '6px 8px', color: '#e2e8f0', overflowWrap: 'anywhere' }}>{r.value || '—'}</td>
+                    <td style={{ padding: '6px 8px', color: '#e2e8f0' }}>{String(r.outcome || '—').replace(/_/g, ' ')}{r.error ? ` · ${r.error}` : ''}</td>
+                    <td style={{ padding: '6px 8px', color: '#e2e8f0' }}>{r.ioc_id != null ? `#${r.ioc_id}` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function AuditExpirationSummary({ item }) {
@@ -6849,6 +6907,7 @@ function AuditLogsPage() {
           <select style={ui.select} value={committed.status} onChange={(e) => commit({ status: e.target.value })}>
             <option value="">All statuses</option>
             <option value="success">Success</option>
+            <option value="partial">Partial</option>
             <option value="failed">Failed</option>
           </select>
           {rangeKey === 'custom' ? (
@@ -6890,7 +6949,7 @@ function AuditLogsPage() {
               ) : items.map((row) => (
                 <tr key={row.id} style={{ cursor: 'pointer' }} onClick={() => openDetail(row)}>
                   <td style={ui.td}>{formatAuditDate(row.created_at)}</td>
-                  <td style={ui.td}>{row.actor_username || row.actor_email || '—'}</td>
+                  <td style={ui.td}>{auditActorLabel(row)}</td>
                   <td style={ui.td}>
                     <div style={{ fontWeight: 600 }}>{row.action_label || row.action}</div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{row.action}</div>
@@ -6925,10 +6984,11 @@ function AuditLogsPage() {
           {detailLoading ? <p style={ui.helper}>Loading details…</p> : null}
           <div style={{ display: 'grid', gap: 10, maxHeight: '70vh', overflowY: 'auto' }}>
             <div><strong>Date:</strong> {formatAuditDate(detailItem.created_at)}</div>
-            <div><strong>Actor:</strong> {detailItem.actor_username || detailItem.actor_email || '—'} ({detailItem.actor_role || '—'})</div>
+            <div><strong>Actor:</strong> {auditActorLabel(detailItem)} ({detailItem.actor_role || '—'})</div>
             <div><strong>Action:</strong> {detailItem.action_label || detailItem.action} <span style={{ color: '#64748b' }}>({detailItem.action})</span></div>
             <div><strong>Entity:</strong> {detailItem.entity_type} · <span title={formatAuditEntityPrimary(detailItem)}>{truncateAuditText(formatAuditEntityPrimary(detailItem), 120)}</span></div>
             <div style={{ fontSize: 12, color: '#94a3b8' }}>{formatAuditEntitySubtitle(detailItem)}</div>
+            <AuditThreatLibrarySummary item={detailItem} />
             <AuditExpirationSummary item={detailItem} />
             <AuditTaxonomySummary item={detailItem} />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

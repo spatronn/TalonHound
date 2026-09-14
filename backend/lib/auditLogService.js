@@ -26,9 +26,13 @@ function resolveIp(req) {
   return req?.ip || req?.socket?.remoteAddress || null;
 }
 
-function resolveRequestId(req) {
+function resolveRequestId(req, explicit) {
+  if (explicit) return String(explicit).trim().slice(0, 128) || null;
   const hdr = req?.headers?.['x-request-id'] || req?.headers?.['x-correlation-id'];
-  return hdr ? String(hdr).trim().slice(0, 128) : null;
+  if (hdr) return String(hdr).trim().slice(0, 128);
+  // Server-assigned per-request id (ensureRequestId in server.js) so every
+  // audit row written during one HTTP request shares a correlation key.
+  return req?.requestId ? String(req.requestId).slice(0, 128) : null;
 }
 
 function normalizeSeverity(value) {
@@ -39,7 +43,8 @@ function normalizeSeverity(value) {
 
 function normalizeStatus(value) {
   const s = String(value || AUDIT_STATUS.SUCCESS).toLowerCase();
-  return s === AUDIT_STATUS.FAILED ? AUDIT_STATUS.FAILED : AUDIT_STATUS.SUCCESS;
+  if (s === AUDIT_STATUS.FAILED || s === AUDIT_STATUS.PARTIAL) return s;
+  return AUDIT_STATUS.SUCCESS;
 }
 
 function jsonOrNull(value) {
@@ -55,11 +60,17 @@ function jsonOrNull(value) {
 export function createAuditLogService(pool) {
   const publicIdCache = new Map();
 
-  async function resolveActorPublicId(req) {
-    if (req?.user?.publicId && isUuid(req.user.publicId)) {
-      return String(req.user.publicId);
+  /**
+   * Resolve the persisted users.public_id for a session user. Interactive
+   * (cookie/JWT) sessions only carry the numeric id, so this is the single
+   * place that turns a request principal into an attributable actor id.
+   * @param {object|null|undefined} user - req.user-shaped principal
+   */
+  async function resolveUserPublicId(user) {
+    if (user?.publicId && isUuid(user.publicId)) {
+      return String(user.publicId);
     }
-    const internalId = req?.user?.id;
+    const internalId = user?.id;
     if (internalId == null || !Number.isFinite(Number(internalId))) return null;
     const key = Number(internalId);
     if (publicIdCache.has(key)) return publicIdCache.get(key);
@@ -74,8 +85,23 @@ export function createAuditLogService(pool) {
   }
 
   /**
+   * Actor principal for a request: `req.user` enriched with its public id.
+   * Use it when a user-initiated operation must stamp `created_by` /
+   * `requested_by` columns or hand the actor to a service layer.
+   * @param {import('express').Request|undefined} req
+   */
+  async function resolveActor(req) {
+    const user = req?.user;
+    if (!user) return null;
+    const publicId = await resolveUserPublicId(user);
+    return { ...user, publicId: publicId || user.publicId || null };
+  }
+
+  /**
    * @param {{
    *   req?: import('express').Request,
+   *   actor?: object|null,
+   *   requestId?: string|null,
    *   action: string,
    *   entityType: string,
    *   entityId?: string|number|null,
@@ -100,10 +126,13 @@ export function createAuditLogService(pool) {
   async function auditLog(event) {
     try {
       const req = event.req;
-      const actorPublicId = event.actorPublicId ?? (req ? await resolveActorPublicId(req) : null);
-      const actorUsername = event.actorUsername ?? (req?.user?.username || req?.user?.email || null);
-      const actorEmail = event.actorEmail ?? (req?.user?.email || req?.user?.username || null);
-      const actorRole = event.actorRole ?? (normalizeAppRole(req?.user?.role) || ROLES.ADMIN);
+      // Actor precedence: explicit actor* fields → request principal → `actor`
+      // (a req.user-shaped object for callers that run outside the request).
+      const principal = req?.user || (event.actor && typeof event.actor === 'object' ? event.actor : null);
+      const actorPublicId = event.actorPublicId ?? (principal ? await resolveUserPublicId(principal) : null);
+      const actorUsername = event.actorUsername ?? (principal?.username || principal?.email || null);
+      const actorEmail = event.actorEmail ?? (principal?.email || principal?.username || null);
+      const actorRole = event.actorRole ?? (normalizeAppRole(principal?.role) || ROLES.ADMIN);
 
       const meta = event.metadata && typeof event.metadata === 'object' ? event.metadata : {};
       const subjectIocIdRaw = event.subjectIocId ?? meta.subject_ioc_id ?? meta.ioc_id;
@@ -147,7 +176,7 @@ export function createAuditLogService(pool) {
           normalizeStatus(event.status),
           resolveIp(req),
           req?.headers?.['user-agent'] ? String(req.headers['user-agent']).slice(0, 512) : null,
-          resolveRequestId(req),
+          resolveRequestId(req, event.requestId),
           resolveSource(req, event.source),
           jsonOrNull(event.before),
           jsonOrNull(event.after),
@@ -167,5 +196,5 @@ export function createAuditLogService(pool) {
     return auditLog({ ...event, status: AUDIT_STATUS.FAILED });
   }
 
-  return { auditLog, auditSuccess, auditFailure };
+  return { auditLog, auditSuccess, auditFailure, resolveActor, resolveUserPublicId };
 }

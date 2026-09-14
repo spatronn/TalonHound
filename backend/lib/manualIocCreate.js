@@ -158,7 +158,14 @@ export function serializeManualIocResponse(row, source, expiration, classificati
 /**
  * @param {import('pg').Pool} pool
  * @param {object} body
- * @param {{ req?: import('express').Request, user?: object, audit?: object, onAfterInsert?: Function }} opts
+ * @param {{
+ *   req?: import('express').Request,
+ *   user?: object,
+ *   audit?: object,
+ *   onAfterInsert?: Function,
+ *   auditMetadata?: Record<string, unknown>
+ * }} opts - `auditMetadata` is merged into the ioc.created row (origin such as
+ *   a Threat Library report / candidate / operation id).
  */
 export async function createManualIoc(pool, body, opts = {}) {
   const value = String(body?.ip || body?.observable || '').trim();
@@ -448,7 +455,8 @@ export async function createManualIoc(pool, body, opts = {}) {
         source_name: source.name,
         expiration_policy: expiration.policy,
         expire_days: expiration.expire_days ?? null,
-        tag_ids: assignedTags.map((t) => t.id)
+        tag_ids: assignedTags.map((t) => t.id),
+        ...(opts.auditMetadata && typeof opts.auditMetadata === 'object' ? opts.auditMetadata : {})
       }
     });
 

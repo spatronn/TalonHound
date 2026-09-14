@@ -200,6 +200,7 @@ import { runProviderHealthProbe } from './lib/enrichmentProviderHealthCheck.js';
 import { auditProviderConfigUpdate } from './lib/enrichmentProviderConfigAudit.js';
 import { getRdapProviderAdminSummary } from './services/rdapEnrichmentService.js';
 import { createAuditLogService } from './lib/auditLogService.js';
+import { ensureRequestId } from './lib/apiRequestId.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence, computeInheritedEffectiveConfidence } from './lib/iocConfidence.js';
 import {
   enrichItemsWithActiveSourceCounts,
@@ -470,6 +471,13 @@ function pickIocLifecycleRow(rows, seedRow) {
 
 app.use(cors());
 app.use(cookieParser());
+// Per-request correlation id (client-supplied X-Request-Id or generated). Audit
+// rows written during one request share it, e.g. a Threat Library bulk event
+// and the ioc.created rows it produced.
+app.use((req, res, next) => {
+  ensureRequestId(req, res);
+  next();
+});
 app.use(express.json({ limit: '512kb' }));
 app.use(createSetupGate(pool));
 app.use(apiAuthGate);

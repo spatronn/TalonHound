@@ -283,6 +283,49 @@ test('filters are ANDed with the time range', async () => {
   });
 });
 
+test('free-text search covers action, entity type, entity display/id and actor (Threat Library events are findable)', async () => {
+  await withServer(async ({ app, state }) => {
+    state.handler = () => ({ rows: [], rowCount: 0 });
+    await request(app, '/api/audit-logs?search=threat_library');
+    const q = listQuery(state);
+    assert.match(q.sql, /lower\(action\) LIKE \$/);
+    assert.match(q.sql, /lower\(entity_type\) LIKE \$/);
+    assert.match(q.sql, /lower\(COALESCE\(entity_display, ''\)\) LIKE \$/);
+    assert.match(q.sql, /lower\(COALESCE\(entity_id, ''\)\) LIKE \$/);
+    assert.match(q.sql, /lower\(COALESCE\(actor_email, ''\)\) LIKE \$/);
+    assert.ok(q.params.includes('%threat_library%'));
+  });
+});
+
+test('status filter accepts partial (bulk operations with row-level failures)', async () => {
+  await withServer(async ({ app, state }) => {
+    state.handler = () => ({ rows: [], rowCount: 0 });
+    await request(app, '/api/audit-logs?status=partial');
+    const q = listQuery(state);
+    assert.match(q.sql, /status = \$/);
+    assert.ok(q.params.includes('partial'));
+  });
+});
+
+test('rows expose action_label so the UI renders "Threat Library › Create IOCs"', async () => {
+  await withServer(async ({ app, state }) => {
+    state.handler = () => ({
+      rows: [{
+        id: 1, created_at: new Date(), actor_user_id: null, actor_username: 'safa@safa.com', actor_email: 'safa@safa.com',
+        action: 'threat_library.iocs.created', entity_type: 'threat_report',
+        entity_id: 'c9e28440-a25f-4149-a993-c78d8b458805', entity_display: 'PurpleBravo report',
+        severity: 'info', status: 'success', source: 'web', metadata: { created: 52 }
+      }],
+      rowCount: 1
+    });
+    const res = await request(app, '/api/audit-logs');
+    assert.equal(res.status, 200);
+    assert.equal(res.data.items[0].action_label, 'Threat Library › Create IOCs');
+    assert.equal(res.data.items[0].actor_email, 'safa@safa.com');
+    assert.deepEqual(res.data.items[0].metadata, { created: 52 });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // RBAC
 // ---------------------------------------------------------------------------

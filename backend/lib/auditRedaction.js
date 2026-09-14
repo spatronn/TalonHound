@@ -70,4 +70,33 @@ export function pickSafeFields(obj, fields) {
   return redactSensitive(out);
 }
 
+// Query parameter names that commonly carry credentials in intel/report URLs.
+const SENSITIVE_QUERY_PARAM_RE = /^(api[_-]?key|apikey|key|token|access[_-]?token|auth[_-]?token|auth|authorization|secret|client[_-]?secret|password|passwd|pwd|sig|signature|x-amz-signature|x-amz-credential|x-amz-security-token|sas|st|se|sp|sv|sr|skoid|sktid|skt|ske|sks|skv)$/i;
+
+/**
+ * Redact a URL for audit storage: drop userinfo, mask credential-like query
+ * parameter values, keep host/path so the row stays meaningful. Non-URL input
+ * is returned as a bounded string (never throws).
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+export function redactUrlSecrets(value) {
+  if (value == null) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return raw.length > 512 ? `${raw.slice(0, 512)}…[truncated]` : raw;
+  }
+  u.username = '';
+  u.password = '';
+  for (const key of Array.from(u.searchParams.keys())) {
+    if (SENSITIVE_QUERY_PARAM_RE.test(key)) u.searchParams.set(key, REDACTED);
+  }
+  const out = u.toString();
+  return out.length > 2048 ? `${out.slice(0, 2048)}…[truncated]` : out;
+}
+
 export { REDACTED };

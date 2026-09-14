@@ -508,3 +508,45 @@ test('concurrent createManualIoc serializes on advisory lock', async () => {
   assert.ok(altFirstHeld >= 0 && altFirstRelease >= 0 && altSecondHeld >= 0);
   assert.ok(altSecondHeld > altFirstRelease, `expected serialization, order=${JSON.stringify(order)}`);
 });
+
+test('createManualIoc emits ioc.created with the request and merges caller-supplied origin metadata', async () => {
+  const pool = createManualIocPoolMock();
+  const events = [];
+  const audit = { async auditSuccess(ev) { events.push(ev); } };
+  const req = { user: { id: 7, email: 'safa@safa.com' }, headers: {}, requestId: 'req_9' };
+  const result = await createManualIoc(
+    pool,
+    { ip: 'deneme.ekhtelalattabrizi.xyz', source_id: 7, confidence: 'high' },
+    {
+      user: { publicId: '22222222-2222-4222-8222-222222222222', email: 'safa@safa.com' },
+      audit,
+      req,
+      auditMetadata: {
+        origin: 'threat_library',
+        threat_report_public_id: 'c9e28440-a25f-4149-a993-c78d8b458805',
+        threat_report_candidate_id: 101,
+        threat_library_operation_id: 'op-1'
+      }
+    }
+  );
+  assert.equal(result.status, 201);
+  const created = events.find((e) => e.action === 'ioc.created');
+  assert.ok(created, 'ioc.created emitted');
+  assert.equal(created.req, req);
+  assert.equal(created.metadata.created_origin, 'manual_add');
+  assert.equal(created.metadata.origin, 'threat_library');
+  assert.equal(created.metadata.threat_report_public_id, 'c9e28440-a25f-4149-a993-c78d8b458805');
+  assert.equal(created.metadata.threat_report_candidate_id, 101);
+  assert.equal(created.metadata.threat_library_operation_id, 'op-1');
+});
+
+test('createManualIoc without a request context emits no ioc.created (unchanged contract)', async () => {
+  const pool = createManualIocPoolMock();
+  const events = [];
+  await createManualIoc(
+    pool,
+    { ip: 'deneme.ekhtelalattabrizi.xyz', source_id: 7, confidence: 'high' },
+    { user: { publicId: '22222222-2222-4222-8222-222222222222' }, audit: { async auditSuccess(ev) { events.push(ev); } } }
+  );
+  assert.equal(events.filter((e) => e.action === 'ioc.created').length, 0);
+});

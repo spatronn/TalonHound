@@ -134,7 +134,7 @@ test('routes surface the phase and both counts, and return the guard code', () =
   assert.match(routeSrc, /raw_candidate_count: row\.indicator_count/);
   assert.match(routeSrc, /review_candidate_count: row\.review_candidate_count/);
   // finalize route no longer ignores the service result
-  assert.match(routeSrc, /const result = await finalizeReport\(pool, report\.id\);\s*if \(!result\.ok\)/);
+  assert.match(routeSrc, /const result = await finalizeReport\(pool, report\.id, \{[^}]*\}\);\s*if \(!result\.ok\)/);
   assert.match(routeSrc, /code: result\.code \|\| null/);
   // status + detail responses carry counts for the preliminary card
   assert.match(routeSrc, /report: publicReport\(await attachReportCounts\(pool, report\)\),\s*job: jobs\[0\]/);
