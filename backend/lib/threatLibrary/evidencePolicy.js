@@ -74,6 +74,12 @@ export function strongestEvidenceTier(candidate) {
 
 /**
  * Aggregate occurrence zones into promotion flags.
+ *
+ * `hasStrong` means the source ASSERTS the observable: an occurrence inside an
+ * authoritative section that is a row (table / list / value line / endpoint)
+ * or an operational clause. A narrative mention that merely sits inside a C2
+ * or IOC section is `hasStrongZoneNarrative`, never an assertion by itself.
+ * Occurrences without relation annotations (legacy records) fall back to zone.
  * @param {object} candidate
  */
 export function summarizeOccurrenceEvidence(candidate) {
@@ -81,22 +87,34 @@ export function summarizeOccurrenceEvidence(candidate) {
   const zones = occ.map((o) => o.zone || o.section_kind).filter(Boolean);
   if (!zones.length && candidate.zone) zones.push(candidate.zone);
 
-  const hasStrong = zones.some((z) => STRONG_IOC_ZONES.has(z));
-  const hasC2 = zones.some((z) => z === 'c2_section');
-  const hasOperational = zones.some((z) => z === 'operational_infrastructure');
+  const annotated = occ.some((o) => o.asserted != null || o.occurrence_kind != null);
+  const strongZoneOcc = occ.filter((o) => STRONG_IOC_ZONES.has(String(o.zone || o.section_kind || '')));
+  const assertedOcc = annotated ? strongZoneOcc.filter((o) => o.asserted === true) : strongZoneOcc;
+  const hasStrong = occ.length ? assertedOcc.length > 0 : zones.some((z) => STRONG_IOC_ZONES.has(z));
+  const hasStrongZoneNarrative = annotated && strongZoneOcc.some((o) => o.asserted !== true);
+  const hasUnresolvedStrongNarrative =
+    annotated && strongZoneOcc.some((o) => o.asserted !== true && (o.relation_marker === 'none' || o.relation_marker === 'empty'));
+  const assertedZones = assertedOcc.map((o) => o.zone || o.section_kind);
+  const hasC2 = (hasStrong ? assertedZones : zones).some((z) => z === 'c2_section');
+  const hasOperational = (hasStrong ? assertedZones : zones).some((z) => z === 'operational_infrastructure');
   const hasBody = zones.some((z) => z === 'report_body' || z === 'unknown' || z === 'code');
   const onlyNegative = zones.length > 0 && zones.every((z) => NEGATIVE_ZONES.has(z));
   const hasEndpoint = occ.some((o) => o.form === 'ip_port' || o.port != null);
 
+  let tier = strongestEvidenceTier({ ...candidate, occurrences: occ.length ? occ : [{ zone: candidate.zone }] });
+  if (tier === 'A' && !hasStrong) tier = 'B';
+
   return {
     zones,
     hasStrong,
+    hasStrongZoneNarrative,
+    hasUnresolvedStrongNarrative,
     hasC2,
     hasOperational,
     hasBody,
     hasEndpoint,
     onlyNegative,
-    tier: strongestEvidenceTier({ ...candidate, occurrences: occ.length ? occ : [{ zone: candidate.zone }] })
+    tier
   };
 }
 
@@ -137,6 +155,9 @@ const EXPLICIT_ROLES = new Set([...MALICIOUS_ROLES, 'hosting_platform']);
  * @param {object} [aiUpdate]
  */
 export function applyEvidencePolicy(candidate, aiUpdate = null) {
+  // Occurrence structure + relation first: every later decision (assertion,
+  // tier, narrative demotion) reads the annotated occurrences, never raw zones.
+  attachOccurrenceRelations(candidate);
   const summary = summarizeOccurrenceEvidence(candidate);
   const resolvedType = candidate.resolved_type || candidate.candidate_type;
   candidate.occurrence_count = Array.isArray(candidate.occurrences)
@@ -180,7 +201,6 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     }
   }
 
-  attachOccurrenceRelations(candidate);
   const relation = candidate.source_relation || strongestSourceRelation(candidate);
   const hasAuthoritativeScope = candidate.document_has_authoritative_scope === true;
   const explicit = summary.hasStrong;
@@ -193,7 +213,10 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
         candidate.confidence = Math.max(Number(aiUpdate.confidence) || 0, EXPLICIT_ASSERTION_CONFIDENCE);
       }
       candidate.ai_role_suggestion = aiUpdate.role || null;
-    } else if (relation === SOURCE_RELATIONS.PROVIDER_SERVICE || (hasAuthoritativeScope && relation === SOURCE_RELATIONS.CONTEXTUAL)) {
+    } else if (
+      relation === SOURCE_RELATIONS.PROVIDER_SERVICE ||
+      (hasAuthoritativeScope && relation === SOURCE_RELATIONS.CONTEXTUAL && !summary.hasUnresolvedStrongNarrative)
+    ) {
       // Source-scope / provider relation dominate AI maliciousness guesses.
       if (aiUpdate.role === 'hosting_platform' || aiUpdate.role === 'legitimate_service' || aiUpdate.role === 'reference') {
         candidate.role = aiUpdate.role;
@@ -258,15 +281,40 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = 'deterministic';
     if (candidate.confidence == null) candidate.confidence = 0.8;
+  } else if (summary.hasUnresolvedStrongNarrative && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS) {
+    // Prose inside an authoritative section with no relation marker either way
+    // ("the following domains were observed: …"). The section is evidence, not
+    // proof: the model classifies it with the section context, deterministic
+    // policy neither promotes nor silently discards it.
+    candidate.source_assertion = SOURCE_ASSERTIONS.BODY_MENTION;
+    candidate.evidence_strength = 'medium';
+    candidate.policy_decision = 'ai_needed_authoritative_narrative';
+    const decided = candidate.decision_source === 'ai' && candidate.assessment && candidate.assessment !== 'unknown';
+    candidate.ai_needed = !decided;
+    if (!candidate.decision_source) candidate.decision_source = 'pending';
+    if (
+      (candidate.assessment === 'malicious' || candidate.assessment === 'suspicious') &&
+      relation === SOURCE_RELATIONS.PROVIDER_SERVICE
+    ) {
+      candidate.assessment = 'context_only';
+      candidate.role = 'hosting_platform';
+      candidate.match_state = 'context_only';
+      candidate.policy_decision = 'demoted_provider_service';
+      candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
+      candidate.ai_needed = false;
+    }
   } else if (hasAuthoritativeScope && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS) {
     // Publisher already curated the operational indicator set. Narrative-only
-    // mentions stay evidence/context and do not enter the review set.
+    // mentions — including research / vendor / organisation names inside a C2
+    // or IOC section — stay evidence/context and do not enter the review set.
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
       candidate.role = 'reference';
     }
     candidate.match_state = 'context_only';
-    candidate.policy_decision = 'context_only_narrative_with_authoritative_scope';
+    candidate.policy_decision = summary.hasStrongZoneNarrative
+      ? 'context_only_contextual_mention_in_indicator_section'
+      : 'context_only_narrative_with_authoritative_scope';
     candidate.source_assertion = SOURCE_ASSERTIONS.BODY_MENTION;
     candidate.evidence_strength = 'weak';
     candidate.ai_needed = false;
@@ -363,6 +411,11 @@ export function buildCandidateEvidenceRecord(c) {
     table_row: o.table_row ?? null,
     surrounding_text: o.surrounding_text ? String(o.surrounding_text).slice(0, 200) : null,
     source_relation: o.source_relation || null,
+    relation_marker: o.relation_marker || undefined,
+    occurrence_kind: o.occurrence_kind || undefined,
+    asserted: o.asserted === true ? true : undefined,
+    zone_reason: o.zone_reason || undefined,
+    scope_opening_id: o.scope_opening_id || undefined,
     typing_reason: o.typing_reason || undefined
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({

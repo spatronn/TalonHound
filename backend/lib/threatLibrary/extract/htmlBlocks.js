@@ -236,7 +236,8 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
       flushPending();
       const text = textOf(node);
       currentSection = text.slice(0, 200) || currentSection;
-      push('heading', text);
+      // DOM hierarchy (h1–h6) lets zone scoping tell a nested sub-label from a sibling section.
+      push('heading', text, { level: Number(tag.slice(1)) });
       return;
     }
     if (PARAGRAPH_TAGS.has(tag)) {

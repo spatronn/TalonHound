@@ -29,12 +29,13 @@ import { applyEvidencePolicy } from './evidencePolicy.js';
 import { isObservableOnlyLine } from './pdfLayout.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
-import { discoverDocumentIndicatorScope } from './indicatorScope.js';
+import { discoverDocumentIndicatorScope, isIndicatorRowShape } from './indicatorScope.js';
 import {
   NON_NETWORK_RESOLVED_TYPES,
   RESOLVED_TYPES,
   buildTypeResolutionRecord,
-  validateCanonicalIocValue
+  validateCanonicalIocValue,
+  validateUrlCandidate
 } from './observableTypeResolver.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
@@ -50,8 +51,14 @@ export { normalizeCandidateValue } from './candidateValue.js';
  * `relative_path` / `file_path` context with an explainable `type_resolution`
  * record; canonical-shape gate on every network candidate; declared-type
  * sub-headings ("Domain", "IP Addresses") continue an open IOC section.
+ * v7: section scope model — descriptive indicator headings open a confirmed
+ * authoritative section, sub-labelled short groups inherit it, and every
+ * occurrence carries a structural kind (row vs narrative) + relation marker so
+ * zone membership alone never asserts maliciousness; scheme-less host/path
+ * resources are one URL occurrence (exact source spelling, no invented scheme,
+ * path preserved, host as parsed metadata).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v6';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v7';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -88,6 +95,12 @@ const IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d
 const IPV4_PORT_RE = /\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
 const IPV6_RE = /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b/g;
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
+/**
+ * Scheme-less network resource: DNS-shaped host + path ("js.cache-mcp.com/layer.js").
+ * The publisher gave no scheme, so none is invented: the exact host/path is
+ * the value. Not preceded by a scheme separator, "@" or another label.
+ */
+const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`)\]，。；]+)/gi;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
 const MD5_RE = /\b[a-fA-F0-9]{32}\b/g;
 const SHA1_RE = /\b[a-fA-F0-9]{40}\b/g;
@@ -107,6 +120,30 @@ export const OCCURRENCE_FORMS = Object.freeze({
 
 function stripUrlTrailingPunct(urlish) {
   return String(urlish || '').replace(/[),.;:!?\]。，；]+$/g, '');
+}
+
+/**
+ * The publisher's own spelling of a refanged token (defanged host dots kept),
+ * so evidence shows "js.cache-mcp[.]com/layer.js" rather than a rewritten form.
+ * @param {string} blockText
+ * @param {string} refanged
+ * @param {string} host
+ */
+function sourceSpelling(blockText, refanged) {
+  const hay = String(blockText || '');
+  if (hay.includes(refanged)) return refanged;
+  // Publishers defang any subset of the dots ("js.cache-mcp[.]com/layer.js"):
+  // every "." may appear as ".", "[.]", "(.)" or "{.}" in the source.
+  const pattern = String(refanged)
+    .replace(/[.*+?^${}()|[\]\\\/]/g, '\\$&')
+    .replace(/\\\./g, '(?:\\.|\\[\\.\\]|\\(\\.\\)|\\{\\.\\})');
+  try {
+    const m = hay.match(new RegExp(pattern, 'i'));
+    if (m) return m[0];
+  } catch {
+    /* fall through */
+  }
+  return refanged;
 }
 
 /**
@@ -208,7 +245,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       canonical_rejections: 0,
       rejected_values: {},
       excluded_reasons: {},
-      examples: []
+      examples: [],
+      /** Host/path resources written without a scheme: preserved verbatim as URL values. */
+      scheme_less_resources: { count: 0, rejected: {}, examples: [] }
     }
   };
   const typeDiag = diagnostics.type_resolution;
@@ -225,14 +264,33 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     const zone = block?.zone || 'unknown';
     const text = extra.rowText || (block?.text ? String(block.text) : null);
     const focus = extra.originalValue || focusValue;
+    const form = extra.form || OCCURRENCE_FORMS.STANDALONE;
+    // Structural reading is decided here, where the whole block is visible:
+    // row placement (list / table / observable-row layout / discovered list)
+    // or a short "value – note" / "label: value" line.
+    const structuralRow =
+      form === OCCURRENCE_FORMS.TABLE_ROW ||
+      form === OCCURRENCE_FORMS.LIST_ROW ||
+      form === OCCURRENCE_FORMS.IP_PORT ||
+      block?.type === 'list_item' ||
+      block?.layout === 'observable_row' ||
+      block?.zone_reason === 'observable_list' ||
+      block?.zone_reason === 'cidr_list' ||
+      block?.zone_reason === 'ioc_table';
+    const rowShape = !structuralRow && text ? isIndicatorRowShape(text, focus || focusValue) : false;
     return {
       block_id: block?.id || null,
       page: block?.page ?? null,
       zone,
+      zone_reason: block?.zone_reason || null,
+      scope_opening_id: block?.scope_opening_id || null,
       section_kind: zone,
       section_heading: block?.section_heading || null,
       block_type: block?.type || null,
-      form: extra.form || OCCURRENCE_FORMS.STANDALONE,
+      layout: block?.layout || null,
+      form,
+      structural_row: structuralRow,
+      row_shape: rowShape,
       port: extra.port ?? null,
       table_row: extra.tableRow ? extra.tableRow.row_index : null,
       surrounding_text: text ? surroundingWindow(text, focus) : null,
@@ -643,6 +701,55 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         }
       }
     }
+    // Pass 1b: scheme-less host/path resources ("js.cache-mcp[.]com/layer.js").
+    // One URL occurrence in the publisher's exact spelling — no scheme is
+    // invented, the path stays in the value, the host is parsed metadata only
+    // (same no-over-derivation rule as absolute URLs) and the basename never
+    // becomes a domain / artifact of its own.
+    for (const m of text.matchAll(HOST_PATH_RE)) {
+      const start = m.index;
+      const raw = stripUrlTrailingPunct(m[0]);
+      if (!raw || insideAnySpan(spans, start, start + raw.length)) continue;
+      const v = validateUrlCandidate(raw);
+      if (!v.ok || v.reason !== 'scheme_less_url_with_dns_host' || v.host_kind !== 'domain') {
+        countReason(typeDiag.scheme_less_resources.rejected, v.reason || 'invalid');
+        continue;
+      }
+      const path = raw.slice(raw.indexOf('/'));
+      if (path.length < 2) continue;
+      spans.push([start, start + raw.length]);
+      const base = pathBasenameFromUrl(`http://${raw}`);
+      if (v.host) knownUrlHosts.add(v.host);
+      if (base && base.includes('.')) urlPathBasenames.add(base.toLowerCase());
+      const isRow = isObservableRow(block);
+      const entry = add(raw, 'url', block, {
+        form: isRow ? OCCURRENCE_FORMS.LIST_ROW : OCCURRENCE_FORMS.URL,
+        originalValue: sourceSpelling(block.text, raw),
+        typing: { typing_reason: 'scheme_less_url_with_dns_host' }
+      });
+      typeDiag.scheme_less_resources.count += 1;
+      if (entry) {
+        entry.parsed.scheme = null;
+        entry.parsed.scheme_less = true;
+        entry.parsed.path = path;
+        if (v.host && !entry.parsed.host) {
+          entry.parsed.host = v.host;
+          entry.parsed.host_kind = 'domain';
+        }
+        if (base && !entry.parsed.path_basename) entry.parsed.path_basename = base;
+        if (!urlHostIndex.has(v.host)) urlHostIndex.set(v.host, new Set());
+        urlHostIndex.get(v.host).add(candidateKey('url', entry.normalized_value));
+        if (typeDiag.scheme_less_resources.examples.length < 12) {
+          typeDiag.scheme_less_resources.examples.push({
+            block_id: block.id,
+            raw: raw.slice(0, 200),
+            resolved: { candidate_type: 'url', normalized_value: entry.normalized_value, host: v.host, path },
+            decision: 'preserved_as_scheme_less_url',
+            not_promotable_as: 'absolute_url_without_scheme'
+          });
+        }
+      }
+    }
     if (spans.length) urlSpansByBlock.set(block.id, spans);
   }
 
@@ -768,8 +875,61 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   t.inconsistent = t.missing_identities.length > 0;
   t.explicit_identities = explicitTableKeys.size;
   diagnostics.document_scope = documentScope;
+  diagnostics.scope = buildScopeDiagnostics(annotated, out);
 
   return { candidates: out, diagnostics };
+}
+
+/**
+ * Developer diagnostics for scope decisions: which headings opened / continued
+ * / closed authoritative sections, and how occurrences were read (row vs
+ * narrative, relation marker) per zone. Bounded; not analyst UI.
+ * @param {object} annotated zone-annotated document
+ * @param {object[]} candidates
+ */
+export function buildScopeDiagnostics(annotated, candidates) {
+  const kinds = {};
+  const markers = {};
+  const byPolicy = {};
+  const perCandidate = [];
+  for (const c of candidates || []) {
+    byPolicy[c.policy_decision || 'none'] = (byPolicy[c.policy_decision || 'none'] || 0) + 1;
+    const occ = Array.isArray(c.occurrences) ? c.occurrences : [];
+    for (const o of occ) {
+      const k = o.occurrence_kind || 'unclassified';
+      kinds[k] = (kinds[k] || 0) + 1;
+      const m = o.relation_marker || 'none';
+      markers[m] = (markers[m] || 0) + 1;
+    }
+    if (perCandidate.length < 80 && c.is_ioc !== false) {
+      perCandidate.push({
+        type: c.candidate_type,
+        value: String(c.normalized_value || '').slice(0, 120),
+        assessment: c.assessment,
+        policy: c.policy_decision || null,
+        ai_needed: c.ai_needed === true,
+        occurrences: occ.slice(0, 6).map((o) => ({
+          block_id: o.block_id,
+          zone: o.zone,
+          zone_reason: o.zone_reason || null,
+          opened_by: o.scope_opening_id || null,
+          heading: o.section_heading ? String(o.section_heading).slice(0, 80) : null,
+          kind: o.occurrence_kind || null,
+          relation: o.source_relation || null,
+          marker: o.relation_marker || null,
+          asserted: o.asserted === true
+        }))
+      });
+    }
+  }
+  return {
+    zones_version: annotated?.meta?.zones_version || null,
+    trace: Array.isArray(annotated?.meta?.scope_trace) ? annotated.meta.scope_trace.slice(0, 60) : [],
+    occurrence_kinds: kinds,
+    relation_markers: markers,
+    policy_decisions: byPolicy,
+    candidates: perCandidate
+  };
 }
 
 /**

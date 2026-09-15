@@ -4,10 +4,27 @@
  */
 
 import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from './pdfLayout.js';
-import { interpretIocTable, looksLikeIocTableHeader, parseDeclaredType } from './tableSemantics.js';
-import { classifySectionRole, zoneForSectionRole } from './indicatorScope.js';
+import { refangTextForExtraction } from './defang.js';
 import { isPrivateOrReservedAddress } from './candidateValue.js';
 import { classifyTypeLabel } from './observableTypeResolver.js';
+import { interpretIocTable, looksLikeIocTableHeader, parseDeclaredType } from './tableSemantics.js';
+import {
+  INDICATOR_HEADING_FORMS,
+  classifyIndicatorHeading,
+  classifySectionRole,
+  isObservableListLine,
+  zoneForSectionRole
+} from './indicatorScope.js';
+
+/**
+ * Bump when zone / scope semantics change (candidates are re-derived; the
+ * canonical document itself is unchanged).
+ * v2: descriptive indicator headings ("Indicators: …") open an authoritative
+ * section once structurally confirmed; sub-labels inside an open section
+ * inherit its scope (no per-subgroup run-length gate); ≥3-row discovery is a
+ * fallback for unlabelled lists only.
+ */
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v2';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -141,7 +158,7 @@ export function classifyHeadingText(text, opts = {}) {
   // A table header row that survived only as a heading ("Type Indicator
   // Description", "Tür Gösterge Açıklama") opens an explicit IOC table.
   if (looksLikeIocTableHeader(t)) return 'explicit_ioc_section';
-  const roleZone = zoneForSectionRole(classifySectionRole(t));
+  const roleZone = zoneForSectionRole(classifySectionRole(t, { allowDescriptiveSuffix: opts.allowDescriptiveSuffix }));
   if (roleZone) return /** @type {DocumentZone} */ (roleZone);
   for (const [zone, patterns] of Object.entries(HEADING_HINTS)) {
     const max = LABEL_MAX_CHARS[zone];
@@ -251,8 +268,125 @@ export function combinedHeadingText(blocks, index) {
 }
 
 /**
+ * A block whose placement (not its prose) says "indicator row": list items,
+ * observable-only lines, single-column table rows, typed tables.
+ * @param {object} b
+ */
+export function isIndicatorStructureBlock(b) {
+  if (!b || b.layout === 'page_edge') return false;
+  if (b.type === 'list_item' || b.layout === 'observable_row') return true;
+  if (b.type === 'table' || b.type === 'list') return true;
+  return isObservableListLine(String(b.text || ''));
+}
+
+/**
+ * A row block that carries an observable itself (not a typed table, which
+ * proves itself, and not a prose list item).
+ * @param {object} b
+ */
+function isIndicatorRowBlock(b) {
+  if (!b || b.layout === 'page_edge' || b.type === 'heading') return false;
+  const text = String(b.text || '');
+  if (b.layout === 'observable_row' || isObservableListLine(text)) return true;
+  if (b.type === 'list_item' || b.type === 'list' || (b.type === 'table' && !b.table)) {
+    return text.length <= 160 && OBSERVABLE_IN_TEXT_RE.test(refangTextForExtraction(text));
+  }
+  return false;
+}
+
+const OBSERVABLE_IN_TEXT_RE =
+  /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
+
+/**
+ * Words that make a short heading read as a group label for indicators rather
+ * than a new topic (multilingual, intent-based — not vendor names).
+ */
+const GROUP_LABEL_CONCEPT_RE =
+  /\b(?:domains?|ips?|ip\s+addresses?|addresses?|urls?|hash(?:es)?|hosts?|hostnames?|servers?|c2|c&c|indicators?|iocs?|samples?|files?|infrastructure|decoys?|types?|campaigns?|clusters?|groups?|waves?|stages?|additional|supporting|related|other|network|emails?|sha-?\d*|md5|mutex(?:es)?|endpoints?|ranges?|cidrs?|payloads?|droppers?|loaders?|implants?|beacons?|alan\s+ad(?:ı|ları)|adres(?:ler)?|sunucu(?:lar)?|ek|ilgili|diğer)\b|域名|地址|服务器|样本|哈希|相关|其他|附加|基础设施|诱饵/i;
+
+/**
+ * Sub-label inside an open indicator section ("Scambling Domains (Type 2)",
+ * "Supporting IP Addresses…", "Decoy domains"): a short heading that opens no
+ * other section, names an indicator group concept, and is either nested
+ * deeper than the opening heading (DOM hierarchy) or directly followed by
+ * indicator rows. It inherits the section scope. "Frequently Asked Questions"
+ * or "Conclusion" name a new topic and close the section.
+ * @param {object} b heading block
+ * @param {object[]} blocks
+ * @param {number} i
+ * @param {{ level: number|null }} opening
+ * @param {Set<string>} chromeIds
+ */
+function isSubgroupLabelHeading(b, blocks, i, opening, chromeIds) {
+  const text = collapseLetterSpacing(String(b.text || '').trim());
+  if (!text || text.length > 72 || /[.!?。]$/.test(text)) return false;
+  if (!GROUP_LABEL_CONCEPT_RE.test(text)) return false;
+  const level = Number.isInteger(b.level) ? b.level : null;
+  if (level != null && opening.level != null && level > opening.level) return true;
+  const next = nextContentBlock(blocks, i, chromeIds);
+  return Boolean(next) && isIndicatorRowBlock(next);
+}
+
+/**
+ * Previous content block before index i (skipping running headers / footers / page edges).
+ * @param {object[]} blocks
+ * @param {number} i
+ * @param {Set<string>} chromeIds
+ */
+function previousContentBlock(blocks, i, chromeIds) {
+  for (let j = i - 1; j >= 0; j -= 1) {
+    const p = blocks[j];
+    if (p.layout === 'page_edge' || chromeIds.has(p.id)) continue;
+    return p;
+  }
+  return null;
+}
+
+/**
+ * Next content block after index i (skipping running headers / footers / page edges).
+ * @param {object[]} blocks
+ * @param {number} i
+ * @param {Set<string>} chromeIds
+ */
+function nextContentBlock(blocks, i, chromeIds) {
+  for (let j = i + 1; j < blocks.length; j += 1) {
+    const n = blocks[j];
+    if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
+    return n;
+  }
+  return null;
+}
+
+/**
+ * Structural confirmation for a descriptive indicator heading: the section it
+ * opens (up to the next real heading) must contain at least one indicator
+ * structure block. A heading that only introduces prose is not an appendix.
+ * @param {object[]} blocks
+ * @param {number} i heading index
+ * @param {Set<string>} chromeIds
+ */
+export function sectionHasIndicatorStructure(blocks, i, chromeIds, limit = 80) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
+    const n = blocks[j];
+    if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
+    if (n.type === 'heading') return false;
+    seen += 1;
+    if (isIndicatorStructureBlock(n)) return true;
+  }
+  return false;
+}
+
+/**
  * Annotate canonical blocks with zone metadata (mutates copies).
  * Repeated running headers/footers never close an open indicator section.
+ *
+ * Scope model: a heading declares a section role → the section is
+ * authoritative (indicator / C2 / sample / operational) or not → every block
+ * until a real section boundary inherits that scope, including short
+ * sub-labelled groups → occurrence-level relation decides assertion vs mention
+ * (see indicatorScope). Run-length list discovery is a fallback for unlabelled
+ * lists only.
  * @param {import('./canonicalDocument.js').CanonicalDocument} doc
  * @param {{ sourceUrl?: string|null, sourceHost?: string|null }} [opts]
  */
@@ -265,6 +399,13 @@ export function annotateDocumentZones(doc, opts = {}) {
   let currentRole = null;
   /** @type {{ label: string, declared_type: string|null, semantics: string }|null} */
   let currentTypeLabel = null;
+  /** Heading that opened the current strong zone (scope ancestry for diagnostics + hierarchy). */
+  let opening = { id: null, text: null, level: null, form: null };
+  /** Developer trace of scope decisions (bounded, not analyst UI). */
+  const scopeTrace = [];
+  const trace = (entry) => {
+    if (scopeTrace.length < 120) scopeTrace.push(entry);
+  };
 
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i];
@@ -290,38 +431,79 @@ export function annotateDocumentZones(doc, opts = {}) {
           // A single observable value ("c2.evil.example") is a row, never a heading.
           !isObservableOnlyLine(text)));
     const headingText = isHeadingLike && b.type === 'heading' ? combinedHeadingText(blocks, i) : text;
-    const headingZone = isHeadingLike ? classifyHeadingText(headingText, { isHeading: b.type === 'heading' }) : null;
-    const headingRole = isHeadingLike ? classifySectionRole(headingText) : null;
+    const indicatorHeading = isHeadingLike ? classifyIndicatorHeading(headingText) : null;
+    const descriptiveForm = indicatorHeading?.form === INDICATOR_HEADING_FORMS.DESCRIPTIVE_SUFFIX;
+    let headingZone = isHeadingLike ? classifyHeadingText(headingText, { isHeading: b.type === 'heading' }) : null;
+    let headingRole = isHeadingLike ? classifySectionRole(headingText) : null;
     const isRealHeading = b.type === 'heading' && !pageEdge && !isRepeatedChrome;
     const labelHeading = isRealHeading ? typeLabelHeading(text) : null;
+
+    // "Indicators: <descriptive text>" is only an appendix when the section it
+    // opens actually holds indicator structure; otherwise it is a narrative title.
+    if (headingZone && descriptiveForm && STRONG_IOC_ZONES.has(headingZone) && !sectionHasIndicatorStructure(blocks, i, footerIds)) {
+      trace({ block_id: b.id, decision: 'indicator_heading_unconfirmed', heading: headingText.slice(0, 120), zone: headingZone });
+      b.zone_reason = 'indicator_heading_unconfirmed';
+      headingZone = null;
+      headingRole = null;
+    }
 
     if (headingZone && ZONE_OPENING_HEADINGS.has(headingZone)) {
       currentZone = headingZone;
       currentRole = headingRole;
       currentTypeLabel = null;
-      b.zone_reason = 'heading_hint';
+      b.zone_reason = descriptiveForm ? 'heading_hint_descriptive' : 'heading_hint';
       b.section_role = headingRole;
+      opening = {
+        id: b.id,
+        text: headingText.slice(0, 160),
+        level: Number.isInteger(b.level) ? b.level : null,
+        form: indicatorHeading?.form || null
+      };
+      b.scope_opening_id = b.id;
+      trace({ block_id: b.id, decision: 'open', zone: headingZone, role: headingRole, heading: opening.text, level: opening.level, form: opening.form });
     } else if (isRealHeading) {
+      const inStrong = STRONG_IOC_ZONES.has(currentZone);
+      // A title wrapped over two visual lines: the previous CONTENT block (a
+      // running header / page edge does not count) is a heading on the same page.
+      const prev = previousContentBlock(blocks, i, footerIds);
       const wrappedContinuation =
-        STRONG_IOC_ZONES.has(currentZone) &&
+        inStrong &&
         text.length <= 40 &&
         !/[.!?。]$/.test(text) &&
-        i > 0 &&
-        blocks[i - 1].type === 'heading' &&
-        blocks[i - 1].page === b.page;
+        Boolean(prev) &&
+        prev.type === 'heading' &&
+        prev.page === b.page;
       // "Domain" / "IP Addresses" / "Hash Values" under an open IOC heading are
       // per-type sub-lists of the same publisher-curated section.
-      const typedContinuation = Boolean(labelHeading) && STRONG_IOC_ZONES.has(currentZone);
-      if (!wrappedContinuation && !typedContinuation) {
+      const typedContinuation = Boolean(labelHeading) && inStrong;
+      // Any other short sub-label that groups rows inside the section (decoy /
+      // supporting / per-campaign groups) inherits the section scope.
+      const subgroupContinuation =
+        inStrong &&
+        !typedContinuation &&
+        !wrappedContinuation &&
+        !headingRole &&
+        !headingZone &&
+        isSubgroupLabelHeading(b, blocks, i, opening, footerIds);
+      if (!wrappedContinuation && !typedContinuation && !subgroupContinuation) {
+        if (inStrong) {
+          trace({ block_id: b.id, decision: 'reset', from_zone: currentZone, heading: headingText.slice(0, 120), level: Number.isInteger(b.level) ? b.level : null, opened_by: opening.id });
+        }
         currentZone = 'report_body';
         currentRole = null;
-        b.zone_reason = 'heading_reset';
+        opening = { id: null, text: null, level: null, form: null };
+        if (b.zone_reason !== 'indicator_heading_unconfirmed') b.zone_reason = 'heading_reset';
       } else {
-        b.zone_reason = typedContinuation ? 'typed_subheading' : 'heading_continuation';
+        b.zone_reason = typedContinuation ? 'typed_subheading' : subgroupContinuation ? 'subgroup_label' : 'heading_continuation';
         b.section_role = currentRole;
+        b.scope_opening_id = opening.id;
+        trace({ block_id: b.id, decision: b.zone_reason, zone: currentZone, heading: headingText.slice(0, 120), opened_by: opening.id });
       }
       currentTypeLabel = labelHeading;
       if (labelHeading) b.type_label_heading = labelHeading;
+    }
+    if (!isRealHeading && !pageEdge && !isRepeatedChrome && opening.id && STRONG_IOC_ZONES.has(currentZone)) {
+      b.scope_opening_id = opening.id;
     }
 
     /** @type {DocumentZone} */
@@ -368,6 +550,8 @@ export function annotateDocumentZones(doc, opts = {}) {
     }
   }
 
+  // Discovery fallback: unlabelled lists in body text. Rows already inside an
+  // authoritative section are untouched (inheritance never depends on run length).
   applyObservableListZones(blocks);
   applyCidrParagraphZones(blocks);
 
@@ -377,6 +561,8 @@ export function annotateDocumentZones(doc, opts = {}) {
     meta: {
       ...(doc.meta || {}),
       zones_annotated: true,
+      zones_version: THREAT_LIBRARY_DOCUMENT_ZONES_VERSION,
+      scope_trace: scopeTrace,
       source_url: opts.sourceUrl || doc.meta?.source_url || null,
       source_host: opts.sourceHost || doc.meta?.source_host || null
     }
@@ -384,10 +570,12 @@ export function annotateDocumentZones(doc, opts = {}) {
 }
 
 /**
- * Structural IOC-list detection (no headings needed): >= OBSERVABLE_LIST_MIN_ROWS
+ * Structural IOC-list DISCOVERY (no headings needed): >= OBSERVABLE_LIST_MIN_ROWS
  * consecutive indicator-only rows in body text form an explicit IOC list;
  * a run made of citation-marked rows ("[1] https://…") is a reference list.
  * Header/footer rows in between (page breaks) do not interrupt a run.
+ * This is a fallback for unlabelled lists; it never gates rows that already
+ * inherit an authoritative section (those keep their zone regardless of run length).
  * @param {object[]} blocks — zone-annotated, mutated in place
  */
 export function applyObservableListZones(blocks) {

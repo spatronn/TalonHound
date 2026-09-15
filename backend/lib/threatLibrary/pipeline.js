@@ -747,9 +747,28 @@ export function compactExtractionDiagnostics(diagnostics) {
           canonical_rejections: tr.canonical_rejections ?? 0,
           rejected_values: tr.rejected_values || {},
           excluded_reasons: tr.excluded_reasons || {},
-          examples: (tr.examples || []).slice(0, 24)
+          examples: (tr.examples || []).slice(0, 24),
+          scheme_less_resources: tr.scheme_less_resources
+            ? {
+                count: tr.scheme_less_resources.count ?? 0,
+                rejected: tr.scheme_less_resources.rejected || {},
+                examples: (tr.scheme_less_resources.examples || []).slice(0, 12)
+              }
+            : undefined
         }
       : null,
+    // Scope decisions (which headings opened / continued / closed authoritative
+    // sections, how occurrences were read) — developer diagnostics, bounded.
+    scope: diagnostics.scope
+      ? {
+          zones_version: diagnostics.scope.zones_version || null,
+          trace: (diagnostics.scope.trace || []).slice(0, 60),
+          occurrence_kinds: diagnostics.scope.occurrence_kinds || {},
+          relation_markers: diagnostics.scope.relation_markers || {},
+          policy_decisions: diagnostics.scope.policy_decisions || {},
+          candidates: (diagnostics.scope.candidates || []).slice(0, 80)
+        }
+      : undefined,
     explicit_tables: {
       tables_seen: t.tables_seen ?? 0,
       ioc_tables: t.ioc_tables ?? 0,
