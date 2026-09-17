@@ -119,3 +119,26 @@ export function describeCandidateDetail(candidate, { formatDateTime } = {}) {
     }))
   };
 }
+
+/**
+ * Position of the open row inside the current filtered / searched result set
+ * (all pages), for the drawer's Previous / Next controls. Ids compare loosely
+ * so numeric ids from state and string ids from the API line up.
+ *
+ * @returns {{ index: number, total: number, prevId: unknown|null, nextId: unknown|null, page: number }}
+ *   index is 1-based (0 when the row is not in the set); page is the 1-based
+ *   page the row lives on for the given page size.
+ */
+export function describeDrawerPosition(rows, openId, pageSize = 50) {
+  const list = Array.isArray(rows) ? rows : [];
+  const size = Number(pageSize) > 0 ? Number(pageSize) : list.length || 1;
+  const idx = openId == null ? -1 : list.findIndex((r) => String(r?.id) === String(openId));
+  if (idx < 0) return { index: 0, total: list.length, prevId: null, nextId: null, page: 1 };
+  return {
+    index: idx + 1,
+    total: list.length,
+    prevId: idx > 0 ? list[idx - 1].id : null,
+    nextId: idx < list.length - 1 ? list[idx + 1].id : null,
+    page: Math.floor(idx / size) + 1
+  };
+}

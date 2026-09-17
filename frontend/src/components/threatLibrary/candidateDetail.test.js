@@ -4,7 +4,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { candidateDisplayValue, describeCandidateDetail, describeEvidencePreview } from './candidateDetail.js';
+import { candidateDisplayValue, describeCandidateDetail, describeDrawerPosition, describeEvidencePreview } from './candidateDetail.js';
 
 const explicitIp = Object.freeze({
   id: 2430,
@@ -90,7 +90,7 @@ test('drawer detail carries labels plus canonical raw values', () => {
   assert.equal(byKey.role.raw, 'malicious_infrastructure');
   assert.equal(byKey.confidence.value, 'Source asserted');
   assert.equal(byKey.review_status.value, 'Approved');
-  assert.equal(byKey.match.value, 'Matched (IP)');
+  assert.equal(byKey.match.value, 'Matched · IP');
   assert.equal(byKey.ioc_result.value, 'Already exists');
   assert.equal(byKey.ioc_result.raw, 'already_existing');
   assert.equal(byKey.original_value.value, '157[.]185[.]143[.]150');
@@ -139,4 +139,17 @@ test('display value prefers normalized over original and tolerates empty rows', 
   const d = describeCandidateDetail(null);
   assert.equal(d.value, '');
   assert.ok(Array.isArray(d.fields));
+});
+
+test('drawer position walks the filtered set across pages and stops at the boundaries', () => {
+  const rows = Array.from({ length: 7 }, (_, i) => ({ id: 100 + i }));
+  assert.deepEqual(describeDrawerPosition(rows, 100, 3), { index: 1, total: 7, prevId: null, nextId: 101, page: 1 });
+  assert.deepEqual(describeDrawerPosition(rows, 103, 3), { index: 4, total: 7, prevId: 102, nextId: 104, page: 2 });
+  assert.deepEqual(describeDrawerPosition(rows, 106, 3), { index: 7, total: 7, prevId: 105, nextId: null, page: 3 });
+  // String ids from the API line up with numeric ids in state.
+  assert.equal(describeDrawerPosition(rows, '104', 3).index, 5);
+  // A row outside the current filtered set has no position.
+  assert.deepEqual(describeDrawerPosition(rows, 999, 3), { index: 0, total: 7, prevId: null, nextId: null, page: 1 });
+  assert.deepEqual(describeDrawerPosition([], 1), { index: 0, total: 0, prevId: null, nextId: null, page: 1 });
+  assert.deepEqual(describeDrawerPosition(null, null), { index: 0, total: 0, prevId: null, nextId: null, page: 1 });
 });

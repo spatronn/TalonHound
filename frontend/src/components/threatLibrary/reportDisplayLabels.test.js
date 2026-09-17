@@ -11,6 +11,7 @@ import {
   candidateTypeLabel,
   entityTypeLabel,
   humanizeEnum,
+  languageLabel,
   matchCellLabel,
   matchStateLabel,
   matchStateTone,
@@ -73,7 +74,7 @@ test('labels do not mutate the canonical value on the row', () => {
   });
   const snapshot = JSON.stringify(row);
   assert.equal(roleLabel(row.role), 'Command & Control');
-  assert.equal(matchCellLabel(row), 'Matched (Domain)');
+  assert.equal(matchCellLabel(row), 'Matched · Domain');
   assert.equal(JSON.stringify(row), snapshot);
   assert.equal(row.role, 'command_and_control');
 });
@@ -81,7 +82,7 @@ test('labels do not mutate the canonical value on the row', () => {
 test('match cell falls back to the match state without an IOC hit', () => {
   assert.equal(matchCellLabel({ match_state: 'new' }), 'New');
   assert.equal(matchCellLabel({ match_state: 'needs_review' }), 'Needs review');
-  assert.equal(matchCellLabel({ matched_ioc_id: 7, candidate_type: 'ip' }), 'Matched (IP)');
+  assert.equal(matchCellLabel({ matched_ioc_id: 7, candidate_type: 'ip' }), 'Matched · IP');
 });
 
 test('tones are restrained: only risk / attention states carry colour', () => {
@@ -97,4 +98,13 @@ test('tones are restrained: only risk / attention states carry colour', () => {
   assert.equal(promotionOutcomeTone('already_existing'), 'neutral');
   assert.equal(promotionOutcomeTone(null), 'none');
   assert.equal(promotionOutcomeTone('will_create'), 'none');
+});
+
+test('language codes become names; unknown codes fall back to the code', () => {
+  assert.equal(languageLabel('en'), 'English');
+  assert.equal(languageLabel('en-us'), 'American English');
+  assert.equal(languageLabel('zh'), 'Chinese');
+  assert.equal(languageLabel(''), '');
+  assert.equal(languageLabel(null), '');
+  assert.equal(languageLabel('xx-not-a-lang'), 'xx-not-a-lang');
 });

@@ -61,6 +61,41 @@ export function CopyValueButton({ value, label = 'Copy value', size = 13, classN
   );
 }
 
+/** Text variant of the copy control ("Copy URL" / "Copied"), same helper. */
+export function CopyUrlButton({ value, label = 'Copy URL' }) {
+  const [copied, setCopied] = useState(false);
+  const [epoch, setEpoch] = useState(0);
+
+  useEffect(() => {
+    if (!copied) return undefined;
+    const id = globalThis.setTimeout(() => setCopied(false), IOC_COPY_FEEDBACK_MS);
+    return () => globalThis.clearTimeout(id);
+  }, [copied, epoch]);
+
+  async function onCopy() {
+    const result = await copyTextToClipboard(value);
+    if (!result.ok) {
+      setCopied(false);
+      return;
+    }
+    setCopied(true);
+    setEpoch((n) => n + 1);
+  }
+
+  return (
+    <button
+      type="button"
+      className={`tl-ghost-btn${copied ? ' is-copied' : ''}`}
+      onClick={onCopy}
+      aria-label={copied ? 'Copied' : label}
+      title={copied ? 'Copied' : label}
+    >
+      {copied ? <IocDetailIcons.check size={13} /> : <IocDetailIcons.copy size={13} />}
+      {copied ? 'Copied' : label}
+    </button>
+  );
+}
+
 /** Underline tab bar (same visual as the IOC Details section tabs). */
 export function ReportTabBar({ tabs, active, onChange, ariaLabel = 'Report sections' }) {
   return (
@@ -240,10 +275,10 @@ export function SectionTitle({ children, right }) {
 }
 
 /** Compact label/value list; callers pass only present values. */
-export function DetailList({ items, testId }) {
+export function DetailList({ items, testId, className = '' }) {
   if (!items?.length) return null;
   return (
-    <dl className="tl-dl" data-testid={testId}>
+    <dl className={`tl-dl${className ? ` ${className}` : ''}`} data-testid={testId}>
       {items.map((it) => (
         <React.Fragment key={it.key}>
           <dt>{it.label}</dt>

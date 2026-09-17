@@ -13,6 +13,7 @@ import {
   buildSourceDetails,
   describeArtifact,
   describeOverviewPhaseNote,
+  entityConfidenceLabel,
   entityHasDetail,
   formatByteSize,
   groupEntitiesByType,
@@ -159,7 +160,9 @@ test('report details hide empty fields and keep only real values', () => {
     formatDateTime: (v) => `fmt(${v})`
   });
   const labels = items.map((i) => i.label);
-  assert.deepEqual(labels, ['Source', 'Source type', 'Language', 'Imported', 'Finalized', 'Document', 'Artifacts', 'Entities', 'Indicators', 'Matched', 'Status']);
+  assert.deepEqual(labels, ['Source', 'Language', 'Imported', 'Finalized', 'Document', 'Artifacts', 'Entities', 'Indicators', 'Status']);
+  assert.ok(!labels.includes('Matched'), 'Matched duplicates the Existing stat');
+  assert.ok(!labels.includes('Source type'), 'source type lives on the Source tab');
   assert.ok(!labels.includes('Published'));
   assert.ok(!labels.includes('Confidence'));
   assert.ok(!labels.includes('Report type'));
@@ -167,7 +170,7 @@ test('report details hide empty fields and keep only real values', () => {
   assert.ok(!labels.includes('SHA-256'));
   assert.ok(items.every((i) => i.value !== '—' && i.value !== '' && i.value !== 'null'));
   assert.equal(items.find((i) => i.label === 'Document').value, '163 blocks');
-  assert.equal(items.find((i) => i.label === 'Source type').value, 'URL');
+  assert.equal(items.find((i) => i.label === 'Language').value, 'American English');
   assert.equal(items.find((i) => i.label === 'Status').value, 'Ready');
   assert.equal(items.find((i) => i.label === 'Imported').value, 'fmt(2026-09-16T00:30:21+03:00)');
 });
@@ -274,4 +277,16 @@ test('byte sizes are human readable', () => {
   assert.equal(formatByteSize(5 * 1024 * 1024), '5.0 MB');
   assert.equal(formatByteSize(null), null);
   assert.equal(formatByteSize('abc'), null);
+});
+
+test('entity confidence is shown exactly as stored (numeric(4,3) from the model) and absent when null', () => {
+  // Real NCSC report rows: the model emitted 0.95 for the actor and 0.1 for
+  // reference organisations; both are genuine outputs, null is "unknown".
+  assert.equal(entityConfidenceLabel({ confidence: '0.950' }), '95%');
+  assert.equal(entityConfidenceLabel({ confidence: '0.100' }), '10%');
+  assert.equal(entityConfidenceLabel({ confidence: 0.8 }), '80%');
+  assert.equal(entityConfidenceLabel({ confidence: null }), null);
+  assert.equal(entityConfidenceLabel({ confidence: '' }), null);
+  assert.equal(entityConfidenceLabel({}), null);
+  assert.equal(entityConfidenceLabel({ confidence: 'abc' }), null);
 });

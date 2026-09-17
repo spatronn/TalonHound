@@ -189,7 +189,23 @@ export function matchCellLabel(candidate) {
   if (!candidate) return '';
   if (candidate.matched_ioc_id) {
     const type = candidate.matched_ioc_observable_type || candidate.candidate_type;
-    return `Matched (${candidateTypeLabel(type) || type})`;
+    return `Matched · ${candidateTypeLabel(type) || type}`;
   }
   return matchStateLabel(candidate.match_state);
+}
+
+/**
+ * Human language name for a BCP-47 tag (`en` → English, `en-us` → American
+ * English). Falls back to the raw code when the runtime cannot name it.
+ */
+export function languageLabel(code) {
+  const raw = String(code ?? '').trim();
+  if (!raw) return '';
+  try {
+    if (typeof Intl !== 'undefined' && typeof Intl.DisplayNames === 'function') {
+      const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(raw.replace(/_/g, '-'));
+      if (name && name.toLowerCase() !== raw.toLowerCase()) return name;
+    }
+  } catch { /* unsupported tag */ }
+  return raw;
 }

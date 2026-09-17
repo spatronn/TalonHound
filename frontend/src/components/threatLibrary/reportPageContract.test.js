@@ -68,9 +68,11 @@ test('overview metrics and report details come from the loaded rows, never hardc
   for (const id of ['metric-candidates', 'metric-new', 'metric-existing', 'metric-needs-review', 'metric-progress']) {
     assert.match(pageSrc, new RegExp(`testId="${id}"|data-testid="${id}"`));
   }
-  assert.match(pageSrc, /\{metrics\.reviewed\} \/ \{metrics\.total\}/);
+  assert.match(pageSrc, /`\$\{metrics\.reviewed\}\/\$\{metrics\.total\}`/);
+  assert.match(pageSrc, /className="tl-statstrip"/, 'compact strip, not KPI cards');
+  assert.doesNotMatch(pageSrc, /className="tl-metrics"/);
   assert.match(pageSrc, /buildReportDetails\(report, \{/);
-  assert.match(pageSrc, /<DetailList items=\{reportDetails\} testId="report-details" \/>/);
+  assert.match(pageSrc, /<DetailList items=\{reportDetails\} testId="report-details" className="tl-dl--info" \/>/);
   assert.match(pageSrc, /const filterCounts = useMemo\(\(\) => buildReviewFilterCounts\(candidates\)/);
   assert.match(pageSrc, /\{filterCounts\[f\.id\] \?\? 0\}/);
   assert.doesNotMatch(pageSrc, /<Meta label="File name"/, 'empty file name / sha256 rows are gone');
@@ -82,10 +84,11 @@ test('review workflow gates are unchanged: canWrite for actions, showReview for 
   assert.match(pageSrc, /\{showReview \? \(/);
   assert.match(pageSrc, /\{showPreliminary \? \(\s*<PreliminaryIndicatorsCard/);
   assert.match(pageSrc, /async function runReview\(action, ids = null\) \{\s*if \(!canWrite\) return;/);
-  assert.match(pageSrc, /<IndicatorDetailDrawer[\s\S]*?canWrite=\{canWrite && showReview\}[\s\S]*?onReview=\{\(action, ids\) => runReview\(action, ids\)/);
-  assert.match(drawerSrc, /onReview\('approve', \[candidate\.id\]\)/);
-  assert.match(drawerSrc, /onReview\('context_only', \[candidate\.id\]\)/);
-  assert.match(drawerSrc, /onReview\('ignore', \[candidate\.id\]\)/);
+  assert.match(pageSrc, /<IndicatorDetailDrawer[\s\S]*?canWrite=\{canWrite\}[\s\S]*?mutationAllowed=\{showReview\}[\s\S]*?onReview=\{\(action, ids\) => runReview\(action, ids\)/);
+  assert.match(drawerSrc, /describeCandidateActions\(candidate, \{ canWrite, mutationAllowed \}\)/, 'drawer actions are state-aware');
+  assert.match(drawerSrc, /onClick=\{\(\) => onReview\(a\.id, \[candidate\.id\]\)\}/);
+  assert.match(pageSrc, /async function createIocs\(explicitIds = null\)/);
+  assert.match(pageSrc, /await createIocs\(Array\.isArray\(ids\) \? ids : null\)/);
   assert.match(pageSrc, /SourceUrlEditor[\s\S]*?canWrite=\{canWrite\}/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('export'\)/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('finalize'\)/);
@@ -99,9 +102,34 @@ test('one scroll model: no nested max-height table scroller, sticky header offse
 
 test('entities are grouped by canonical type and only detailed when data exists', () => {
   assert.match(pageSrc, /const entityGroups = useMemo\(\(\) => groupEntitiesByType\(entities\)/);
-  assert.match(pageSrc, /group\.items\.some\(entityHasDetail\)/);
+  assert.match(pageSrc, /className="tl-entity-grid"/);
   assert.match(pageSrc, /data-entity-type=\{group\.type\}/);
+  assert.match(pageSrc, /\{e\.description \? <div className="tl-entity-card__desc">/, 'description kept when present');
+  assert.match(pageSrc, /\{e\.evidence_text \? <blockquote className="tl-quote">/, 'evidence kept when present');
+  assert.match(pageSrc, /\{conf \? <span className="tl-entity-card__conf"/, 'confidence only when present');
   assert.doesNotMatch(pageSrc, /<th style=\{ui\.th\}>Confidence<\/th>\s*<th style=\{ui\.th\}>Evidence<\/th>/, 'no empty Confidence/Evidence entity table');
+});
+
+test('drawer: previous / next walk the filtered set, row trigger says what it opens', () => {
+  assert.match(pageSrc, /describeDrawerPosition\(filtered, openCandidateId, paged\.pageSize\)/);
+  assert.match(pageSrc, /function navigateDrawer\(nextId\)[\s\S]*?setPage\(target\.page\);\s*setOpenCandidateId\(nextId\);/);
+  assert.doesNotMatch(pageSrc.slice(pageSrc.indexOf('function navigateDrawer'), pageSrc.indexOf('function onRowClick')), /setSelected/, 'navigation keeps the selection');
+  assert.match(pageSrc, /aria-label=\{`View details for \$\{value \|\| c\.id\}`\}[\s\S]*?aria-haspopup="dialog"/);
+  assert.match(drawerSrc, /aria-label="Previous indicator"/);
+  assert.match(drawerSrc, /aria-label="Next indicator"/);
+  assert.match(drawerSrc, /disabled=\{position\.prevId == null\}/);
+  assert.match(drawerSrc, /disabled=\{position\.nextId == null\}/);
+  assert.match(drawerSrc, /e\.key === 'Escape'/);
+  assert.match(drawerSrc, /aria-label="Close details"/);
+});
+
+test('source card: identity first, explicit open / copy, low-emphasis edit, no fabricated organisation', () => {
+  assert.match(pageSrc, /className="tl-source-card"/);
+  assert.match(pageSrc, /data-testid="source-identity"[\s\S]*?\{report\.source_name \|\| report\.source_file_name \|\| sourceTypeLabel\(report\.source_type\)/);
+  assert.doesNotMatch(pageSrc, /ncsc|infoblox|socradar/i, 'no hardcoded domain → organisation mapping');
+  assert.match(pageSrc, /<CopyUrlButton value=\{url\} \/>/);
+  assert.match(pageSrc, /className="tl-ghost-btn"[\s\S]*?\{value \? 'Edit' : 'Add source URL'\}/);
+  assert.match(pageSrc, /<details className="tl-artifacts"/);
 });
 
 test('finalize "Show Needs Review" lands on the Indicators section', () => {

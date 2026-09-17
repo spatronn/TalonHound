@@ -63,7 +63,6 @@ import {
   describeArtifact,
   describeOverviewPhaseNote,
   entityConfidenceLabel,
-  entityHasDetail,
   groupEntitiesByType,
   isOpenableSourceUrl
 } from './reportOverview.js';
@@ -77,15 +76,16 @@ import {
   promotionOutcomeTone,
   reviewStatusLabel,
   reviewStatusTone,
-  roleLabel
+  roleLabel,
+  sourceTypeLabel
 } from './reportDisplayLabels.js';
-import { candidateDisplayValue, describeEvidencePreview } from './candidateDetail.js';
+import { candidateDisplayValue, describeDrawerPosition, describeEvidencePreview } from './candidateDetail.js';
 import {
+  CopyUrlButton,
   CopyValueButton,
   DetailList,
   ReportActionsMenu,
   ReportTabBar,
-  SectionTitle,
   ToneBadge
 } from './reportPageParts.jsx';
 import IndicatorDetailDrawer from './IndicatorDetailDrawer.jsx';
@@ -181,14 +181,13 @@ function SourceUrlEditor({ value, canWrite, busy, onSave }) {
   if (!editing) {
     const url = value ? String(value) : '';
     return (
-      <div data-testid="source-url">
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>Source URL</div>
+      <div data-testid="source-url" className="tl-source-card__url">
         {url ? (
-          <div className="tl-value" style={{ fontSize: 13, marginBottom: 8 }}>{url}</div>
+          <div className="tl-value tl-source-card__urltext" title={url}>{url}</div>
         ) : (
-          <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>No source URL recorded.</div>
+          <div style={{ color: '#64748b', fontSize: 13 }}>No source URL recorded.</div>
         )}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="tl-source-card__actions">
           {url && isOpenableSourceUrl(url) ? (
             <a
               href={url}
@@ -199,16 +198,11 @@ function SourceUrlEditor({ value, canWrite, busy, onSave }) {
               Open source
             </a>
           ) : null}
-          {url ? (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#94a3b8', fontSize: 12 }}>
-              <CopyValueButton value={url} label="Copy source URL" size={14} />
-              Copy
-            </span>
-          ) : null}
+          {url ? <CopyUrlButton value={url} /> : null}
           {canWrite ? (
             <button
               type="button"
-              style={compactAction}
+              className="tl-ghost-btn"
               disabled={Boolean(busy)}
               onClick={() => { setLocalError(''); setDraft(value || ''); setEditing(true); }}
             >
@@ -221,7 +215,7 @@ function SourceUrlEditor({ value, canWrite, busy, onSave }) {
   }
 
   return (
-    <div>
+    <div className="tl-source-card__url">
       <label htmlFor="tl-source-url" style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4, display: 'block' }}>
         Source URL
       </label>
@@ -335,12 +329,13 @@ function PreliminaryIndicatorsCard({ report, job, candidates, onRetry, retryEnab
   );
 }
 
-function MetricCard({ label, value, testId }) {
+function Stat({ label, value, testId, children }) {
   return (
-    <div className="tl-metric" data-testid={testId}>
-      <div className="tl-metric__value">{value}</div>
-      <div className="tl-metric__label">{label}</div>
-    </div>
+    <span className="tl-stat" data-testid={testId}>
+      <span className="tl-stat__value">{value}</span>
+      <span className="tl-stat__label">{label}</span>
+      {children}
+    </span>
   );
 }
 
@@ -561,7 +556,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   async function runReview(action, ids = null) {
     if (!canWrite) return;
     if (action === 'create_iocs') {
-      await createIocs();
+      await createIocs(Array.isArray(ids) ? ids : null);
       return;
     }
     setBusy(action);
@@ -587,12 +582,16 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }
   }
 
-  async function createIocs() {
-    if (!canWrite || !selected.size) return;
+  /**
+   * Preview + confirm + create for the current selection, or for an explicit
+   * id list when triggered from the detail drawer. Same two calls either way.
+   */
+  async function createIocs(explicitIds = null) {
+    const ids = Array.isArray(explicitIds) ? explicitIds : [...selected];
+    if (!canWrite || !ids.length) return;
     setBusy('create_iocs');
     setFeedback('');
     setError('');
-    const ids = [...selected];
     try {
       const { data: preview } = await api.post(`/threat-library/reports/${reportId}/review`, {
         action: 'create_iocs',
@@ -857,15 +856,22 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     indicatorCount: showReview ? indicatorCount : null,
     formatDateTime: formatUserDateTime
   }), [report, documentMeta, artifacts, entities.length, showReview, indicatorCount]);
-  const sourceDetails = useMemo(
-    () => buildSourceDetails(report, { documentMeta, artifacts, formatDateTime: formatUserDateTime }),
-    [report, documentMeta, artifacts]
-  );
+  const sourceDetails = useMemo(() => {
+    const items = buildSourceDetails(report, { documentMeta, artifacts, formatDateTime: formatUserDateTime });
+    // The file name is already the card's identity when there is no source name.
+    return report && !report.source_name && report.source_file_name ? items.filter((i) => i.key !== 'file_name') : items;
+  }, [report, documentMeta, artifacts]);
   const entityGroups = useMemo(() => groupEntitiesByType(entities), [entities]);
   const openCandidate = useMemo(
     () => (openCandidateId == null ? null : candidates.find((c) => c.id === openCandidateId) || null),
     [candidates, openCandidateId]
   );
+  // Previous / Next walk the whole filtered set (every page), not just the visible page.
+  const drawerPosition = useMemo(
+    () => describeDrawerPosition(filtered, openCandidateId, paged.pageSize),
+    [filtered, openCandidateId, paged.pageSize]
+  );
+  const selectedOnPage = useMemo(() => pageRows.filter((c) => selected.has(c.id)).length, [pageRows, selected]);
   const overflowItems = [
     isAdmin ? { id: 'delete', label: 'Delete report', danger: true, disabled: Boolean(busy), onSelect: () => removeReport().catch(() => {}) } : null
   ];
@@ -873,6 +879,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
 
   function openRow(c) {
     setOpenCandidateId(c.id);
+  }
+
+  /** Drawer navigation: follow the row onto its page without touching the selection. */
+  function navigateDrawer(nextId) {
+    if (nextId == null) return;
+    const target = describeDrawerPosition(filtered, nextId, paged.pageSize);
+    if (target.index > 0 && target.page !== paged.page) setPage(target.page);
+    setOpenCandidateId(nextId);
   }
 
   function onRowClick(e, c) {
@@ -993,37 +1007,41 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         {report && view === REPORT_VIEWS.OVERVIEW ? (
           <div role="tabpanel" id="tl-panel-overview" aria-labelledby="tl-tab-overview">
             {metrics.available ? (
-              <div className="tl-metrics" data-testid="overview-metrics">
-                <MetricCard label="Candidates" value={metrics.candidates} testId="metric-candidates" />
-                <MetricCard label="New" value={metrics.new} testId="metric-new" />
-                <MetricCard label="Existing" value={metrics.existing} testId="metric-existing" />
-                <MetricCard label="Needs review" value={metrics.needsReview} testId="metric-needs-review" />
-                <div className="tl-metric" data-testid="metric-progress">
-                  <div className="tl-metric__value" style={{ fontSize: 18 }}>
-                    {metrics.reviewed} / {metrics.total}
-                    <span style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', marginLeft: 6 }}>reviewed</span>
-                  </div>
-                  <div className="tl-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={metrics.progressPct} aria-label="Review progress">
-                    <div className="tl-progress__bar" style={{ width: `${metrics.progressPct}%` }} />
-                  </div>
-                </div>
+              <div className="tl-statstrip" data-testid="overview-metrics">
+                <Stat label="Candidates" value={metrics.candidates} testId="metric-candidates" />
+                <Stat label="New" value={metrics.new} testId="metric-new" />
+                <Stat label="Existing" value={metrics.existing} testId="metric-existing" />
+                <Stat label="Needs review" value={metrics.needsReview} testId="metric-needs-review" />
+                <Stat label="Reviewed" value={`${metrics.reviewed}/${metrics.total}`} testId="metric-progress">
+                  <span
+                    className="tl-progress tl-progress--inline"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={metrics.progressPct}
+                    aria-label="Review progress"
+                    title={`${metrics.progressPct}% reviewed`}
+                  >
+                    <span className="tl-progress__bar" style={{ width: `${metrics.progressPct}%` }} />
+                  </span>
+                </Stat>
               </div>
             ) : (
               describeOverviewPhaseNote(report) ? (
-                <div style={{ ...ui.muted, marginBottom: 16 }}>{describeOverviewPhaseNote(report)}</div>
+                <div style={{ ...ui.muted, marginBottom: 14 }}>{describeOverviewPhaseNote(report)}</div>
               ) : null
             )}
 
             <div className="tl-overview">
-              <div>
-                <SectionTitle>Summary</SectionTitle>
+              <div className="tl-overview__summary">
+                <h2 className="tl-heading">Summary</h2>
                 <div className="tl-summary" data-testid="report-summary">
                   {report.summary || <span style={{ color: '#64748b' }}>No summary available yet.</span>}
                 </div>
               </div>
-              <div>
-                <SectionTitle>Report details</SectionTitle>
-                <DetailList items={reportDetails} testId="report-details" />
+              <div className="tl-overview__info">
+                <h2 className="tl-heading">Report information</h2>
+                <DetailList items={reportDetails} testId="report-details" className="tl-dl--info" />
               </div>
             </div>
           </div>
@@ -1119,7 +1137,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                       Approve high-confidence malicious
                     </button>
                     <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }} aria-live="polite">
-                      {selected.size} selected on this page
+                      {selectedOnPage === selected.size
+                        ? `${selected.size} selected on this page`
+                        : `${selected.size} selected (${selectedOnPage} on this page)`}
                     </span>
                   </div>
                 ) : null}
@@ -1219,8 +1239,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                                 type="button"
                                 className="tl-row-open"
                                 onClick={() => openRow(c)}
-                                aria-label={`Details for ${value || c.id}`}
-                                title="Details"
+                                aria-label={`View details for ${value || c.id}`}
+                                aria-haspopup="dialog"
+                                aria-expanded={isOpen}
+                                title="View details"
                               >
                                 ›
                               </button>
@@ -1275,46 +1297,44 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         ) : null}
 
         {report && view === REPORT_VIEWS.ENTITIES ? (
-          <div role="tabpanel" id="tl-panel-entities" aria-labelledby="tl-tab-entities" data-testid="entities-panel">
+          <div role="tabpanel" id="tl-panel-entities" aria-labelledby="tl-tab-entities" data-testid="entities-panel" className="tl-entities">
             {entityGroups.length === 0 ? (
               <div style={ui.muted}>No entities extracted.</div>
             ) : entityGroups.map((group) => (
-              <div key={group.type} className="tl-entity-group" data-entity-type={group.type}>
-                <SectionTitle>{group.label} <span style={{ color: '#475569', fontWeight: 600 }}>{group.items.length}</span></SectionTitle>
-                {group.items.some(entityHasDetail) ? (
-                  group.items.map((e) => {
+              <section key={group.type} className="tl-entity-group" data-entity-type={group.type} aria-label={`${group.label} (${group.items.length})`}>
+                <h2 className="tl-heading">
+                  {group.label} <span className="tl-heading__count">{'\u00b7'} {group.items.length}</span>
+                </h2>
+                <div className="tl-entity-grid">
+                  {group.items.map((e) => {
                     const conf = entityConfidenceLabel(e);
                     return (
-                      <div key={e.id} className="tl-entity-card">
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <span style={{ fontWeight: 600, color: '#e2e8f0', overflowWrap: 'anywhere' }}>{e.name}</span>
-                          {conf ? <ToneBadge tone="neutral">{conf}</ToneBadge> : null}
+                      <div key={e.id} className="tl-entity-card" data-entity-id={e.id}>
+                        <div className="tl-entity-card__head">
+                          <span className="tl-entity-card__name">{e.name}</span>
+                          {conf ? <span className="tl-entity-card__conf" title="Entity link confidence as reported by analysis">Confidence {conf}</span> : null}
                         </div>
-                        {e.description ? <div style={{ fontSize: 13, color: '#cbd5e1', marginTop: 4 }}>{e.description}</div> : null}
+                        {e.description ? <div className="tl-entity-card__desc">{e.description}</div> : null}
                         {e.evidence_text ? <blockquote className="tl-quote">{e.evidence_text}</blockquote> : null}
                       </div>
                     );
-                  })
-                ) : (
-                  <div className="tl-chip-row">
-                    {group.items.map((e) => (
-                      <span key={e.id} className="tl-chip">{e.name}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
+                  })}
+                </div>
+              </section>
             ))}
           </div>
         ) : null}
 
         {report && view === REPORT_VIEWS.SOURCE ? (
           <div role="tabpanel" id="tl-panel-source" aria-labelledby="tl-tab-source" data-testid="source-panel">
-            <div style={{ display: 'grid', gap: 18, maxWidth: 820 }}>
-              <div>
-                <SectionTitle>Source</SectionTitle>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#f1f5f9', overflowWrap: 'anywhere' }}>
-                  {report.source_name || report.source_file_name || humanizeEnum(report.source_type) || 'Unknown source'}
+            <div className="tl-source-card">
+              <div className="tl-source-card__identity">
+                <div className="tl-source-card__name" data-testid="source-identity">
+                  {report.source_name || report.source_file_name || sourceTypeLabel(report.source_type) || 'Unknown source'}
                 </div>
+                {report.source_name && report.source_file_name && report.source_file_name !== report.source_name ? (
+                  <div className="tl-source-card__sub tl-value">{report.source_file_name}</div>
+                ) : null}
               </div>
               <SourceUrlEditor
                 value={report.source_url}
@@ -1322,11 +1342,11 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 busy={busy}
                 onSave={saveSourceUrl}
               />
-              <DetailList items={sourceDetails} testId="source-details" />
+              <DetailList items={sourceDetails} testId="source-details" className="tl-dl--grid" />
               {artifacts?.length ? (
                 <details className="tl-artifacts" data-testid="artifacts">
                   <summary>Artifacts ({artifacts.length})</summary>
-                  <div style={{ marginTop: 6 }}>
+                  <div style={{ marginTop: 4 }}>
                     {artifacts.map((a) => {
                       const d = describeArtifact(a, { formatDateTime: formatUserDateTime });
                       return (
@@ -1335,7 +1355,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                             <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{d.typeLabel}</span>
                             {d.name ? <span className="tl-value" style={{ fontSize: 12 }}>{d.name}</span> : null}
                           </div>
-                          {d.facts.length ? <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>{d.facts.join(' · ')}</div> : null}
+                          {d.facts.length ? <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>{d.facts.join(' \u00b7 ')}</div> : null}
                           {d.sha256 ? <div className="tl-value" style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>sha256 {d.sha256}</div> : null}
                         </div>
                       );
@@ -1351,9 +1371,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       <IndicatorDetailDrawer
         candidate={openCandidate}
         onClose={() => setOpenCandidateId(null)}
-        canWrite={canWrite && showReview}
+        canWrite={canWrite}
+        mutationAllowed={showReview}
         busy={busy}
         onReview={(action, ids) => runReview(action, ids).catch(() => {})}
+        position={drawerPosition}
+        onNavigate={navigateDrawer}
       />
     </AppShell>
   );

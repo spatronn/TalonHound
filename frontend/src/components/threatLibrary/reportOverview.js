@@ -11,7 +11,7 @@
 import { REVIEW_FILTERS, matchReviewFilter } from './candidateReview.js';
 import { resolveReportPhase, REPORT_PHASES, canShowReviewTable } from './reportPhase.js';
 import { statusLabel } from './stages.js';
-import { artifactTypeLabel, entityTypeLabel, humanizeEnum, sourceTypeLabel } from './reportDisplayLabels.js';
+import { artifactTypeLabel, entityTypeLabel, humanizeEnum, languageLabel, sourceTypeLabel } from './reportDisplayLabels.js';
 
 /**
  * Per-filter row counts for the indicator filter tabs.
@@ -93,9 +93,8 @@ export function buildReportDetails(report, opts = {}) {
   if (!report) return items;
   const fmt = typeof opts.formatDateTime === 'function' ? opts.formatDateTime : (v) => String(v);
   pushIf(items, 'Source', report.source_name);
-  pushIf(items, 'Source type', report.source_type ? sourceTypeLabel(report.source_type) : null);
   pushIf(items, 'Report type', report.report_type ? humanizeEnum(report.report_type) : null);
-  pushIf(items, 'Language', report.language);
+  pushIf(items, 'Language', report.language ? languageLabel(report.language) : null);
   pushIf(items, 'Confidence', formatConfidence(report.confidence));
   pushIf(items, 'Published', report.published_at ? fmt(report.published_at) : null);
   pushIf(items, 'Imported', report.created_at ? fmt(report.created_at) : null);
@@ -107,9 +106,6 @@ export function buildReportDetails(report, opts = {}) {
   pushIf(items, 'Entities', entityCount != null && Number(entityCount) > 0 ? Number(entityCount) : null);
   if (opts.indicatorCount && opts.indicatorCount.value != null) {
     pushIf(items, opts.indicatorCount.label, opts.indicatorCount.value);
-  }
-  if (report.matched_count != null && Number(report.matched_count) > 0 && canShowReviewTable(report)) {
-    pushIf(items, 'Matched', Number(report.matched_count));
   }
   pushIf(items, 'Status', statusLabel(report));
   return items;
@@ -199,7 +195,8 @@ export function buildSourceDetails(report, { documentMeta = null, artifacts = []
   pushIf(items, 'Source type', report.source_type ? sourceTypeLabel(report.source_type) : null);
   pushIf(items, 'File name', report.source_file_name);
   pushIf(items, 'SHA-256', report.source_sha256, { mono: true });
-  pushIf(items, 'Language', report.language || documentMeta?.language);
+  const lang = report.language || documentMeta?.language;
+  pushIf(items, 'Language', lang ? languageLabel(lang) : null);
   pushIf(items, 'Published', report.published_at ? fmt(report.published_at) : null);
   pushIf(items, 'Imported', report.created_at ? fmt(report.created_at) : null);
   const blocks = formatBlocks(documentMeta);
