@@ -32,7 +32,9 @@ import {
   serializeReviewTableUrlState,
   iocResultLabel,
   applyPromotionResults,
-  formatCreateIocSummary
+  formatCreateIocSummary,
+  describeReviewFeedback,
+  describeCreateIocFeedback
 } from './candidateReview.js';
 import {
   REPORT_PHASES,
@@ -549,14 +551,11 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     });
   }
 
-  /**
-   * Review action for the current selection, or for an explicit id list when
-   * triggered from the detail drawer. Same endpoint and body either way.
-   */
-  async function runReview(action, ids = null) {
+  /** Review action for the current table selection (the only mutation entry point). */
+  async function runReview(action) {
     if (!canWrite) return;
     if (action === 'create_iocs') {
-      await createIocs(Array.isArray(ids) ? ids : null);
+      await createIocs();
       return;
     }
     setBusy(action);
@@ -565,14 +564,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     try {
       const body = { action };
       if (action !== 'approve_high_confidence_malicious') {
-        body.candidate_ids = Array.isArray(ids) ? ids : [...selected];
+        body.candidate_ids = [...selected];
       }
       const { data } = await api.post(`/threat-library/reports/${reportId}/review`, body);
-      if (data?.errors?.length) {
-        setFeedback(`Completed with ${data.errors.length} error(s).`);
-      } else {
-        setFeedback('Review action applied.');
-      }
+      const updated = Number.isFinite(Number(data?.updated)) ? Number(data.updated) : null;
+      setFeedback(describeReviewFeedback(action, {
+        count: updated ?? (action === 'approve_high_confidence_malicious' ? null : selected.size),
+        errors: Array.isArray(data?.errors) ? data.errors.length : 0
+      }));
       setSelected(new Set());
       await loadDetail();
     } catch (err) {
@@ -582,16 +581,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }
   }
 
-  /**
-   * Preview + confirm + create for the current selection, or for an explicit
-   * id list when triggered from the detail drawer. Same two calls either way.
-   */
-  async function createIocs(explicitIds = null) {
-    const ids = Array.isArray(explicitIds) ? explicitIds : [...selected];
-    if (!canWrite || !ids.length) return;
+  async function createIocs() {
+    if (!canWrite || !selected.size) return;
     setBusy('create_iocs');
     setFeedback('');
     setError('');
+    const ids = [...selected];
     try {
       const { data: preview } = await api.post(`/threat-library/reports/${reportId}/review`, {
         action: 'create_iocs',
@@ -639,11 +634,11 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
       const created = data?.summary?.created ?? data?.created?.length ?? 0;
       const existing = data?.summary?.already_existing ?? 0;
-      if (data?.errors?.length) {
-        setFeedback(`Created ${created} IOC(s); ${data.errors.length} error(s).`);
-      } else {
-        setFeedback(`Created ${created} IOC(s). ${existing} already existed.`);
-      }
+      setFeedback(describeCreateIocFeedback({
+        created,
+        existing,
+        errors: Array.isArray(data?.errors) ? data.errors.length : 0
+      }));
       setSelected(new Set());
       await loadDetail();
     } catch (err) {
@@ -1371,10 +1366,6 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       <IndicatorDetailDrawer
         candidate={openCandidate}
         onClose={() => setOpenCandidateId(null)}
-        canWrite={canWrite}
-        mutationAllowed={showReview}
-        busy={busy}
-        onReview={(action, ids) => runReview(action, ids).catch(() => {})}
         position={drawerPosition}
         onNavigate={navigateDrawer}
       />

@@ -353,3 +353,46 @@ export function formatCreateIocSummary(summary) {
   }
   return lines.join('\n');
 }
+
+const REVIEW_FEEDBACK = Object.freeze({
+  approve: { one: 'Indicator approved.', many: (n) => `${n} indicators approved.`, some: 'Indicators approved.' },
+  context_only: {
+    one: 'Indicator marked as Context Only.',
+    many: (n) => `${n} indicators marked as Context Only.`,
+    some: 'Indicators marked as Context Only.'
+  },
+  ignore: { one: 'Indicator ignored.', many: (n) => `${n} indicators ignored.`, some: 'Indicators ignored.' },
+  approve_high_confidence_malicious: {
+    one: '1 high-confidence malicious indicator approved.',
+    many: (n) => `${n} high-confidence malicious indicators approved.`,
+    some: 'High-confidence malicious indicators approved.'
+  }
+});
+
+/**
+ * Success banner for a review action from the Indicators page. `count` is the
+ * backend's `updated` count when present, else the number of selected rows.
+ * Errors reported by the backend keep the explicit error wording.
+ */
+export function describeReviewFeedback(action, { count = null, errors = 0 } = {}) {
+  const errs = Number(errors) || 0;
+  if (errs > 0) return `Completed with ${errs} error${errs === 1 ? '' : 's'}.`;
+  const entry = REVIEW_FEEDBACK[String(action || '')];
+  if (!entry) return 'Review action applied.';
+  const n = count == null || count === '' ? NaN : Number(count);
+  if (!Number.isFinite(n) || n < 0) return entry.some;
+  if (n === 1) return entry.one;
+  return entry.many(n);
+}
+
+/** Success banner after Create IOCs (confirmed run). */
+export function describeCreateIocFeedback({ created = 0, existing = 0, errors = 0 } = {}) {
+  const c = Number(created) || 0;
+  const e = Number(existing) || 0;
+  const errs = Number(errors) || 0;
+  const head = c === 1 ? 'IOC created.' : `${c} IOCs created.`;
+  const parts = [head];
+  if (e > 0) parts.push(`${e} already existed.`);
+  if (errs > 0) parts.push(`${errs} error${errs === 1 ? '' : 's'}.`);
+  return parts.join(' ');
+}

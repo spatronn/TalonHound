@@ -56,7 +56,7 @@ test('enum cells go through display labels; canonical values feed only compariso
   assert.doesNotMatch(pageSrc, /<td[^>]*>\{c\.role \|\| '—'\}<\/td>/, 'raw role no longer rendered');
   assert.doesNotMatch(pageSrc, /<td[^>]*>\{c\.review_status \|\| '—'\}<\/td>/, 'raw review_status no longer rendered');
   // Request bodies still carry canonical values / ids only.
-  assert.match(pageSrc, /body\.candidate_ids = Array\.isArray\(ids\) \? ids : \[\.\.\.selected\]/);
+  assert.match(pageSrc, /body\.candidate_ids = \[\.\.\.selected\]/);
   assert.match(pageSrc, /candidate_ids: ids,\s*confirm: false/);
   assert.match(pageSrc, /candidate_ids: ids,\s*confirm: true/);
   assert.match(pageSrc, /c\.candidate_type === 'cidr'/, 'canonical comparison for the CIDR note');
@@ -79,16 +79,15 @@ test('overview metrics and report details come from the loaded rows, never hardc
   assert.doesNotMatch(pageSrc, /<Meta label="SHA-256"/);
 });
 
-test('review workflow gates are unchanged: canWrite for actions, showReview for the table, drawer reuses runReview', () => {
+test('review workflow gates are unchanged: canWrite for actions, showReview for the table, mutations only from the toolbar', () => {
   assert.match(pageSrc, /\{canWrite \? \(\s*<div className="tl-bulkbar"/);
   assert.match(pageSrc, /\{showReview \? \(/);
   assert.match(pageSrc, /\{showPreliminary \? \(\s*<PreliminaryIndicatorsCard/);
-  assert.match(pageSrc, /async function runReview\(action, ids = null\) \{\s*if \(!canWrite\) return;/);
-  assert.match(pageSrc, /<IndicatorDetailDrawer[\s\S]*?canWrite=\{canWrite\}[\s\S]*?mutationAllowed=\{showReview\}[\s\S]*?onReview=\{\(action, ids\) => runReview\(action, ids\)/);
-  assert.match(drawerSrc, /describeCandidateActions\(candidate, \{ canWrite, mutationAllowed \}\)/, 'drawer actions are state-aware');
-  assert.match(drawerSrc, /onClick=\{\(\) => onReview\(a\.id, \[candidate\.id\]\)\}/);
-  assert.match(pageSrc, /async function createIocs\(explicitIds = null\)/);
-  assert.match(pageSrc, /await createIocs\(Array\.isArray\(ids\) \? ids : null\)/);
+  assert.match(pageSrc, /async function runReview\(action\) \{\s*if \(!canWrite\) return;/);
+  assert.match(pageSrc, /async function createIocs\(\) \{\s*if \(!canWrite \|\| !selected\.size\) return;/);
+  for (const action of ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious']) {
+    assert.match(pageSrc, new RegExp(`className="tl-bulkbar"[\\s\\S]*?runReview\\('${action}'\\)`), `toolbar still offers ${action}`);
+  }
   assert.match(pageSrc, /SourceUrlEditor[\s\S]*?canWrite=\{canWrite\}/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('export'\)/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('finalize'\)/);
@@ -108,6 +107,27 @@ test('entities are grouped by canonical type and only detailed when data exists'
   assert.match(pageSrc, /\{e\.evidence_text \? <blockquote className="tl-quote">/, 'evidence kept when present');
   assert.match(pageSrc, /\{conf \? <span className="tl-entity-card__conf"/, 'confidence only when present');
   assert.doesNotMatch(pageSrc, /<th style=\{ui\.th\}>Confidence<\/th>\s*<th style=\{ui\.th\}>Evidence<\/th>/, 'no empty Confidence/Evidence entity table');
+});
+
+test('drawer is read-only: no review mutation controls, no review handler, no generic feedback', () => {
+  assert.doesNotMatch(drawerSrc, /onReview|runReview|createIocs|api\.post/, 'drawer has no mutation path');
+  assert.doesNotMatch(drawerSrc, /candidateActions|describeCandidateActions/);
+  assert.doesNotMatch(drawerSrc, />\s*(Approve|Context only|Ignore|Create IOC)\s*</, 'no review buttons rendered');
+  assert.doesNotMatch(drawerSrc, /data-testid="drawer-actions"/);
+  const drawerButtons = drawerSrc.match(/aria-label="[^"]+"/g) || [];
+  assert.deepEqual(
+    drawerButtons.filter((a) => /Close details|Previous indicator|Next indicator/.test(a)).length,
+    3,
+    'the only controls are close, previous and next (plus copy)'
+  );
+  assert.match(pageSrc, /<IndicatorDetailDrawer\s+candidate=\{openCandidate\}\s+onClose=\{\(\) => setOpenCandidateId\(null\)\}\s+position=\{drawerPosition\}\s+onNavigate=\{navigateDrawer\}\s*\/>/);
+  assert.doesNotMatch(pageSrc, /Review action applied\./, 'generic feedback replaced by action-specific text');
+  assert.match(pageSrc, /describeReviewFeedback\(action, \{/);
+  assert.match(pageSrc, /describeCreateIocFeedback\(\{/);
+  // Status stays visible, read-only, in the body.
+  assert.match(drawerSrc, /<Field label="Review">/);
+  assert.match(drawerSrc, /<Field label="IOC result">/);
+  assert.match(drawerSrc, /<Field label="Existing match">/);
 });
 
 test('drawer: previous / next walk the filtered set, row trigger says what it opens', () => {

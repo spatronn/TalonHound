@@ -19,7 +19,9 @@ import {
   serializeReviewTableUrlState,
   iocResultLabel,
   applyPromotionResults,
-  formatCreateIocSummary
+  formatCreateIocSummary,
+  describeReviewFeedback,
+  describeCreateIocFeedback
 } from './candidateReview.js';
 
 const explicitUrl = {
@@ -299,4 +301,31 @@ test('non-IOC artifacts are excluded from the review set and explain their resol
   assert.equal(p.resolution.label, 'Relative path (no scheme / host) · relative path without scheme or host');
   assert.equal(p.resolution.detail, 'port 8081');
   assert.equal(describeCandidateProvenance(ioc).resolution, null);
+});
+
+test('review feedback is action-specific and count-aware', () => {
+  assert.equal(describeReviewFeedback('approve', { count: 1 }), 'Indicator approved.');
+  assert.equal(describeReviewFeedback('approve', { count: 4 }), '4 indicators approved.');
+  assert.equal(describeReviewFeedback('context_only', { count: 1 }), 'Indicator marked as Context Only.');
+  assert.equal(describeReviewFeedback('context_only', { count: 3 }), '3 indicators marked as Context Only.');
+  assert.equal(describeReviewFeedback('ignore', { count: 1 }), 'Indicator ignored.');
+  assert.equal(describeReviewFeedback('ignore', { count: 2 }), '2 indicators ignored.');
+  assert.equal(describeReviewFeedback('approve_high_confidence_malicious', { count: 1 }), '1 high-confidence malicious indicator approved.');
+  assert.equal(describeReviewFeedback('approve_high_confidence_malicious', { count: 7 }), '7 high-confidence malicious indicators approved.');
+  assert.equal(describeReviewFeedback('approve_high_confidence_malicious', { count: null }), 'High-confidence malicious indicators approved.');
+  assert.equal(describeReviewFeedback('approve', { count: 0 }), '0 indicators approved.');
+});
+
+test('review feedback never claims success when the backend reported errors', () => {
+  assert.equal(describeReviewFeedback('approve', { count: 4, errors: 1 }), 'Completed with 1 error.');
+  assert.equal(describeReviewFeedback('ignore', { count: 2, errors: 3 }), 'Completed with 3 errors.');
+  assert.equal(describeReviewFeedback('unknown_action', { count: 1 }), 'Review action applied.');
+});
+
+test('create IOC feedback names what happened', () => {
+  assert.equal(describeCreateIocFeedback({ created: 1, existing: 0 }), 'IOC created.');
+  assert.equal(describeCreateIocFeedback({ created: 3, existing: 2 }), '3 IOCs created. 2 already existed.');
+  assert.equal(describeCreateIocFeedback({ created: 0, existing: 1 }), '0 IOCs created. 1 already existed.');
+  assert.equal(describeCreateIocFeedback({ created: 2, existing: 0, errors: 1 }), '2 IOCs created. 1 error.');
+  assert.equal(describeCreateIocFeedback({}), '0 IOCs created.');
 });

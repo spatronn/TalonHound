@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { describeCandidateDetail } from './candidateDetail.js';
-import { describeCandidateActions } from './candidateActions.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
 import {
   assessmentTone,
@@ -13,7 +12,6 @@ import { CopyValueButton, ToneBadge } from './reportPageParts.jsx';
 import { ui } from './styles.js';
 
 const compactBtn = { ...ui.btn, minHeight: 30, padding: '4px 10px', fontSize: 12 };
-const compactPrimary = { ...ui.btnPrimary, minHeight: 30, padding: '4px 10px', fontSize: 12 };
 
 function Field({ label, children, mono }) {
   return (
@@ -25,18 +23,16 @@ function Field({ label, children, mono }) {
 }
 
 /**
- * Right-side detail panel for one indicator row. Reads the same candidate
- * object the table renders; review actions route through the page's
- * `onReview(action, [id])` so semantics stay identical to the bulk toolbar.
- * Previous / Next walk the current filtered result set via `position`.
+ * Right-side detail panel for one indicator row: an inspection surface only.
+ * It reads the same candidate object the table renders, shows the current
+ * review / IOC state read-only, copies the value and walks the current
+ * filtered result set via Previous / Next (`position`). Review-state
+ * mutations live exclusively in the Indicators table toolbar; this component
+ * has no review handler at all.
  */
 export default function IndicatorDetailDrawer({
   candidate,
   onClose,
-  canWrite,
-  mutationAllowed = true,
-  busy,
-  onReview,
   position = null,
   onNavigate
 }) {
@@ -71,8 +67,6 @@ export default function IndicatorDetailDrawer({
 
   const d = describeCandidateDetail(candidate, { formatDateTime: formatUserDateTime });
   const fields = Object.fromEntries(d.fields.map((f) => [f.key, f]));
-  const { actions, note } = describeCandidateActions(candidate, { canWrite, mutationAllowed });
-  const showActions = typeof onReview === 'function' && (actions.length > 0 || note);
   const title = `${d.typeLabel || 'Indicator'} ${d.value}`;
   const hasNav = position && position.total > 0 && position.index > 0;
 
@@ -181,47 +175,29 @@ export default function IndicatorDetailDrawer({
           </section>
         </div>
 
-        {hasNav || showActions ? (
+        {hasNav ? (
           <div className="tl-drawer__foot">
-            {hasNav ? (
-              <div className="tl-drawer__nav" role="group" aria-label="Navigate indicators">
-                <button
-                  type="button"
-                  style={compactBtn}
-                  disabled={position.prevId == null}
-                  onClick={() => onNavigate?.(position.prevId)}
-                  aria-label="Previous indicator"
-                >
-                  ‹ Previous
-                </button>
-                <span className="tl-drawer__counter" aria-live="polite">{position.index} / {position.total}</span>
-                <button
-                  type="button"
-                  style={compactBtn}
-                  disabled={position.nextId == null}
-                  onClick={() => onNavigate?.(position.nextId)}
-                  aria-label="Next indicator"
-                >
-                  Next ›
-                </button>
-              </div>
-            ) : null}
-            {showActions ? (
-              <div className="tl-drawer__actions" data-testid="drawer-actions">
-                {note ? <span className="tl-drawer__note" data-testid="drawer-state-note">{note}</span> : null}
-                {actions.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    style={a.primary ? compactPrimary : compactBtn}
-                    disabled={Boolean(busy)}
-                    onClick={() => onReview(a.id, [candidate.id])}
-                  >
-                    {a.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            <div className="tl-drawer__nav" role="group" aria-label="Navigate indicators">
+              <button
+                type="button"
+                style={compactBtn}
+                disabled={position.prevId == null}
+                onClick={() => onNavigate?.(position.prevId)}
+                aria-label="Previous indicator"
+              >
+                ‹ Previous
+              </button>
+              <span className="tl-drawer__counter" aria-live="polite">{position.index} / {position.total}</span>
+              <button
+                type="button"
+                style={compactBtn}
+                disabled={position.nextId == null}
+                onClick={() => onNavigate?.(position.nextId)}
+                aria-label="Next indicator"
+              >
+                Next ›
+              </button>
+            </div>
           </div>
         ) : null}
       </aside>
