@@ -11,6 +11,7 @@
  */
 
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from '../auditConstants.js';
+import { isTlpDowngrade } from './tlpPolicy.js';
 import { redactUrlSecrets } from '../auditRedaction.js';
 import { PROMOTION_OUTCOMES } from './promotion.js';
 
@@ -243,6 +244,25 @@ export function buildSourceUrlAuditEvent({ report, oldUrl, newUrl, user }) {
       initiated_by: initiatedBy(user),
       old_source_url: redactUrlSecrets(oldUrl),
       new_source_url: redactUrlSecrets(newUrl)
+    }
+  };
+}
+
+export function buildTlpAuditEvent({ report, oldTlp, oldSource, newTlp, user }) {
+  return {
+    action: AUDIT_ACTION.THREAT_LIBRARY_REPORT_TLP_UPDATED,
+    ...reportAuditEntity(report),
+    severity: isTlpDowngrade(oldTlp, newTlp) ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+    status: AUDIT_STATUS.SUCCESS,
+    before: { tlp: oldTlp || null, tlp_source: oldSource || null },
+    after: { tlp: newTlp || null, tlp_source: 'manual' },
+    metadata: {
+      ...reportAuditSnapshot(report),
+      initiated_by: initiatedBy(user),
+      old_tlp: oldTlp || null,
+      new_tlp: newTlp || null,
+      old_tlp_source: oldSource || null,
+      downgrade: isTlpDowngrade(oldTlp, newTlp)
     }
   };
 }

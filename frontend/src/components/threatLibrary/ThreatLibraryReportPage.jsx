@@ -49,7 +49,16 @@ import {
   shouldRefetchDetail,
   createLatestOnly
 } from './reportPhase.js';
-import { TlpBadge, isElevatedTlp, normalizeTlp } from './tlp.jsx';
+import { TlpBadge, isElevatedTlp, normalizeTlp, tlpDisplay } from './tlp.jsx';
+import ThreatLibraryModal, { ModalCancelButton } from './ThreatLibraryModal.jsx';
+import {
+  TLP_OPTIONS,
+  canEditTlp,
+  describeTlpChangeConfirm,
+  describeTlpSavedFeedback,
+  tlpSourceLabel,
+  tlpSourceShortLabel
+} from './tlpEdit.js';
 import { ui, badgeStyle } from './styles.js';
 import {
   REPORT_VIEWS,
@@ -261,6 +270,71 @@ function SourceUrlEditor({ value, canWrite, busy, onSave }) {
   );
 }
 
+/**
+ * Deliberate TLP change: a select over the canonical set, an explicit Save,
+ * and a confirmation only when the sharing restriction is being reduced.
+ */
+function TlpEditModal({ open, current, source, busy, onClose, onSave }) {
+  const [draft, setDraft] = useState(normalizeTlp(current));
+  const [localError, setLocalError] = useState('');
+
+  useEffect(() => {
+    if (open) {
+      setDraft(normalizeTlp(current));
+      setLocalError('');
+    }
+  }, [open, current]);
+
+  const unchanged = normalizeTlp(current) === draft;
+  return (
+    <ThreatLibraryModal
+      open={open}
+      title="TLP classification"
+      description="TLP is a sharing restriction, not a severity. Set it to what the publisher marked or what your organisation is allowed to share."
+      onClose={onClose}
+      width={460}
+      closeDisabled={Boolean(busy)}
+      footer={(
+        <>
+          <ModalCancelButton onClick={onClose} disabled={Boolean(busy)} />
+          <button
+            type="button"
+            style={ui.btnPrimary}
+            disabled={Boolean(busy) || unchanged}
+            onClick={async () => {
+              setLocalError('');
+              try {
+                await onSave(draft);
+              } catch (err) {
+                setLocalError(err?.response?.data?.message || err?.message || 'Could not update TLP');
+              }
+            }}
+          >
+            {busy === 'tlp' ? 'Saving…' : 'Save'}
+          </button>
+        </>
+      )}
+    >
+      <label htmlFor="tl-tlp-select" style={ui.label}>TLP Classification</label>
+      <select
+        id="tl-tlp-select"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        style={ui.select}
+        disabled={Boolean(busy)}
+      >
+        {TLP_OPTIONS.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <span style={ui.helper}>
+        Current: {tlpDisplay(current)} · {tlpSourceLabel(source)}
+      </span>
+      {localError ? <div style={{ ...ui.error, marginTop: 10 }} role="alert">{localError}</div> : null}
+    </ThreatLibraryModal>
+  );
+}
+
 function SectionCard({ title, children, actions }) {
   return (
     <div style={{ ...ui.formPanel, marginBottom: 14 }}>
@@ -372,6 +446,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [pageSize, setPageSize] = useState(urlState.pageSize || DEFAULT_PAGE_SIZE);
   const [selected, setSelected] = useState(() => new Set());
   const [openCandidateId, setOpenCandidateId] = useState(null);
+  const [tlpEditOpen, setTlpEditOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
   const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
@@ -715,6 +790,31 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     setFeedback('Source URL saved.');
   }
 
+  /**
+   * Manual TLP override (analyst / admin). The backend marks it `manual` so
+   * re-analysis keeps it; reducing the restriction asks for confirmation.
+   */
+  async function saveTlp(nextTlp) {
+    if (!canEditTlp({ canWrite, report })) return;
+    const confirm = describeTlpChangeConfirm(report?.tlp, nextTlp);
+    if (confirm) {
+      const ok = await requestConfirm(confirm);
+      if (!ok) return;
+    }
+    setBusy('tlp');
+    setError('');
+    try {
+      const { data } = await api.patch(`/threat-library/reports/${reportId}`, { tlp: nextTlp });
+      if (data?.report) {
+        setReport((prev) => ({ ...prev, ...data.report }));
+      }
+      setFeedback(describeTlpSavedFeedback(data?.report?.tlp || nextTlp));
+      setTlpEditOpen(false);
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function retry() {
     if (!canWrite || busy || isProcessingStatus(report)) return;
     setBusy('retry');
@@ -849,7 +949,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     artifacts,
     entityCount: entities.length,
     indicatorCount: showReview ? indicatorCount : null,
-    formatDateTime: formatUserDateTime
+    formatDateTime: formatUserDateTime,
+    tlpLabel: report ? `${tlpDisplay(report.tlp, report.tlp_display)} · ${tlpSourceShortLabel(report.tlp_source)}` : null
   }), [report, documentMeta, artifacts, entities.length, showReview, indicatorCount]);
   const sourceDetails = useMemo(() => {
     const items = buildSourceDetails(report, { documentMeta, artifacts, formatDateTime: formatUserDateTime });
@@ -904,7 +1005,27 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
             </h1>
             {report ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 8 }}>
-                <TlpBadge tlp={report.tlp} display={report.tlp_display} />
+                <span
+                  data-testid="report-tlp"
+                  data-tlp={normalizeTlp(report.tlp)}
+                  data-tlp-source={report.tlp_source || 'default'}
+                  title={`TLP: ${tlpSourceLabel(report.tlp_source)}`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <TlpBadge tlp={report.tlp} display={report.tlp_display} />
+                  {canEditTlp({ canWrite, report }) ? (
+                    <button
+                      type="button"
+                      className="tl-ghost-btn"
+                      style={{ minHeight: 24, padding: '2px 8px', fontSize: 11 }}
+                      disabled={Boolean(busy)}
+                      onClick={() => setTlpEditOpen(true)}
+                      aria-label="Edit TLP classification"
+                    >
+                      Edit TLP
+                    </button>
+                  ) : null}
+                </span>
                 <span style={badgeStyle({ border: '#334155', bg: '#1e293b', color: '#cbd5e1' })} data-testid="report-status">
                   {statusLabel(report)}
                 </span>
@@ -1369,6 +1490,17 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         position={drawerPosition}
         onNavigate={navigateDrawer}
       />
+
+      {report && canEditTlp({ canWrite, report }) ? (
+        <TlpEditModal
+          open={tlpEditOpen}
+          current={report.tlp}
+          source={report.tlp_source}
+          busy={busy}
+          onClose={() => { if (busy !== 'tlp') setTlpEditOpen(false); }}
+          onSave={saveTlp}
+        />
+      ) : null}
     </AppShell>
   );
 }

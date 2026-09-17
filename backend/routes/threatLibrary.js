@@ -10,6 +10,7 @@ import {
   buildImportAuditEvent,
   buildImportFailedAuditEvent,
   buildSourceUrlAuditEvent,
+  buildTlpAuditEvent,
   buildThibExportAuditEvent,
   reportAuditEntity,
   reportAuditSnapshot,
@@ -17,7 +18,8 @@ import {
   safeErrorCategory
 } from '../lib/threatLibrary/audit.js';
 import { registerRouteModule } from '../lib/routeRegistry.js';
-import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY } from '../lib/threatLibrary/constants.js';
+import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY, TLP_VALUES } from '../lib/threatLibrary/constants.js';
+import { isValidTlp } from '../lib/threatLibrary/tlpPolicy.js';
 import { validateThreatLibraryUrl } from '../lib/threatLibrary/urlIngest.js';
 import { validatePdfBuffer, isAcceptablePdfUploadMeta } from '../lib/threatLibrary/pdfIngest.js';
 import { maskAiSettingsForClient } from '../lib/threatLibrary/ai/providers.js';
@@ -43,7 +45,8 @@ import {
   updateReportStatus,
   countReportCandidates,
   attachReportCounts,
-  updateReportSourceUrl
+  updateReportSourceUrl,
+  updateReportTlp
 } from '../lib/threatLibrary/store.js';
 import { validateReportSourceUrl } from '../lib/threatLibrary/sourceUrl.js';
 import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
@@ -117,6 +120,8 @@ function publicReport(row) {
     language: row.language,
     tlp: row.tlp,
     tlp_display: TLP_DISPLAY[row.tlp] || `TLP:${String(row.tlp || '').toUpperCase()}`,
+    // Provenance of the effective TLP: explicit (document marking) / default / manual.
+    tlp_source: row.tlp_source || 'default',
     confidence: row.confidence,
     report_type: row.report_type,
     summary: row.summary,
@@ -383,6 +388,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         source_url: policy.url,
         source_name: policy.parsed.hostname,
         tlp: normalizeTlp(req.body?.tlp || 'clear'),
+        // A TLP supplied with the import request is an analyst assertion.
+        tlp_source: req.body?.tlp ? 'manual' : 'default',
         created_by: actor?.publicId
       });
       const jobRow = await createJob(pool, {
@@ -472,6 +479,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           source_sha256: validation.sha256,
           source_name: validation.fileName,
           tlp: normalizeTlp(req.body?.tlp || 'clear'),
+          tlp_source: req.body?.tlp ? 'manual' : 'default',
           created_by: actor?.publicId
         });
 
@@ -876,26 +884,60 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       try {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
-        if (!Object.prototype.hasOwnProperty.call(req.body || {}, 'source_url')) {
-          return res.status(400).json({ message: 'source_url is required' });
+        const body = req.body || {};
+        const hasSourceUrl = Object.prototype.hasOwnProperty.call(body, 'source_url');
+        const hasTlp = Object.prototype.hasOwnProperty.call(body, 'tlp');
+        if (!hasSourceUrl && !hasTlp) {
+          return res.status(400).json({ message: 'source_url or tlp is required' });
         }
-        const parsed = validateReportSourceUrl(req.body.source_url);
-        if (!parsed.ok) {
-          return res.status(400).json({ message: parsed.message, code: parsed.error });
+        let parsed = null;
+        if (hasSourceUrl) {
+          parsed = validateReportSourceUrl(body.source_url);
+          if (!parsed.ok) {
+            return res.status(400).json({ message: parsed.message, code: parsed.error });
+          }
         }
-        const updated = await updateReportSourceUrl(pool, report.id, parsed.value);
-        if (!updated) return res.status(404).json({ message: 'Report not found' });
-        await writeAudit(req, buildSourceUrlAuditEvent({
-          report,
-          oldUrl: report.source_url || null,
-          newUrl: parsed.value,
-          user: req.user
-        }));
+        let nextTlp = null;
+        if (hasTlp) {
+          const raw = String(body.tlp || '').trim().toLowerCase().replace(/^tlp:/, '').replace(/\+/g, '_').replace(/-/g, '_');
+          const candidate = raw === 'white' ? 'clear' : raw;
+          if (!isValidTlp(candidate)) {
+            return res.status(400).json({
+              message: `tlp must be one of: ${TLP_VALUES.join(', ')}`,
+              code: 'invalid_tlp'
+            });
+          }
+          nextTlp = candidate;
+        }
+        let updated = report;
+        if (parsed) {
+          updated = await updateReportSourceUrl(pool, report.id, parsed.value);
+          if (!updated) return res.status(404).json({ message: 'Report not found' });
+          await writeAudit(req, buildSourceUrlAuditEvent({
+            report,
+            oldUrl: report.source_url || null,
+            newUrl: parsed.value,
+            user: req.user
+          }));
+        }
+        if (nextTlp) {
+          const previousTlp = normalizeTlp(report.tlp);
+          const previousSource = report.tlp_source || 'default';
+          updated = await updateReportTlp(pool, report.id, nextTlp);
+          if (!updated) return res.status(404).json({ message: 'Report not found' });
+          await writeAudit(req, buildTlpAuditEvent({
+            report,
+            oldTlp: previousTlp,
+            oldSource: previousSource,
+            newTlp: nextTlp,
+            user: req.user
+          }));
+        }
         return res.json({
           report: publicReport(await attachReportCounts(pool, updated))
         });
       } catch (err) {
-        return res.status(500).json({ message: 'Failed to update source URL', detail: err.message });
+        return res.status(500).json({ message: 'Failed to update report', detail: err.message });
       }
     }
   );

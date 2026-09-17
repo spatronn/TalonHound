@@ -18,7 +18,7 @@ import { bulkMatchCandidates } from './iocMatch.js';
 import { analyzeThreatDocument } from './ai/providers.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
-import { normalizeTlp, deriveMatchState, normalizeEntityName } from './constants.js';
+import { deriveMatchState, normalizeEntityName } from './constants.js';
 import { storeArtifactBuffer, readArtifactBuffer } from './artifactStore.js';
 import {
   getAiSettings,
@@ -38,6 +38,7 @@ import {
   loadReportCandidatesForAnalysis,
   isAnalysisCancelRequested
 } from './store.js';
+import { resolveEffectiveTlp } from './tlpPolicy.js';
 import { createServiceLogger } from '../appLogger.js';
 
 const log = createServiceLogger('threat-library');
@@ -592,15 +593,28 @@ export async function runAnalysisPipeline(pool, ctx) {
     }
     await replaceRelationships(pool, report.id, relRows);
 
+    // Effective TLP: manual override > explicit marking in the document >
+    // safe default. The model's `tlp` is recorded as a hint only — a
+    // sharing restriction is never inferred from subject matter.
+    const latestReport = (await getReportById(pool, report.id)) || report;
+    const tlpResolution = resolveEffectiveTlp({ report: latestReport, document, aiHint: aiValue.tlp || null });
+
     await updateReportStatus(pool, report.id, {
       title: document.title || report.title,
       language: aiValue.language || document.language || report.language,
-      tlp: normalizeTlp(aiValue.tlp || report.tlp),
+      tlp: tlpResolution.tlp,
+      tlp_source: tlpResolution.tlp_source,
       confidence: aiValue.confidence ?? null,
       report_type: aiValue.report_type || null,
       summary: aiValue.summary || null,
       candidate_summary: summary,
       ai_result: {
+        tlp: {
+          effective: tlpResolution.tlp,
+          source: tlpResolution.tlp_source,
+          detected: tlpResolution.detection,
+          ai_hint: tlpResolution.ai_hint
+        },
         entity_count: (aiValue.entities || []).length,
         relationship_count: relRows.length,
         candidate_update_count: (aiValue.candidate_updates || []).length,

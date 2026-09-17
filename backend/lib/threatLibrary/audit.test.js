@@ -215,3 +215,17 @@ test('summarizeFinalizeCandidates counts review states and promotion outcomes', 
 test('sample limit is 100 (matches auditRedaction MAX_ARRAY_LEN so nothing is silently cut)', () => {
   assert.equal(AUDIT_RESULT_SAMPLE_LIMIT, 100);
 });
+
+test('TLP change audit event records before/after and flags downgrades', async () => {
+  const { buildTlpAuditEvent } = await import('./audit.js');
+  const report = { id: 1, public_id: 'r-1', title: 'NCSC advisory', source_type: 'url', tlp: 'amber' };
+  const down = buildTlpAuditEvent({ report, oldTlp: 'amber', oldSource: 'default', newTlp: 'clear', user: { email: 'a@b' } });
+  assert.equal(down.action, 'threat_library.report.tlp.updated');
+  assert.equal(down.severity, 'warning');
+  assert.deepEqual(down.before, { tlp: 'amber', tlp_source: 'default' });
+  assert.deepEqual(down.after, { tlp: 'clear', tlp_source: 'manual' });
+  assert.equal(down.metadata.downgrade, true);
+  const up = buildTlpAuditEvent({ report, oldTlp: 'clear', oldSource: 'default', newTlp: 'red', user: null });
+  assert.equal(up.severity, 'info');
+  assert.equal(up.metadata.downgrade, false);
+});

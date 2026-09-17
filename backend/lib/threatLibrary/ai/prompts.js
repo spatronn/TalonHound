@@ -112,6 +112,15 @@ export function formatResolvedCandidateLine(c) {
  *   sourceHost?: string|null
  * }} input
  */
+/**
+ * TLP is a sharing restriction, not a sensitivity score. The model may only
+ * echo a marking that is literally present in the report text; anything
+ * else must be null. The pipeline treats the value as a hint regardless.
+ */
+export const TLP_LINE =
+  'tlp: ONLY the exact TLP marking written in the report text (e.g. "TLP:AMBER"); otherwise null. '
+  + 'Never infer a TLP from how sensitive, political or serious the content is.';
+
 export function buildChunkPrompt(input) {
   const toClassify = (input.toClassify || []).slice(0, 250).map(formatCandidateEvidenceLine).join('\n');
   const resolved = (input.resolved || []).slice(0, 300).map(formatResolvedCandidateLine).join('\n');
@@ -129,6 +138,7 @@ export function buildChunkPrompt(input) {
     'evidence_block_ids must reference block ids present in this chunk.',
     'subject_ref/object_ref for entities use entity name; for candidates use candidate_id.',
     'confidence must be a number between 0 and 1 (never "high"/"medium"/"low").',
+    TLP_LINE,
     'No markdown fences. No explanations.',
     '',
     `DOCUMENT TITLE: ${input.documentTitle}`,
@@ -160,6 +170,7 @@ export function buildSynthesisPrompt(input) {
     'Return keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships.',
     'confidence must be a number 0..1. Do not invent indicators. Merge duplicate entities and relationships.',
     'Copy candidate_updates through unchanged (same candidate_id, assessment, role); never add new ones.',
+    TLP_LINE,
     'Write one coherent summary (max 1500 characters).',
     ENTITY_TYPE_LINE,
     ASSESSMENT_LINE,

@@ -4,6 +4,7 @@
 
 import crypto from 'node:crypto';
 import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.js';
+import { isValidTlpSource } from './tlpPolicy.js';
 import { deleteReportArtifacts } from './artifactStore.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 
@@ -98,9 +99,9 @@ export async function createThreatReport(pool, fields) {
     `INSERT INTO threat_reports (
        title, source_type, source_name, source_url, source_file_name, source_sha256,
        published_at, language, tlp, confidence, report_type, summary,
-       import_status, analysis_status, portable_id, bundle_id, created_by
+       import_status, analysis_status, portable_id, bundle_id, created_by, tlp_source
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid,$18
      ) RETURNING *`,
     [
       fields.title || 'Untitled report',
@@ -119,7 +120,8 @@ export async function createThreatReport(pool, fields) {
       fields.analysis_status || 'pending',
       fields.portable_id || `report--${crypto.randomUUID()}`,
       fields.bundle_id || null,
-      fields.created_by || null
+      fields.created_by || null,
+      isValidTlpSource(fields.tlp_source) ? String(fields.tlp_source).toLowerCase() : 'default'
     ]
   );
   return rows[0];
@@ -200,6 +202,7 @@ export async function updateReportStatus(pool, reportId, patch) {
        title = COALESCE($2, title),
        language = COALESCE($3, language),
        tlp = COALESCE($4, tlp),
+       tlp_source = COALESCE($24, tlp_source),
        confidence = COALESCE($5, confidence),
        report_type = COALESCE($6, report_type),
        summary = COALESCE($7, summary),
@@ -252,10 +255,26 @@ export async function updateReportStatus(pool, reportId, patch) {
       patch.analysis_run_id ?? null,
       patch.clear_cancel === true ? false : patch.request_cancel === true ? true : null,
       patch.clear_failure === true,
-      patch.failure_details != null ? JSON.stringify(patch.failure_details) : null
+      patch.failure_details != null ? JSON.stringify(patch.failure_details) : null,
+      isValidTlpSource(patch.tlp_source) ? String(patch.tlp_source).toLowerCase() : null
     ]
   );
   return rows[0];
+}
+
+/**
+ * Manual TLP override from an authorised user. Marks the row `manual` so the
+ * analysis pipeline keeps this value across retries / re-extraction.
+ */
+export async function updateReportTlp(pool, reportId, tlp) {
+  const { rows } = await pool.query(
+    `UPDATE threat_reports
+     SET tlp = $2, tlp_source = 'manual', updated_at = NOW()
+     WHERE id = $1 AND deleted_at IS NULL
+     RETURNING *`,
+    [reportId, normalizeTlp(tlp)]
+  );
+  return rows[0] || null;
 }
 
 export async function requestAnalysisCancel(pool, reportId) {

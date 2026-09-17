@@ -104,6 +104,11 @@ export function threatLibraryDetailRows(row) {
   } else if (action === 'threat_library.report.source_url.updated') {
     push('Old URL', m.old_source_url ?? row?.before_data?.source_url);
     push('New URL', m.new_source_url ?? row?.after_data?.source_url);
+  } else if (action === 'threat_library.report.tlp.updated') {
+    push('Old TLP', m.old_tlp ?? row?.before_data?.tlp);
+    push('New TLP', m.new_tlp ?? row?.after_data?.tlp);
+    push('Previous source', m.old_tlp_source ?? row?.before_data?.tlp_source);
+    push('Sharing restriction reduced', m.downgrade === true ? 'yes' : null);
   } else if (action === 'threat_library.thib.exported') {
     push('Indicators', num(m.indicator_count));
     push('Entities', num(m.entity_count));

@@ -130,3 +130,25 @@ test('created_by / requested_by are stamped from the resolved actor public id, n
   assert.match(routeSrc, /created_by: actor\?\.publicId/);
   assert.match(routeSrc, /requestedBy: actor\?\.publicId/);
 });
+
+test('report PATCH accepts tlp for analyst/admin only and validates against the canonical set', () => {
+  assert.match(routeSrc, /app\.patch\(\s*'\/api\/threat-library\/reports\/:publicId',\s*requireRole\(ROLES\.ADMIN, ROLES\.ANALYST\)/);
+  assert.match(routeSrc, /const hasTlp = Object\.prototype\.hasOwnProperty\.call\(body, 'tlp'\)/);
+  assert.match(routeSrc, /if \(!isValidTlp\(candidate\)\)[\s\S]*?code: 'invalid_tlp'/);
+  assert.match(routeSrc, /updated = await updateReportTlp\(pool, report\.id, nextTlp\)/);
+  assert.match(routeSrc, /buildTlpAuditEvent\(\{\s*report,\s*oldTlp: previousTlp,\s*oldSource: previousSource,\s*newTlp: nextTlp,\s*user: req\.user/);
+  assert.match(routeSrc, /message: 'source_url or tlp is required'/);
+});
+
+test('THIB export uses the effective TLP and carries its provenance', () => {
+  const codecSrc = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../lib/threatLibrary/thib/codec.js'),
+    'utf8'
+  );
+  assert.match(codecSrc, /tlp: normalizeTlp\(report\.tlp\),\s*tlp_source: \['explicit', 'default', 'manual'\]\.includes\(report\.tlp_source\)/);
+  const importSrc = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../lib/threatLibrary/thibImport.js'),
+    'utf8'
+  );
+  assert.match(importSrc, /tlp_source: \['explicit', 'manual'\]\.includes\(b\.report\.tlp_source\) \? b\.report\.tlp_source : 'explicit'/);
+});

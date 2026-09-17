@@ -93,6 +93,7 @@ export function buildReportDetails(report, opts = {}) {
   if (!report) return items;
   const fmt = typeof opts.formatDateTime === 'function' ? opts.formatDateTime : (v) => String(v);
   pushIf(items, 'Source', report.source_name);
+  pushIf(items, 'TLP', opts.tlpLabel);
   pushIf(items, 'Report type', report.report_type ? humanizeEnum(report.report_type) : null);
   pushIf(items, 'Language', report.language ? languageLabel(report.language) : null);
   pushIf(items, 'Confidence', formatConfidence(report.confidence));

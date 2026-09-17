@@ -46,6 +46,9 @@ export async function importThibBundle(pool, bundle, opts = {}) {
     published_at: b.report.published_at,
     language: b.report.language,
     tlp: normalizeTlp(b.report.tlp),
+    // The bundle's TLP is the sharing party's assertion: keep it and its
+    // provenance; never loosen it, never re-derive it (analysis is skipped).
+    tlp_source: ['explicit', 'manual'].includes(b.report.tlp_source) ? b.report.tlp_source : 'explicit',
     confidence: b.report.confidence,
     report_type: b.report.report_type,
     summary: b.report.summary,

@@ -88,6 +88,7 @@ const thibReportSchema = z.object({
   published_at: z.string().max(64).optional().nullable(),
   language: z.string().max(16).optional().nullable(),
   tlp: z.string().max(32).optional().default('clear'),
+  tlp_source: z.enum(['explicit', 'default', 'manual']).optional().nullable(),
   confidence: z.number().min(0).max(1).nullable().optional(),
   report_type: z.string().max(64).optional().nullable(),
   summary: z.string().max(20000).optional().nullable()
@@ -259,6 +260,7 @@ export function exportThibBundle(snapshot) {
       published_at: report.published_at || null,
       language: report.language || null,
       tlp: normalizeTlp(report.tlp),
+      tlp_source: ['explicit', 'default', 'manual'].includes(report.tlp_source) ? report.tlp_source : 'default',
       confidence: report.confidence == null ? null : Number(report.confidence),
       report_type: report.report_type || null,
       summary: report.summary || null
