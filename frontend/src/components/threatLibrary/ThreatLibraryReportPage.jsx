@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
@@ -24,7 +24,6 @@ import {
   PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
   isReviewIndicator,
-  describeCandidateProvenance,
   describeAnalysisFailureDetail,
   confidenceLabel,
   filterReviewCandidates,
@@ -50,32 +49,56 @@ import {
 } from './reportPhase.js';
 import { TlpBadge, isElevatedTlp, normalizeTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
+import {
+  REPORT_VIEWS,
+  buildReportTabs,
+  parseReportView,
+  withReportView
+} from './reportTabs.js';
+import {
+  buildOverviewMetrics,
+  buildReportDetails,
+  buildReviewFilterCounts,
+  buildSourceDetails,
+  describeArtifact,
+  describeOverviewPhaseNote,
+  entityConfidenceLabel,
+  entityHasDetail,
+  groupEntitiesByType,
+  isOpenableSourceUrl
+} from './reportOverview.js';
+import {
+  assessmentLabel,
+  assessmentTone,
+  candidateTypeLabel,
+  humanizeEnum,
+  matchCellLabel,
+  matchStateTone,
+  promotionOutcomeTone,
+  reviewStatusLabel,
+  reviewStatusTone,
+  roleLabel
+} from './reportDisplayLabels.js';
+import { candidateDisplayValue, describeEvidencePreview } from './candidateDetail.js';
+import {
+  CopyValueButton,
+  DetailList,
+  ReportActionsMenu,
+  ReportTabBar,
+  SectionTitle,
+  ToneBadge
+} from './reportPageParts.jsx';
+import IndicatorDetailDrawer from './IndicatorDetailDrawer.jsx';
+import './reportPage.css';
 
-function CandidateProvenance({ candidate }) {
-  const p = describeCandidateProvenance(candidate);
-  const parts = [];
-  if (p.section) parts.push(p.section);
-  if (p.pages) parts.push(p.pages);
-  if (p.tableRow) parts.push(p.tableRow);
-  parts.push(`${p.occurrences} occurrence${p.occurrences === 1 ? '' : 's'}`);
-  if (p.ports) parts.push(`port ${p.ports}`);
+function EvidencePreview({ candidate }) {
+  const p = describeEvidencePreview(candidate);
   return (
-    <div>
-      <div style={{ color: '#e2e8f0' }}>
-        {p.assertion}
-        {p.declaredType ? <span style={{ color: '#94a3b8' }}> · {p.declaredType}</span> : null}
-        {p.decision ? <span style={{ color: '#94a3b8' }}> · {p.decision}</span> : null}
-        {!p.direct ? <span style={{ color: '#fbbf24' }}> · derived</span> : null}
-      </div>
-      {p.description ? <div style={{ color: '#cbd5e1' }}>{p.description}</div> : null}
-      {p.resolution ? (
-        <div style={{ color: '#fbbf24' }}>
-          {p.resolution.label}
-          {p.resolution.detail ? <span style={{ color: '#94a3b8' }}> · {p.resolution.detail}</span> : null}
-        </div>
-      ) : null}
-      <div style={{ color: '#94a3b8' }}>{parts.join(' · ')}</div>
-      {p.urlHost ? <div style={{ color: '#64748b' }}>host {p.urlHost} (URL metadata)</div> : null}
+    <div className="tl-evidence">
+      <div style={{ color: '#e2e8f0' }}>{p.primary}</div>
+      {p.secondary ? <div className="tl-evidence__secondary" title={p.secondary}>{p.secondary}</div> : null}
+      {p.warning ? <div style={{ color: '#fbbf24' }}>{p.warning}</div> : null}
+      <div className="tl-evidence__tertiary">{p.tertiary}</div>
     </div>
   );
 }
@@ -136,18 +159,16 @@ function compactBtn(base, disabled) {
   };
 }
 
-const compactTh = {
-  ...ui.th,
-  position: 'sticky',
-  top: 0,
-  zIndex: 1,
-  background: '#0f172a',
-  padding: '8px 8px'
-};
-const compactTd = { ...ui.td, padding: '6px 8px', fontSize: 12 };
-const compactInput = { ...ui.input, padding: '8px 10px', fontSize: 13, minHeight: 36 };
-const compactSelect = { ...ui.select, width: 'auto', minWidth: 140, padding: '8px 10px', fontSize: 13, minHeight: 36 };
+const compactInput = { ...ui.input, padding: '6px 10px', fontSize: 13, minHeight: 32 };
+const compactSelect = { ...ui.select, width: 'auto', minWidth: 130, padding: '6px 10px', fontSize: 13, minHeight: 32 };
+const compactAction = { ...ui.btn, minHeight: 30, padding: '4px 10px', fontSize: 12 };
+const compactPrimary = { ...ui.btnPrimary, minHeight: 30, padding: '4px 10px', fontSize: 12 };
 
+/**
+ * Source URL: displayed as inert text with an explicit "Open source" action
+ * (http/https only) and the existing edit flow. The report source is
+ * legitimate navigation; indicator values elsewhere on the page never are.
+ */
 function SourceUrlEditor({ value, canWrite, busy, onSave }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || '');
@@ -158,26 +179,36 @@ function SourceUrlEditor({ value, canWrite, busy, onSave }) {
   }, [value, editing]);
 
   if (!editing) {
+    const url = value ? String(value) : '';
     return (
-      <div>
-        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 2 }}>Source URL</div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {value ? (
+      <div data-testid="source-url">
+        <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>Source URL</div>
+        {url ? (
+          <div className="tl-value" style={{ fontSize: 13, marginBottom: 8 }}>{url}</div>
+        ) : (
+          <div style={{ color: '#64748b', fontSize: 13, marginBottom: 8 }}>No source URL recorded.</div>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          {url && isOpenableSourceUrl(url) ? (
             <a
-              href={String(value)}
+              href={url}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ color: '#5eead4', wordBreak: 'break-all' }}
+              style={{ ...compactAction, textDecoration: 'none' }}
             >
-              {String(value)}
+              Open source
             </a>
-          ) : (
-            <span style={{ color: '#94a3b8' }}>—</span>
-          )}
+          ) : null}
+          {url ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#94a3b8', fontSize: 12 }}>
+              <CopyValueButton value={url} label="Copy source URL" size={14} />
+              Copy
+            </span>
+          ) : null}
           {canWrite ? (
             <button
               type="button"
-              style={ui.btn}
+              style={compactAction}
               disabled={Boolean(busy)}
               onClick={() => { setLocalError(''); setDraft(value || ''); setEditing(true); }}
             >
@@ -191,7 +222,7 @@ function SourceUrlEditor({ value, canWrite, busy, onSave }) {
 
   return (
     <div>
-      <label htmlFor="tl-source-url" style={{ color: '#94a3b8', fontSize: 12, marginBottom: 2, display: 'block' }}>
+      <label htmlFor="tl-source-url" style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4, display: 'block' }}>
         Source URL
       </label>
       <input
@@ -292,7 +323,7 @@ function PreliminaryIndicatorsCard({ report, job, candidates, onRetry, retryEnab
             <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1', fontSize: 13 }}>
               {candidates.slice(0, 60).map((c) => (
                 <li key={c.id || c.public_id} style={{ marginBottom: 4, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', wordBreak: 'break-all' }}>
-                  [{c.candidate_type}] {c.normalized_value || c.original_value}
+                  [{candidateTypeLabel(c.candidate_type) || c.candidate_type}] {c.normalized_value || c.original_value}
                 </li>
               ))}
               {candidates.length > 60 ? <li style={{ color: '#64748b' }}>… {candidates.length - 60} more</li> : null}
@@ -302,6 +333,20 @@ function PreliminaryIndicatorsCard({ report, job, candidates, onRetry, retryEnab
       </div>
     </SectionCard>
   );
+}
+
+function MetricCard({ label, value, testId }) {
+  return (
+    <div className="tl-metric" data-testid={testId}>
+      <div className="tl-metric__value">{value}</div>
+      <div className="tl-metric__label">{label}</div>
+    </div>
+  );
+}
+
+function isInteractiveTarget(target) {
+  if (!target || typeof target.closest !== 'function') return false;
+  return Boolean(target.closest('button, a, input, select, textarea, label, [role="menu"]'));
 }
 
 export default function ThreatLibraryReportPage({ AppShell, useSession }) {
@@ -321,6 +366,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [artifacts, setArtifacts] = useState([]);
   const [documentMeta, setDocumentMeta] = useState(null);
   const [job, setJob] = useState(null);
+  const [view, setView] = useState(() => parseReportView(searchParams));
   const [filter, setFilter] = useState(urlState.tab || DEFAULT_REVIEW_FILTER);
   const [search, setSearch] = useState(urlState.q || '');
   const [typeFilter, setTypeFilter] = useState(urlState.type || 'all');
@@ -328,9 +374,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [page, setPage] = useState(urlState.page || 1);
   const [pageSize, setPageSize] = useState(urlState.pageSize || DEFAULT_PAGE_SIZE);
   const [selected, setSelected] = useState(() => new Set());
+  const [openCandidateId, setOpenCandidateId] = useState(null);
   const [busy, setBusy] = useState('');
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
   const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
+  const [stickyOffset, setStickyOffset] = useState(0);
+  const bulkBarRef = useRef(null);
   // Overlapping detail fetches: only the most recently issued response may land.
   const latestDetail = useRef(createLatestOnly());
 
@@ -413,24 +462,43 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     [filtered, page, pageSize]
   );
   const pageRows = paged.rows;
+  const filterCounts = useMemo(() => buildReviewFilterCounts(candidates), [candidates]);
 
   useEffect(() => {
-    const next = serializeReviewTableUrlState({
+    const next = withReportView(serializeReviewTableUrlState({
       tab: filter,
       q: search,
       type: typeFilter,
       result: resultFilter,
       page: paged.page,
       pageSize: paged.pageSize
-    });
+    }), view);
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [filter, search, typeFilter, resultFilter, paged.page, paged.pageSize, searchParams, setSearchParams]);
+  }, [view, filter, search, typeFilter, resultFilter, paged.page, paged.pageSize, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (paged.page !== page) setPage(paged.page);
   }, [paged.page, page]);
+
+  // Sticky table header sits directly under the sticky bulk-action bar.
+  useLayoutEffect(() => {
+    const el = bulkBarRef.current;
+    if (!el) {
+      setStickyOffset(0);
+      return undefined;
+    }
+    const measure = () => setStickyOffset(el.offsetHeight || 0);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [canWrite, view, report?.review_phase]);
 
   function changeFilter(next) {
     setFilter(next);
@@ -486,7 +554,11 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     });
   }
 
-  async function runReview(action) {
+  /**
+   * Review action for the current selection, or for an explicit id list when
+   * triggered from the detail drawer. Same endpoint and body either way.
+   */
+  async function runReview(action, ids = null) {
     if (!canWrite) return;
     if (action === 'create_iocs') {
       await createIocs();
@@ -498,7 +570,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     try {
       const body = { action };
       if (action !== 'approve_high_confidence_malicious') {
-        body.candidate_ids = [...selected];
+        body.candidate_ids = Array.isArray(ids) ? ids : [...selected];
       }
       const { data } = await api.post(`/threat-library/reports/${reportId}/review`, body);
       if (data?.errors?.length) {
@@ -606,6 +678,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       setCandidates([]);
     }
     setSelected(new Set());
+    setOpenCandidateId(null);
     setError(data.message || 'The indicator set is still being refined. Review actions are available once analysis completes.');
     return true;
   }
@@ -628,7 +701,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           cancelLabel: 'Close',
           variant: 'warning'
         });
-        if (ok) changeFilter('needs_review');
+        if (ok) {
+          setView(REPORT_VIEWS.INDICATORS);
+          changeFilter('needs_review');
+        }
         return;
       }
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Finalize failed');
@@ -657,6 +733,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       // The review set is being rebuilt: previous rows are no longer current.
       setCandidates([]);
       setSelected(new Set());
+      setOpenCandidateId(null);
       setRetryAcceptedAt(Date.now());
       setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
       setFeedback(
@@ -674,6 +751,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         if (applied.job) setJob(applied.job);
         setCandidates([]);
         setSelected(new Set());
+        setOpenCandidateId(null);
         setRetryAcceptedAt(Date.now());
         setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
         setFeedback('Analysis is already running. Showing live progress.');
@@ -766,52 +844,92 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const showPreliminary = Boolean(report) && !loading && (phase === REPORT_PHASES.PREPARING || phase === REPORT_PHASES.FAILED);
   const reviewCount = useMemo(() => candidates.filter((c) => isReviewIndicator(c)).length, [candidates]);
   const indicatorCount = describeIndicatorCount(report, showReview ? { reviewCount } : { rawCount: candidates.length || null });
+  const metrics = useMemo(() => buildOverviewMetrics(candidates, report), [candidates, report]);
+  const tabs = useMemo(() => buildReportTabs({
+    indicatorCount: indicatorCount.value,
+    indicatorCountStable: showReview,
+    entityCount: entities.length
+  }), [indicatorCount.value, showReview, entities.length]);
+  const reportDetails = useMemo(() => buildReportDetails(report, {
+    documentMeta,
+    artifacts,
+    entityCount: entities.length,
+    indicatorCount: showReview ? indicatorCount : null,
+    formatDateTime: formatUserDateTime
+  }), [report, documentMeta, artifacts, entities.length, showReview, indicatorCount]);
+  const sourceDetails = useMemo(
+    () => buildSourceDetails(report, { documentMeta, artifacts, formatDateTime: formatUserDateTime }),
+    [report, documentMeta, artifacts]
+  );
+  const entityGroups = useMemo(() => groupEntitiesByType(entities), [entities]);
+  const openCandidate = useMemo(
+    () => (openCandidateId == null ? null : candidates.find((c) => c.id === openCandidateId) || null),
+    [candidates, openCandidateId]
+  );
+  const overflowItems = [
+    isAdmin ? { id: 'delete', label: 'Delete report', danger: true, disabled: Boolean(busy), onSelect: () => removeReport().catch(() => {}) } : null
+  ];
+  const canCancel = canWrite && processing && ['analyzing', 'matching', 'fetching', 'extracting', 'candidates', 'pending'].includes(String(report?.analysis_status || ''));
+
+  function openRow(c) {
+    setOpenCandidateId(c.id);
+  }
+
+  function onRowClick(e, c) {
+    if (isInteractiveTarget(e.target)) return;
+    const selection = typeof window !== 'undefined' && window.getSelection ? String(window.getSelection() || '') : '';
+    if (selection) return;
+    openRow(c);
+  }
 
   return (
     <AppShell>
       <section style={ui.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-          <div>
+        <div className="tl-report-header">
+          <div className="tl-report-header__title">
             <Link to="/threat-intelligence/threat-library" style={{ color: '#94a3b8', fontSize: 12, textDecoration: 'none' }}>
               ← Threat Library
             </Link>
-            <h1 style={{ ...ui.pageTitle, marginTop: 8 }}>
+            <h1 style={{ ...ui.pageTitle, marginTop: 6, overflowWrap: 'anywhere' }}>
               {loading ? 'Loading…' : (report?.title || 'Report')}
             </h1>
             {report ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 8 }}>
                 <TlpBadge tlp={report.tlp} display={report.tlp_display} />
-                <span style={badgeStyle({ border: '#334155', bg: '#1e293b', color: '#cbd5e1' })}>
+                <span style={badgeStyle({ border: '#334155', bg: '#1e293b', color: '#cbd5e1' })} data-testid="report-status">
                   {statusLabel(report)}
                 </span>
                 {report.report_type ? (
-                  <span style={{ fontSize: 12, color: '#94a3b8' }}>{report.report_type}</span>
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>{humanizeEnum(report.report_type)}</span>
                 ) : null}
               </div>
             ) : null}
           </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {canWrite && processing && ['analyzing', 'matching', 'fetching', 'extracting', 'candidates', 'pending'].includes(String(report?.analysis_status || '')) ? (
-              <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => cancelAnalysis().catch(() => {})}>
-                Cancel analysis
-              </button>
-            ) : null}
-            {canShowRetryButton(report, { busy: Boolean(busy), canWrite }) ? (
-              <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => retry().catch(() => {})}>
-                {busy === 'retry' ? 'Starting…' : 'Retry analysis'}
-              </button>
-            ) : null}
-            {canWrite ? (
-              <button type="button" style={ui.btn} disabled={Boolean(busy) || !report} onClick={() => exportThib().catch(() => {})}>
-                Export THIB
-              </button>
-            ) : null}
-            {isAdmin ? (
-              <button type="button" style={ui.btnDanger} disabled={Boolean(busy)} onClick={() => removeReport().catch(() => {})}>
-                Delete
-              </button>
-            ) : null}
-          </div>
+          {report ? (
+            <div className="tl-report-header__actions">
+              {canCancel ? (
+                <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => cancelAnalysis().catch(() => {})}>
+                  Cancel analysis
+                </button>
+              ) : null}
+              {canShowRetryButton(report, { busy: Boolean(busy), canWrite }) ? (
+                <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => retry().catch(() => {})}>
+                  {busy === 'retry' ? 'Starting…' : 'Retry analysis'}
+                </button>
+              ) : null}
+              {canWrite ? (
+                <button type="button" style={ui.btn} disabled={Boolean(busy)} onClick={() => exportThib().catch(() => {})}>
+                  Export THIB
+                </button>
+              ) : null}
+              <ReportActionsMenu items={overflowItems} disabled={Boolean(busy)} />
+              {canWrite && canFinalize(report) ? (
+                <button type="button" style={ui.btnPrimary} disabled={Boolean(busy)} onClick={() => finalize().catch(() => {})}>
+                  {busy === 'finalize' ? 'Finalizing…' : 'Finalize report'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {isElevatedTlp(report?.tlp) ? (
@@ -870,336 +988,373 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           </SectionCard>
         ) : null}
 
-        {showPreliminary ? (
-          <PreliminaryIndicatorsCard
-            report={report}
-            job={job}
-            candidates={candidates}
-            onRetry={() => retry().catch(() => {})}
-            retryEnabled={canShowRetryButton(report, { busy: Boolean(busy), canWrite })}
-            busy={busy}
-          />
+        {report ? <ReportTabBar tabs={tabs} active={view} onChange={setView} /> : null}
+
+        {report && view === REPORT_VIEWS.OVERVIEW ? (
+          <div role="tabpanel" id="tl-panel-overview" aria-labelledby="tl-tab-overview">
+            {metrics.available ? (
+              <div className="tl-metrics" data-testid="overview-metrics">
+                <MetricCard label="Candidates" value={metrics.candidates} testId="metric-candidates" />
+                <MetricCard label="New" value={metrics.new} testId="metric-new" />
+                <MetricCard label="Existing" value={metrics.existing} testId="metric-existing" />
+                <MetricCard label="Needs review" value={metrics.needsReview} testId="metric-needs-review" />
+                <div className="tl-metric" data-testid="metric-progress">
+                  <div className="tl-metric__value" style={{ fontSize: 18 }}>
+                    {metrics.reviewed} / {metrics.total}
+                    <span style={{ fontSize: 12, fontWeight: 500, color: '#94a3b8', marginLeft: 6 }}>reviewed</span>
+                  </div>
+                  <div className="tl-progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={metrics.progressPct} aria-label="Review progress">
+                    <div className="tl-progress__bar" style={{ width: `${metrics.progressPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              describeOverviewPhaseNote(report) ? (
+                <div style={{ ...ui.muted, marginBottom: 16 }}>{describeOverviewPhaseNote(report)}</div>
+              ) : null
+            )}
+
+            <div className="tl-overview">
+              <div>
+                <SectionTitle>Summary</SectionTitle>
+                <div className="tl-summary" data-testid="report-summary">
+                  {report.summary || <span style={{ color: '#64748b' }}>No summary available yet.</span>}
+                </div>
+              </div>
+              <div>
+                <SectionTitle>Report details</SectionTitle>
+                <DetailList items={reportDetails} testId="report-details" />
+              </div>
+            </div>
+          </div>
         ) : null}
 
-        {showReview ? (
-          <SectionCard
-            title={indicatorSectionTitle(report)}
-            actions={(
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                <span style={{ fontSize: 13, color: '#94a3b8' }} data-testid="indicator-count">
-                  {indicatorCount.text}
-                </span>
-                {canWrite && canFinalize(report) ? (
-                  <button type="button" style={ui.btnPrimary} disabled={Boolean(busy)} onClick={() => finalize().catch(() => {})}>
-                    {busy === 'finalize' ? 'Finalizing…' : 'Finalize report'}
-                  </button>
-                ) : null}
-              </div>
-            )}
-          >
-            <div style={ui.tabRow} role="tablist" aria-label="Indicator filters">
-              {REVIEW_FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === f.id}
-                  style={ui.tab(filter === f.id)}
-                  onClick={() => changeFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center' }}>
-              <label htmlFor="tl-indicator-search" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                Search indicators
-              </label>
-              <input
-                id="tl-indicator-search"
-                type="search"
-                value={search}
-                onChange={(e) => changeSearch(e.target.value)}
-                placeholder="Search indicators…"
-                style={{ ...compactInput, maxWidth: 280 }}
+        {report && view === REPORT_VIEWS.INDICATORS ? (
+          <div role="tabpanel" id="tl-panel-indicators" aria-labelledby="tl-tab-indicators">
+            {showPreliminary ? (
+              <PreliminaryIndicatorsCard
+                report={report}
+                job={job}
+                candidates={candidates}
+                onRetry={() => retry().catch(() => {})}
+                retryEnabled={canShowRetryButton(report, { busy: Boolean(busy), canWrite })}
+                busy={busy}
               />
-              <label htmlFor="tl-type-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                Type
-              </label>
-              <select
-                id="tl-type-filter"
-                value={typeFilter}
-                onChange={(e) => changeType(e.target.value)}
-                style={compactSelect}
-              >
-                {TYPE_FILTERS.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-              <label htmlFor="tl-result-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                IOC Result
-              </label>
-              <select
-                id="tl-result-filter"
-                value={resultFilter}
-                onChange={(e) => changeResult(e.target.value)}
-                style={compactSelect}
-              >
-                {RESULT_FILTERS.map((t) => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-            </div>
-
-            {canWrite ? (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12, alignItems: 'center', position: 'sticky', top: 0, zIndex: 2, background: '#0f172a', padding: '6px 0' }}>
-                <button type="button" style={compactBtn(ui.btn, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('approve').catch(() => {})}>
-                  Approve
-                </button>
-                <button type="button" style={compactBtn(ui.btn, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('context_only').catch(() => {})}>
-                  Context only
-                </button>
-                <button type="button" style={compactBtn(ui.btn, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('ignore').catch(() => {})}>
-                  Ignore
-                </button>
-                <button type="button" style={compactBtn(ui.btnPrimary, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('create_iocs').catch(() => {})}>
-                  Create IOCs
-                </button>
-                <button type="button" style={compactBtn(ui.btn, Boolean(busy))} disabled={Boolean(busy)} onClick={() => runReview('approve_high_confidence_malicious').catch(() => {})}>
-                  Approve high-confidence malicious
-                </button>
-                <span style={{ fontSize: 12, color: '#94a3b8' }} aria-live="polite">
-                  {selected.size} selected on this page
-                </span>
-              </div>
             ) : null}
 
-            <div style={{ overflow: 'auto', maxHeight: 'min(70vh, 720px)', border: '1px solid #1e293b', borderRadius: 8 }}>
-              <table width="100%" cellPadding="0" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead>
-                  <tr style={ui.thead}>
-                    {canWrite ? (
-                      <th style={compactTh}>
-                        <input
-                          type="checkbox"
-                          checked={pageRows.length > 0 && pageRows.every((c) => selected.has(c.id))}
-                          onChange={toggleAllOnPage}
-                          aria-label="Select all on this page"
-                        />
-                      </th>
-                    ) : null}
-                    <th style={compactTh}>Type</th>
-                    <th style={compactTh}>Value</th>
-                    <th style={compactTh}>Assessment</th>
-                    <th style={compactTh}>Role</th>
-                    <th style={compactTh}>Confidence</th>
-                    <th style={compactTh}>Evidence</th>
-                    <th style={compactTh}>Match</th>
-                    <th style={compactTh}>Review</th>
-                    <th style={compactTh}>IOC Result</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageRows.length === 0 ? (
-                    <tr style={ui.tr}><td colSpan={canWrite ? 10 : 9} style={{ ...compactTd, color: '#94a3b8' }}>No candidates in this filter.</td></tr>
-                  ) : pageRows.map((c) => (
-                    <tr key={c.id || c.public_id} style={ui.tr}>
-                      {canWrite ? (
-                        <td style={compactTd}>
-                          <input
-                            type="checkbox"
-                            checked={selected.has(c.id)}
-                            onChange={() => toggleOne(c.id)}
-                            aria-label={`Select ${c.candidate_type} ${c.normalized_value || c.original_value || c.id}`}
-                          />
-                        </td>
-                      ) : null}
-                      <td style={compactTd}>{c.candidate_type}</td>
-                      <td style={{ ...compactTd, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', wordBreak: 'break-all' }}>
-                        {/* Intentionally plain text — do not auto-link potentially malicious values */}
-                        {c.normalized_value || c.original_value || '—'}
-                      </td>
-                      <td style={compactTd}>{c.assessment || '—'}</td>
-                      <td style={compactTd}>{c.role || '—'}</td>
-                      <td style={compactTd}>{confidenceLabel(c)}</td>
-                      <td style={{ ...compactTd, color: '#cbd5e1', maxWidth: 260 }}>
-                        <CandidateProvenance candidate={c} />
-                      </td>
-                      <td style={compactTd}>
-                        {c.matched_ioc_id
-                          ? `Matched (${c.matched_ioc_observable_type || c.candidate_type})`
-                          : (c.match_state || '—')}
-                      </td>
-                      <td style={compactTd}>{c.review_status || '—'}</td>
-                      <td style={compactTd} title={c.promotion_detail || undefined}>
-                        {iocResultLabel(c)}
-                        {c.candidate_type === 'cidr' && (!c.promotion_outcome || c.promotion_outcome === 'unsupported') ? (
-                          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
-                            {c.promotion_detail || 'Preserved in Threat Library; not an IOC record.'}
-                          </div>
-                        ) : c.promotion_detail && c.promotion_outcome === 'unsupported' ? (
-                          <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>{c.promotion_detail}</div>
-                        ) : null}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {showReview ? (
+              <div>
+                <div className="tl-filterbar">
+                  <div className="tl-filterbar__tabs" role="tablist" aria-label="Indicator filters">
+                    {REVIEW_FILTERS.map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        role="tab"
+                        aria-selected={filter === f.id}
+                        className="tl-filter-tab"
+                        onClick={() => changeFilter(f.id)}
+                      >
+                        {f.label}
+                        <span className="tl-filter-tab__count" data-testid={`filter-count-${f.id}`}>{filterCounts[f.id] ?? 0}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="tl-filterbar__controls">
+                    <label htmlFor="tl-indicator-search" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                      Search indicators
+                    </label>
+                    <input
+                      id="tl-indicator-search"
+                      type="search"
+                      value={search}
+                      onChange={(e) => changeSearch(e.target.value)}
+                      placeholder="Search indicators…"
+                      style={{ ...compactInput, width: 220 }}
+                    />
+                    <label htmlFor="tl-type-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                      Type
+                    </label>
+                    <select
+                      id="tl-type-filter"
+                      value={typeFilter}
+                      onChange={(e) => changeType(e.target.value)}
+                      style={compactSelect}
+                    >
+                      {TYPE_FILTERS.map((t) => (
+                        <option key={t.id} value={t.id}>{t.label}</option>
+                      ))}
+                    </select>
+                    <label htmlFor="tl-result-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                      IOC Result
+                    </label>
+                    <select
+                      id="tl-result-filter"
+                      value={resultFilter}
+                      onChange={(e) => changeResult(e.target.value)}
+                      style={compactSelect}
+                    >
+                      {RESULT_FILTERS.map((t) => (
+                        <option key={t.id} value={t.id}>{t.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10, fontSize: 13, color: '#94a3b8' }}>
-              <span>
-                Page {paged.page} of {paged.totalPages} · {paged.total} total
-              </span>
-              <button
-                type="button"
-                style={compactBtn(ui.btn, paged.page <= 1)}
-                disabled={paged.page <= 1}
-                aria-label="Previous page"
-                onClick={() => goToPage(paged.page - 1)}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                style={compactBtn(ui.btn, paged.page >= paged.totalPages)}
-                disabled={paged.page >= paged.totalPages}
-                aria-label="Next page"
-                onClick={() => goToPage(paged.page + 1)}
-              >
-                Next
-              </button>
-              <label htmlFor="tl-page-size" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                Page size
-                <select
-                  id="tl-page-size"
-                  value={paged.pageSize}
-                  onChange={(e) => changePageSize(e.target.value)}
-                  style={{ ...compactSelect, minWidth: 80 }}
-                >
-                  {PAGE_SIZES.map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-          </SectionCard>
-        ) : null}
+                {canWrite ? (
+                  <div className="tl-bulkbar" ref={bulkBarRef} data-testid="bulk-actions">
+                    <button type="button" style={compactBtn(compactAction, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('approve').catch(() => {})}>
+                      Approve
+                    </button>
+                    <button type="button" style={compactBtn(compactAction, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('context_only').catch(() => {})}>
+                      Context only
+                    </button>
+                    <button type="button" style={compactBtn(compactAction, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('ignore').catch(() => {})}>
+                      Ignore
+                    </button>
+                    <button type="button" style={compactBtn(compactPrimary, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('create_iocs').catch(() => {})}>
+                      Create IOCs
+                    </button>
+                    <button type="button" style={compactBtn(compactAction, Boolean(busy))} disabled={Boolean(busy)} onClick={() => runReview('approve_high_confidence_malicious').catch(() => {})}>
+                      Approve high-confidence malicious
+                    </button>
+                    <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }} aria-live="polite">
+                      {selected.size} selected on this page
+                    </span>
+                  </div>
+                ) : null}
 
-        {report ? (
-          <>
-            <SectionCard title="Metadata">
-              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', fontSize: 13 }}>
-                <Meta label="Source type" value={report.source_type} />
-                <Meta label="Source name" value={report.source_name} />
-                <Meta label="Language" value={report.language} />
-                <Meta label="Confidence" value={report.confidence} />
-                <Meta label="Published" value={report.published_at ? formatUserDateTime(report.published_at) : null} />
-                <Meta label="Imported" value={report.created_at ? formatUserDateTime(report.created_at) : null} />
-                <Meta label="Finalized" value={report.finalized_at ? formatUserDateTime(report.finalized_at) : null} />
-                <Meta label="Entities" value={report.entity_count} />
-                <Meta label={indicatorCount.label} value={indicatorCount.value} />
-                <Meta label="Matched" value={report.matched_count} />
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Summary">
-              <div style={{ fontSize: 14, color: '#cbd5e1', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
-                {report.summary || 'No summary available yet.'}
-              </div>
-            </SectionCard>
-
-            <SectionCard title="Entities">
-              {entities.length === 0 ? (
-                <div style={ui.muted}>No entities extracted.</div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table width="100%" cellPadding="0" style={{ borderCollapse: 'collapse', fontSize: 13 }}>
+                <div className="tl-table-container">
+                <div className="tl-table-wrap" style={{ '--tl-sticky-offset': `${stickyOffset}px` }}>
+                  <table className="tl-table" data-testid="indicator-table">
+                    <colgroup>
+                      {canWrite ? <col style={{ width: '3%' }} /> : null}
+                      <col style={{ width: '6%' }} />
+                      <col style={{ width: '17%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '11%' }} />
+                      <col style={{ width: '9%' }} />
+                      <col style={{ width: '16%' }} />
+                      <col style={{ width: '11%' }} />
+                      <col style={{ width: '8%' }} />
+                      <col style={{ width: '10%' }} />
+                      <col style={{ width: 34 }} />
+                    </colgroup>
                     <thead>
-                      <tr style={ui.thead}>
-                        <th style={ui.th}>Type</th>
-                        <th style={ui.th}>Name</th>
-                        <th style={ui.th}>Confidence</th>
-                        <th style={ui.th}>Evidence</th>
+                      <tr>
+                        {canWrite ? (
+                          <th>
+                            <input
+                              type="checkbox"
+                              checked={pageRows.length > 0 && pageRows.every((c) => selected.has(c.id))}
+                              onChange={toggleAllOnPage}
+                              aria-label="Select all on this page"
+                            />
+                          </th>
+                        ) : null}
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th>Assessment</th>
+                        <th>Role</th>
+                        <th>Confidence</th>
+                        <th>Evidence</th>
+                        <th>Match</th>
+                        <th>Review</th>
+                        <th>IOC Result</th>
+                        <th aria-label="Details" />
                       </tr>
                     </thead>
                     <tbody>
-                      {entities.map((e) => (
-                        <tr key={e.id} style={ui.tr}>
-                          <td style={ui.td}>{e.entity_type}</td>
-                          <td style={ui.td}>{e.name}</td>
-                          <td style={ui.td}>{e.confidence == null ? '—' : `${Math.round(Number(e.confidence) * 100)}%`}</td>
-                          <td style={{ ...ui.td, color: '#94a3b8', maxWidth: 360 }}>{e.evidence_text || e.description || '—'}</td>
-                        </tr>
-                      ))}
+                      {pageRows.length === 0 ? (
+                        <tr><td colSpan={canWrite ? 11 : 10} style={{ color: '#94a3b8' }}>No candidates in this filter.</td></tr>
+                      ) : pageRows.map((c) => {
+                        const value = candidateDisplayValue(c);
+                        const resultTone = promotionOutcomeTone(c.promotion_outcome);
+                        const isOpen = openCandidateId != null && c.id === openCandidateId;
+                        return (
+                          <tr
+                            key={c.id || c.public_id}
+                            className={`is-clickable${isOpen ? ' is-open' : ''}`}
+                            onClick={(e) => onRowClick(e, c)}
+                            data-candidate-id={c.id}
+                          >
+                            {canWrite ? (
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  checked={selected.has(c.id)}
+                                  onChange={() => toggleOne(c.id)}
+                                  aria-label={`Select ${candidateTypeLabel(c.candidate_type) || c.candidate_type} ${value || c.id}`}
+                                />
+                              </td>
+                            ) : null}
+                            <td>{candidateTypeLabel(c.candidate_type) || '—'}</td>
+                            <td>
+                              <div className="tl-value-cell">
+                                {/* Intentionally plain text — never an anchor, even for URL values */}
+                                <span className="tl-value" data-testid="indicator-value">{value || '—'}</span>
+                                {value ? <CopyValueButton value={value} label="Copy indicator" /> : null}
+                              </div>
+                            </td>
+                            <td><ToneBadge tone={assessmentTone(c.assessment)}>{assessmentLabel(c.assessment) || '—'}</ToneBadge></td>
+                            <td>{roleLabel(c.role) || '—'}</td>
+                            <td>{confidenceLabel(c)}</td>
+                            <td><EvidencePreview candidate={c} /></td>
+                            <td>
+                              <ToneBadge tone={c.matched_ioc_id ? 'neutral' : matchStateTone(c.match_state)}>{matchCellLabel(c) || '—'}</ToneBadge>
+                            </td>
+                            <td><ToneBadge tone={reviewStatusTone(c.review_status)}>{reviewStatusLabel(c.review_status) || '—'}</ToneBadge></td>
+                            <td title={c.promotion_detail || undefined}>
+                              <ToneBadge tone={resultTone}>{iocResultLabel(c)}</ToneBadge>
+                              {c.candidate_type === 'cidr' && (!c.promotion_outcome || c.promotion_outcome === 'unsupported') ? (
+                                <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
+                                  {c.promotion_detail || 'Preserved in Threat Library; not an IOC record.'}
+                                </div>
+                              ) : c.promotion_detail && c.promotion_outcome === 'unsupported' ? (
+                                <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>{c.promotion_detail}</div>
+                              ) : null}
+                            </td>
+                            <td>
+                              <button
+                                type="button"
+                                className="tl-row-open"
+                                onClick={() => openRow(c)}
+                                aria-label={`Details for ${value || c.id}`}
+                                title="Details"
+                              >
+                                ›
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </SectionCard>
+                </div>
 
-            <SectionCard title="Source">
-              <div style={{ display: 'grid', gap: 8, fontSize: 13 }}>
-                <SourceUrlEditor
-                  value={report.source_url}
-                  canWrite={canWrite}
-                  busy={busy}
-                  onSave={saveSourceUrl}
-                />
-                <Meta label="File name" value={report.source_file_name} />
-                <Meta label="SHA-256" value={report.source_sha256} mono />
-                {documentMeta ? (
-                  <Meta
-                    label="Document"
-                    value={`${documentMeta.title || 'Untitled'} · ${documentMeta.block_count || 0} blocks`}
-                  />
-                ) : null}
-                {artifacts?.length ? (
-                  <div>
-                    <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>Artifacts</div>
-                    <ul style={{ margin: 0, paddingLeft: 18, color: '#cbd5e1' }}>
-                      {artifacts.map((a) => (
-                        <li key={a.id || a.storage_key}>
-                          {a.artifact_type}: {a.file_name || a.storage_key}
-                          {a.size_bytes != null ? ` (${a.size_bytes} bytes)` : ''}
-                        </li>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center', marginTop: 10, fontSize: 13, color: '#94a3b8' }}>
+                  <span>
+                    Page {paged.page} of {paged.totalPages} · {paged.total} total
+                  </span>
+                  <button
+                    type="button"
+                    style={compactBtn(compactAction, paged.page <= 1)}
+                    disabled={paged.page <= 1}
+                    aria-label="Previous page"
+                    onClick={() => goToPage(paged.page - 1)}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    style={compactBtn(compactAction, paged.page >= paged.totalPages)}
+                    disabled={paged.page >= paged.totalPages}
+                    aria-label="Next page"
+                    onClick={() => goToPage(paged.page + 1)}
+                  >
+                    Next
+                  </button>
+                  <label htmlFor="tl-page-size" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                    Page size
+                    <select
+                      id="tl-page-size"
+                      value={paged.pageSize}
+                      onChange={(e) => changePageSize(e.target.value)}
+                      style={{ ...compactSelect, minWidth: 72 }}
+                    >
+                      {PAGE_SIZES.map((n) => (
+                        <option key={n} value={n}>{n}</option>
                       ))}
-                    </ul>
-                  </div>
-                ) : null}
+                    </select>
+                  </label>
+                </div>
               </div>
-            </SectionCard>
-          </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {report && view === REPORT_VIEWS.ENTITIES ? (
+          <div role="tabpanel" id="tl-panel-entities" aria-labelledby="tl-tab-entities" data-testid="entities-panel">
+            {entityGroups.length === 0 ? (
+              <div style={ui.muted}>No entities extracted.</div>
+            ) : entityGroups.map((group) => (
+              <div key={group.type} className="tl-entity-group" data-entity-type={group.type}>
+                <SectionTitle>{group.label} <span style={{ color: '#475569', fontWeight: 600 }}>{group.items.length}</span></SectionTitle>
+                {group.items.some(entityHasDetail) ? (
+                  group.items.map((e) => {
+                    const conf = entityConfidenceLabel(e);
+                    return (
+                      <div key={e.id} className="tl-entity-card">
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, color: '#e2e8f0', overflowWrap: 'anywhere' }}>{e.name}</span>
+                          {conf ? <ToneBadge tone="neutral">{conf}</ToneBadge> : null}
+                        </div>
+                        {e.description ? <div style={{ fontSize: 13, color: '#cbd5e1', marginTop: 4 }}>{e.description}</div> : null}
+                        {e.evidence_text ? <blockquote className="tl-quote">{e.evidence_text}</blockquote> : null}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="tl-chip-row">
+                    {group.items.map((e) => (
+                      <span key={e.id} className="tl-chip">{e.name}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {report && view === REPORT_VIEWS.SOURCE ? (
+          <div role="tabpanel" id="tl-panel-source" aria-labelledby="tl-tab-source" data-testid="source-panel">
+            <div style={{ display: 'grid', gap: 18, maxWidth: 820 }}>
+              <div>
+                <SectionTitle>Source</SectionTitle>
+                <div style={{ fontSize: 16, fontWeight: 600, color: '#f1f5f9', overflowWrap: 'anywhere' }}>
+                  {report.source_name || report.source_file_name || humanizeEnum(report.source_type) || 'Unknown source'}
+                </div>
+              </div>
+              <SourceUrlEditor
+                value={report.source_url}
+                canWrite={canWrite}
+                busy={busy}
+                onSave={saveSourceUrl}
+              />
+              <DetailList items={sourceDetails} testId="source-details" />
+              {artifacts?.length ? (
+                <details className="tl-artifacts" data-testid="artifacts">
+                  <summary>Artifacts ({artifacts.length})</summary>
+                  <div style={{ marginTop: 6 }}>
+                    {artifacts.map((a) => {
+                      const d = describeArtifact(a, { formatDateTime: formatUserDateTime });
+                      return (
+                        <div key={d.key} className="tl-artifact">
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                            <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{d.typeLabel}</span>
+                            {d.name ? <span className="tl-value" style={{ fontSize: 12 }}>{d.name}</span> : null}
+                          </div>
+                          {d.facts.length ? <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 2 }}>{d.facts.join(' · ')}</div> : null}
+                          {d.sha256 ? <div className="tl-value" style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>sha256 {d.sha256}</div> : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          </div>
         ) : null}
       </section>
-    </AppShell>
-  );
-}
 
-function Meta({ label, value, mono, asSafeUrl }) {
-  return (
-    <div>
-      <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 2 }}>{label}</div>
-      {asSafeUrl && value ? (
-        <a
-          href={String(value)}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#5eead4', wordBreak: 'break-all' }}
-        >
-          {String(value)}
-        </a>
-      ) : (
-        <div style={{
-          color: '#e2e8f0',
-          wordBreak: 'break-all',
-          fontFamily: mono ? 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' : undefined
-        }}
-        >
-          {value == null || value === '' ? '—' : String(value)}
-        </div>
-      )}
-    </div>
+      <IndicatorDetailDrawer
+        candidate={openCandidate}
+        onClose={() => setOpenCandidateId(null)}
+        canWrite={canWrite && showReview}
+        busy={busy}
+        onReview={(action, ids) => runReview(action, ids).catch(() => {})}
+      />
+    </AppShell>
   );
 }
