@@ -7,6 +7,7 @@ import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.
 import { isValidTlpSource } from './tlpPolicy.js';
 import { deleteReportArtifacts } from './artifactStore.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
+import { buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 
 export async function getAiSettings(pool) {
   const { rows } = await pool.query(`SELECT * FROM threat_library_ai_settings WHERE id = 1`);
@@ -179,21 +180,26 @@ export async function attachReportCounts(pool, report) {
   return { ...report, ...(rows[0] || {}) };
 }
 
-export async function listThreatReports(pool, { limit = 50, offset = 0 } = {}) {
-  const lim = Math.min(Math.max(Number(limit) || 50, 1), 200);
-  const off = Math.max(Number(offset) || 0, 0);
+/**
+ * Page of reports plus the total for the same filter. `search` is applied
+ * before LIMIT/OFFSET so `total` always describes the filtered set.
+ */
+export async function listThreatReports(pool, { limit, offset, search } = {}) {
+  const opts = parseReportListQuery({ limit, offset, search });
+  const where = buildReportListWhere({ search: opts.search }, 1);
   const { rows } = await pool.query(
     `SELECT r.*, ${REPORT_COUNT_COLUMNS}
      FROM threat_reports r
-     WHERE r.deleted_at IS NULL
+     ${where.sql}
      ORDER BY r.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [lim, off]
+     LIMIT $${where.nextParamIndex} OFFSET $${where.nextParamIndex + 1}`,
+    [...where.params, opts.limit, opts.offset]
   );
   const { rows: countRows } = await pool.query(
-    `SELECT COUNT(*)::int AS total FROM threat_reports WHERE deleted_at IS NULL`
+    `SELECT COUNT(*)::int AS total FROM threat_reports r ${where.sql}`,
+    where.params
   );
-  return { items: rows, total: countRows[0]?.total || 0 };
+  return { items: rows, total: countRows[0]?.total || 0, search: opts.search };
 }
 
 export async function updateReportStatus(pool, reportId, patch) {

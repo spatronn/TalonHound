@@ -289,7 +289,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     try {
       const result = await listThreatReports(pool, {
         limit: req.query.limit,
-        offset: req.query.offset
+        offset: req.query.offset,
+        // Library navigation search over stored report metadata only.
+        search: req.query.search
       });
       return res.json({
         items: result.items.map(publicReport),
