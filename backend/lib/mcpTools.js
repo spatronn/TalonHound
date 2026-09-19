@@ -8,6 +8,7 @@ import {
   mcpLookupIoc,
   mcpSearchIocs,
   mcpGetIocContext,
+  mcpGetThreatReport,
   mcpBulkLookupIocs,
   mcpListIocSources,
   mcpImportIocs,
@@ -171,6 +172,22 @@ export function registerMcpTools(server, deps) {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async (args) => withAuth('get_ioc_context', ctxFrom(), () => mcpGetIocContext(deps.pool, args, ctxFrom()))
+  );
+
+  server.registerTool(
+    'get_threat_report',
+    {
+      title: 'Get threat report',
+      description:
+        'Return one persisted Threat Library report by id (take it from get_ioc_context.threat_context.claims[].report.id) for same-report drill-down: report metadata (title, source_name, source_type, source_url, published_at, language, tlp, tlp_display, tlp_source, import_status, review_phase), `summary`, `counts`, a paged `indicators` roster in document order (items: id, value, original_value, type, is_ioc, assessment, role, confidence, section, page_number, evidence_text, occurrence_count, review_status, match_state, ioc_id, ioc_type; default 100, max 500 per call, use indicator_offset to page), `entities` (≤50 report-level co-mentions: id, entity_type, name, description) and `relationships` (≤100 explicit links, same shape as threat_context.relationships). Each indicator carries its OWN role/assessment — use those, not the report title or entity list, to say what a given IOC is in this report. Entities are co-mentioned in the report and do not imply a direct relationship with any indicator unless an explicit relationship or the claim/occurrence evidence of that indicator supports it. Never returns the report body, artifacts or parser internals; reads stored data only, never re-fetches, re-parses or analyzes the report.',
+      inputSchema: {
+        id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
+        indicator_limit: z.number().int().min(1).max(500).optional().describe('Indicators per call (default 100, max 500)'),
+        indicator_offset: z.number().int().min(0).optional().describe('Indicator offset for paging (default 0)')
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('get_threat_report', ctxFrom(), () => mcpGetThreatReport(deps.pool, args))
   );
 
   server.registerTool(

@@ -10,6 +10,7 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   lookup_ioc: [API_SCOPE.MCP_IOC_READ],
   search_iocs: [API_SCOPE.MCP_IOC_READ],
   get_ioc_context: [API_SCOPE.MCP_IOC_READ],
+  get_threat_report: [API_SCOPE.MCP_IOC_READ],
   bulk_lookup_iocs: [API_SCOPE.MCP_IOC_READ],
   list_ioc_sources: [API_SCOPE.MCP_SOURCES_READ],
   import_iocs: [API_SCOPE.MCP_IOC_CREATE]

@@ -33,6 +33,7 @@ import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 import { findArtifactLinkedIocsByIocId } from './fileArtifacts/read.js';
 import { collectDerivedInfrastructure, collectIocEnrichments } from './iocEnrichmentAggregator.js';
 import { loadIocThreatContext } from './threatLibrary/iocThreatContext.js';
+import { loadThreatReportForMcp } from './threatLibrary/mcpThreatReport.js';
 
 async function findExistingIoc(pool, type, value) {
   const { rows } = await pool.query(
@@ -458,6 +459,16 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       threat_context: threatContext
     }
   };
+}
+
+/**
+ * get_threat_report: one persisted Threat Library report (metadata, summary,
+ * paged indicator roster, entities, explicit relationships) for same-report
+ * drill-down from get_ioc_context.threat_context.claims[].report.id.
+ * Read-only, bounded, persisted data only.
+ */
+export async function mcpGetThreatReport(pool, args = {}) {
+  return loadThreatReportForMcp(pool, args, { errorCodes: API_ERROR_CODE });
 }
 
 export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {

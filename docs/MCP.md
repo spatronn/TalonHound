@@ -89,7 +89,7 @@ Create keys in the TalonHound UI under API key management (same place as publish
 
 | Scope | Grants |
 |-------|--------|
-| `mcp:ioc:read` | `lookup_ioc`, `search_iocs`, `get_ioc_context`, `bulk_lookup_iocs` |
+| `mcp:ioc:read` | `lookup_ioc`, `search_iocs`, `get_ioc_context`, `bulk_lookup_iocs`, `get_threat_report` |
 | `mcp:ioc:create` | `import_iocs` (also needs owner analyst/admin) |
 | `mcp:enrichment:read` | Include stored enrichment rows in `get_ioc_context` |
 | `mcp:sources:read` | `list_ioc_sources` |
@@ -105,12 +105,25 @@ Profile presets:
 |------|-------------------|-----------|-------------|
 | `lookup_ioc` | `mcp:ioc:read` | Yes | Exact lookup of one observable. Type optional (auto-detect + normalize). |
 | `search_iocs` | `mcp:ioc:read` | Yes | Search inventory by DSL or plain-text `query` and/or `type` / `classification` / `source` filters (AND-combined); cursor pagination; bounded page size. See [search semantics](#search_iocs-query-semantics). |
-| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment. For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. |
+| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment. For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. Always returns `threat_context` — Threat Library claims for this IOC (role / assessment / confidence, up to 5 IOC-specific `occurrences`, `report.summary`, bounded `report.entities`) and explicit `relationships`; see [Threat Context semantics](#threat-context-semantics). |
+| `get_threat_report` | `mcp:ioc:read` | Yes | One persisted Threat Library report by `id` (from `threat_context.claims[].report.id`): metadata + `summary`, paged `indicators` roster in document order with each indicator's own role / assessment (`indicator_limit` default 100, max 500; `indicator_offset`), `entities` (≤50) and explicit `relationships` (≤100). Never the report body, artifacts or parser internals; never re-fetches or re-analyzes. |
 | `bulk_lookup_iocs` | `mcp:ioc:read` | Yes | Batch existence check → `existing` / `missing` / `invalid` (max batch size configurable). |
 | `list_ioc_sources` | `mcp:sources:read` | Yes | Active, selectable IOC Sources usable as `import_iocs` targets. |
 | `import_iocs` | `mcp:ioc:create` | No | Import into an existing source via the same manual ingestion path as the GUI. Supports `dry_run`. |
 
 There are no delete, update-admin, feed, or user-management tools.
+
+### Threat Context semantics
+
+`get_ioc_context.threat_context` and `get_threat_report` expose persisted Threat Library data only. Read evidence in this order, strongest first:
+
+1. explicit `relationships` (subject → object, typed)
+2. the IOC's own claim (`claims[].role` / `assessment` / `confidence`) or, in `get_threat_report`, the indicator's own `role` / `assessment`
+3. IOC-specific `occurrences` (section heading + surrounding text where that value appears)
+4. `report.summary`
+5. report-level `entities`
+
+Report-level entities are co-mentioned in the same report and do **not** imply a direct relationship with an IOC unless supported by an explicit relationship, that IOC's claim, or its occurrence evidence. A report title or entity name alone never attributes an IOC to an actor, malware family or C2 role. Bounds: 5 occurrences per claim (with `occurrence_count` carrying the persisted total), 20 entities per claim report, 50 entities / 100 relationships / 500 indicators per `get_threat_report` call.
 
 ### Common input shapes
 

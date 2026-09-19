@@ -23,6 +23,16 @@ test('MCP_TOOL_SCOPES covers expected tools', () => {
   assert.ok(MCP_TOOL_SCOPES.lookup_ioc);
   assert.ok(MCP_TOOL_SCOPES.import_iocs);
   assert.ok(MCP_TOOL_SCOPES.list_ioc_sources);
+  assert.ok(MCP_TOOL_SCOPES.get_threat_report);
+});
+
+test('get_threat_report is readable with the same scope as get_ioc_context, never with create-only scope', () => {
+  assert.deepEqual(MCP_TOOL_SCOPES.get_threat_report, MCP_TOOL_SCOPES.get_ioc_context);
+  const ok = authorizeMcpTool('get_threat_report', { scopes: READ_SCOPES, ownerRole: ROLES.READONLY });
+  assert.equal(ok.ok, true);
+  const noScope = authorizeMcpTool('get_threat_report', { scopes: ['mcp:ioc:create'], ownerRole: ROLES.ANALYST });
+  assert.equal(noScope.ok, false);
+  assert.equal(noScope.code, 'MISSING_SCOPE');
 });
 
 test('read token cannot import', () => {
