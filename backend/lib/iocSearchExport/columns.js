@@ -1,11 +1,12 @@
 // Export column registry. Each column has a stable key (persisted in selected_columns),
 // a CSV header label, and a formatter that reads from an assembled export record.
 //
-// NOTE: no `updated_at` or technical `last_seen` column.
+// NOTE: no `updated_at` column.
 // Platform import time is `created_at` / `imported_at` (ioc_items.created_at).
 // Source-change columns:
 //   first_seen_in_source   = MIN(first_seen_in_feed) across memberships
-//   last_changed_in_source = MAX(COALESCE(last_changed_in_source, first_seen_in_feed)); never last_seen_in_feed alone
+//   last_seen_in_source    = MAX(last_seen_in_feed) — last source observation
+//   last_changed_in_source = MAX(COALESCE(last_changed_in_source, first_seen_in_feed))
 import { csvTimestamp } from './csv.js';
 
 export const EXPORT_COLUMNS = Object.freeze({
@@ -20,6 +21,10 @@ export const EXPORT_COLUMNS = Object.freeze({
   first_seen_in_source: {
     header: 'First seen in source',
     format: (r, tz) => csvTimestamp(r.first_seen_in_source, tz)
+  },
+  last_seen_in_source: {
+    header: 'Last seen in source',
+    format: (r, tz) => csvTimestamp(r.last_seen_in_source, tz)
   },
   last_changed_in_source: {
     header: 'Last changed in source',
@@ -102,7 +107,7 @@ export function headerRow(columns, timeZone = null) {
     const base = EXPORT_COLUMNS[k].header;
     if (
       timeZone
-      && (k === 'first_seen_in_source' || k === 'last_changed_in_source' || k === 'created_at' || k === 'imported_at')
+      && (k === 'first_seen_in_source' || k === 'last_seen_in_source' || k === 'last_changed_in_source' || k === 'created_at' || k === 'imported_at')
     ) {
       return `${base} (${timeZone})`;
     }

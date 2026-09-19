@@ -68,6 +68,31 @@ function addDays(base, days) {
   return d;
 }
 
+function asTimestamp(value) {
+  if (value == null || value === '') return null;
+  const d = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(d.getTime()) ? d : null;
+}
+
+/**
+ * Monotonic MAX for source last-seen. No-ops when the incoming observation is
+ * missing or not strictly later — safe under concurrent ingest.
+ */
+async function applyMonotonicLastSeenInFeed(client, membershipId, observedAt) {
+  const observed = asTimestamp(observedAt);
+  if (!membershipId || !observed) return { moved: false, row: null };
+  const upd = await client.query(
+    `UPDATE ioc_feed_memberships
+     SET last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
+         updated_at = NOW()
+     WHERE id = $1
+       AND last_seen_in_feed < $2
+     RETURNING *`,
+    [membershipId, observed]
+  );
+  return { moved: Number(upd.rowCount || 0) > 0, row: upd.rows[0] || null };
+}
+
 export function sourceNameMatchesFeed(sourceName, feedKey) {
   const sn = String(sourceName || '');
   const rule = FEED_SOURCE_RULES.find((r) => r.key === feedKey);
@@ -146,7 +171,7 @@ export function validateExpirationPolicyInput(body, feedUpdateMode = 'incrementa
   const graceDays = body?.grace_days == null || body?.grace_days === '' ? null : Number(body.grace_days);
 
   if (rawMode === LEGACY_EXPIRATION_MODE_LAST_SEEN_TTL) {
-    errors.push('expiration_mode last_seen_ttl is no longer supported; use fixed_ttl (from first seen in feed)');
+    errors.push('expiration_mode last_seen_ttl is no longer supported; use fixed_ttl (from last source observation)');
   } else if (!EXPIRATION_MODES.includes(rawMode)) {
     errors.push(`expiration_mode must be one of: ${EXPIRATION_MODES.join(', ')}`);
   }
@@ -200,8 +225,12 @@ export function computePolicyExpiresAt(policy, { firstSeenInFeed, lastSeenInFeed
   const ttl = Number(policy.ttl_days);
   const grace = Number(policy.grace_days ?? policy.ttl_days);
 
-  if (mode === 'fixed_ttl' && firstSeenInFeed && Number.isFinite(ttl) && ttl > 0) {
-    return addDays(firstSeenInFeed, ttl);
+  if (mode === 'fixed_ttl' && Number.isFinite(ttl) && ttl > 0) {
+    // Event-feed re-observations (and fingerprint-protected snapshot last_seen)
+    // extend TTL. Unchanged snapshot polls do not write last_seen_in_feed, so
+    // they still expire from the original observation/insert time.
+    const ttlBase = lastSeenInFeed || firstSeenInFeed;
+    if (ttlBase) return addDays(ttlBase, ttl);
   }
   if (mode === 'missing_from_feed_ttl' && missingSince && Number.isFinite(grace) && grace > 0) {
     return addDays(missingSince, grace);
@@ -285,7 +314,7 @@ export function applyTypeOverrideToFeedPolicy(basePolicy, typeOverrideRow) {
   if (!resolved.enabled) {
     return { ...(basePolicy || {}), enabled: false, expiration_mode: 'never', ttl_days: null };
   }
-  // fixed_ttl override: expire N days after first_seen_in_feed.
+  // fixed_ttl override: expire N days after last source observation (fallback first_seen).
   return {
     ...(basePolicy || {}),
     enabled: true,
@@ -627,6 +656,7 @@ export async function upsertMembershipOnImport(client, {
   feedId,
   seenAt = new Date(),
   firstSeenAt = null,
+  observedAt = null,
   explicitConfidence = null,
   contentFingerprint = null,
   audit = null,
@@ -639,6 +669,8 @@ export async function upsertMembershipOnImport(client, {
   const policy = await getFeedPolicy(client, feedId, observableType, { importContext: importCtx });
   const now = seenAt instanceof Date ? seenAt : new Date(seenAt);
   const firstNow = firstSeenAt ? (firstSeenAt instanceof Date ? firstSeenAt : new Date(firstSeenAt)) : now;
+  const observed = asTimestamp(observedAt);
+  const lastSeenWriteAt = observed || now;
   const fp = contentFingerprint != null && String(contentFingerprint).trim()
     ? String(contentFingerprint).trim()
     : null;
@@ -664,7 +696,7 @@ export async function upsertMembershipOnImport(client, {
            content_fingerprint, missing_since, status
          ) VALUES ($1, $2, $3::uuid, $4, $5, $5, $6, NULL, 'active')
          RETURNING *`,
-        [iocItemId, observableType, feedId, firstNow, now, fp]
+        [iocItemId, observableType, feedId, firstNow, lastSeenWriteAt, fp]
       )
       : await client.query(
         `INSERT INTO ioc_feed_memberships (
@@ -672,7 +704,7 @@ export async function upsertMembershipOnImport(client, {
            first_seen_in_feed, last_seen_in_feed, missing_since, status
          ) VALUES ($1, $2, $3::uuid, $4, $5, NULL, 'active')
          RETURNING *`,
-        [iocItemId, observableType, feedId, firstNow, now]
+        [iocItemId, observableType, feedId, firstNow, lastSeenWriteAt]
       );
     membershipRow = ins.rows[0];
     membershipId = membershipRow.id;
@@ -713,22 +745,53 @@ export async function upsertMembershipOnImport(client, {
           membershipRow = lowered.rows[0];
           firstSeenLowered = true;
           membershipTouched = true;
-          // fixed_ttl expiry derives from first_seen_in_feed — recompute policy fields.
+          // first_seen change can move fixed_ttl when last_seen has not yet been observed.
           const recomputed = await applyMembershipComputedFields(client, membershipId, policy, now, row);
           if (recomputed?.updated) membershipTouched = true;
         }
       }
     }
 
-    // reactivateOnly: membership is healthy — skip all DB writes, return early.
+    // Source observation time is independent of semantic fingerprint. Snapshot
+    // callers omit observedAt so unchanged polls still skip last_seen writes.
+    if (observed) {
+      const obsUpd = await applyMonotonicLastSeenInFeed(client, membershipId, observed);
+      if (obsUpd.moved) {
+        Object.assign(row, obsUpd.row);
+        membershipRow = obsUpd.row;
+        membershipTouched = true;
+        if (outcome === 'unchanged') outcome = 'reobserved';
+      }
+    }
+
+    async function finishHealthyNoop(currentOutcome) {
+      if (membershipTouched) {
+        const recomputed = await applyMembershipComputedFields(client, membershipId, policy, now, row);
+        if (recomputed?.updated) membershipTouched = true;
+      }
+      if (reactivated || !importCtx) {
+        if (membershipTouched) {
+          await recomputeIocGlobalStatus(client, iocItemId, observableType, {
+            audit,
+            actor,
+            importContext: importCtx
+          });
+        }
+      } else if (membershipTouched) {
+        scheduleDeferredIocRecompute(importCtx, { iocItemId, observableType, audit, actor });
+      }
+      return {
+        membershipId: row.id,
+        outcome: currentOutcome,
+        touched: membershipTouched
+      };
+    }
+
+    // reactivateOnly: membership is healthy — skip last_changed / status writes.
     // For inactive/expired memberships the condition below does NOT hold, so we fall through
     // to the normal reactivation path (because feed re-appearance is semantically meaningful).
     if (reactivateOnly && healthyActive) {
-      return {
-        membershipId: row.id,
-        outcome: firstSeenLowered ? 'changed' : 'unchanged',
-        touched: firstSeenLowered
-      };
+      return finishHealthyNoop(firstSeenLowered ? 'changed' : outcome);
     }
 
     if (fp && healthyActive) {
@@ -747,34 +810,29 @@ export async function upsertMembershipOnImport(client, {
             [membershipId, fp]
           );
           if (adopt.rowCount) {
+            Object.assign(row, adopt.rows[0]);
             membershipRow = adopt.rows[0];
             outcome = 'adopted';
           } else {
             membershipRow = row;
-            outcome = 'unchanged';
           }
         } else {
           membershipRow = row;
-          outcome = 'unchanged';
         }
 
-        // fixed_ttl / never: first_seen-based policy fields cannot change on unchanged/adopt.
-        // Skip applyMembershipComputedFields to avoid spurious updated_at bumps from
-        // Date vs timestamptz string inequality in the no-op detector.
+        // last_seen may have moved via observedAt GREATEST; recompute TTL if so.
+        // Unchanged snapshot polls (no observedAt, no first_seen change) still skip writes.
+        return finishHealthyNoop(outcome);
+      }
+    }
 
-        if (reactivated || !importCtx) {
-          if (membershipTouched) {
-            await recomputeIocGlobalStatus(client, iocItemId, observableType, {
-              audit,
-              actor,
-              importContext: importCtx
-            });
-          }
-        } else if (membershipTouched) {
-          scheduleDeferredIocRecompute(importCtx, { iocItemId, observableType, audit, actor });
-        }
-
-        return { membershipId, outcome, touched: membershipTouched };
+    // No fingerprint: skip last_changed/status writes when last_seen is already
+    // current. ObservedAt-only bumps are applied above via GREATEST.
+    if (healthyActive && !fp) {
+      const storedLast = asTimestamp(row.last_seen_in_feed);
+      const incomingLast = asTimestamp(lastSeenWriteAt);
+      if (storedLast && incomingLast && storedLast.getTime() >= incomingLast.getTime()) {
+        return finishHealthyNoop(outcome);
       }
     }
 
@@ -782,32 +840,32 @@ export async function upsertMembershipOnImport(client, {
       const upd = fp
         ? await client.query(
           `UPDATE ioc_feed_memberships
-           SET last_seen_in_feed = $2,
+           SET last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
                last_changed_in_source = $2,
                content_fingerprint = $4,
                missing_since = CASE WHEN $3 THEN NULL ELSE missing_since END,
                updated_at = NOW()
            WHERE id = $1
              AND (
-               last_seen_in_feed IS DISTINCT FROM $2
+               last_seen_in_feed < $2
                OR content_fingerprint IS DISTINCT FROM $4
                OR ($3 AND missing_since IS NOT NULL)
              )
            RETURNING *`,
-          [membershipId, now, clearMissing, fp]
+          [membershipId, lastSeenWriteAt, clearMissing, fp]
         )
         : await client.query(
           `UPDATE ioc_feed_memberships
-           SET last_seen_in_feed = $2,
+           SET last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
                missing_since = CASE WHEN $3 THEN NULL ELSE missing_since END,
                updated_at = NOW()
            WHERE id = $1
              AND (
-               last_seen_in_feed IS DISTINCT FROM $2
+               last_seen_in_feed < $2
                OR ($3 AND missing_since IS NOT NULL)
              )
            RETURNING *`,
-          [membershipId, now, clearMissing]
+          [membershipId, lastSeenWriteAt, clearMissing]
         );
       if (upd.rowCount) {
         membershipRow = upd.rows[0];
@@ -827,7 +885,7 @@ export async function upsertMembershipOnImport(client, {
       const upd = fp
         ? await client.query(
           `UPDATE ioc_feed_memberships
-           SET last_seen_in_feed = $2,
+           SET last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
                last_changed_in_source = $2,
                content_fingerprint = $3,
                missing_since = NULL,
@@ -841,7 +899,8 @@ export async function upsertMembershipOnImport(client, {
                updated_at = NOW()
            WHERE id = $1
              AND (
-               content_fingerprint IS DISTINCT FROM $3
+               last_seen_in_feed < $2
+               OR content_fingerprint IS DISTINCT FROM $3
                OR missing_since IS NOT NULL
                OR status IS DISTINCT FROM 'active'
                OR expired_at IS NOT NULL
@@ -852,11 +911,11 @@ export async function upsertMembershipOnImport(client, {
                OR purge_reason IS NOT NULL
              )
            RETURNING *`,
-          [membershipId, now, fp]
+          [membershipId, lastSeenWriteAt, fp]
         )
         : await client.query(
           `UPDATE ioc_feed_memberships
-           SET last_seen_in_feed = $2,
+           SET last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
                missing_since = NULL,
                status = 'active',
                expired_at = NULL,
@@ -868,7 +927,7 @@ export async function upsertMembershipOnImport(client, {
                updated_at = NOW()
            WHERE id = $1
              AND (
-               last_seen_in_feed IS DISTINCT FROM $2
+               last_seen_in_feed < $2
                OR missing_since IS NOT NULL
                OR status IS DISTINCT FROM 'active'
                OR expired_at IS NOT NULL
@@ -879,7 +938,7 @@ export async function upsertMembershipOnImport(client, {
                OR purge_reason IS NOT NULL
              )
            RETURNING *`,
-          [membershipId, now]
+          [membershipId, lastSeenWriteAt]
         );
       if (upd.rowCount) {
         membershipRow = upd.rows[0];
@@ -1136,6 +1195,8 @@ export async function syncMembershipAfterIocImport(client, {
   category = null,
   seenAt = new Date(),
   firstSeenAt = null,
+  observedAt = null,
+  contentFingerprint = null,
   reactivateOnly = false
 }) {
   const feedId = await resolveFeedIdBySourceName(client, sourceName);
@@ -1161,7 +1222,9 @@ export async function syncMembershipAfterIocImport(client, {
     feedId,
     seenAt,
     firstSeenAt,
+    observedAt,
     explicitConfidence: resolvedConfidence,
+    contentFingerprint,
     reactivateOnly
   });
   return result?.membershipId ?? null;
@@ -1207,7 +1270,7 @@ async function reactivateMembershipOnMatch(client, membershipRow, policy, matchA
     }
     await client.query(
       `UPDATE ioc_feed_memberships
-       SET last_seen_in_feed = $2,
+       SET last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
            missing_since = NULL,
            updated_at = NOW()
        WHERE id = $1`,
@@ -1221,7 +1284,7 @@ async function reactivateMembershipOnMatch(client, membershipRow, policy, matchA
        SET status = 'active',
            expired_at = NULL,
            expiration_reason = NULL,
-           last_seen_in_feed = $2,
+           last_seen_in_feed = GREATEST(last_seen_in_feed, $2),
            missing_since = NULL,
            policy_expires_at = $3,
            expires_at = $3,

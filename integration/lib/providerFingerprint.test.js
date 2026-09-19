@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeUrlhausProviderFingerprint } from './urlhaus.js';
-import { computeThreatFoxProviderFingerprint } from './threatfox.js';
+import { computeThreatFoxProviderFingerprint, computeThreatFoxSemanticFingerprint } from './threatfox.js';
 import { createImportMetrics } from './import-metrics.js';
 
 // ---------------------------------------------------------------------------
@@ -134,6 +134,21 @@ describe('computeThreatFoxProviderFingerprint', () => {
     const a = makeThreatFoxEntry({ observable: 'https://voltrix.lol/a.zip' });
     const b = makeThreatFoxEntry({ observable: 'https://voltrix.lol/b.zip' });
     assert.notEqual(computeThreatFoxProviderFingerprint(a), computeThreatFoxProviderFingerprint(b));
+  });
+});
+
+describe('computeThreatFoxSemanticFingerprint', () => {
+  it('is unchanged across different ThreatFox ioc_id / first_seen for the same IOC', () => {
+    const a = makeThreatFoxEntry({ iocId: '1860000', firstSeen: new Date('2026-06-03T00:00:00Z') });
+    const b = makeThreatFoxEntry({ iocId: '1865994', firstSeen: new Date('2026-07-31T09:05:06Z') });
+    assert.equal(computeThreatFoxSemanticFingerprint(a), computeThreatFoxSemanticFingerprint(b));
+    assert.notEqual(computeThreatFoxProviderFingerprint(a), computeThreatFoxProviderFingerprint(b));
+  });
+
+  it('changes when malware metadata changes', () => {
+    const a = makeThreatFoxEntry({ malwarePrintable: 'Cobalt Strike' });
+    const b = makeThreatFoxEntry({ malwarePrintable: 'AgentTesla' });
+    assert.notEqual(computeThreatFoxSemanticFingerprint(a), computeThreatFoxSemanticFingerprint(b));
   });
 });
 

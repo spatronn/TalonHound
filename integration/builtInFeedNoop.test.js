@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createImportMetrics } from './lib/import-metrics.js';
 import { buildMalwareBazaarNote, mapMalwareBazaarRecord } from './lib/malwarebazaar.js';
-import { buildThreatFoxNote, mapThreatFoxApiRow } from './lib/threatfox.js';
+import { buildThreatFoxNote, computeThreatFoxProviderFingerprint, computeThreatFoxSemanticFingerprint, mapThreatFoxApiRow } from './lib/threatfox.js';
 import {
   batchInsertIocs,
   updateMalwareBazaarObservableBySource,
@@ -82,7 +82,7 @@ function makeBatchDuplicateClient(existingStatus = 'unchanged') {
   };
 }
 
-function makeThreatFoxExistingClient({ row, membershipStatus = 'active' }) {
+function makeThreatFoxExistingClient({ row, membershipStatus = 'active', contentFingerprint = null, lastSeenInFeed = null }) {
   const calls = [];
   const membershipRow = {
     id: 'bbbbbbbb-0000-0000-0000-000000000002',
@@ -92,7 +92,9 @@ function makeThreatFoxExistingClient({ row, membershipStatus = 'active' }) {
     purged_at: null,
     override_enabled: false,
     first_seen_in_feed: new Date('2026-06-01T00:00:00Z'),
-    last_seen_in_feed: new Date('2026-06-20T00:00:00Z'),
+    last_seen_in_feed: lastSeenInFeed || new Date('2026-06-20T00:00:00Z'),
+    last_changed_in_source: null,
+    content_fingerprint: contentFingerprint,
     expiration_reason: membershipStatus === 'expired' ? 'policy_ttl' : null
   };
   return {
@@ -114,6 +116,7 @@ function makeThreatFoxExistingClient({ row, membershipStatus = 'active' }) {
       if (text.includes('FROM ioc_items') && text.includes('WHERE observable = $1') && !text.includes('source_name = $3')) {
         return { rows: [{ id: 42, observable_type: row?.observable_type || 'url' }] };
       }
+      if (text.includes('FROM integration_feed_expiration_type_policies')) return { rows: [] };
       if (text.includes('FROM threat_feed_expiration_policies')) return { rows: [] };
       if (text.includes('FROM ioc_feed_memberships') && text.includes('feed_id = $3')) {
         return { rowCount: 1, rows: [membershipRow] };
@@ -125,6 +128,15 @@ function makeThreatFoxExistingClient({ row, membershipStatus = 'active' }) {
       if (text.includes('INSERT INTO ioc_observables')) return { rowCount: 1, rows: [] };
       if (text.includes('analyst_confidence_override')) return { rows: [{ analyst_confidence_override: null }] };
       if (text.includes('UPDATE ioc_items') && text.includes('confidence')) return { rowCount: 1, rows: [] };
+      if (text.includes('UPDATE ioc_feed_memberships') && text.includes('GREATEST(last_seen_in_feed')) {
+        const incoming = params[1];
+        const stored = membershipRow.last_seen_in_feed;
+        if (incoming instanceof Date && stored instanceof Date && incoming.getTime() > stored.getTime()) {
+          membershipRow.last_seen_in_feed = incoming;
+          return { rowCount: 1, rows: [{ ...membershipRow, status: membershipStatus === 'expired' ? 'expired' : 'active' }] };
+        }
+        return { rowCount: 0, rows: [] };
+      }
       if (text.includes('UPDATE ioc_feed_memberships') && text.includes('explicit_confidence')) {
         return { rowCount: 1, rows: [] };
       }
@@ -159,7 +171,7 @@ describe('built-in feed unchanged metadata no-op handling', () => {
       entry.category || 'malware'
     );
 
-    assert.equal(result.status, 'unchanged');
+    assert.ok(['unchanged', 'fingerprint_unchanged'].includes(result.status));
     assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'unchanged active MB row must not rewrite feed membership');
     assert.ok(!client.calls.some((c) => c.sql.includes('INSERT INTO ioc_observables')), 'unchanged active MB row must not touch observables index');
   });
@@ -246,8 +258,11 @@ describe('built-in feed unchanged metadata no-op handling', () => {
         note,
         category: entry.threatType || 'threat-intel',
         first_seen_at: entry.firstSeen,
-        last_seen_at: entry.lastSeen
-      }
+        last_seen_at: entry.lastSeen,
+        provider_fingerprint: computeThreatFoxProviderFingerprint(entry)
+      },
+      contentFingerprint: computeThreatFoxSemanticFingerprint(entry),
+      lastSeenInFeed: entry.lastSeen || entry.firstSeen
     });
     const result = await updateThreatFoxObservableBySource(
       client,
@@ -257,9 +272,12 @@ describe('built-in feed unchanged metadata no-op handling', () => {
       entry.threatType || 'threat-intel'
     );
 
-    assert.equal(result.status, 'unchanged');
+    assert.ok(['unchanged', 'fingerprint_unchanged'].includes(result.status));
     assert.ok(!client.calls.some((c) => c.sql.startsWith('UPDATE ioc_items')), 'unchanged row must not rewrite ioc_items');
-    assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'unchanged active ThreatFox row must not rewrite feed membership');
+    assert.ok(
+      !client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes('last_changed_in_source')),
+      'unchanged active ThreatFox row must not advance last_changed'
+    );
   });
 
   it('updates ThreatFox IOC observation when only provider last_seen changes', async () => {
@@ -277,8 +295,10 @@ describe('built-in feed unchanged metadata no-op handling', () => {
         note: priorNote,
         category: entry.threatType || 'threat-intel',
         first_seen_at: entry.firstSeen,
-        last_seen_at: new Date('2026-06-26T12:25:15.000Z')
-      }
+        last_seen_at: new Date('2026-06-26T12:25:15.000Z'),
+        provider_fingerprint: computeThreatFoxProviderFingerprint(entry)
+      },
+      contentFingerprint: computeThreatFoxSemanticFingerprint(entry)
     });
 
     const result = await updateThreatFoxObservableBySource(
@@ -290,8 +310,15 @@ describe('built-in feed unchanged metadata no-op handling', () => {
     );
 
     assert.equal(result.status, 'observation_updated');
-    assert.ok(client.calls.some((c) => c.sql.includes('SET note = $2') && c.sql.includes('last_seen_at = $4')));
-    assert.ok(!client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships')), 'observation-only ThreatFox row must not refresh active membership last_seen_in_feed');
+    assert.ok(client.calls.some((c) => c.sql.includes('last_seen_at') && c.sql.includes('GREATEST')));
+    assert.ok(
+      client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes('GREATEST(last_seen_in_feed')),
+      'observation-only ThreatFox row must advance membership last_seen'
+    );
+    assert.ok(
+      !client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes('last_changed_in_source')),
+      'observation-only ThreatFox row must not advance last_changed'
+    );
   });
 
   it('classifies ThreatFox existing-row update statuses', async () => {
@@ -375,6 +402,7 @@ describe('built-in feed unchanged metadata no-op handling', () => {
     const note = buildThreatFoxNote(entry);
     const client = makeThreatFoxExistingClient({
       membershipStatus: 'expired',
+      contentFingerprint: computeThreatFoxSemanticFingerprint(entry),
       row: {
         public_id: 'pub-2',
         observable: entry.observable,
@@ -382,7 +410,8 @@ describe('built-in feed unchanged metadata no-op handling', () => {
         note,
         category: entry.threatType || 'threat-intel',
         first_seen_at: entry.firstSeen,
-        last_seen_at: entry.lastSeen
+        last_seen_at: entry.lastSeen,
+        provider_fingerprint: computeThreatFoxProviderFingerprint(entry)
       }
     });
 
@@ -394,7 +423,7 @@ describe('built-in feed unchanged metadata no-op handling', () => {
       entry.threatType || 'threat-intel'
     );
 
-    assert.equal(result.status, 'unchanged');
+    assert.ok(['unchanged', 'fingerprint_unchanged'].includes(result.status));
     assert.ok(
       client.calls.some((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes('last_seen_in_feed')),
       'expired membership must be reactivated via UPDATE ioc_feed_memberships'

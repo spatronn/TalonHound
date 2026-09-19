@@ -298,8 +298,11 @@ test('item date between is inclusive range (created_at)', () => {
   assert.match(sql, /i\.created_at >= .+ AND i\.created_at <= /);
 });
 
-test('last_seen is not a valid field (removed in v1)', () => {
-  assert.throws(() => build('last_seen after "2026-07-01"'));
+test('last_seen maps to MAX(last_seen_in_feed) and stays distinct from last_changed', () => {
+  const { sql } = build('last_seen after "2026-07-01"');
+  assert.match(sql, /EXISTS \(SELECT 1 FROM ioc_feed_memberships m/);
+  assert.match(sql, /m\.last_seen_in_feed > /);
+  assert.doesNotMatch(sql, /last_changed_in_source/);
 });
 
 test('first_seen maps to MIN(first_seen_in_feed) with item fallback, never last_seen_in_feed', () => {

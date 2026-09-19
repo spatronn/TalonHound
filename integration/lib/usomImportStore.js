@@ -533,7 +533,7 @@ function policySql(policy) {
   const ttl = Number(policy.ttl_days);
   const grace = Number(policy.grace_days ?? policy.ttl_days);
   if (policy.expiration_mode === 'fixed_ttl' && Number.isFinite(ttl) && ttl > 0) {
-    return { expression: `m.first_seen_in_feed + ($3::int * INTERVAL '1 day')`, params: [ttl] };
+    return { expression: `COALESCE(m.last_seen_in_feed, m.first_seen_in_feed) + ($3::int * INTERVAL '1 day')`, params: [ttl] };
   }
   if (policy.expiration_mode === 'missing_from_feed_ttl' && Number.isFinite(grace) && grace > 0) {
     return { expression: `m.missing_since + ($3::int * INTERVAL '1 day')`, params: [grace] };

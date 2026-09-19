@@ -45,6 +45,7 @@ export const SEARCH_FIELDS = [
   { name: 'status', label: 'Status', kind: 'enum', operators: ENUM_OPERATORS, values: ['active', 'expired', 'disabled', 'suppressed'] },
   { name: 'confidence', label: 'Confidence', kind: 'enum', operators: ENUM_OPERATORS, values: ['low', 'medium', 'high'] },
   { name: 'first_seen', label: 'First seen in source', kind: 'date', operators: DATE_OPERATORS },
+  { name: 'last_seen', label: 'Last seen in source', kind: 'date', operators: DATE_OPERATORS },
   { name: 'last_changed', label: 'Last changed in source', kind: 'date', operators: DATE_OPERATORS },
   { name: 'created_at', label: 'Created at', kind: 'date', operators: DATE_OPERATORS }
 ];
@@ -78,6 +79,7 @@ export const EXPORT_COLUMN_OPTIONS = [
   { key: 'classifications', label: 'Classifications' },
   { key: 'threat_actor', label: 'Threat actor' },
   { key: 'first_seen_in_source', label: 'First seen in source' },
+  { key: 'last_seen_in_source', label: 'Last seen in source' },
   { key: 'last_changed_in_source', label: 'Last changed in source' },
   { key: 'created_at', label: 'Created at' }
 ];

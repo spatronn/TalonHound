@@ -38,20 +38,24 @@ test('timestamp cards use correct labels and values', () => {
       imported_at: '2026-07-26T14:32:41.000Z',
       first_seen_at: '2026-07-26T14:30:05.000Z',
       last_seen_at: '2026-07-26T14:30:05.000Z',
+      last_seen_in_source: '2026-07-26T14:30:05.000Z',
+      last_changed_in_source: '2026-07-26T14:30:05.000Z',
       last_confirmed_at: '2026-07-26T14:30:05.000Z'
     },
     [{
       name: 'MalwareBazaar abuse.ch',
       first_seen_at: '2026-07-26T14:30:05.000Z',
       last_changed_at: '2026-07-26T14:30:05.000Z',
-      last_seen_at: '2026-07-26T14:30:05.000Z'
+      last_seen_at: '2026-07-26T14:30:05.000Z',
+      last_seen_in_source: '2026-07-26T14:30:05.000Z'
     }],
     []
   );
-  assert.equal(cards.length, 3);
+  assert.equal(cards.length, 4);
   assert.equal(cards[0].label, 'Inserted into Platform');
   assert.equal(cards[1].label, 'First seen in source');
-  assert.equal(cards[2].label, 'Last changed in source');
+  assert.equal(cards[2].label, 'Last seen in source');
+  assert.equal(cards[3].label, 'Last changed in source');
   assert.equal(cards[1].context, 'Source: MalwareBazaar abuse.ch');
   assert.equal(cards[0].value, '2026-07-26T14:32:41.000Z');
   assert.equal(

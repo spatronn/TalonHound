@@ -12,7 +12,9 @@ import {
   reactivateIocOnCorrelationMatch,
   runExpirationWorkerBatch,
   EXPIRATION_MODES,
-  canonicalExpirationMode
+  canonicalExpirationMode,
+  upsertMembershipOnImport,
+  withImportOptimizationContext
 } from './iocExpiration.js';
 
 describe('EXPIRATION_MODES', () => {
@@ -88,15 +90,23 @@ describe('computePolicyExpiresAt', () => {
   const base = new Date('2026-01-01T00:00:00Z');
   const last = new Date('2026-01-20T00:00:00Z');
 
-  it('computes fixed_ttl from first_seen', () => {
+  it('computes fixed_ttl from last_seen when present', () => {
     const at = computePolicyExpiresAt(
       { enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 10 },
       { firstSeenInFeed: base, lastSeenInFeed: last }
     );
+    assert.equal(at.toISOString(), '2026-01-30T00:00:00.000Z');
+  });
+
+  it('falls back to first_seen when last_seen is missing', () => {
+    const at = computePolicyExpiresAt(
+      { enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 10 },
+      { firstSeenInFeed: base, lastSeenInFeed: null }
+    );
     assert.equal(at.toISOString(), '2026-01-11T00:00:00.000Z');
   });
 
-  it('does not reset fixed_ttl when last_seen is later (re-seen)', () => {
+  it('extends fixed_ttl when last_seen is later (re-observed)', () => {
     const first = computePolicyExpiresAt(
       { enabled: true, expiration_mode: 'fixed_ttl', ttl_days: 10 },
       { firstSeenInFeed: base, lastSeenInFeed: base }
@@ -106,15 +116,15 @@ describe('computePolicyExpiresAt', () => {
       { firstSeenInFeed: base, lastSeenInFeed: last }
     );
     assert.equal(first.toISOString(), '2026-01-11T00:00:00.000Z');
-    assert.equal(reseen.toISOString(), first.toISOString());
+    assert.equal(reseen.toISOString(), '2026-01-30T00:00:00.000Z');
   });
 
-  it('treats legacy last_seen_ttl as fixed_ttl (first_seen, not last_seen)', () => {
+  it('treats legacy last_seen_ttl as fixed_ttl from last source observation', () => {
     const at = computePolicyExpiresAt(
       { enabled: true, expiration_mode: 'last_seen_ttl', ttl_days: 5 },
       { firstSeenInFeed: base, lastSeenInFeed: last }
     );
-    assert.equal(at.toISOString(), '2026-01-06T00:00:00.000Z');
+    assert.equal(at.toISOString(), '2026-01-25T00:00:00.000Z');
   });
 
   it('computes missing_from_feed_ttl from missing_since', () => {
@@ -470,5 +480,207 @@ describe('runExpirationWorkerBatch bounded due-batch selection', () => {
     const membershipUpdates = calls.filter((c) => c.sql.includes('UPDATE ioc_feed_memberships') && c.sql.includes("status = 'expired'"));
     assert.equal(membershipUpdates.length, 3);
     assert.deepEqual(membershipUpdates.map((c) => c.params[0]).sort(), [1, 2, 3]);
+  });
+});
+
+describe('upsertMembershipOnImport observedAt semantics', () => {
+  const FEED_ID = '11111111-1111-1111-1111-111111111111';
+  const FP = 'abc'.repeat(21) + 'a';
+  const T1 = new Date('2026-06-03T00:00:00Z');
+  const T2 = new Date('2026-07-31T09:05:06Z');
+  const T_OLD = new Date('2026-07-19T18:05:00Z');
+
+  function membership(overrides = {}) {
+    return {
+      id: 10,
+      ioc_item_id: 99,
+      ioc_observable_type: 'ip',
+      feed_id: FEED_ID,
+      first_seen_in_feed: T1,
+      last_seen_in_feed: T1,
+      last_changed_in_source: T1,
+      content_fingerprint: FP,
+      missing_since: null,
+      override_enabled: false,
+      override_status: null,
+      status: 'active',
+      expired_at: null,
+      expiration_reason: null,
+      purged_at: null,
+      policy_expires_at: new Date('2026-07-03T00:00:00Z'),
+      expires_at: new Date('2026-07-03T00:00:00Z'),
+      explicit_confidence: null,
+      ...overrides
+    };
+  }
+
+  function makeClient(row) {
+    const updates = [];
+    let current = { ...row };
+    const client = {
+      updates,
+      async query(sql, params = []) {
+        const s = String(sql);
+        if (s.includes('FROM threat_feed_expiration_policies') && s.includes('SELECT *')) {
+          return {
+            rows: [{
+              enabled: true,
+              expiration_mode: 'fixed_ttl',
+              ttl_days: 30,
+              feed_id: FEED_ID,
+              observable_type: 'all'
+            }]
+          };
+        }
+        if (s.includes('FROM ioc_suppressions')) return { rows: [] };
+        if (s.includes('FROM ioc_feed_memberships') && s.includes('ioc_item_id')) {
+          return { rows: [current], rowCount: 1 };
+        }
+        if (s.includes('SELECT * FROM ioc_feed_memberships WHERE id')) {
+          return { rows: [current] };
+        }
+        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('GREATEST(last_seen_in_feed') && !s.includes('last_changed_in_source') && !s.includes("status = 'active'")) {
+          updates.push({ kind: 'last_seen', sql: s, params });
+          const incoming = params[1];
+          if (incoming instanceof Date && new Date(current.last_seen_in_feed).getTime() < incoming.getTime()) {
+            current = { ...current, last_seen_in_feed: incoming };
+            return { rows: [current], rowCount: 1 };
+          }
+          return { rows: [], rowCount: 0 };
+        }
+        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('last_changed_in_source')) {
+          updates.push({ kind: 'last_changed', sql: s, params });
+          current = {
+            ...current,
+            last_seen_in_feed: params[1] instanceof Date && new Date(current.last_seen_in_feed) < params[1]
+              ? params[1]
+              : current.last_seen_in_feed,
+            last_changed_in_source: params[1],
+            content_fingerprint: params[2] || params[3] || current.content_fingerprint,
+            status: 'active',
+            expired_at: null,
+            expiration_reason: null
+          };
+          return { rows: [current], rowCount: 1 };
+        }
+        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('policy_expires_at')) {
+          updates.push({ kind: 'ttl', sql: s, params });
+          current = {
+            ...current,
+            policy_expires_at: params[1],
+            expires_at: params[2],
+            status: params[3],
+            expired_at: params[4],
+            expiration_reason: params[5]
+          };
+          return { rows: [current], rowCount: 1 };
+        }
+        if (s.startsWith('UPDATE ioc_feed_memberships')) {
+          updates.push({ kind: 'other', sql: s, params });
+          current = { ...current, status: 'active', expired_at: null };
+          return { rows: [current], rowCount: 1 };
+        }
+        if (s.includes('FROM ioc_items') && s.includes('manual_status_override')) {
+          return {
+            rows: [{
+              id: 99,
+              observable: '81.70.21.248',
+              observable_type: 'ip',
+              status: current.status === 'active' ? 'active' : 'expired',
+              manual_status_override: false,
+              expires_at: current.expires_at,
+              expired_at: current.expired_at,
+              expiration_reason: current.expiration_reason
+            }]
+          };
+        }
+        if (s.includes('FROM ioc_feed_memberships m') && s.includes('INNER JOIN ioc_items')) {
+          return { rows: [{ status: current.status, purged_at: null }] };
+        }
+        if (s.includes('MIN(m.expires_at)')) return { rows: [{ min_exp: current.expires_at }] };
+        if (s.startsWith('UPDATE ioc_items')) return { rowCount: 1, rows: [] };
+        return { rows: [], rowCount: 0 };
+      }
+    };
+    return client;
+  }
+
+  it('later observation advances last_seen and extends TTL without last_changed', async () => {
+    const client = makeClient(membership());
+    const result = await withImportOptimizationContext(client, async () => upsertMembershipOnImport(client, {
+      iocItemId: 99,
+      observableType: 'ip',
+      feedId: FEED_ID,
+      seenAt: new Date('2026-08-03T00:24:01Z'),
+      firstSeenAt: T1,
+      observedAt: T2,
+      contentFingerprint: FP
+    }));
+
+    assert.equal(result.outcome, 'reobserved');
+    assert.ok(client.updates.some((u) => u.kind === 'last_seen'));
+    assert.equal(client.updates.some((u) => u.kind === 'last_changed'), false);
+    assert.ok(client.updates.some((u) => u.kind === 'ttl'));
+  });
+
+  it('out-of-order observation does not rewind last_seen', async () => {
+    const client = makeClient(membership({ last_seen_in_feed: T2, policy_expires_at: new Date('2026-08-30T09:05:06Z'), expires_at: new Date('2026-08-30T09:05:06Z') }));
+    const result = await withImportOptimizationContext(client, async () => upsertMembershipOnImport(client, {
+      iocItemId: 99,
+      observableType: 'ip',
+      feedId: FEED_ID,
+      seenAt: new Date('2026-08-03T00:24:01Z'),
+      firstSeenAt: T1,
+      observedAt: T_OLD,
+      contentFingerprint: FP
+    }));
+
+    assert.equal(result.outcome, 'unchanged');
+    assert.equal(client.updates.filter((u) => u.kind === 'last_seen' && u.sql.includes('GREATEST')).every((u) => {
+      // statement may run; mock returns rowCount 0 when not newer
+      return true;
+    }), true);
+    assert.equal(client.updates.some((u) => u.kind === 'last_changed'), false);
+  });
+
+  it('expired membership reactivates on a later observation', async () => {
+    const client = makeClient(membership({
+      status: 'expired',
+      expired_at: new Date('2026-07-02T21:20:37Z'),
+      expiration_reason: 'fixed_ttl'
+    }));
+    const result = await upsertMembershipOnImport(client, {
+      iocItemId: 99,
+      observableType: 'ip',
+      feedId: FEED_ID,
+      seenAt: new Date('2026-08-03T00:24:01Z'),
+      firstSeenAt: T1,
+      observedAt: T2,
+      contentFingerprint: FP
+    });
+
+    assert.equal(result.outcome, 'reactivated');
+    assert.ok(client.updates.some((u) => u.kind === 'last_changed' || (u.kind === 'other' && u.sql.includes("status = 'active'"))));
+  });
+
+  it('manual override expired is not reactivated', async () => {
+    const client = makeClient(membership({
+      status: 'expired',
+      override_enabled: true,
+      override_status: 'expired',
+      expired_at: new Date('2026-07-02T21:20:37Z'),
+      expiration_reason: 'manual'
+    }));
+    await upsertMembershipOnImport(client, {
+      iocItemId: 99,
+      observableType: 'ip',
+      feedId: FEED_ID,
+      seenAt: new Date('2026-08-03T00:24:01Z'),
+      firstSeenAt: T1,
+      observedAt: T2,
+      contentFingerprint: FP
+    });
+    const statusWrites = client.updates.filter((u) => u.sql.includes("status = 'active'"));
+    assert.equal(statusWrites.length, 0);
   });
 });

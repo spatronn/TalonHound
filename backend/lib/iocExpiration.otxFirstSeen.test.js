@@ -40,7 +40,7 @@ function baseMembership(overrides = {}) {
     purged_by: null,
     purged_by_username: null,
     purge_reason: null,
-    // fixed_ttl 30d from first_seen — matches OTX domain policy in prod.
+    // fixed_ttl 30d from last_seen (falls back to first_seen) — OTX domain policy.
     policy_expires_at: '2026-08-29T13:03:20.000Z',
     expires_at: '2026-08-29T13:03:20.000Z',
     explicit_confidence: null,

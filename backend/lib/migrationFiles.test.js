@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '024_threat_library_tlp_source.sql');
-  assert.equal(meta.latestMigration, 24);
+  assert.equal(meta.latestMigrationFile, '025_ioc_source_last_seen.sql');
+  assert.equal(meta.latestMigration, 25);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -95,4 +95,21 @@ test('001_core published feeds schema uses multi ioc_types', () => {
   assert.match(sql, /ioc_types jsonb NOT NULL/);
   assert.match(sql, /chk_published_feeds_ioc_types/);
   assert.match(sql, /published_feeds_bridge_ioc_types/);
+});
+
+test('025 documents last_seen_in_feed as last source observation and bounds ThreatFox backfill', () => {
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/025_ioc_source_last_seen.sql'),
+    'utf8'
+  );
+  assert.match(sql, /COMMENT ON COLUMN public\.ioc_feed_memberships\.last_seen_in_feed/);
+  assert.match(sql, /threatfox-abusech/);
+  assert.match(sql, /source_name LIKE 'ThreatFox:%'/);
+  assert.match(sql, /SOURCE ISOLATION/);
+  // Must never assign membership last_seen from a non-ThreatFox ioc_items row.
+  assert.match(sql, /WHERE tf\.source_name LIKE 'ThreatFox:%'/);
+  assert.match(sql, /last_seen_in_feed = o\.observed_at/);
+  assert.doesNotMatch(sql, /DELETE /);
+  // Guard against accidental global MAX(last_seen_at) across all sources.
+  assert.doesNotMatch(sql, /MAX\(\s*(?:i|anchor)\.last_seen_at\s*\)/);
 });

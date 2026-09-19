@@ -70,7 +70,9 @@ import {
   THREATFOX_SOURCE_URL_MASKED,
   buildThreatFoxNote,
   computeThreatFoxProviderFingerprint,
+  computeThreatFoxSemanticFingerprint,
   threatFoxNotesSemanticallyEqual,
+  threatFoxObservedAt,
   fetchThreatFoxRecentIocs,
   resolveThreatFoxAuthKey,
   resolveThreatFoxRecentDays,
@@ -888,12 +890,35 @@ export async function updateThreatFoxExistingIocBySource(client, {
   const row = rows[0];
   if (!row) return { status: 'not_found' };
 
-  if (incomingFingerprint && row.provider_fingerprint === incomingFingerprint) {
-    return { status: 'fingerprint_unchanged', publicId: row.public_id };
-  }
-
   const nextFirstSeenAt = mergeThreatFoxFirstSeenAt(row.first_seen_at, firstSeenAt);
   const nextLastSeenAt = mergeThreatFoxLastSeenAt(row.last_seen_at, lastSeenAt);
+  const timestampsMoved = threatFoxObservationChanged(row, {
+    fullNote: row.note,
+    nextFirstSeenAt,
+    nextLastSeenAt
+  });
+
+  if (incomingFingerprint && row.provider_fingerprint === incomingFingerprint) {
+    if (timestampsMoved) {
+      const upd = await client.query(
+        `UPDATE ioc_items
+         SET first_seen_at = CASE WHEN $2::timestamptz IS NULL THEN first_seen_at ELSE LEAST(first_seen_at, $2) END,
+             last_seen_at = CASE WHEN $3::timestamptz IS NULL THEN last_seen_at ELSE GREATEST(last_seen_at, $3) END
+         WHERE public_id = $1
+           AND (
+             ($2::timestamptz IS NOT NULL AND first_seen_at > $2)
+             OR ($3::timestamptz IS NOT NULL AND last_seen_at < $3)
+           )
+         RETURNING public_id`,
+        [row.public_id, nextFirstSeenAt, nextLastSeenAt]
+      );
+      return {
+        status: 'observation_updated',
+        publicId: upd.rows[0]?.public_id || row.public_id
+      };
+    }
+    return { status: 'fingerprint_unchanged', publicId: row.public_id };
+  }
   const semanticChanged = String(row.category || '') !== String(category || '')
     || !threatFoxNotesSemanticallyEqual(row.note, fullNote);
   const observationChanged = threatFoxObservationChanged(row, {
@@ -921,8 +946,8 @@ export async function updateThreatFoxExistingIocBySource(client, {
       `UPDATE ioc_items
        SET category = $2,
            note = $3,
-           first_seen_at = $4,
-           last_seen_at = $5,
+           first_seen_at = CASE WHEN $4::timestamptz IS NULL THEN first_seen_at ELSE LEAST(first_seen_at, $4) END,
+           last_seen_at = CASE WHEN $5::timestamptz IS NULL THEN last_seen_at ELSE GREATEST(last_seen_at, $5) END,
            provider_fingerprint = $6
        WHERE public_id = $1
        RETURNING public_id`,
@@ -934,8 +959,8 @@ export async function updateThreatFoxExistingIocBySource(client, {
   const upd = await client.query(
     `UPDATE ioc_items
      SET note = $2,
-         first_seen_at = $3,
-         last_seen_at = $4,
+         first_seen_at = CASE WHEN $3::timestamptz IS NULL THEN first_seen_at ELSE LEAST(first_seen_at, $3) END,
+         last_seen_at = CASE WHEN $4::timestamptz IS NULL THEN last_seen_at ELSE GREATEST(last_seen_at, $4) END,
          provider_fingerprint = $5
      WHERE public_id = $1
      RETURNING public_id`,
@@ -944,15 +969,19 @@ export async function updateThreatFoxExistingIocBySource(client, {
   return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
 }
 
-async function maybeReactivateThreatFoxMembership(client, entry, sourceName, category) {
-  await importSideEffect('threatfox_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
+async function syncThreatFoxMembership(client, entry, sourceName, category, { reactivateOnly = false } = {}) {
+  const observedAt = threatFoxObservedAt(entry);
+  await importSideEffect('threatfox_membership', null, () => syncMembershipAfterIocImport(client, {
     observable: entry.observable,
     observableType: entry.observableType,
     sourceName,
     sourceUrl: THREATFOX_SOURCE_URL_MASKED,
     explicitConfidence: entry.confidence,
     category,
-    reactivateOnly: true
+    firstSeenAt: entry.firstSeen || null,
+    observedAt,
+    contentFingerprint: computeThreatFoxSemanticFingerprint(entry),
+    reactivateOnly
   }));
 }
 
@@ -971,12 +1000,12 @@ export async function updateThreatFoxObservableBySource(client, entry, sourceNam
   });
 
   if (existing.status === 'fingerprint_unchanged') {
+    // Same ThreatFox record: still apply monotonic last_seen / expired reactivation.
+    await syncThreatFoxMembership(client, entry, sourceName, category);
     return existing;
   }
   if (existing.status === 'unchanged' || existing.status === 'observation_updated') {
-    // Active membership: skip last_seen_in_feed refresh on unchanged/observation-only rows.
-    // Inactive/expired membership: reactivate (updates last_seen_in_feed by design).
-    await maybeReactivateThreatFoxMembership(client, entry, sourceName, category);
+    await syncThreatFoxMembership(client, entry, sourceName, category);
     return existing;
   }
   if (existing.status !== 'updated') return existing;
@@ -990,14 +1019,7 @@ export async function updateThreatFoxObservableBySource(client, entry, sourceNam
     sourceName,
     parsedSourceConfidence: entry.confidence
   }));
-  await importSideEffect('threatfox_membership', null, () => syncMembershipAfterIocImport(client, {
-    observable: entry.observable,
-    observableType: entry.observableType,
-    sourceName,
-    sourceUrl: THREATFOX_SOURCE_URL_MASKED,
-    explicitConfidence: entry.confidence,
-    category
-  }));
+  await syncThreatFoxMembership(client, entry, sourceName, category);
   return existing;
 }
 

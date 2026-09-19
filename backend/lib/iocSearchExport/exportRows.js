@@ -9,6 +9,7 @@
 import {
   CANONICAL_FIRST_SEEN_AGG_SQL,
   CANONICAL_LAST_CHANGED_AGG_SQL,
+  CANONICAL_LAST_SEEN_AGG_SQL,
   resolvePlatformImportTimestamp,
   resolveSourceChangeTimestamps
 } from '../iocListTimestamps.js';
@@ -170,6 +171,7 @@ export async function enrichExportBatch(db, baseRows) {
     db.query(
       `SELECT m.ioc_item_id,
               ${CANONICAL_FIRST_SEEN_AGG_SQL} AS first_seen_in_source,
+              ${CANONICAL_LAST_SEEN_AGG_SQL} AS last_seen_in_source,
               ${CANONICAL_LAST_CHANGED_AGG_SQL} AS last_changed_in_source
          FROM ioc_feed_memberships m
         WHERE m.ioc_item_id = ANY($1::bigint[])
@@ -194,7 +196,7 @@ export async function enrichExportBatch(db, baseRows) {
   const tsMap = new Map(
     tsRes.rows.map((r) => [
       Number(r.ioc_item_id),
-      { first_seen_in_source: r.first_seen_in_source, last_changed_in_source: r.last_changed_in_source }
+      { first_seen_in_source: r.first_seen_in_source, last_seen_in_source: r.last_seen_in_source, last_changed_in_source: r.last_changed_in_source }
     ])
   );
   const knownByArtifact = new Map();
@@ -214,6 +216,7 @@ export async function enrichExportBatch(db, baseRows) {
     const platform = resolvePlatformImportTimestamp({ item_created_at: row.created_at });
     const source = resolveSourceChangeTimestamps({
       first_seen_in_source: ts.first_seen_in_source,
+      last_seen_in_source: ts.last_seen_in_source,
       last_changed_in_source: ts.last_changed_in_source,
       item_created_at: row.created_at
     });
@@ -235,6 +238,7 @@ export async function enrichExportBatch(db, baseRows) {
       tags: tagMap.get(id) || [],
       classifications: classMap.get(id) || [],
       first_seen_in_source: source.first_seen_in_source || row.first_seen_at || row.created_at,
+      last_seen_in_source: source.last_seen_in_source || null,
       last_changed_in_source: source.last_changed_in_source,
       artifact_id: row.artifact_id || null,
       primary_hash_type: row.primary_hash_type || null,

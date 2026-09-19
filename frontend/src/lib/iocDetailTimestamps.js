@@ -11,13 +11,19 @@ export const IOC_DETAIL_TIMESTAMP_CARDS = Object.freeze({
   firstSeen: Object.freeze({
     key: 'first_seen',
     label: 'First seen in source',
-    description: 'First time this IOC was observed in a source feed.',
+    description: 'Earliest known source observation of this IOC.',
     icon: 'calendar'
+  }),
+  lastSeen: Object.freeze({
+    key: 'last_seen',
+    label: 'Last seen in source',
+    description: 'Most recent source observation of this IOC, even if source metadata did not change.',
+    icon: 'clock'
   }),
   lastChanged: Object.freeze({
     key: 'last_changed',
     label: 'Last changed in source',
-    description: 'Last time this IOC meaningfully changed in a source.',
+    description: 'Last time source-provided metadata or state meaningfully changed.',
     icon: 'edit'
   })
 });
@@ -70,7 +76,7 @@ export function resolveTimestampSourceContext({
 }
 
 /**
- * Build the three IOC Timestamps cards for Overview.
+ * Build the IOC Timestamps cards for Overview.
  * @param {object|null} summary
  * @param {object[]} activeSources
  * @param {object[]} historicalSources
@@ -79,8 +85,9 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
   const sources = [...(activeSources || []), ...(historicalSources || [])];
   const importedAt = resolveIocDetailImportedAt(summary || {});
   const firstSeen = summary?.first_seen_at ?? null;
+  const lastSeen = summary?.last_seen_in_source ?? null;
   // summary.last_seen_at is the canonical last-changed aggregate (legacy field name).
-  const lastChanged = summary?.last_seen_at ?? null;
+  const lastChanged = summary?.last_changed_in_source ?? summary?.last_seen_at ?? null;
 
   return [
     {
@@ -97,6 +104,16 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
         value: firstSeen,
         sources,
         pick: (s) => s.first_seen_at
+      })
+    },
+    {
+      ...IOC_DETAIL_TIMESTAMP_CARDS.lastSeen,
+      value: lastSeen,
+      display: formatIocDetailDateTime(lastSeen),
+      context: resolveTimestampSourceContext({
+        value: lastSeen,
+        sources,
+        pick: (s) => s.last_seen_in_source || s.last_seen_at || null
       })
     },
     {

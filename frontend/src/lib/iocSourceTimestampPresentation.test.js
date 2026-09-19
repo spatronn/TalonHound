@@ -4,8 +4,10 @@ import { IOC_SOURCE_TIMESTAMP_PRESENTATION } from './iocSourceTimestampPresentat
 
 test('frontend last-changed presentation does not use last_seen_in_feed', () => {
   assert.equal(IOC_SOURCE_TIMESTAMP_PRESENTATION.last.label, 'Last changed in source');
+  assert.equal(IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.label, 'Last seen in source');
   assert.equal(IOC_SOURCE_TIMESTAMP_PRESENTATION.imported.label, 'Inserted into Platform');
-  assert.match(IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip, /observed in this source/i);
+  assert.match(IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip, /earliest known source observation/i);
+  assert.match(IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.tooltip, /most recent source observation/i);
   assert.match(IOC_SOURCE_TIMESTAMP_PRESENTATION.imported.tooltip, /does not change on re-import/i);
   assert.match(IOC_SOURCE_TIMESTAMP_PRESENTATION.last.tooltip, /meaningfully changed/i);
   const blob = JSON.stringify(IOC_SOURCE_TIMESTAMP_PRESENTATION);

@@ -15,7 +15,7 @@ export const LEGACY_EXPIRATION_MODE_LAST_SEEN_TTL = 'last_seen_ttl';
 
 export const EXPIRATION_MODE_OPTIONS = Object.freeze([
   { id: EXPIRATION_MODE_NEVER, label: 'Never' },
-  { id: EXPIRATION_MODE_FIXED_TTL, label: 'Fixed TTL (from first seen in feed)' },
+  { id: EXPIRATION_MODE_FIXED_TTL, label: 'Fixed TTL (from last source observation)' },
   {
     id: EXPIRATION_MODE_MISSING_FROM_FEED,
     label: 'Expire when removed from source'

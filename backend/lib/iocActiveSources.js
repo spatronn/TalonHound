@@ -39,10 +39,10 @@ export function formatFeedMembershipSource(m) {
     // content change or reactivation. NULL for rows that predate migration 121, which
     // fall back to first_seen_in_feed as the documented baseline.
     last_changed_at: m.last_changed_in_source || m.first_seen_in_feed || null,
-    // DEPRECATED: last_seen_in_feed is technical presence bookkeeping, not an analyst
-    // fact — it advances on every successful poll even when nothing changed. Retained
-    // only for API backward compatibility; do NOT render it. Use last_changed_at.
+    // Canonical last source observation (MAX). Snapshot unchanged polls do not
+    // advance this field. Distinct from last_changed_at.
     last_seen_at: m.last_seen_in_feed || null,
+    last_seen_in_source: m.last_seen_in_feed || null,
     policy_expires_at: m.policy_expires_at || null,
     expires_at: m.expires_at || null,
     override_enabled: Boolean(m.override_enabled),

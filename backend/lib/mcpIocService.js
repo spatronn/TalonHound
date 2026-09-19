@@ -134,8 +134,8 @@ function serializeLookupHit(row, extras = {}) {
       || row.threat_classifications
       || (row.threat_classification ? [row.threat_classification] : []),
     confidence: row.confidence ?? null,
-    first_seen: row.created_at || null,
-    last_seen: row.last_seen_at || row.created_at || null,
+      first_seen: row.first_seen_at || row.created_at || null,
+      last_seen: row.last_seen_at || row.created_at || null,
     note: row.note ?? null,
     tags: Array.isArray(row.tags)
       ? row.tags.map((t) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
@@ -446,8 +446,8 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       // Same tags with provenance so analyst-authored vs source-provided is explicit.
       tags_detail: catalogTags,
       note: body.note,
-      first_seen: body.created_at,
-      last_seen: body.created_at,
+      first_seen: body.first_seen_at || body.created_at,
+      last_seen: body.last_seen_in_source || body.last_seen_at || body.created_at,
       sources,
       // Source-/feed-provided intelligence, kept distinct from native fields above.
       source_intelligence: sourceIntelligence,

@@ -8,20 +8,12 @@
 // item-level updated_at column, so exposing it would require a fabricated mapping.
 // It is excluded from the DSL, Advanced Search, Syntax Help, the API and export
 // columns until a real column exists.
-//
-// NOTE: `last_seen` is intentionally NOT a field. ioc_items.last_seen_at is written by
-// the importer with feed-heterogeneous semantics (source last_online for some feeds,
-// observation-refresh for others) and the analyst presentation layer deliberately
-// exposes no "last seen / last confirmed in source" value (see
-// iocSourceTimestampPresentation.js). Exposing it would present an ambiguous
-// analyst-facing timestamp, so it is excluded from v1.
-//
 // `first_seen` maps to the analyst "First seen in source" = MIN(first_seen_in_feed)
 // across feed memberships (fallback to ioc_items.first_seen_at for membership-less
 // IOCs) — identical to the export column semantics, so filter and export agree.
-// `last_changed` maps to MAX(COALESCE(last_changed_in_source, first_seen_in_feed));
-// last_seen_in_feed is never referenced. `created_at` is the unambiguous item creation
-// time.
+// `last_changed` maps to MAX(COALESCE(last_changed_in_source, first_seen_in_feed)).
+// `last_seen` maps to MAX(last_seen_in_feed), the canonical last source observation.
+// `created_at` is the unambiguous item creation time.
 
 export const TEXT_OPERATORS = Object.freeze([
   'contains',
@@ -105,6 +97,7 @@ export const FIELD_REGISTRY = Object.freeze({
     allowedValues: ['low', 'medium', 'high']
   },
   first_seen: { kind: 'date', operators: DATE_OPERATORS },
+  last_seen: { kind: 'date', operators: DATE_OPERATORS },
   last_changed: { kind: 'date', operators: DATE_OPERATORS },
   created_at: { kind: 'date', operators: DATE_OPERATORS }
 });

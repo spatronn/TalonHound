@@ -136,6 +136,13 @@ test('imphash/tlsh/ssdeep are registered attr fields with equals only', () => {
   }
 });
 
+test('last_seen is a date field distinct from last_changed', () => {
+  assert.equal(FIELD_BY_NAME.last_seen.kind, 'date');
+  assert.equal(FIELD_BY_NAME.last_seen.label, 'Last seen in source');
+  assert.equal(FIELD_BY_NAME.last_changed.label, 'Last changed in source');
+  assert.notEqual(FIELD_BY_NAME.last_seen.label, FIELD_BY_NAME.last_changed.label);
+});
+
 test('attr conditions generate the exact equals DSL syntax (ssdeep quoted with colons)', () => {
   assert.equal(
     conditionToDsl({ field: 'imphash', operator: 'equals', value: 'f34d5f2d4577ed6d9ceec516c1f5a744' }),

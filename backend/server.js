@@ -5675,13 +5675,20 @@ app.get('/api/ioc/details', async (req, res) => {
 
     // Analyst-visible "last changed", not "last polled". Uses last_changed_in_source so
     // an unchanged re-import cannot advance it; falls back to first_seen_in_feed for
-    // rows predating migration 121. Must NOT read last_seen_in_feed (technical presence).
-    const globalLastSeenAt = (() => {
+    // rows predating migration 121.
+    const globalLastChangedAt = (() => {
       const mDates = membershipSummary.membershipRows
         .map((m) => m.last_changed_in_source || m.first_seen_in_feed)
         .filter(Boolean);
       if (mDates.length) return mDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max);
       const iDates = rows.map((r) => r.item_last_seen_at || r.created_at).filter(Boolean);
+      return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
+    })();
+
+    const globalLastSeenInSource = (() => {
+      const mDates = membershipSummary.membershipRows.map((m) => m.last_seen_in_feed).filter(Boolean);
+      if (mDates.length) return mDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max);
+      const iDates = rows.map((r) => r.item_last_seen_at).filter(Boolean);
       return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
     })();
 
@@ -5746,7 +5753,9 @@ app.get('/api/ioc/details', async (req, res) => {
       })(),
       first_seen_at: globalFirstSeenAt,
       // Analyst "last changed in source" aggregate (legacy field name kept for clients).
-      last_seen_at: globalLastSeenAt,
+      last_seen_at: globalLastChangedAt,
+      last_changed_in_source: globalLastChangedAt,
+      last_seen_in_source: globalLastSeenInSource,
       // Presence confirmation across feeds — null when no last_seen_in_feed (no silent fallback).
       last_confirmed_at: resolveDetailLastConfirmedAt(membershipSummary.membershipRows),
       // source_count kept for backward compat but now equals total_source_membership_count

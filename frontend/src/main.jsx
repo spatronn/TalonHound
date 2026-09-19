@@ -17014,6 +17014,7 @@ function IOCDetailsPage() {
                               <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
                                 <th>Source</th><th>Type</th><th>Status</th>
                                 <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.first.label}</th>
+                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.label}</th>
                                 <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.last.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.last.label}</th>
                                 <th>Purged at</th><th>Reason</th>
                               </tr>
@@ -17025,6 +17026,7 @@ function IOCDetailsPage() {
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatIocDetailDateTime(src.first_seen_at)}</td>
+                                  <td>{formatIocDetailDateTime(src.last_seen_in_source || src.last_seen_at)}</td>
                                   <td>{formatIocDetailDateTime(src.last_changed_at)}</td>
                                   <td>{formatIocDetailDateTime(src.purged_at)}</td>
                                   <td>{src.description || src.purge_reason || '—'}</td>

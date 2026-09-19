@@ -97,6 +97,8 @@ class Builder {
         return this.buildFirstSeen(node);
       case 'created_at':
         return this.buildItemDate(node, `${IOC_ALIAS}.created_at`);
+      case 'last_seen':
+        return this.buildLastSeen(node);
       case 'last_changed':
         return this.buildLastChanged(node);
       default:
@@ -524,9 +526,32 @@ class Builder {
     }
   }
 
+  // ---- date: last_seen (canonical last source observation) --------------
+  // IOC-level value is MAX(last_seen_in_feed) over ioc_feed_memberships.
+  buildLastSeen(node) {
+    const membershipFilter =
+      `m.ioc_item_id = ${IOC_ALIAS}.id AND m.ioc_observable_type = ${IOC_ALIAS}.observable_type`;
+    const seenExpr = 'm.last_seen_in_feed';
+    if (node.operator === 'after') {
+      return (
+        `EXISTS (SELECT 1 FROM ioc_feed_memberships m WHERE ${membershipFilter} ` +
+        `AND ${seenExpr} > ${this.dateExpr(node.dates[0])})`
+      );
+    }
+    const maxSub =
+      `(SELECT MAX(${seenExpr}) FROM ioc_feed_memberships m WHERE ${membershipFilter})`;
+    if (node.operator === 'before') {
+      return `${maxSub} < ${this.dateExpr(node.dates[0])}`;
+    }
+    if (node.operator === 'between') {
+      return `(${maxSub} >= ${this.dateExpr(node.dates[0])} AND ${maxSub} <= ${this.dateExpr(node.dates[1])})`;
+    }
+    throw new Error(`Unsupported operator for last_seen: ${node.operator}`);
+  }
+
   // ---- date: last_changed (per-membership analyst semantic) -------------
   // IOC-level value is MAX(COALESCE(last_changed_in_source, first_seen_in_feed)) over
-  // ioc_feed_memberships. last_seen_in_feed (technical presence) is never referenced.
+  // ioc_feed_memberships.
   //   after  -> EXISTS a membership newer than cutoff (equivalent to MAX > cutoff)
   //   before -> IOC-level MAX < cutoff (scalar subquery; no-membership IOCs excluded)
   //   between-> IOC-level MAX within [from, to]

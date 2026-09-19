@@ -192,10 +192,36 @@ export function threatFoxNotesSemanticallyEqual(storedNote, incomingNote) {
   return stripThreatFoxVolatileNoteParts(storedNote) === stripThreatFoxVolatileNoteParts(incomingNote);
 }
 
+export function threatFoxObservedAt(entry) {
+  return entry?.lastSeen || entry?.firstSeen || null;
+}
+
+/**
+ * Semantic metadata fingerprint for membership last_changed.
+ * Excludes ioc_id, first_seen, last_seen, and port — those are observations of the
+ * same normalized IOC, not source metadata changes.
+ */
+export function computeThreatFoxSemanticFingerprint(entry) {
+  const payload = JSON.stringify({
+    provider: 'threatfox',
+    observable: String(entry.observable ?? ''),
+    threat_type: String(entry.threatType ?? ''),
+    malware: String(entry.malwarePrintable ?? entry.malware ?? ''),
+    malware_alias: String(entry.malwareAlias ?? ''),
+    reporter: String(entry.reporter ?? ''),
+    confidence: String(entry.confidence ?? ''),
+    reference: String(entry.reference ?? ''),
+    tags: [...(entry.tags ?? [])].sort()
+  });
+  return createHash('sha256').update(payload).digest('hex');
+}
+
 /**
  * Stable SHA-256 fingerprint of provider-supplied metadata that is meaningful
  * and unlikely to change unless the IOC record genuinely changed.
  * Excludes last_seen (volatile, updated on every ThreatFox poll).
+ * Includes ioc_id/first_seen so a later ThreatFox record for the same normalized
+ * IOC still refreshes the stored note/evidence.
  */
 export function computeThreatFoxProviderFingerprint(entry) {
   const payload = JSON.stringify({

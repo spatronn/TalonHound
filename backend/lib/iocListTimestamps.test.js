@@ -180,3 +180,14 @@ test('detail last_confirmed_at uses max last_seen_in_feed only', () => {
     null
   );
 });
+
+test('last_seen_in_source is independent of last_changed_in_source', () => {
+  const source = resolveSourceChangeTimestamps({
+    first_seen_in_source: '2026-06-03T00:00:00.000Z',
+    last_changed_in_source: '2026-06-03T00:00:00.000Z',
+    last_seen_in_source: '2026-07-31T09:05:06.000Z'
+  });
+  assert.equal(source.first_seen_in_source, '2026-06-03T00:00:00.000Z');
+  assert.equal(source.last_changed_in_source, '2026-06-03T00:00:00.000Z');
+  assert.equal(source.last_seen_in_source, '2026-07-31T09:05:06.000Z');
+});

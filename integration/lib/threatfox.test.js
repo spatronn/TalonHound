@@ -10,6 +10,7 @@ import {
   parseThreatFoxApiResponse,
   sanitizeThreatFoxErrorMessage,
   stripThreatFoxVolatileNoteParts,
+  threatFoxObservedAt,
   validateThreatFoxRecentDays
 } from './threatfox.js';
 
@@ -39,6 +40,41 @@ describe('classifyThreatFoxObservable', () => {
       observable: '1.2.3.4',
       observableType: 'ip'
     });
+  });
+
+  it('normalizes ThreatFox IP:port observations of 81.70.21.248 to one base IP', () => {
+    const ports = ['443', '22', '65443', '9443', '8000', '8082', '5672', '111', '5003'];
+    for (const port of ports) {
+      assert.deepEqual(classifyThreatFoxObservable(`81.70.21.248:${port}`, 'ip:port'), {
+        observable: '81.70.21.248',
+        observableType: 'ip'
+      });
+    }
+  });
+});
+
+describe('threatFoxObservedAt', () => {
+  it('prefers last_seen then first_seen', () => {
+    const a = mapThreatFoxApiRow({
+      id: '1',
+      ioc: '81.70.21.248:22',
+      ioc_type: 'ip:port',
+      threat_type: 'botnet_cc',
+      malware_printable: 'Cobalt Strike',
+      first_seen: '2026-07-31 09:05:06 UTC',
+      last_seen: '2026-07-31 09:05:06 UTC'
+    });
+    const b = mapThreatFoxApiRow({
+      id: '2',
+      ioc: '81.70.21.248:443',
+      ioc_type: 'ip:port',
+      threat_type: 'botnet_cc',
+      malware_printable: 'Cobalt Strike',
+      first_seen: '2026-06-03 00:00:00 UTC'
+    });
+    assert.equal(a.observable, '81.70.21.248');
+    assert.equal(threatFoxObservedAt(a).toISOString(), '2026-07-31T09:05:06.000Z');
+    assert.equal(threatFoxObservedAt(b).toISOString(), '2026-06-03T00:00:00.000Z');
   });
 });
 

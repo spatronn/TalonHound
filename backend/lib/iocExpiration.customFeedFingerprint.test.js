@@ -29,7 +29,7 @@ function baseMembership(overrides = {}) {
     purged_by: null,
     purged_by_username: null,
     purge_reason: null,
-    // fixed_ttl 365d from first_seen — keep in sync so adopt/noop does not rewrite policy fields
+    // fixed_ttl 365d from last_seen (= first_seen in this fixture) — keep in sync so adopt/noop does not rewrite policy fields
     policy_expires_at: '2027-07-14T17:41:16.386Z',
     expires_at: '2027-07-14T17:41:16.386Z',
     explicit_confidence: 'medium',
@@ -194,5 +194,27 @@ describe('upsertMembershipOnImport content fingerprint (custom feed path)', () =
     const write = client.updates.find((u) => /status = 'active'/.test(u.sql));
     assert.ok(write);
     assert.match(write.sql, /last_changed_in_source/);
+  });
+
+  it('matching fingerprint with later observedAt advances last_seen not last_changed', async () => {
+    const membership = baseMembership({ content_fingerprint: FP });
+    const client = makeClient({ membership });
+    const observedAt = new Date('2026-08-01T00:00:00.000Z');
+
+    const result = await withImportOptimizationContext(client, async () => upsertMembershipOnImport(client, {
+      iocItemId: 99,
+      observableType: 'domain',
+      feedId: FEED_ID,
+      seenAt: new Date('2026-08-02T00:00:00.000Z'),
+      observedAt,
+      explicitConfidence: 'medium',
+      contentFingerprint: FP
+    }));
+
+    assert.equal(result.outcome, 'reobserved');
+    const lastSeen = client.updates.find((u) => /GREATEST\(last_seen_in_feed/.test(u.sql));
+    assert.ok(lastSeen, 'expected monotonic last_seen UPDATE');
+    assert.equal(lastSeen.params[1].getTime(), observedAt.getTime());
+    assert.equal(client.updates.some((u) => /last_changed_in_source/.test(u.sql)), false);
   });
 });

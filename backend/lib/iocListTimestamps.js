@@ -12,6 +12,7 @@
 export const CANONICAL_FIRST_SEEN_AGG_SQL = 'MIN(m.first_seen_in_feed)';
 export const CANONICAL_LAST_CHANGED_AGG_SQL =
   'MAX(COALESCE(m.last_changed_in_source, m.first_seen_in_feed))';
+export const CANONICAL_LAST_SEEN_AGG_SQL = 'MAX(m.last_seen_in_feed)';
 
 /**
  * Platform import / IOC List Timestamp resolver.
@@ -31,10 +32,12 @@ export function resolvePlatformImportTimestamp(input = {}) {
 
 /**
  * Source-change timestamps for detail / DSL / export (not the list Timestamp column).
- * last_changed falls back to first_seen_in_feed only — never to created_at or last_seen_in_feed alone.
+ * last_changed falls back to first_seen_in_feed only — never to created_at.
+ * last_seen_in_source is MAX(last_seen_in_feed) and is independent of last_changed.
  * @param {{
  *   first_seen_in_source?: Date|string|null,
  *   last_changed_in_source?: Date|string|null,
+ *   last_seen_in_source?: Date|string|null,
  *   item_created_at?: Date|string|null,
  *   created_at?: Date|string|null
  * }} input
@@ -44,11 +47,13 @@ export function resolveSourceChangeTimestamps(input = {}) {
   const firstSeenInSource = input.first_seen_in_source || null;
   const lastChangedRaw = input.last_changed_in_source || null;
   const lastChangedDisplay = lastChangedRaw || firstSeenInSource || null;
+  const lastSeenInSource = input.last_seen_in_source || null;
 
   return {
     first_seen_in_source: firstSeenInSource || null,
     last_changed_in_source: lastChangedDisplay,
     last_changed_in_source_raw: lastChangedRaw,
+    last_seen_in_source: lastSeenInSource || null,
     // Item-level first_seen_at is not the list Timestamp; keep for consumers that need it.
     first_seen_at: firstSeenInSource || created || null
   };
