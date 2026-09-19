@@ -19,12 +19,6 @@ export const IOC_DETAIL_TIMESTAMP_CARDS = Object.freeze({
     label: 'Last seen in source',
     description: 'Most recent source observation of this IOC, even if source metadata did not change.',
     icon: 'clock'
-  }),
-  lastChanged: Object.freeze({
-    key: 'last_changed',
-    label: 'Last changed in source',
-    description: 'Last time source-provided metadata or state meaningfully changed.',
-    icon: 'edit'
   })
 });
 
@@ -86,9 +80,9 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
   const importedAt = resolveIocDetailImportedAt(summary || {});
   const firstSeen = summary?.first_seen_at ?? null;
   const lastSeen = summary?.last_seen_in_source ?? null;
-  // summary.last_seen_at is the canonical last-changed aggregate (legacy field name).
-  const lastChanged = summary?.last_changed_in_source ?? summary?.last_seen_at ?? null;
 
+  // Analyst lifecycle cards: Inserted / First seen / Last seen only.
+  // last_changed_in_source remains on the API for compatibility but is not rendered here.
   return [
     {
       ...IOC_DETAIL_TIMESTAMP_CARDS.imported,
@@ -114,16 +108,6 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
         value: lastSeen,
         sources,
         pick: (s) => s.last_seen_in_source || s.last_seen_at || null
-      })
-    },
-    {
-      ...IOC_DETAIL_TIMESTAMP_CARDS.lastChanged,
-      value: lastChanged,
-      display: formatIocDetailDateTime(lastChanged),
-      context: resolveTimestampSourceContext({
-        value: lastChanged,
-        sources,
-        pick: (s) => s.last_changed_at || null
       })
     }
   ];

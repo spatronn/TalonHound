@@ -123,7 +123,7 @@ All timestamp columns remain **`TIMESTAMPTZ`**. Absolute instants are preserved.
 
 IOC List **Timestamp** column = platform first-import time (`ioc_items.created_at` / API `imported_at`). Stable across re-syncs and extra feed memberships. Sorted `ORDER BY created_at DESC`.
 
-Source-change fields (`first_seen_in_source`, `last_changed_in_source`) remain for IOC detail, DSL filters, and export — they do **not** drive the list Timestamp. Technical `last_seen_in_feed` is not shown as Timestamp.
+Source-change fields (`first_seen_in_source`, `last_seen_in_source`) drive analyst-facing IOC detail and search/export. `last_changed_in_source` remains available for API / DSL / programmatic export compatibility but is not a normal UI lifecycle field. None of these drive the list Timestamp. Technical `last_seen_in_feed` is not shown as Timestamp.
 
 Shared helpers: `backend/lib/iocListTimestamps.js`.
 

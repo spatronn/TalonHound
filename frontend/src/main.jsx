@@ -6108,7 +6108,7 @@ function FeedFormSection({ title, children, headerRight = null }) {
 function SearchDslSyntaxHelpBody() {
   return (
     <>
-      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_changed, created_at</p>
+      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_seen, created_at</p>
       <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
       <p><b>List operators:</b> in, not_in</p>
       <p><b>Date operators:</b> before, after, between</p>
@@ -6122,7 +6122,7 @@ ioc contains "example" AND tag contains "mirai"
 type in ("domain", "url") AND status equals "active"
 (source contains "USOM" OR source contains "URLHaus") AND confidence equals "high"
 source equals "USOM:TR-CERT"
-last_changed after "2026-07-01"
+last_seen after "2026-07-01"
 first_seen between "2026-07-01" AND "2026-07-22"
 tag equals "mirai" AND tag equals "botnet"
 md5 equals "20945449fd11203d79ea5d0d29bf1e22"
@@ -17015,7 +17015,6 @@ function IOCDetailsPage() {
                                 <th>Source</th><th>Type</th><th>Status</th>
                                 <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.first.label}</th>
                                 <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.label}</th>
-                                <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.last.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.last.label}</th>
                                 <th>Purged at</th><th>Reason</th>
                               </tr>
                             </thead>
@@ -17027,7 +17026,6 @@ function IOCDetailsPage() {
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatIocDetailDateTime(src.first_seen_at)}</td>
                                   <td>{formatIocDetailDateTime(src.last_seen_in_source || src.last_seen_at)}</td>
-                                  <td>{formatIocDetailDateTime(src.last_changed_at)}</td>
                                   <td>{formatIocDetailDateTime(src.purged_at)}</td>
                                   <td>{src.description || src.purge_reason || '—'}</td>
                                 </tr>

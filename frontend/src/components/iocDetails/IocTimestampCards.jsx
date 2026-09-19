@@ -5,15 +5,13 @@ import { buildIocDetailTimestampCards } from '../../lib/iocDetailTimestamps.js';
 const ICON_MAP = {
   download: IocDetailIcons.download,
   calendar: IocDetailIcons.calendar,
-  clock: IocDetailIcons.clock,
-  edit: IocDetailIcons.edit
+  clock: IocDetailIcons.clock
 };
 
 const ICON_COLORS = {
   download: '#60a5fa',
   calendar: '#a78bfa',
-  clock: '#67e8f9',
-  edit: '#2dd4bf'
+  clock: '#67e8f9'
 };
 
 export function IocTimestampCards({ summary, activeSources = [], historicalSources = [] }) {
@@ -29,7 +27,7 @@ export function IocTimestampCards({ summary, activeSources = [], historicalSourc
       </div>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
         gap: 12
       }}
         className="ioc-timestamp-cards-grid"

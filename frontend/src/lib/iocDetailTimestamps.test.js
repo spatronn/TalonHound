@@ -32,7 +32,7 @@ test('null imported_at renders em dash without inventing fallbacks', () => {
   assert.equal(cards[0].context, 'Source: System');
 });
 
-test('timestamp cards use correct labels and values', () => {
+test('timestamp cards use Inserted / First seen / Last seen only', () => {
   const cards = buildIocDetailTimestampCards(
     {
       imported_at: '2026-07-26T14:32:41.000Z',
@@ -51,11 +51,11 @@ test('timestamp cards use correct labels and values', () => {
     }],
     []
   );
-  assert.equal(cards.length, 4);
+  assert.equal(cards.length, 3);
   assert.equal(cards[0].label, 'Inserted into Platform');
   assert.equal(cards[1].label, 'First seen in source');
   assert.equal(cards[2].label, 'Last seen in source');
-  assert.equal(cards[3].label, 'Last changed in source');
+  assert.equal(cards.some((card) => card.label === 'Last changed in source'), false);
   assert.equal(cards[1].context, 'Source: MalwareBazaar abuse.ch');
   assert.equal(cards[0].value, '2026-07-26T14:32:41.000Z');
   assert.equal(

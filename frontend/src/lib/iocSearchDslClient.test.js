@@ -6,7 +6,10 @@ import {
   defaultOperatorFor,
   newCondition,
   chipLabel,
-  FIELD_BY_NAME
+  FIELD_BY_NAME,
+  SEARCH_FIELDS,
+  EXPORT_COLUMN_OPTIONS,
+  DEFAULT_EXPORT_COLUMNS
 } from './iocSearchDslClient.js';
 
 test('scalar text condition', () => {
@@ -136,11 +139,19 @@ test('imphash/tlsh/ssdeep are registered attr fields with equals only', () => {
   }
 });
 
-test('last_seen is a date field distinct from last_changed', () => {
+test('last_seen is the discoverable analyst recency field; last_changed stays off the picker', () => {
   assert.equal(FIELD_BY_NAME.last_seen.kind, 'date');
   assert.equal(FIELD_BY_NAME.last_seen.label, 'Last seen in source');
-  assert.equal(FIELD_BY_NAME.last_changed.label, 'Last changed in source');
-  assert.notEqual(FIELD_BY_NAME.last_seen.label, FIELD_BY_NAME.last_changed.label);
+  assert.equal(FIELD_BY_NAME.last_changed, undefined);
+  assert.ok(SEARCH_FIELDS.every((f) => f.name !== 'last_changed'));
+  assert.ok(SEARCH_FIELDS.some((f) => f.name === 'last_seen'));
+});
+
+test('export UI offers last_seen_in_source and hides last_changed_in_source', () => {
+  assert.ok(EXPORT_COLUMN_OPTIONS.some((c) => c.key === 'last_seen_in_source'));
+  assert.ok(EXPORT_COLUMN_OPTIONS.every((c) => c.key !== 'last_changed_in_source'));
+  assert.ok(DEFAULT_EXPORT_COLUMNS.includes('last_seen_in_source'));
+  assert.ok(!DEFAULT_EXPORT_COLUMNS.includes('last_changed_in_source'));
 });
 
 test('attr conditions generate the exact equals DSL syntax (ssdeep quoted with colons)', () => {
