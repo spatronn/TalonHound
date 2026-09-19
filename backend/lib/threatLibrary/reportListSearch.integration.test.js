@@ -187,6 +187,66 @@ test('over-long search terms are bounded and still parameterised', opts, async (
   });
 });
 
+// --- Page-size-25 pagination over a 157-report library -----------------------
+
+async function withLargeLibraryTx(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM threat_reports');
+    // 157 reports, newest first by created_at; odd numbers are threat_report (79),
+    // even numbers blog (78). Titles "Library report 001" ... "Library report 157".
+    await client.query(
+      `INSERT INTO threat_reports (title, source_type, source_name, source_url, report_type, created_at)
+       SELECT 'Library report ' || lpad(g::text, 3, '0'), 'url', 'Bulk source', 'https://bulk.example/' || g,
+              CASE WHEN g % 2 = 1 THEN 'threat_report' ELSE 'blog' END,
+              NOW() - (g * INTERVAL '1 minute')
+       FROM generate_series(1, 157) AS g`
+    );
+    await fn(client);
+  } finally {
+    await client.query('ROLLBACK').catch(() => {});
+    client.release();
+  }
+}
+
+test('157 reports at 25 per page produce 7 pages; page 7 holds the final 7 rows', opts, async () => {
+  await withLargeLibraryTx(async (client) => {
+    const pages = [];
+    for (let p = 1; p <= 8; p += 1) {
+      pages.push(await listThreatReports(client, { limit: 25, offset: (p - 1) * 25 }));
+    }
+    for (const pg of pages) assert.equal(pg.total, 157);
+    assert.deepEqual(pages.slice(0, 6).map((pg) => pg.items.length), [25, 25, 25, 25, 25, 25]);
+    assert.equal(pages[6].items.length, 7, 'page 7 = rows 151-157');
+    assert.equal(pages[7].items.length, 0, 'page 8 is past the end');
+    assert.deepEqual(titles(pages[0]).slice(0, 2), ['Library report 001', 'Library report 002']);
+    assert.deepEqual(titles(pages[6]), Array.from({ length: 7 }, (_, i) => `Library report ${String(151 + i).padStart(3, '0')}`));
+    // Every row appears exactly once across the pages.
+    const all = pages.flatMap(titles);
+    assert.equal(all.length, 157);
+    assert.equal(new Set(all).size, 157);
+  });
+});
+
+test('filtered pagination pages over the 79 threat_report rows with the filtered COUNT', opts, async () => {
+  await withLargeLibraryTx(async (client) => {
+    const pages = [];
+    for (let p = 1; p <= 5; p += 1) {
+      pages.push(await listThreatReports(client, { search: 'threat_report', limit: 25, offset: (p - 1) * 25 }));
+    }
+    for (const pg of pages) assert.equal(pg.total, 79, 'total is the filtered count, not 157');
+    assert.deepEqual(pages.map((pg) => pg.items.length), [25, 25, 25, 4, 0]);
+    const all = pages.flatMap(titles);
+    assert.equal(new Set(all).size, 79);
+    for (const t of all) assert.equal(Number(t.slice(-3)) % 2, 1, `${t} is a threat_report row`);
+    // A different filter paginates independently.
+    const blog = await listThreatReports(client, { search: 'blog', limit: 25, offset: 75 });
+    assert.equal(blog.total, 78);
+    assert.equal(blog.items.length, 3);
+  });
+});
+
 test.after(async () => {
   await pool.end().catch(() => {});
 });

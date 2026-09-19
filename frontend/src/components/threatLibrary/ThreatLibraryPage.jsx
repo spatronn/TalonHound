@@ -8,13 +8,14 @@ import {
   REPORT_LIST_PAGE_SIZE,
   REPORT_LIST_SEARCH_DEBOUNCE_MS,
   REPORT_LIST_SEARCH_MAX_LENGTH,
-  buildReportListQueryParams,
   buildReportListUrlSearchParams,
   describeReportListEmptyState,
+  describeReportListPagination,
   formatReportListShowingLabel,
   normalizeReportListSearch,
   parseReportListUrlState
 } from './reportList.js';
+import { createReportListLoader } from './reportListLoader.js';
 import { indicatorListCell } from './reportPhase.js';
 import { TlpBadge, isElevatedTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
@@ -37,72 +38,100 @@ function statusColors(report) {
 
 const searchInputStyle = { ...ui.input, padding: '8px 12px', fontSize: 13, minHeight: 36 };
 const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' };
+const pagerBtn = { ...ui.btn, minHeight: 30, padding: '4px 10px', fontSize: 12 };
 
 export default function ThreatLibraryPage({ AppShell, useSession }) {
   const { isAdmin, canWrite } = useSession();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initial = useMemo(() => parseReportListUrlState(searchParams), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // The URL is the single source of truth for the debounced search term and
+  // the page (?search=&page=), so reload, Back/Forward and shared links all
+  // land on the same list state and nothing can fight the router.
+  const { search, page } = useMemo(() => parseReportListUrlState(searchParams), [searchParams]);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [importOpen, setImportOpen] = useState(false);
-  // searchInput follows every keystroke; search is the debounced, trimmed term
-  // that drives requests and the URL (same split as the threat-actor list).
-  const [searchInput, setSearchInput] = useState(initial.search);
-  const [search, setSearch] = useState(initial.search);
-  // Overlapping list requests: only the most recently issued response may land.
-  const requestSeqRef = useRef(0);
-  const abortRef = useRef(null);
+  // searchInput follows every keystroke; the URL `search` is its debounced,
+  // trimmed form (same split as the threat-actor list).
+  const [searchInput, setSearchInput] = useState(search);
+  // Overlapping list requests (search, page, Refresh) go through one loader:
+  // only the most recently issued response may land, and an out-of-range page
+  // is clamped to the last valid one instead of stranding the user.
+  const loaderRef = useRef(null);
+  if (!loaderRef.current) {
+    loaderRef.current = createReportListLoader({
+      pageSize: REPORT_LIST_PAGE_SIZE,
+      fetchPage: async (params, signal) => (await api.get('/threat-library/reports', { params, signal })).data
+    });
+  }
+
+  // react-router recreates searchParams AND setSearchParams on every URL change;
+  // read both through a ref so setListUrl (and therefore load) keeps one identity
+  // and a URL rewrite never re-issues the list request by itself.
+  const routerRef = useRef({ searchParams, setSearchParams });
+  routerRef.current = { searchParams, setSearchParams };
+  const setListUrl = useCallback((next) => {
+    const params = buildReportListUrlSearchParams(next);
+    const router = routerRef.current;
+    if (params.toString() !== router.searchParams.toString()) router.setSearchParams(params, { replace: true });
+  }, []);
 
   const load = useCallback(async () => {
-    const seq = ++requestSeqRef.current;
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
     setLoading(true);
     setError('');
-    try {
-      const params = buildReportListQueryParams({ search, limit: REPORT_LIST_PAGE_SIZE, offset: 0 });
-      const { data } = await api.get('/threat-library/reports', { params, signal: controller.signal });
-      if (seq !== requestSeqRef.current) return;
-      setItems(data?.items || []);
-      setTotal(Number(data?.total || 0));
-    } catch (err) {
-      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
-      if (seq !== requestSeqRef.current) return;
-      setError(err?.response?.data?.message || 'Failed to load Threat Library');
+    const result = await loaderRef.current.load({ search, page });
+    if (result.kind === 'stale') return;
+    if (result.kind === 'clamped') {
+      // Result set shrank below this page (search narrowed, rows deleted):
+      // keep the loading placeholder and reload the last valid page.
+      setTotal(result.total);
+      setListUrl({ search, page: result.page });
+      return;
+    }
+    if (result.kind === 'error') {
+      setError(result.message);
       setItems([]);
       setTotal(0);
-    } finally {
-      if (seq === requestSeqRef.current) setLoading(false);
+    } else {
+      setItems(result.items);
+      setTotal(result.total);
     }
-  }, [search]);
+    setLoading(false);
+  }, [search, page, setListUrl]);
 
   useEffect(() => {
     load().catch(() => {});
-    return () => {
-      if (abortRef.current) abortRef.current.abort();
-    };
   }, [load]);
 
+  useEffect(() => () => loaderRef.current?.abort(), []);
+
+  // Debounced term -> URL. A new term (or clearing it) always starts from page 1.
   useEffect(() => {
     const t = setTimeout(() => {
       const next = normalizeReportListSearch(searchInput);
-      setSearch((prev) => (prev === next ? prev : next));
+      if (next !== search) setListUrl({ search: next, page: 1 });
     }, REPORT_LIST_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [searchInput]);
+  }, [searchInput, search, setListUrl]);
 
+  // URL term changed underneath the field (Back/Forward, shared link): reflect it,
+  // but leave the raw input alone while it already normalises to the same term.
   useEffect(() => {
-    const next = buildReportListUrlSearchParams({ search });
-    if (next.toString() !== searchParams.toString()) {
-      setSearchParams(next, { replace: true });
-    }
-  }, [search, searchParams, setSearchParams]);
+    setSearchInput((prev) => (normalizeReportListSearch(prev) === search ? prev : search));
+  }, [search]);
 
-  const emptyState = describeReportListEmptyState({ loading, itemCount: items.length, search, canWrite });
+  // Canonicalise a hand-typed URL (page=1, padded search, junk page) once; the
+  // serialised form of the parsed state is a fixed point, so this cannot loop.
+  useEffect(() => {
+    setListUrl({ search, page });
+  }, [search, page, setListUrl]);
+
+  const goToPage = (next) => setListUrl({ search, page: next });
+
+  const pagination = describeReportListPagination({ page, total, pageSize: REPORT_LIST_PAGE_SIZE });
+  const emptyState = describeReportListEmptyState({ loading, itemCount: items.length, total, search, canWrite });
 
   function onImported(report) {
     if (report?.id) {
@@ -212,9 +241,31 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
           </table>
         </div>
 
-        {!loading && total > 0 ? (
-          <div style={{ marginTop: 12, fontSize: 12, color: '#64748b' }}>
-            {formatReportListShowingLabel({ shown: items.length, total, search })}
+        {total > 0 ? (
+          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: '#64748b' }}>
+            <div>
+              {formatReportListShowingLabel({ from: pagination.from, to: pagination.to, total, search })}
+              {loading ? ' \u00b7 Updating\u2026' : ''}
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={pagerBtn}
+                disabled={!pagination.hasPrevious || loading}
+                onClick={() => goToPage(Math.max(1, page - 1))}
+              >
+                Previous
+              </button>
+              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{pagination.pageLabel}</span>
+              <button
+                type="button"
+                style={pagerBtn}
+                disabled={!pagination.hasNext || loading}
+                onClick={() => goToPage(page + 1)}
+              >
+                Next
+              </button>
+            </div>
           </div>
         ) : null}
       </section>
