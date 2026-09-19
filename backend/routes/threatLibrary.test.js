@@ -152,3 +152,14 @@ test('THIB export uses the effective TLP and carries its provenance', () => {
   );
   assert.match(importSrc, /tlp_source: \['explicit', 'manual'\]\.includes\(b\.report\.tlp_source\) \? b\.report\.tlp_source : 'explicit'/);
 });
+
+// --- Report-list search contract -----------------------------------------
+
+test('report list passes ?search= to the store and keeps the { items, total } response shape', () => {
+  const block = routeSrc.slice(routeSrc.indexOf("app.get('/api/threat-library/reports',"), routeSrc.indexOf("app.get('/api/threat-library/reports/:publicId'"));
+  assert.match(block, /listThreatReports\(pool, \{\s*limit: req\.query\.limit,\s*offset: req\.query\.offset,[\s\S]*?search: req\.query\.search\s*\}\)/);
+  assert.match(block, /items: result\.items\.map\(publicReport\),\s*total: result\.total/);
+  // No string-built SQL and no provider / AI involvement on the list path.
+  assert.doesNotMatch(block, /pool\.query|ILIKE|LIKE/);
+  assert.doesNotMatch(block, /analyzeThreatDocument|runAnalysisPipeline|fetch\(/);
+});
