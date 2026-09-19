@@ -21,7 +21,12 @@ import {
   applyPromotionResults,
   formatCreateIocSummary,
   describeReviewFeedback,
-  describeCreateIocFeedback
+  describeCreateIocFeedback,
+  describePromoteBlocker,
+  describePromoteFeedback,
+  describeReviewToolbar,
+  isContextOnlyCandidate,
+  selectionForAction
 } from './candidateReview.js';
 
 const explicitUrl = {
@@ -328,4 +333,112 @@ test('create IOC feedback names what happened', () => {
   assert.equal(describeCreateIocFeedback({ created: 0, existing: 1 }), '0 IOCs created. 1 already existed.');
   assert.equal(describeCreateIocFeedback({ created: 2, existing: 0, errors: 1 }), '2 IOCs created. 1 error.');
   assert.equal(describeCreateIocFeedback({}), '0 IOCs created.');
+});
+
+// --- Context Only != IOC candidate -----------------------------------------
+
+const ctxAmazon = { id: 101, candidate_type: 'domain', normalized_value: 'amazon.com', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', role: 'legitimate_service', is_ioc: true };
+const ctxTrustpilot = { id: 102, candidate_type: 'domain', normalized_value: 'trustpilot.com', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', role: 'reference', is_ioc: true };
+const ctxTechnique = { id: 103, candidate_type: 'attack_technique', normalized_value: 'T1059', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', is_ioc: false };
+const ctxCidr = { id: 104, candidate_type: 'cidr', normalized_value: '10.0.0.0/8', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', is_ioc: true };
+const iocA = { id: 201, candidate_type: 'domain', normalized_value: 'evil.example', assessment: 'malicious', match_state: 'new', review_status: 'pending', is_ioc: true };
+const iocB = { id: 202, candidate_type: 'ip', normalized_value: '1.2.3.4', assessment: 'malicious', match_state: 'new', review_status: 'approved', is_ioc: true };
+const ids = (t) => t.actions.map((a) => a.id);
+const enabled = (t) => t.actions.filter((a) => a.enabled).map((a) => a.id);
+
+test('isContextOnlyCandidate mirrors the backend rule and matches the Context Only filter', () => {
+  for (const c of [ctxAmazon, ctxTrustpilot, ctxTechnique, ctxCidr]) {
+    assert.equal(isContextOnlyCandidate(c), true, c.normalized_value);
+    assert.equal(matchReviewFilter(c, 'context_only'), true);
+  }
+  assert.equal(isContextOnlyCandidate({ ...iocA, review_status: 'context_only' }), true);
+  assert.equal(isContextOnlyCandidate({ ...iocA, match_state: 'context_only' }), true);
+  assert.equal(isContextOnlyCandidate(iocA), false);
+  assert.equal(isContextOnlyCandidate(iocB), false);
+});
+
+test('Context Only view: no Create IOCs / Approve high-confidence malicious / Approve / redundant Context only', () => {
+  const none = describeReviewToolbar({ filter: 'context_only', selectedRows: [] });
+  assert.deepEqual(ids(none), ['promote_to_ioc', 'ignore']);
+  assert.deepEqual(enabled(none), []);
+  assert.equal(none.actions[0].hint, 'Select one Context Only indicator to promote it.');
+  const one = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxAmazon] });
+  assert.deepEqual(enabled(one), ['promote_to_ioc', 'ignore']);
+  assert.equal(one.actions[0].label, 'Promote to IOC…');
+  const many = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxAmazon, ctxTrustpilot] });
+  assert.deepEqual(enabled(many), ['ignore'], 'promotion is never bulk');
+  assert.match(many.actions[0].hint, /single-row/);
+  const busy = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxAmazon], busy: true });
+  assert.deepEqual(enabled(busy), []);
+  for (const t of [none, one, many]) {
+    for (const forbidden of ['create_iocs', 'approve_high_confidence_malicious', 'approve', 'context_only']) {
+      assert.equal(ids(t).includes(forbidden), false, `${forbidden} is not rendered in the Context Only view`);
+    }
+  }
+});
+
+test('promotion blockers: unsupported types and non-context rows cannot be promoted', () => {
+  assert.equal(describePromoteBlocker([ctxAmazon]), null);
+  assert.match(describePromoteBlocker([ctxTechnique]), /cannot be stored as an IOC record/);
+  assert.match(describePromoteBlocker([ctxCidr]), /cannot be stored as an IOC record/);
+  assert.match(describePromoteBlocker([iocA]), /Only Context Only indicators/);
+  assert.match(describePromoteBlocker([]), /Select one/);
+});
+
+test('IOC candidate views keep the full action set and enable it from the selection', () => {
+  for (const filter of ['indicators', 'new', 'needs_review', 'existing', 'all']) {
+    const t = describeReviewToolbar({ filter, selectedRows: [iocA] });
+    assert.deepEqual(ids(t), ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious'], filter);
+    assert.deepEqual(enabled(t), ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious'], filter);
+    assert.equal(t.actions.find((a) => a.id === 'create_iocs').primary, true);
+    assert.equal(ids(t).includes('promote_to_ioc'), false);
+  }
+  const empty = describeReviewToolbar({ filter: 'indicators', selectedRows: [] });
+  assert.deepEqual(enabled(empty), ['approve_high_confidence_malicious'], 'report-wide action needs no selection');
+});
+
+test('All view with only Context Only rows selected: unsafe IOC actions stay disabled', () => {
+  const t = describeReviewToolbar({ filter: 'all', selectedRows: [ctxAmazon, ctxTrustpilot] });
+  assert.deepEqual(enabled(t), ['ignore', 'approve_high_confidence_malicious']);
+  assert.equal(t.contextOnlySelected, 2);
+  assert.equal(t.iocSelected, 0);
+  for (const id of ['approve', 'context_only', 'create_iocs']) {
+    const a = t.actions.find((x) => x.id === id);
+    assert.equal(a.enabled, false, id);
+    assert.equal(a.hint, 'Context Only rows are not IOC candidates.');
+  }
+});
+
+test('mixed selection: Context Only rows never enter Approve / Context only / Create IOCs payloads', () => {
+  const rows = [iocA, ctxAmazon, iocB, ctxTrustpilot];
+  const t = describeReviewToolbar({ filter: 'all', selectedRows: rows });
+  assert.deepEqual(enabled(t), ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious']);
+  assert.equal(t.iocSelected, 2);
+  assert.equal(t.contextOnlySelected, 2);
+  for (const action of ['approve', 'context_only', 'create_iocs']) {
+    assert.deepEqual(selectionForAction(action, rows), { ids: [201, 202], excluded: 2 }, action);
+  }
+  assert.deepEqual(selectionForAction('ignore', rows), { ids: [201, 101, 202, 102], excluded: 0 });
+  assert.deepEqual(selectionForAction('promote_to_ioc', [ctxAmazon]), { ids: [101], excluded: 0 });
+  assert.deepEqual(selectionForAction('create_iocs', [ctxAmazon, ctxTrustpilot]), { ids: [], excluded: 2 });
+});
+
+test('feedback reports rows that were left out and the promotion outcome', () => {
+  assert.equal(describeReviewFeedback('approve', { count: 2, excluded: 1 }), '2 indicators approved. 1 Context Only row was not included.');
+  assert.equal(describeReviewFeedback('approve', { count: 1, excluded: 2 }), 'Indicator approved. 2 Context Only rows were not included.');
+  assert.equal(describeReviewFeedback('approve', { count: 3 }), '3 indicators approved.');
+  assert.equal(describePromoteFeedback({ summary: { created: 1 } }, 'amazon.com'), 'amazon.com promoted to IOC. IOC created.');
+  assert.equal(describePromoteFeedback({ summary: { already_existing: 1 } }, 'amazon.com'), 'amazon.com promoted to IOC. An IOC record already existed and was linked.');
+  assert.match(describePromoteFeedback({ summary: { failed: 1 } }, 'amazon.com'), /creation failed; the row is now an approved IOC candidate/);
+});
+
+test('report filter counts are unchanged by the toolbar rules', () => {
+  const all = [iocA, iocB, ctxAmazon, ctxTrustpilot, ctxTechnique, ctxCidr];
+  const count = (tab) => filterReviewCandidates(all, { tab }).length;
+  assert.equal(count('indicators'), 2);
+  assert.equal(count('new'), 2);
+  assert.equal(count('needs_review'), 1);
+  assert.equal(count('existing'), 0);
+  assert.equal(count('context_only'), 4);
+  assert.equal(count('all'), 6);
 });

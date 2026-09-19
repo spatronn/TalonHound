@@ -34,7 +34,11 @@ import {
   applyPromotionResults,
   formatCreateIocSummary,
   describeReviewFeedback,
-  describeCreateIocFeedback
+  describeCreateIocFeedback,
+  describePromoteFeedback,
+  describeReviewToolbar,
+  isContextOnlyCandidate,
+  selectionForAction
 } from './candidateReview.js';
 import {
   REPORT_PHASES,
@@ -626,26 +630,38 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     });
   }
 
-  /** Review action for the current table selection (the only mutation entry point). */
+  /**
+   * Review action for the current table selection (the only mutation entry
+   * point). Context Only rows are never sent to Approve / Context only /
+   * Create IOCs: item-level eligibility is applied here and enforced again by
+   * the backend.
+   */
   async function runReview(action) {
     if (!canWrite) return;
     if (action === 'create_iocs') {
       await createIocs();
       return;
     }
+    if (action === 'promote_to_ioc') {
+      await promoteToIoc();
+      return;
+    }
+    const { ids, excluded } = selectionForAction(action, selectedRows);
+    if (action !== 'approve_high_confidence_malicious' && !ids.length) return;
     setBusy(action);
     setFeedback('');
     setError('');
     try {
       const body = { action };
       if (action !== 'approve_high_confidence_malicious') {
-        body.candidate_ids = [...selected];
+        body.candidate_ids = ids;
       }
       const { data } = await api.post(`/threat-library/reports/${reportId}/review`, body);
       const updated = Number.isFinite(Number(data?.updated)) ? Number(data.updated) : null;
       setFeedback(describeReviewFeedback(action, {
-        count: updated ?? (action === 'approve_high_confidence_malicious' ? null : selected.size),
-        errors: Array.isArray(data?.errors) ? data.errors.length : 0
+        count: updated ?? (action === 'approve_high_confidence_malicious' ? null : ids.length),
+        errors: Array.isArray(data?.errors) ? data.errors.length : 0,
+        excluded: excluded + (Number(data?.skipped_context_only) || 0)
       }));
       setSelected(new Set());
       await loadDetail();
@@ -658,10 +674,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
 
   async function createIocs() {
     if (!canWrite || !selected.size) return;
+    const { ids, excluded } = selectionForAction('create_iocs', selectedRows);
+    if (!ids.length) return;
     setBusy('create_iocs');
     setFeedback('');
     setError('');
-    const ids = [...selected];
+    const excludedNote = excluded > 0
+      ? `\n${excluded} Context Only row${excluded === 1 ? ' is' : 's are'} not an IOC candidate and ${excluded === 1 ? 'was' : 'were'} left out.`
+      : '';
     try {
       const { data: preview } = await api.post(`/threat-library/reports/${reportId}/review`, {
         action: 'create_iocs',
@@ -696,7 +716,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         description: eligible < (summary.selected || 0)
           ? `Only the ${eligible} eligible approved indicators will be created.`
           : `${eligible} new IOC record${eligible === 1 ? '' : 's'} will be created.`,
-        detail: formatCreateIocSummary(summary),
+        detail: formatCreateIocSummary(summary) + excludedNote,
         confirmLabel: `Create ${eligible} IOC${eligible === 1 ? '' : 's'}`,
         cancelLabel: 'Cancel'
       });
@@ -730,6 +750,49 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         return;
       }
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Review action failed');
+    } finally {
+      setBusy('');
+    }
+  }
+
+  /**
+   * Row-level Context Only override. Exactly one selected Context Only row is
+   * re-classified as an approved IOC candidate and created (or linked) through
+   * the normal Create IOCs path, after an explicit confirmation that names the
+   * transition. Never a bulk path.
+   */
+  async function promoteToIoc() {
+    if (!canWrite || selectedRows.length !== 1) return;
+    const row = selectedRows[0];
+    if (!isContextOnlyCandidate(row)) return;
+    const value = candidateDisplayValue(row) || String(row.id);
+    const ok = await requestConfirm({
+      title: 'Promote to IOC?',
+      description: `${value} is classified as Context Only. Promote it to an IOC?`,
+      detail: [
+        'This is an analyst override of the report evidence.',
+        'The indicator will be re-classified as an approved IOC candidate and an IOC record will be created, or linked if one already exists.',
+        'Context Only indicators are never created as IOCs in bulk.'
+      ].join('\n'),
+      confirmLabel: 'Promote to IOC',
+      cancelLabel: 'Cancel',
+      variant: 'warning'
+    });
+    if (!ok) return;
+    setBusy('promote_to_ioc');
+    setFeedback('');
+    setError('');
+    try {
+      const { data } = await api.post(`/threat-library/reports/${reportId}/review`, {
+        action: 'promote_to_ioc',
+        candidate_ids: [row.id]
+      });
+      if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
+      setFeedback(describePromoteFeedback(data, value));
+      setSelected(new Set());
+      await loadDetail();
+    } catch (err) {
+      if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Promote to IOC failed');
     } finally {
       setBusy('');
     }
@@ -968,6 +1031,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     [filtered, openCandidateId, paged.pageSize]
   );
   const selectedOnPage = useMemo(() => pageRows.filter((c) => selected.has(c.id)).length, [pageRows, selected]);
+  const selectedRows = useMemo(() => candidates.filter((c) => selected.has(c.id)), [candidates, selected]);
+  // Which review actions exist for this filter and whether the selection can drive them.
+  const toolbar = useMemo(
+    () => describeReviewToolbar({ filter, selectedRows, busy: Boolean(busy) }),
+    [filter, selectedRows, busy]
+  );
   const overflowItems = [
     isAdmin ? { id: 'delete', label: 'Delete report', danger: true, disabled: Boolean(busy), onSelect: () => removeReport().catch(() => {}) } : null
   ];
@@ -1236,22 +1305,21 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 </div>
 
                 {canWrite ? (
-                  <div className="tl-bulkbar" ref={bulkBarRef} data-testid="bulk-actions">
-                    <button type="button" style={compactBtn(compactAction, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('approve').catch(() => {})}>
-                      Approve
-                    </button>
-                    <button type="button" style={compactBtn(compactAction, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('context_only').catch(() => {})}>
-                      Context only
-                    </button>
-                    <button type="button" style={compactBtn(compactAction, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('ignore').catch(() => {})}>
-                      Ignore
-                    </button>
-                    <button type="button" style={compactBtn(compactPrimary, !selected.size || Boolean(busy))} disabled={!selected.size || Boolean(busy)} onClick={() => runReview('create_iocs').catch(() => {})}>
-                      Create IOCs
-                    </button>
-                    <button type="button" style={compactBtn(compactAction, Boolean(busy))} disabled={Boolean(busy)} onClick={() => runReview('approve_high_confidence_malicious').catch(() => {})}>
-                      Approve high-confidence malicious
-                    </button>
+                  <div className="tl-bulkbar" ref={bulkBarRef} data-testid="bulk-actions" data-review-filter={filter}>
+                    {/* Context Only != IOC candidate: the toolbar descriptor renders only the actions valid for this filter. */}
+                    {toolbar.actions.map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        data-review-action={a.id}
+                        style={compactBtn(a.primary ? compactPrimary : compactAction, !a.enabled)}
+                        disabled={!a.enabled}
+                        title={!a.enabled && a.hint ? a.hint : undefined}
+                        onClick={() => runReview(a.id).catch(() => {})}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
                     <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }} aria-live="polite">
                       {selectedOnPage === selected.size
                         ? `${selected.size} selected on this page`

@@ -55,8 +55,9 @@ test('enum cells go through display labels; canonical values feed only compariso
   assert.doesNotMatch(pageSrc, /<td[^>]*>\{c\.candidate_type\}<\/td>/, 'raw candidate_type no longer rendered');
   assert.doesNotMatch(pageSrc, /<td[^>]*>\{c\.role \|\| '—'\}<\/td>/, 'raw role no longer rendered');
   assert.doesNotMatch(pageSrc, /<td[^>]*>\{c\.review_status \|\| '—'\}<\/td>/, 'raw review_status no longer rendered');
-  // Request bodies still carry canonical values / ids only.
-  assert.match(pageSrc, /body\.candidate_ids = \[\.\.\.selected\]/);
+  // Request bodies still carry canonical values / ids only (eligibility-filtered, see selectionForAction).
+  assert.match(pageSrc, /body\.candidate_ids = ids;/);
+  assert.match(pageSrc, /const \{ ids, excluded \} = selectionForAction\(action, selectedRows\);/);
   assert.match(pageSrc, /candidate_ids: ids,\s*confirm: false/);
   assert.match(pageSrc, /candidate_ids: ids,\s*confirm: true/);
   assert.match(pageSrc, /c\.candidate_type === 'cidr'/, 'canonical comparison for the CIDR note');
@@ -85,9 +86,10 @@ test('review workflow gates are unchanged: canWrite for actions, showReview for 
   assert.match(pageSrc, /\{showPreliminary \? \(\s*<PreliminaryIndicatorsCard/);
   assert.match(pageSrc, /async function runReview\(action\) \{\s*if \(!canWrite\) return;/);
   assert.match(pageSrc, /async function createIocs\(\) \{\s*if \(!canWrite \|\| !selected\.size\) return;/);
-  for (const action of ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious']) {
-    assert.match(pageSrc, new RegExp(`className="tl-bulkbar"[\\s\\S]*?runReview\\('${action}'\\)`), `toolbar still offers ${action}`);
-  }
+  // The toolbar renders the filter-aware descriptor: no hardcoded action buttons.
+  assert.match(pageSrc, /className="tl-bulkbar"[\s\S]*?\{toolbar\.actions\.map\(\(a\) => \([\s\S]*?onClick=\{\(\) => runReview\(a\.id\)\.catch/);
+  assert.match(pageSrc, /describeReviewToolbar\(\{ filter, selectedRows, busy: Boolean\(busy\) \}\)/);
+  assert.doesNotMatch(pageSrc, /runReview\('(approve|context_only|ignore|create_iocs|approve_high_confidence_malicious)'\)/, 'no filter-blind action buttons');
   assert.match(pageSrc, /SourceUrlEditor[\s\S]*?canWrite=\{canWrite\}/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('export'\)/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('finalize'\)/);
@@ -160,4 +162,16 @@ test('copy control reuses the shared clipboard helper and overflow menu reuses t
   assert.match(partsSrc, /import \{ IOC_COPY_FEEDBACK_MS, copyTextToClipboard \} from '\.\.\/\.\.\/lib\/iocCopyFeedback\.js'/);
   assert.match(partsSrc, /computeOverflowMenuPosition/);
   assert.match(partsSrc, /className=\{`br-menu-item\$\{item\.danger \? ' ioc-source-menu-item--danger' : ''\}`\}/);
+});
+
+test('Context Only != IOC candidate: promotion is a confirmed single-row override, mixed selections drop context rows', () => {
+  assert.match(pageSrc, /if \(action === 'promote_to_ioc'\) \{\s*await promoteToIoc\(\);/);
+  assert.match(pageSrc, /async function promoteToIoc\(\) \{\s*if \(!canWrite \|\| selectedRows\.length !== 1\) return;/);
+  assert.match(pageSrc, /if \(!isContextOnlyCandidate\(row\)\) return;/);
+  assert.match(pageSrc, /is classified as Context Only\. Promote it to an IOC\?/, 'confirmation names the transition');
+  assert.match(pageSrc, /action: 'promote_to_ioc',\s*candidate_ids: \[row\.id\]/, 'exactly one id is sent');
+  assert.match(pageSrc, /confirmLabel: 'Promote to IOC'/);
+  assert.match(pageSrc, /const \{ ids, excluded \} = selectionForAction\('create_iocs', selectedRows\);/);
+  assert.match(pageSrc, /excluded: excluded \+ \(Number\(data\?\.skipped_context_only\) \|\| 0\)/, 'feedback reports skipped context rows');
+  assert.doesNotMatch(drawerSrc, /promote_to_ioc|promoteToIoc|Promote to IOC/, 'drawer stays read-only');
 });

@@ -35,6 +35,20 @@ export function isReviewIndicator(candidate) {
   return true;
 }
 
+/**
+ * Context Only != IOC candidate. Mirrors backend `isContextOnlyCandidate`:
+ * any of the three review fields marks the row as context, and such a row is
+ * never part of Approve / Create IOCs / high-confidence approval no matter
+ * which filter is active. The only exit is the explicit row-level promotion.
+ */
+export function isContextOnlyCandidate(candidate) {
+  if (!candidate) return false;
+  const state = String(candidate.match_state || '').toLowerCase();
+  const review = String(candidate.review_status || '').toLowerCase();
+  const assessment = String(candidate.assessment || '').toLowerCase();
+  return state === 'context_only' || review === 'context_only' || assessment === 'context_only';
+}
+
 export function matchReviewFilter(candidate, filter) {
   if (filter === 'all') return true;
   const state = String(candidate.match_state || '').toLowerCase();
@@ -354,6 +368,96 @@ export function formatCreateIocSummary(summary) {
   return lines.join('\n');
 }
 
+/** Observable types that can be stored as IOC records (backend CREATABLE_IOC_TYPES). */
+const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
+
+export const REVIEW_TOOLBAR_LABELS = Object.freeze({
+  approve: 'Approve',
+  context_only: 'Context only',
+  ignore: 'Ignore',
+  create_iocs: 'Create IOCs',
+  approve_high_confidence_malicious: 'Approve high-confidence malicious',
+  promote_to_ioc: 'Promote to IOC…'
+});
+
+/** Actions whose request body must only carry IOC-candidate rows (context-only rows are excluded). */
+const IOC_CANDIDATE_ACTIONS = new Set(['approve', 'context_only', 'create_iocs']);
+
+/**
+ * Split the current selection for one review action: `ids` is what may be
+ * sent, `excluded` counts the Context Only rows that were left out. Item-level
+ * eligibility is canonical here; the filter only decides which buttons show.
+ */
+export function selectionForAction(action, selectedRows) {
+  const rows = Array.isArray(selectedRows) ? selectedRows : [];
+  if (!IOC_CANDIDATE_ACTIONS.has(String(action || ''))) {
+    return { ids: rows.map((c) => c.id), excluded: 0 };
+  }
+  const eligible = rows.filter((c) => !isContextOnlyCandidate(c));
+  return { ids: eligible.map((c) => c.id), excluded: rows.length - eligible.length };
+}
+
+/**
+ * Why a single selected row cannot be promoted (null when it can). Promotion
+ * is deliberately single-row: it is an analyst override, never a bulk path.
+ */
+export function describePromoteBlocker(selectedRows) {
+  const rows = Array.isArray(selectedRows) ? selectedRows : [];
+  if (rows.length === 0) return 'Select one Context Only indicator to promote it.';
+  if (rows.length > 1) return 'Promote to IOC is a single-row action: select exactly one indicator.';
+  const row = rows[0];
+  if (!isContextOnlyCandidate(row)) return 'Only Context Only indicators can be promoted.';
+  if (!PROMOTABLE_TYPES.has(String(row.candidate_type || '').toLowerCase())) {
+    return 'This indicator type cannot be stored as an IOC record.';
+  }
+  return null;
+}
+
+/**
+ * Toolbar for the active filter and selection.
+ *
+ * Context Only view: no IOC lifecycle actions at all (they are not rendered,
+ * not merely disabled) — only the single-row `Promote to IOC…` override and
+ * `Ignore`. Every other view keeps the IOC actions, but Approve / Context only
+ * / Create IOCs enable only when the selection holds at least one IOC
+ * candidate, so a Context Only row selected in the All view can never drive
+ * them on its own.
+ *
+ * @returns {{ actions: Array<{ id: string, label: string, enabled: boolean, primary?: boolean, hint?: string|null }>, contextOnlySelected: number, iocSelected: number }}
+ */
+export function describeReviewToolbar({ filter, selectedRows, busy = false } = {}) {
+  const rows = Array.isArray(selectedRows) ? selectedRows : [];
+  const iocSelected = rows.filter((c) => !isContextOnlyCandidate(c)).length;
+  const contextOnlySelected = rows.length - iocSelected;
+  const isBusy = Boolean(busy);
+  const item = (id, enabled, extra = {}) => ({ id, label: REVIEW_TOOLBAR_LABELS[id], enabled: enabled && !isBusy, ...extra });
+
+  if (filter === 'context_only') {
+    const blocker = describePromoteBlocker(rows);
+    return {
+      actions: [
+        item('promote_to_ioc', blocker == null, { hint: blocker }),
+        item('ignore', rows.length > 0)
+      ],
+      contextOnlySelected,
+      iocSelected
+    };
+  }
+
+  const noIocHint = rows.length > 0 && iocSelected === 0 ? 'Context Only rows are not IOC candidates.' : null;
+  return {
+    actions: [
+      item('approve', iocSelected > 0, { hint: noIocHint }),
+      item('context_only', iocSelected > 0, { hint: noIocHint }),
+      item('ignore', rows.length > 0),
+      item('create_iocs', iocSelected > 0, { primary: true, hint: noIocHint }),
+      item('approve_high_confidence_malicious', true)
+    ],
+    contextOnlySelected,
+    iocSelected
+  };
+}
+
 const REVIEW_FEEDBACK = Object.freeze({
   approve: { one: 'Indicator approved.', many: (n) => `${n} indicators approved.`, some: 'Indicators approved.' },
   context_only: {
@@ -374,15 +478,28 @@ const REVIEW_FEEDBACK = Object.freeze({
  * backend's `updated` count when present, else the number of selected rows.
  * Errors reported by the backend keep the explicit error wording.
  */
-export function describeReviewFeedback(action, { count = null, errors = 0 } = {}) {
+export function describeReviewFeedback(action, { count = null, errors = 0, excluded = 0 } = {}) {
   const errs = Number(errors) || 0;
   if (errs > 0) return `Completed with ${errs} error${errs === 1 ? '' : 's'}.`;
   const entry = REVIEW_FEEDBACK[String(action || '')];
   if (!entry) return 'Review action applied.';
   const n = count == null || count === '' ? NaN : Number(count);
-  if (!Number.isFinite(n) || n < 0) return entry.some;
-  if (n === 1) return entry.one;
-  return entry.many(n);
+  const head = !Number.isFinite(n) || n < 0 ? entry.some : n === 1 ? entry.one : entry.many(n);
+  const skipped = Number(excluded) || 0;
+  if (skipped > 0) return `${head} ${skipped} Context Only row${skipped === 1 ? ' was' : 's were'} not included.`;
+  return head;
+}
+
+/** Success banner after the single-row Context Only override. */
+export function describePromoteFeedback(data, value) {
+  const label = value ? `${value} promoted to IOC.` : 'Indicator promoted to IOC.';
+  const summary = data?.summary || {};
+  if ((Number(summary.created) || 0) > 0) return `${label} IOC created.`;
+  if ((Number(summary.already_existing) || 0) > 0) return `${label} An IOC record already existed and was linked.`;
+  if ((Number(summary.failed) || 0) > 0 || (Array.isArray(data?.errors) && data.errors.length)) {
+    return `${label} IOC creation failed; the row is now an approved IOC candidate.`;
+  }
+  return label;
 }
 
 /** Success banner after Create IOCs (confirmed run). */

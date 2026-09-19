@@ -70,6 +70,48 @@ export function isPendingActionableCandidate(candidate) {
   return isActionableReviewIndicator(candidate) && reviewOf(candidate) === 'pending';
 }
 
+/**
+ * Context Only != IOC candidate. A row is context-only when any of the three
+ * review fields says so (the pipeline sets assessment + match_state, the
+ * analyst action sets all three). Such rows never enter Approve, Create IOCs
+ * or the high-confidence malicious set; the only way out is the explicit
+ * row-level `promote_to_ioc` override.
+ */
+export function isContextOnlyCandidate(candidate) {
+  if (!candidate) return false;
+  const review = reviewOf(candidate);
+  const assessment = String(candidate.assessment || '').toLowerCase();
+  const state = String(candidate.match_state || '').toLowerCase();
+  return review === 'context_only' || assessment === 'context_only' || state === 'context_only';
+}
+
+/** SQL predicate equivalent of isContextOnlyCandidate (negated) for `threat_report_candidates` rows. */
+export const NOT_CONTEXT_ONLY_SQL = `
+  COALESCE(assessment, '') <> 'context_only'
+  AND COALESCE(match_state, '') <> 'context_only'
+  AND COALESCE(review_status, '') <> 'context_only'`;
+
+/**
+ * Row-level Context Only -> IOC override eligibility. Only a context-only row
+ * with a creatable observable type may be promoted; the analyst must confirm.
+ * @returns {{ ok: boolean, code?: string, detail?: string }}
+ */
+export function classifyPromoteEligibility(candidate) {
+  if (!candidate) return { ok: false, code: 'promote_not_found', detail: 'Candidate not found.' };
+  if (!isContextOnlyCandidate(candidate)) {
+    return { ok: false, code: 'promote_not_context_only', detail: 'Only Context Only indicators can be promoted; use Approve for IOC candidates.' };
+  }
+  const type = typeOf(candidate);
+  if (!CREATABLE.has(type)) {
+    return {
+      ok: false,
+      code: 'promote_unsupported_type',
+      detail: type === 'cidr' ? CIDR_UNSUPPORTED_DETAIL : `Type ${type || 'unknown'} cannot be stored as an IOC record.`
+    };
+  }
+  return { ok: true };
+}
+
 export function isContextOrIgnored(candidate) {
   if (!candidate || candidate.is_ioc === false) return true;
   const review = reviewOf(candidate);

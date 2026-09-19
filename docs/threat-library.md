@@ -161,6 +161,14 @@ Central thresholds in `backend/lib/threatLibrary/constants.js` (`CONFIDENCE_POLI
 
 AI confidence is not truth; analysts approve IOC creation.
 
+### Context Only is not an IOC candidate
+
+A candidate row is **Context Only** when any of `assessment`, `match_state` or `review_status` is `context_only` (the pipeline sets the first two; the *Context only* review action sets all three). Such rows are context, never IOC candidates, and the rule is enforced at item level on both sides regardless of the active filter:
+
+- **Toolbar.** In the Context Only view the IOC lifecycle actions (*Approve*, *Create IOCs*, *Approve high-confidence malicious*, the redundant *Context only*) are not rendered at all; the toolbar is `Promote to IOC…` + `Ignore`. In every other view (including *All*) *Approve* / *Context only* / *Create IOCs* enable only when the selection contains at least one IOC candidate, and a mixed selection sends only the IOC-candidate ids (the banner reports how many Context Only rows were left out).
+- **Backend.** `approve` and `approve_high_confidence_malicious` filter context-only / `is_ioc = false` rows out in SQL (`NOT_CONTEXT_ONLY_SQL`) and return `updated` (actual row count) plus `skipped_context_only`; `create_iocs` classifies them `not_applicable`; the high-confidence candidate set additionally passes `isActionableReviewIndicator`.
+- **Row-level exception.** `POST …/review { action: "promote_to_ioc", candidate_ids: [id] }` is the only way out: exactly one context-only row of a creatable type (`400 promote_single_row_only`, `409 promote_not_context_only` / `promote_unsupported_type` otherwise). The row is re-classified `review_status = approved`, `assessment = suspicious`, `is_ioc = true`, `match_state = new | existing` (context roles reset to `unknown`), the original classification is kept in `evidence.promoted_from` (`policy_decision = analyst_promoted_from_context_only`, `decision_source = analyst`), and the row then goes through the normal Create IOCs path (dedup / link / outcome / `ioc.created` audit). The UI offers it as a confirmed single-selection action in the Context Only view.
+
 ## Canonical intelligence model
 
 Tables (migration `019_threat_library.sql`):
@@ -218,7 +226,8 @@ Every Threat Library write operation produces **one** `audit_logs` row per user 
 | `threat_library.report.imported.pdf` / `.url` / `.thib` | import request accepted | report id/title, TLP, file name + sha256 (pdf), redacted source URL (url), count summary (thib), job id |
 | `threat_library.report.import_failed` | import request threw | safe `error_code` only |
 | `threat_library.report.analysis.completed` / `.failed` | worker finished the job | actor = user from `threat_library_jobs.requested_by`, `executed_by: threat-library-worker`, `source: worker`, candidate counts |
-| `threat_library.candidates.approved` / `.context_only` / `.ignored` | review action (grouped) | selected / changed / already_in_state, type distribution, candidate ids (bounded) |
+| `threat_library.candidates.approved` / `.context_only` / `.ignored` | review action (grouped) | selected / changed / already_in_state / skipped_context_only, type distribution, candidate ids (bounded) |
+| `threat_library.candidates.promoted` | **Promote to IOC…** (single Context Only row re-classified as an approved IOC candidate) | same shape, `target_state: approved`; followed by the `threat_library.iocs.created` event of its Create IOCs run |
 | `threat_library.iocs.created` | **Create IOCs** committed | selected / eligible / created / already_existing / not_approved / unsupported / failed, `candidate_types`, `created_ioc_ids`, bounded per-candidate `results` with `results_total` / `results_shown` / `results_omitted`, `operation_id`; `status` = success / partial / failed |
 | `threat_library.report.finalized` | report finalized | final review summary |
 | `threat_library.report.source_url.updated` | provenance edit | old / new URL with credentials and token-like query values masked |
