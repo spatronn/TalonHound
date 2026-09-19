@@ -112,4 +112,7 @@ test('025 documents last_seen_in_feed as last source observation and bounds Thre
   assert.doesNotMatch(sql, /DELETE /);
   // Guard against accidental global MAX(last_seen_at) across all sources.
   assert.doesNotMatch(sql, /MAX\(\s*(?:i|anchor)\.last_seen_at\s*\)/);
+  // Postgres rejects UPDATE target aliases inside JOIN/ON of FROM.
+  assert.doesNotMatch(sql, /JOIN\s+ioc_items\s+anchor\s*\n\s*ON\s+anchor\.id\s*=\s*m\./i);
+  assert.match(sql, /FROM\s+integration_feeds\s+f,\s*\n\s*ioc_items\s+anchor,\s*\n\s*threatfox_obs\s+o/i);
 });

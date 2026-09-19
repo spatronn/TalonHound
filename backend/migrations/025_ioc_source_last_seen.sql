@@ -54,21 +54,23 @@ threatfox_obs AS (
   WHERE observed_at IS NOT NULL
   GROUP BY observable, observable_type
 )
+-- Postgres forbids referencing the UPDATE target alias inside JOIN/ON of FROM.
+-- Keep target `m` only in WHERE / SET (comma FROM + WHERE predicates).
 UPDATE ioc_feed_memberships m
 SET first_seen_in_feed = CASE
       WHEN o.first_observed_at IS NULL THEN m.first_seen_in_feed
       ELSE LEAST(m.first_seen_in_feed, o.first_observed_at)
     END,
     last_seen_in_feed = o.observed_at
-FROM integration_feeds f
-JOIN ioc_items anchor
-  ON anchor.id = m.ioc_item_id
- AND anchor.observable_type = m.ioc_observable_type
-JOIN threatfox_obs o
-  ON o.observable = anchor.observable
- AND o.observable_type = anchor.observable_type
+FROM integration_feeds f,
+     ioc_items anchor,
+     threatfox_obs o
 WHERE f.integration_id = m.feed_id
   AND f.key = 'threatfox-abusech'
+  AND anchor.id = m.ioc_item_id
+  AND anchor.observable_type = m.ioc_observable_type
+  AND o.observable = anchor.observable
+  AND o.observable_type = anchor.observable_type
   AND (
     (o.first_observed_at IS NOT NULL
       AND m.first_seen_in_feed IS DISTINCT FROM LEAST(m.first_seen_in_feed, o.first_observed_at))
