@@ -4,6 +4,12 @@
  * Approve / Context only / Ignore / Approve high-confidence malicious
  * change review state only. They never create IOC records.
  *
+ * Context Only != IOC candidate: context-only rows are excluded from Approve,
+ * Approve high-confidence malicious and Create IOCs at this layer regardless
+ * of what the client selected. The only exit is `promote_to_ioc`, a single-row
+ * analyst override that re-classifies the row as an approved IOC candidate
+ * and then runs the normal Create IOCs path for it.
+ *
  * Create IOCs materializes only approved, supported, new observables.
  * Finalize closes the report lifecycle and never creates IOCs.
  */
@@ -24,8 +30,12 @@ import { isFinalizeAllowed, isReviewMutationAllowed, reviewNotReadyError } from 
 import {
   canExecutePromotion,
   classifyCreateEligibility,
+  classifyPromoteEligibility,
+  isActionableReviewIndicator,
+  isContextOnlyCandidate,
   isNoneEligibleBlock,
   isPendingActionableCandidate,
+  NOT_CONTEXT_ONLY_SQL,
   previewCreateIocPromotion,
   PROMOTION_OUTCOMES,
   summarizePromotionResults
@@ -99,7 +109,7 @@ async function emitAudit(opts, event) {
  * @param {number} reportId
  * @param {{
  *   candidateIds?: number[],
- *   action: 'approve'|'context_only'|'ignore'|'create_iocs'|'approve_high_confidence_malicious',
+ *   action: 'approve'|'context_only'|'ignore'|'create_iocs'|'approve_high_confidence_malicious'|'promote_to_ioc',
  *   confirm?: boolean,
  *   user?: object,
  *   audit?: object,
@@ -117,18 +127,27 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
 
   let ids = Array.isArray(opts.candidateIds) ? opts.candidateIds.map(Number).filter((n) => n > 0) : [];
 
+  if (action === 'promote_to_ioc') {
+    return promoteContextOnlyCandidate(pool, report, ids, opts);
+  }
+
   if (action === 'approve_high_confidence_malicious') {
+    // Candidate set = reviewable IOC candidates only: malicious, above the
+    // suggest threshold, pending, and never context-only / non-IOC rows.
     const { rows } = await pool.query(
       `SELECT * FROM threat_report_candidates
        WHERE report_id = $1
          AND assessment = 'malicious'
          AND confidence IS NOT NULL AND confidence >= $2
-         AND review_status = 'pending'`,
+         AND review_status = 'pending'
+         AND is_ioc = true
+         AND ${NOT_CONTEXT_ONLY_SQL}`,
       [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
     );
     ids = rows
       .filter((r) => {
         const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {};
+        if (!isActionableReviewIndicator(r)) return false;
         if (ev.is_parser_derived_metadata === true || r.is_ioc === false) return false;
         const occurrences = Array.isArray(ev.occurrences) && ev.occurrences.length
           ? ev.occurrences
@@ -161,19 +180,26 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   // Pre-update snapshot of the selection: the grouped audit event reports
   // changed vs already-in-state counts and the type distribution from it.
   const { rows: selectedBefore } = await pool.query(
-    `SELECT id, candidate_type, review_status FROM threat_report_candidates
+    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc
+     FROM threat_report_candidates
      WHERE report_id = $1 AND id = ANY($2::bigint[])`,
     [reportId, ids]
   );
 
+  let updated = ids.length;
+  let skippedIds = [];
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {
-    // Non-IOC artifacts (mutex names, relative paths, code identifiers) are
-    // context rows: they can never be approved into the IOC set.
-    await pool.query(
+    // Non-IOC artifacts (mutex names, relative paths, code identifiers) and
+    // context-only rows are context, not IOC candidates: a mixed selection
+    // approves only the IOC candidates and reports the rest as skipped.
+    skippedIds = selectedBefore.filter((c) => isContextOnlyCandidate(c) || c.is_ioc === false).map((c) => Number(c.id));
+    const res = await pool.query(
       `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
-       WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true`,
+       WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true
+         AND ${NOT_CONTEXT_ONLY_SQL}`,
       [reportId, ids]
     );
+    updated = Number.isInteger(res?.rowCount) ? res.rowCount : Math.max(0, selectedBefore.length - skippedIds.length);
   } else if (action === 'context_only') {
     await pool.query(
       `UPDATE threat_report_candidates
@@ -194,18 +220,95 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
     action,
     requestedIds: ids,
     candidates: selectedBefore,
+    skippedIds,
     user: opts.user
   }));
 
-  return { ok: true, updated: ids.length };
+  return { ok: true, updated, skipped_context_only: skippedIds.length };
 }
 
-async function createIocsFromCandidates(pool, report, ids, opts) {
-  const { rows: candidates } = await pool.query(
-    `SELECT * FROM threat_report_candidates
-     WHERE report_id = $1 AND id = ANY($2::bigint[])`,
-    [report.id, ids]
+/**
+ * Row-level Context Only to IOC override. Exactly one candidate: the row is
+ * re-classified as an approved IOC candidate (original classification kept in
+ * evidence.promoted_from) and then goes through the normal Create IOCs path,
+ * so dedup, linking, outcomes and the ioc.created audit trail are unchanged.
+ */
+async function promoteContextOnlyCandidate(pool, report, ids, opts) {
+  if (ids.length !== 1) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'promote_single_row_only',
+      error: 'Promote to IOC is a single-row action: select exactly one Context Only indicator.'
+    };
+  }
+  const candidateId = ids[0];
+  const { rows } = await pool.query(
+    `SELECT * FROM threat_report_candidates WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+    [report.id, [candidateId]]
   );
+  const candidate = rows.find((r) => Number(r.id) === Number(candidateId)) || null;
+  if (!candidate) return { ok: false, status: 404, code: 'promote_not_found', error: 'Candidate not found' };
+  const eligibility = classifyPromoteEligibility(candidate);
+  if (!eligibility.ok) return { ok: false, status: 409, code: eligibility.code, error: eligibility.detail };
+
+  const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
+  const evidencePatch = {
+    promoted_from: {
+      assessment: candidate.assessment || null,
+      role: candidate.role || null,
+      match_state: candidate.match_state || null,
+      review_status: candidate.review_status || null,
+      is_ioc: candidate.is_ioc !== false,
+      policy_decision: ev.policy_decision || null,
+      decision_source: ev.decision_source || null,
+      promoted_at: new Date().toISOString(),
+      promoted_by: opts.user?.email || opts.user?.username || null
+    },
+    decision_source: 'analyst',
+    policy_decision: 'analyst_promoted_from_context_only'
+  };
+  const { rows: promotedRows } = await pool.query(
+    `UPDATE threat_report_candidates
+     SET review_status = 'approved',
+         assessment = 'suspicious',
+         role = CASE WHEN role IN ('reference', 'legitimate_service', 'hosting_platform') THEN 'unknown' ELSE role END,
+         is_ioc = true,
+         match_state = CASE WHEN matched_ioc_id IS NOT NULL THEN 'existing' ELSE 'new' END,
+         evidence = COALESCE(evidence, '{}'::jsonb) || $3::jsonb,
+         updated_at = NOW()
+     WHERE report_id = $1 AND id = $2
+     RETURNING *`,
+    [report.id, candidateId, JSON.stringify(evidencePatch)]
+  );
+  const promoted = promotedRows?.[0] || null;
+
+  await emitAudit(opts, buildReviewAuditEvent({
+    report,
+    action: 'promote_to_ioc',
+    requestedIds: [candidateId],
+    candidates: [candidate],
+    user: opts.user
+  }));
+
+  const result = await createIocsFromCandidates(
+    pool,
+    report,
+    [candidateId],
+    { ...opts, confirm: true },
+    promoted ? [promoted] : null
+  );
+  return { ...result, promoted: true, candidate_id: Number(candidateId) };
+}
+
+async function createIocsFromCandidates(pool, report, ids, opts, preloaded = null) {
+  const candidates = Array.isArray(preloaded)
+    ? preloaded
+    : (await pool.query(
+      `SELECT * FROM threat_report_candidates
+       WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+      [report.id, ids]
+    )).rows;
   const ordered = ids.map((id) => candidates.find((c) => Number(c.id) === Number(id))).filter(Boolean);
   const preview = previewCreateIocPromotion(ordered);
 

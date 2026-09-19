@@ -27,7 +27,9 @@ const REVIEW_ACTION_AUDIT = Object.freeze({
     target: 'approved'
   },
   context_only: { action: AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_CONTEXT_ONLY, target: 'context_only' },
-  ignore: { action: AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_IGNORED, target: 'ignored' }
+  ignore: { action: AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_IGNORED, target: 'ignored' },
+  // Row-level analyst override: a Context Only row re-classified as an approved IOC candidate.
+  promote_to_ioc: { action: AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_PROMOTED, target: 'approved' }
 });
 
 /** Entity columns for a report row: title is the display, public id the key. */
@@ -161,11 +163,14 @@ export function reviewActionAudit(action) {
  * Grouped event for Approve / Context only / Ignore / Approve high-confidence.
  * `candidates` are the selected rows as they were BEFORE the update.
  */
-export function buildReviewAuditEvent({ report, action, requestedIds, candidates, user }) {
+export function buildReviewAuditEvent({ report, action, requestedIds, candidates, user, skippedIds = [] }) {
   const mapping = reviewActionAudit(action);
   if (!mapping) return null;
   const rows = Array.isArray(candidates) ? candidates : [];
-  const changed = rows.filter((c) => String(c.review_status || 'pending') !== mapping.target).length;
+  // Rows the action refused (context-only / non-IOC on Approve) are neither changed nor already in state.
+  const skipped = new Set((Array.isArray(skippedIds) ? skippedIds : []).map(Number));
+  const applied = rows.filter((c) => !skipped.has(Number(c.id)));
+  const changed = applied.filter((c) => String(c.review_status || 'pending') !== mapping.target).length;
   return {
     action: mapping.action,
     ...reportAuditEntity(report),
@@ -179,7 +184,8 @@ export function buildReviewAuditEvent({ report, action, requestedIds, candidates
       selected: Array.isArray(requestedIds) ? requestedIds.length : rows.length,
       matched: rows.length,
       changed,
-      already_in_state: rows.length - changed,
+      already_in_state: applied.length - changed,
+      skipped_context_only: skipped.size,
       candidate_types: summarizeCandidateTypes(rows),
       candidate_ids: rows.map((c) => Number(c.id)).slice(0, AUDIT_RESULT_SAMPLE_LIMIT),
       candidate_ids_total: rows.length
