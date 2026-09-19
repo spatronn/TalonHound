@@ -40,7 +40,6 @@ import {
   createJob,
   updateJob,
   insertArtifact,
-  getIocThreatContext,
   requestAnalysisCancel,
   updateReportStatus,
   countReportCandidates,
@@ -48,6 +47,7 @@ import {
   updateReportSourceUrl,
   updateReportTlp
 } from '../lib/threatLibrary/store.js';
+import { loadIocThreatContext } from '../lib/threatLibrary/iocThreatContext.js';
 import { validateReportSourceUrl } from '../lib/threatLibrary/sourceUrl.js';
 import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
@@ -967,27 +967,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       if (!Number.isFinite(iocId) || iocId <= 0) {
         return res.status(400).json({ message: 'Invalid IOC id' });
       }
-      const ctx = await getIocThreatContext(pool, iocId);
-      return res.json({
-        claims: ctx.claims.map((c) => ({
-          role: c.role,
-          assessment: c.assessment,
-          confidence: c.confidence,
-          evidence_text: c.evidence_text,
-          section: c.section,
-          page_number: c.page_number,
-          report: {
-            id: c.report_public_id,
-            title: c.report_title,
-            published_at: c.published_at,
-            tlp: c.tlp,
-            tlp_display: TLP_DISPLAY[c.tlp] || c.tlp,
-            source_name: c.source_name,
-            source_type: c.source_type
-          }
-        })),
-        relationships: ctx.relationships
-      });
+      // Same serializer as MCP get_ioc_context.threat_context — one canonical shape.
+      return res.json(await loadIocThreatContext(pool, iocId));
     } catch (err) {
       return res.status(500).json({ message: 'Failed to load threat context', detail: err.message });
     }

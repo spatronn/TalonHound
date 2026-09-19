@@ -32,6 +32,7 @@ import {
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 import { findArtifactLinkedIocsByIocId } from './fileArtifacts/read.js';
 import { collectDerivedInfrastructure, collectIocEnrichments } from './iocEnrichmentAggregator.js';
+import { loadIocThreatContext } from './threatLibrary/iocThreatContext.js';
 
 async function findExistingIoc(pool, type, value) {
   const { rows } = await pool.query(
@@ -419,6 +420,15 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
     });
   }
 
+  // Threat Context = Threat Library claims/relationships linked to this IOC
+  // (IOC Details "Threat Context"). Same store read + serializer as
+  // GET /api/ioc/:id/threat-context, keyed by the resolved internal IOC id.
+  // Persisted data only — no report fetch/parse, no model call. Not enrichment
+  // and not source_intelligence, so it stays a top-level field. Always present
+  // ({claims: [], relationships: []} when none); a failed read throws instead
+  // of masquerading as "no context".
+  const threatContext = await loadIocThreatContext(pool, body.id);
+
   return {
     status: 200,
     body: {
@@ -443,7 +453,9 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       enrichment: enrichment === undefined ? undefined : enrichment,
       // Additive: URL IP-host Derived Infrastructure (null when not applicable).
       derived_infrastructure: derivedInfrastructure === undefined ? undefined : derivedInfrastructure,
-      enrichment_included: caps.enrichment_read
+      enrichment_included: caps.enrichment_read,
+      // Additive: Threat Library Threat Context (claims + relationships).
+      threat_context: threatContext
     }
   };
 }

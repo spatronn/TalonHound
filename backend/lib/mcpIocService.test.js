@@ -178,7 +178,7 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
 // effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null } = {}) {
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatContextError = null } = {}) {
   const queries = [];
   return {
     queries,
@@ -245,6 +245,15 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
       // File-artifact link lookup (optional; usually gated off in unit tests).
       if (normalized.includes('FROM file_artifact_ioc_links') || normalized.includes('FROM file_artifacts')) {
         return { rows: [] };
+      }
+      // Threat Library Threat Context (store.getIocThreatContext): claims + relationships.
+      if (normalized.includes('FROM threat_report_candidates c') && normalized.includes('JOIN threat_reports r')) {
+        if (threatContextError) throw threatContextError;
+        return { rows: threatClaims };
+      }
+      if (normalized.includes('FROM threat_relationships tr')) {
+        if (threatContextError) throw threatContextError;
+        return { rows: threatRelationships };
       }
       throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
@@ -1304,4 +1313,192 @@ test('mcpLookupIoc: hash-storage fix preserved (abstract hash resolves to sha256
   const exact = pool.queries.find((q) =>
     q.sql.includes('observable_type = $1 AND observable = $2') && q.sql.includes('ORDER BY created_at ASC'));
   assert.deepEqual(exact.params, ['sha256', FEED_SHA256]);
+});
+
+// --- Threat Library Threat Context in get_ioc_context ---
+
+const INFOBLOX_CLAIM_ROW = {
+  id: 501, report_id: 11, matched_ioc_id: 3451551, role: 'malicious_infrastructure',
+  assessment: 'malicious', confidence: '0.900', evidence_text: 'zzyud.com listed as gambling infrastructure',
+  section: 'Indicators', page_number: 3, block_id: 'b-12', candidate_value: 'zzyud.com',
+  report_public_id: 'f1b3a0c2-1111-4222-8333-444455556666',
+  report_title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime',
+  published_at: '2026-09-10T00:00:00.000Z', tlp: 'clear',
+  source_name: 'www.infoblox.com', source_url: 'https://www.infoblox.com/x', source_type: 'url'
+};
+
+const RELATIONSHIP_ROW = {
+  id: 77, public_id: 'aaaa1111-2222-4333-8444-555566667777', portable_id: null, report_id: 11,
+  subject_kind: 'entity', subject_entity_id: 5, subject_candidate_id: null, subject_ioc_id: null, subject_portable_ref: null,
+  relationship_type: 'uses', object_kind: 'ioc', object_entity_id: null, object_candidate_id: null,
+  object_ioc_id: 3451551, object_portable_ref: null, role: 'malicious_infrastructure', confidence: '0.800',
+  evidence_text: 'PeckBirdy operates zzyud.com', section: 'Attribution', page_number: 4, block_id: 'b-20',
+  created_at: '2026-09-16T14:00:00.000Z',
+  report_public_id: 'f1b3a0c2-1111-4222-8333-444455556666',
+  report_title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime', tlp: 'clear',
+  subject_entity_name: 'PeckBirdy', subject_entity_type: 'threat_actor',
+  object_entity_name: null, object_entity_type: null
+};
+
+function zzyudRow() {
+  return domainRow({
+    id: 3451551, public_id: '6e8213c6-4d2a-4be1-9236-d2fe99039fb6', observable: 'zzyud.com',
+    confidence: 'high', note: 'Auto-imported from AlienVault OTX'
+  });
+}
+
+const READ_AUTH = { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'analyst' };
+
+function threatContextQueries(pool) {
+  return pool.queries.filter((q) => q.sql.includes('FROM threat_report_candidates c') || q.sql.includes('FROM threat_relationships tr'));
+}
+
+test('get_ioc_context: Threat Library claim surfaces under threat_context with canonical shape', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatClaims: [INFOBLOX_CLAIM_ROW] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  const tc = out.body.threat_context;
+  assert.ok(tc, 'threat_context is a top-level field');
+  assert.equal(tc.claims.length, 1);
+  assert.deepEqual(tc.claims[0], {
+    role: 'malicious_infrastructure',
+    assessment: 'malicious',
+    confidence: '0.900',
+    evidence_text: 'zzyud.com listed as gambling infrastructure',
+    section: 'Indicators',
+    page_number: 3,
+    report: {
+      id: 'f1b3a0c2-1111-4222-8333-444455556666',
+      title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime',
+      published_at: '2026-09-10T00:00:00.000Z',
+      tlp: 'clear',
+      tlp_display: 'TLP:CLEAR',
+      source_name: 'www.infoblox.com',
+      source_type: 'url'
+    }
+  });
+  assert.deepEqual(tc.relationships, []);
+  // Internal DB columns never leak (candidate id, report FK, block id, source_url).
+  assert.equal('id' in tc.claims[0], false);
+  assert.equal('report_id' in tc.claims[0], false);
+  assert.equal('block_id' in tc.claims[0], false);
+  assert.equal('source_url' in tc.claims[0].report, false);
+  // Lookup keyed by the resolved internal IOC id (same id the HTTP route takes).
+  const [claimQuery] = threatContextQueries(pool);
+  assert.deepEqual(claimQuery.params, [3451551]);
+});
+
+test('get_ioc_context: relationship surfaces with canonical shape, FK columns dropped', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatRelationships: [RELATIONSHIP_ROW] });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  const rels = out.body.threat_context.relationships;
+  assert.equal(rels.length, 1);
+  assert.deepEqual(rels[0], {
+    id: 'aaaa1111-2222-4333-8444-555566667777',
+    relationship_type: 'uses',
+    role: 'malicious_infrastructure',
+    confidence: '0.800',
+    evidence_text: 'PeckBirdy operates zzyud.com',
+    section: 'Attribution',
+    page_number: 4,
+    subject_kind: 'entity',
+    subject_entity_name: 'PeckBirdy',
+    subject_entity_type: 'threat_actor',
+    subject_ioc_id: null,
+    subject_portable_ref: null,
+    object_kind: 'ioc',
+    object_entity_name: null,
+    object_entity_type: null,
+    object_ioc_id: 3451551,
+    object_portable_ref: null,
+    report_title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime',
+    report: {
+      id: 'f1b3a0c2-1111-4222-8333-444455556666',
+      title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime',
+      tlp: 'clear',
+      tlp_display: 'TLP:CLEAR'
+    },
+    created_at: '2026-09-16T14:00:00.000Z'
+  });
+  for (const k of ['report_id', 'subject_entity_id', 'subject_candidate_id', 'object_entity_id', 'object_candidate_id', 'block_id', 'portable_id']) {
+    assert.equal(k in rels[0], false, `${k} must not be exposed`);
+  }
+  assert.deepEqual(out.body.threat_context.claims, []);
+});
+
+test('get_ioc_context: no Threat Library link yields stable empty threat_context (never omitted/null)', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(Object.prototype.hasOwnProperty.call(out.body, 'threat_context'), true);
+  assert.deepEqual(out.body.threat_context, { claims: [], relationships: [] });
+});
+
+test('get_ioc_context: Threat Context read failure surfaces as an error, not as empty context', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatContextError: new Error('relation "threat_report_candidates" is unavailable') });
+  await assert.rejects(
+    () => mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH }),
+    /threat_report_candidates/
+  );
+});
+
+test('get_ioc_context: threat_context is additive — existing fields unchanged, enrichment untouched', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({
+    row,
+    tags: [{ name: 'peckbirdy', type: 'context', origins: ['integration'], source_name: 'AlienVault OTX' }],
+    sources: [{ id: row.id, ioc_source_id: null, source_name: 'AlienVault OTX', catalog_source_name: 'AlienVault OTX', status: 'active', created_at: row.created_at }],
+    evidence: [{ id: 1, ioc_item_id: row.id, ioc_observable_type: 'domain', feed_id: 3, source_name: 'AlienVault OTX', category: null,
+      note: 'Auto-imported from AlienVault OTX | adversary=PeckBirdy | tags=peckbirdy', feed_key: 'alienvault-otx' }],
+    enrichment: [{ provider: 'virustotal', status: 'success', normalized_summary: { stats: { malicious: 1 } },
+      fetched_at: '2026-09-19T12:16:55.497Z', expires_at: null, error_message: null }],
+    rdap: { ...RDAP_ROW, root_domain: 'zzyud.com', observable_value: 'zzyud.com' },
+    threatClaims: [INFOBLOX_CLAIM_ROW]
+  });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.id, 3451551);
+  assert.equal(out.body.public_id, row.public_id);
+  assert.deepEqual(out.body.tags, ['peckbirdy']);
+  assert.equal(out.body.tags_detail[0].origin, 'integration');
+  assert.equal(out.body.sources.length, 1);
+  assert.equal(out.body.sources[0].name, 'AlienVault OTX');
+  assert.ok(out.body.source_intelligence.feed_tags.some((t) => t.normalized === 'peckbirdy'));
+  assert.equal(out.body.enrichment_included, true);
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider).sort(), ['rdap', 'virustotal']);
+  // Threat Context stays semantically separate: not inside enrichment, not merged into source_intelligence.
+  assert.equal(out.body.enrichment.some((e) => e.provider === 'threat_library' || 'claims' in e), false);
+  assert.equal('claims' in out.body.source_intelligence, false);
+  assert.equal(out.body.threat_context.claims.length, 1);
+});
+
+test('get_ioc_context: Threat Context is exactly two bounded queries per request (no N+1, no external calls)', async () => {
+  const row = zzyudRow();
+  const manyClaims = Array.from({ length: 25 }, (_, i) => ({ ...INFOBLOX_CLAIM_ROW, id: 600 + i, report_id: 20 + i, report_public_id: `r-${i}` }));
+  const manyRels = Array.from({ length: 25 }, (_, i) => ({ ...RELATIONSHIP_ROW, id: 700 + i, public_id: `p-${i}` }));
+  const pool = makeContextPool({ row, threatClaims: manyClaims, threatRelationships: manyRels });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.body.threat_context.claims.length, 25);
+  assert.equal(out.body.threat_context.relationships.length, 25);
+  const tcq = threatContextQueries(pool);
+  assert.equal(tcq.length, 2, 'one claims query + one relationships query, regardless of row count');
+  // No per-report metadata lookups: nothing else touches threat_reports.
+  assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+  // Read-only: no writes were issued anywhere in the request.
+  assert.equal(pool.queries.some((q) => /^(INSERT|UPDATE|DELETE)/i.test(q.sql)), false);
+});
+
+test('bulk_lookup_iocs: unchanged — never reads Threat Library tables and has no threat_context', async () => {
+  const pool = makeBulkPool([bulkRow(3451551, 'zzyud.com', 'domain')]);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'zzyud.com', type: 'domain' }] }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.counts.existing, 1);
+  assert.equal('threat_context' in out.body.existing[0], false);
+  assert.equal('threat_context' in out.body, false);
+  assert.equal(pool.queries.some((q) => q.sql.includes('threat_report_candidates') || q.sql.includes('threat_relationships')), false);
 });
