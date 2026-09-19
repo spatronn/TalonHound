@@ -744,7 +744,8 @@ export async function getThreatLibraryIocSourceId(pool) {
 export async function getIocThreatContext(pool, iocId) {
   const { rows: candidates } = await pool.query(
     `SELECT c.*, r.public_id AS report_public_id, r.title AS report_title,
-            r.published_at, r.tlp, r.source_name, r.source_url, r.source_type
+            r.published_at, r.tlp, r.source_name, r.source_url, r.source_type,
+            r.summary AS report_summary
      FROM threat_report_candidates c
      JOIN threat_reports r ON r.id = c.report_id
      WHERE c.matched_ioc_id = $1 AND r.deleted_at IS NULL
@@ -770,5 +771,25 @@ export async function getIocThreatContext(pool, iocId) {
     [iocId]
   );
 
-  return { claims: candidates, relationships: rels };
+  // Report-level entities for every report that carries a claim: ONE batched
+  // read keyed by report id (same join/order as loadReportSnapshot), skipped
+  // when there are no claims. These are co-mentions in the report, not IOC
+  // relationships — the serializer keeps them under the report, never under
+  // relationships.
+  const reportIds = [...new Set(candidates.map((c) => Number(c.report_id)).filter(Number.isFinite))];
+  let entityRows = [];
+  if (reportIds.length > 0) {
+    const { rows } = await pool.query(
+      `SELECT re.report_id, e.public_id, e.entity_type, e.name, e.description,
+              re.confidence AS link_confidence
+       FROM threat_report_entities re
+       JOIN threat_entities e ON e.id = re.entity_id
+       WHERE re.report_id = ANY($1::bigint[])
+       ORDER BY re.report_id, e.entity_type, e.name`,
+      [reportIds]
+    );
+    entityRows = rows;
+  }
+
+  return { claims: candidates, relationships: rels, entities: entityRows };
 }

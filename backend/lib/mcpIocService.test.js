@@ -178,7 +178,7 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
 // effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatContextError = null } = {}) {
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null } = {}) {
   const queries = [];
   return {
     queries,
@@ -254,6 +254,11 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
       if (normalized.includes('FROM threat_relationships tr')) {
         if (threatContextError) throw threatContextError;
         return { rows: threatRelationships };
+      }
+      if (normalized.includes('FROM threat_report_entities re')) {
+        if (threatContextError) throw threatContextError;
+        const wanted = new Set((params[0] || []).map(String));
+        return { rows: threatEntities.filter((e) => wanted.has(String(e.report_id))) };
       }
       throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
@@ -1350,7 +1355,9 @@ function zzyudRow() {
 const READ_AUTH = { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'analyst' };
 
 function threatContextQueries(pool) {
-  return pool.queries.filter((q) => q.sql.includes('FROM threat_report_candidates c') || q.sql.includes('FROM threat_relationships tr'));
+  return pool.queries.filter((q) => q.sql.includes('FROM threat_report_candidates c')
+    || q.sql.includes('FROM threat_relationships tr')
+    || q.sql.includes('FROM threat_report_entities re'));
 }
 
 test('get_ioc_context: Threat Library claim surfaces under threat_context with canonical shape', async () => {
@@ -1368,6 +1375,8 @@ test('get_ioc_context: Threat Library claim surfaces under threat_context with c
     evidence_text: 'zzyud.com listed as gambling infrastructure',
     section: 'Indicators',
     page_number: 3,
+    occurrence_count: 0,
+    occurrences: [],
     report: {
       id: 'f1b3a0c2-1111-4222-8333-444455556666',
       title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime',
@@ -1375,7 +1384,9 @@ test('get_ioc_context: Threat Library claim surfaces under threat_context with c
       tlp: 'clear',
       tlp_display: 'TLP:CLEAR',
       source_name: 'www.infoblox.com',
-      source_type: 'url'
+      source_type: 'url',
+      summary: null,
+      entities: []
     }
   });
   assert.deepEqual(tc.relationships, []);
@@ -1486,9 +1497,13 @@ test('get_ioc_context: Threat Context is exactly two bounded queries per request
   assert.equal(out.body.threat_context.claims.length, 25);
   assert.equal(out.body.threat_context.relationships.length, 25);
   const tcq = threatContextQueries(pool);
-  assert.equal(tcq.length, 2, 'one claims query + one relationships query, regardless of row count');
+  assert.equal(tcq.length, 3, 'claims + relationships + ONE batched entities query, regardless of row count');
   // No per-report metadata lookups: nothing else touches threat_reports.
   assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+  // Entities fetched in one shot for all 25 distinct reports.
+  const entityQueries = pool.queries.filter((q) => q.sql.includes('FROM threat_report_entities re'));
+  assert.equal(entityQueries.length, 1);
+  assert.equal(entityQueries[0].params[0].length, 25);
   // Read-only: no writes were issued anywhere in the request.
   assert.equal(pool.queries.some((q) => /^(INSERT|UPDATE|DELETE)/i.test(q.sql)), false);
 });
@@ -1501,4 +1516,240 @@ test('bulk_lookup_iocs: unchanged — never reads Threat Library tables and has 
   assert.equal('threat_context' in out.body.existing[0], false);
   assert.equal('threat_context' in out.body, false);
   assert.equal(pool.queries.some((q) => q.sql.includes('threat_report_candidates') || q.sql.includes('threat_relationships')), false);
+});
+
+// --- Threat Context report context: summary, IOC occurrences, report-level entities ---
+
+const INFOBLOX_SUMMARY = 'The report details the operational ecosystem of illegal online gambling sites, categorizing them into three types: Type 1 (Illegal Chinese-language casinos), Type 2 (Scambling), and Type 3 (PeckBirdy C2 decoys).';
+
+const ZZYUD_OCCURRENCES = [
+  { block_id: 'b008', page: null, zone: 'report_body', section_heading: 'Why Should Anyone Care About Casino Websites?', form: 'standalone', port: null, table_row: null,
+    surrounding_text: 'Figure 1. Screenshots of three casino sites from left to right, vip311[.]cc, zzyud[.]com, zenplay77-x[.]space; vip311[.]cc is associated with PeckBirdy',
+    source_relation: 'subject', relation_marker: 'figure', occurrence_kind: 'narrative', zone_reason: 'heading-scope', typing_reason: 'dotted-host' },
+  { block_id: 'b120', page: null, zone: 'explicit_ioc_section', section_heading: 'Indicators: Three Casinos and a Thousand Lookalikes', form: 'list_row', port: null, table_row: null,
+    surrounding_text: 'zzyud[.]com', source_relation: 'subject', occurrence_kind: 'row', asserted: true }
+];
+
+function claimWithEvidence(overrides = {}, evidence = {}) {
+  return {
+    ...INFOBLOX_CLAIM_ROW,
+    report_summary: INFOBLOX_SUMMARY,
+    evidence: {
+      source_assertion: 'explicit_ioc', evidence_strength: 'strong', evidence_tier: 'A',
+      policy_decision: 'explicit_report_assertion', decision_source: 'deterministic', ai_needed: false,
+      occurrence_count: ZZYUD_OCCURRENCES.length, zones: ['report_body', 'explicit_ioc_section'], parsed: {}, table_rows: [],
+      occurrences: ZZYUD_OCCURRENCES,
+      ...evidence
+    },
+    ...overrides
+  };
+}
+
+const INFOBLOX_ENTITIES = [
+  { report_id: 11, public_id: 'e-peckbirdy-campaign', entity_type: 'campaign', name: 'PeckBirdy', description: 'C2 framework used against gambling-themed decoys', link_confidence: '0.800', id: 167, normalized_name: 'peckbirdy', portable_id: 'entity--x', created_at: 'x', updated_at: 'x' },
+  { report_id: 11, public_id: 'e-sable', entity_type: 'threat_actor', name: 'Sable Squirrel', description: null, link_confidence: null, id: 168, normalized_name: 'sable squirrel' },
+  { report_id: 11, public_id: 'e-infoblox', entity_type: 'organization', name: 'Infoblox Threat Intel', description: null, link_confidence: null, id: 169, normalized_name: 'infoblox threat intel' },
+  // Belongs to a different report — must never leak into report 11.
+  { report_id: 99, public_id: 'e-other', entity_type: 'malware', name: 'OtherMalware', description: null, link_confidence: null, id: 170, normalized_name: 'othermalware' }
+];
+
+test('get_ioc_context: persisted report summary surfaces under claim.report.summary', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence()] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.threat_context.claims[0].report.summary, INFOBLOX_SUMMARY);
+  // Summary comes from the claims JOIN — no extra read of threat_reports, no model/provider call.
+  assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+});
+
+test('get_ioc_context: missing summary is a stable null; empty evidence yields occurrences [] / count 0', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatClaims: [{ ...INFOBLOX_CLAIM_ROW, report_summary: null, evidence: {} }] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const c = out.body.threat_context.claims[0];
+  assert.equal(c.report.summary, null);
+  assert.deepEqual(c.occurrences, []);
+  assert.equal(c.occurrence_count, 0);
+  assert.deepEqual(c.report.entities, []);
+});
+
+test('get_ioc_context: IOC-specific occurrences keep heading + surrounding text, drop parser internals', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence()] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const c = out.body.threat_context.claims[0];
+  assert.equal(c.occurrence_count, 2);
+  assert.deepEqual(c.occurrences, [
+    { zone: 'report_body', section_heading: 'Why Should Anyone Care About Casino Websites?', page: null, form: 'standalone',
+      surrounding_text: 'Figure 1. Screenshots of three casino sites from left to right, vip311[.]cc, zzyud[.]com, zenplay77-x[.]space; vip311[.]cc is associated with PeckBirdy' },
+    { zone: 'explicit_ioc_section', section_heading: 'Indicators: Three Casinos and a Thousand Lookalikes', page: null, form: 'list_row', surrounding_text: 'zzyud[.]com' }
+  ]);
+  for (const k of ['block_id', 'source_relation', 'relation_marker', 'occurrence_kind', 'zone_reason', 'typing_reason', 'asserted', 'port', 'table_row']) {
+    assert.equal(k in c.occurrences[0], false, `${k} must not be exposed`);
+  }
+  // Evidence-policy internals stay off the claim too.
+  for (const k of ['evidence', 'source_assertion', 'evidence_tier', 'policy_decision', 'decision_source', 'block_id']) {
+    assert.equal(k in c, false, `${k} must not be exposed`);
+  }
+});
+
+test('get_ioc_context: occurrences bounded to 5 in persisted order; occurrence_count keeps the persisted total', async () => {
+  const row = zzyudRow();
+  const many = Array.from({ length: 12 }, (_, i) => ({ ...ZZYUD_OCCURRENCES[0], section_heading: `H${i}`, surrounding_text: `text ${i}` }));
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence({}, { occurrences: many, occurrence_count: 12 })] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const c = out.body.threat_context.claims[0];
+  assert.equal(c.occurrences.length, 5);
+  assert.deepEqual(c.occurrences.map((o) => o.section_heading), ['H0', 'H1', 'H2', 'H3', 'H4']);
+  assert.equal(c.occurrence_count, 12);
+});
+
+test('get_ioc_context: over-long occurrence/summary text is truncated deterministically at the serializer', async () => {
+  const row = zzyudRow();
+  const longText = 'x'.repeat(1000);
+  const longSummary = 's'.repeat(5000);
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence({ report_summary: longSummary }, { occurrences: [{ ...ZZYUD_OCCURRENCES[0], surrounding_text: longText, section_heading: longText }] })] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const c = out.body.threat_context.claims[0];
+  assert.equal(c.occurrences[0].surrounding_text.length, 300);
+  assert.equal(c.occurrences[0].section_heading.length, 300);
+  assert.equal(c.report.summary.length, 2000);
+});
+
+test('get_ioc_context: occurrences belong to their own claim — evidence of another IOC never bleeds across', async () => {
+  const row = zzyudRow();
+  const otherClaim = claimWithEvidence(
+    { id: 777, report_id: 12, report_public_id: 'rp-other', report_title: 'Other report', report_summary: 'other summary' },
+    { occurrences: [{ ...ZZYUD_OCCURRENCES[1], section_heading: 'Other IOC section', surrounding_text: 'vip311[.]cc only' }], occurrence_count: 1 }
+  );
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence(), otherClaim] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const [a, b] = out.body.threat_context.claims;
+  assert.equal(a.report.id, 'f1b3a0c2-1111-4222-8333-444455556666');
+  assert.equal(a.occurrences.length, 2);
+  assert.equal(a.report.summary, INFOBLOX_SUMMARY);
+  assert.equal(b.report.id, 'rp-other');
+  assert.deepEqual(b.occurrences.map((o) => o.surrounding_text), ['vip311[.]cc only']);
+  assert.equal(b.report.summary, 'other summary');
+});
+
+test('get_ioc_context: report-level entities surface under claim.report.entities, scoped per report, internals dropped', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence()], threatEntities: INFOBLOX_ENTITIES });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const ents = out.body.threat_context.claims[0].report.entities;
+  assert.deepEqual(ents, [
+    { id: 'e-peckbirdy-campaign', entity_type: 'campaign', name: 'PeckBirdy', description: 'C2 framework used against gambling-themed decoys' },
+    { id: 'e-sable', entity_type: 'threat_actor', name: 'Sable Squirrel', description: null },
+    { id: 'e-infoblox', entity_type: 'organization', name: 'Infoblox Threat Intel', description: null }
+  ]);
+  for (const k of ['report_id', 'link_confidence', 'normalized_name', 'portable_id', 'created_at', 'updated_at']) {
+    assert.equal(k in ents[0], false, `${k} must not be exposed`);
+  }
+  assert.equal(ents.some((e) => e.name === 'OtherMalware'), false, 'entity of another report must not leak');
+  // Entities query is keyed by the claim report ids only.
+  const eq = pool.queries.find((q) => q.sql.includes('FROM threat_report_entities re'));
+  assert.deepEqual(eq.params, [[11]]);
+});
+
+test('get_ioc_context: report-level entities bounded to 20 in persisted order', async () => {
+  const row = zzyudRow();
+  const many = Array.from({ length: 30 }, (_, i) => ({ report_id: 11, public_id: `e-${i}`, entity_type: 'malware', name: `M${String(i).padStart(2, '0')}`, description: null }));
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence()], threatEntities: many });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const ents = out.body.threat_context.claims[0].report.entities;
+  assert.equal(ents.length, 20);
+  assert.equal(ents[0].name, 'M00');
+  assert.equal(ents[19].name, 'M19');
+});
+
+test('get_ioc_context: attribution safety — PeckBirdy co-mention without explicit relationship yields NO relationship', async () => {
+  const row = zzyudRow();
+  // Same report holds zzyud.com (claim) and PeckBirdy / Sable Squirrel (entities) but no threat_relationships row for the IOC.
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence()], threatEntities: INFOBLOX_ENTITIES, threatRelationships: [] });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  const tc = out.body.threat_context;
+  assert.deepEqual(tc.relationships, [], 'co-mention must not be synthesized into a relationship');
+  assert.ok(tc.claims[0].report.entities.some((e) => e.name === 'PeckBirdy'));
+  // Entities are never shaped like relationships and never appear at top level.
+  assert.equal('subject_kind' in tc.claims[0].report.entities[0], false);
+  assert.equal('relationship_type' in tc.claims[0].report.entities[0], false);
+  assert.equal('entities' in tc, false);
+  assert.equal('report_entities' in tc, false);
+  // The IOC's own role stays what the claim says, not what the entity list suggests.
+  assert.equal(tc.claims[0].role, 'malicious_infrastructure');
+});
+
+test('get_ioc_context: no claims => entities query skipped, empty threat_context stable', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatEntities: INFOBLOX_ENTITIES });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.deepEqual(out.body.threat_context, { claims: [], relationships: [] });
+  assert.equal(pool.queries.some((q) => q.sql.includes('FROM threat_report_entities re')), false);
+  assert.equal(threatContextQueries(pool).length, 2);
+});
+
+test('get_ioc_context: entity read failure propagates (not masked as empty entities)', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, threatClaims: [claimWithEvidence()] });
+  const orig = pool.query;
+  pool.query = async (sql, params) => {
+    if (String(sql).includes('FROM threat_report_entities re')) throw new Error('entities read failed');
+    return orig(sql, params);
+  };
+  await assert.rejects(
+    () => mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH }),
+    /entities read failed/
+  );
+});
+
+test('get_ioc_context: same report across several claims is still ONE entities query and no extra summary reads', async () => {
+  const row = zzyudRow();
+  // Two claims from the same report (e.g. hash alias rows) + one from another report.
+  const claims = [claimWithEvidence(), claimWithEvidence({ id: 502 }), claimWithEvidence({ id: 503, report_id: 12, report_public_id: 'rp-12' })];
+  const pool = makeContextPool({ row, threatClaims: claims, threatEntities: INFOBLOX_ENTITIES });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.body.threat_context.claims.length, 3);
+  const eq = pool.queries.filter((q) => q.sql.includes('FROM threat_report_entities re'));
+  assert.equal(eq.length, 1);
+  assert.deepEqual(eq[0].params, [[11, 12]]);
+  assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+  assert.equal(out.body.threat_context.claims[0].report.entities.length, 3);
+  assert.equal(out.body.threat_context.claims[1].report.entities.length, 3);
+  assert.deepEqual(out.body.threat_context.claims[2].report.entities, []);
+});
+
+test('get_ioc_context: expanded threat_context is additive — enrichment/source_intelligence/tags/sources untouched', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({
+    row,
+    tags: [{ name: 'peckbirdy', type: 'context', origins: ['integration'], source_name: 'AlienVault OTX' }],
+    sources: [{ id: row.id, ioc_source_id: null, source_name: 'AlienVault OTX', catalog_source_name: 'AlienVault OTX', status: 'active', created_at: row.created_at }],
+    evidence: [{ id: 1, ioc_item_id: row.id, ioc_observable_type: 'domain', feed_id: 3, source_name: 'AlienVault OTX', category: null,
+      note: 'Auto-imported from AlienVault OTX | adversary=PeckBirdy | tags=peckbirdy', feed_key: 'alienvault-otx' }],
+    enrichment: [{ provider: 'virustotal', status: 'success', normalized_summary: { stats: { malicious: 1 } },
+      fetched_at: '2026-09-19T12:16:55.497Z', expires_at: null, error_message: null }],
+    rdap: { ...RDAP_ROW, root_domain: 'zzyud.com', observable_value: 'zzyud.com' },
+    threatClaims: [claimWithEvidence()],
+    threatEntities: INFOBLOX_ENTITIES
+  });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: ENRICH_AUTH });
+  assert.deepEqual(out.body.tags, ['peckbirdy']);
+  assert.equal(out.body.tags_detail[0].source_name, 'AlienVault OTX');
+  assert.equal(out.body.sources[0].name, 'AlienVault OTX');
+  assert.ok(out.body.source_intelligence.labels.some((l) => l.adversary === 'PeckBirdy' || JSON.stringify(l).includes('PeckBirdy')));
+  assert.deepEqual(out.body.enrichment.map((e) => e.provider).sort(), ['rdap', 'virustotal']);
+  assert.equal(out.body.enrichment.some((e) => 'summary' in e && e.summary && 'entities' in e.summary), false);
+  assert.equal(out.body.threat_context.claims[0].report.entities.length, 3);
+  assert.equal(out.body.threat_context.claims[0].occurrences.length, 2);
+});
+
+test('bulk_lookup_iocs: still no Threat Library reads after report-context expansion', async () => {
+  const pool = makeBulkPool([bulkRow(3451551, 'zzyud.com', 'domain')]);
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'zzyud.com', type: 'domain' }] }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(pool.queries.some((q) => /threat_report_candidates|threat_relationships|threat_report_entities|threat_entities|threat_reports/.test(q.sql)), false);
+  assert.deepEqual(Object.keys(out.body).sort(), ['counts', 'existing', 'invalid', 'missing', 'submitted']);
+  assert.equal('threat_context' in out.body.existing[0], false);
 });
