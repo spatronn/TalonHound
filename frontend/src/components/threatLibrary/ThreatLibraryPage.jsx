@@ -190,7 +190,6 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
               <tr style={ui.thead}>
                 <th style={ui.th}>Report</th>
                 <th style={ui.th}>Source</th>
-                <th style={ui.th}>Published</th>
                 <th style={ui.th}>TLP</th>
                 <th style={ui.th}>Type</th>
                 <th style={ui.th}>Entities</th>
@@ -202,10 +201,10 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
             </thead>
             <tbody>
               {emptyState.kind === 'loading' ? (
-                <tr style={ui.tr}><td colSpan={10} style={ui.td}>Loading…</td></tr>
+                <tr style={ui.tr}><td colSpan={9} style={ui.td}>Loading…</td></tr>
               ) : emptyState.kind !== 'none' ? (
                 <tr style={ui.tr}>
-                  <td colSpan={10} style={{ ...ui.td, color: '#94a3b8' }} data-testid={`report-list-${emptyState.kind}`}>
+                  <td colSpan={9} style={{ ...ui.td, color: '#94a3b8' }} data-testid={`report-list-${emptyState.kind}`}>
                     {emptyState.message}{emptyState.hint ? ` ${emptyState.hint}` : ''}
                   </td>
                 </tr>
@@ -225,7 +224,6 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                     <div>{sourceLabel(row)}</div>
                     <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{row.source_type || '—'}</div>
                   </td>
-                  <td style={ui.td}>{row.published_at ? formatUserDateTime(row.published_at) : '—'}</td>
                   <td style={ui.td}><TlpBadge tlp={row.tlp} display={row.tlp_display} /></td>
                   <td style={ui.td}>{row.report_type || '—'}</td>
                   <td style={ui.td}>{row.entity_count ?? 0}</td>
