@@ -176,9 +176,11 @@ test('report details hide empty fields and keep only real values', () => {
   assert.equal(items.find((i) => i.label === 'Imported').value, 'fmt(2026-09-16T00:30:21+03:00)');
 });
 
-test('report details render confidence and report type as friendly values', () => {
+test('report details render report type as a friendly value and never the report-level confidence', () => {
   const items = buildReportDetails(reviewReport, {});
-  assert.equal(items.find((i) => i.label === 'Confidence').value, '95%');
+  assert.equal(reviewReport.confidence, '0.950', 'fixture carries the API field');
+  assert.ok(!items.some((i) => i.label === 'Confidence'));
+  assert.ok(!items.some((i) => i.value === '95%'));
   assert.equal(items.find((i) => i.label === 'Report type').value, 'Threat report');
   assert.equal(items.find((i) => i.label === 'Status').value, 'Needs review');
   assert.ok(!items.some((i) => i.label === 'Document'));
@@ -309,13 +311,35 @@ test('Overview never renders a Finalized row, even when finalized_at is set or s
   assert.equal(retried.find((i) => i.label === 'Status').value, 'Needs review');
 
   // No Threat Library runtime file reads the field: the removal is display-only.
+  for (const [f, code] of await threatLibraryRuntimeSources()) {
+    assert.doesNotMatch(code, /finalized_at/, `${f} must not read finalized_at`);
+  }
+});
+
+/** Every non-test .js/.jsx next to this file, with comments stripped. */
+async function threatLibraryRuntimeSources() {
   const { readdirSync, readFileSync } = await import('node:fs');
   const path = await import('node:path');
   const { fileURLToPath } = await import('node:url');
   const here = path.dirname(fileURLToPath(import.meta.url));
-  const runtimeFiles = readdirSync(here).filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\.js$/.test(f));
-  for (const f of runtimeFiles) {
-    const code = readFileSync(path.join(here, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    assert.doesNotMatch(code, /finalized_at/, `${f} must not read finalized_at`);
+  return readdirSync(here)
+    .filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\.js$/.test(f))
+    .map((f) => [f, readFileSync(path.join(here, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')]);
+}
+
+// Presentation-only regression: the report-level `confidence` (AI max-over-chunks
+// self-estimate) stays in the API/THIB contract but is never rendered as report
+// metadata. Indicator and entity confidence are different fields and stay.
+test('Overview never renders the report-level Confidence row; indicator/entity confidence untouched', async () => {
+  for (const report of [finalizedReport, reviewReport, { ...finalizedReport, confidence: 0.92 }, { ...reviewReport, confidence: 'high' }]) {
+    const items = buildReportDetails(report, { indicatorCount: { label: 'Indicators', value: 3 } });
+    assert.ok(!items.some((i) => i.label === 'Confidence'), 'no Confidence row');
+    assert.ok(!items.some((i) => /^\d+%$/.test(i.value)), 'no percentage value anywhere in report metadata');
+    assert.ok(items.some((i) => i.label === 'Status'));
+  }
+  // Only the entity-link helper may format a confidence; nothing reads report.confidence.
+  assert.equal(entityConfidenceLabel({ confidence: 0.57 }), '57%');
+  for (const [f, code] of await threatLibraryRuntimeSources()) {
+    assert.doesNotMatch(code, /report\.confidence/, `${f} must not read report.confidence`);
   }
 });

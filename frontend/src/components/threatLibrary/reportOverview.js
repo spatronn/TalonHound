@@ -89,6 +89,11 @@ function formatConfidence(value) {
  * it, and it survives a Retry (stale "Finalized" next to "Needs review"). The
  * actor + time of finalization live in the audit log; the API keeps the field.
  *
+ * The report-level `confidence` is not listed either: it is the model's
+ * undefined, max-over-chunks self-estimate for the whole report, read by no
+ * logic (indicator confidence is what drives match state, batch approval and
+ * IOC confidence, and it stays on the Indicators tab). The API and THIB keep it.
+ *
  * @param {object} report
  * @param {{ documentMeta?: object|null, artifacts?: object[], entityCount?: number|null, indicatorCount?: { label: string, value: number|null }|null, formatDateTime?: (iso: string) => string }} [opts]
  * @returns {{ key: string, label: string, value: string, mono?: boolean }[]}
@@ -101,7 +106,6 @@ export function buildReportDetails(report, opts = {}) {
   pushIf(items, 'TLP', opts.tlpLabel);
   pushIf(items, 'Report type', report.report_type ? humanizeEnum(report.report_type) : null);
   pushIf(items, 'Language', report.language ? languageLabel(report.language) : null);
-  pushIf(items, 'Confidence', formatConfidence(report.confidence));
   pushIf(items, 'Published', report.published_at ? fmt(report.published_at) : null);
   pushIf(items, 'Imported', report.created_at ? fmt(report.created_at) : null);
   pushIf(items, 'Document', formatBlocks(opts.documentMeta));

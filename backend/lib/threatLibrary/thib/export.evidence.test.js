@@ -114,3 +114,12 @@ test('spec 1.0 bundles without evidence still validate; evidence helper tolerate
   assert.equal(thibIndicatorEvidence({ candidate_type: 'url' }), null);
   assert.equal(bundle.spec_version, '1.0');
 });
+
+test('report-level confidence stays in the THIB report block (UI Overview no longer shows it)', () => {
+  const bundle = exportThibBundle({ report: { ...report, confidence: '0.950' }, entities: [], candidates: [urlRow], relationships: [] });
+  assert.equal(validateThibBundle(bundle).ok, true);
+  assert.equal(bundle.report.confidence, 0.95);
+  assert.equal(bundle.indicators[0].confidence, 0.9, 'indicator confidence is a separate field and unchanged');
+  const absent = exportThibBundle({ report, entities: [], candidates: [], relationships: [] });
+  assert.equal(absent.report.confidence, null);
+});
