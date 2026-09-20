@@ -163,3 +163,10 @@ test('report list passes ?search= to the store and keeps the { items, total } re
   assert.doesNotMatch(block, /pool\.query|ILIKE|LIKE/);
   assert.doesNotMatch(block, /analyzeThreatDocument|runAnalysisPipeline|fetch\(/);
 });
+
+test('publicReport keeps published_at and report_type in the API contract (list columns were removed UI-side only)', () => {
+  const block = routeSrc.slice(routeSrc.indexOf('function publicReport(row)'), routeSrc.indexOf('\n}\n', routeSrc.indexOf('function publicReport(row)')));
+  assert.match(block, /published_at: row\.published_at,/);
+  assert.match(block, /report_type: row\.report_type,/);
+  assert.match(block, /created_at: row\.created_at/);
+});
