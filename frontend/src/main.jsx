@@ -6108,10 +6108,11 @@ function FeedFormSection({ title, children, headerRight = null }) {
 function SearchDslSyntaxHelpBody() {
   return (
     <>
-      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_seen, created_at</p>
+      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_seen, created_at (alias: imported_at)</p>
       <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
       <p><b>List operators:</b> in, not_in</p>
-      <p><b>Date operators:</b> before, after, between</p>
+      <p><b>Date operators:</b> before, after, between. Values are <code>&quot;YYYY-MM-DD&quot;</code>, <code>&quot;YYYY-MM-DD HH:MM:SS&quot;</code>, ISO-8601 with offset, or relative <code>&quot;now-N&quot;</code> + unit <code>m</code>/<code>h</code>/<code>d</code>/<code>w</code> (e.g. <code>&quot;now-5d&quot;</code>). Relative values are re-evaluated every time the query runs — in a Published Feed the window rolls forward on each regeneration.</p>
+      <p><b>Imported vs seen:</b> <code>imported_at</code> (= <code>created_at</code>) is when the IOC was first imported into TalonHound; <code>first_seen</code>/<code>last_seen</code> are source observation times. <code>imported_at after &quot;now-5d&quot;</code> = first imported into TalonHound within the rolling last 5 days (exactly 5 days old is excluded).</p>
       <p><b>Hash fields (equals only):</b> exact <code>md5</code>, <code>sha1</code>, <code>sha256</code> lookup across direct hash IOCs and file-artifact known hashes, resolved to the canonical file-hash IOC. Examples: <code>sha256 equals &quot;dd55…a347e6&quot;</code>, <code>md5 equals &quot;20945449fd11203d79ea5d0d29bf1e22&quot;</code>.</p>
       <p><b>IOC Type vs file attributes:</b> <code>type</code> filters true IOC identity types only (<code>ip</code>, <code>ipv6</code>, <code>domain</code>, <code>url</code>, <code>md5</code>, <code>sha1</code>, <code>sha256</code>). <code>imphash</code>/<code>tlsh</code>/<code>ssdeep</code> are file-artifact attributes, not IOC types — search them with their own fields, not with <code>type</code>.</p>
       <p><b>File attribute fields (equals only):</b> exact <code>imphash</code>, <code>tlsh</code>, <code>ssdeep</code> lookup on file-artifact attributes, resolved to the artifact&apos;s canonical file-hash IOC. Examples: <code>imphash equals &quot;f34d5f2d4577ed6d9ceec516c1f5a744&quot;</code>, <code>ssdeep equals &quot;3072:Etd/dEZOS3hE0E9rycyje:M4OS3C3yj&quot;</code> (ssdeep must be quoted).</p>
@@ -6124,6 +6125,8 @@ type in ("domain", "url") AND status equals "active"
 source equals "USOM:TR-CERT"
 last_seen after "2026-07-01"
 first_seen between "2026-07-01" AND "2026-07-22"
+imported_at after "now-5d"
+ioc contains "raw.githubusercontent.com" AND imported_at after "now-5d"
 tag equals "mirai" AND tag equals "botnet"
 md5 equals "20945449fd11203d79ea5d0d29bf1e22"
 sha256 equals "dd55cbafbf914c8bb7eee34acfc65876d96b21de2ba8f320737cf8d280a347e6"

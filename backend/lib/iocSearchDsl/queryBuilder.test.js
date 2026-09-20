@@ -346,10 +346,102 @@ test('every generated query keeps placeholders and params aligned', () => {
     'ioc contains "a" AND tag in ("x","y") OR NOT source equals "z"',
     'type in ("ip","ipv6") AND status equals "active" AND confidence not_equals "low"',
     'first_seen between "2026-01-01" AND "2026-12-31" AND last_changed after "2026-06-01"',
-    'classification not_in ("phishing","malware") AND threat_actor contains "apt"'
+    'classification not_in ("phishing","malware") AND threat_actor contains "apt"',
+    'ioc contains "raw.githubusercontent.com" AND created_at after "now-5d" AND last_seen between "now-2w" AND "now-1w"'
   ];
   for (const q of queries) {
     const { sql, params } = build(q);
     assertPlaceholdersMatchParams(sql, params);
   }
+});
+
+// ---------------------------------------------------------------------------
+// Relative date literals: resolved in application code, bound as a constant
+// ---------------------------------------------------------------------------
+
+const FAKE_NOW = Date.UTC(2026, 8, 20, 12, 0, 0); // 2026-09-20T12:00:00Z
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+test('created_at after "now-5d" compiles to a bare column > bound timestamptz (index-friendly)', () => {
+  const { sql, params } = build('created_at after "now-5d"', { now: FAKE_NOW });
+  // Column stays bare on the left; cutoff is a bound parameter, not a SQL expression.
+  assert.equal(sql, 'i.created_at > $1::timestamptz');
+  assert.doesNotMatch(sql, /NOW\(\)|interval|CURRENT_TIMESTAMP|\(i\.created_at/i);
+  assert.deepEqual(params, [new Date(FAKE_NOW - 5 * DAY_MS).toISOString()]);
+  assert.equal(params[0], '2026-09-15T12:00:00.000Z');
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('relative cutoff is exact for every supported unit', () => {
+  const cases = [
+    ['now-30m', 30 * 60 * 1000],
+    ['now-12h', 12 * 60 * 60 * 1000],
+    ['now-5d', 5 * DAY_MS],
+    ['now-2w', 14 * DAY_MS]
+  ];
+  for (const [lit, ms] of cases) {
+    const { params } = build(`created_at after "${lit}"`, { now: FAKE_NOW });
+    assert.equal(params[0], new Date(FAKE_NOW - ms).toISOString(), lit);
+  }
+});
+
+test('relative cutoff ignores the configured search timezone (it is an instant, not a wall-clock date)', () => {
+  const utc = build('created_at after "now-5d"', { timezone: 'UTC', now: FAKE_NOW });
+  const ist = build('created_at after "now-5d"', { timezone: 'Europe/Istanbul', now: FAKE_NOW });
+  assert.deepEqual(ist, utc);
+  // No timezone name is bound for a relative literal.
+  assert.equal(utc.params.length, 1);
+});
+
+test('relative cutoff is re-derived from the evaluation instant on every compilation', () => {
+  const { ast } = parseSearchQuery('ioc contains "raw.githubusercontent.com" AND created_at after "now-5d"');
+  const t0 = buildWhereClause(ast, { timezone: 'UTC', now: FAKE_NOW });
+  const t1 = buildWhereClause(ast, { timezone: 'UTC', now: FAKE_NOW + 2 * 60 * 60 * 1000 });
+  assert.equal(t0.sql, t1.sql);
+  assert.equal(t0.params[0], '%raw.githubusercontent.com%');
+  assert.equal(t0.params[1], '2026-09-15T12:00:00.000Z');
+  assert.equal(t1.params[1], '2026-09-15T14:00:00.000Z');
+  // The AST itself was not mutated by compilation (still relative).
+  assert.deepEqual(ast.children[1].dates[0].relative, { amount: 5, unit: 'd' });
+});
+
+test('relative cutoff defaults to the wall clock when no now is supplied', () => {
+  const before = Date.now();
+  const { params } = build('created_at after "now-1h"');
+  const after = Date.now();
+  const cutoff = new Date(params[0]).getTime();
+  assert.ok(cutoff >= before - 60 * 60 * 1000 && cutoff <= after - 60 * 60 * 1000);
+});
+
+test('imported_at alias compiles to the same predicate as created_at', () => {
+  const a = build('imported_at after "now-5d"', { now: FAKE_NOW });
+  const b = build('created_at after "now-5d"', { now: FAKE_NOW });
+  assert.deepEqual(a, b);
+  assert.equal(a.sql, 'i.created_at > $1::timestamptz');
+});
+
+test('relative between binds both cutoffs and keeps the inclusive range shape', () => {
+  const { sql, params } = build('created_at between "now-2w" AND "now-1w"', { now: FAKE_NOW });
+  assert.equal(sql, '(i.created_at >= $1::timestamptz AND i.created_at <= $2::timestamptz)');
+  assert.deepEqual(params, ['2026-09-06T12:00:00.000Z', '2026-09-13T12:00:00.000Z']);
+});
+
+test('relative literal on membership date fields uses the same resolved constant', () => {
+  const { sql, params } = build('last_seen after "now-24h"', { now: FAKE_NOW });
+  assert.match(sql, /m\.last_seen_in_feed > \$1::timestamptz/);
+  assert.deepEqual(params, ['2026-09-19T12:00:00.000Z']);
+});
+
+test('absolute date regression: bare literal still uses AT TIME ZONE and explicit tz still casts', () => {
+  const bare = build('created_at after "2026-09-15"', { timezone: 'Europe/Istanbul', now: FAKE_NOW });
+  assert.equal(bare.sql, 'i.created_at > ($1::timestamp AT TIME ZONE $2)');
+  assert.deepEqual(bare.params, ['2026-09-15 00:00:00', 'Europe/Istanbul']);
+  const iso = build('created_at after "2026-09-15T00:00:00Z"', { now: FAKE_NOW });
+  assert.equal(iso.sql, 'i.created_at > $1::timestamptz');
+  assert.deepEqual(iso.params, ['2026-09-15T00:00:00Z']);
+});
+
+test('buildWhereClause rejects an unusable now', () => {
+  const { ast } = parseSearchQuery('created_at after "now-5d"');
+  assert.throws(() => buildWhereClause(ast, { now: 'not-a-time' }), /invalid now/);
 });

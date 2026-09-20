@@ -1,5 +1,5 @@
 import { getSearchTimezone } from './config.js';
-import { likeEscape, normalizeIocValue } from './normalize.js';
+import { likeEscape, normalizeIocValue, resolveRelativeDate } from './normalize.js';
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 
 // Compiles a validated AST into a single boolean SQL expression plus a positional
@@ -27,10 +27,14 @@ function normalizeTagValue(value) {
 }
 
 class Builder {
-  constructor(tz, { fileArtifactsReadEnabled = false } = {}) {
+  constructor(tz, { fileArtifactsReadEnabled = false, now = Date.now() } = {}) {
     this.params = [];
     this.tz = tz;
     this.fileArtifactsReadEnabled = Boolean(fileArtifactsReadEnabled);
+    // Evaluation instant for relative date literals. Captured once per compilation so
+    // every `now-…` in one query shares the same reference point.
+    this.now = now instanceof Date ? now.getTime() : Number(now);
+    if (!Number.isFinite(this.now)) throw new Error('buildWhereClause: invalid now');
   }
 
   bind(value) {
@@ -38,10 +42,21 @@ class Builder {
     return `$${this.params.length}`;
   }
 
-  // A date literal becomes either a plain timestamptz (when it carried an explicit
-  // offset/Z) or a wall-clock timestamp interpreted in the configured timezone. The
-  // timezone name is itself bound, so the comparison never depends on session state.
+  // A date literal becomes one of:
+  //   relative (`now-5d`)  -> resolved HERE, at compile time, in application code to a
+  //                           concrete instant and bound as a plain timestamptz parameter.
+  //                           Never `NOW() - interval` in SQL: the column stays bare on the
+  //                           left side so the created_at btree index is usable, and the
+  //                           cutoff is deterministic per compilation. Independent of the
+  //                           configured timezone (it is a duration, not a wall-clock date).
+  //   explicit offset/Z     -> plain timestamptz.
+  //   bare wall-clock       -> `::timestamp AT TIME ZONE <configured tz>`; the timezone
+  //                           name is itself bound, so the comparison never depends on
+  //                           session state.
   dateExpr(parsed) {
+    if (parsed.relative) {
+      return `${this.bind(resolveRelativeDate(parsed.relative, this.now).toISOString())}::timestamptz`;
+    }
     if (parsed.hasTimezone) {
       return `${this.bind(parsed.value)}::timestamptz`;
     }
@@ -579,11 +594,15 @@ class Builder {
 
 // Build the WHERE expression + params for an AST.
 // Returns { sql, params }. `sql` is a single boolean expression referencing alias `i`.
+// `now` (Date | epoch ms) is the evaluation instant for relative date literals; it
+// defaults to the wall clock at compile time, so callers that re-compile a stored query
+// (Published Feed regeneration, export re-parse) get a fresh cutoff each time.
 export function buildWhereClause(ast, {
   timezone = getSearchTimezone(),
-  fileArtifactsReadEnabled = isFileArtifactsReadEnabled()
+  fileArtifactsReadEnabled = isFileArtifactsReadEnabled(),
+  now = Date.now()
 } = {}) {
-  const builder = new Builder(timezone, { fileArtifactsReadEnabled });
+  const builder = new Builder(timezone, { fileArtifactsReadEnabled, now });
   const sql = builder.build(ast);
   return { sql, params: builder.params };
 }

@@ -301,3 +301,96 @@ test('flattenConditions lists leaf predicates', () => {
   assert.equal(flat.length, 3);
   assert.deepEqual(flat.map((c) => c.field), ['ioc', 'tag', 'status']);
 });
+
+// ---------------------------------------------------------------------------
+// Relative date literals (`now-<amount><unit>`)
+// ---------------------------------------------------------------------------
+
+test('relative date literal parses structurally and is never resolved by the parser', () => {
+  for (const [input, amount, unit] of [
+    ['created_at after "now-5d"', 5, 'd'],
+    ['created_at after "now-24h"', 24, 'h'],
+    ['created_at after "now-30m"', 30, 'm'],
+    ['created_at after "now-2w"', 2, 'w']
+  ]) {
+    const ast = parse(input);
+    assert.equal(ast.kind, 'date');
+    assert.equal(ast.operator, 'after');
+    assert.deepEqual(ast.dates[0].relative, { amount, unit });
+    assert.equal(ast.dates[0].display, `now-${amount}${unit}`);
+    // No absolute value is materialized at parse time.
+    assert.equal(ast.dates[0].value, undefined);
+    assert.equal(ast.dates[0].hasTimezone, undefined);
+  }
+});
+
+test('relative date literal is case-insensitive and renders canonical lowercase', () => {
+  const { ast, normalizedQuery } = parseSearchQuery('created_at after "NOW-24H"');
+  assert.deepEqual(ast.dates[0].relative, { amount: 24, unit: 'h' });
+  assert.equal(normalizedQuery, 'created_at after "now-24h"');
+});
+
+test('normalized query preserves the relative form (never baked into an absolute timestamp)', () => {
+  const input = 'ioc contains "raw.githubusercontent.com" AND created_at after "now-5d"';
+  const { normalizedQuery } = parseSearchQuery(input);
+  assert.equal(normalizedQuery, input);
+  // Round-trips: the stored text re-parses to the same relative literal.
+  const reparsed = parseDsl(normalizedQuery);
+  assert.deepEqual(reparsed.children[1].dates[0].relative, { amount: 5, unit: 'd' });
+  assert.equal(renderNormalizedQuery(reparsed), normalizedQuery);
+});
+
+test('relative literal works with between and with the other date fields', () => {
+  const ast = parse('last_seen between "now-2w" AND "now-1w"');
+  assert.deepEqual(ast.dates[0].relative, { amount: 2, unit: 'w' });
+  assert.deepEqual(ast.dates[1].relative, { amount: 1, unit: 'w' });
+  assert.deepEqual(flattenConditions(ast)[0].dates, ['now-2w', 'now-1w']);
+});
+
+test('imported_at is an alias of created_at (platform first-import time)', () => {
+  const { ast, normalizedQuery } = parseSearchQuery('imported_at after "now-5d"');
+  assert.equal(ast.field, 'created_at');
+  assert.deepEqual(ast.dates[0].relative, { amount: 5, unit: 'd' });
+  assert.equal(normalizedQuery, 'created_at after "now-5d"');
+  // Absolute literals through the alias behave exactly like created_at.
+  assert.equal(parse('IMPORTED_AT before "2026-09-15"').dates[0].display, '2026-09-15');
+});
+
+test('malformed relative literals are rejected with invalid_date', () => {
+  for (const bad of [
+    'now+5d',        // future offsets are not a thing
+    'now-5x',        // unknown unit
+    'now-0d',        // zero duration is meaningless
+    'now--5d',       // double sign
+    'now-',          // missing amount/unit
+    'now',           // bare now
+    '5d',            // bare duration
+    '-5d',
+    'yesterday',
+    'now - 5 days',  // whitespace / spelled-out units
+    'now-5days',
+    'now-5d5h',      // compound durations
+    'now-123456d',   // more than 5 digits
+    'now-5d OR 1=1', // no expression smuggling
+    '${now}',
+    'NOW() - interval \'5 days\''
+  ]) {
+    expectError(`created_at after "${bad}"`, 'invalid_date');
+  }
+});
+
+test('relative literal must be quoted like every other value', () => {
+  // The lexer has no '-' token, so the unquoted form dies before the parser even sees it.
+  expectError('created_at after now-5d', 'unexpected_character');
+  expectError('created_at after now', 'expected_value');
+});
+
+test('absolute date literals are unchanged by relative support', () => {
+  const bare = parse('created_at after "2026-09-15"');
+  assert.equal(bare.dates[0].relative, undefined);
+  assert.equal(bare.dates[0].value, '2026-09-15 00:00:00');
+  assert.equal(bare.dates[0].hasTimezone, false);
+  const iso = parse('created_at after "2026-09-15T00:00:00Z"');
+  assert.equal(iso.dates[0].relative, undefined);
+  assert.equal(iso.dates[0].hasTimezone, true);
+});

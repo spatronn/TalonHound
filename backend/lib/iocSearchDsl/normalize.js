@@ -197,6 +197,33 @@ const RE_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const RE_DATETIME = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/;
 const RE_ISO_TZ = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
 
+// Relative literal: exactly `now-<amount><unit>` — a duration subtracted from the
+// evaluation instant. Deliberately closed-form: one `now`, one `-`, 1..5 digits, one
+// unit letter. No `+`, no spaces, no compound durations, no bare durations (`5d`), no
+// words (`yesterday`). Anything else falls through to the generic invalid_date error.
+const RE_RELATIVE = /^now-(\d{1,5})([mhdw])$/;
+
+export const RELATIVE_DATE_UNITS = Object.freeze({
+  m: { label: 'minutes', ms: 60 * 1000 },
+  h: { label: 'hours', ms: 60 * 60 * 1000 },
+  d: { label: 'days', ms: 24 * 60 * 60 * 1000 },
+  w: { label: 'weeks', ms: 7 * 24 * 60 * 60 * 1000 }
+});
+
+// Resolve a parsed relative literal to a concrete instant relative to `now` (Date or
+// epoch ms). Callers pass the evaluation instant, so the cutoff is re-derived on EVERY
+// compilation — a Published Feed regeneration moves it forward automatically.
+export function resolveRelativeDate(relative, now = Date.now()) {
+  const nowMs = now instanceof Date ? now.getTime() : Number(now);
+  if (!Number.isFinite(nowMs)) throw new Error('resolveRelativeDate: invalid now');
+  const unit = RELATIVE_DATE_UNITS[relative?.unit];
+  const amount = Number(relative?.amount);
+  if (!unit || !Number.isInteger(amount) || amount < 1) {
+    throw new Error('resolveRelativeDate: invalid relative literal');
+  }
+  return new Date(nowMs - amount * unit.ms);
+}
+
 function daysInMonth(year, month) {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
@@ -210,16 +237,32 @@ function validParts(y, mo, d, h = 0, mi = 0, s = 0) {
   return true;
 }
 
-// Parse a DSL date literal. Returns:
-//   { value: <string bound as a parameter>, hasTimezone: boolean, display: <canonical> }
-// hasTimezone=false  -> builder casts `::timestamp AT TIME ZONE <configured tz>`
-// hasTimezone=true   -> literal already carries an offset/Z; builder casts `::timestamptz`
+// Parse a DSL date literal. Returns one of:
+//   absolute: { value: <string bound as a parameter>, hasTimezone: boolean, display: <canonical> }
+//     hasTimezone=false -> builder casts `::timestamp AT TIME ZONE <configured tz>`
+//     hasTimezone=true  -> literal already carries an offset/Z; builder casts `::timestamptz`
+//   relative: { relative: { amount, unit }, display: 'now-<amount><unit>' }
+//     A duration before the evaluation instant (`now-5d` = 5 x 24h before now). It is NOT
+//     resolved here: the AST and the normalized query keep the relative form so a stored
+//     Published Feed query re-derives the cutoff on every regeneration. The builder
+//     resolves it in application code and binds a plain timestamptz parameter. Being an
+//     instant rather than a wall-clock date, it is independent of IOC_SEARCH_TIMEZONE.
 export function parseDateLiteral(raw, { field, operator, position } = {}) {
   const v = String(raw ?? '').trim();
   const fail = () => {
     throw new DslError(`Invalid date format: ${raw}`, { code: 'invalid_date', position, field });
   };
   if (!v) fail();
+
+  const rel = RE_RELATIVE.exec(v.toLowerCase());
+  if (rel) {
+    const amount = Number(rel[1]);
+    const unit = rel[2];
+    // `now-0d` is meaningless (nothing is created after "now"): reject it like any other
+    // malformed literal instead of silently compiling to an empty result.
+    if (!Number.isInteger(amount) || amount < 1) fail();
+    return { relative: { amount, unit }, display: `now-${amount}${unit}` };
+  }
 
   let m = RE_DATE.exec(v);
   if (m) {

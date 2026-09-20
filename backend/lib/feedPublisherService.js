@@ -1544,7 +1544,12 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   let canUseIncrementalRefreshFn = null;
   if (!force && shouldStreamPublishedFeed(feed)) {
     const proj = await import('./publishedFeedProjection.js');
-    incrementalPreferDirtyPath = proj.isIncrementalEnabledForFeed(id) && proj.isProjectionReady(feed);
+    // Relative-date query feeds never take the dirty-poll path: a noop tick there would
+    // skip regeneration even though the rolling cutoff moved (see
+    // feedSupportsIncrementalProjection).
+    incrementalPreferDirtyPath = proj.isIncrementalEnabledForFeed(id)
+      && proj.isProjectionReady(feed)
+      && proj.feedSupportsIncrementalProjection(feed);
     canUseIncrementalRefreshFn = proj.canUseIncrementalRefresh;
   }
 
@@ -1759,7 +1764,8 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           clearFeedProjection,
           PROJECTION_STATUS,
           logRefreshMetrics,
-          isIncrementalEnabledForFeed
+          isIncrementalEnabledForFeed,
+          feedSupportsIncrementalProjection
         } = await import('./publishedFeedIncremental.js');
         const {
           isPublishedFeedChunkedEnabledForFeed,
@@ -1783,7 +1789,9 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           || (latestMeta?.params?.filters_hash && latestMeta.params.filters_hash !== filters_hash)
         );
 
-        const incrementalForFeed = isIncrementalEnabledForFeed(id);
+        // Treat rolling-window query feeds exactly as if incremental were disabled for them:
+        // no projection populate, no bootstrap, full streaming rebuild every real tick.
+        const incrementalForFeed = isIncrementalEnabledForFeed(id) && feedSupportsIncrementalProjection(feed);
         const mode = decideRefreshMode(feed, {
           force: force || filtersChanged,
           filtersChanged,

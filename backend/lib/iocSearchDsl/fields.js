@@ -113,7 +113,11 @@ const FIELD_ALIASES = Object.freeze({
   observable_type: 'type',
   observed_type: 'known_hash_type',
   threat_classification: 'classification',
-  actor: 'threat_actor'
+  actor: 'threat_actor',
+  // Platform first-import time. Same column the API/export/feed JSON already expose as
+  // `imported_at` (ioc_items.created_at) — see iocListTimestamps.js. Canonical DSL name
+  // stays `created_at`; the normalized query renders the canonical name.
+  imported_at: 'created_at'
 });
 
 export function canonicalFieldName(raw) {

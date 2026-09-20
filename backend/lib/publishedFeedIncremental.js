@@ -34,6 +34,7 @@ import {
   upsertProjectionBatch,
   deleteProjectionIdentities,
   canUseIncrementalRefresh,
+  feedSupportsIncrementalProjection,
   isPublishedFeedIncrementalEnabled,
   isPublishedFeedIncrementalAllowedForFeed,
   isIncrementalEnabledForFeed,
@@ -702,6 +703,10 @@ export function decideRefreshMode(feed, {
   snapshotWindow = null
 } = {}) {
   if (!streamingEnabled) return 'full';
+  // Rolling-window (relative-date) query feeds are never projection-incremental: a full
+  // evaluation is the only way to observe time-only departures. Neither bootstrap nor
+  // incremental is meaningful for them.
+  if (!feedSupportsIncrementalProjection(feed)) return 'full';
   if (force || filtersChanged) return isProjectionReady(feed) ? 'full' : (incrementalEnabled ? 'bootstrap' : 'full');
   if (!incrementalEnabled) return isProjectionReady(feed) ? 'full' : 'full';
   if (!isProjectionReady(feed)) return 'bootstrap';
@@ -711,6 +716,7 @@ export function decideRefreshMode(feed, {
 
 export {
   canUseIncrementalRefresh,
+  feedSupportsIncrementalProjection,
   isPublishedFeedIncrementalEnabled,
   isPublishedFeedIncrementalAllowedForFeed,
   isIncrementalEnabledForFeed,

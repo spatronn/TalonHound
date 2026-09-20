@@ -18,6 +18,7 @@ import {
   isSlidingWindow,
   isSlidingWindowIncrementalEnabled
 } from './publishedFeedWindowEligibility.js';
+import { queryHasRelativeDate } from './iocSearchDsl/index.js';
 
 export const PROJECTION_STATUS = {
   ABSENT: 'absent',
@@ -68,11 +69,32 @@ export function isProjectionReady(feed) {
 }
 
 /**
+ * Whether the incremental projection model (dirty-row polling + per-identity re-evaluation)
+ * is CORRECT for this feed at all, independent of env flags / allowlists / projection state.
+ *
+ * A query-mode feed whose Advanced Query contains a relative date literal (`created_at
+ * after "now-5d"`) has a rolling membership: an item leaves the result set purely because
+ * time advanced, with NO IOC row write and therefore no dirty candidate. Basic-mode
+ * sliding windows handle that with boundary-departure scans; the DSL has no equivalent,
+ * so such feeds must always run the full evaluation + fingerprint path. This is the single
+ * choke point every incremental decision consults; correctness must not depend on the
+ * PUBLISHED_FEED_INCREMENTAL_FEED_IDS deployment allowlist.
+ */
+export function feedSupportsIncrementalProjection(feed) {
+  const mode = String(feed?.filter_mode || '').trim().toLowerCase();
+  if (mode !== 'query') return true;
+  const query = String(feed?.advanced_query || '').trim();
+  if (!query) return true;
+  return !queryHasRelativeDate(query);
+}
+
+/**
  * Whether this feed can use incremental projection refresh (vs full rebuild).
  * Conservative: capped feeds, sliding windows, and force/config changes rebuild.
  * @param {string} [snapshotWindow] the snapshot window being generated ('1d'|'3d'|'7d'|'all')
  */
 export function canUseIncrementalRefresh(feed, { force = false, filtersChanged = false, snapshotWindow = null } = {}) {
+  if (!feedSupportsIncrementalProjection(feed)) return false;
   if (force || filtersChanged) return false;
   if (!isProjectionReady(feed)) return false;
   if (feed?.max_items != null && Number.isFinite(Number(feed.max_items))) return false;

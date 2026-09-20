@@ -4,6 +4,7 @@ import {
   projectionIdentityKey,
   projectionContentFingerprint,
   canUseIncrementalRefresh,
+  feedSupportsIncrementalProjection,
   isProjectionReady,
   PROJECTION_STATUS,
   PROJECTION_UPSERT_MAX_ROWS,
@@ -85,6 +86,46 @@ describe('decideRefreshMode', () => {
       { id: 1, projection_status: 'absent', time_window: 'all' },
       { streamingEnabled: true, incrementalEnabled: false }
     ), 'full');
+  });
+});
+
+
+describe('relative-date (rolling window) query feeds never use dirty-row incremental refresh', () => {
+  const READY = { id: 15, projection_status: PROJECTION_STATUS.READY, time_window: 'all', max_items: null };
+  const RELATIVE = { ...READY, filter_mode: 'query', advanced_query: 'ioc contains "raw.githubusercontent.com" AND created_at after "now-5d"' };
+  const RELATIVE_ALIAS = { ...READY, filter_mode: 'query', advanced_query: 'imported_at after "now-5d"' };
+  const RELATIVE_NESTED = { ...READY, filter_mode: 'query', advanced_query: 'type equals "url" AND NOT (source equals "x" OR last_seen before "now-2w")' };
+  const ABSOLUTE = { ...READY, filter_mode: 'query', advanced_query: 'ioc contains "raw.githubusercontent.com" AND created_at after "2026-09-15"' };
+  const PLAIN_QUERY = { ...READY, filter_mode: 'query', advanced_query: 'ioc contains "raw.githubusercontent.com"' };
+  const BASIC = { ...READY, filter_mode: 'basic', advanced_query: 'created_at after "now-5d"' }; // ignored in basic mode
+
+  it('feedSupportsIncrementalProjection detects relative predicates anywhere in the query', () => {
+    assert.equal(feedSupportsIncrementalProjection(RELATIVE), false);
+    assert.equal(feedSupportsIncrementalProjection(RELATIVE_ALIAS), false);
+    assert.equal(feedSupportsIncrementalProjection(RELATIVE_NESTED), false);
+    assert.equal(feedSupportsIncrementalProjection(ABSOLUTE), true);
+    assert.equal(feedSupportsIncrementalProjection(PLAIN_QUERY), true);
+    assert.equal(feedSupportsIncrementalProjection(BASIC), true);
+    assert.equal(feedSupportsIncrementalProjection({ ...READY, filter_mode: 'query', advanced_query: '' }), true);
+    // Unparseable text cannot be evaluated at all; it is not the incremental gate's problem.
+    assert.equal(feedSupportsIncrementalProjection({ ...READY, filter_mode: 'query', advanced_query: 'bogus (' }), true);
+  });
+
+  it('canUseIncrementalRefresh is false for relative query feeds even when everything else allows it', () => {
+    assert.equal(canUseIncrementalRefresh(ABSOLUTE), true, 'sanity: absolute query feed is otherwise eligible');
+    assert.equal(canUseIncrementalRefresh(RELATIVE), false);
+    assert.equal(canUseIncrementalRefresh(RELATIVE_ALIAS), false);
+    assert.equal(canUseIncrementalRefresh(RELATIVE, { snapshotWindow: 'all' }), false);
+  });
+
+  it('decideRefreshMode returns full (never incremental or bootstrap) for relative query feeds', () => {
+    const on = { streamingEnabled: true, incrementalEnabled: true };
+    assert.equal(decideRefreshMode(RELATIVE, on), 'full');
+    assert.equal(decideRefreshMode({ ...RELATIVE, projection_status: 'absent' }, on), 'full');
+    assert.equal(decideRefreshMode({ ...RELATIVE, projection_status: 'absent' }, { ...on, force: true }), 'full');
+    // Existing absolute-query behaviour is unchanged.
+    assert.equal(decideRefreshMode(ABSOLUTE, on), 'incremental');
+    assert.equal(decideRefreshMode({ ...ABSOLUTE, projection_status: 'absent' }, on), 'bootstrap');
   });
 });
 

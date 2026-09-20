@@ -86,6 +86,29 @@ export function renderNormalizedQuery(ast) {
   return renderNode(ast, 0);
 }
 
+// True when any date literal in the AST is relative (`now-…`). A relative predicate makes
+// the result set time-dependent: rows can enter/leave WITHOUT any IOC row changing, so
+// consumers that cache or incrementally refresh results (Published Feed projections)
+// must re-evaluate the whole query instead of reacting to dirty rows only.
+export function astHasRelativeDate(node) {
+  if (!node) return false;
+  if (node.type === 'condition') {
+    return Array.isArray(node.dates) && node.dates.some((d) => Boolean(d?.relative));
+  }
+  if (node.type === 'not') return astHasRelativeDate(node.child);
+  return Array.isArray(node.children) && node.children.some((c) => astHasRelativeDate(c));
+}
+
+// Same check on raw query text. Unparseable text is treated as "no relative predicate"
+// (an invalid query cannot be evaluated at all, so there is nothing to keep fresh).
+export function queryHasRelativeDate(input) {
+  try {
+    return astHasRelativeDate(parseSearchQuery(input).ast);
+  } catch {
+    return false;
+  }
+}
+
 // Flatten the AST into a list of leaf conditions for building removable UI chips.
 // Logical structure is not represented in the flat list; the chips summarize the
 // active predicates.
