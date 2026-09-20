@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '026_threat_library_published_at_provenance.sql');
-  assert.equal(meta.latestMigration, 26);
+  assert.equal(meta.latestMigrationFile, '027_reparent_merged_artifact_ioc_links.sql');
+  assert.equal(meta.latestMigration, 27);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -115,4 +115,18 @@ test('025 documents last_seen_in_feed as last source observation and bounds Thre
   // Postgres rejects UPDATE target aliases inside JOIN/ON of FROM.
   assert.doesNotMatch(sql, /JOIN\s+ioc_items\s+anchor\s*\n\s*ON\s+anchor\.id\s*=\s*m\./i);
   assert.match(sql, /FROM\s+integration_feeds\s+f,\s*\n\s*ioc_items\s+anchor,\s*\n\s*threatfox_obs\s+o/i);
+});
+
+test('027 reparents tombstone IOC links without deleting enrichments or IOC rows', () => {
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/027_reparent_merged_artifact_ioc_links.sql'),
+    'utf8'
+  );
+  assert.match(sql, /file_artifact_ioc_links/);
+  assert.match(sql, /merged_into_artifact_id/);
+  assert.match(sql, /is_canonical_ioc = FALSE/);
+  assert.match(sql, /status = 'merged'/);
+  assert.doesNotMatch(sql, /DELETE FROM public\.ioc_items/i);
+  assert.doesNotMatch(sql, /DELETE FROM public\.ioc_enrichments/i);
+  assert.doesNotMatch(sql, /DROP TABLE/i);
 });

@@ -1400,8 +1400,10 @@ test('get_ioc_context: Threat Library claim surfaces under threat_context with c
   assert.equal('block_id' in tc.claims[0], false);
   assert.equal('source_url' in tc.claims[0].report, false);
   // Lookup keyed by the resolved internal IOC id (same id the HTTP route takes).
+  // File-artifact alias expansion passes ANY($ids) + preferred id; domains stay a
+  // single-element identity set.
   const [claimQuery] = threatContextQueries(pool);
-  assert.deepEqual(claimQuery.params, [3451551]);
+  assert.deepEqual(claimQuery.params, [[3451551], 3451551]);
 });
 
 test('get_ioc_context: relationship surfaces with canonical shape, FK columns dropped', async () => {
@@ -1710,18 +1712,33 @@ test('get_ioc_context: entity read failure propagates (not masked as empty entit
 
 test('get_ioc_context: same report across several claims is still ONE entities query and no extra summary reads', async () => {
   const row = zzyudRow();
-  // Two claims from the same report (e.g. hash alias rows) + one from another report.
+  // Two candidates from the same report (e.g. hash-alias rows of one file) + one
+  // from another report. Artifact-aware Threat Context keeps one claim per report.
   const claims = [claimWithEvidence(), claimWithEvidence({ id: 502 }), claimWithEvidence({ id: 503, report_id: 12, report_public_id: 'rp-12' })];
   const pool = makeContextPool({ row, threatClaims: claims, threatEntities: INFOBLOX_ENTITIES });
+  // Emulate store DISTINCT ON (report_id) — mock returns raw rows; collapse here
+  // the way PostgreSQL would for the production query.
+  const orig = pool.query.bind(pool);
+  pool.query = async (sql, params) => {
+    const res = await orig(sql, params);
+    if (String(sql).includes('FROM threat_report_candidates c') && String(sql).includes('DISTINCT ON')) {
+      const byReport = new Map();
+      for (const c of res.rows || []) {
+        if (!byReport.has(c.report_id)) byReport.set(c.report_id, c);
+      }
+      return { rows: [...byReport.values()] };
+    }
+    return res;
+  };
   const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
-  assert.equal(out.body.threat_context.claims.length, 3);
+  assert.equal(out.body.threat_context.claims.length, 2);
   const eq = pool.queries.filter((q) => q.sql.includes('FROM threat_report_entities re'));
   assert.equal(eq.length, 1);
-  assert.deepEqual(eq[0].params, [[11, 12]]);
+  assert.deepEqual([...eq[0].params[0]].sort((a, b) => a - b), [11, 12]);
   assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
-  assert.equal(out.body.threat_context.claims[0].report.entities.length, 3);
-  assert.equal(out.body.threat_context.claims[1].report.entities.length, 3);
-  assert.deepEqual(out.body.threat_context.claims[2].report.entities, []);
+  const byTitle = Object.fromEntries(out.body.threat_context.claims.map((c) => [c.report.id, c.report.entities.length]));
+  assert.equal(byTitle['f1b3a0c2-1111-4222-8333-444455556666'], 3);
+  assert.equal(byTitle['rp-12'], 0);
 });
 
 test('get_ioc_context: expanded threat_context is additive — enrichment/source_intelligence/tags/sources untouched', async () => {

@@ -785,21 +785,69 @@ export async function getThreatLibraryIocSourceId(pool) {
 
 /**
  * IOC Threat Context for IOC detail page.
+ *
+ * `iocIds` may be a single id or an array. For file artifacts, callers pass every
+ * proven exact-hash alias ioc_items id (md5/sha1/sha256 of the same artifact) so
+ * Threat Library matches created against any alias remain visible from the
+ * surviving canonical IOC. Claims are deduplicated by report_id (one claim per
+ * report). Relationships are unioned across the identity set without inventing
+ * cross-artifact links.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} pool
+ * @param {number|string|Array<number|string>} iocIds
  */
-export async function getIocThreatContext(pool, iocId) {
+export async function getIocThreatContext(pool, iocIds) {
+  const ids = [...new Set(
+    (Array.isArray(iocIds) ? iocIds : [iocIds])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  )];
+  if (!ids.length) {
+    return { claims: [], relationships: [], entities: [] };
+  }
+
+  // Prefer a claim whose matched_ioc_id is the first requested id (usually the
+  // canonical IOC the UI is viewing), then stronger hash types, then lower id.
   const { rows: candidates } = await pool.query(
-    `SELECT c.*, r.public_id AS report_public_id, r.title AS report_title,
+    `SELECT DISTINCT ON (c.report_id)
+            c.*, r.public_id AS report_public_id, r.title AS report_title,
             r.published_at, r.published_at_precision, r.published_at_source, r.published_at_raw,
             r.created_at AS report_created_at,
             r.tlp, r.source_name, r.source_url, r.source_type,
             r.summary AS report_summary
      FROM threat_report_candidates c
      JOIN threat_reports r ON r.id = c.report_id
-     WHERE c.matched_ioc_id = $1 AND r.deleted_at IS NULL
+     WHERE c.matched_ioc_id = ANY($1::bigint[]) AND r.deleted_at IS NULL
        AND r.import_status IN ('ready','imported','review_required')
-     ORDER BY r.published_at DESC NULLS LAST, r.created_at DESC`,
-    [iocId]
+     ORDER BY c.report_id,
+              CASE WHEN c.matched_ioc_id = $2::bigint THEN 0 ELSE 1 END,
+              CASE lower(c.candidate_type)
+                WHEN 'sha256' THEN 0
+                WHEN 'sha1' THEN 1
+                WHEN 'md5' THEN 2
+                ELSE 9
+              END,
+              c.id ASC`,
+    [ids, ids[0]]
   );
+
+  // Stable analyst ordering: newest publication first, then import date
+  // (same as pre-alias path / publication-date provenance work).
+  candidates.sort((a, b) => {
+    const ap = a.published_at ? Date.parse(a.published_at) : NaN;
+    const bp = b.published_at ? Date.parse(b.published_at) : NaN;
+    const aOk = Number.isFinite(ap);
+    const bOk = Number.isFinite(bp);
+    if (aOk && bOk && ap !== bp) return bp - ap;
+    if (aOk !== bOk) return aOk ? -1 : 1;
+    const ac = a.report_created_at ? Date.parse(a.report_created_at) : NaN;
+    const bc = b.report_created_at ? Date.parse(b.report_created_at) : NaN;
+    const acOk = Number.isFinite(ac);
+    const bcOk = Number.isFinite(bc);
+    if (acOk && bcOk && ac !== bc) return bc - ac;
+    if (acOk !== bcOk) return acOk ? -1 : 1;
+    return Number(a.id) - Number(b.id);
+  });
 
   const { rows: rels } = await pool.query(
     `SELECT tr.*, r.public_id AS report_public_id, r.title AS report_title, r.tlp,
@@ -810,12 +858,12 @@ export async function getIocThreatContext(pool, iocId) {
      LEFT JOIN threat_entities se ON se.id = tr.subject_entity_id
      LEFT JOIN threat_entities oe ON oe.id = tr.object_entity_id
      WHERE r.deleted_at IS NULL
-       AND (tr.subject_ioc_id = $1 OR tr.object_ioc_id = $1
-            OR tr.subject_candidate_id IN (SELECT id FROM threat_report_candidates WHERE matched_ioc_id = $1)
-            OR tr.object_candidate_id IN (SELECT id FROM threat_report_candidates WHERE matched_ioc_id = $1))
+       AND (tr.subject_ioc_id = ANY($1::bigint[]) OR tr.object_ioc_id = ANY($1::bigint[])
+            OR tr.subject_candidate_id IN (SELECT id FROM threat_report_candidates WHERE matched_ioc_id = ANY($1::bigint[]))
+            OR tr.object_candidate_id IN (SELECT id FROM threat_report_candidates WHERE matched_ioc_id = ANY($1::bigint[])))
      ORDER BY tr.created_at DESC
      LIMIT 100`,
-    [iocId]
+    [ids]
   );
 
   // Report-level entities for every report that carries a claim: ONE batched

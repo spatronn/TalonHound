@@ -65,10 +65,17 @@ export async function loadArtifactDetail(db, artifactId, opts = {}) {
   );
   const primary = hashes.find((h) => h.is_primary) || selectPrimaryHash(hashes);
 
+  // Include links still parked on merged tombstones that point at this artifact
+  // (legacy merge bug left IOC links behind while hashes moved). Migration
+  // 026 reparents them; this keeps reads correct even before that backfill.
   const { rows: links } = await db.query(
     `SELECT ioc_item_id, ioc_observable_type, ioc_public_id, linked_hash_id, is_canonical_ioc
      FROM file_artifact_ioc_links
      WHERE artifact_id = $1
+        OR artifact_id IN (
+             SELECT id FROM file_artifacts
+             WHERE status = 'merged' AND merged_into_artifact_id = $1
+           )
      ORDER BY is_canonical_ioc DESC, ioc_observable_type`,
     [artifactId]
   );
@@ -186,8 +193,18 @@ export async function findArtifactLinkedIocsByIocId(db, iocItemId) {
       mergedInto = next.rows[0].merged_into_artifact_id;
       guard += 1;
     }
+    // Active artifact links PLUS links still on direct merged tombstones of this
+    // artifact (self-heal for pre-026 merge link bugs). Deduped by ioc_item_id.
     const { rows: links } = await db.query(
-      `SELECT ioc_item_id, ioc_public_id FROM file_artifact_ioc_links WHERE artifact_id = $1`,
+      `SELECT DISTINCT ON (ioc_item_id) ioc_item_id, ioc_public_id
+       FROM file_artifact_ioc_links
+       WHERE artifact_id = $1
+          OR artifact_id IN (
+               SELECT id FROM file_artifacts
+               WHERE status = 'merged' AND merged_into_artifact_id = $1
+             )
+       ORDER BY ioc_item_id,
+                CASE WHEN artifact_id = $1 THEN 0 ELSE 1 END`,
       [artifactId]
     );
     return {

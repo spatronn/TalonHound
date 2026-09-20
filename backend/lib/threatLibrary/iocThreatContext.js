@@ -18,6 +18,7 @@
 import { getIocThreatContext } from './store.js';
 import { TLP_DISPLAY } from './constants.js';
 import { serializePublicationDate } from './publicationDate.js';
+import { findArtifactLinkedIocsByIocId } from '../fileArtifacts/read.js';
 
 // Bounds for the per-claim report context. Persisted evidence already caps
 // occurrences at 40 per candidate (evidencePolicy.buildCandidateEvidenceRecord,
@@ -171,8 +172,30 @@ export function serializeIocThreatContext(ctx) {
 /**
  * Read + serialize in one call. Errors propagate: a failed read must surface as
  * a failure, never as an empty "no threat context" answer.
+ *
+ * For file-hash IOCs, expands to every proven exact-hash alias of the same file
+ * artifact (via file_artifact_ioc_links) so Threat Library matches created
+ * against MD5/SHA1 remain visible after canonicalization to SHA256. Non-file
+ * IOCs and read-flag-off deployments keep the single-id path.
  */
 export async function loadIocThreatContext(pool, iocId) {
-  const ctx = await getIocThreatContext(pool, iocId);
+  const primaryId = Number(iocId);
+  let iocIds = Number.isFinite(primaryId) && primaryId > 0 ? [primaryId] : [];
+  try {
+    const linked = await findArtifactLinkedIocsByIocId(pool, iocId);
+    const linkedIds = (linked?.linked_ioc_ids || [])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (linkedIds.length) {
+      // Keep the requested IOC first so DISTINCT ON claim preference favors it.
+      iocIds = [primaryId, ...linkedIds.filter((n) => n !== primaryId)].filter((n) => Number.isFinite(n) && n > 0);
+    }
+  } catch (err) {
+    // Artifact tables / flag optional — fall back to the single IOC id.
+    if (!(err && (err.code === '42P01' || String(err.message || '').includes('file_artifact')))) {
+      throw err;
+    }
+  }
+  const ctx = await getIocThreatContext(pool, iocIds.length ? iocIds : iocId);
   return serializeIocThreatContext(ctx);
 }

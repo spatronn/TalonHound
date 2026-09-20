@@ -120,7 +120,7 @@ describe('findArtifactLinkedIocsByIocId', () => {
       const db = mockDb([
         { match: (s) => s.includes('file_artifact_ioc_links l') && s.includes('JOIN file_artifacts a'),
           result: () => ({ rows: [{ artifact_id: 'art-1', status: 'active', merged_into_artifact_id: null }], rowCount: 1 }) },
-        { match: (s) => s.includes('FROM file_artifact_ioc_links WHERE artifact_id'),
+        { match: (s) => s.includes('file_artifact_ioc_links') && (s.includes('DISTINCT ON') || s.includes('ioc_public_id')),
           result: () => ({ rows: [
             { ioc_item_id: '100', ioc_public_id: 'pid-256' },
             { ioc_item_id: '200', ioc_public_id: 'pid-sha1' }
@@ -140,7 +140,7 @@ describe('findArtifactLinkedIocsByIocId', () => {
           result: () => ({ rows: [{ artifact_id: 'old', status: 'merged', merged_into_artifact_id: 'new' }], rowCount: 1 }) },
         { match: (s) => s.includes('FROM file_artifacts WHERE id = $1'),
           result: () => ({ rows: [{ id: 'new', status: 'active', merged_into_artifact_id: null }], rowCount: 1 }) },
-        { match: (s) => s.includes('FROM file_artifact_ioc_links WHERE artifact_id'),
+        { match: (s) => s.includes('file_artifact_ioc_links') && (s.includes('DISTINCT ON') || s.includes('ioc_public_id')),
           result: (s, p) => { assert.equal(p[0], 'new'); return { rows: [{ ioc_item_id: '300', ioc_public_id: 'pid-x' }], rowCount: 1 }; } }
       ]);
       const res = await findArtifactLinkedIocsByIocId(db, 300);

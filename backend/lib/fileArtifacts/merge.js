@@ -103,7 +103,11 @@ export async function mergeFileArtifacts(client, input) {
     );
   }
 
-  // Move IOC links
+  // Move IOC links. Global unique is (ioc_observable_type, ioc_item_id), so the
+  // SELECT always finds at least this row. Only treat *other* rows as collisions —
+  // previously "if existing.rowCount: continue" skipped moving the duplicate's own
+  // links and left them on merged tombstones (breaking VT / Threat Context alias
+  // resolution from the surviving canonical IOC).
   const { rows: dupLinks } = await client.query(
     `SELECT id, ioc_item_id, ioc_observable_type FROM file_artifact_ioc_links WHERE artifact_id = $1`,
     [duplicateId]
@@ -114,10 +118,12 @@ export async function mergeFileArtifacts(client, input) {
        WHERE ioc_observable_type = $1 AND ioc_item_id = $2`,
       [link.ioc_observable_type, link.ioc_item_id]
     );
-    if (existing.rowCount) {
-      if (existing.rows[0].artifact_id === canonicalId) {
+    const ex = existing.rows[0] || null;
+    if (ex && ex.id !== link.id) {
+      if (ex.artifact_id === canonicalId) {
         await client.query(`DELETE FROM file_artifact_ioc_links WHERE id = $1`, [link.id]);
       }
+      // Bound to a third artifact under global unique — leave in place
       continue;
     }
     await client.query(
