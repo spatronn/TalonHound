@@ -169,4 +169,5 @@ test('publicReport keeps published_at and report_type in the API contract (list 
   assert.match(block, /published_at: row\.published_at,/);
   assert.match(block, /report_type: row\.report_type,/);
   assert.match(block, /created_at: row\.created_at/);
+  assert.match(block, /finalized_at: row\.finalized_at/, 'finalized_at stays in the API even though the Overview no longer shows it');
 });

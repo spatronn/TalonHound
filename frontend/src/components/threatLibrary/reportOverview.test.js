@@ -160,8 +160,9 @@ test('report details hide empty fields and keep only real values', () => {
     formatDateTime: (v) => `fmt(${v})`
   });
   const labels = items.map((i) => i.label);
-  assert.deepEqual(labels, ['Source', 'Language', 'Imported', 'Finalized', 'Document', 'Artifacts', 'Entities', 'Indicators', 'Status']);
+  assert.deepEqual(labels, ['Source', 'Language', 'Imported', 'Document', 'Artifacts', 'Entities', 'Indicators', 'Status']);
   assert.ok(!labels.includes('Matched'), 'Matched duplicates the Existing stat');
+  assert.ok(!labels.includes('Finalized'), 'finalized_at is the Ready transition the Status row already shows');
   assert.ok(!labels.includes('Source type'), 'source type lives on the Source tab');
   assert.ok(!labels.includes('Published'));
   assert.ok(!labels.includes('Confidence'));
@@ -289,4 +290,32 @@ test('entity confidence is shown exactly as stored (numeric(4,3) from the model)
   assert.equal(entityConfidenceLabel({ confidence: '' }), null);
   assert.equal(entityConfidenceLabel({}), null);
   assert.equal(entityConfidenceLabel({ confidence: 'abc' }), null);
+});
+
+// Presentation-only regression: `finalized_at` stays in the API/MCP contract
+// but the Overview never renders it — neither on a finalized report nor on a
+// retried one whose stale timestamp would otherwise sit next to "Needs review".
+test('Overview never renders a Finalized row, even when finalized_at is set or stale after a retry', async () => {
+  const finalized = buildReportDetails(finalizedReport, { formatDateTime: (v) => `fmt(${v})` });
+  assert.ok(finalizedReport.finalized_at, 'fixture carries the API field');
+  assert.ok(!finalized.some((i) => i.label === 'Finalized'));
+  assert.ok(!finalized.some((i) => String(i.value).includes(finalizedReport.finalized_at)));
+  assert.equal(finalized.find((i) => i.label === 'Status').value, 'Ready');
+  assert.equal(finalized.find((i) => i.label === 'Imported').value, `fmt(${finalizedReport.created_at})`);
+
+  // Retry keeps finalized_at (updateReportStatus never clears it) while the phase goes back to review.
+  const retried = buildReportDetails({ ...reviewReport, finalized_at: '2026-09-17T23:39:16+03:00' }, {});
+  assert.ok(!retried.some((i) => i.label === 'Finalized'));
+  assert.equal(retried.find((i) => i.label === 'Status').value, 'Needs review');
+
+  // No Threat Library runtime file reads the field: the removal is display-only.
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const runtimeFiles = readdirSync(here).filter((f) => /\.(js|jsx)$/.test(f) && !/\.test\.js$/.test(f));
+  for (const f of runtimeFiles) {
+    const code = readFileSync(path.join(here, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    assert.doesNotMatch(code, /finalized_at/, `${f} must not read finalized_at`);
+  }
 });

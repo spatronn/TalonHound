@@ -94,6 +94,9 @@ test('serializeThreatReport: allow-listed metadata + summary, no body/diagnostic
   assert.equal(out.tlp_source, 'default');
   assert.equal(out.summary, 'Three types of illegal gambling sites; PeckBirdy C2 decoys are type 3.');
   assert.equal(out.review_phase, 'finalized');
+  // Lifecycle timestamps stay part of the MCP contract (the UI Overview no longer shows finalized_at).
+  assert.equal(out.created_at, '2026-09-16T00:30:21.000Z');
+  assert.equal(out.finalized_at, '2026-09-17T23:39:16.000Z');
   assert.deepEqual(out.counts, { indicators: 2, entities: 2, relationships: 1 });
   for (const k of ['canonical_document', 'failure_reason', 'failure_details', 'analysis_progress', 'candidate_summary', 'artifacts', 'jobs', 'source_sha256']) {
     assert.equal(k in out, false, `${k} must not be exposed`);

@@ -84,6 +84,11 @@ function formatConfidence(value) {
  * Compact report metadata for the Overview tab. Only fields with a real value
  * are returned, so the caller never renders "Label: —".
  *
+ * `finalized_at` is deliberately not listed: it is written at exactly the
+ * transition the Status row already shows (Finalize → Ready), nothing reads
+ * it, and it survives a Retry (stale "Finalized" next to "Needs review"). The
+ * actor + time of finalization live in the audit log; the API keeps the field.
+ *
  * @param {object} report
  * @param {{ documentMeta?: object|null, artifacts?: object[], entityCount?: number|null, indicatorCount?: { label: string, value: number|null }|null, formatDateTime?: (iso: string) => string }} [opts]
  * @returns {{ key: string, label: string, value: string, mono?: boolean }[]}
@@ -99,7 +104,6 @@ export function buildReportDetails(report, opts = {}) {
   pushIf(items, 'Confidence', formatConfidence(report.confidence));
   pushIf(items, 'Published', report.published_at ? fmt(report.published_at) : null);
   pushIf(items, 'Imported', report.created_at ? fmt(report.created_at) : null);
-  pushIf(items, 'Finalized', report.finalized_at ? fmt(report.finalized_at) : null);
   pushIf(items, 'Document', formatBlocks(opts.documentMeta));
   const artifactCount = Array.isArray(opts.artifacts) ? opts.artifacts.length : 0;
   pushIf(items, 'Artifacts', artifactCount > 0 ? artifactCount : null);
