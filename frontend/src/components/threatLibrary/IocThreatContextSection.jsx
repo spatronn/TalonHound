@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
-import { formatUserDateTime } from '../../lib/formatDate.js';
+import { formatPublicationDate } from './publicationDate.js';
 import { TlpBadge } from './tlp.jsx';
 import { badgeStyle } from './styles.js';
 
@@ -100,7 +100,7 @@ export default function IocThreatContextSection({ iocId, active = true }) {
               </div>
               <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>
                 {c.report?.source_name || c.report?.source_type || 'Source unknown'}
-                {c.report?.published_at ? ` · ${formatUserDateTime(c.report.published_at)}` : ''}
+                {formatPublicationDate(c.report) ? ` · published ${formatPublicationDate(c.report)}` : ''}
                 {c.confidence != null ? ` · confidence ${Math.round(Number(c.confidence) * 100)}%` : ''}
                 {c.section ? ` · ${c.section}` : ''}
                 {c.page_number != null ? ` · p.${c.page_number}` : ''}

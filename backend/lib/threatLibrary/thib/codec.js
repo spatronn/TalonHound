@@ -6,6 +6,7 @@
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { readCanonicalVersion } from '../../productVersion.js';
+import { publicationDateForExport } from '../publicationDate.js';
 import {
   THIB_FORMAT,
   THIB_SPEC_VERSION,
@@ -257,7 +258,8 @@ export function exportThibBundle(snapshot) {
       source_url: report.source_url || null,
       source_file_name: report.source_file_name || null,
       source_sha256: report.source_sha256 || null,
-      published_at: report.published_at || null,
+      // Calendar-day values travel as YYYY-MM-DD, instants as ISO 8601 UTC.
+      published_at: publicationDateForExport(report),
       language: report.language || null,
       tlp: normalizeTlp(report.tlp),
       tlp_source: ['explicit', 'default', 'manual'].includes(report.tlp_source) ? report.tlp_source : 'default',

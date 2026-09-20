@@ -20,6 +20,7 @@ import {
 import { registerRouteModule } from '../lib/routeRegistry.js';
 import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY, TLP_VALUES } from '../lib/threatLibrary/constants.js';
 import { isValidTlp } from '../lib/threatLibrary/tlpPolicy.js';
+import { serializePublicationDate } from '../lib/threatLibrary/publicationDate.js';
 import { validateThreatLibraryUrl } from '../lib/threatLibrary/urlIngest.js';
 import { validatePdfBuffer, isAcceptablePdfUploadMeta } from '../lib/threatLibrary/pdfIngest.js';
 import { maskAiSettingsForClient } from '../lib/threatLibrary/ai/providers.js';
@@ -116,7 +117,10 @@ function publicReport(row) {
     source_url: row.source_url,
     source_file_name: row.source_file_name,
     source_sha256: row.source_sha256,
-    published_at: row.published_at,
+    // published_at = original publication instant (or 00:00 UTC of the stated
+    // day when precision is 'date'); published_date = calendar day as the
+    // source stated it. created_at (Imported) is a separate concept.
+    ...serializePublicationDate(row),
     language: row.language,
     tlp: row.tlp,
     tlp_display: TLP_DISPLAY[row.tlp] || `TLP:${String(row.tlp || '').toUpperCase()}`,

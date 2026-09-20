@@ -12,6 +12,7 @@ import { REVIEW_FILTERS, matchReviewFilter } from './candidateReview.js';
 import { resolveReportPhase, REPORT_PHASES, canShowReviewTable } from './reportPhase.js';
 import { statusLabel } from './stages.js';
 import { artifactTypeLabel, entityTypeLabel, humanizeEnum, languageLabel, sourceTypeLabel } from './reportDisplayLabels.js';
+import { formatPublicationDate, publicationDateTitle } from './publicationDate.js';
 
 /**
  * Per-filter row counts for the indicator filter tabs.
@@ -106,7 +107,9 @@ export function buildReportDetails(report, opts = {}) {
   pushIf(items, 'TLP', opts.tlpLabel);
   pushIf(items, 'Report type', report.report_type ? humanizeEnum(report.report_type) : null);
   pushIf(items, 'Language', report.language ? languageLabel(report.language) : null);
-  pushIf(items, 'Published', report.published_at ? fmt(report.published_at) : null);
+  // Published = the day the ORIGINAL source was published (calendar day, no
+  // invented time); Imported = when TalonHound ingested it. Independent values.
+  pushIf(items, 'Published', formatPublicationDate(report), { title: publicationDateTitle(report) });
   pushIf(items, 'Imported', report.created_at ? fmt(report.created_at) : null);
   pushIf(items, 'Document', formatBlocks(opts.documentMeta));
   const artifactCount = Array.isArray(opts.artifacts) ? opts.artifacts.length : 0;
@@ -206,7 +209,9 @@ export function buildSourceDetails(report, { documentMeta = null, artifacts = []
   pushIf(items, 'SHA-256', report.source_sha256, { mono: true });
   const lang = report.language || documentMeta?.language;
   pushIf(items, 'Language', lang ? languageLabel(lang) : null);
-  pushIf(items, 'Published', report.published_at ? fmt(report.published_at) : null);
+  // Published = the day the ORIGINAL source was published (calendar day, no
+  // invented time); Imported = when TalonHound ingested it. Independent values.
+  pushIf(items, 'Published', formatPublicationDate(report), { title: publicationDateTitle(report) });
   pushIf(items, 'Imported', report.created_at ? fmt(report.created_at) : null);
   const blocks = formatBlocks(documentMeta);
   if (blocks) {

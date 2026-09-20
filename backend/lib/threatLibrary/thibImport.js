@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import { previewThibImport } from './thib/codec.js';
 import { normalizeTlp } from './constants.js';
+import { normalizeSuppliedPublicationDate } from './publicationDate.js';
 import {
   createThreatReport,
   replaceCandidates,
@@ -43,7 +44,10 @@ export async function importThibBundle(pool, bundle, opts = {}) {
     source_url: b.report.source_url,
     source_file_name: b.report.source_file_name,
     source_sha256: b.report.source_sha256,
-    published_at: b.report.published_at,
+    // The bundle's publication date is the sharing party's assertion
+    // (source 'thib', durable). An unreadable value stays NULL rather than
+    // failing the import or inventing an instant.
+    ...(normalizeSuppliedPublicationDate(b.report.published_at, 'thib') || { published_at: null }),
     language: b.report.language,
     tlp: normalizeTlp(b.report.tlp),
     // The bundle's TLP is the sharing party's assertion: keep it and its

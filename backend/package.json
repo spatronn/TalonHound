@@ -65,7 +65,7 @@
     "test:system-time": "node --test lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js",
     "test:setup-wizard": "node --test lib/setupCode.test.js lib/firstRunSetup.test.js routes/setupWizard.test.js routes/setup.test.js",
     "test:setup-wizard-integration": "node --test lib/firstRunSetup.integration.test.js",
-    "test:threat-library-integration": "node --test lib/threatLibrary/reportListSearch.integration.test.js",
+    "test:threat-library-integration": "node --test lib/threatLibrary/reportListSearch.integration.test.js lib/threatLibrary/publicationDateOrdering.integration.test.js",
     "test:file-artifacts": "node --test lib/fileArtifacts/*.test.js",
     "test:virustotal": "node --test lib/virustotalEnrichment.test.js lib/virustotalEnrichmentReuse.test.js lib/virustotalWebAnalysis.test.js lib/iocEnrichmentAggregator.test.js",
     "test:file-artifacts-db": "node scripts/fileArtifactDbTests.js",

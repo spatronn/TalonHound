@@ -15,6 +15,7 @@
  */
 
 import { getReportByPublicId, loadReportSnapshot } from './store.js';
+import { serializePublicationDate } from './publicationDate.js';
 import { TLP_DISPLAY } from './constants.js';
 import { resolveReportPhase } from './reportPhase.js';
 import {
@@ -115,7 +116,7 @@ export function serializeThreatReport(snapshot, page = {}) {
     source_name: r.source_name ?? null,
     source_type: r.source_type ?? null,
     source_url: r.source_url ?? null,
-    published_at: r.published_at ?? null,
+    ...serializePublicationDate(r),
     language: r.language ?? null,
     tlp: r.tlp,
     tlp_display: TLP_DISPLAY[r.tlp] || r.tlp,

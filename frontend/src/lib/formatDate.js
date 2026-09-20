@@ -198,3 +198,16 @@ export function utcIsoToSystemLocalInput(value, timeZone) {
   const pick = (type) => parts.find((p) => p.type === type)?.value || '00';
   return `${pick('year')}-${pick('month')}-${pick('day')}T${pick('hour')}:${pick('minute')}`;
 }
+
+/**
+ * Format a calendar day (`YYYY-MM-DD`, no time, no zone) as DD/MM/YYYY.
+ * Used for values that are a stated day rather than an instant (e.g. a
+ * report's publication date): no timezone conversion may ever shift the day,
+ * and no 00:00:00 time is invented. Returns '' when the value is not a day.
+ * @param {string|null|undefined} value
+ */
+export function formatCalendarDate(value) {
+  const m = String(value || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}

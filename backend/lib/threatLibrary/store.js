@@ -5,6 +5,7 @@
 import crypto from 'node:crypto';
 import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.js';
 import { isValidTlpSource } from './tlpPolicy.js';
+import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
@@ -100,9 +101,10 @@ export async function createThreatReport(pool, fields) {
     `INSERT INTO threat_reports (
        title, source_type, source_name, source_url, source_file_name, source_sha256,
        published_at, language, tlp, confidence, report_type, summary,
-       import_status, analysis_status, portable_id, bundle_id, created_by, tlp_source
+       import_status, analysis_status, portable_id, bundle_id, created_by, tlp_source,
+       published_at_source, published_at_precision, published_at_raw
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid,$18
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid,$18,$19,$20,$21
      ) RETURNING *`,
     [
       fields.title || 'Untitled report',
@@ -122,7 +124,44 @@ export async function createThreatReport(pool, fields) {
       fields.portable_id || `report--${crypto.randomUUID()}`,
       fields.bundle_id || null,
       fields.created_by || null,
-      isValidTlpSource(fields.tlp_source) ? String(fields.tlp_source).toLowerCase() : 'default'
+      isValidTlpSource(fields.tlp_source) ? String(fields.tlp_source).toLowerCase() : 'default',
+      // Provenance travels with the value: a bare published_at without a
+      // source is treated as unknown provenance (kept, never upgraded).
+      fields.published_at && isValidPublicationDateSource(fields.published_at_source) ? String(fields.published_at_source).toLowerCase() : null,
+      fields.published_at && isValidPublicationDatePrecision(fields.published_at_precision) ? String(fields.published_at_precision).toLowerCase() : null,
+      fields.published_at && fields.published_at_raw ? String(fields.published_at_raw).slice(0, 80) : null
+    ]
+  );
+  return rows[0];
+}
+
+/**
+ * Publication date only — never touches lifecycle / status columns. The
+ * caller decides via publicationDate.resolvePublicationDateUpdate whether
+ * the write is allowed; this just persists the four columns together.
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ * @param {{ published_at: string, published_at_source: string, published_at_precision: string, published_at_raw?: string|null }} fields
+ */
+export async function updateReportPublicationDate(pool, reportId, fields) {
+  if (!fields?.published_at || !isValidPublicationDateSource(fields.published_at_source) || !isValidPublicationDatePrecision(fields.published_at_precision)) {
+    throw Object.assign(new Error('Invalid publication date fields'), { code: 'invalid_publication_date' });
+  }
+  const { rows } = await pool.query(
+    `UPDATE threat_reports SET
+       published_at = $2,
+       published_at_source = $3,
+       published_at_precision = $4,
+       published_at_raw = $5,
+       updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [
+      reportId,
+      fields.published_at,
+      String(fields.published_at_source).toLowerCase(),
+      String(fields.published_at_precision).toLowerCase(),
+      fields.published_at_raw ? String(fields.published_at_raw).slice(0, 80) : null
     ]
   );
   return rows[0];
@@ -750,7 +789,9 @@ export async function getThreatLibraryIocSourceId(pool) {
 export async function getIocThreatContext(pool, iocId) {
   const { rows: candidates } = await pool.query(
     `SELECT c.*, r.public_id AS report_public_id, r.title AS report_title,
-            r.published_at, r.tlp, r.source_name, r.source_url, r.source_type,
+            r.published_at, r.published_at_precision, r.published_at_source, r.published_at_raw,
+            r.created_at AS report_created_at,
+            r.tlp, r.source_name, r.source_url, r.source_type,
             r.summary AS report_summary
      FROM threat_report_candidates c
      JOIN threat_reports r ON r.id = c.report_id

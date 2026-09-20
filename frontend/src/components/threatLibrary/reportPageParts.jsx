@@ -282,7 +282,7 @@ export function DetailList({ items, testId, className = '' }) {
       {items.map((it) => (
         <React.Fragment key={it.key}>
           <dt>{it.label}</dt>
-          <dd className={it.mono ? 'is-mono' : undefined}>{it.value}</dd>
+          <dd className={it.mono ? 'is-mono' : undefined} title={it.title || undefined}>{it.value}</dd>
         </React.Fragment>
       ))}
     </dl>

@@ -36,9 +36,11 @@ import {
   markAnalysisChunkFailed,
   countReportCandidates,
   loadReportCandidatesForAnalysis,
-  isAnalysisCancelRequested
+  isAnalysisCancelRequested,
+  updateReportPublicationDate
 } from './store.js';
 import { resolveEffectiveTlp } from './tlpPolicy.js';
+import { detectReportPublicationDate, resolvePublicationDateUpdate } from './publicationDate.js';
 import { createServiceLogger } from '../appLogger.js';
 
 const log = createServiceLogger('threat-library');
@@ -84,6 +86,64 @@ async function loadRetainedHtmlArtifact(pool, reportId) {
 }
 
 /**
+ * Detect the source's publication date and persist it under the write policy
+ * (existing manual / THIB / stronger values are kept; a retry never nulls a
+ * good value). A URL report without HTML in this run reads its retained
+ * source HTML; a PDF reads the canonical document only (PDF CreationDate is
+ * never used). Non-fatal: the analysis never fails because of a date.
+ * @param {import('pg').Pool} pool
+ * @param {object} report
+ * @param {{ document: object|null, sourceHtml?: string|null }} input
+ */
+async function applyPublicationDate(pool, report, input) {
+  try {
+    let html = input.sourceHtml || null;
+    if (!html && report.source_type === 'url') {
+      const retained = await loadRetainedHtmlArtifact(pool, report.id);
+      if (retained?.storage_key) {
+        try {
+          html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
+        } catch {
+          html = null;
+        }
+      }
+    }
+    const detection = detectReportPublicationDate({
+      sourceType: report.source_type,
+      sourceUrl: report.source_url,
+      html,
+      document: input.document
+    });
+    const current = (await getReportById(pool, report.id)) || report;
+    const decision = resolvePublicationDateUpdate(current, detection);
+    if (decision.action === 'write') {
+      await updateReportPublicationDate(pool, report.id, decision.fields);
+    }
+    const outcome = {
+      action: decision.action,
+      reason: decision.reason,
+      detected: detection.published_at
+        ? {
+            published_at: detection.published_at,
+            published_date: detection.published_date,
+            precision: detection.precision,
+            source: detection.source,
+            raw_value: detection.raw_value,
+            evidence: detection.evidence,
+            modified_at: detection.modified_at
+          }
+        : null,
+      extractor: detection.extractor
+    };
+    log.info('publication date resolved', { reportId: report.id, ...outcome });
+    return outcome;
+  } catch (err) {
+    log.warn('publication date detection failed (non-fatal)', { reportId: report.id, error: err.message });
+    return { action: 'keep', reason: `error:${err.message}`, detected: null, extractor: null };
+  }
+}
+
+/**
  * @param {import('pg').Pool} pool
  * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean }} ctx
  */
@@ -110,6 +170,8 @@ export async function runAnalysisPipeline(pool, ctx) {
 
   try {
     let document = report.canonical_document;
+    /** Raw source HTML for this run (fetched or retained) — the publication-date extractor reads it. */
+    let sourceHtml = null;
     const resumePreferred = ctx.resumeAnalysis === true || ctx.jobType === 'retry' || hasUsableDocument(document);
     const documentContractCurrent = isDocumentContractCurrent(report, document);
     let documentRebuilt = false;
@@ -132,6 +194,7 @@ export async function runAnalysisPipeline(pool, ctx) {
         if (retained?.storage_key) {
           try {
             const html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
+            sourceHtml = html;
             reextracted = reextractStoredHtmlDocument(html, {
               url: report.source_url,
               finalUrl: retained.source_metadata?.final_url || report.source_url,
@@ -155,6 +218,7 @@ export async function runAnalysisPipeline(pool, ctx) {
           log.info('report import started', { reportId: report.id, sourceType: 'url' });
           const fetched = await ingestUrlToCanonicalDocument(ctx.sourceUrl || report.source_url);
           document = fetched.document;
+          sourceHtml = fetched.bodyText || null;
           let stored = null;
           if (fetched.bodyText) {
             try {
@@ -275,6 +339,9 @@ export async function runAnalysisPipeline(pool, ctx) {
         progress: { stage: 'extracting', reused: true, blocks: document.blocks?.length || 0 }
       });
     }
+
+    // --- Publication date (deterministic, provenance-ranked, never lifecycle) ---
+    const publicationDate = await applyPublicationDate(pool, report, { document, sourceHtml });
 
     // --- Deterministic candidates (refresh when extraction contract changes) ---
     let candidates;
@@ -615,6 +682,7 @@ export async function runAnalysisPipeline(pool, ctx) {
           detected: tlpResolution.detection,
           ai_hint: tlpResolution.ai_hint
         },
+        publication_date: publicationDate,
         entity_count: (aiValue.entities || []).length,
         relationship_count: relRows.length,
         candidate_update_count: (aiValue.candidate_updates || []).length,

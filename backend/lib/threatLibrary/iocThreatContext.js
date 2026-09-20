@@ -17,6 +17,7 @@
 
 import { getIocThreatContext } from './store.js';
 import { TLP_DISPLAY } from './constants.js';
+import { serializePublicationDate } from './publicationDate.js';
 
 // Bounds for the per-claim report context. Persisted evidence already caps
 // occurrences at 40 per candidate (evidencePolicy.buildCandidateEvidenceRecord,
@@ -105,7 +106,11 @@ export function serializeThreatContextClaim(c, entitiesByReport = new Map()) {
     report: {
       id: c.report_public_id,
       title: c.report_title,
-      published_at: c.published_at,
+      // Publication date of the source (published_date = calendar day as
+      // stated; precision 'date' = no time known). created_at = when
+      // TalonHound imported the report — the ordering fallback.
+      ...serializePublicationDate(c),
+      created_at: c.report_created_at ?? null,
       tlp: c.tlp,
       tlp_display: tlpDisplay(c.tlp),
       source_name: c.source_name,

@@ -166,7 +166,8 @@ test('report list passes ?search= to the store and keeps the { items, total } re
 
 test('publicReport keeps published_at and report_type in the API contract (list columns were removed UI-side only)', () => {
   const block = routeSrc.slice(routeSrc.indexOf('function publicReport(row)'), routeSrc.indexOf('\n}\n', routeSrc.indexOf('function publicReport(row)')));
-  assert.match(block, /published_at: row\.published_at,/);
+  // published_at / published_date / precision / source come from the shared serializer.
+  assert.match(block, /\.\.\.serializePublicationDate\(row\),/);
   assert.match(block, /report_type: row\.report_type,/);
   assert.match(block, /created_at: row\.created_at/);
   assert.match(block, /finalized_at: row\.finalized_at/, 'finalized_at stays in the API even though the Overview no longer shows it');
