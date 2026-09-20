@@ -74,7 +74,7 @@ test('search is a single bound parameter matched case-insensitively across the m
   assert.deepEqual(w.params, ['%Iranian%']);
   assert.equal(w.nextParamIndex, 2);
   assert.match(w.sql, /^WHERE r\.deleted_at IS NULL AND \(/);
-  for (const col of ['r.title', 'r.source_name', 'r.source_url', 'r.source_file_name', 'r.report_type']) {
+  for (const col of ['r.title', 'r.source_name', 'r.source_url', 'r.source_file_name']) {
     assert.ok(w.sql.includes(`${col} ILIKE $1 ESCAPE '\\'`), `${col} searched`);
   }
   assert.equal((w.sql.match(/ILIKE/g) || []).length, REPORT_LIST_SEARCH_COLUMNS.length);
@@ -82,6 +82,16 @@ test('search is a single bound parameter matched case-insensitively across the m
   for (const forbidden of ['summary', 'canonical_document', 'ai_result', 'candidate', 'entit', 'lower(']) {
     assert.equal(w.sql.includes(forbidden), false, `${forbidden} must not be part of the search`);
   }
+});
+
+test('search never matches on report_type: the list no longer shows it, so a row must not match on a hidden value', () => {
+  assert.deepEqual([...REPORT_LIST_SEARCH_COLUMNS], ['r.title', 'r.source_name', 'r.source_url', 'r.source_file_name']);
+  assert.equal(REPORT_LIST_SEARCH_COLUMNS.includes('r.report_type'), false);
+  const w = buildReportListWhere({ search: 'advisory' }, 1);
+  assert.doesNotMatch(w.sql, /report_type/);
+  // Exactly one ILIKE per visible column, all bound to the same single parameter.
+  assert.equal((w.sql.match(/ILIKE \$1 ESCAPE '\\'/g) || []).length, 4);
+  assert.deepEqual(w.params, ['%advisory%']);
 });
 
 test('search honours the caller-supplied parameter start index', () => {

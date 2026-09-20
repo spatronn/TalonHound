@@ -164,11 +164,11 @@ test('empty/loading rows span exactly the header column count', () => {
   for (const span of spans) assert.equal(span, LIST_COLUMNS.length);
 });
 
-test('report type metadata survives outside the list: detail header + Overview humanise it, list search still covers it', () => {
+test('report type metadata survives outside the list: detail header + Overview humanise it; the list request shape is unchanged', () => {
   const reportPageSrc = readFileSync(path.join(here, 'ThreatLibraryReportPage.jsx'), 'utf8');
   const overviewSrc = readFileSync(path.join(here, 'reportOverview.js'), 'utf8');
   assert.match(reportPageSrc, /\{report\.report_type \? \(\s*<span[^>]*>\{humanizeEnum\(report\.report_type\)\}<\/span>/);
   assert.match(overviewSrc, /pushIf\(items, 'Report type', report\.report_type \? humanizeEnum\(report\.report_type\) : null\);/);
-  // The list search request is untouched: the server matches report_type server-side.
+  // The list search request is untouched (the server decides which visible columns it matches).
   assert.match(pageSrc, /api\.get\('\/threat-library\/reports', \{ params, signal \}\)/);
 });

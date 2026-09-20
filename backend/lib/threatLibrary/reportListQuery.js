@@ -3,8 +3,13 @@
  * shared WHERE clause used by both the page and the count query.
  *
  * This is library navigation search over stored report metadata only
- * (title / source / file name / report type). It never touches extracted
- * bodies, candidates, entities or AI results, and never calls a provider.
+ * (title / source / file name). It never touches extracted bodies,
+ * candidates, entities or AI results, and never calls a provider.
+ *
+ * Only fields the list actually shows are searched: a row must never match
+ * on a value the user cannot see in the list. `report_type` (AI-chosen free
+ * text, removed from the list UI) is therefore not a search column even
+ * though the API and detail page still carry it.
  */
 
 import { likeEscape } from '../iocSearchDsl/normalize.js';
@@ -18,8 +23,7 @@ export const REPORT_LIST_SEARCH_COLUMNS = Object.freeze([
   'r.title',
   'r.source_name',
   'r.source_url',
-  'r.source_file_name',
-  'r.report_type'
+  'r.source_file_name'
 ]);
 
 /**

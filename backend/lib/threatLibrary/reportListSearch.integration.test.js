@@ -36,7 +36,9 @@ try {
 const opts = { skip: hasDb ? false : 'no database available (set DB_HOST/DB_PASSWORD to run)' };
 
 const SEED = [
-  { title: 'Iranian cyber targeting of dissidents, activists and journalists', source_type: 'url', source_name: 'NCSC', source_url: 'https://www.ncsc.gov.uk/news/iranian-cyber-targeting', report_type: 'advisory' },
+  // Same shape as the production report: neither title, source name nor URL
+  // contains "advisory"; only the hidden (not list-visible) report_type does.
+  { title: 'Iranian cyber targeting of dissidents, activists and journalists', source_type: 'url', source_name: 'NCSC', source_url: 'https://www.ncsc.gov.uk/news/iranian-cyber-targeting', report_type: 'threat_advisory' },
   { title: 'VectraRAT: a new remote access trojan', source_type: 'url', source_name: 'SOCRadar', source_url: 'https://socradar.io/vectrarat-analysis', report_type: 'threat_report' },
   { title: 'CTA joint analysis: DPRK IT workers', source_type: 'pdf', source_name: null, source_url: null, source_file_name: 'CTA-NK-IT-Workers-2025.pdf', report_type: 'threat_report' },
   { title: 'Quarterly threat landscape', source_type: 'thib', source_name: 'Vendor Bundle', source_url: null, report_type: 'bundle' },
@@ -96,17 +98,29 @@ test('no search returns every non-deleted report (baseline unchanged)', opts, as
   });
 });
 
-test('search by title, source name, source domain, file name and report type', opts, async () => {
+test('search by title, source name, source domain and file name', opts, async () => {
   await withSeededTx(async (client) => {
     assert.deepEqual(titles(await listThreatReports(client, { search: 'iranian' })), ['Iranian cyber targeting of dissidents, activists and journalists']);
     assert.deepEqual(titles(await listThreatReports(client, { search: 'ncsc' })), ['Iranian cyber targeting of dissidents, activists and journalists']);
+    assert.deepEqual(titles(await listThreatReports(client, { search: 'ncsc.gov.uk' })), ['Iranian cyber targeting of dissidents, activists and journalists']);
     assert.deepEqual(titles(await listThreatReports(client, { search: 'vectrarat' })), ['VectraRAT: a new remote access trojan']);
     assert.deepEqual(titles(await listThreatReports(client, { search: 'socradar' })), ['VectraRAT: a new remote access trojan']);
     assert.deepEqual(titles(await listThreatReports(client, { search: 'cta-nk' })), ['CTA joint analysis: DPRK IT workers']);
+    assert.deepEqual(titles(await listThreatReports(client, { search: 'vendor bundle' })), ['Quarterly threat landscape']);
+  });
+});
+
+test('report_type is a hidden field on the list and never produces a match on its own', opts, async () => {
+  await withSeededTx(async (client) => {
+    // Production case: report_type = 'threat_advisory' while no visible column contains "advisory".
+    const advisory = await listThreatReports(client, { search: 'advisory', limit: 200 });
+    assert.equal(advisory.total, 0);
+    assert.deepEqual(advisory.items, []);
+    // 56 seeded rows carry report_type = 'threat_report' and none of them shows it in a visible column.
     const byType = await listThreatReports(client, { search: 'threat_report', limit: 200 });
-    assert.equal(byType.total, 2 + 54);
-    assert.ok(titles(byType).includes('VectraRAT: a new remote access trojan'));
-    assert.ok(titles(byType).includes('CTA joint analysis: DPRK IT workers'));
+    assert.equal(byType.total, 0);
+    assert.equal((await listThreatReports(client, { search: 'bundle', limit: 200 })).total, 1, 'matches the "Vendor Bundle" source name only, not the report_type = bundle value');
+    assert.equal((await listThreatReports(client, { search: 'blog', limit: 200 })).total, 0);
   });
 });
 
@@ -135,10 +149,11 @@ test('LIKE wildcards in the term match literally, not as wildcards', opts, async
     assert.equal((await listThreatReports(client, { search: '%' })).total, 1);
     assert.equal((await listThreatReports(client, { search: 'Under_score' })).total, 1);
     // "_" alone must not act as a single-char wildcard (which would match all 60);
-    // literally it matches the 56 report_type='threat_report' rows + 'Under_score title'.
+    // literally it matches only 'Under_score title' (the 56 report_type='threat_report'
+    // rows carry their underscore in a hidden column that is not searched).
     const underscoreOnly = await listThreatReports(client, { search: '_', limit: 200 });
-    assert.equal(underscoreOnly.total, 57);
-    assert.ok(titles(underscoreOnly).includes('Under_score title'));
+    assert.equal(underscoreOnly.total, 1);
+    assert.deepEqual(titles(underscoreOnly), ['Under_score title']);
     assert.equal((await listThreatReports(client, { search: 'thr_at' })).total, 0);
   });
 });
@@ -194,11 +209,15 @@ async function withLargeLibraryTx(fn) {
   try {
     await client.query('BEGIN');
     await client.query('DELETE FROM threat_reports');
-    // 157 reports, newest first by created_at; odd numbers are threat_report (79),
-    // even numbers blog (78). Titles "Library report 001" ... "Library report 157".
+    // 157 reports, newest first by created_at; odd numbers come from source
+    // "Odd desk" (79), even numbers from "Even desk" (78), and report_type still
+    // alternates threat_report / blog so the hidden column can be proven inert.
+    // Titles "Library report 001" ... "Library report 157".
     await client.query(
       `INSERT INTO threat_reports (title, source_type, source_name, source_url, report_type, created_at)
-       SELECT 'Library report ' || lpad(g::text, 3, '0'), 'url', 'Bulk source', 'https://bulk.example/' || g,
+       SELECT 'Library report ' || lpad(g::text, 3, '0'), 'url',
+              CASE WHEN g % 2 = 1 THEN 'Odd desk' ELSE 'Even desk' END,
+              'https://bulk.example/' || g,
               CASE WHEN g % 2 = 1 THEN 'threat_report' ELSE 'blog' END,
               NOW() - (g * INTERVAL '1 minute')
        FROM generate_series(1, 157) AS g`
@@ -229,21 +248,24 @@ test('157 reports at 25 per page produce 7 pages; page 7 holds the final 7 rows'
   });
 });
 
-test('filtered pagination pages over the 79 threat_report rows with the filtered COUNT', opts, async () => {
+test('filtered pagination pages over the 79 "Odd desk" rows with the filtered COUNT', opts, async () => {
   await withLargeLibraryTx(async (client) => {
     const pages = [];
     for (let p = 1; p <= 5; p += 1) {
-      pages.push(await listThreatReports(client, { search: 'threat_report', limit: 25, offset: (p - 1) * 25 }));
+      pages.push(await listThreatReports(client, { search: 'odd desk', limit: 25, offset: (p - 1) * 25 }));
     }
     for (const pg of pages) assert.equal(pg.total, 79, 'total is the filtered count, not 157');
     assert.deepEqual(pages.map((pg) => pg.items.length), [25, 25, 25, 4, 0]);
     const all = pages.flatMap(titles);
     assert.equal(new Set(all).size, 79);
-    for (const t of all) assert.equal(Number(t.slice(-3)) % 2, 1, `${t} is a threat_report row`);
+    for (const t of all) assert.equal(Number(t.slice(-3)) % 2, 1, `${t} is an odd row`);
     // A different filter paginates independently.
-    const blog = await listThreatReports(client, { search: 'blog', limit: 25, offset: 75 });
-    assert.equal(blog.total, 78);
-    assert.equal(blog.items.length, 3);
+    const even = await listThreatReports(client, { search: 'even desk', limit: 25, offset: 75 });
+    assert.equal(even.total, 78);
+    assert.equal(even.items.length, 3);
+    // The hidden report_type column never contributes: neither value matches anything.
+    assert.equal((await listThreatReports(client, { search: 'threat_report', limit: 25 })).total, 0);
+    assert.equal((await listThreatReports(client, { search: 'blog', limit: 25 })).total, 0);
   });
 });
 
