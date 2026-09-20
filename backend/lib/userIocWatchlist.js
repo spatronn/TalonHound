@@ -13,6 +13,10 @@
  */
 
 import { IOC_LIST_ALLOWED_PAGE_SIZES, IOC_LIST_DEFAULT_PAGE_SIZE } from './iocListPagination.js';
+import {
+  mapIocIdsToArtifactScopedIocIds,
+  resolveArtifactScopedIocIds
+} from './fileArtifacts/read.js';
 
 export const WATCHLIST_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -71,33 +75,39 @@ export async function addToWatchlist(pool, userId, ref) {
 }
 
 /**
- * Idempotent remove. Removing an absent row is a no-op. Only ever affects the
- * caller's own row.
+ * Idempotent remove across the viewed IOC and every proven file-hash alias of
+ * the same artifact. Detail always redirects aliases to the canonical hash, so
+ * unstarring the file must clear a star that was originally placed on MD5/SHA1.
  * @param {import('pg').Pool} pool
  * @param {number} userId
  * @param {{ ioc_id: number, observable_type: string }} ref
  */
 export async function removeFromWatchlist(pool, userId, ref) {
+  const ids = await resolveArtifactScopedIocIds(pool, ref.ioc_id);
   const { rowCount } = await pool.query(
     `DELETE FROM user_ioc_watchlist
-      WHERE user_id = $1 AND observable_type = $2 AND ioc_id = $3`,
-    [userId, ref.observable_type, ref.ioc_id]
+      WHERE user_id = $1 AND ioc_id = ANY($2::bigint[])`,
+    [userId, ids.length ? ids : [ref.ioc_id]]
   );
   return { removed: rowCount > 0 };
 }
 
 /**
+ * True when the caller starred this IOC or any proven exact-hash alias of the
+ * same file artifact (so a pre-merge MD5 star remains visible on the canonical
+ * SHA256 detail / list identity after redirect).
  * @param {import('pg').Pool} pool
  * @param {number} userId
  * @param {{ ioc_id: number, observable_type: string }} ref
  * @returns {Promise<boolean>}
  */
 export async function isWatchlisted(pool, userId, ref) {
+  const ids = await resolveArtifactScopedIocIds(pool, ref.ioc_id);
   const { rowCount } = await pool.query(
     `SELECT 1 FROM user_ioc_watchlist
-      WHERE user_id = $1 AND observable_type = $2 AND ioc_id = $3
+      WHERE user_id = $1 AND ioc_id = ANY($2::bigint[])
       LIMIT 1`,
-    [userId, ref.observable_type, ref.ioc_id]
+    [userId, ids.length ? ids : [ref.ioc_id]]
   );
   return rowCount > 0;
 }
@@ -187,10 +197,10 @@ export function iocRowToPageItem(row) {
 }
 
 /**
- * Per-user membership for a page of already-built IOC list items. ONE query,
- * scoped to the viewer, keyed by the globally-unique ioc id. Mutates each item,
- * setting item.watchlisted (boolean). Safe to call with an empty/invalid viewer
- * (annotates everything false without a query).
+ * Per-user membership for a page of already-built IOC list items. ONE watchlist
+ * query (+ one optional artifact-link expansion), scoped to the viewer. Mutates
+ * each item, setting item.watchlisted (boolean). A star on any proven hash alias
+ * of the same file artifact marks the canonical list identity as watchlisted.
  * @param {import('pg').Pool} pool
  * @param {number|null} userId
  * @param {Array<object>} items
@@ -207,17 +217,21 @@ export async function annotateItemsWatchlisted(pool, userId, items) {
     const n = Number(it?.id);
     if (Number.isInteger(n) && n > 0) ids.push(n);
   }
+  const linkedBySeed = await mapIocIdsToArtifactScopedIocIds(pool, ids);
+  const allIds = [...new Set([...ids, ...[...linkedBySeed.values()].flat()])];
   let starred = new Set();
-  if (ids.length) {
+  if (allIds.length) {
     const { rows } = await pool.query(
       `SELECT ioc_id FROM user_ioc_watchlist
         WHERE user_id = $1 AND ioc_id = ANY($2::bigint[])`,
-      [uid, ids]
+      [uid, allIds]
     );
     starred = new Set(rows.map((r) => Number(r.ioc_id)));
   }
   for (const it of items) {
-    it.watchlisted = starred.has(Number(it?.id));
+    const seed = Number(it?.id);
+    const group = linkedBySeed.get(seed) || [seed];
+    it.watchlisted = group.some((id) => starred.has(id));
   }
   return items;
 }

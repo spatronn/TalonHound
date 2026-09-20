@@ -327,7 +327,7 @@ import {
   ensureVtWebAnalysis
 } from './lib/virustotalWebAnalysis.js';
 import { resolveVtEnrichmentRow } from './lib/virustotalEnrichmentReuse.js';
-import { findArtifactLinkedIocsByIocId } from './lib/fileArtifacts/read.js';
+import { findArtifactLinkedIocsByIocId, resolveArtifactScopedIocIds } from './lib/fileArtifacts/read.js';
 
 const { Pool } = pg;
 
@@ -3357,27 +3357,30 @@ app.get('/api/ioc/:id/tags', async (req, res) => {
   if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
 
   try {
+    const exists = await pool.query(
+      `SELECT id FROM ioc_items WHERE id = $1 LIMIT 1`,
+      [iocId]
+    );
+    if (!exists.rowCount) return res.status(404).json({ message: 'IOC not found' });
+
+    // Include proven file-hash aliases so a manual tag on MD5 remains visible
+    // after the detail page canonicalizes to SHA256.
+    const scopedIds = await resolveArtifactScopedIocIds(pool, iocId);
     const q = await pool.query(
-      `SELECT
-         i.id AS ioc_id,
+      `SELECT DISTINCT ON (t.id)
          t.id,
          t.name,
          t.type,
          t.enabled
-       FROM ioc_items i
-       LEFT JOIN ioc_tags it
-         ON it.ioc_id = i.id
-        AND it.ioc_observable_type = i.observable_type
-        AND it.origin = 'manual'
-       LEFT JOIN tags t ON t.id = it.tag_id AND t.enabled = TRUE
-       WHERE i.id = $1
-       ORDER BY t.type ASC NULLS LAST, t.name ASC NULLS LAST`,
-      [iocId]
+       FROM ioc_tags it
+       JOIN tags t ON t.id = it.tag_id AND t.enabled = TRUE
+       WHERE it.ioc_id = ANY($1::bigint[])
+         AND it.origin = 'manual'
+       ORDER BY t.id, t.type ASC NULLS LAST, t.name ASC NULLS LAST`,
+      [scopedIds.length ? scopedIds : [iocId]]
     );
 
-    if (!q.rowCount) return res.status(404).json({ message: 'IOC not found' });
-
-    return res.json(q.rows.filter((row) => row.id != null).map((row) => ({
+    return res.json(q.rows.map((row) => ({
       id: row.id,
       name: row.name,
       type: row.type,
@@ -5639,9 +5642,14 @@ app.get('/api/ioc/details', async (req, res) => {
     })();
 
     // analyst_intelligence_summary: impact counts for IOC detail overview badge.
+    // Include proven file-hash aliases so MD5-authored refs survive SHA256 redirect.
     let analystIntelligenceSummary = { total_count: 0, supports_malicious_count: 0, supports_benign_count: 0, needs_review_count: 0, context_only_count: 0 };
     try {
-      const iocIds = [...new Set(rows.map((r) => r.id).filter((id) => Number.isFinite(Number(id))))];
+      let iocIds = [...new Set(rows.map((r) => r.id).filter((id) => Number.isFinite(Number(id))).map(Number))];
+      if (seedRow?.id) {
+        const scoped = await resolveArtifactScopedIocIds(pool, seedRow.id);
+        if (scoped.length) iocIds = [...new Set([...iocIds, ...scoped])];
+      }
       if (iocIds.length) {
         const aiQ = await pool.query(
           `SELECT
@@ -5658,7 +5666,7 @@ app.get('/api/ioc/details', async (req, res) => {
         if (aiQ.rows[0]) analystIntelligenceSummary = aiQ.rows[0];
       }
     } catch (_e) {
-      // Non-fatal â€” analyst intelligence table may not exist in older migrations
+      // Non-fatal — analyst intelligence table may not exist in older migrations
     }
 
     const totalSourceMembershipCount = membershipSummary.activeSourceCount + membershipSummary.historicalSourceCount;

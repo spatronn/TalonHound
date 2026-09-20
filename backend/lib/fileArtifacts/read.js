@@ -222,6 +222,101 @@ export async function findArtifactLinkedIocsByIocId(db, iocItemId) {
 }
 
 /**
+ * Identity IOC id set for one seed: the seed itself plus every proven exact-hash
+ * alias of the same file artifact (when artifact reads are enabled). Used by
+ * watchlist / analyst intelligence / tags / classifications so analyst-facing
+ * relations survive MD5→SHA256 canonicalization without reparenting rows.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {number|string} iocItemId
+ * @returns {Promise<number[]>}
+ */
+export async function resolveArtifactScopedIocIds(db, iocItemId) {
+  const id = Number(iocItemId);
+  if (!Number.isFinite(id) || id <= 0) return [];
+  try {
+    const linked = await findArtifactLinkedIocsByIocId(db, id);
+    const ids = (linked?.linked_ioc_ids || [])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (!ids.length) return [id];
+    return [...new Set([id, ...ids])];
+  } catch (err) {
+    if (err && (err.code === '42P01' || String(err.message || '').includes('file_artifact'))) {
+      return [id];
+    }
+    throw err;
+  }
+}
+
+/**
+ * Batch form of resolveArtifactScopedIocIds for list annotation (one SQL).
+ * Seeds with no artifact link map to themselves only.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {Array<number|string>} iocIds
+ * @returns {Promise<Map<number, number[]>>}
+ */
+export async function mapIocIdsToArtifactScopedIocIds(db, iocIds) {
+  const seeds = [...new Set(
+    (Array.isArray(iocIds) ? iocIds : [])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  )];
+  const out = new Map(seeds.map((id) => [id, [id]]));
+  if (!seeds.length || !isFileArtifactsReadEnabled()) return out;
+  try {
+    const { rows } = await db.query(
+      `WITH seeds AS (
+         SELECT DISTINCT unnest($1::bigint[]) AS seed_id
+       ),
+       seed_link AS (
+         SELECT s.seed_id, l.artifact_id, a.status, a.merged_into_artifact_id
+         FROM seeds s
+         LEFT JOIN file_artifact_ioc_links l ON l.ioc_item_id = s.seed_id
+         LEFT JOIN file_artifacts a ON a.id = l.artifact_id
+       ),
+       resolved AS (
+         SELECT seed_id,
+                CASE
+                  WHEN status = 'merged' AND merged_into_artifact_id IS NOT NULL
+                    THEN merged_into_artifact_id
+                  ELSE artifact_id
+                END AS artifact_id
+         FROM seed_link
+       )
+       SELECT r.seed_id, l.ioc_item_id AS linked_id
+       FROM resolved r
+       JOIN file_artifact_ioc_links l
+         ON r.artifact_id IS NOT NULL
+        AND (
+          l.artifact_id = r.artifact_id
+          OR l.artifact_id IN (
+            SELECT id FROM file_artifacts
+            WHERE status = 'merged' AND merged_into_artifact_id = r.artifact_id
+          )
+        )`,
+      [seeds]
+    );
+    for (const row of rows) {
+      const seed = Number(row.seed_id);
+      const linked = Number(row.linked_id);
+      if (!Number.isFinite(seed) || !Number.isFinite(linked)) continue;
+      const bucket = out.get(seed) || [seed];
+      if (!bucket.includes(linked)) bucket.push(linked);
+      if (!bucket.includes(seed)) bucket.unshift(seed);
+      out.set(seed, bucket);
+    }
+    return out;
+  } catch (err) {
+    if (err && (err.code === '42P01' || String(err.message || '').includes('file_artifact'))) {
+      return out;
+    }
+    throw err;
+  }
+}
+
+/**
  * Map of public_id → artifact_id for list dedupe.
  * @param {import('pg').Pool|import('pg').PoolClient} db
  * @param {string[]} publicIds

@@ -20,6 +20,7 @@ import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
+import { resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
 
 export const API_IOC_TYPES = Object.freeze(['ip', 'domain', 'url', 'hash']);
 
@@ -261,10 +262,13 @@ export async function loadManualTags(pool, iocId, observableType) {
  * this reflects every tag the IOC Details UI shows, so an IOC tagged only by an
  * ingestion feed is not reported as untagged. `origin` is the primary
  * provenance ('manual' wins when present, else the first origin) so a consumer
- * can distinguish analyst-authored tags from source-provided ones. Single
- * grouped query — no N+1.
+ * can distinguish analyst-authored tags from source-provided ones.
+ *
+ * For file artifacts, includes tags stored on proven exact-hash aliases of the
+ * same file so an MD5 tag remains visible after canonicalization to SHA256.
  */
 export async function loadCatalogTags(pool, iocId, observableType) {
+  const scopedIds = await resolveArtifactScopedIocIds(pool, iocId);
   const { rows } = await pool.query(
     `SELECT t.name, t.type,
             array_agg(DISTINCT it.origin) AS origins,
@@ -272,12 +276,11 @@ export async function loadCatalogTags(pool, iocId, observableType) {
                FILTER (WHERE it.source_name IS NOT NULL))[1] AS source_name
      FROM ioc_tags it
      JOIN tags t ON t.id = it.tag_id
-     WHERE it.ioc_id = $1
-       AND it.ioc_observable_type = $2
+     WHERE it.ioc_id = ANY($1::bigint[])
        AND t.enabled = TRUE
      GROUP BY t.name, t.type
      ORDER BY t.name ASC`,
-    [iocId, observableType]
+    [scopedIds.length ? scopedIds : [iocId]]
   );
   return rows.map((r) => {
     const origins = (Array.isArray(r.origins) ? r.origins.filter(Boolean) : []).sort();

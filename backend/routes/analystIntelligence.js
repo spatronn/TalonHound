@@ -9,6 +9,7 @@ import {
   toPublicAnalystIntelligenceRow,
   validateAnalystIntelligencePayload
 } from '../lib/analystIntelligence.js';
+import { resolveArtifactScopedIocIds, mapIocIdsToArtifactScopedIocIds } from '../lib/fileArtifacts/read.js';
 
 function resolveActor(req) {
   const userId = req.user?.publicId && /^[0-9a-f-]{36}$/i.test(req.user.publicId)
@@ -40,14 +41,16 @@ export function registerAnalystIntelligenceRoutes(app, pool, audit) {
       const ioc = await fetchIocContext(pool, iocId);
       if (!ioc) return res.status(404).json({ message: 'IOC not found' });
 
+      // Include proven file-hash aliases so a reference added on MD5 remains
+      // visible after the detail page canonicalizes to SHA256.
+      const scopedIds = await resolveArtifactScopedIocIds(pool, iocId);
       const { rows } = await pool.query(
         `SELECT *
          FROM ioc_analyst_intelligence
-         WHERE ioc_id = $1
-           AND ioc_observable_type = $2
+         WHERE ioc_id = ANY($1::bigint[])
            AND deleted_at IS NULL
          ORDER BY created_at DESC`,
-        [iocId, ioc.observable_type]
+        [scopedIds.length ? scopedIds : [iocId]]
       );
 
       const items = rows.map(toPublicAnalystIntelligenceRow);
@@ -268,25 +271,40 @@ export async function enrichItemsWithAnalystIntelligenceCounts(pool, items) {
     .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
   if (!pairs.length) return map;
 
-  const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
-  const params = pairs.flatMap((p) => [p.id, p.observable_type]);
+  const linkedBySeed = await mapIocIdsToArtifactScopedIocIds(
+    pool,
+    pairs.map((p) => p.id)
+  );
+  const allIds = [...new Set([...pairs.map((p) => p.id), ...[...linkedBySeed.values()].flat()])];
   const { rows } = await pool.query(
-    `SELECT ioc_id, ioc_observable_type,
+    `SELECT ioc_id,
             COUNT(*)::int AS analyst_intelligence_count,
             COUNT(*) FILTER (WHERE assessment_impact = 'supports_malicious')::int AS supports_malicious_count,
             COUNT(*) FILTER (WHERE assessment_impact = 'needs_review')::int AS needs_review_count
      FROM ioc_analyst_intelligence
      WHERE deleted_at IS NULL
-       AND (ioc_id, ioc_observable_type) IN (VALUES ${values})
-     GROUP BY ioc_id, ioc_observable_type`,
-    params
+       AND ioc_id = ANY($1::bigint[])
+     GROUP BY ioc_id`,
+    [allIds]
   );
+  const byIoc = new Map(rows.map((r) => [Number(r.ioc_id), r]));
 
-  for (const row of rows) {
-    map.set(`${Number(row.ioc_id)}|${String(row.ioc_observable_type)}`, {
-      analyst_intelligence_count: Number(row.analyst_intelligence_count || 0),
-      supports_malicious_count: Number(row.supports_malicious_count || 0),
-      needs_review_count: Number(row.needs_review_count || 0)
+  for (const p of pairs) {
+    const group = linkedBySeed.get(p.id) || [p.id];
+    let analyst_intelligence_count = 0;
+    let supports_malicious_count = 0;
+    let needs_review_count = 0;
+    for (const id of group) {
+      const row = byIoc.get(id);
+      if (!row) continue;
+      analyst_intelligence_count += Number(row.analyst_intelligence_count || 0);
+      supports_malicious_count += Number(row.supports_malicious_count || 0);
+      needs_review_count += Number(row.needs_review_count || 0);
+    }
+    map.set(`${p.id}|${p.observable_type}`, {
+      analyst_intelligence_count,
+      supports_malicious_count,
+      needs_review_count
     });
   }
   return map;

@@ -84,12 +84,15 @@ test('annotateItemsWatchlisted marks only the viewer-starred ids in one query', 
     }
   };
   const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+  // FILE_ARTIFACTS_READ off → no artifact expansion query; one membership query.
   await annotateItemsWatchlisted(pool, 9, items);
   assert.deepEqual(items.map((i) => i.watchlisted), [false, true, false]);
   assert.equal(calls, 1, 'exactly one batched membership query (no N+1)');
 });
 
 // Store helpers against a tiny fake pool: idempotency of add/remove.
+// With FILE_ARTIFACTS_READ off, resolveArtifactScopedIocIds returns [ioc_id]
+// without querying file_artifact_* tables.
 function fakeWatchlistPool() {
   const rows = [];
   return {
@@ -105,17 +108,19 @@ function fakeWatchlistPool() {
         return { rowCount: 1 };
       }
       if (s.startsWith('DELETE FROM user_ioc_watchlist')) {
-        const [user_id, observable_type, ioc_id] = params;
+        const [user_id, ids] = params;
+        const idSet = new Set((ids || []).map(Number));
         const before = rows.length;
         for (let i = rows.length - 1; i >= 0; i -= 1) {
           const r = rows[i];
-          if (r.user_id === user_id && r.observable_type === observable_type && r.ioc_id === ioc_id) rows.splice(i, 1);
+          if (r.user_id === user_id && idSet.has(r.ioc_id)) rows.splice(i, 1);
         }
         return { rowCount: before - rows.length };
       }
       if (s.includes('SELECT 1 FROM user_ioc_watchlist')) {
-        const [user_id, observable_type, ioc_id] = params;
-        const hit = rows.some((r) => r.user_id === user_id && r.observable_type === observable_type && r.ioc_id === ioc_id);
+        const [user_id, ids] = params;
+        const idSet = new Set((ids || []).map(Number));
+        const hit = rows.some((r) => r.user_id === user_id && idSet.has(r.ioc_id));
         return { rowCount: hit ? 1 : 0, rows: hit ? [{ '?column?': 1 }] : [] };
       }
       throw new Error(`unexpected sql ${s}`);

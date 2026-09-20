@@ -5,6 +5,7 @@ import {
   threatClassificationLabel,
   validateThreatClassificationSlug
 } from './threatClassification.js';
+import { resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
 
 export function parseThreatClassificationInput(raw) {
   if (raw == null) return [];
@@ -169,10 +170,29 @@ export async function fetchIocThreatClassificationSlugs(pool, iocId, observableT
  * is fetched on demand. Feed-only classifications and analyst suppressions are
  * NOT applied here — this is the analyst/native slug set, not the full
  * effective computation used when feed classifications are present.
+ *
+ * For file artifacts, junction rows on proven exact-hash aliases of the same
+ * file are unioned so an MD5 analyst classification remains visible after
+ * canonicalization to SHA256.
  */
 export async function loadEffectiveIocClassificationSlugs(pool, iocId, observableType, legacyThreatClassification) {
-  const junction = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
-  if (junction.length) return junction;
+  const scopedIds = await resolveArtifactScopedIocIds(pool, iocId);
+  if (scopedIds.length > 1) {
+    const { rows: typeRows } = await pool.query(
+      `SELECT id, observable_type FROM ioc_items WHERE id = ANY($1::bigint[])`,
+      [scopedIds]
+    );
+    const pairs = typeRows.map((r) => ({ id: Number(r.id), observable_type: String(r.observable_type) }));
+    const junctionMap = await loadIocThreatClassificationSlugs(pool, pairs);
+    const union = new Set();
+    for (const p of pairs) {
+      for (const slug of junctionMap.get(iocPairKey(p.id, p.observable_type)) || []) union.add(slug);
+    }
+    if (union.size) return [...union].sort();
+  } else {
+    const junction = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
+    if (junction.length) return junction;
+  }
   let legacy = legacyThreatClassification;
   if (legacy == null) {
     const { rows } = await pool.query(
