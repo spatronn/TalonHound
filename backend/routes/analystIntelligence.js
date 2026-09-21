@@ -259,7 +259,7 @@ export function registerAnalystIntelligenceRoutes(app, pool, audit) {
   });
 }
 
-export async function enrichItemsWithAnalystIntelligenceCounts(pool, items) {
+export async function enrichItemsWithAnalystIntelligenceCounts(pool, items, opts = {}) {
   const map = new Map();
   if (!items?.length) return map;
 
@@ -271,10 +271,11 @@ export async function enrichItemsWithAnalystIntelligenceCounts(pool, items) {
     .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
   if (!pairs.length) return map;
 
-  const linkedBySeed = await mapIocIdsToArtifactScopedIocIds(
-    pool,
-    pairs.map((p) => p.id)
-  );
+  const linkedBySeed = opts.linkedBySeed
+    || await mapIocIdsToArtifactScopedIocIds(
+      pool,
+      pairs.map((p) => p.id)
+    );
   const allIds = [...new Set([...pairs.map((p) => p.id), ...[...linkedBySeed.values()].flat()])];
   const { rows } = await pool.query(
     `SELECT ioc_id,

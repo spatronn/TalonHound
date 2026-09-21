@@ -36,6 +36,7 @@ Fresh installations apply the public forward migrations present in the repositor
 025_ioc_source_last_seen.sql
 026_threat_library_published_at_provenance.sql
 027_reparent_merged_artifact_ioc_links.sql
+028_file_artifact_ioc_links_ioc_item_id_idx.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.

@@ -253,6 +253,13 @@ export async function resolveArtifactScopedIocIds(db, iocItemId) {
  * Batch form of resolveArtifactScopedIocIds for list annotation (one SQL).
  * Seeds with no artifact link map to themselves only.
  *
+ * IMPORTANT — page-scoped only. Callers must pass the current page's IOC ids
+ * (tens/hundreds), never the full catalog. The SQL resolves each seed →
+ * artifact (and direct merge tombstones), then index-joins links by
+ * artifact_id. Do not reintroduce an OR/subplan against file_artifact_ioc_links
+ * that allows the planner to nest-loop the whole links table × every seed
+ * (~1M×N rows on production).
+ *
  * @param {import('pg').Pool|import('pg').PoolClient} db
  * @param {Array<number|string>} iocIds
  * @returns {Promise<Map<number, number[]>>}
@@ -270,32 +277,32 @@ export async function mapIocIdsToArtifactScopedIocIds(db, iocIds) {
       `WITH seeds AS (
          SELECT DISTINCT unnest($1::bigint[]) AS seed_id
        ),
-       seed_link AS (
-         SELECT s.seed_id, l.artifact_id, a.status, a.merged_into_artifact_id
+       seed_resolved AS (
+         SELECT s.seed_id,
+                CASE
+                  WHEN a.status = 'merged' AND a.merged_into_artifact_id IS NOT NULL
+                    THEN a.merged_into_artifact_id
+                  ELSE l.artifact_id
+                END AS artifact_id
          FROM seeds s
          LEFT JOIN file_artifact_ioc_links l ON l.ioc_item_id = s.seed_id
          LEFT JOIN file_artifacts a ON a.id = l.artifact_id
        ),
-       resolved AS (
-         SELECT seed_id,
-                CASE
-                  WHEN status = 'merged' AND merged_into_artifact_id IS NOT NULL
-                    THEN merged_into_artifact_id
-                  ELSE artifact_id
-                END AS artifact_id
-         FROM seed_link
+       artifact_scope AS (
+         SELECT sr.seed_id, sr.artifact_id AS scope_artifact_id
+         FROM seed_resolved sr
+         WHERE sr.artifact_id IS NOT NULL
+         UNION
+         SELECT sr.seed_id, fa.id AS scope_artifact_id
+         FROM seed_resolved sr
+         JOIN file_artifacts fa
+           ON fa.status = 'merged'
+          AND fa.merged_into_artifact_id = sr.artifact_id
+         WHERE sr.artifact_id IS NOT NULL
        )
-       SELECT r.seed_id, l.ioc_item_id AS linked_id
-       FROM resolved r
-       JOIN file_artifact_ioc_links l
-         ON r.artifact_id IS NOT NULL
-        AND (
-          l.artifact_id = r.artifact_id
-          OR l.artifact_id IN (
-            SELECT id FROM file_artifacts
-            WHERE status = 'merged' AND merged_into_artifact_id = r.artifact_id
-          )
-        )`,
+       SELECT DISTINCT ascope.seed_id, l.ioc_item_id AS linked_id
+       FROM artifact_scope ascope
+       JOIN file_artifact_ioc_links l ON l.artifact_id = ascope.scope_artifact_id`,
       [seeds]
     );
     for (const row of rows) {

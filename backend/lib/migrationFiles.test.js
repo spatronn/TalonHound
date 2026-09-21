@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '027_reparent_merged_artifact_ioc_links.sql');
-  assert.equal(meta.latestMigration, 27);
+  assert.equal(meta.latestMigrationFile, '028_file_artifact_ioc_links_ioc_item_id_idx.sql');
+  assert.equal(meta.latestMigration, 28);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -129,4 +129,13 @@ test('027 reparents tombstone IOC links without deleting enrichments or IOC rows
   assert.doesNotMatch(sql, /DELETE FROM public\.ioc_items/i);
   assert.doesNotMatch(sql, /DELETE FROM public\.ioc_enrichments/i);
   assert.doesNotMatch(sql, /DROP TABLE/i);
+});
+
+test('028 adds ioc_item_id index for page-scoped alias expansion', () => {
+  const sql = readFileSync(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations/028_file_artifact_ioc_links_ioc_item_id_idx.sql'),
+    'utf8'
+  );
+  assert.match(sql, /CREATE INDEX IF NOT EXISTS idx_file_artifact_ioc_links_ioc_item_id/);
+  assert.match(sql, /ON file_artifact_ioc_links \(ioc_item_id\)/);
 });

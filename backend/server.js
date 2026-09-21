@@ -327,7 +327,7 @@ import {
   ensureVtWebAnalysis
 } from './lib/virustotalWebAnalysis.js';
 import { resolveVtEnrichmentRow } from './lib/virustotalEnrichmentReuse.js';
-import { findArtifactLinkedIocsByIocId, resolveArtifactScopedIocIds } from './lib/fileArtifacts/read.js';
+import { findArtifactLinkedIocsByIocId, resolveArtifactScopedIocIds, mapIocIdsToArtifactScopedIocIds } from './lib/fileArtifacts/read.js';
 
 const { Pool } = pg;
 
@@ -3725,25 +3725,33 @@ registerIocSourceRemovalRoute(app, pool, auditLogService, { invalidateDetailsCac
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
   const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
+  // One page-scoped artifact alias expansion shared by watchlist + analyst counts.
+  const pageIds = pageItems
+    .map((it) => Number(it?.id))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  const linkedBySeed = await mapIocIdsToArtifactScopedIocIds(pool, pageIds);
   const [confMap, threatMetaMap, analystMap, feedClassMap, suppressMap] = await Promise.all([
     buildDisplayConfidenceForItems(pool, enriched, {
       includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
     }),
     enrichItemsWithThreatMetadata(pool, pageItems),
-    enrichItemsWithAnalystIntelligenceCounts(pool, pageItems),
+    enrichItemsWithAnalystIntelligenceCounts(pool, pageItems, { linkedBySeed }),
     batchLoadFeedClassifications(pool, pageItems),
     batchLoadThreatClassificationSuppressions(pool, pageItems)
   ]);
-  return enriched.map((it) => {
-    const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
-    const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-    const withFeed = mergeFeedClassificationsIntoItem(merged, feedClassMap, suppressMap);
-    return mergeAnalystIntelligenceItem(withFeed, analystMap);
-  });
+  return {
+    items: enriched.map((it) => {
+      const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
+      const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
+      const withFeed = mergeFeedClassificationsIntoItem(merged, feedClassMap, suppressMap);
+      return mergeAnalystIntelligenceItem(withFeed, analystMap);
+    }),
+    linkedBySeed
+  };
 }
 
 async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, byItemIds = false, viewerUserId = null } = {}) {
-  const finalized = await finalizeIocListPageItems(pool, pageItems, {
+  const { items: finalized, linkedBySeed } = await finalizeIocListPageItems(pool, pageItems, {
     byItemIds,
     includeInactiveMemberships: hasSearch
   });
@@ -3753,7 +3761,7 @@ async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, b
   // Per-user watchlist membership (one batched query, viewer-scoped). Skipped when
   // no interactive viewer is supplied, so machine/worker call sites are unchanged.
   if (viewerUserId != null) {
-    await annotateItemsWatchlisted(pool, viewerUserId, decorated);
+    await annotateItemsWatchlisted(pool, viewerUserId, decorated, { linkedBySeed });
   }
   return decorated;
 }

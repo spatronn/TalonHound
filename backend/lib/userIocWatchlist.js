@@ -205,7 +205,7 @@ export function iocRowToPageItem(row) {
  * @param {number|null} userId
  * @param {Array<object>} items
  */
-export async function annotateItemsWatchlisted(pool, userId, items) {
+export async function annotateItemsWatchlisted(pool, userId, items, opts = {}) {
   if (!Array.isArray(items) || items.length === 0) return items;
   const uid = normalizeUserId(userId);
   if (!uid) {
@@ -217,7 +217,7 @@ export async function annotateItemsWatchlisted(pool, userId, items) {
     const n = Number(it?.id);
     if (Number.isInteger(n) && n > 0) ids.push(n);
   }
-  const linkedBySeed = await mapIocIdsToArtifactScopedIocIds(pool, ids);
+  const linkedBySeed = opts.linkedBySeed || await mapIocIdsToArtifactScopedIocIds(pool, ids);
   const allIds = [...new Set([...ids, ...[...linkedBySeed.values()].flat()])];
   let starred = new Set();
   if (allIds.length) {
