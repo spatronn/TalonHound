@@ -17,6 +17,23 @@ function assertPlaceholdersMatchParams(sql, params) {
   }
 }
 
+test('ioc contains full sha256 uses proven alias membership when FA read is on', () => {
+  const sha = '3f5ff48aa4dc2c1af3deeb33a9cc576616dad37156ae9182831b1b2a5ae4ae20';
+  const { sql, params } = build(`ioc contains "${sha}"`, { fileArtifactsReadEnabled: true });
+  assert.match(sql, /\(i\.observable_type, i\.id\) IN \(/);
+  assert.match(sql, /file_artifact_hashes h/);
+  assert.match(sql, /h\.hash_type = 'sha256'/);
+  assert.doesNotMatch(sql, /ILIKE/);
+  assert.deepEqual(params, [sha]);
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('ioc contains domain stays ILIKE and never joins file_artifact_hashes', () => {
+  const { sql } = build('ioc contains "evil.example.com"', { fileArtifactsReadEnabled: true });
+  assert.match(sql, /i\.observable ILIKE/);
+  assert.doesNotMatch(sql, /file_artifact_hashes/);
+});
+
 test('ioc contains is parameterized with ILIKE and escaped wildcards', () => {
   const { sql, params } = build('ioc contains "example.com"');
   assert.match(sql, /i\.observable ILIKE \$1 ESCAPE/);
@@ -121,7 +138,7 @@ test('AND / OR / NOT structure', () => {
 });
 
 test('type in maps to observable_type ANY (partition prunable)', () => {
-  const { sql, params } = build('type in ("domain", "url")');
+  const { sql, params } = build('type in ("domain", "url")', { fileArtifactsReadEnabled: false });
   assert.match(sql, /i\.observable_type = ANY\(\$1::text\[\]\)/);
   assert.deepEqual(params, [['domain', 'url']]);
 });

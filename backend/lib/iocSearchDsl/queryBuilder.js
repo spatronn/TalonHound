@@ -1,6 +1,7 @@
 import { getSearchTimezone } from './config.js';
 import { likeEscape, normalizeIocValue, resolveRelativeDate } from './normalize.js';
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
+import { inferExactHashType } from '../fileArtifacts/hashNormalize.js';
 
 // Compiles a validated AST into a single boolean SQL expression plus a positional
 // parameter array. EVERY user-derived value is bound as a parameter — no DSL token is
@@ -122,10 +123,28 @@ class Builder {
   }
 
   // ---- text: ioc --------------------------------------------------------
+  // Complete md5/sha1/sha256 literals (when file-artifact reads are on) resolve through
+  // the same proven-alias membership as `md5|sha1|sha256 equals`, so searching the
+  // canonical SHA256 finds an MD5-only IOC linked to that artifact. Partial / non-hash
+  // `ioc contains` stays substring ILIKE and never touches file_artifact_hashes.
   buildIoc(node) {
     const raw = node.values[0];
     const norm = normalizeIocValue(raw);
     const col = `${IOC_ALIAS}.observable`;
+    const hashType = this.fileArtifactsReadEnabled ? inferExactHashType(norm) : null;
+    if (
+      hashType
+      && (node.operator === 'contains'
+        || node.operator === 'equals'
+        || node.operator === 'not_contains'
+        || node.operator === 'not_equals')
+    ) {
+      const positive = this.buildExactHashIdentityMembership(hashType, norm);
+      if (node.operator === 'not_contains' || node.operator === 'not_equals') {
+        return `(NOT ${positive})`;
+      }
+      return positive;
+    }
     switch (node.operator) {
       case 'contains':
         return `${col} ILIKE ${this.bind(`%${likeEscape(norm)}%`)} ESCAPE '\\'`;
@@ -145,6 +164,35 @@ class Builder {
       default:
         throw new Error(`Unsupported operator for ioc: ${node.operator}`);
     }
+  }
+
+  /**
+   * Direct hash IOC ∪ proven file-artifact alias links for one (hash_type, value).
+   * Shared by typed `md5|sha1|sha256 equals` and full-hash `ioc contains|equals`.
+   * Uses `(type, id) IN (UNION …)` — never `direct OR (… IN …)` — so the planner
+   * stays on the hash / PK indexes instead of scanning every ioc_items partition.
+   */
+  buildExactHashIdentityMembership(hashType, value) {
+    const valuePh = this.bind(value);
+    return `(${IOC_ALIAS}.observable_type, ${IOC_ALIAS}.id) IN (
+      SELECT d.observable_type, d.id
+        FROM ioc_items d
+       WHERE d.observable_type = '${hashType}' AND LOWER(d.observable) = ${valuePh}
+      UNION
+      SELECT fal.ioc_observable_type, fal.ioc_item_id
+        FROM file_artifact_hashes h
+        JOIN file_artifacts hfa ON hfa.id = h.artifact_id
+        JOIN file_artifact_ioc_links fal
+          ON fal.artifact_id = COALESCE(
+               CASE
+                 WHEN hfa.status = 'merged' AND hfa.merged_into_artifact_id IS NOT NULL
+                   THEN hfa.merged_into_artifact_id
+                 ELSE hfa.id
+               END,
+               hfa.id
+             )
+       WHERE h.hash_type = '${hashType}' AND h.normalized_hash_value = ${valuePh}
+    )`;
   }
 
   // ---- text: source -----------------------------------------------------
@@ -421,37 +469,16 @@ class Builder {
       throw new Error(`Unsupported operator for ${node.field}: ${node.operator}`);
     }
     const value = String(node.values[0]).trim().toLowerCase();
-    const valuePh = this.bind(value);
-
-    const directIoc =
-      `(${IOC_ALIAS}.observable_type = '${hashType}' AND LOWER(${IOC_ALIAS}.observable) = ${valuePh})`;
 
     // Without the file-artifact read/canonical layer there is no artifact identity to
     // resolve to and no dedup, so a direct exact hash IOC is the only sound match. This
     // bare predicate already uses the partial hash index directly (no OR to defeat it).
     if (!this.fileArtifactsReadEnabled) {
-      return directIoc;
+      const valuePh = this.bind(value);
+      return `(${IOC_ALIAS}.observable_type = '${hashType}' AND LOWER(${IOC_ALIAS}.observable) = ${valuePh})`;
     }
 
-    return `(${IOC_ALIAS}.observable_type, ${IOC_ALIAS}.id) IN (
-      SELECT d.observable_type, d.id
-        FROM ioc_items d
-       WHERE d.observable_type = '${hashType}' AND LOWER(d.observable) = ${valuePh}
-      UNION
-      SELECT fal.ioc_observable_type, fal.ioc_item_id
-        FROM file_artifact_hashes h
-        JOIN file_artifacts hfa ON hfa.id = h.artifact_id
-        JOIN file_artifact_ioc_links fal
-          ON fal.artifact_id = COALESCE(
-               CASE
-                 WHEN hfa.status = 'merged' AND hfa.merged_into_artifact_id IS NOT NULL
-                   THEN hfa.merged_into_artifact_id
-                 ELSE hfa.id
-               END,
-               hfa.id
-             )
-       WHERE h.hash_type = '${hashType}' AND h.normalized_hash_value = ${valuePh}
-    )`;
+    return this.buildExactHashIdentityMembership(hashType, value);
   }
 
   // ---- attr: imphash / tlsh / ssdeep (non-identity file-artifact attribute) --

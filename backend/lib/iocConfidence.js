@@ -598,34 +598,47 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
   if (!keyed.length) return new Map();
 
   const ids = keyed.map((x) => Number(x.id));
-  const types = [...new Set(keyed.map((x) => String(x.observable_type)))];
+  /** @type {Map<number, number[]>} */
+  let linkedBySeed = opts.linkedBySeed || null;
+  if (!linkedBySeed) {
+    const readOn = ['1', 'true', 'yes', 'on']
+      .includes(String(process.env.FILE_ARTIFACTS_READ_ENABLED || '').trim().toLowerCase());
+    if (readOn) {
+      const { mapIocIdsToArtifactScopedIocIds } = await import('./fileArtifacts/read.js');
+      linkedBySeed = await mapIocIdsToArtifactScopedIocIds(pool, ids);
+    } else {
+      linkedBySeed = new Map(ids.map((id) => [id, [id]]));
+    }
+  }
+  const allIds = [...new Set([
+    ...ids,
+    ...[...linkedBySeed.values()].flat().map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+  ])];
 
-  const pairs = keyed.map((x, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
-  const pairParams = keyed.flatMap((x) => [Number(x.id), String(x.observable_type)]);
-
+  // Look up by id only — list canonicalization may rewrite observable_type to the
+  // primary SHA256 while the ioc_items / membership rows remain on an alias type.
   const [{ rows: mRows }, { rows: iocItemRows }] = await Promise.all([
     pool.query(
       `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
               f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
        FROM ioc_feed_memberships m
        JOIN integration_feeds f ON f.integration_id = m.feed_id
-       WHERE m.ioc_item_id = ANY($1::bigint[])
-         AND m.ioc_observable_type = ANY($2::text[])`,
-      [ids, types]
+       WHERE m.ioc_item_id = ANY($1::bigint[])`,
+      [allIds]
     ),
     pool.query(
       `SELECT i.id, i.observable_type, i.confidence, i.analyst_confidence_override, i.ioc_source_id, i.source_name
        FROM ioc_items i
-       WHERE (i.id, i.observable_type) IN (VALUES ${pairs})`,
-      pairParams
+       WHERE i.id = ANY($1::bigint[])`,
+      [allIds]
     )
   ]);
 
-  const byKey = new Map();
+  const byId = new Map();
   for (const m of mRows) {
-    const k = `${m.ioc_item_id}|${m.ioc_observable_type}`;
-    if (!byKey.has(k)) byKey.set(k, []);
-    byKey.get(k).push(m);
+    const id = Number(m.ioc_item_id);
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id).push(m);
   }
 
   const iocItemById = new Map();
@@ -635,9 +648,14 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
 
   const out = new Map();
   for (const it of keyed) {
-    const k = `${Number(it.id)}|${String(it.observable_type)}`;
-    const memberships = byKey.get(k) || [];
-    const storedItem = iocItemById.get(Number(it.id));
+    const seed = Number(it.id);
+    const group = (linkedBySeed.get(seed) || [seed])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    const memberships = group.flatMap((id) => byId.get(id) || []);
+    const storedItem = iocItemById.get(seed)
+      || group.map((id) => iocItemById.get(id)).find(Boolean)
+      || null;
     const itEnriched = storedItem
       ? {
           ...it,
@@ -671,6 +689,9 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
     effective = effective
       || (Number(itEnriched.active_source_count) > 0 ? normalizeConfidence(itEnriched.confidence) : null)
       || null;
+    // Keep the list-item (possibly canonicalized) type in the map key so callers that
+    // look up with the display type still hit.
+    const k = `${seed}|${String(it.observable_type)}`;
     out.set(k, {
       confidence_effective: effective,
       confidence_source: source || (effective ? 'legacy_item' : 'unknown'),

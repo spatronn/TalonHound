@@ -150,7 +150,7 @@ function observableKey(observableType, observable) {
 /**
  * @param {import('pg').Pool} pool
  * @param {Array<{ id?: number|string, observable: string, observable_type: string }>} items
- * @param {{ byItemIds?: boolean }} [opts]
+ * @param {{ byItemIds?: boolean, linkedBySeed?: Map<number, number[]> }} [opts]
  */
 export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts = {}) {
   const keyed = (items || []).filter((x) => x?.observable && x?.observable_type);
@@ -162,36 +162,101 @@ export async function enrichItemsWithActiveSourceCounts(pool, items = [], opts =
 
   let membershipRows;
   let manualRows;
+  /** @type {Map<number, number[]>|null} */
+  let linkedBySeed = opts.linkedBySeed || null;
 
   if (byItemIds && itemIds.length) {
+    // Canonical list display may rewrite observable/type to the primary SHA256 while
+    // the underlying ioc_items row (and its sources) remain on an MD5/SHA1 alias.
+    // Resolve memberships by id — never by rewritten display type — and aggregate
+    // across proven file-hash aliases of the same artifact when available.
+    if (!linkedBySeed) {
+      const readOn = ['1', 'true', 'yes', 'on']
+        .includes(String(process.env.FILE_ARTIFACTS_READ_ENABLED || '').trim().toLowerCase());
+      if (readOn) {
+        const { mapIocIdsToArtifactScopedIocIds } = await import('./fileArtifacts/read.js');
+        linkedBySeed = await mapIocIdsToArtifactScopedIocIds(pool, itemIds);
+      } else {
+        linkedBySeed = new Map(itemIds.map((id) => [id, [id]]));
+      }
+    }
+    const allIds = [...new Set([
+      ...itemIds,
+      ...[...linkedBySeed.values()].flat().map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
+    ])];
+
     const [membershipRes, manualRes] = await Promise.all([
       pool.query(
         `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.purged_at,
                 f.name AS feed_name, f.key AS feed_key
          FROM ioc_feed_memberships m
          JOIN integration_feeds f ON f.integration_id = m.feed_id
-         WHERE m.ioc_item_id = ANY($1::bigint[])
-           AND m.ioc_observable_type = ANY($2::text[])`,
-        [itemIds, types]
+         WHERE m.ioc_item_id = ANY($1::bigint[])`,
+        [allIds]
       ),
       pool.query(
         `SELECT id AS ioc_item_id, observable_type, source_name
          FROM ioc_items
          WHERE id = ANY($1::bigint[])
            AND ioc_source_id IS NOT NULL`,
-        [itemIds]
+        [allIds]
       )
     ]);
-    membershipRows = membershipRes.rows.map((row) => ({
-      ...row,
-      observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.ioc_observable_type)?.observable,
-      observable_type: row.ioc_observable_type
-    }));
-    manualRows = manualRes.rows.map((row) => ({
-      ...row,
-      observable: keyed.find((it) => Number(it.id) === Number(row.ioc_item_id) && it.observable_type === row.observable_type)?.observable
-    }));
-  } else {
+
+    const membershipsById = new Map();
+    for (const row of membershipRes.rows) {
+      const id = Number(row.ioc_item_id);
+      if (!Number.isFinite(id)) continue;
+      if (!membershipsById.has(id)) membershipsById.set(id, []);
+      membershipsById.get(id).push(row);
+    }
+    const manualsById = new Map();
+    for (const row of manualRes.rows) {
+      const id = Number(row.ioc_item_id);
+      if (!Number.isFinite(id)) continue;
+      if (!manualsById.has(id)) manualsById.set(id, []);
+      manualsById.get(id).push(row);
+    }
+
+    return keyed.map((it) => {
+      const seed = Number(it.id);
+      const group = (linkedBySeed.get(seed) || [seed])
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      const activeNames = new Set();
+      const historical = [];
+      for (const id of group) {
+        for (const row of membershipsById.get(id) || []) {
+          if (isActiveFeedMembership(row)) {
+            if (row.feed_name) activeNames.add(row.feed_name);
+          } else if (isHistoricalFeedMembership(row)) {
+            historical.push({
+              feed_name: row.feed_name || row.feed_key || 'Unknown feed',
+              status: membershipDisplayStatus(row),
+              purge_reason: row.purge_reason || null
+            });
+          }
+        }
+        for (const row of manualsById.get(id) || []) {
+          if (row.source_name) activeNames.add(row.source_name);
+        }
+      }
+      const activeSorted = [...activeNames].sort();
+      const historicalNames = [...new Set(historical.map((h) => h.feed_name).filter(Boolean))].sort();
+      const sourceNames = activeSorted.length ? activeSorted : historicalNames;
+      const displaySource = sourceNames[0] || it.source_name || 'No active source';
+      return {
+        ...it,
+        source_count: sourceNames.length,
+        source_names: sourceNames,
+        active_source_count: activeSorted.length,
+        historical_sources: historical,
+        display_source: displaySource
+      };
+    });
+  }
+
+  {
     const observables = [...new Set(keyed.map((x) => String(x.observable)))];
     const membershipRes = await pool.query(
       `SELECT i.observable, i.observable_type, m.status, m.purged_at,

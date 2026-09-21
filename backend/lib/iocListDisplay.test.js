@@ -46,3 +46,18 @@ test('decorateIocListItems adds lifecycle and display source fields', () => {
   assert.equal(item.display_source, 'Legacy Feed');
   assert.equal(item.display_source_kind, 'historical');
 });
+
+test('decorateIocListItems shows Threat_Library for canonical hash row with active source_names', () => {
+  const [item] = decorateIocListItems([{
+    id: 3475208,
+    observable: '3f5ff48aa4dc2c1af3deeb33a9cc576616dad37156ae9182831b1b2a5ae4ae20',
+    observable_type: 'sha256',
+    status: 'active',
+    source_names: ['Threat_Library'],
+    active_source_count: 1
+  }]);
+  assert.equal(item.observable_type, 'sha256');
+  assert.equal(item.display_source, 'Threat_Library');
+  assert.equal(item.display_source_kind, 'active');
+  assert.notEqual(item.display_source, 'No active source');
+});

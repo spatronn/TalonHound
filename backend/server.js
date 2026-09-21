@@ -3724,15 +3724,21 @@ registerIocDeleteRoute(app, pool, auditLogService, { invalidateDetailsCache: inv
 registerIocSourceRemovalRoute(app, pool, auditLogService, { invalidateDetailsCache: invalidateIocDetailsCache });
 
 async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
-  const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, opts);
-  // One page-scoped artifact alias expansion shared by watchlist + analyst counts.
+  // One page-scoped artifact alias expansion shared by sources + watchlist + analyst counts.
+  // Must run before source enrichment: list canonicalization may rewrite display type/value
+  // to the primary SHA256 while sources still live on an MD5/SHA1 alias of the same artifact.
   const pageIds = pageItems
     .map((it) => Number(it?.id))
     .filter((n) => Number.isFinite(n) && n > 0);
   const linkedBySeed = await mapIocIdsToArtifactScopedIocIds(pool, pageIds);
+  const enriched = await enrichItemsWithActiveSourceCounts(pool, pageItems, {
+    ...opts,
+    linkedBySeed
+  });
   const [confMap, threatMetaMap, analystMap, feedClassMap, suppressMap] = await Promise.all([
     buildDisplayConfidenceForItems(pool, enriched, {
-      includeInactiveMemberships: Boolean(opts.includeInactiveMemberships)
+      includeInactiveMemberships: Boolean(opts.includeInactiveMemberships),
+      linkedBySeed
     }),
     enrichItemsWithThreatMetadata(pool, pageItems),
     enrichItemsWithAnalystIntelligenceCounts(pool, pageItems, { linkedBySeed }),
@@ -3751,8 +3757,12 @@ async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
 }
 
 async function mapIocListPageItems(pool, pageItems, { statusFilter, hasSearch, byItemIds = false, viewerUserId = null } = {}) {
+  // Prefer id-based source/confidence resolution whenever page rows carry ids: after
+  // file-artifact canonicalization the displayed type/value may diverge from the
+  // underlying ioc_items row that owns memberships.
+  const hasIds = (pageItems || []).some((it) => Number.isFinite(Number(it?.id)) && Number(it.id) > 0);
   const { items: finalized, linkedBySeed } = await finalizeIocListPageItems(pool, pageItems, {
-    byItemIds,
+    byItemIds: byItemIds || hasIds,
     includeInactiveMemberships: hasSearch
   });
   const scoped = hasSearch ? finalized : applyActiveListScope(finalized, statusFilter);

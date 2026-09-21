@@ -73,21 +73,28 @@ test('annotateItemsWatchlisted sets false for everything when no viewer', async 
 });
 
 test('annotateItemsWatchlisted marks only the viewer-starred ids in one query', async () => {
-  let calls = 0;
-  const pool = {
-    async query(sql, params) {
-      calls += 1;
-      assert.match(sql, /FROM user_ioc_watchlist/);
-      assert.equal(params[0], 9); // viewer id
-      // starred set for this user
-      return { rows: [{ ioc_id: 2 }] };
-    }
-  };
-  const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
-  // FILE_ARTIFACTS_READ off → no artifact expansion query; one membership query.
-  await annotateItemsWatchlisted(pool, 9, items);
-  assert.deepEqual(items.map((i) => i.watchlisted), [false, true, false]);
-  assert.equal(calls, 1, 'exactly one batched membership query (no N+1)');
+  const prev = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  process.env.FILE_ARTIFACTS_READ_ENABLED = '0';
+  try {
+    let calls = 0;
+    const pool = {
+      async query(sql, params) {
+        calls += 1;
+        assert.match(sql, /FROM user_ioc_watchlist/);
+        assert.equal(params[0], 9); // viewer id
+        // starred set for this user
+        return { rows: [{ ioc_id: 2 }] };
+      }
+    };
+    const items = [{ id: 1 }, { id: 2 }, { id: 3 }];
+    // FILE_ARTIFACTS_READ off → no artifact expansion query; one membership query.
+    await annotateItemsWatchlisted(pool, 9, items);
+    assert.deepEqual(items.map((i) => i.watchlisted), [false, true, false]);
+    assert.equal(calls, 1, 'exactly one batched membership query (no N+1)');
+  } finally {
+    if (prev === undefined) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    else process.env.FILE_ARTIFACTS_READ_ENABLED = prev;
+  }
 });
 
 // Store helpers against a tiny fake pool: idempotency of add/remove.

@@ -296,11 +296,38 @@ test('enrichItemsWithActiveSourceCounts byItemIds path counts manual IOC as acti
     }
   };
   const items = [{ id: 3015395, observable: '31.76.32.249', observable_type: 'ip' }];
-  const result = await enrichItemsWithActiveSourceCounts(pool, items, { byItemIds: true });
+  const result = await enrichItemsWithActiveSourceCounts(pool, items, {
+    byItemIds: true,
+    linkedBySeed: new Map([[3015395, [3015395]]])
+  });
   assert.equal(result.length, 1);
   assert.equal(result[0].active_source_count, 1, 'manual IOC must count as active source');
   assert.deepEqual(result[0].source_names, ['manual-smoke']);
   assert.ok(queries.some((q) => q.includes('ioc_source_id IS NOT NULL')), 'must query manual sources in byItemIds path');
+});
+
+test('enrichItemsWithActiveSourceCounts byItemIds survives canonical SHA256 display rewrite', async () => {
+  const MD5_IOC = 3475208;
+  const pool = {
+    async query(sql) {
+      if (sql.includes('FROM ioc_feed_memberships m')) return { rows: [] };
+      if (sql.includes('ioc_source_id IS NOT NULL')) {
+        return { rows: [{ ioc_item_id: MD5_IOC, observable_type: 'md5', source_name: 'Threat_Library' }] };
+      }
+      return { rows: [] };
+    }
+  };
+  const items = [{
+    id: MD5_IOC,
+    observable: '3f5ff48aa4dc2c1af3deeb33a9cc576616dad37156ae9182831b1b2a5ae4ae20',
+    observable_type: 'sha256'
+  }];
+  const result = await enrichItemsWithActiveSourceCounts(pool, items, {
+    byItemIds: true,
+    linkedBySeed: new Map([[MD5_IOC, [MD5_IOC]]])
+  });
+  assert.equal(result[0].active_source_count, 1);
+  assert.deepEqual(result[0].source_names, ['Threat_Library']);
 });
 
 test('membershipDisplayStatus distinguishes purged from expired', () => {
