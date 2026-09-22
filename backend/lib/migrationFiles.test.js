@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '029_align_seeded_sequences.sql');
-  assert.equal(meta.latestMigration, 29);
+  assert.equal(meta.latestMigrationFile, '030_threat_report_tags.sql');
+  assert.equal(meta.latestMigration, 30);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -217,3 +217,17 @@ test('baseline builder keeps pg_dump setval lines and drops only the session pre
   assert.equal((script.match(/sed "\$\{PG_DUMP_SESSION_FILTER\}/g) || []).length, 2);
 });
 
+
+test('030 adds threat_report_tags additively with deliberate FKs, PK and tag index', () => {
+  const sql = readFileSync(path.join(MIGRATIONS_DIR, '030_threat_report_tags.sql'), 'utf8');
+  const code = sql.replace(/^--.*$/gm, '');
+  assert.ok(code.includes('CREATE TABLE IF NOT EXISTS public.threat_report_tags'));
+  assert.ok(code.includes('REFERENCES public.threat_reports(id) ON DELETE CASCADE'));
+  assert.ok(code.includes('REFERENCES public.tags(id) ON DELETE CASCADE'));
+  assert.ok(code.includes('PRIMARY KEY (report_id, tag_id)'), 'duplicate inheritance rows cannot accumulate');
+  assert.ok(code.includes('ON public.threat_report_tags (tag_id)'));
+  // Inheritance is derived at read time: the migration never touches direct IOC tags or existing data.
+  for (const forbidden of ['ioc_tags', 'DROP ', 'DELETE FROM', 'UPDATE ', 'TRUNCATE', 'INSERT ', 'ALTER TABLE']) {
+    assert.ok(!code.includes(forbidden), `030 must not contain ${forbidden.trim()}`);
+  }
+});

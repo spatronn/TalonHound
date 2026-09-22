@@ -1,6 +1,16 @@
 /**
- * Pure helpers for IOC detail tag badges (manual orange / feed blue).
+ * Pure helpers for IOC detail tag badges (manual orange / feed blue /
+ * Threat Library context teal).
  */
+
+/** "Inherited from Threat Library: A; B" — why the IOC carries this tag. */
+export function describeThreatLibraryTagSources(reports = []) {
+  const titles = (Array.isArray(reports) ? reports : [])
+    .map((r) => String(r?.title || '').trim())
+    .filter(Boolean);
+  if (!titles.length) return 'Inherited from a Threat Library report';
+  return `Inherited from Threat Library report${titles.length > 1 ? 's' : ''}: ${titles.join('; ')}`;
+}
 
 export function formatTagSourcesCell(sources = [], { maxVisible = 2 } = {}) {
   const list = Array.isArray(sources) ? sources.filter(Boolean).map(String) : [];
@@ -25,12 +35,19 @@ export function formatTagSourcesCell(sources = [], { maxVisible = 2 } = {}) {
  * @param {{
  *   manualTags?: Array<{ id: number|string, name: string, is_active?: boolean }>,
  *   feedTags?: Array<{ tag?: string, normalized?: string, source_name?: string }>,
+ *   contextTags?: Array<{ name: string, reports?: Array<{ id: string, title: string }> }>,
  *   disabledTagNames?: Iterable<string>
  * }} opts
+ *
+ * contextTags = tags inherited from linked Threat Library reports. They are
+ * shown in their own group (never as direct assignments) and cannot be removed
+ * here — they are managed on the report. When the same tag is also assigned
+ * directly or by a feed, that badge wins and its tooltip notes the inheritance.
  */
 export function buildIocTagBadges({
   manualTags = [],
   feedTags = [],
+  contextTags = [],
   disabledTagNames = []
 } = {}) {
   const disabled = new Set(
@@ -86,5 +103,35 @@ export function buildIocTagBadges({
       : 'Imported from feed'
   }));
 
-  return { manual, feed, hasTags: manual.length > 0 || feed.length > 0 };
+  const context = [];
+  const seenContext = new Set();
+  for (const ct of contextTags || []) {
+    const label = String(ct?.name || '').trim();
+    const normalized = label.toLowerCase();
+    if (!normalized || disabled.has(normalized) || seenContext.has(normalized)) continue;
+    seenContext.add(normalized);
+    const reports = Array.isArray(ct?.reports) ? ct.reports : [];
+    const inheritedNote = describeThreatLibraryTagSources(reports);
+    const owner = manual.find((m) => m.normalized === normalized) || feed.find((f) => f.normalized === normalized);
+    if (owner) {
+      owner.title = `${owner.title}. Also ${inheritedNote.charAt(0).toLowerCase()}${inheritedNote.slice(1)}`;
+      owner.inheritedReports = reports;
+      continue;
+    }
+    context.push({
+      kind: 'threat_library',
+      key: `tl-${normalized}`,
+      label,
+      normalized,
+      reports,
+      title: inheritedNote
+    });
+  }
+
+  return {
+    manual,
+    feed,
+    context,
+    hasTags: manual.length > 0 || feed.length > 0 || context.length > 0
+  };
 }

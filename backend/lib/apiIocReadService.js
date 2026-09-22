@@ -239,7 +239,11 @@ export async function searchApiIocs(pool, { query, cursor, limit } = {}) {
       normalized_query: parsed.normalizedQuery,
       items: page.map((row) => {
         const meta = metaMap.get(iocPairKey(row.id, row.observable_type)) || EMPTY_IOC_API_METADATA;
-        return toApiIocResponse(row, { classifications: meta.classifications, tags: meta.tags });
+        return toApiIocResponse(row, {
+          classifications: meta.classifications,
+          tags: meta.tags,
+          tag_context: meta.tag_context
+        });
       }),
       limit: pageSize,
       has_more: hasMore,

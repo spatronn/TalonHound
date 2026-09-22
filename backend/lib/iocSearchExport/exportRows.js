@@ -14,6 +14,7 @@ import {
   resolveSourceChangeTimestamps
 } from '../iocListTimestamps.js';
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
+import { loadInheritedReportTagRows } from '../threatLibrary/reportTagInheritance.js';
 
 // Build the full export query for the matched set — executed exactly ONCE by
 // streamExportToSink through a NO SCROLL server-side cursor, then streamed in FETCH-sized
@@ -139,7 +140,7 @@ export async function enrichExportBatch(db, baseRows) {
     baseRows.map((r) => r.artifact_id).filter(Boolean).map(String)
   )];
 
-  const [tagsRes, classRes, actorRes, tsRes, hashesRes] = await Promise.all([
+  const [tagsRes, classRes, actorRes, tsRes, hashesRes, inheritedTagRows] = await Promise.all([
     db.query(
       `SELECT it.ioc_id, ARRAY_AGG(DISTINCT t.name ORDER BY t.name) AS names
          FROM ioc_tags it JOIN tags t ON t.id = it.tag_id
@@ -187,10 +188,17 @@ export async function enrichExportBatch(db, baseRows) {
                    CASE hash_type WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END`,
         [artifactIds]
       )
-      : Promise.resolve({ rows: [] })
+      : Promise.resolve({ rows: [] }),
+    // Effective tags = direct ioc_tags ∪ Threat Library report-inherited tags
+    // (same rule as `tag …` search), one batch query per page.
+    loadInheritedReportTagRows(db, ids)
   ]);
 
   const tagMap = new Map(tagsRes.rows.map((r) => [Number(r.ioc_id), r.names || []]));
+  for (const row of inheritedTagRows) {
+    const names = tagMap.get(row.ioc_id) || [];
+    if (!names.includes(row.name)) tagMap.set(row.ioc_id, [...names, row.name].sort());
+  }
   const classMap = new Map(classRes.rows.map((r) => [Number(r.ioc_id), r.names || []]));
   const actorMap = new Map((actorRes.rows || []).map((r) => [Number(r.ioc_id), r.names || []]));
   const tsMap = new Map(

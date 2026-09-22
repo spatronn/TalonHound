@@ -60,6 +60,8 @@ function aliasPool({ rows = [MD5_ROW], aliases = { [`sha1\0${SHA1}`]: [MD5_ROW],
     query: async (sql, params = []) => {
       const s = String(sql).replace(/\s+/g, ' ').trim();
       pool.queries.push({ sql: s, params });
+      // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
+      if (s.includes('threat_report_tags rt')) return { rows: [] };
       if (s.includes('CROSS JOIN LATERAL') && s.includes('file_artifact_hashes h')) {
         const out = [];
         params[0].forEach((type, i) => {
@@ -224,7 +226,7 @@ describe('BUG 2 — search results carry real metadata', () => {
     assert.equal(smallMap.size, 2);
     assert.equal(largeMap.size, 40);
     assert.equal(large.queries.length, small.queries.length);
-    assert.ok(large.queries.length <= 2, `junction + tags only when rows carry legacy column (got ${large.queries.length})`);
+    assert.ok(large.queries.length <= 3, `junction + tags + inherited report tags only when rows carry legacy column (got ${large.queries.length})`);
     assert.deepEqual(largeMap.get(iocPairKey(1039, 'domain')).classifications, ['phishing']);
   });
 

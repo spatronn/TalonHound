@@ -3,6 +3,7 @@ import { likeEscape, normalizeIocValue, resolveRelativeDate } from './normalize.
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 import { inferExactHashType } from '../fileArtifacts/hashNormalize.js';
 import { artifactAliasIocMembershipSql } from '../fileArtifacts/hashIdentitySql.js';
+import { inheritedTagIocMembershipSql } from '../threatLibrary/reportTagInheritance.js';
 
 // Compiles a validated AST into a single boolean SQL expression plus a positional
 // parameter array. EVERY user-derived value is bound as a parameter — no DSL token is
@@ -254,11 +255,22 @@ class Builder {
   }
 
   // ---- text: tag (EXISTS over ioc_tags + tags) --------------------------
+  // ---- text: tag (effective tags) ---------------------------------------
+  // Matches an IOC whose EFFECTIVE tags satisfy the predicate: tags assigned directly
+  // (ioc_tags) OR inherited from an active Threat Library report linked to the IOC
+  // (threat_report_tags; see threatLibrary/reportTagInheritance.js). Same row-wise
+  // `(observable_type, id) IN (<direct> UNION <inherited>)` membership as file hashes —
+  // never `EXISTS … OR EXISTS …`, which defeats semi-joins and walks every row.
   buildTag(node) {
     const base = (cond) =>
-      `EXISTS (SELECT 1 FROM ioc_tags it JOIN tags t ON t.id = it.tag_id ` +
-      `WHERE it.ioc_id = ${IOC_ALIAS}.id AND it.ioc_observable_type = ${IOC_ALIAS}.observable_type ` +
-      `AND ${cond})`;
+      `(${IOC_ALIAS}.observable_type, ${IOC_ALIAS}.id) IN (
+      SELECT it.ioc_observable_type, it.ioc_id
+        FROM ioc_tags it
+        JOIN tags t ON t.id = it.tag_id
+       WHERE ${cond}
+      UNION
+      ${inheritedTagIocMembershipSql(cond)}
+    )`;
     switch (node.operator) {
       case 'contains':
         return base(`t.name ILIKE ${this.bind(`%${likeEscape(normalizeTagValue(node.values[0]))}%`)} ESCAPE '\\'`);

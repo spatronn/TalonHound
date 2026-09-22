@@ -55,6 +55,8 @@ import {
 } from './reportPhase.js';
 import { TlpBadge, isElevatedTlp, normalizeTlp, tlpDisplay } from './tlp.jsx';
 import ThreatLibraryModal, { ModalCancelButton } from './ThreatLibraryModal.jsx';
+import ReportTagsEditor from './ReportTagsEditor.jsx';
+import { mergeReportPayload } from './reportTags.js';
 import {
   TLP_OPTIONS,
   canEditTlp,
@@ -885,7 +887,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     try {
       const { data } = await api.post(`/threat-library/reports/${reportId}/retry`);
       const applied = applyRetryAcceptedState(data);
-      if (applied.report) setReport(applied.report);
+      if (applied.report) setReport((prev) => mergeReportPayload(prev, applied.report));
       if (applied.job) setJob(applied.job);
       // The review set is being rebuilt: previous rows are no longer current.
       setCandidates([]);
@@ -904,7 +906,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       const code = err?.response?.data?.code;
       if (code === 'analysis_already_running' && err?.response?.data?.report) {
         const applied = applyRetryAcceptedState(err.response.data);
-        if (applied.report) setReport(applied.report);
+        if (applied.report) setReport((prev) => mergeReportPayload(prev, applied.report));
         if (applied.job) setJob(applied.job);
         setCandidates([]);
         setSelected(new Set());
@@ -1101,6 +1103,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 {report.report_type ? (
                   <span style={{ fontSize: 12, color: '#94a3b8' }}>{humanizeEnum(report.report_type)}</span>
                 ) : null}
+                <ReportTagsEditor
+                  reportId={reportId}
+                  tags={report.tags}
+                  canWrite={canWrite}
+                  disabled={Boolean(busy)}
+                  onChange={(nextTags) => setReport((prev) => (prev ? { ...prev, tags: nextTags } : prev))}
+                  onError={(message) => setError(message)}
+                />
               </div>
             ) : null}
           </div>

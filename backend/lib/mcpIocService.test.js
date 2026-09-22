@@ -138,6 +138,8 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
     query: async (sql, params = []) => {
       const normalized = String(sql).replace(/\s+/g, ' ').trim();
       queries.push({ sql: normalized, params: [...params] });
+      // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
+      if (normalized.includes('threat_report_tags rt')) return { rows: [] };
       if (normalized.includes('FROM ioc_items')
         && normalized.includes('observable_type = $1 AND observable = $2')
         && normalized.includes('ORDER BY created_at ASC')) {
@@ -190,6 +192,8 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
     query: async (sql, params = []) => {
       const normalized = String(sql).replace(/\s+/g, ' ').trim();
       queries.push({ sql: normalized, params: [...params] });
+      // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
+      if (normalized.includes('threat_report_tags rt')) return { rows: [] };
       // getApiIoc row load (by public_id or id) and mcpLookupIoc exact match.
       if (normalized.includes('FROM ioc_items') && normalized.includes('WHERE public_id = $1::uuid')) {
         return { rows: row ? [row] : [] };
@@ -329,6 +333,8 @@ function makeBulkPool(foundRows, junctionRows = []) {
     query: async (sql, params = []) => {
       const normalized = String(sql).replace(/\s+/g, ' ').trim();
       queries.push({ sql: normalized, params: [...params] });
+      // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
+      if (normalized.includes('threat_report_tags rt')) return { rows: [] };
       if (/FROM ioc_threat_classifications/i.test(normalized)) {
         return { rows: junctionRows };
       }
@@ -651,6 +657,8 @@ function makeImportPool({ source, membership = null, existing = null, createCall
   return {
     query: async (sql, params = []) => {
       const normalized = String(sql).replace(/\s+/g, ' ').trim();
+      // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
+      if (normalized.includes('threat_report_tags rt')) return { rows: [] };
       if (normalized.includes('FROM ioc_sources WHERE id = $1')) {
         return { rows: source ? [source] : [] };
       }
@@ -1364,8 +1372,12 @@ function zzyudRow() {
 
 const READ_AUTH = { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'analyst' };
 
+// Report-tag inheritance (hydrator, 'threat_report_tags rt') is a separate, tags-only
+// read; Threat Context's own query budget is counted without it.
+const isInheritedTagQuery = (q) => q.sql.includes('threat_report_tags rt');
+
 function threatContextQueries(pool) {
-  return pool.queries.filter((q) => q.sql.includes('FROM threat_report_candidates c')
+  return pool.queries.filter((q) => !isInheritedTagQuery(q)).filter((q) => q.sql.includes('FROM threat_report_candidates c')
     || q.sql.includes('FROM threat_relationships tr')
     || q.sql.includes('FROM threat_report_entities re'));
 }
@@ -1515,7 +1527,7 @@ test('get_ioc_context: Threat Context is exactly two bounded queries per request
   const tcq = threatContextQueries(pool);
   assert.equal(tcq.length, 3, 'claims + relationships + ONE batched entities query, regardless of row count');
   // No per-report metadata lookups: nothing else touches threat_reports.
-  assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+  assert.equal(pool.queries.filter((q) => !isInheritedTagQuery(q) && q.sql.includes('threat_reports')).length, 2);
   // Entities fetched in one shot for all 25 distinct reports.
   const entityQueries = pool.queries.filter((q) => q.sql.includes('FROM threat_report_entities re'));
   assert.equal(entityQueries.length, 1);
@@ -1531,7 +1543,8 @@ test('bulk_lookup_iocs: unchanged — never reads Threat Library tables and has 
   assert.equal(out.body.counts.existing, 1);
   assert.equal('threat_context' in out.body.existing[0], false);
   assert.equal('threat_context' in out.body, false);
-  assert.equal(pool.queries.some((q) => q.sql.includes('threat_report_candidates') || q.sql.includes('threat_relationships')), false);
+  // Only the tags-only report-tag inheritance read may touch Threat Library tables.
+  assert.equal(pool.queries.some((q) => !isInheritedTagQuery(q) && (q.sql.includes('threat_report_candidates') || q.sql.includes('threat_relationships'))), false);
 });
 
 // --- Threat Context report context: summary, IOC occurrences, report-level entities ---
@@ -1576,7 +1589,7 @@ test('get_ioc_context: persisted report summary surfaces under claim.report.summ
   assert.equal(out.status, 200);
   assert.equal(out.body.threat_context.claims[0].report.summary, INFOBLOX_SUMMARY);
   // Summary comes from the claims JOIN — no extra read of threat_reports, no model/provider call.
-  assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+  assert.equal(pool.queries.filter((q) => !isInheritedTagQuery(q) && q.sql.includes('threat_reports')).length, 2);
 });
 
 test('get_ioc_context: missing summary is a stable null; empty evidence yields occurrences [] / count 0', async () => {
@@ -1745,7 +1758,7 @@ test('get_ioc_context: same report across several claims is still ONE entities q
   const eq = pool.queries.filter((q) => q.sql.includes('FROM threat_report_entities re'));
   assert.equal(eq.length, 1);
   assert.deepEqual([...eq[0].params[0]].sort((a, b) => a - b), [11, 12]);
-  assert.equal(pool.queries.filter((q) => q.sql.includes('threat_reports')).length, 2);
+  assert.equal(pool.queries.filter((q) => !isInheritedTagQuery(q) && q.sql.includes('threat_reports')).length, 2);
   const byTitle = Object.fromEntries(out.body.threat_context.claims.map((c) => [c.report.id, c.report.entities.length]));
   assert.equal(byTitle['f1b3a0c2-1111-4222-8333-444455556666'], 3);
   assert.equal(byTitle['rp-12'], 0);
@@ -1780,7 +1793,7 @@ test('bulk_lookup_iocs: still no Threat Library reads after report-context expan
   const pool = makeBulkPool([bulkRow(3451551, 'zzyud.com', 'domain')]);
   const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'zzyud.com', type: 'domain' }] }, { config: TEST_CONFIG });
   assert.equal(out.status, 200);
-  assert.equal(pool.queries.some((q) => /threat_report_candidates|threat_relationships|threat_report_entities|threat_entities|threat_reports/.test(q.sql)), false);
+  assert.equal(pool.queries.filter((q) => !isInheritedTagQuery(q)).some((q) => /threat_report_candidates|threat_relationships|threat_report_entities|threat_entities|threat_reports/.test(q.sql)), false);
   assert.deepEqual(Object.keys(out.body).sort(), ['counts', 'existing', 'invalid', 'missing', 'submitted']);
   assert.equal('threat_context' in out.body.existing[0], false);
 });

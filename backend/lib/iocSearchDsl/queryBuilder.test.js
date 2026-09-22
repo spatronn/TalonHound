@@ -260,30 +260,41 @@ test('status equals uses COALESCE default active', () => {
   assert.match(sql, /COALESCE\(i\.status, 'active'\) = \$1/);
 });
 
-test('tag equals uses EXISTS with normalized lowercase name', () => {
+// tag = EFFECTIVE tags: direct ioc_tags UNION Threat Library report-inherited tags,
+// as one row-wise (observable_type, id) membership (never EXISTS … OR EXISTS …).
+const flat = (sql) => sql.replace(/\s+/g, ' ');
+const DIRECT_TAG_BRANCH = '(i.observable_type, i.id) IN ( SELECT it.ioc_observable_type, it.ioc_id FROM ioc_tags it JOIN tags t ON t.id = it.tag_id';
+const INHERITED_TAG_BRANCH = 'UNION SELECT trc.matched_ioc_observable_type, trc.matched_ioc_id FROM threat_report_tags trt';
+const countOf = (sql, needle) => flat(sql).split(needle).length - 1;
+
+test('tag equals matches direct OR report-inherited tags with normalized lowercase name', () => {
   const { sql, params } = build('tag equals "MIRAI"');
-  assert.match(sql, /EXISTS \(SELECT 1 FROM ioc_tags it JOIN tags t/);
-  assert.match(sql, /it\.ioc_id = i\.id AND it\.ioc_observable_type = i\.observable_type/);
-  assert.equal(params[0], 'mirai');
+  assert.equal(countOf(sql, DIRECT_TAG_BRANCH), 1);
+  assert.equal(countOf(sql, INHERITED_TAG_BRANCH), 1);
+  assert.ok(flat(sql).includes('trr.deleted_at IS NULL'));
+  assert.ok(flat(sql).includes("trc.review_status NOT IN ('ignored', 'context_only', 'rejected')"));
+  // Both branches filter on the same bound, normalized tag name.
+  assert.equal(countOf(sql, 't.name = $1'), 2);
+  assert.ok(!sql.includes('EXISTS'));
+  assert.deepEqual(params, ['mirai']);
 });
 
-test('tag equals X AND tag equals Y requires both (two EXISTS)', () => {
+test('tag equals X AND tag equals Y requires both (two memberships)', () => {
   const { sql } = build('tag equals "mirai" AND tag equals "botnet"');
-  const count = (sql.match(/EXISTS \(SELECT 1 FROM ioc_tags/g) || []).length;
-  assert.equal(count, 2);
+  assert.equal(countOf(sql, DIRECT_TAG_BRANCH), 2);
+  assert.equal(countOf(sql, INHERITED_TAG_BRANCH), 2);
 });
 
-test('tag in matches any (single EXISTS with ANY)', () => {
+test('tag in matches any (single membership with ANY)', () => {
   const { sql, params } = build('tag in ("mirai", "botnet")');
-  const count = (sql.match(/EXISTS \(SELECT 1 FROM ioc_tags/g) || []).length;
-  assert.equal(count, 1);
-  assert.match(sql, /t\.name = ANY/);
+  assert.equal(countOf(sql, DIRECT_TAG_BRANCH), 1);
+  assert.ok(sql.includes('t.name = ANY'));
   assert.deepEqual(params[0], ['mirai', 'botnet']);
 });
 
-test('tag not_contains negates EXISTS', () => {
+test('tag not_contains negates the effective-tag membership', () => {
   const { sql } = build('tag not_contains "mirai"');
-  assert.match(sql, /NOT EXISTS \(SELECT 1 FROM ioc_tags/);
+  assert.ok(flat(sql).startsWith('NOT (i.observable_type, i.id) IN ('));
 });
 
 test('classification matches slug OR label', () => {

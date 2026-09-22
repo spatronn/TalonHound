@@ -11,6 +11,7 @@ import {
   buildImportFailedAuditEvent,
   buildSourceUrlAuditEvent,
   buildTlpAuditEvent,
+  buildReportTagAuditEvent,
   buildThibExportAuditEvent,
   reportAuditEntity,
   reportAuditSnapshot,
@@ -49,6 +50,20 @@ import {
   updateReportTlp
 } from '../lib/threatLibrary/store.js';
 import { loadIocThreatContext } from '../lib/threatLibrary/iocThreatContext.js';
+import {
+  loadReportTags,
+  loadReportTagsByReportIds,
+  findEnabledTag,
+  addReportTag,
+  removeReportTag,
+  countReportTagInheritingIocs
+} from '../lib/threatLibrary/reportTags.js';
+import {
+  reportTagInheritanceEligibleSql,
+  loadInheritedReportTagRows,
+  groupInheritedTagsBySeed
+} from '../lib/threatLibrary/reportTagInheritance.js';
+import { resolveArtifactScopedIocIds } from '../lib/fileArtifacts/read.js';
 import { validateReportSourceUrl } from '../lib/threatLibrary/sourceUrl.js';
 import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
@@ -148,7 +163,9 @@ function publicReport(row) {
     entity_count: row.entity_count,
     created_at: row.created_at,
     updated_at: row.updated_at,
-    finalized_at: row.finalized_at
+    finalized_at: row.finalized_at,
+    // Analyst-managed report tags (campaign/threat context), present when loaded.
+    ...(Array.isArray(row.tags) ? { tags: row.tags } : {})
   };
 }
 
@@ -179,6 +196,13 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   async function writeAudit(req, event) {
     if (typeof audit?.auditLog !== 'function') return;
     await audit.auditLog({ req, ...event });
+  }
+
+  /** Counts + analyst report tags for report responses (one extra small query). */
+  async function reportWithDetail(row) {
+    if (!row) return row;
+    const counted = await attachReportCounts(pool, row);
+    return { ...counted, tags: await loadReportTags(pool, row.id) };
   }
 
   async function enqueueAnalyze(reportId, jobRow, extra = {}) {
@@ -297,8 +321,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         // Library navigation search over stored report metadata only.
         search: req.query.search
       });
+      const tagsByReport = await loadReportTagsByReportIds(pool, result.items.map((r) => r.id));
       return res.json({
-        items: result.items.map(publicReport),
+        items: result.items.map((r) => publicReport({ ...r, tags: tagsByReport.get(Number(r.id)) || [] })),
         total: result.total
       });
     } catch (err) {
@@ -312,7 +337,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       if (!report) return res.status(404).json({ message: 'Report not found' });
       const snap = await loadReportSnapshot(pool, report.id);
       return res.json({
-        report: publicReport(await attachReportCounts(pool, snap.report)),
+        report: publicReport(await reportWithDetail(snap.report)),
         candidates: snap.candidates.map((c) => ({
           id: c.id,
           public_id: c.public_id,
@@ -372,7 +397,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         [report.id]
       );
       return res.json({
-        report: publicReport(await attachReportCounts(pool, report)),
+        report: publicReport(await reportWithDetail(report)),
         job: jobs[0] || null
       });
     } catch (err) {
@@ -646,7 +671,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             summary: result.summary || undefined,
             results: result.results || undefined,
             pending_count: result.pending_count,
-            report: result.code ? publicReport(await attachReportCounts(pool, report)) : undefined
+            report: result.code ? publicReport(await reportWithDetail(report)) : undefined
           });
         }
         return res.json(result);
@@ -691,11 +716,11 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             code: result.code || null,
             phase: result.phase || null,
             pending_count: result.pending_count,
-            report: publicReport(await attachReportCounts(pool, report))
+            report: publicReport(await reportWithDetail(report))
           });
         }
         const updated = await getReportByPublicId(pool, req.params.publicId);
-        return res.json({ report: publicReport(await attachReportCounts(pool, updated)) });
+        return res.json({ report: publicReport(await reportWithDetail(updated)) });
       } catch (err) {
         return res.status(500).json({ message: 'Finalize failed', detail: err.message });
       }
@@ -806,7 +831,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             clear_cancel: true
           });
           return res.status(202).json({
-            report: publicReport(await attachReportCounts(pool, updated)),
+            report: publicReport(await reportWithDetail(updated)),
             job_id: activeJobs[0].public_id,
             already_running: true,
             code: 'analysis_already_running',
@@ -846,7 +871,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           newAnalysisRun: req.body?.reset_checkpoints === true
         });
         return res.status(202).json({
-          report: publicReport(await attachReportCounts(pool, updated)),
+          report: publicReport(await reportWithDetail(updated)),
           job_id: jobRow.public_id,
           job: {
             public_id: jobRow.public_id,
@@ -873,7 +898,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const updated = await requestAnalysisCancel(pool, report.id);
         return res.json({
           ok: true,
-          report: publicReport(await attachReportCounts(pool, updated)),
+          report: publicReport(await reportWithDetail(updated)),
           message: 'Cancel requested. The worker will stop at the next safe checkpoint.'
         });
       } catch (err) {
@@ -940,13 +965,79 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           }));
         }
         return res.json({
-          report: publicReport(await attachReportCounts(pool, updated))
+          report: publicReport(await reportWithDetail(updated))
         });
       } catch (err) {
         return res.status(500).json({ message: 'Failed to update report', detail: err.message });
       }
     }
   );
+
+  // --- Report tags (campaign / threat context, inherited by linked IOCs at read time) ---
+  async function reportTagMutation(req, res, { added }) {
+    const report = await getReportByPublicId(pool, req.params.publicId);
+    if (!report) return res.status(404).json({ message: 'Report not found' });
+    const tagId = added ? req.body?.tag_id : req.params.tagId;
+    const tag = await findEnabledTag(pool, tagId);
+    if (!tag) {
+      if (added) return res.status(404).json({ message: 'Tag not found or disabled', code: 'tag_not_found' });
+      // Removing a tag that is not (or no longer) assigned is a no-op.
+      return res.json({ changed: false, tags: await loadReportTags(pool, report.id) });
+    }
+    const changed = added
+      ? await addReportTag(pool, report.id, tag.id)
+      : await removeReportTag(pool, report.id, tag.id);
+    if (changed) {
+      const inheritingIocCount = await countReportTagInheritingIocs(
+        pool,
+        report.id,
+        reportTagInheritanceEligibleSql('c', 'r')
+      );
+      await writeAudit(req, buildReportTagAuditEvent({ report, tag, added, inheritingIocCount, user: req.user }));
+    }
+    return res.json({ changed, tags: await loadReportTags(pool, report.id) });
+  }
+
+  app.post(
+    '/api/threat-library/reports/:publicId/tags',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        return await reportTagMutation(req, res, { added: true });
+      } catch (err) {
+        return res.status(500).json({ message: 'Failed to add report tag', detail: err.message });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/threat-library/reports/:publicId/tags/:tagId',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        return await reportTagMutation(req, res, { added: false });
+      } catch (err) {
+        return res.status(500).json({ message: 'Failed to remove report tag', detail: err.message });
+      }
+    }
+  );
+
+  // --- IOC: tags inherited from Threat Library reports (IOC Details "Threat Context" tags) ---
+  // Same artifact scope and eligibility as effective tags in search / MCP / REST.
+  app.get('/api/ioc/:id/tags/threat-library', async (req, res) => {
+    try {
+      const iocId = Number(req.params.id);
+      if (!Number.isInteger(iocId) || iocId <= 0) {
+        return res.status(400).json({ message: 'Invalid IOC id' });
+      }
+      const scope = await resolveArtifactScopedIocIds(pool, iocId);
+      const rows = await loadInheritedReportTagRows(pool, scope.length ? scope : [iocId]);
+      const grouped = groupInheritedTagsBySeed(rows, new Map([[iocId, scope.length ? scope : [iocId]]]));
+      return res.json({ items: grouped.get(iocId) || [] });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to load Threat Library tags', detail: err.message });
+    }
+  });
 
   // --- Delete ---
   app.delete(

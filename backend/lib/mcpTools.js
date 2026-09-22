@@ -119,7 +119,7 @@ export function registerMcpTools(server, deps) {
       title: 'Lookup IOC',
       description:
         'Exact lookup of a single observable in TalonHound. Provide the raw value; type is optional because TalonHound detects and normalizes it. '
-        + 'Returns found/not found with identity, status, confidence, sources, and the IOC\'s TalonHound classifications (slugs) and tags (names) as shown on the IOC Details page — tags include source-integration/feed tags, not only analyst-added ones. '
+        + 'Returns found/not found with identity, status, confidence, sources, and the IOC\'s TalonHound classifications (slugs) and tags (names) as shown on the IOC Details page — tags are the EFFECTIVE tags: the IOC\'s own tags (analyst-added and source-integration/feed) plus tags inherited from Threat Library reports linked to it. `tag_context` explains every tag: sources of type `direct` (origin manual/integration) and/or `threat_library` (report_id, title, tlp). Report tags are context only — they never change classifications. '
         + 'An empty classifications/tags array means TalonHound holds none for this IOC. For per-source provenance and stored enrichment, call get_ioc_context. '
         + 'File hashes (md5/sha1/sha256) also match through proven file-artifact aliases of the same file (same identity search_iocs uses): `matched_via` is `exact` or `file_artifact_alias`, `queried` is what you asked for and `record` is the stored IOC returned (e.g. queried sha256, record md5); alias hits list every IOC of that file in `artifact_memberships` (primary first: active, strongest hash, oldest).',
       inputSchema: {
@@ -143,6 +143,8 @@ export function registerMcpTools(server, deps) {
         + '(fields: ioc, type, source, tag, threat_actor, classification, status, confidence, '
         + 'first_seen, created_at; operators: contains, equals, not_equals, starts_with, ends_with, '
         + 'in, not_in) — or plain text, which is treated as a bounded IOC-value contains-search. '
+        + '`tag` matches EFFECTIVE tags: tags assigned to the IOC or inherited from a linked Threat Library report '
+        + '(e.g. `tag equals "winpot"` finds both). Result items carry tags plus `tag_context` provenance. '
         + 'Results are bounded (server-enforced max page size); use `cursor` for pagination. '
         + 'Not for unbounded export.',
       inputSchema: {
@@ -197,7 +199,7 @@ export function registerMcpTools(server, deps) {
       title: 'Bulk lookup IOCs',
       description:
         `Check a batch of extracted IOCs efficiently. Returns existing, missing, and invalid buckets. Maximum ${config.bulkLookupMax} items per request. Uses batched database lookup (not N+1). `
-        + 'Existing items carry confidence, classifications, tags and note with the same semantics as lookup_ioc, plus `matched_via` (`exact` | `file_artifact_alias`), `queried` and `record` — a file hash with no IOC row of its own is found via a proven alias of the same file.',
+        + 'Existing items carry confidence, classifications, tags (effective, incl. Threat Library report tags), `tag_context` and note with the same semantics as lookup_ioc, plus `matched_via` (`exact` | `file_artifact_alias`), `queried` and `record` — a file hash with no IOC row of its own is found via a proven alias of the same file.',
       inputSchema: {
         iocs: z.array(
           z.union([

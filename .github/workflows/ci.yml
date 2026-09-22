@@ -126,6 +126,12 @@ jobs:
         working-directory: backend
         run: npm run test:threat-library-integration
 
+      - name: Threat Library report tags → IOC effective tags (real Postgres)
+        working-directory: backend
+        env:
+          THREAT_LIBRARY_TAG_ITEST: '1'
+        run: npm run test:threat-library-tags-integration
+
       - name: Partition-aware backup restore smoke
         env:
           RESTORE_TEST_DB: talonhound_restore_test

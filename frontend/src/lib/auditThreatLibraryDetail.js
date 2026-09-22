@@ -109,6 +109,9 @@ export function threatLibraryDetailRows(row) {
     push('New TLP', m.new_tlp ?? row?.after_data?.tlp);
     push('Previous source', m.old_tlp_source ?? row?.before_data?.tlp_source);
     push('Sharing restriction reduced', m.downgrade === true ? 'yes' : null);
+  } else if (action === 'threat_library.report.tag.added' || action === 'threat_library.report.tag.removed') {
+    push('Tag', m.tag ?? row?.after_data?.tag ?? row?.before_data?.tag);
+    push('Linked IOC records', num(m.inheriting_ioc_count));
   } else if (action === 'threat_library.thib.exported') {
     push('Indicators', num(m.indicator_count));
     push('Entities', num(m.entity_count));

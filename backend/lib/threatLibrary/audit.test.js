@@ -4,6 +4,7 @@ import {
   AUDIT_RESULT_SAMPLE_LIMIT,
   buildAnalysisAuditEvent,
   buildDeleteAuditEvent,
+  buildReportTagAuditEvent,
   buildImportAuditEvent,
   buildSourceUrlAuditEvent,
   buildThibExportAuditEvent,
@@ -228,4 +229,22 @@ test('TLP change audit event records before/after and flags downgrades', async (
   const up = buildTlpAuditEvent({ report, oldTlp: 'clear', oldSource: 'default', newTlp: 'red', user: null });
   assert.equal(up.severity, 'info');
   assert.equal(up.metadata.downgrade, false);
+});
+
+test('report tag add/remove audit events carry the tag and the inheriting IOC count', () => {
+  const report = { id: 1, public_id: 'r-1', title: 'WinPot campaign', source_type: 'url', tlp: 'clear' };
+  const tag = { id: 42, name: 'winpot' };
+  const added = buildReportTagAuditEvent({ report, tag, added: true, inheritingIocCount: 3, user: null });
+  assert.equal(added.action, 'threat_library.report.tag.added');
+  assert.equal(added.action, AUDIT_ACTION.THREAT_LIBRARY_REPORT_TAG_ADDED);
+  assert.deepEqual(added.after, { tag: 'winpot' });
+  assert.equal(added.before, null);
+  assert.equal(added.metadata.tag_id, 42);
+  assert.equal(added.metadata.inheriting_ioc_count, 3);
+  assert.equal(auditActionLabel(added.action), 'Threat Library › Report Tag Added');
+  const removed = buildReportTagAuditEvent({ report, tag, added: false, inheritingIocCount: 3, user: null });
+  assert.equal(removed.action, 'threat_library.report.tag.removed');
+  assert.deepEqual(removed.before, { tag: 'winpot' });
+  assert.equal(removed.after, null);
+  assert.equal(auditActionLabel(removed.action), 'Threat Library › Report Tag Removed');
 });

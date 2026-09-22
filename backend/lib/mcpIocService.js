@@ -212,13 +212,17 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
       },
       {
         sources,
-        rest: buildLookupMatchMetadata({
-          queriedType: resolved.type,
-          queriedValue: resolved.value,
-          record: existing,
-          matchedVia: identity.matchedVia,
-          memberships: identity.memberships
-        })
+        rest: {
+          // Additive: provenance of each effective tag (direct and/or Threat Library report).
+          tag_context: meta.tag_context,
+          ...buildLookupMatchMetadata({
+            queriedType: resolved.type,
+            queriedValue: resolved.value,
+            record: existing,
+            matchedVia: identity.matchedVia,
+            memberships: identity.memberships
+          })
+        }
       }
     )
   };
@@ -489,10 +493,13 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       confidence: body.confidence,
       // Native TalonHound classification (effective analyst slugs).
       classifications: classificationSlugs,
-      // Native TalonHound tag names shown on the IOC (analyst + source-integration).
+      // Effective TalonHound tag names: the IOC's own tags (analyst + source-integration)
+      // plus tags inherited from linked Threat Library reports.
       tags: catalogTags.map((t) => t.name),
-      // Same tags with provenance so analyst-authored vs source-provided is explicit.
+      // Same tags with origin so analyst / source / threat_library provenance is explicit.
       tags_detail: catalogTags,
+      // Additive: every source of each effective tag (direct origin, Threat Library reports).
+      tag_context: meta.tag_context,
       note: body.note,
       first_seen: body.first_seen_at || body.created_at,
       last_seen: body.last_seen_in_source || body.last_seen_at || body.created_at,
@@ -650,6 +657,7 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
         first_seen: hit.created_at || null,
         // Additive (parity with lookup_ioc / search_iocs).
         tags: meta.tags,
+        tag_context: meta.tag_context,
         note: hit.note ?? null,
         ...buildLookupMatchMetadata({
           queriedType: r.type,

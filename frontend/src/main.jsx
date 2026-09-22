@@ -16043,6 +16043,7 @@ function IOCDetailsPage() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({ summary: null, sources: [], matches: [], suppression: { active: false } });
   const [iocTags, setIocTags] = useState([]);
+  const [iocContextTags, setIocContextTags] = useState([]);
   const [hiddenSourceTags, setHiddenSourceTags] = useState([]);
   const [showHiddenSourceTags, setShowHiddenSourceTags] = useState(false);
   const [tagSuggestions, setTagSuggestions] = useState([]);
@@ -16149,6 +16150,21 @@ function IOCDetailsPage() {
     }
   }
 
+  // Tags inherited from linked Threat Library reports (managed on the report, read-only here).
+  async function loadIocContextTags(iocId) {
+    if (!iocId) {
+      setIocContextTags([]);
+      return;
+    }
+    try {
+      const res = await api.get(`/ioc/${iocId}/tags/threat-library`);
+      setIocContextTags(Array.isArray(res.data?.items) ? res.data.items : []);
+    } catch (err) {
+      console.log('[ioc-tags] threat library context load failed', err);
+      setIocContextTags([]);
+    }
+  }
+
   async function loadHiddenSourceTags(iocId) {
     if (!iocId) {
       setHiddenSourceTags([]);
@@ -16236,11 +16252,13 @@ function IOCDetailsPage() {
     const iocId = Number(data?.summary?.id);
     if (!Number.isFinite(iocId) || iocId <= 0) {
       setIocTags([]);
+      setIocContextTags([]);
       setHiddenSourceTags([]);
       setShowHiddenSourceTags(false);
       return;
     }
     loadIocTags(iocId).catch(() => {});
+    loadIocContextTags(iocId).catch(() => {});
     loadHiddenSourceTags(iocId).catch(() => {});
   }, [data?.summary?.id]);
 
@@ -17069,10 +17087,13 @@ function IOCDetailsPage() {
                   <div style={{ fontSize: 13, marginBottom: 8, color: '#94a3b8' }}>Tags</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(() => {
-                      const { manual, feed, hasTags } = buildIocTagBadges({
+                      // Direct row: analyst + source tags. Threat Library context tags render below.
+                      const { manual, feed } = buildIocTagBadges({
                         manualTags: iocTags,
-                        feedTags: summary?.feed_intelligence?.tags || []
+                        feedTags: summary?.feed_intelligence?.tags || [],
+                        contextTags: iocContextTags
                       });
+                      const hasTags = manual.length > 0 || feed.length > 0;
                       return (
                         <>
                           {manual.map((tag) => (
@@ -17195,6 +17216,59 @@ function IOCDetailsPage() {
                       ) : null}
                     </div>
                   </div>
+                  {(() => {
+                    const { context } = buildIocTagBadges({
+                      manualTags: iocTags,
+                      feedTags: summary?.feed_intelligence?.tags || [],
+                      contextTags: iocContextTags
+                    });
+                    if (!context.length) return null;
+                    return (
+                      <div data-testid="ioc-threat-context-tags" style={{ marginTop: 10 }}>
+                        <div
+                          style={{ fontSize: 11, marginBottom: 6, color: '#64748b' }}
+                          title="Inherited from Threat Library reports linked to this IOC. Manage them on the report."
+                        >
+                          Threat Context
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {context.map((ct) => {
+                            const firstReport = ct.reports[0];
+                            const chipStyle = {
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              padding: '3px 8px',
+                              borderRadius: 999,
+                              border: '1px dashed #0f766e',
+                              fontSize: 12,
+                              color: '#5eead4',
+                              background: 'rgba(15,118,110,0.12)',
+                              textDecoration: 'none'
+                            };
+                            return firstReport?.id ? (
+                              <Link
+                                key={ct.key}
+                                to={`/threat-intelligence/threat-library/${firstReport.id}`}
+                                title={ct.title}
+                                data-tag-origin="threat_library"
+                                style={chipStyle}
+                              >
+                                {ct.label}
+                                {ct.reports.length > 1 ? (
+                                  <span style={{ fontSize: 10, color: '#2dd4bf' }}>×{ct.reports.length}</span>
+                                ) : null}
+                              </Link>
+                            ) : (
+                              <span key={ct.key} title={ct.title} data-tag-origin="threat_library" style={chipStyle}>
+                                {ct.label}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {canWrite && hiddenSourceTags.length > 0 ? (
                     <div style={{ marginTop: 10 }}>
                       <button

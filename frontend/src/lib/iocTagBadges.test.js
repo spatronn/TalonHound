@@ -42,6 +42,40 @@ test('buildIocTagBadges ignores legacy stored tag.color (origin drives the chip)
   assert.ok(!('color' in feed[0]));
 });
 
+test('buildIocTagBadges shows Threat Library tags as a separate, provenance-carrying group', () => {
+  const reports = [
+    { id: 'r-a', title: 'WinPot malware campaign' },
+    { id: 'r-b', title: 'ATM jackpotting wave' }
+  ];
+  const { manual, feed, context, hasTags } = buildIocTagBadges({
+    manualTags: [{ id: 1, name: 'clickfix' }],
+    contextTags: [{ name: 'winpot', reports }, { name: 'atm', reports: [reports[0]] }]
+  });
+  assert.equal(hasTags, true);
+  assert.deepEqual(manual.map((m) => m.label), ['clickfix']);
+  assert.equal(feed.length, 0);
+  // Inherited tags are never presented as direct assignments.
+  assert.deepEqual(context.map((c) => [c.kind, c.label]), [['threat_library', 'winpot'], ['threat_library', 'atm']]);
+  assert.equal(context[0].title, 'Inherited from Threat Library reports: WinPot malware campaign; ATM jackpotting wave');
+  assert.equal(context[1].title, 'Inherited from Threat Library report: WinPot malware campaign');
+});
+
+test('buildIocTagBadges: direct tag wins over the same inherited tag, which is noted in its tooltip', () => {
+  const { manual, context } = buildIocTagBadges({
+    manualTags: [{ id: 5, name: 'winpot' }],
+    contextTags: [{ name: 'winpot', reports: [{ id: 'r-a', title: 'WinPot malware campaign' }] }]
+  });
+  assert.equal(manual.length, 1);
+  assert.equal(context.length, 0, 'effective tag appears once');
+  assert.match(manual[0].title, /^Added by analyst\. Also inherited from Threat Library report: WinPot malware campaign$/);
+});
+
+test('buildIocTagBadges: only inherited tags still count as tags', () => {
+  const { hasTags, context } = buildIocTagBadges({ contextTags: [{ name: 'atm', reports: [] }] });
+  assert.equal(hasTags, true);
+  assert.equal(context[0].title, 'Inherited from a Threat Library report');
+});
+
 test('buildIocTagBadges hides disabled catalog names from feed badges', () => {
   const { manual, feed } = buildIocTagBadges({
     manualTags: [{ id: 2, name: 'c2', is_active: false }],

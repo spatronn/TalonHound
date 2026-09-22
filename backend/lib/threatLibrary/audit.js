@@ -273,6 +273,30 @@ export function buildTlpAuditEvent({ report, oldTlp, oldSource, newTlp, user }) 
   };
 }
 
+/**
+ * Report tag added/removed. Tags are campaign/threat context inherited (at read
+ * time) by the report's IOC records; direct IOC tags are never written.
+ */
+export function buildReportTagAuditEvent({ report, tag, added, inheritingIocCount, user }) {
+  return {
+    action: added
+      ? AUDIT_ACTION.THREAT_LIBRARY_REPORT_TAG_ADDED
+      : AUDIT_ACTION.THREAT_LIBRARY_REPORT_TAG_REMOVED,
+    ...reportAuditEntity(report),
+    severity: AUDIT_SEVERITY.INFO,
+    status: AUDIT_STATUS.SUCCESS,
+    before: added ? null : { tag: tag?.name || null },
+    after: added ? { tag: tag?.name || null } : null,
+    metadata: {
+      ...reportAuditSnapshot(report),
+      initiated_by: initiatedBy(user),
+      tag_id: tag?.id ?? null,
+      tag: tag?.name || null,
+      inheriting_ioc_count: Number.isFinite(inheritingIocCount) ? inheritingIocCount : null
+    }
+  };
+}
+
 export function buildDeleteAuditEvent({ report, user }) {
   return {
     action: AUDIT_ACTION.THREAT_LIBRARY_REPORT_DELETED,
