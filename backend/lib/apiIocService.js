@@ -282,11 +282,18 @@ export async function loadCatalogTags(pool, iocId, observableType) {
      ORDER BY t.name ASC`,
     [scopedIds.length ? scopedIds : [iocId]]
   );
-  return rows.map((r) => {
-    const origins = (Array.isArray(r.origins) ? r.origins.filter(Boolean) : []).sort();
-    const origin = origins.includes('manual') ? 'manual' : (origins[0] || 'manual');
-    return { name: r.name, type: r.type || null, origin, origins, source_name: r.source_name || null };
-  });
+  return rows.map(catalogTagFromAggregateRow);
+}
+
+/**
+ * One grouped catalog-tag row ({ name, type, origins[], source_name }) → the
+ * tag shape shown on the IOC. Shared by loadCatalogTags and the batched API
+ * metadata hydrator so both apply identical origin precedence.
+ */
+export function catalogTagFromAggregateRow(r) {
+  const origins = (Array.isArray(r.origins) ? r.origins.filter(Boolean) : []).sort();
+  const origin = origins.includes('manual') ? 'manual' : (origins[0] || 'manual');
+  return { name: r.name, type: r.type || null, origin, origins, source_name: r.source_name || null };
 }
 
 /**

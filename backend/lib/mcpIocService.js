@@ -6,14 +6,20 @@
 import {
   normalizeApiIocValue,
   parseApiIocType,
-  toApiIocResponse,
-  loadCatalogTags
+  toApiIocResponse
 } from './apiIocService.js';
 import { getApiIoc, searchApiIocs, clampApiIocPageSize } from './apiIocReadService.js';
 import { createManualIoc, inferObservableType } from './manualIocCreate.js';
 import { isIocSourceSelectable, resolveIocSourceState } from './iocSourceLifecycle.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
-import { loadEffectiveIocClassificationSlugs, loadEffectiveIocClassificationSlugsBatch, iocPairKey } from './iocThreatClassifications.js';
+import { iocPairKey } from './iocThreatClassifications.js';
+import { hydrateIocApiMetadata, EMPTY_IOC_API_METADATA } from './iocApiMetadata.js';
+import {
+  IOC_MATCHED_VIA,
+  resolveArtifactAliasMemberships,
+  lookupIdentityKey,
+  buildLookupMatchMetadata
+} from './iocLookupIdentity.js';
 import { fetchFeedSourceEvidenceForItems } from './iocFeedSourceEvidence.js';
 import { buildFeedIntelligence } from './feedTagNormalization.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
@@ -170,8 +176,8 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
     return { status: 400, error: { code: resolved.code || API_ERROR_CODE.VALIDATION_ERROR, message: resolved.message } };
   }
 
-  const existing = await findExistingIoc(pool, resolved.type, resolved.value);
-  if (!existing) {
+  const identity = await resolveLookupIdentity(pool, resolved);
+  if (!identity) {
     return {
       status: 200,
       body: {
@@ -182,28 +188,54 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
       }
     };
   }
+  const existing = identity.row;
 
   // classifications: junction table with legacy-column fallback (feed imports
   // store the classification only on ioc_items.threat_classification).
   // tags: all enabled catalog assignments, not just origin='manual' — source
-  // integration/feed tags are the ones the IOC Details UI shows.
-  const [classifications, tags, sources] = await Promise.all([
-    loadEffectiveIocClassificationSlugs(pool, existing.id, existing.observable_type, existing.threat_classification),
-    loadCatalogTags(pool, existing.id, existing.observable_type),
+  // integration/feed tags are the ones the IOC Details UI shows. Same batched
+  // hydrator as search_iocs / bulk_lookup_iocs, keyed by the returned row's id.
+  // Sources are keyed by the returned (stored) row, never the queried alias.
+  const [metaMap, sources] = await Promise.all([
+    hydrateIocApiMetadata(pool, [existing]),
     loadIocSourcesForObservable(pool, existing.observable_type, existing.observable)
   ]);
+  const meta = metaMap.get(iocPairKey(existing.id, existing.observable_type)) || EMPTY_IOC_API_METADATA;
 
   return {
     status: 200,
     body: serializeLookupHit(
       {
         ...existing,
-        classifications,
-        tags: tags.map((t) => t.name)
+        classifications: meta.classifications,
+        tags: meta.tags
       },
-      { sources }
+      {
+        sources,
+        rest: buildLookupMatchMetadata({
+          queriedType: resolved.type,
+          queriedValue: resolved.value,
+          record: existing,
+          matchedVia: identity.matchedVia,
+          memberships: identity.memberships
+        })
+      }
     )
   };
+}
+
+/**
+ * Exact (type, value) row first — unchanged historical semantics; for a file
+ * hash with no row of its own, the proven file-artifact alias membership shared
+ * with the IOC Search DSL. Returns null when neither matches.
+ */
+async function resolveLookupIdentity(pool, resolved) {
+  const direct = await findExistingIoc(pool, resolved.type, resolved.value);
+  if (direct) return { row: direct, matchedVia: IOC_MATCHED_VIA.EXACT, memberships: null };
+  const aliasMap = await resolveArtifactAliasMemberships(pool, [{ type: resolved.type, value: resolved.value }]);
+  const memberships = aliasMap.get(lookupIdentityKey(resolved.type, resolved.value));
+  if (!memberships?.length) return null;
+  return { row: memberships[0], matchedVia: IOC_MATCHED_VIA.FILE_ARTIFACT_ALIAS, memberships };
 }
 
 // Every DSL operator word, used only to detect a *broken DSL attempt* vs. plain text.
@@ -347,15 +379,28 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   });
 
   let rowOutcome;
+  // Additive match metadata (queried / matched_via / record) when resolved by value.
+  let matchMeta = null;
   if (id != null && String(id).trim() !== '') {
     rowOutcome = await getApiIoc(pool, id);
   } else {
-    const lookup = await mcpLookupIoc(pool, { value, type }, opts);
-    if (lookup.error) return lookup;
-    if (!lookup.body?.found) {
+    const resolved = resolveMcpIocInput(value, type, opts.config || getMcpConfig());
+    if (!resolved.ok) {
+      return { status: 400, error: { code: resolved.code || API_ERROR_CODE.VALIDATION_ERROR, message: resolved.message } };
+    }
+    // Same exact → proven-artifact-alias identity as lookup_ioc / bulk_lookup_iocs.
+    const identity = await resolveLookupIdentity(pool, resolved);
+    if (!identity) {
       return { status: 404, error: { code: API_ERROR_CODE.IOC_NOT_FOUND, message: 'IOC not found' } };
     }
-    rowOutcome = await getApiIoc(pool, lookup.body.id);
+    matchMeta = buildLookupMatchMetadata({
+      queriedType: resolved.type,
+      queriedValue: resolved.value,
+      record: identity.row,
+      matchedVia: identity.matchedVia,
+      memberships: identity.memberships
+    });
+    rowOutcome = await getApiIoc(pool, identity.row.id);
   }
   if (rowOutcome.error) return rowOutcome;
 
@@ -364,13 +409,16 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   // Recompute native classifications/tags — getApiIoc uses the junction-only +
   // origin='manual' loaders (public v1 contract), which drop feed-imported
   // classifications (legacy column) and integration/feed tags. MCP must match
-  // the IOC Details UI, so use the effective-classification + all-origin
-  // catalog-tag loaders here.
-  const [classificationSlugs, catalogTags, sources] = await Promise.all([
-    loadEffectiveIocClassificationSlugs(pool, body.id, body.type),
-    loadCatalogTags(pool, body.id, body.type),
+  // the IOC Details UI, so use the shared effective hydrator (same one
+  // lookup_ioc / bulk_lookup_iocs / search_iocs use). The legacy column is
+  // read by the hydrator (body carries junction slugs, not the raw column).
+  const [metaMap, sources] = await Promise.all([
+    hydrateIocApiMetadata(pool, [{ id: body.id, observable_type: body.type }]),
     loadIocSourcesForObservable(pool, body.type, body.value)
   ]);
+  const meta = metaMap.get(iocPairKey(body.id, body.type)) || EMPTY_IOC_API_METADATA;
+  const classificationSlugs = meta.classifications;
+  const catalogTags = meta.tags_detail;
 
   // source_intelligence: source-/feed-provided context, kept SEPARATE from the
   // native TalonHound classifications/tags above so provenance is never
@@ -456,7 +504,9 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       derived_infrastructure: derivedInfrastructure === undefined ? undefined : derivedInfrastructure,
       enrichment_included: caps.enrichment_read,
       // Additive: Threat Library Threat Context (claims + relationships).
-      threat_context: threatContext
+      threat_context: threatContext,
+      // Additive: how a by-value request resolved (exact vs file_artifact_alias).
+      ...(matchMeta || {})
     }
   };
 }
@@ -533,19 +583,36 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
     foundRows = rows;
   }
 
-  // Effective classification slugs (junction table, else legacy column) for the
-  // whole batch in ONE query — parity with lookup_ioc / get_ioc_context without
-  // an N+1. The legacy fallback reuses each row's already-selected
-  // threat_classification, so no extra per-IOC read is issued.
-  const effectiveClassMap = await loadEffectiveIocClassificationSlugsBatch(pool, foundRows);
+  // Exact matches keep their historical semantics. Hashes with no row of their
+  // own resolve through the proven file-artifact alias membership shared with
+  // search_iocs / lookup_ioc — ONE batched query for the whole request.
+  const byKey = new Map(foundRows.map((r) => [lookupIdentityKey(r.observable_type, r.observable), {
+    row: r,
+    matchedVia: IOC_MATCHED_VIA.EXACT,
+    memberships: null
+  }]));
+  const aliasMap = await resolveArtifactAliasMemberships(
+    pool,
+    uniquePairs.filter((r) => !byKey.has(lookupIdentityKey(r.type, r.value)))
+  );
+  for (const [key, memberships] of aliasMap) {
+    if (memberships.length) {
+      byKey.set(key, { row: memberships[0], matchedVia: IOC_MATCHED_VIA.FILE_ARTIFACT_ALIAS, memberships });
+    }
+  }
 
-  const byKey = new Map(foundRows.map((r) => [`${r.observable_type}\0${r.observable}`, r]));
+  // Classifications + tags for the whole batch through the shared hydrator
+  // (constant query count, no N+1) — parity with lookup_ioc / search_iocs /
+  // get_ioc_context. Rows carry threat_classification, so the legacy fallback
+  // needs no extra read.
+  const metaMap = await hydrateIocApiMetadata(pool, [...byKey.values()].map((m) => m.row));
+
   const existing = [];
   const missing = [];
 
   for (const r of resolved) {
     if (r.duplicate_in_request) {
-      const hit = byKey.get(`${r.type}\0${r.value}`);
+      const hit = byKey.get(lookupIdentityKey(r.type, r.value))?.row;
       if (hit) {
         existing.push({
           index: r.index,
@@ -566,8 +633,10 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
       }
       continue;
     }
-    const hit = byKey.get(`${r.type}\0${r.value}`);
-    if (hit) {
+    const match = byKey.get(lookupIdentityKey(r.type, r.value));
+    if (match) {
+      const hit = match.row;
+      const meta = metaMap.get(iocPairKey(hit.id, hit.observable_type)) || EMPTY_IOC_API_METADATA;
       existing.push({
         index: r.index,
         value: r.value,
@@ -577,8 +646,18 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
         public_id: hit.public_id || null,
         status: hit.status || null,
         confidence: hit.confidence ?? null,
-        classifications: effectiveClassMap.get(iocPairKey(hit.id, hit.observable_type)) || [],
-        first_seen: hit.created_at || null
+        classifications: meta.classifications,
+        first_seen: hit.created_at || null,
+        // Additive (parity with lookup_ioc / search_iocs).
+        tags: meta.tags,
+        note: hit.note ?? null,
+        ...buildLookupMatchMetadata({
+          queriedType: r.type,
+          queriedValue: r.value,
+          record: hit,
+          matchedVia: match.matchedVia,
+          memberships: match.memberships
+        })
       });
     } else {
       missing.push({

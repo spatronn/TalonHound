@@ -11,7 +11,8 @@ import {
   getQueryTimeoutMs
 } from './iocSearchDsl/index.js';
 import { buildPlainSearchPageSql } from './iocSearchDsl/searchPageSql.js';
-import { fetchIocThreatClassificationSlugs } from './iocThreatClassifications.js';
+import { fetchIocThreatClassificationSlugs, iocPairKey } from './iocThreatClassifications.js';
+import { hydrateIocApiMetadata, EMPTY_IOC_API_METADATA } from './iocApiMetadata.js';
 import { toApiIocResponse, loadManualTags } from './apiIocService.js';
 import { csvRow } from './iocSearchExport/csv.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
@@ -196,32 +197,20 @@ export async function searchApiIocs(pool, { query, cursor, limit } = {}) {
   const pageSql = buildPlainSearchPageSql({
     whereSql: built.sql,
     keysetClause,
-    limitParamIdx: limitIdx
+    limitParamIdx: limitIdx,
+    includeIocMetadata: true
   });
 
   const timeoutMs = Math.max(100, Math.min(Math.trunc(getQueryTimeoutMs()), 120000));
   const client = await pool.connect();
+  let pageRows;
   try {
     await client.query('BEGIN');
     await client.query(`SET LOCAL statement_timeout = ${timeoutMs}`);
     await client.query('SET LOCAL max_parallel_workers_per_gather = 0');
     const pageRes = await client.query(pageSql, params);
     await client.query('COMMIT');
-    const hasMore = pageRes.rows.length > pageSize;
-    const page = pageRes.rows.slice(0, pageSize);
-    const last = page[page.length - 1];
-    return {
-      status: 200,
-      body: {
-        normalized_query: parsed.normalizedQuery,
-        items: page.map(listItem),
-        limit: pageSize,
-        has_more: hasMore,
-        next_cursor: hasMore && last
-          ? encodeApiIocCursor({ t: new Date(last.created_at).toISOString(), id: String(last.id) })
-          : null
-      }
-    };
+    pageRows = pageRes.rows;
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch { /* ignore */ }
     if (err?.code === '57014') {
@@ -237,6 +226,28 @@ export async function searchApiIocs(pool, { query, cursor, limit } = {}) {
   } finally {
     client.release();
   }
+
+  const hasMore = pageRows.length > pageSize;
+  const page = pageRows.slice(0, pageSize);
+  const last = page[page.length - 1];
+  // Page-scoped, batched metadata (classifications + tags) through the same
+  // hydrator lookup_ioc / bulk_lookup_iocs use — constant query count per page.
+  const metaMap = await hydrateIocApiMetadata(pool, page);
+  return {
+    status: 200,
+    body: {
+      normalized_query: parsed.normalizedQuery,
+      items: page.map((row) => {
+        const meta = metaMap.get(iocPairKey(row.id, row.observable_type)) || EMPTY_IOC_API_METADATA;
+        return toApiIocResponse(row, { classifications: meta.classifications, tags: meta.tags });
+      }),
+      limit: pageSize,
+      has_more: hasMore,
+      next_cursor: hasMore && last
+        ? encodeApiIocCursor({ t: new Date(last.created_at).toISOString(), id: String(last.id) })
+        : null
+    }
+  };
 }
 
 export async function exportApiIocs(pool, { query, format } = {}) {

@@ -143,7 +143,10 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
         && normalized.includes('ORDER BY created_at ASC')) {
         return { rows: existing ? [existing] : [] };
       }
-      // Legacy-column fallback read from loadEffectiveIocClassificationSlugs.
+      // Legacy-column / scoped-type batch read from hydrateIocApiMetadata.
+      if (normalized.includes('SELECT id, observable_type, threat_classification FROM ioc_items WHERE id = ANY')) {
+        return { rows: existing ? [{ id: existing.id, observable_type: existing.observable_type, threat_classification: existing.threat_classification ?? null }] : [] };
+      }
       if (normalized.includes('SELECT threat_classification FROM ioc_items')
         && normalized.includes('WHERE id = $1 AND observable_type = $2')) {
         return { rows: existing ? [{ threat_classification: existing.threat_classification ?? null }] : [] };
@@ -157,10 +160,11 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
           }))
         };
       }
-      if (normalized.includes('FROM ioc_tags it')) {
-        // loadCatalogTags groups and returns { name, type, origins, source_name }.
+      if (normalized.includes('ioc_tags it')) {
+        // Batched hydrator groups per seed_id and returns { seed_id, name, type, origins, source_name }.
         return {
           rows: tags.map((t) => ({
+            seed_id: (params[0] || [])[0],
             name: t.name,
             type: t.type ?? null,
             origins: t.origins ?? (t.origin ? [t.origin] : ['manual']),
@@ -202,6 +206,10 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
         && normalized.includes('WHERE id = $1 AND observable_type = $2')) {
         return { rows: row ? [{ threat_classification: row.threat_classification ?? null }] : [] };
       }
+      // Legacy-column batch read from hydrateIocApiMetadata.
+      if (normalized.includes('SELECT id, observable_type, threat_classification FROM ioc_items WHERE id = ANY')) {
+        return { rows: row ? [{ id: row.id, observable_type: row.observable_type, threat_classification: row.threat_classification ?? null }] : [] };
+      }
       if (normalized.includes('FROM ioc_threat_classifications')) {
         return {
           rows: classifications.map((slug) => ({
@@ -211,9 +219,11 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
           }))
         };
       }
-      if (normalized.includes('FROM ioc_tags it')) {
+      if (normalized.includes('ioc_tags it')) {
+        // Batched hydrator groups per seed_id and returns { seed_id, name, type, origins, source_name }.
         return {
           rows: tags.map((t) => ({
+            seed_id: (params[0] || [])[0],
             name: t.name,
             type: t.type ?? null,
             origins: t.origins ?? (t.origin ? [t.origin] : ['manual']),

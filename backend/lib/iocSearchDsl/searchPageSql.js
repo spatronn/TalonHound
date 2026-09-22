@@ -218,12 +218,20 @@ export function buildFileArtifactSearchPageSql({
 export function buildPlainSearchPageSql({
   whereSql,
   keysetClause = '',
-  limitParamIdx
+  limitParamIdx,
+  includeIocMetadata = false
 }) {
+  // includeIocMetadata: the API/MCP search serializer reports confidence, note and
+  // the legacy classification column, so it must select them (they were silently
+  // serialized as null / [] before). UI list callers keep the narrow projection.
+  const metadataCols = includeIocMetadata
+    ? `,
+           i.confidence, i.note, i.threat_classification`
+    : '';
   return `
     SELECT i.id, i.public_id, i.observable, i.observable_type,
            COALESCE(i.status, 'active') AS status,
-           i.first_seen_at, i.last_seen_at, i.created_at
+           i.first_seen_at, i.last_seen_at, i.created_at${metadataCols}
     FROM ioc_items i
     WHERE ${whereSql}${keysetClause}
     ORDER BY i.created_at DESC, i.id DESC

@@ -2,6 +2,7 @@ import { getSearchTimezone } from './config.js';
 import { likeEscape, normalizeIocValue, resolveRelativeDate } from './normalize.js';
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 import { inferExactHashType } from '../fileArtifacts/hashNormalize.js';
+import { artifactAliasIocMembershipSql } from '../fileArtifacts/hashIdentitySql.js';
 
 // Compiles a validated AST into a single boolean SQL expression plus a positional
 // parameter array. EVERY user-derived value is bound as a parameter — no DSL token is
@@ -179,19 +180,7 @@ class Builder {
         FROM ioc_items d
        WHERE d.observable_type = '${hashType}' AND LOWER(d.observable) = ${valuePh}
       UNION
-      SELECT fal.ioc_observable_type, fal.ioc_item_id
-        FROM file_artifact_hashes h
-        JOIN file_artifacts hfa ON hfa.id = h.artifact_id
-        JOIN file_artifact_ioc_links fal
-          ON fal.artifact_id = COALESCE(
-               CASE
-                 WHEN hfa.status = 'merged' AND hfa.merged_into_artifact_id IS NOT NULL
-                   THEN hfa.merged_into_artifact_id
-                 ELSE hfa.id
-               END,
-               hfa.id
-             )
-       WHERE h.hash_type = '${hashType}' AND h.normalized_hash_value = ${valuePh}
+      ${artifactAliasIocMembershipSql(`'${hashType}'`, valuePh)}
     )`;
   }
 
