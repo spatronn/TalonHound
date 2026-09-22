@@ -112,6 +112,12 @@ jobs:
         working-directory: backend
         run: npm run migrate
 
+      - name: Fresh-install seeded sequences and migration count (real Postgres)
+        working-directory: backend
+        env:
+          MIGRATION_CHAIN_ITEST: '1'
+        run: npm run test:migration-chain-integration
+
       - name: First-run setup wizard integration tests (real Postgres)
         working-directory: backend
         run: npm run test:setup-wizard-integration

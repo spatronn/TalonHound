@@ -53,6 +53,11 @@ pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
   "${TABLE_ARGS[@]}" \
   > "$DATA"
 
+# pg_dump session preamble: SET ... and SELECT pg_catalog.set_config(...). Only those
+# are dropped — SELECT pg_catalog.setval(...) restores sequences for explicit-id seed
+# rows and MUST survive (stripping it shipped a baseline whose sequences restart at 1).
+PG_DUMP_SESSION_FILTER='/^SET /d;/^SELECT pg_catalog\.set_config(/d'
+
 mkdir -p "$(dirname "$OUT")"
 {
   cat <<'HEADER'
@@ -73,12 +78,12 @@ HEADER
   echo "-- ===== SCHEMA ====="
   # Strip pg_dump connection/session noise; keep DDL.
   grep -vE '^\\(connect|restrict|unrestrict)' "$SCHEMA" \
-    | sed '/^SET /d;/^SELECT pg_catalog/d;/^-- PostgreSQL database dump$/d' \
+    | sed "${PG_DUMP_SESSION_FILTER};/^-- PostgreSQL database dump$/d" \
     || true
   echo
   echo "-- ===== CANONICAL SEED DATA ====="
   grep -vE '^\\(connect|restrict|unrestrict)' "$DATA" \
-    | sed '/^SET /d;/^SELECT pg_catalog/d' \
+    | sed "${PG_DUMP_SESSION_FILTER}" \
     || true
   echo
   echo "COMMIT;"

@@ -37,9 +37,12 @@ Fresh installations apply the public forward migrations present in the repositor
 026_threat_library_published_at_provenance.sql
 027_reparent_merged_artifact_ioc_links.sql
 028_file_artifact_ioc_links_ioc_item_id_idx.sql
+029_align_seeded_sequences.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.
+
+`001_core.sql` restores the sequences of its explicit-id seed tables (`ioc_sources`, `tags`, `threat_feed_expiration_policies`, `threat_intel_provider_configs`). The originally released baseline omitted them because `scripts/baseline/build-001-core.sh` stripped pg_dump's `SELECT pg_catalog.setval(...)` lines, so a fresh install failed at `019_threat_library.sql` (`ioc_sources_pkey`). `029_align_seeded_sequences.sql` repairs databases built from that baseline; it only ever moves a sequence forward and is a no-op where sequences are already ahead of their tables.
 
 ## After the first public release
 

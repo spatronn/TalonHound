@@ -8989,27 +8989,56 @@ INSERT INTO public.threat_intel_provider_configs (id, provider, enabled, api_key
 
 
 --
+-- Sequence state for the explicit-id seed rows above.
+-- Exceptional post-release edit: the released baseline omitted the sequence
+-- state pg_dump generates because scripts/baseline/build-001-core.sh stripped
+-- every "SELECT pg_catalog..." line, including SELECT pg_catalog.setval(...).
+-- Without it a fresh install hands out id 1 again and the first id-less insert
+-- (019_threat_library.sql -> ioc_sources) fails with ioc_sources_pkey.
+-- Existing installs are unaffected: migrate.js records migrations by filename
+-- (no checksum), so 001_core.sql never re-runs where it is already applied;
+-- 029_align_seeded_sequences.sql repairs installs built from the old baseline.
+-- Values are derived from the seeded rows and only ever move a sequence forward.
+--
+
+--
 -- Name: ioc_sources_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
+SELECT pg_catalog.setval('public.ioc_sources_id_seq', m.max_id, true)
+FROM (SELECT max(id) AS max_id FROM public.ioc_sources) m, public.ioc_sources_id_seq s
+WHERE m.max_id IS NOT NULL
+  AND m.max_id >= CASE WHEN s.is_called THEN s.last_value + 1 ELSE s.last_value END;
 
 
 --
 -- Name: tags_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
+SELECT pg_catalog.setval('public.tags_id_seq', m.max_id, true)
+FROM (SELECT max(id) AS max_id FROM public.tags) m, public.tags_id_seq s
+WHERE m.max_id IS NOT NULL
+  AND m.max_id >= CASE WHEN s.is_called THEN s.last_value + 1 ELSE s.last_value END;
 
 
 --
 -- Name: threat_feed_expiration_policies_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
+SELECT pg_catalog.setval('public.threat_feed_expiration_policies_id_seq', m.max_id, true)
+FROM (SELECT max(id) AS max_id FROM public.threat_feed_expiration_policies) m, public.threat_feed_expiration_policies_id_seq s
+WHERE m.max_id IS NOT NULL
+  AND m.max_id >= CASE WHEN s.is_called THEN s.last_value + 1 ELSE s.last_value END;
 
 
 --
 -- Name: threat_intel_provider_configs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
+SELECT pg_catalog.setval('public.threat_intel_provider_configs_id_seq', m.max_id, true)
+FROM (SELECT max(id) AS max_id FROM public.threat_intel_provider_configs) m, public.threat_intel_provider_configs_id_seq s
+WHERE m.max_id IS NOT NULL
+  AND m.max_id >= CASE WHEN s.is_called THEN s.last_value + 1 ELSE s.last_value END;
 
 
 --
