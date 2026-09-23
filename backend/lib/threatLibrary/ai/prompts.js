@@ -13,11 +13,18 @@
  */
 
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, CANDIDATE_ROLE_VALUES } from './contract.js';
+import { RELATIONSHIP_TYPES } from '../relationshipPolicy.js';
 
 export const ENTITY_TYPE_LINE =
   'entity_type values: threat_actor, malware, campaign, tool, vulnerability, infrastructure, organization, attack_pattern';
 export const ASSESSMENT_LINE = 'assessment values: malicious, suspicious, context_only, unknown, invalid';
 export const ROLE_LINE = `role values: ${CANDIDATE_ROLE_VALUES.join(', ')}`;
+// Safety belt only: relationshipPolicy.js / evidencePolicy.js enforce these deterministically.
+export const RELATIONSHIP_LINE =
+  `relationship_type values: ${RELATIONSHIP_TYPES.join(', ')}. Every relationship must cite in evidence_block_ids a block that ` +
+  'names BOTH endpoints and quote that sentence verbatim in evidence_text; relationships without such evidence are discarded. ' +
+  'The report publisher/author is never related to a threat merely because it published, analyzed or detects it. ' +
+  'File hashes (md5/sha1/sha256) are files: their role is malware_sample, never an infrastructure role.';
 
 export function buildSystemPrompt() {
   return [
@@ -135,6 +142,7 @@ export function buildChunkPrompt(input) {
     ENTITY_TYPE_LINE,
     ASSESSMENT_LINE,
     ROLE_LINE,
+    RELATIONSHIP_LINE,
     'evidence_block_ids must reference block ids present in this chunk.',
     'subject_ref/object_ref for entities use entity name; for candidates use candidate_id.',
     'confidence must be a number between 0 and 1 (never "high"/"medium"/"low").',
@@ -175,6 +183,7 @@ export function buildSynthesisPrompt(input) {
     ENTITY_TYPE_LINE,
     ASSESSMENT_LINE,
     ROLE_LINE,
+    RELATIONSHIP_LINE,
     '',
     `DOCUMENT TITLE: ${input.documentTitle}`,
     '',

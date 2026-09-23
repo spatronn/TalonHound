@@ -40,6 +40,7 @@ import {
   updateReportPublicationDate
 } from './store.js';
 import { resolveEffectiveTlp } from './tlpPolicy.js';
+import { buildEvidenceIndex, publisherTokens, validateRelationship } from './relationshipPolicy.js';
 import { detectReportPublicationDate, resolvePublicationDateUpdate } from './publicationDate.js';
 import { createServiceLogger } from '../appLogger.js';
 
@@ -627,35 +628,29 @@ export async function runAnalysisPipeline(pool, ctx) {
         evidence_text: e.evidence_text,
         block_id: e.evidence_block_ids?.[0] || null
       });
-      entityByRef.set(normalizeEntityName(e.name), row);
-      entityByRef.set(e.name, row);
+      const known = entityByRef.get(normalizeEntityName(e.name));
+      const names = [...new Set([...(known?.names || []), row.name, e.name, ...(e.aliases || [])].filter(Boolean))];
+      const entry = { ...row, names };
+      entityByRef.set(normalizeEntityName(e.name), entry);
+      entityByRef.set(e.name, entry);
     }
 
     const candByKey = new Map(
       savedCandidates.map((c) => [`${c.candidate_type}:${c.normalized_value}`, c])
     );
-    const relRows = [];
-    for (const r of aiValue.relationships || []) {
-      const subject = resolveRef(r.subject_kind, r.subject_ref, entityByRef, candByKey);
-      const object = resolveRef(r.object_kind, r.object_ref, entityByRef, candByKey);
-      if (!subject || !object) continue;
-      relRows.push({
-        portable_id: `relationship--${crypto.randomUUID()}`,
-        subject_kind: r.subject_kind,
-        subject_entity_id: subject.entity_id || null,
-        subject_candidate_id: subject.candidate_id || null,
-        subject_ioc_id: subject.ioc_id || null,
-        subject_portable_ref: subject.portable_ref || null,
-        relationship_type: r.relationship_type,
-        object_kind: r.object_kind,
-        object_entity_id: object.entity_id || null,
-        object_candidate_id: object.candidate_id || null,
-        object_ioc_id: object.ioc_id || null,
-        object_portable_ref: object.portable_ref || null,
-        role: r.role || null,
-        confidence: r.confidence ?? null,
-        evidence_text: r.evidence_text || null,
-        block_id: r.evidence_block_ids?.[0] || null
+    const { rows: relRows, rejected: relRejected } = buildValidatedRelationships({
+      relationships: aiValue.relationships || [],
+      entityByRef,
+      candByKey,
+      document,
+      report
+    });
+    if (relRejected.length) {
+      log.info('relationships rejected by policy', {
+        reportId: report.id,
+        accepted: relRows.length,
+        rejected: relRejected.length,
+        reasons: relRejected.reduce((acc, r) => ({ ...acc, [r.reason]: (acc[r.reason] || 0) + 1 }), {})
       });
     }
     await replaceRelationships(pool, report.id, relRows);
@@ -926,11 +921,62 @@ function resolvePipelineFailureStage(err) {
   return 'failed';
 }
 
+/**
+ * AI relationships → persistable rows. Model output is a proposal: every
+ * relationship passes the deterministic relationship policy (known type,
+ * compatible endpoint kinds, evidence in the source naming both endpoints,
+ * explicit quote for the publisher) or it is dropped.
+ * @param {{ relationships: object[], entityByRef: Map, candByKey: Map, document: object|null, report: object }} input
+ */
+export function buildValidatedRelationships({ relationships, entityByRef, candByKey, document, report }) {
+  const evidenceIndex = buildEvidenceIndex(document, { sourceUrl: report?.source_url || null });
+  const tokens = publisherTokens(report, document);
+  const rows = [];
+  const rejected = [];
+  for (const r of relationships || []) {
+    const subject = resolveRef(r.subject_kind, r.subject_ref, entityByRef, candByKey);
+    const object = resolveRef(r.object_kind, r.object_ref, entityByRef, candByKey);
+    if (!subject || !object) continue;
+    const verdict = validateRelationship(r, subject.endpoint, object.endpoint, {
+      requireEvidence: true,
+      evidenceIndex,
+      publisherTokens: tokens
+    });
+    if (!verdict.ok) {
+      rejected.push({ subject_ref: r.subject_ref, relationship_type: r.relationship_type, object_ref: r.object_ref, reason: verdict.reason });
+      continue;
+    }
+    rows.push({
+      portable_id: `relationship--${crypto.randomUUID()}`,
+      subject_kind: r.subject_kind,
+      subject_entity_id: subject.entity_id || null,
+      subject_candidate_id: subject.candidate_id || null,
+      subject_ioc_id: subject.ioc_id || null,
+      subject_portable_ref: subject.portable_ref || null,
+      relationship_type: verdict.relationship_type,
+      object_kind: r.object_kind,
+      object_entity_id: object.entity_id || null,
+      object_candidate_id: object.candidate_id || null,
+      object_ioc_id: object.ioc_id || null,
+      object_portable_ref: object.portable_ref || null,
+      role: r.role || null,
+      confidence: r.confidence ?? null,
+      evidence_text: r.evidence_text || null,
+      block_id: verdict.block_id || r.evidence_block_ids?.[0] || null
+    });
+  }
+  return { rows, rejected };
+}
+
 function resolveRef(kind, ref, entityByRef, candByKey) {
   if (kind === 'entity') {
     const e = entityByRef.get(normalizeEntityName(ref)) || entityByRef.get(ref);
     if (!e) return null;
-    return { entity_id: e.id, portable_ref: e.portable_id };
+    return {
+      entity_id: e.id,
+      portable_ref: e.portable_id,
+      endpoint: { kind: 'entity', entity_type: e.entity_type, names: e.names || [e.name] }
+    };
   }
   if (kind === 'candidate') {
     let c = candByKey.get(ref);
@@ -946,7 +992,13 @@ function resolveRef(kind, ref, entityByRef, candByKey) {
     return {
       candidate_id: c.id,
       ioc_id: c.matched_ioc_id || null,
-      portable_ref: c.portable_id
+      portable_ref: c.portable_id,
+      endpoint: {
+        kind: 'candidate',
+        candidate_type: c.candidate_type,
+        assessment: c.assessment || null,
+        names: [c.normalized_value, c.original_value].filter(Boolean)
+      }
     };
   }
   return null;

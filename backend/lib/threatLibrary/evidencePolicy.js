@@ -55,6 +55,31 @@ const MALICIOUS_ROLES = new Set([
 const HASH_TYPES = new Set(['md5', 'sha1', 'sha256']);
 
 /**
+ * Roles a file hash can carry. A hash identifies a file, never a network
+ * endpoint, so infrastructure roles (command_and_control, redirector,
+ * payload_hosting, hosting_platform, …) are invalid on it whatever the model
+ * or a bundle says. `tool` is the non-IOC artifact role set by excludeFromIoc.
+ */
+const FILE_HASH_ROLES = new Set(['malware_sample', 'security_tool', 'tool', 'reference', 'unknown']);
+
+/**
+ * Deterministic IOC type ↔ role compatibility. Mutates and returns the
+ * candidate; an incompatible hash role becomes `malware_sample` when the
+ * candidate is malicious/suspicious or the rejected role was a malicious one,
+ * otherwise `reference`. Other types are left unchanged.
+ * @param {object} candidate
+ */
+export function enforceRoleTypeCompatibility(candidate) {
+  if (!candidate || !HASH_TYPES.has(String(candidate.candidate_type))) return candidate;
+  const role = String(candidate.role || 'unknown');
+  if (FILE_HASH_ROLES.has(role)) return candidate;
+  const malicious =
+    candidate.assessment === 'malicious' || candidate.assessment === 'suspicious' || MALICIOUS_ROLES.has(role);
+  candidate.role = malicious ? 'malware_sample' : 'reference';
+  return candidate;
+}
+
+/**
  * @param {object} candidate
  * @returns {'A'|'B'|'C'|'D'}
  */
@@ -354,6 +379,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     }
   }
 
+  enforceRoleTypeCompatibility(candidate);
   candidate.evidence_tier = summary.tier;
   candidate.evidence_summary = summary;
   if (!candidate.policy_decision) candidate.policy_decision = 'pass';

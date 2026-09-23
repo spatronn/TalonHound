@@ -3,8 +3,23 @@
  * Pure functions — no DB access. Called at API response time.
  */
 
-// Feed tag → classification slug
-const TAG_TO_CLASSIFICATION = new Map([
+/**
+ * Canonical token for matching a feed tag against TAG_TO_CLASSIFICATION:
+ * lowercase, trimmed, runs of whitespace / hyphen / underscore collapsed to one
+ * underscore ("Command-and-Control" → "command_and_control"). Spelling only —
+ * no synonyms: a tag reaches a classification only if its canonical token is
+ * already a key below. Other punctuation is kept so unrelated tags never collide.
+ * @param {string|null|undefined} raw
+ */
+export function canonicalClassificationToken(raw) {
+  return String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, '_');
+}
+
+// Feed tag → classification slug (keys are canonical tokens; see canonicalClassificationToken)
+const TAG_TO_CLASSIFICATION_ENTRIES = [
   ['malware_download', 'dropper_downloader'],
   ['malware-download', 'dropper_downloader'],
   ['malware_delivery', 'dropper_downloader'],
@@ -28,7 +43,10 @@ const TAG_TO_CLASSIFICATION = new Map([
   ['loader', 'dropper_downloader'],
   ['cryptominer', 'cryptomining'],
   ['miner', 'cryptomining'],
-]);
+];
+const TAG_TO_CLASSIFICATION = new Map(
+  TAG_TO_CLASSIFICATION_ENTRIES.map(([tag, slug]) => [canonicalClassificationToken(tag), slug])
+);
 
 // IOC category field → classification slug
 const CATEGORY_TO_CLASSIFICATION = new Map([
@@ -106,7 +124,7 @@ export function normalizeFeedTags({ sourceName, rawTags = [], category = null, s
     if (!trimmed) continue;
     const normalized = trimmed.toLowerCase();
 
-    const classSlug = TAG_TO_CLASSIFICATION.get(normalized);
+    const classSlug = TAG_TO_CLASSIFICATION.get(canonicalClassificationToken(trimmed));
     if (classSlug) {
       if (!seenSlugs.has(classSlug)) {
         classifications.push({ value: classSlug, label: slugToLabel(classSlug), active: true, origin: 'feed', source_name: sourceName });

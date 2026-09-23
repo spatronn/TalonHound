@@ -7,7 +7,7 @@ import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.
 import { isValidTlpSource } from './tlpPolicy.js';
 import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
-import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
+import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility } from './evidencePolicy.js';
 import { buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 
 export async function getAiSettings(pool) {
@@ -501,7 +501,10 @@ export async function replaceCandidates(pool, reportId, candidates) {
     if (owned) await client.query('BEGIN');
     await client.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
     const inserted = [];
-    for (const c of candidates) {
+    for (const input of candidates) {
+      // Last gate before persistence: every path (pipeline, THIB import) gets
+      // the same IOC type ↔ role invariant.
+      const c = enforceRoleTypeCompatibility({ ...input });
       const evidence = buildCandidateEvidenceRecord(c);
       const { rows } = await client.query(
         `INSERT INTO threat_report_candidates (

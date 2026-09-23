@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { previewThibImport } from './thib/codec.js';
 import { normalizeTlp } from './constants.js';
 import { normalizeSuppliedPublicationDate } from './publicationDate.js';
+import { validateRelationship } from './relationshipPolicy.js';
 import {
   createThreatReport,
   replaceCandidates,
@@ -114,6 +115,14 @@ export async function importThibBundle(pool, bundle, opts = {}) {
     const objectCand = candByPortable.get(r.object_ref);
     if (!subjectEntity && !subjectCand) continue;
     if (!objectEntity && !objectCand) continue;
+    // A bundle carries no source document, so only the type policy applies:
+    // an unknown type or incompatible endpoint kinds is never imported.
+    const verdict = validateRelationship(
+      r,
+      subjectEntity ? { kind: 'entity', entity_type: subjectEntity.entity_type } : { kind: 'candidate', candidate_type: subjectCand.candidate_type, assessment: subjectCand.assessment },
+      objectEntity ? { kind: 'entity', entity_type: objectEntity.entity_type } : { kind: 'candidate', candidate_type: objectCand.candidate_type, assessment: objectCand.assessment }
+    );
+    if (!verdict.ok) continue;
     rels.push({
       portable_id: r.id || `relationship--${crypto.randomUUID()}`,
       subject_kind: subjectEntity ? 'entity' : 'candidate',
@@ -121,7 +130,7 @@ export async function importThibBundle(pool, bundle, opts = {}) {
       subject_candidate_id: subjectCand?.id || null,
       subject_ioc_id: subjectCand?.matched_ioc_id || null,
       subject_portable_ref: r.subject_ref,
-      relationship_type: r.relationship_type,
+      relationship_type: verdict.relationship_type,
       object_kind: objectEntity ? 'entity' : 'candidate',
       object_entity_id: objectEntity?.id || null,
       object_candidate_id: objectCand?.id || null,
