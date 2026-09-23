@@ -78,7 +78,7 @@ TalonHound is self-hosted. Enabling an **external** provider means selected repo
 
 ### Evidence model (deterministic before AI)
 
-Candidate extraction (`tl-candidates-v7`, zones `tl-zones-v2`) produces one candidate per observable identity (type + normalized value) that aggregates **occurrences** — real text spans with block id, page, zone, section heading, source relation, form (`standalone`, `url`, `ip_port`, `list_row`, `table_row`) and structural **occurrence kind** (`typed_table_row`, `standalone_indicator_row`, `list_item`, `endpoint`, `narrative_assertion`, `narrative_context`, `narrative_mention`, `reference`).
+Candidate extraction (`tl-candidates-v8`, zones `tl-zones-v2`) produces one candidate per observable identity (type + normalized value) that aggregates **occurrences** — real text spans with block id, page, zone, section heading, source relation, form (`standalone`, `url`, `ip_port`, `list_row`, `table_row`) and structural **occurrence kind** (`typed_table_row`, `standalone_indicator_row`, `list_item`, `endpoint`, `narrative_assertion`, `narrative_context`, `narrative_mention`, `reference`).
 
 #### Observable-type resolver (`tl-type-resolver-v1`)
 

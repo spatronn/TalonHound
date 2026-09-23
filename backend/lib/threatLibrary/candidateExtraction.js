@@ -37,8 +37,14 @@ import {
   validateCanonicalIocValue,
   validateUrlCandidate
 } from './observableTypeResolver.js';
+import { ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
+export {
+  candidateHasStandaloneOccurrence,
+  isOnlyEmbeddedInDnsHostname,
+  isStandaloneObservableSpan
+} from './sourceOccurrence.js';
 
 /**
  * Bump when derivation / evidence semantics change. Older candidate sets are
@@ -57,8 +63,11 @@ export { normalizeCandidateValue } from './candidateValue.js';
  * zone membership alone never asserts maliciousness; scheme-less host/path
  * resources are one URL occurrence (exact source spelling, no invented scheme,
  * path preserved, host as parsed metadata).
+ * v8: IPv4 / IPv6 token boundaries — a numeric DNS prefix such as
+ * `128.200.178.68.host.example.com` is not a standalone IP; acceptance
+ * requires a source span that is not a subspan of a larger hostname.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v7';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v8';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -91,9 +100,15 @@ export function surroundingWindow(text, value, radius = 140) {
   return hay.slice(start, idx + nlen + radius);
 }
 
-const IPV4_RE = /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b/g;
-const IPV4_PORT_RE = /\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
-const IPV6_RE = /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b/g;
+// `\b` alone is not enough: `.` is a non-word character, so the first four
+// numeric labels of `128.200.178.68.host.example.com` match as IPv4. Lookaround
+// plus the span check in Pass 2 reject DNS continuation on either side.
+const IPV4_RE =
+  /(?<![A-Za-z0-9_-]\.)\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b(?!\.[A-Za-z0-9_-])/g;
+const IPV4_PORT_RE =
+  /(?<![A-Za-z0-9_-]\.)\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
+const IPV6_RE =
+  /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b(?!\.[A-Za-z0-9_-])/g;
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
 /**
  * Scheme-less network resource: DNS-shaped host + path ("js.cache-mcp.com/layer.js").
@@ -423,6 +438,16 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     if (!n.ok) {
       countReason(typeDiag.rejected_values, n.error || 'unrecognized');
       return null;
+    }
+    // IP/IPv6: reject when this block's only evidence is a numeric prefix of a
+    // larger DNS token. Do not consult originalValue/raw — those may already be
+    // the carved IP. Unknown spelling (no hit) is not treated as embedding.
+    if (n.candidateType === 'ip' || n.candidateType === 'ipv6') {
+      const sourceHay = extra.rowText || block?.text || '';
+      if (sourceHay && isOnlyEmbeddedInDnsHostname(sourceHay, n.candidateType, n.normalizedValue)) {
+        countReason(typeDiag.rejected_values, 'embedded_in_dns_hostname');
+        return null;
+      }
     }
     const typingMeta = { ...(extra.typing || {}) };
     const zone = block?.zone || 'unknown';
@@ -768,8 +793,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // IP:port endpoints (direct C2 endpoint assertions)
     for (const m of text.matchAll(IPV4_PORT_RE)) {
       const start = m.index;
+      const ipEnd = start + m[1].length;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
+      if (!ipv4MatchIsStandalone(text, start, ipEnd)) continue;
       const port = Number(m[2]);
       if (!Number.isFinite(port) || port < 1 || port > 65535) continue;
       const entry = add(m[1], 'ip', block, { form: OCCURRENCE_FORMS.IP_PORT, port });
@@ -784,15 +811,20 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
     for (const m of text.matchAll(IPV4_RE)) {
       const start = m.index;
-      const end = start + m[0].length;
+      const raw = String(m[0]);
+      const slash = raw.indexOf('/');
+      const ipEnd = start + (slash >= 0 ? slash : raw.length);
+      const end = start + raw.length;
       if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
-      if (String(m[0]).includes('/')) add(m[0], 'cidr', block, { form: standaloneForm });
-      else add(m[0], 'ip', block, { form: standaloneForm });
+      if (!ipv4MatchIsStandalone(text, start, ipEnd)) continue;
+      if (slash >= 0) add(raw, 'cidr', block, { form: standaloneForm });
+      else add(raw, 'ip', block, { form: standaloneForm });
     }
     for (const m of text.matchAll(IPV6_RE)) {
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
+      if (!ipv4MatchIsStandalone(text, start, end)) continue;
       add(m[0], 'ipv6', block, { form: standaloneForm });
     }
     for (const m of text.matchAll(SHA256_RE)) add(m[0], 'sha256', block, { form: standaloneForm });

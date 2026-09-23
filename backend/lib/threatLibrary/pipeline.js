@@ -14,6 +14,7 @@ import {
 } from './candidateExtraction.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { hostnameFromUrl } from './candidateTyping.js';
+import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOccurrence.js';
 import { bulkMatchCandidates } from './iocMatch.js';
 import { analyzeThreatDocument } from './ai/providers.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
@@ -583,7 +584,8 @@ export async function runAnalysisPipeline(pool, ctx) {
     }
 
     // Merge AI candidate updates onto the deterministic set (never the reverse).
-    candidates = mergeAiCandidateUpdates(candidates, aiValue);
+    // AI identities are untrusted: IPv4 carved from a hostname prefix is dropped.
+    candidates = mergeAiCandidateUpdates(candidates, aiValue, { document });
 
     // --- Match local IOCs ---
     await setStage('matching');
@@ -783,15 +785,33 @@ export function decideCandidateReuse(input) {
  * update only refines a candidate that already exists, explicit assertions can
  * only gain a malicious role, and every candidate passes the evidence policy
  * again. A missing / empty AI result leaves the deterministic set intact.
+ *
+ * IPv4 / IPv6 proposals are source-grounded when `opts.sourceText` or
+ * `opts.document` is provided: a value that occurs only as a prefix/subspan
+ * of a larger DNS hostname is dropped, whether it came from a stale
+ * deterministic set or from the model. The model is not authoritative about
+ * token boundaries. New AI identities are never inserted.
  * @param {object[]} candidates
  * @param {{ candidate_updates?: object[] }|null} aiValue
+ * @param {{ sourceText?: string, document?: object }} [opts]
  */
-export function mergeAiCandidateUpdates(candidates, aiValue) {
-  const byKey = new Map((candidates || []).map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c]));
+export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
+  const sourceText = opts.sourceText || (opts.document ? sourceTextFromDocument(opts.document) : '');
+  const keep = (c) => {
+    if (!sourceText) return true;
+    if (c.candidate_type !== 'ip' && c.candidate_type !== 'ipv6') return true;
+    return !isOnlyEmbeddedInDnsHostname(sourceText, c.candidate_type, c.normalized_value);
+  };
+  const byKey = new Map(
+    (candidates || []).filter(keep).map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c])
+  );
   for (const u of aiValue?.candidate_updates || []) {
     const key = `${u.candidate_type}\0${u.normalized_value}`;
     const existing = byKey.get(key);
     if (!existing) continue;
+    if (sourceText && (u.candidate_type === 'ip' || u.candidate_type === 'ipv6')) {
+      if (isOnlyEmbeddedInDnsHostname(sourceText, u.candidate_type, u.normalized_value)) continue;
+    }
     applyEvidencePolicy(existing, {
       assessment: u.assessment,
       role: u.role || existing.role,
