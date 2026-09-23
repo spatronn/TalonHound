@@ -1715,14 +1715,16 @@ function AppConfirmHost({ state, controller }) {
       >
         {state.cancelLabel}
       </button>
-      <button
-        type="button"
-        className={buttonClassName({ variant: confirmVariant })}
-        disabled={state.submitting}
-        onClick={() => { controller.confirm().catch(() => {}); }}
-      >
-        {state.submitting ? 'Working…' : state.confirmLabel}
-      </button>
+      {state.informational ? null : (
+        <button
+          type="button"
+          className={buttonClassName({ variant: confirmVariant })}
+          disabled={state.submitting}
+          onClick={() => { controller.confirm().catch(() => {}); }}
+        >
+          {state.submitting ? 'Working…' : state.confirmLabel}
+        </button>
+      )}
     </>
   );
   return (

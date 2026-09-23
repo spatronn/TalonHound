@@ -507,6 +507,20 @@
   color: #e2e8f0;
 }
 
+/* IOC Result cell: small secondary link to the linked IOC record. */
+.tl-ioc-result-link {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #93c5fd;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.tl-ioc-result-link:hover {
+  text-decoration: underline;
+}
+
 .tl-chip {
   display: inline-flex;
   align-items: center;

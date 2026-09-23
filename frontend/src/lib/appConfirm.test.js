@@ -75,3 +75,20 @@ test('initial focus contract for danger is prefer cancel', () => {
   // Documented contract consumed by AppConfirmHost (initialFocus="cancel").
   assert.equal(APP_CONFIRM_INITIAL.variant, 'primary');
 });
+
+test('informational request has no confirm action: confirm() is ignored, Close resolves false', async () => {
+  let state = { ...APP_CONFIRM_INITIAL };
+  let ran = 0;
+  const c = createAppConfirmController((s) => { state = s; });
+  const p = c.request({ title: 'No new IOC records', informational: true, cancelLabel: 'Close', onConfirm: () => { ran += 1; } });
+  assert.equal(state.open, true);
+  assert.equal(state.informational, true);
+  assert.equal(state.cancelLabel, 'Close');
+  const r = await c.confirm();
+  assert.equal(r.ignored, true);
+  assert.equal(c.getState().open, true);
+  c.cancel();
+  assert.equal(await p, false);
+  assert.equal(ran, 0);
+  assert.equal(c.getState().informational, false, 'reset for the next request');
+});

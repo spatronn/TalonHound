@@ -31,6 +31,9 @@ import {
   parseReviewTableUrlState,
   serializeReviewTableUrlState,
   iocResultLabel,
+  iocResultLink,
+  iocResultOutcome,
+  describeNoCreatableIocs,
   applyPromotionResults,
   formatCreateIocSummary,
   describeReviewFeedback,
@@ -692,24 +695,15 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       });
       const summary = preview?.summary || {};
       const eligible = Number(summary.eligible || 0);
-      if (eligible <= 0 && Number(summary.not_approved || 0) === Number(summary.selected || 0)) {
+      // Nothing to create: informational only, no mutation and no OK action.
+      // Existing rows already read as "Already exists" from their IOC link.
+      const noop = describeNoCreatableIocs(summary);
+      if (noop) {
         await requestConfirm({
-          title: 'Approve indicators first',
-          description: 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
-          confirmLabel: 'OK',
-          cancelLabel: 'Close',
-          variant: 'warning'
-        });
-        return;
-      }
-      if (eligible <= 0) {
-        await requestConfirm({
-          title: 'Create approved IOCs?',
-          description: 'None of the selected indicators can be created as IOC records.',
-          detail: formatCreateIocSummary(summary),
-          confirmLabel: 'OK',
-          cancelLabel: 'Close',
-          variant: 'warning'
+          ...noop,
+          detail: formatCreateIocSummary(summary) + excludedNote,
+          informational: true,
+          cancelLabel: 'Close'
         });
         return;
       }
@@ -745,9 +739,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           description: err.response.data.message
             || 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
           detail: err.response.data.summary ? formatCreateIocSummary(err.response.data.summary) : '',
-          confirmLabel: 'OK',
-          cancelLabel: 'Close',
-          variant: 'warning'
+          informational: true,
+          cancelLabel: 'Close'
         });
         return;
       }
@@ -1383,7 +1376,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                         <tr><td colSpan={canWrite ? 11 : 10} style={{ color: '#94a3b8' }}>No candidates in this filter.</td></tr>
                       ) : pageRows.map((c) => {
                         const value = candidateDisplayValue(c);
-                        const resultTone = promotionOutcomeTone(c.promotion_outcome);
+                        const resultTone = promotionOutcomeTone(iocResultOutcome(c));
+                        const resultHref = iocResultLink(c);
                         const isOpen = openCandidateId != null && c.id === openCandidateId;
                         return (
                           <tr
@@ -1420,6 +1414,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                             <td><ToneBadge tone={reviewStatusTone(c.review_status)}>{reviewStatusLabel(c.review_status) || '—'}</ToneBadge></td>
                             <td title={c.promotion_detail || undefined}>
                               <ToneBadge tone={resultTone}>{iocResultLabel(c)}</ToneBadge>
+                              {resultHref ? (
+                                <Link to={resultHref} className="tl-ioc-result-link" data-testid="ioc-result-link">View IOC</Link>
+                              ) : null}
                               {c.candidate_type === 'cidr' && (!c.promotion_outcome || c.promotion_outcome === 'unsupported') ? (
                                 <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
                                   {c.promotion_detail || 'Preserved in Threat Library; not an IOC record.'}

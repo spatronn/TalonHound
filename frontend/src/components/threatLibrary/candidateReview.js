@@ -248,7 +248,7 @@ export function candidateMatchesTypeFilter(candidate, type) {
 
 export function candidateMatchesResultFilter(candidate, result) {
   if (!result || result === 'all') return true;
-  const outcome = String(candidate?.promotion_outcome || '').toLowerCase();
+  const outcome = iocResultOutcome(candidate) || '';
   if (result === 'not_created') {
     return !outcome || outcome === 'not_approved' || outcome === 'not_applicable' || outcome === 'failed';
   }
@@ -311,9 +311,67 @@ export function serializeReviewTableUrlState(state) {
   return params;
 }
 
+/** Observable types that can be stored as IOC records (backend CREATABLE_IOC_TYPES). */
+const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
+
+const lower = (v) => String(v || '').toLowerCase();
+
+/**
+ * Mirror of backend `classifyCreateEligibility` (promotion.js), same rule
+ * order: what Create IOCs would do with this row right now. Pure read of the
+ * persisted row — `already_existing` rests on the stored IOC link, never on a
+ * value comparison.
+ * @returns {'will_create'|'already_existing'|'not_approved'|'unsupported'|'not_applicable'}
+ */
+export function classifyCreateOutcome(candidate) {
+  const c = candidate || {};
+  const review = lower(c.review_status || 'pending');
+  const assessment = lower(c.assessment);
+  const state = lower(c.match_state);
+  const type = lower(c.candidate_type);
+  if (c.is_ioc === false
+    || review === 'ignored' || review === 'context_only'
+    || assessment === 'context_only' || assessment === 'invalid'
+    || state === 'context_only' || state === 'invalid') return 'not_applicable';
+  if (!PROMOTABLE_TYPES.has(type)) return 'unsupported';
+  if (review !== 'approved' && review !== 'created_ioc') return 'not_approved';
+  if (assessment !== 'malicious' && assessment !== 'suspicious') return 'not_applicable';
+  if (c.matched_ioc_id || review === 'created_ioc' || state === 'existing' || lower(c.promotion_outcome) === 'created') {
+    return 'already_existing';
+  }
+  return 'will_create';
+}
+
+/**
+ * Effective IOC Result outcome. A persisted `created` / `already_existing`
+ * (last Create IOCs run) wins; otherwise a row that Create IOCs would record as
+ * already existing shows that deterministically from its stored IOC link, so an
+ * existing-only selection needs no no-op mutation and survives a refresh.
+ * Anything else falls back to the persisted outcome (null = not run).
+ */
+export function iocResultOutcome(candidate) {
+  const persisted = lower(candidate?.promotion_outcome);
+  if (persisted === 'created' || persisted === 'already_existing') return persisted;
+  if (classifyCreateOutcome(candidate) === 'already_existing') return 'already_existing';
+  return persisted && persisted !== 'will_create' ? persisted : null;
+}
+
+/**
+ * IOC details route for the record this row resolved to, only when the
+ * backend returned its public id (exact PK lookup). Null otherwise — a link is
+ * never derived from the observable value.
+ */
+export function iocResultLink(candidate) {
+  const outcome = iocResultOutcome(candidate);
+  if (outcome !== 'created' && outcome !== 'already_existing') return null;
+  const publicId = typeof candidate?.matched_ioc_public_id === 'string' ? candidate.matched_ioc_public_id.trim() : '';
+  if (!publicId || !candidate?.matched_ioc_id) return null;
+  return `/ioc/details/${encodeURIComponent(publicId)}`;
+}
+
 export function iocResultLabel(candidate) {
-  const outcome = String(candidate?.promotion_outcome || '').toLowerCase();
-  if (!outcome || outcome === 'will_create') return '—';
+  const outcome = iocResultOutcome(candidate);
+  if (!outcome) return '—';
   if (outcome === 'created') return 'Created';
   if (outcome === 'already_existing') return 'Already exists';
   if (outcome === 'unsupported') return 'Not supported';
@@ -339,6 +397,35 @@ export function applyPromotionResults(candidates, results) {
         : c.matched_ioc_observable_type
     };
   });
+}
+
+/**
+ * Informational copy when a Create IOCs preview has nothing to create
+ * (approved + new + supported = 0): no mutation follows, so the modal only
+ * explains why. Null when at least one IOC would be created.
+ * @returns {{ title: string, description: string }|null}
+ */
+export function describeNoCreatableIocs(summary) {
+  const s = summary || {};
+  if ((Number(s.eligible) || 0) > 0) return null;
+  const selected = Number(s.selected) || 0;
+  const existing = Number(s.already_existing) || 0;
+  const notApproved = Number(s.not_approved) || 0;
+  const existingLine = existing > 0
+    ? ` ${existing} selected ${existing === 1 ? 'indicator already exists' : 'indicators already exist'} as IOC records.`
+    : '';
+  if (notApproved > 0 && notApproved === selected) {
+    return {
+      title: 'Approve indicators first',
+      description: 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.'
+    };
+  }
+  return {
+    title: 'No new IOC records',
+    description: existing > 0
+      ? `No new IOC records will be created.${existingLine}`
+      : 'No new IOC records will be created. None of the selected indicators can be created as IOC records.'
+  };
 }
 
 export function formatCreateIocSummary(summary) {
@@ -367,9 +454,6 @@ export function formatCreateIocSummary(summary) {
   }
   return lines.join('\n');
 }
-
-/** Observable types that can be stored as IOC records (backend CREATABLE_IOC_TYPES). */
-const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
 
 export const REVIEW_TOOLBAR_LABELS = Object.freeze({
   approve: 'Approve',
@@ -413,15 +497,17 @@ export function describePromoteBlocker(selectedRows) {
   return null;
 }
 
+export const NO_CREATABLE_HINT = 'No new approved indicators selected.';
+
 /**
  * Toolbar for the active filter and selection.
  *
  * Context Only view: no IOC lifecycle actions at all (they are not rendered,
  * not merely disabled) — only the single-row `Promote to IOC…` override and
  * `Ignore`. Every other view keeps the IOC actions, but Approve / Context only
- * / Create IOCs enable only when the selection holds at least one IOC
- * candidate, so a Context Only row selected in the All view can never drive
- * them on its own.
+ * enable only when the selection holds at least one IOC candidate, so a
+ * Context Only row selected in the All view can never drive them on its own.
+ * Create IOCs additionally needs one row Create IOCs would actually create.
  *
  * @returns {{ actions: Array<{ id: string, label: string, enabled: boolean, primary?: boolean, hint?: string|null }>, contextOnlySelected: number, iocSelected: number }}
  */
@@ -445,12 +531,16 @@ export function describeReviewToolbar({ filter, selectedRows, busy = false } = {
   }
 
   const noIocHint = rows.length > 0 && iocSelected === 0 ? 'Context Only rows are not IOC candidates.' : null;
+  // Create IOCs needs at least one approved + new + supported row; existing
+  // rows in a mixed selection never block the new ones.
+  const creatable = rows.filter((c) => classifyCreateOutcome(c) === 'will_create').length;
+  const createHint = noIocHint || (rows.length > 0 && creatable === 0 ? NO_CREATABLE_HINT : null);
   return {
     actions: [
       item('approve', iocSelected > 0, { hint: noIocHint }),
       item('context_only', iocSelected > 0, { hint: noIocHint }),
       item('ignore', rows.length > 0),
-      item('create_iocs', iocSelected > 0, { primary: true, hint: noIocHint }),
+      item('create_iocs', creatable > 0, { primary: true, hint: createHint }),
       item('approve_high_confidence_malicious', true)
     ],
     contextOnlySelected,

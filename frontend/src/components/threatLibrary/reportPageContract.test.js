@@ -14,6 +14,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const pageSrc = readFileSync(path.join(here, 'ThreatLibraryReportPage.jsx'), 'utf8');
 const drawerSrc = readFileSync(path.join(here, 'IndicatorDetailDrawer.jsx'), 'utf8');
 const partsSrc = readFileSync(path.join(here, 'reportPageParts.jsx'), 'utf8');
+const mainSrc = readFileSync(path.join(here, '..', '..', 'main.jsx'), 'utf8');
 
 test('page is split into Overview / Indicators / Entities / Source with the Overview default', () => {
   assert.match(pageSrc, /<ReportTabBar tabs=\{tabs\} active=\{view\} onChange=\{setView\} \/>/);
@@ -174,4 +175,21 @@ test('Context Only != IOC candidate: promotion is a confirmed single-row overrid
   assert.match(pageSrc, /const \{ ids, excluded \} = selectionForAction\('create_iocs', selectedRows\);/);
   assert.match(pageSrc, /excluded: excluded \+ \(Number\(data\?\.skipped_context_only\) \|\| 0\)/, 'feedback reports skipped context rows');
   assert.doesNotMatch(drawerSrc, /promote_to_ioc|promoteToIoc|Promote to IOC/, 'drawer stays read-only');
+});
+
+test('Create IOCs with nothing to create is informational: Close only, no OK, no mutation call', () => {
+  const fn = pageSrc.slice(pageSrc.indexOf('async function createIocs()'), pageSrc.indexOf('async function promoteToIoc()'));
+  assert.match(fn, /const noop = describeNoCreatableIocs\(summary\);\s*if \(noop\) \{/);
+  assert.doesNotMatch(fn, /confirmLabel: 'OK'/, 'no OK action on a no-mutation modal');
+  const noopBlock = fn.slice(fn.indexOf('if (noop) {'), fn.indexOf('const ok = await requestConfirm'));
+  assert.match(noopBlock, /informational: true/);
+  assert.match(noopBlock, /return;/);
+  assert.doesNotMatch(noopBlock, /confirm: true/, 'no commit call on the informational path');
+  assert.match(mainSrc, /\{state\.informational \? null : \(/, 'confirm host hides the confirm button');
+});
+
+test('IOC Result cell renders the effective outcome and links only via the backend public id', () => {
+  assert.match(pageSrc, /const resultTone = promotionOutcomeTone\(iocResultOutcome\(c\)\);/);
+  assert.match(pageSrc, /const resultHref = iocResultLink\(c\);/);
+  assert.match(pageSrc, /\{resultHref \? \(\s*<Link to=\{resultHref\}[^>]*>View IOC<\/Link>/);
 });

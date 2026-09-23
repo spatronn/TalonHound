@@ -758,6 +758,45 @@ export async function loadReportSnapshot(pool, reportId) {
   return { report, candidates, entities: entityLinks, relationships, artifacts, jobs };
 }
 
+function matchedIocKey(observableType, id) {
+  return `${String(observableType || '').toLowerCase()}\0${Number(id)}`;
+}
+
+/**
+ * Public ids of the IOC records candidates are linked to (`matched_ioc_id`),
+ * resolved by exact primary key (observable_type, id) — never by value — so a
+ * UI link always points at the linked record. One query, no N+1. A candidate
+ * whose record no longer exists simply resolves to null.
+ * @returns {Promise<(candidate: object) => string|null>}
+ */
+export async function loadMatchedIocPublicIds(pool, candidates) {
+  const refs = new Map();
+  for (const c of Array.isArray(candidates) ? candidates : []) {
+    if (c?.matched_ioc_id == null) continue;
+    const type = String(c.matched_ioc_observable_type || c.candidate_type || '').toLowerCase();
+    const id = Number(c.matched_ioc_id);
+    if (!type || !Number.isSafeInteger(id)) continue;
+    refs.set(matchedIocKey(type, id), { type, id });
+  }
+  const byKey = new Map();
+  if (refs.size) {
+    const list = [...refs.values()];
+    const { rows } = await pool.query(
+      `SELECT i.observable_type, i.id, i.public_id
+         FROM ioc_items i
+         JOIN unnest($1::text[], $2::bigint[]) AS m(observable_type, ioc_id)
+           ON i.observable_type = m.observable_type AND i.id = m.ioc_id`,
+      [list.map((r) => r.type), list.map((r) => r.id)]
+    );
+    for (const r of rows) byKey.set(matchedIocKey(r.observable_type, r.id), r.public_id || null);
+  }
+  return (c) => {
+    if (c?.matched_ioc_id == null) return null;
+    const type = c.matched_ioc_observable_type || c.candidate_type;
+    return byKey.get(matchedIocKey(type, c.matched_ioc_id)) ?? null;
+  };
+}
+
 /**
  * Soft-delete report + hard-delete owned TL rows via CASCADE; never deletes ioc_items.
  */

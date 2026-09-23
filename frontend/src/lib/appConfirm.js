@@ -7,6 +7,9 @@
  *
  * Mode B — async action (modal stays open on error):
  *   await controller.request({ title, onConfirm: async () => api.delete(...) });
+ *
+ * Mode C — informational (nothing to confirm, only a Close button):
+ *   await controller.request({ title, description, informational: true, cancelLabel: 'Close' });
  */
 
 export const APP_CONFIRM_INITIAL = Object.freeze({
@@ -17,6 +20,7 @@ export const APP_CONFIRM_INITIAL = Object.freeze({
   confirmLabel: 'Confirm',
   cancelLabel: 'Cancel',
   variant: 'primary', // primary | warning | danger
+  informational: false,
   submitting: false,
   error: ''
 });
@@ -66,7 +70,8 @@ export function createAppConfirmController(notify) {
         resolver = null;
         prev(false);
       }
-      action = typeof options.onConfirm === 'function' ? options.onConfirm : null;
+      const informational = options.informational === true;
+      action = !informational && typeof options.onConfirm === 'function' ? options.onConfirm : null;
       const variant = ['primary', 'warning', 'danger'].includes(options.variant)
         ? options.variant
         : 'primary';
@@ -78,6 +83,7 @@ export function createAppConfirmController(notify) {
         confirmLabel: String(options.confirmLabel || 'Confirm'),
         cancelLabel: String(options.cancelLabel || 'Cancel'),
         variant,
+        informational,
         submitting: false,
         error: ''
       });
@@ -93,7 +99,7 @@ export function createAppConfirmController(notify) {
     },
 
     async confirm() {
-      if (!state.open || state.submitting) return { ok: false, ignored: true };
+      if (!state.open || state.submitting || state.informational) return { ok: false, ignored: true };
       if (!action) {
         settle(true);
         return { ok: true };

@@ -8,7 +8,7 @@
  * canonical row fields rendered through display labels.
  */
 
-import { describeCandidateProvenance, confidenceLabel, iocResultLabel } from './candidateReview.js';
+import { describeCandidateProvenance, confidenceLabel, iocResultLabel, iocResultOutcome } from './candidateReview.js';
 import {
   assessmentLabel,
   candidateTypeLabel,
@@ -82,7 +82,7 @@ export function describeCandidateDetail(candidate, { formatDateTime } = {}) {
     key: 'ioc_result',
     label: 'IOC result',
     value: c.promotion_detail && result !== '—' ? `${result} · ${c.promotion_detail}` : (result === '—' && c.promotion_detail ? c.promotion_detail : result),
-    raw: c.promotion_outcome ?? null
+    raw: iocResultOutcome(c)
   });
   if (c.promoted_at) fields.push({ key: 'promoted_at', label: 'Promoted', value: fmt(c.promoted_at), raw: c.promoted_at });
   if (c.original_value && c.normalized_value && c.original_value !== c.normalized_value) {

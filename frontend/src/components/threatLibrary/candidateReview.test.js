@@ -387,7 +387,7 @@ test('promotion blockers: unsupported types and non-context rows cannot be promo
 
 test('IOC candidate views keep the full action set and enable it from the selection', () => {
   for (const filter of ['indicators', 'new', 'needs_review', 'existing', 'all']) {
-    const t = describeReviewToolbar({ filter, selectedRows: [iocA] });
+    const t = describeReviewToolbar({ filter, selectedRows: [iocA, iocB] });
     assert.deepEqual(ids(t), ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious'], filter);
     assert.deepEqual(enabled(t), ['approve', 'context_only', 'ignore', 'create_iocs', 'approve_high_confidence_malicious'], filter);
     assert.equal(t.actions.find((a) => a.id === 'create_iocs').primary, true);

@@ -38,6 +38,7 @@ import {
   listThreatReports,
   getReportByPublicId,
   loadReportSnapshot,
+  loadMatchedIocPublicIds,
   deleteThreatReport,
   createJob,
   updateJob,
@@ -336,6 +337,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       const report = await getReportByPublicId(pool, req.params.publicId);
       if (!report) return res.status(404).json({ message: 'Report not found' });
       const snap = await loadReportSnapshot(pool, report.id);
+      const matchedIocPublicId = await loadMatchedIocPublicIds(pool, snap.candidates);
       return res.json({
         report: publicReport(await reportWithDetail(snap.report)),
         candidates: snap.candidates.map((c) => ({
@@ -355,6 +357,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           match_state: c.match_state,
           matched_ioc_id: c.matched_ioc_id,
           matched_ioc_observable_type: c.matched_ioc_observable_type,
+          // Linked IOC record's public id (exact PK lookup); null when unknown.
+          matched_ioc_public_id: matchedIocPublicId(c),
           promotion_outcome: c.promotion_outcome || (c.review_status === 'created_ioc' ? 'created' : null),
           promotion_detail: c.promotion_detail || null,
           promoted_at: c.promoted_at || null,
