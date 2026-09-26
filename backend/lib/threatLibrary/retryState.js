@@ -10,6 +10,31 @@ export function isActiveAnalysisStatus(status) {
   return !TERMINAL_ANALYSIS.has(s);
 }
 
+const ENDED_JOB_STATUSES = new Set(['failed', 'cancelled']);
+
+/**
+ * An "active" analysis status left behind by a job that already ended: the
+ * report still carries that job's failure while no job is queued or running
+ * (a late progress write overwrote the terminal status). Retry must recover
+ * it instead of answering "already running".
+ *
+ * Race-free without timing heuristics: every legitimate transition to an
+ * active status (Retry, pipeline stages) clears `failure_code` in the same
+ * UPDATE, so a concurrent Retry that just claimed the report is never seen
+ * as orphaned.
+ * @param {{
+ *   report: { analysis_status?: string|null, failure_code?: string|null },
+ *   activeJob?: object|null,
+ *   latestJob?: { status?: string|null }|null
+ * }} input
+ */
+export function isOrphanedActiveAnalysis({ report, activeJob = null, latestJob = null } = {}) {
+  if (!report || !isActiveAnalysisStatus(report.analysis_status)) return false;
+  if (activeJob) return false;
+  if (!report.failure_code) return false;
+  return Boolean(latestJob && ENDED_JOB_STATUSES.has(String(latestJob.status || '').toLowerCase()));
+}
+
 /**
  * Prefer AI-stage resume when document + candidates already exist (Retry Analysis contract).
  * @param {{ hasDocument?: boolean, candidateCount?: number }} opts

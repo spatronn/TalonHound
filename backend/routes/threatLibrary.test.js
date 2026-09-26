@@ -55,6 +55,11 @@ test('retry commits active analysis_status and clears failure before 202', () =>
   assert.match(routeSrc, /resumed:\s*true/);
 });
 
+test('retry recovers an orphaned active status instead of answering already_running', () => {
+  assert.match(routeSrc, /isOrphanedActiveAnalysis/);
+  assert.match(routeSrc, /recovered_orphaned_status:\s*recoveredOrphanedStatus/);
+});
+
 test('cancel analysis endpoint exists and is analyst-gated', () => {
   assert.match(routeSrc, /\/api\/threat-library\/reports\/:publicId\/cancel[\s\S]*?requireRole\(ROLES\.ADMIN, ROLES\.ANALYST\)/);
   assert.match(routeSrc, /requestAnalysisCancel/);

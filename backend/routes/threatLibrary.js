@@ -76,6 +76,7 @@ import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
 import {
   isActiveAnalysisStatus,
+  isOrphanedActiveAnalysis,
   resolveRetryStartStatus,
   buildRetryProgress
 } from '../lib/threatLibrary/retryState.js';
@@ -860,6 +861,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         }
 
         // Idempotent: do not enqueue a second concurrent analysis for the same report.
+        let recoveredOrphanedStatus = false;
         if (isActiveAnalysisStatus(report.analysis_status)) {
           const { rows: activeJobs } = await pool.query(
             `SELECT public_id, status, stage, progress, error_message, created_at
@@ -868,14 +870,25 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
              ORDER BY id DESC LIMIT 1`,
             [report.id]
           );
-          return res.status(202).json({
-            report: publicReport(report),
-            job_id: activeJobs[0]?.public_id || null,
-            job: activeJobs[0] || null,
-            already_running: true,
-            code: 'analysis_already_running',
-            resumed: true
-          });
+          if (!activeJobs[0]) {
+            const { rows: latestJobs } = await pool.query(
+              `SELECT status FROM threat_library_jobs WHERE report_id = $1 ORDER BY id DESC LIMIT 1`,
+              [report.id]
+            );
+            // Active status left behind by an ended job (still carrying its failure):
+            // start a fresh retry below instead of reporting a phantom running analysis.
+            recoveredOrphanedStatus = isOrphanedActiveAnalysis({ report, activeJob: null, latestJob: latestJobs[0] || null });
+          }
+          if (!recoveredOrphanedStatus) {
+            return res.status(202).json({
+              report: publicReport(report),
+              job_id: activeJobs[0]?.public_id || null,
+              job: activeJobs[0] || null,
+              already_running: true,
+              code: 'analysis_already_running',
+              resumed: true
+            });
+          }
         }
 
         const { rows: activeJobs } = await pool.query(
@@ -951,7 +964,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             progress
           },
           resumed: true,
-          already_running: false
+          already_running: false,
+          recovered_orphaned_status: recoveredOrphanedStatus
         });
       } catch (err) {
         return res.status(500).json({ message: 'Retry failed', detail: err.message });
