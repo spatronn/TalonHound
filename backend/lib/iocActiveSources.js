@@ -700,13 +700,27 @@ async function fetchItemRowTopSources(pool, statusClause, limit = 20) {
  * @param {unknown[]} [params]
  */
 async function queryWithoutParallelWorkers(db, sql, params = []) {
+  return queryWithLocalSettings(db, sql, params, [
+    'SET LOCAL max_parallel_workers_per_gather = 0',
+    "SET LOCAL work_mem = '4MB'"
+  ]);
+}
+
+/**
+ * Run one query inside a short transaction with transaction-scoped SET LOCAL
+ * statements, so the settings never leak to other queries on the pooled connection.
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {string} sql
+ * @param {unknown[]} params
+ * @param {string[]} setLocalStatements
+ */
+async function queryWithLocalSettings(db, sql, params, setLocalStatements) {
   const client = typeof db.connect === 'function' ? await db.connect() : null;
   const runner = client || db;
   const ownClient = Boolean(client);
   try {
     await runner.query('BEGIN');
-    await runner.query('SET LOCAL max_parallel_workers_per_gather = 0');
-    await runner.query("SET LOCAL work_mem = '4MB'");
+    for (const stmt of setLocalStatements) await runner.query(stmt);
     const result = await runner.query(sql, params);
     await runner.query('COMMIT');
     return result;
@@ -830,8 +844,21 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
 }
 
 /**
+ * Candidate row window ($1) for the canonical browse SQL.
+ * Candidate must cover browseCap identities after collapse; inflate for sibling hashes.
+ * @param {{ limit: number, offset: number, browseCap: number }} opts
+ */
+export function canonicalBrowseCandidateLimit({ limit, offset, browseCap }) {
+  return Math.min(
+    Math.max(browseCap * 8, (offset + limit) * 16, 2000),
+    50000
+  );
+}
+
+/**
  * SQL-before-pagination canonical browse (READ flag on).
- * Candidate window is an index walk bound only; LIMIT/OFFSET apply after identity GROUP BY.
+ * Candidate window is an index walk bound only; page LIMIT/OFFSET apply to identity rows
+ * ranked by (MIN(created_at), identity_key); full winner-row grouping runs for the page only.
  *
  * @param {import('pg').Pool} pool
  * @param {{ limit: number, offset: number, browseCap: number }} opts
@@ -839,12 +866,14 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
 export async function queryActiveIocCanonicalBrowsePage(pool, { limit, offset, browseCap }) {
   const { buildCanonicalActiveBrowsePageSql } = await import('./fileArtifacts/canonicalListSql.js');
   const sql = buildCanonicalActiveBrowsePageSql();
-  // Candidate must cover browseCap identities after collapse; inflate for sibling hashes.
-  const candidateLimit = Math.min(
-    Math.max(browseCap * 8, (offset + limit) * 16, 2000),
-    50000
+  const candidateLimit = canonicalBrowseCandidateLimit({ limit, offset, browseCap });
+  // JIT compile (~25-30 ms on prod) costs more than it saves on this bounded window query.
+  const { rows } = await queryWithLocalSettings(
+    pool,
+    sql,
+    [candidateLimit, browseCap, limit, offset],
+    ['SET LOCAL jit = off']
   );
-  const { rows } = await pool.query(sql, [candidateLimit, browseCap, limit, offset]);
   return rows;
 }
 

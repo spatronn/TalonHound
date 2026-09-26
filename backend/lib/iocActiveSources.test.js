@@ -224,6 +224,12 @@ test('fetchActiveIocListPage READ on: SQL canonicalize before LIMIT/OFFSET', asy
   assert.match(browse.sql, /GROUP BY/);
   assert.match(browse.sql, /identity_key/);
   assert.equal(browse.sql.includes('NULLS LAST'), false);
+  // JIT is disabled for this query only, inside its own transaction.
+  const browseAt = queries.indexOf(browse);
+  assert.deepEqual(
+    queries.slice(browseAt - 2, browseAt + 2).map((q) => (q === browse ? '<browse>' : q.sql)),
+    ['BEGIN', 'SET LOCAL jit = off', '<browse>', 'COMMIT']
+  );
   // Must not run JS oversample window path (LIMIT $2 need)
   assert.ok(!queries.some((q) => q.sql.includes('WITH recent AS') && q.sql.includes('LIMIT $2') && !q.sql.includes('LIMIT $3 OFFSET $4')));
   if (prev == null) delete process.env.FILE_ARTIFACTS_READ_ENABLED;

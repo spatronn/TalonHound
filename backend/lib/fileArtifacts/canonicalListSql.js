@@ -209,13 +209,12 @@ export function buildGroupedCteBody() {
 }
 
 /**
- * Active browse page: canonicalize in SQL, then LIMIT/OFFSET on identity rows.
- * Candidate window bounds index walk (perf); pagination correctness does not use JS dedupe.
- *
- * Params: $1 candidateLimit, $2 browseCap, $3 pageLimit, $4 pageOffset
+ * Candidate window CTEs shared by the active browse page SQL: `recent` (newest
+ * $1 ioc_items rows by platform import time) and `filtered` (active rows with a
+ * manual source or an active, non-purged feed membership). Ends with a comma so
+ * callers append their own CTEs.
  */
-export function buildCanonicalActiveBrowsePageSql() {
-  const grouped = buildGroupedCteBody();
+export function buildActiveBrowseWindowCtesSql() {
   return `
     WITH recent AS (
       SELECT
@@ -242,9 +241,70 @@ export function buildCanonicalActiveBrowsePageSql() {
                AND m.purged_at IS NULL
           )
         )
+    ),`;
+}
+
+/**
+ * Active browse page: canonicalize in SQL, then LIMIT/OFFSET on identity rows.
+ * Candidate window bounds index walk (perf); pagination correctness does not use JS dedupe.
+ *
+ * READ on (two-stage): page order only needs (identity_key, MIN(created_at)), so
+ * stage 1 ranks identities with that single aggregate, applies browseCap and the
+ * page LIMIT/OFFSET, and only the page's identities go through the full winner-row
+ * aggregate grouping. Same window, identity, winner and ordering as grouping every
+ * candidate identity first (prod: ~16k identity groups → page size).
+ *
+ * Params: $1 candidateLimit, $2 browseCap, $3 pageLimit, $4 pageOffset
+ */
+export function buildCanonicalActiveBrowsePageSql() {
+  if (!isFileArtifactsReadEnabled()) return buildSingleStageActiveBrowsePageSql();
+  return `${buildActiveBrowseWindowCtesSql()}
+    ann AS MATERIALIZED (
+      ${buildAnnotatedSelectSql('filtered')}
+    ),
+    ranked AS (
+      SELECT identity_key, MIN(created_at) AS platform_imported_at
+      FROM ann
+      GROUP BY identity_key
+      ORDER BY platform_imported_at DESC, identity_key ASC
+      LIMIT $2
+    ),
+    page_identities AS (
+      SELECT identity_key
+      FROM ranked
+      ORDER BY platform_imported_at DESC, identity_key ASC
+      LIMIT $3 OFFSET $4
+    ),
+    page_rows AS (
+      SELECT ann.*
+      FROM ann
+      WHERE ann.identity_key IN (SELECT identity_key FROM page_identities)
     ),
     grouped AS (
-      ${grouped}
+      ${buildIdentityGroupedSelectSql('page_rows')}
+    )
+    SELECT
+      id, public_id, observable, observable_type,
+      platform_imported_at AS created_at,
+      platform_imported_at AS imported_at,
+      platform_imported_at AS first_seen_at,
+      platform_imported_at AS last_seen_at,
+      artifact_id, identity_key, status,
+      source_count, source_names, confidence_set, category_set
+    FROM grouped
+    ORDER BY platform_imported_at DESC, identity_key ASC
+  `;
+}
+
+/**
+ * Single-stage shape: full identity grouping of every candidate row, then cap and
+ * page. Used when the file-artifact READ flag is off (legacy type+value grouping).
+ * Params: $1 candidateLimit, $2 browseCap, $3 pageLimit, $4 pageOffset
+ */
+export function buildSingleStageActiveBrowsePageSql() {
+  return `${buildActiveBrowseWindowCtesSql()}
+    grouped AS (
+      ${buildGroupedCteBody()}
     ),
     capped AS (
       SELECT *

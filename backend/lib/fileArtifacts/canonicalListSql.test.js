@@ -130,4 +130,75 @@ describe('canonicalListSql', () => {
     const pageIdx = sql.lastIndexOf('LIMIT $3 OFFSET $4');
     assert.ok(groupIdx > 0 && pageIdx > groupIdx, 'GROUP BY must precede page LIMIT/OFFSET');
   });
+
+  it('canonical browse SQL runs full winner-row grouping only for page identities', async () => {
+    process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+    const { buildCanonicalActiveBrowsePageSql } = await import('./canonicalListSql.js');
+    const ctes = parseTopLevelCtes(buildCanonicalActiveBrowsePageSql());
+    const names = ctes.map((c) => c.name);
+    const isFullGrouping = (body) => /\bARRAY_AGG\s*\(/i.test(body) && /\bGROUP BY\b/i.test(body);
+
+    const pageIdx = ctes.findIndex((c) => /LIMIT \$3 OFFSET \$4/.test(c.body));
+    const fullIdx = ctes.findIndex((c) => isFullGrouping(c.body));
+    assert.ok(pageIdx >= 0, `page LIMIT/OFFSET must live in a CTE (got ${names.join(', ')})`);
+    assert.ok(fullIdx > pageIdx, 'full winner-row grouping must come after page identity selection');
+
+    // Everything up to page selection ranks identities with MIN(created_at) only.
+    for (const c of ctes.slice(0, pageIdx + 1)) {
+      assert.equal(/\bARRAY_AGG\s*\(|\bCOUNT\s*\(/i.test(c.body), false, `${c.name} must not run heavy aggregates`);
+    }
+    const ranking = ctes.slice(0, pageIdx).find((c) => /\bGROUP BY\s+identity_key\b/i.test(c.body));
+    assert.ok(ranking, 'identities must be ranked by a lightweight GROUP BY identity_key');
+    assert.match(ranking.body, /MIN\(created_at\)/);
+    assert.match(ranking.body, /ORDER BY platform_imported_at DESC, identity_key ASC/);
+    assert.match(ranking.body, /LIMIT \$2\b/, 'browseCap must apply to ranked identities');
+
+    // The full grouping reads only rows restricted to the page's identities.
+    const fromMatch = ctes[fullIdx].body.match(/\bFROM\s+(\w+)/i);
+    assert.ok(fromMatch, 'full grouping must read from a CTE');
+    const source = ctes.find((c) => c.name === fromMatch[1]);
+    assert.ok(source, `full grouping source ${fromMatch[1]} must be a CTE`);
+    assert.ok(source.body.includes(`identity_key IN (SELECT identity_key FROM ${ctes[pageIdx].name})`), `${source.name} must be restricted to page identities`);
+  });
+
+  it('single-stage browse SQL (READ off) keeps legacy grouping before paging', async () => {
+    delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    const { buildCanonicalActiveBrowsePageSql, buildSingleStageActiveBrowsePageSql } = await import('./canonicalListSql.js');
+    const sql = buildCanonicalActiveBrowsePageSql();
+    assert.equal(sql, buildSingleStageActiveBrowsePageSql());
+    assert.ok(sql.includes('GROUP BY observable, observable_type'));
+    assert.ok(sql.indexOf('GROUP BY') < sql.lastIndexOf('LIMIT $3 OFFSET $4'));
+  });
 });
+
+/**
+ * Split `WITH a AS (...), b AS MATERIALIZED (...)` into top-level CTEs by
+ * paren matching, so structural assertions do not depend on whitespace.
+ * @param {string} sql
+ */
+function parseTopLevelCtes(sql) {
+  const out = [];
+  const re = /(?:\bWITH|,)\s*(\w+)\s+AS\s+(?:(?:NOT\s+)?MATERIALIZED\s+)?\(/gi;
+  let depth = 0;
+  for (let i = 0; i < sql.length; i += 1) {
+    if (depth === 0) {
+      re.lastIndex = i;
+      const m = re.exec(sql);
+      if (m && m.index === i) {
+        const start = re.lastIndex;
+        let d = 1;
+        let j = start;
+        for (; j < sql.length && d > 0; j += 1) {
+          if (sql[j] === '(') d += 1;
+          else if (sql[j] === ')') d -= 1;
+        }
+        out.push({ name: m[1], body: sql.slice(start, j - 1) });
+        i = j - 1;
+        continue;
+      }
+    }
+    if (sql[i] === '(') depth += 1;
+    else if (sql[i] === ')') depth -= 1;
+  }
+  return out;
+}

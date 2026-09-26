@@ -82,7 +82,9 @@ export {
   buildIdentityGroupedSelectSql,
   buildLegacyGroupedSelectSql,
   buildGroupedCteBody,
+  buildActiveBrowseWindowCtesSql,
   buildCanonicalActiveBrowsePageSql,
+  buildSingleStageActiveBrowsePageSql,
   identityKeyForRow,
   canonicalizeRowsByIdentity,
   loadArtifactMapsForPublicIds
