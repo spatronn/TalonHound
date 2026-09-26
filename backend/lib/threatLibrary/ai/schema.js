@@ -113,10 +113,18 @@ export function validateAiStructure(raw) {
   return { ok: true, value: parsed.data };
 }
 
+function relationshipKey(r) {
+  const ref = (v) => String(v || '').trim().toLowerCase();
+  const type = String(r.relationship_type || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return `${r.subject_kind}\0${ref(r.subject_ref)}\0${type}\0${r.object_kind}\0${ref(r.object_ref)}`;
+}
+
 /**
  * Semantic / reference validation after structure passes.
- * Policy: drop invalid optional relationships; reject unknown candidate_updates;
- * strip unknown block ids; never accept local DB ids.
+ * Policy: drop invalid optional relationships; drop repeated
+ * subject + type + object relationships (defense in depth — the prompt asks
+ * for one per triple); reject unknown candidate_updates; strip unknown block
+ * ids; never accept local DB ids.
  *
  * @param {object} data
  * @param {{
@@ -179,9 +187,15 @@ export function validateAiReferences(data, ctx = {}) {
     entities.map((e) => String(e.name || '').trim().toLowerCase()).filter(Boolean)
   );
   const relationships = [];
+  const relationshipKeys = new Set();
   for (let idx = 0; idx < (data.relationships || []).length; idx += 1) {
     const r = data.relationships[idx];
     const path = `relationships[${idx}]`;
+    const key = relationshipKey(r);
+    if (relationshipKeys.has(key)) {
+      rejected.push({ path, code: 'duplicate_relationship', message: 'Repeated subject + relationship_type + object' });
+      continue;
+    }
     let ok = true;
     if (r.subject_kind === 'entity') {
       if (!entityNames.has(String(r.subject_ref || '').trim().toLowerCase())) {
@@ -214,6 +228,7 @@ export function validateAiReferences(data, ctx = {}) {
       }
     }
     if (!ok) continue;
+    relationshipKeys.add(key);
     relationships.push({
       ...r,
       evidence_block_ids: filterBlocks(r.evidence_block_ids, `${path}.evidence_block_ids`)
@@ -292,8 +307,15 @@ export function processAiResponseText(text, ctx = {}) {
     };
   }
   const result = validateAiAnalysis(extracted.value, ctx);
+  const count = (v) => (Array.isArray(v) ? v.length : 0);
   return {
     ...result,
+    // Items as generated, before reference filtering / dedup (budget checks).
+    raw_counts: {
+      entities: count(extracted.value.entities),
+      candidate_updates: count(extracted.value.candidate_updates),
+      relationships: count(extracted.value.relationships)
+    },
     extract_method: extracted.method,
     raw_sample: result.ok ? undefined : capRawOutputSample(text),
     schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION

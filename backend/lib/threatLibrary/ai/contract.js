@@ -7,8 +7,14 @@
  * candidate_updates; body prompts exclude header/footer/navigation blocks.
  * v5: source-scope + relation semantics (authoritative indicator sections vs
  * provider/service usage vs direct malicious assertions).
+ * v6: selective relationships + generation budgets. The model no longer turns
+ * every listed indicator into an `actor uses <indicator>` relationship (that
+ * enumeration filled the 10,240-token ceiling on dense reports); per-chunk
+ * entity / relationship / text caps are sized from healthy production output;
+ * a generation-ceiling hit is a workload failure recovered by one compact
+ * regeneration, never by syntax repair.
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v5';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v6';
 
 export const CANDIDATE_ROLE_VALUES = Object.freeze([
   'command_and_control',
@@ -31,9 +37,24 @@ export const CANDIDATE_ROLE_VALUES = Object.freeze([
 /**
  * Structured-output and Zod bounds.
  *
- * Chunk caps sit well above healthy production Threat Library outputs
- * (largest observed successful chunk ≈ 10.5k chars / 11 entities) so dense
- * reports still fit, while an 86k-character relationship dump cannot.
+ * Generation caps (provider grammar + prompt + runtime check) are derived from
+ * the 60+ healthy production chunks (semantic v4/v5, 2026-09):
+ *  - entity↔entity relationships per chunk: max 16, p90 4. 82% of generated
+ *    relationships had an indicator endpoint and only 1 of 32 persisted
+ *    relationships did (relationshipPolicy discards table/list enumeration).
+ *    relationshipMaxItemsChunk 24 = 1.5× the observed useful maximum, leaving
+ *    room for prose-stated indicator links; recovery halves it (12).
+ *  - entities per chunk: max 25 → entityMaxItemsChunk 30; recovery 15.
+ *  - evidence_text: max 374 chars (candidate update), relationship p95 157 →
+ *    evidenceTextMaxLengthGeneration 400 (one sentence, above every observed value).
+ *  - entity description: max 249, p95 141 → entityDescriptionMaxLengthGeneration 300.
+ *  - chunk summary: max 770, p95 608 → summaryMaxLengthChunk 1500 (same as the
+ *    synthesis summary instruction).
+ * At p95 item sizes the per-chunk caps stay below numPredict; Job 35's failed
+ * chunk was ~94% relationship text (≈66 `actor uses cand-N` items).
+ *
+ * Synthesis keeps the pre-v6 80/80 caps: it is optional, non-fatal and only
+ * merges already-validated chunk results (several chunks' worth of items).
  *
  * Merged-analysis Zod caps stay at the pre-existing array ceilings so
  * concatenating several valid chunks cannot fail validation merely because
@@ -74,26 +95,32 @@ function providerString(maxLength, { nullable = false } = {}) {
 }
 
 export const AI_OUTPUT_BOUNDS = Object.freeze({
-  summaryMaxLengthChunk: 4000,
+  summaryMaxLengthChunk: 1500,
   summaryMaxLengthMerged: 8000,
   reportTypeMaxLength: 64,
   languageMaxLength: 16,
   tlpMaxLength: 32,
-  entityMaxItemsChunk: 80,
+  entityMaxItemsChunk: 30,
+  entityMaxItemsRecovery: 15,
+  entityMaxItemsSynthesis: 80,
   entityMaxItemsMerged: 100,
   entityNameMaxLength: 300,
   entityAliasMaxItems: 20,
   entityAliasMaxLength: 200,
   entityDescriptionMaxLength: 2000,
+  entityDescriptionMaxLengthGeneration: 300,
   evidenceBlockIdMaxItems: 20,
   evidenceBlockIdMaxLength: 64,
   evidenceTextMaxLength: 1000,
+  evidenceTextMaxLengthGeneration: 400,
   candidateUpdatesMaxItems: 500,
   candidateIdMaxLength: 64,
   candidateTypeMaxLength: 32,
   normalizedValueMaxLength: 2000,
   sectionMaxLength: 300,
-  relationshipMaxItemsChunk: 80,
+  relationshipMaxItemsChunk: 24,
+  relationshipMaxItemsRecovery: 12,
+  relationshipMaxItemsSynthesis: 80,
   relationshipMaxItemsMerged: 300,
   refMaxLength: 400,
   relationshipTypeMaxLength: 64,
@@ -103,8 +130,9 @@ export const AI_OUTPUT_BOUNDS = Object.freeze({
 
 /**
  * Per-chunk candidate_updates ceiling: one update per TO-CLASSIFY plus one
- * optional role refinement per resolved indicator. Never below the supplied
- * workload; never above the Zod/provider absolute max.
+ * optional role refinement per refinable (non context-only) resolved
+ * indicator. Never below the supplied workload; never above the Zod/provider
+ * absolute max.
  * @param {number} toClassifyCount
  * @param {number} resolvedCount
  */
@@ -115,19 +143,41 @@ export function candidateUpdatesMaxItemsForChunk(toClassifyCount, resolvedCount)
 }
 
 /**
+ * Model-facing output budget for one generation. `chunk` is the normal
+ * per-chunk budget, `recovery` the compact regeneration after a workload
+ * failure, `synthesis` the optional merge call.
+ * @param {'chunk'|'recovery'|'synthesis'} [kind]
+ * @returns {{ kind: string, maxEntities: number, maxRelationships: number }}
+ */
+export function outputBudget(kind = 'chunk') {
+  const B = AI_OUTPUT_BOUNDS;
+  if (kind === 'recovery') {
+    return { kind, maxEntities: B.entityMaxItemsRecovery, maxRelationships: B.relationshipMaxItemsRecovery };
+  }
+  if (kind === 'synthesis') {
+    return { kind, maxEntities: B.entityMaxItemsSynthesis, maxRelationships: B.relationshipMaxItemsSynthesis };
+  }
+  return { kind: 'chunk', maxEntities: B.entityMaxItemsChunk, maxRelationships: B.relationshipMaxItemsChunk };
+}
+
+function boundedCount(value, fallback, ceiling) {
+  const n = Math.floor(Number(value));
+  return Math.min(ceiling, Math.max(1, Number.isFinite(n) && n > 0 ? n : fallback));
+}
+
+/**
  * JSON Schema for provider structured-output (Ollama `format` object).
  * Kept in sync with Zod canonical fields in schema.js — every schema cap is
  * ≤ the corresponding Zod cap so a grammar-accepted payload cannot fail
  * solely for being "too large" at validation.
- * @param {{ maxCandidateUpdates?: number }} [opts]
+ * @param {{ maxCandidateUpdates?: number, maxEntities?: number, maxRelationships?: number }} [opts]
  */
 export function buildProviderJsonSchema(opts = {}) {
   const B = AI_OUTPUT_BOUNDS;
-  const maxUpdates = Math.min(
-    B.candidateUpdatesMaxItems,
-    Math.max(1, Number(opts.maxCandidateUpdates) || B.candidateUpdatesMaxItems)
-  );
-  const evidenceText = providerString(B.evidenceTextMaxLength, { nullable: true });
+  const maxUpdates = boundedCount(opts.maxCandidateUpdates, B.candidateUpdatesMaxItems, B.candidateUpdatesMaxItems);
+  const maxEntities = boundedCount(opts.maxEntities, B.entityMaxItemsChunk, B.entityMaxItemsMerged);
+  const maxRelationships = boundedCount(opts.maxRelationships, B.relationshipMaxItemsChunk, B.relationshipMaxItemsMerged);
+  const evidenceText = providerString(B.evidenceTextMaxLengthGeneration, { nullable: true });
   const evidenceBlocks = {
     type: 'array',
     maxItems: B.evidenceBlockIdMaxItems,
@@ -146,7 +196,7 @@ export function buildProviderJsonSchema(opts = {}) {
       confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
       entities: {
         type: 'array',
-        maxItems: B.entityMaxItemsChunk,
+        maxItems: maxEntities,
         items: {
           type: 'object',
           additionalProperties: false,
@@ -171,7 +221,7 @@ export function buildProviderJsonSchema(opts = {}) {
               maxItems: B.entityAliasMaxItems,
               items: providerString(B.entityAliasMaxLength)
             },
-            description: providerString(B.entityDescriptionMaxLength, { nullable: true }),
+            description: providerString(B.entityDescriptionMaxLengthGeneration, { nullable: true }),
             confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
             evidence_block_ids: evidenceBlocks,
             evidence_text: evidenceText
@@ -208,7 +258,7 @@ export function buildProviderJsonSchema(opts = {}) {
       },
       relationships: {
         type: 'array',
-        maxItems: B.relationshipMaxItemsChunk,
+        maxItems: maxRelationships,
         items: {
           type: 'object',
           additionalProperties: false,

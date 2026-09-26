@@ -18,7 +18,9 @@ export const AI_FAILURE_CODES = Object.freeze({
   AI_VALIDATION: 'ai_validation',
   AI_OUTPUT_PARSE_ERROR: 'ai_output_parse_error',
   AI_OUTPUT_SCHEMA_ERROR: 'ai_output_schema_error',
-  AI_OUTPUT_REFERENCE_ERROR: 'ai_output_reference_error'
+  AI_OUTPUT_REFERENCE_ERROR: 'ai_output_reference_error',
+  AI_GENERATION_LIMIT: 'ai_generation_limit_exceeded',
+  AI_OUTPUT_BUDGET_EXCEEDED: 'ai_output_budget_exceeded'
 });
 
 export const AI_FAILURE_MESSAGES = Object.freeze({
@@ -36,7 +38,9 @@ export const AI_FAILURE_MESSAGES = Object.freeze({
   [AI_FAILURE_CODES.AI_VALIDATION]: 'AI response failed schema validation',
   [AI_FAILURE_CODES.AI_OUTPUT_PARSE_ERROR]: 'Could not parse AI response as JSON',
   [AI_FAILURE_CODES.AI_OUTPUT_SCHEMA_ERROR]: 'AI returned JSON that does not match the required schema',
-  [AI_FAILURE_CODES.AI_OUTPUT_REFERENCE_ERROR]: 'AI response referenced unknown or forbidden identifiers'
+  [AI_FAILURE_CODES.AI_OUTPUT_REFERENCE_ERROR]: 'AI response referenced unknown or forbidden identifiers',
+  [AI_FAILURE_CODES.AI_GENERATION_LIMIT]: 'AI output reached the generation token ceiling before the JSON was complete',
+  [AI_FAILURE_CODES.AI_OUTPUT_BUDGET_EXCEEDED]: 'AI output exceeded the per-chunk entity/relationship budget'
 });
 
 /**

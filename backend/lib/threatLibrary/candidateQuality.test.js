@@ -201,13 +201,13 @@ test('explicit IOC zone candidate remains eligible when malicious + strong evide
   assert.equal(isEligibleForHighConfidenceMalicious(c), true);
 });
 
-test('semantic prompt teaches evidence rules and uses v5 contract', () => {
+test('semantic prompt teaches evidence rules and uses v6 contract', () => {
   const sys = buildSystemPrompt();
   assert.match(sys, /NOT malicious merely/i);
   assert.match(sys, /context_only/);
   assert.match(sys, /any language/i);
   assert.ok(sys.includes(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION));
-  assert.match(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, /v5$/);
+  assert.match(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, /v6$/);
   assert.match(sys, /parser-derived metadata/i);
   assert.match(sys, /authoritative/i);
   assert.match(sys, /provider/i);

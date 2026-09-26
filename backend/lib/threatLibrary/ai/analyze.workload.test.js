@@ -111,7 +111,8 @@ test('fixture report: one chunk, one AI call, bounded prompt, resolved context p
   assert.equal(result.meta.resolved_candidates, 13);
   const user = calls[0].user;
   // v3 sent the full page-blob document + 18 candidate evidence lines (~15.3k chars).
-  assert.ok(user.length < 11_000, `prompt chars ${user.length}`);
+  // v6 adds ~1.7k chars of fixed relationship/evidence/update rules.
+  assert.ok(user.length < 12_500, `prompt chars ${user.length}`);
   assert.ok(user.includes('=== RESOLVED INDICATORS'));
   assert.ok(user.includes('source_assertion=explicit_c2'));
   assert.ok(user.includes('value=107.172.249.140'));
@@ -145,7 +146,9 @@ test('provider JSON schema bounds match the documented contract and stay ≤ Zod
   assert.equal(schema.properties.relationships.maxItems, B.relationshipMaxItemsChunk);
   assert.equal(schema.properties.candidate_updates.maxItems, B.candidateUpdatesMaxItems);
   assert.equal(schema.properties.summary.maxLength, B.summaryMaxLengthChunk);
-  assert.equal(schema.properties.entities.items.properties.evidence_text.maxLength, B.evidenceTextMaxLength);
+  assert.equal(schema.properties.entities.items.properties.evidence_text.maxLength, B.evidenceTextMaxLengthGeneration);
+  assert.ok(B.evidenceTextMaxLengthGeneration <= B.evidenceTextMaxLength);
+  assert.ok(B.entityDescriptionMaxLengthGeneration <= B.entityDescriptionMaxLength);
   assert.ok(B.entityMaxItemsChunk <= B.entityMaxItemsMerged);
   assert.ok(B.relationshipMaxItemsChunk <= B.relationshipMaxItemsMerged);
   assert.ok(B.summaryMaxLengthChunk <= B.summaryMaxLengthMerged);
@@ -175,7 +178,7 @@ test('provider schema remaps Ollama-unparseable maxLength 2000 and never emits i
   assert.equal(lengths.includes(OLLAMA_UNPARSEABLE_MAX_LENGTH), false);
   assert.equal(
     schema.properties.entities.items.properties.description.maxLength,
-    OLLAMA_SAFE_ALIAS_FOR_UNPARSEABLE_MAX_LENGTH
+    AI_OUTPUT_BOUNDS.entityDescriptionMaxLengthGeneration
   );
   assert.equal(
     schema.properties.candidate_updates.items.properties.normalized_value.maxLength,
@@ -238,8 +241,7 @@ test('candidate_updates provider capacity follows the chunk workload and stays u
 
 test('prompts include semantic output budgets without weakening required candidate updates', () => {
   const sys = buildSystemPrompt();
-  assert.match(sys, /at most 80 entities/);
-  assert.match(sys, /at most 80 relationships/);
+  assert.match(sys, /never one per sentence or per listed indicator/);
   assert.match(sys, /one candidate_updates entry per TO CLASSIFY/);
   const chunk = buildChunkPrompt({
     documentTitle: 't',
@@ -251,7 +253,8 @@ test('prompts include semantic output budgets without weakening required candida
     toClassify: [],
     resolved: []
   });
-  assert.match(chunk, /do not drop required updates/i);
+  assert.match(chunk, /exactly one entry per TO CLASSIFY candidate/);
+  assert.match(chunk, /never drop one to save space/i);
 });
 
 test('primary provider call deadline protects the recovery reserve', async () => {

@@ -17,6 +17,29 @@ import { AI_OUTPUT_BOUNDS } from './contract.js';
 /** Last-resort Ollama generation ceiling. See AI_OUTPUT_BOUNDS.numPredict. */
 export const OLLAMA_NUM_PREDICT = AI_OUTPUT_BOUNDS.numPredict;
 
+/** Provider stop reasons that mean "token ceiling reached", not a natural end. */
+const LENGTH_STOP_REASONS = new Set(['length', 'max_tokens']);
+
+/**
+ * True when the provider stopped because the generation token ceiling was
+ * reached (Ollama done_reason "length" / eval_count >= num_predict, OpenAI
+ * finish_reason "length", Anthropic stop_reason "max_tokens"). Output cut at
+ * the ceiling is incomplete by construction: the remainder was never generated.
+ * @param {{ done_reason?: string|null, eval_count?: number, num_predict?: number }|null|undefined} timing
+ */
+export function isGenerationLimitHit(timing) {
+  if (!timing || typeof timing !== 'object') return false;
+  if (timing.done_reason && LENGTH_STOP_REASONS.has(String(timing.done_reason))) return true;
+  const evalCount = Number(timing.eval_count);
+  const numPredict = Number(timing.num_predict);
+  return Number.isFinite(evalCount) && Number.isFinite(numPredict) && numPredict > 0 && evalCount >= numPredict;
+}
+
+function withDoneReason(acc, reason) {
+  if (!reason) return;
+  acc.provider_metrics = { ...(acc.provider_metrics || {}), done_reason: String(reason).slice(0, 32) };
+}
+
 /**
  * @param {object} settings
  */
@@ -224,6 +247,7 @@ function parseOpenAiSseLine(line, acc) {
     const json = JSON.parse(payload);
     const delta = json.choices?.[0]?.delta?.content || json.choices?.[0]?.message?.content || '';
     if (delta) acc.text += delta;
+    withDoneReason(acc, json.choices?.[0]?.finish_reason);
   } catch {
     /* ignore partial json */
   }
@@ -239,6 +263,8 @@ function parseAnthropicSseLine(line, acc) {
       acc.text += json.delta.text;
     } else if (json.type === 'content_block_start' && json.content_block?.text) {
       acc.text += json.content_block.text;
+    } else if (json.type === 'message_delta') {
+      withDoneReason(acc, json.delta?.stop_reason);
     }
   } catch {
     /* ignore */
@@ -263,6 +289,10 @@ function pickOllamaMetrics(json) {
       out[key] = n;
       any = true;
     }
+  }
+  if (typeof json.done_reason === 'string' && json.done_reason) {
+    out.done_reason = json.done_reason.slice(0, 32);
+    any = true;
   }
   return any ? out : null;
 }
@@ -321,6 +351,7 @@ export async function callAiProvider(settings, messages, hooks = {}) {
   }
   const callStartedAt = Date.now();
   const promptChars = String(messages.system || '').length + String(messages.user || '').length;
+  const numPredict = Number(hooks.numPredict) > 0 ? Number(hooks.numPredict) : OLLAMA_NUM_PREDICT;
 
   try {
     let fetchPromise;
@@ -341,7 +372,7 @@ export async function callAiProvider(settings, messages, hooks = {}) {
           options: {
             temperature: 0.1,
             // Last-resort token ceiling; schema maxItems should stop generation first.
-            num_predict: Number(hooks.numPredict) > 0 ? Number(hooks.numPredict) : OLLAMA_NUM_PREDICT
+            num_predict: numPredict
           },
           messages: [
             { role: 'system', content: messages.system },
@@ -458,8 +489,10 @@ export async function callAiProvider(settings, messages, hooks = {}) {
       output_chars: stats.output_chars ?? text.length,
       thinking_chars: stats.thinking_chars ?? 0,
       provider: endpoint.kind,
+      ...(endpoint.kind === 'ollama_stream' ? { num_predict: numPredict } : {}),
       ...(stats.provider_metrics || {})
     };
+    timing.generation_limit_hit = isGenerationLimitHit(timing);
     return { text, policy, timing };
   } catch (err) {
     if (err?.code) throw err;

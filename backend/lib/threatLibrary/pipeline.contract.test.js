@@ -13,7 +13,7 @@ test('internal contract versions for this change', () => {
   assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v3');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v9');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v2');
-  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v5');
+  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v6');
 });
 
 test('outdated PDF/HTML canonical documents are rebuilt from the stored artifact; current ones are reused', () => {

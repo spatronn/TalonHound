@@ -1,5 +1,5 @@
 /**
- * Chunked Threat Library AI analysis with merge + checkpoint hooks (semantic-v5).
+ * Chunked Threat Library AI analysis with merge + checkpoint hooks (semantic-v6).
  *
  * Work split:
  *  - deterministic layer (candidateExtraction / evidencePolicy) decides explicit
@@ -8,7 +8,11 @@
  *    resolved indicator list as compact context, and classifies only the
  *    `ai_needed` candidates whose occurrences fall in the chunk;
  *  - every provider call is timed; completed chunks are checkpointed and reused
- *    on retry; the final synthesis is optional and budget-bounded.
+ *    on retry; the final synthesis is optional and budget-bounded;
+ *  - each chunk makes at most ONE follow-up call: a compact regeneration when
+ *    the output hit the generation ceiling / item budget (workload failure),
+ *    or a syntax repair when a naturally completed output is malformed.
+ *    Competing payloads fail closed without a follow-up.
  */
 
 import {
@@ -19,7 +23,7 @@ import {
   formatCandidateEvidenceLine
 } from './prompts.js';
 import { processAiResponseText, validateAiAnalysis } from './schema.js';
-import { callAiProvider } from './client.js';
+import { callAiProvider, isGenerationLimitHit } from './client.js';
 import { assertAiReady } from './settings.js';
 import {
   AI_FAILURE_CODES,
@@ -32,7 +36,8 @@ import {
 import {
   THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
   buildProviderJsonSchema,
-  candidateUpdatesMaxItemsForChunk
+  candidateUpdatesMaxItemsForChunk,
+  outputBudget
 } from './contract.js';
 import { capRawOutputSample } from './extract.js';
 import { chunkCanonicalDocument, flattenCanonicalText, collectBlockIds } from '../canonicalDocument.js';
@@ -172,8 +177,10 @@ function buildCandidateIdMap(candidates) {
 
 /**
  * Build the user prompt for one chunk from the evidence model.
+ * `refinableResolved` counts resolved indicators that may get an optional role
+ * refinement (context-only / invalid ones never do).
  */
-export function buildChunkRequest({ document, chunk, chunkIndex, chunkTotal, partition, sourceHost }) {
+export function buildChunkRequest({ document, chunk, chunkIndex, chunkTotal, partition, sourceHost, budget, compactRecovery = false }) {
   const isFirst = chunkIndex === 0;
   const toClassify = candidatesForChunk(partition.toClassify, chunk, isFirst);
   const explicitAll = partition.explicit.slice(0, MAX_RESOLVED_EXPLICIT_PER_CHUNK);
@@ -192,9 +199,12 @@ export function buildChunkRequest({ document, chunk, chunkIndex, chunkTotal, par
     blockIds: chunk.block_ids,
     toClassify,
     resolved,
-    sourceHost
+    sourceHost,
+    budget: budget || outputBudget('chunk'),
+    compactRecovery
   });
-  return { user, toClassify, resolved, promptChars: user.length };
+  const refinableResolved = resolved.filter((c) => c.assessment !== 'context_only' && c.assessment !== 'invalid').length;
+  return { user, toClassify, resolved, refinableResolved, promptChars: user.length };
 }
 
 export function mergeAnalyses(parts, ctx) {
@@ -244,6 +254,83 @@ export function mergeAnalyses(parts, ctx) {
   merged.summary = summaries.filter(Boolean).join('\n\n').slice(0, 8000) || 'Analysis complete.';
 
   return validateAiAnalysis(merged, ctx);
+}
+
+/** Outcome of one chunk-level provider response (drives the follow-up decision). */
+export const CHUNK_OUTCOMES = Object.freeze({
+  OK: 'ok',
+  GENERATION_LIMIT: 'generation_limit',
+  BUDGET_EXCEEDED: 'budget_exceeded',
+  AMBIGUOUS: 'ambiguous',
+  MALFORMED: 'malformed'
+});
+
+/**
+ * Reject a parsed response whose GENERATED item counts exceed the call's
+ * budget (providers that ignore the grammar). Rejected, never truncated.
+ * @param {object} processed processAiResponseText result
+ * @param {{ maxEntities: number, maxRelationships: number }} budget
+ */
+export function checkOutputBudget(processed, budget) {
+  if (!processed?.ok || !budget) return processed;
+  const counts = processed.raw_counts || {
+    entities: processed.value?.entities?.length || 0,
+    relationships: processed.value?.relationships?.length || 0
+  };
+  const over = [];
+  if (counts.entities > budget.maxEntities) {
+    over.push({ path: 'entities', message: `${counts.entities} entities exceed the budget of ${budget.maxEntities}` });
+  }
+  if (counts.relationships > budget.maxRelationships) {
+    over.push({
+      path: 'relationships',
+      message: `${counts.relationships} relationships exceed the budget of ${budget.maxRelationships}`
+    });
+  }
+  if (!over.length) return processed;
+  return {
+    ok: false,
+    code: AI_FAILURE_CODES.AI_OUTPUT_BUDGET_EXCEEDED,
+    error: 'AI output exceeded the per-chunk entity/relationship budget',
+    details: over,
+    raw_counts: counts,
+    schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+  };
+}
+
+/**
+ * @param {object} processed
+ * @param {object|null|undefined} timing provider timing (done_reason / eval_count / num_predict)
+ */
+export function classifyChunkOutcome(processed, timing) {
+  if (processed?.ok) return CHUNK_OUTCOMES.OK;
+  if (isGenerationLimitHit(timing)) return CHUNK_OUTCOMES.GENERATION_LIMIT;
+  if (processed?.code === AI_FAILURE_CODES.AI_OUTPUT_BUDGET_EXCEEDED) return CHUNK_OUTCOMES.BUDGET_EXCEEDED;
+  if (/multiple JSON (objects|payloads)/i.test(String(processed?.error || ''))) return CHUNK_OUTCOMES.AMBIGUOUS;
+  return CHUNK_OUTCOMES.MALFORMED;
+}
+
+function annotateWorkloadFailure(processed, outcome, timing) {
+  if (outcome !== CHUNK_OUTCOMES.GENERATION_LIMIT) return processed;
+  const used = timing?.eval_count != null ? `${timing.eval_count}` : '?';
+  const ceiling = timing?.num_predict != null ? `${timing.num_predict}` : '?';
+  const reason = timing?.done_reason ? `, done_reason=${timing.done_reason}` : '';
+  return {
+    ...processed,
+    code: AI_FAILURE_CODES.AI_GENERATION_LIMIT,
+    error: `AI output reached the generation token ceiling (${used}/${ceiling} tokens) before the JSON was complete`,
+    details: [
+      { path: '(generation)', message: `eval_count=${used} num_predict=${ceiling}${reason}` },
+      ...(processed.details || [])
+    ]
+  };
+}
+
+/** Bounded failed-output samples, labelled per call (primary / repair / recovery). */
+function formatOutputSamples(samples) {
+  if (samples.length <= 1) return capRawOutputSample(samples[0]?.text || '');
+  const each = Math.floor(8000 / samples.length);
+  return samples.map((x) => `[${x.label}]\n${capRawOutputSample(x.text, each)}`).join('\n');
 }
 
 function failChunk(code, message, extra = {}) {
@@ -305,7 +392,11 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
   }
 
   const system = buildSystemPrompt();
-  const formatSchemaFull = buildProviderJsonSchema();
+  const synthesisBudget = outputBudget('synthesis');
+  const formatSchemaSynthesis = buildProviderJsonSchema({
+    maxEntities: synthesisBudget.maxEntities,
+    maxRelationships: synthesisBudget.maxRelationships
+  });
   const partials = [];
   /** @type {object[]} */
   const timings = [];
@@ -367,17 +458,21 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       current_chunk_index: i + 1
     });
 
+    const budget = outputBudget('chunk');
     const req = buildChunkRequest({
       document: input.document,
       chunk,
       chunkIndex: i,
       chunkTotal: chunks.length,
       partition,
-      sourceHost
+      sourceHost,
+      budget
     });
     const chunkCands = [...req.toClassify, ...req.resolved];
     const formatSchema = buildProviderJsonSchema({
-      maxCandidateUpdates: candidateUpdatesMaxItemsForChunk(req.toClassify.length, req.resolved.length)
+      maxCandidateUpdates: candidateUpdatesMaxItemsForChunk(req.toClassify.length, req.refinableResolved),
+      maxEntities: budget.maxEntities,
+      maxRelationships: budget.maxRelationships
     });
 
     const remainingBeforeCall = deadlineAt - Date.now();
@@ -456,6 +551,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       })
     );
     const text = result.text;
+    const primaryTiming = timings[timings.length - 1];
 
     const chunkCtx = {
       knownBlockIds: new Set(chunk.block_ids),
@@ -463,87 +559,155 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       candidateIdMap: buildCandidateIdMap(chunkCands)
     };
 
-    let processed = processAiResponseText(text, chunkCtx);
+    const chunkProgress = (extra = {}) => ({
+      ...progressBase(),
+      current_chunk: chunk.chunk_key,
+      current_chunk_index: i + 1,
+      ...extra
+    });
+    const failureProgress = () =>
+      chunkProgress({
+        analysis_chunks_remaining: chunks.length - partials.length,
+        elapsed_ms: Date.now() - analysisStartedAt,
+        total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
+        recovery_reserve_ms: reserveMs
+      });
+    const samples = [{ label: 'primary', text }];
+
+    /**
+     * The single follow-up provider call a chunk may make (repair OR compact
+     * recovery, never both, never repeated). Provider/deadline errors fail
+     * the chunk closed with the diagnostics collected so far.
+     */
+    const followUpCall = async (kind, user, schema, activityFlag) => {
+      const startedAt = Date.now();
+      try {
+        aiCalls += 1;
+        const res = await callProvider(
+          settings,
+          { system, user },
+          {
+            analysisStartedAt,
+            callDeadlineAt: deadlineAt,
+            signal: hooks.signal,
+            keepAlive: '5m',
+            formatSchema: schema,
+            onActivity: async () => {
+              await hooks.onProgress?.(chunkProgress({ [activityFlag]: true }));
+            }
+          }
+        );
+        timings.push(timingEntry(kind, chunk.chunk_key, startedAt, res, { prompt_chars: user.length }));
+        samples.push({ label: kind, text: res.text });
+        return res;
+      } catch (err) {
+        timings.push(
+          timingEntry(kind, chunk.chunk_key, startedAt, { timing: err?.timing }, {
+            prompt_chars: user.length,
+            failed: err?.code || 'error',
+            output_chars: err?.timing?.output_chars ?? 0,
+            http_status: err?.http_status ?? null
+          })
+        );
+        if (err?.code === AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE) {
+          const e = deadlineError();
+          await hooks.markChunkFailed?.(chunk, e.code, e.message, {
+            schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+            raw_output_sample: formatOutputSamples(samples),
+            timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
+          });
+          throw e;
+        }
+        if (err && typeof err === 'object') {
+          err.progress = err.progress || failureProgress();
+          err.schema_version = err.schema_version || THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION;
+          if (err.provider_error && !Array.isArray(err.details)) {
+            err.details = [err.provider_error];
+          }
+        }
+        await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || `${kind} failed`, {
+          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+          validation_details: err?.details || [],
+          raw_output_sample: formatOutputSamples(samples),
+          timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
+        });
+        throw err;
+      }
+    };
+
+    let processed = checkOutputBudget(processAiResponseText(text, chunkCtx), budget);
+    let failureClass = classifyChunkOutcome(processed, result.timing);
+    processed = annotateWorkloadFailure(processed, failureClass, result.timing);
+    primaryTiming.outcome = failureClass;
     let repairAttempted = false;
-    if (!processed.ok) {
+    let recoveryAttempted = false;
+
+    if (failureClass === CHUNK_OUTCOMES.GENERATION_LIMIT || failureClass === CHUNK_OUTCOMES.BUDGET_EXCEEDED) {
+      // Workload failure: the remainder was never generated (or the model
+      // over-produced), so a syntax repair could only invent it. Regenerate
+      // the same chunk once with the smaller recovery budget instead.
+      const remaining = deadlineAt - Date.now();
+      if (remaining >= minPrimaryMs) {
+        primaryTiming.decision = 'compact_recovery';
+        recoveryAttempted = true;
+        const recoveryBudget = outputBudget('recovery');
+        const recoveryReq = buildChunkRequest({
+          document: input.document,
+          chunk,
+          chunkIndex: i,
+          chunkTotal: chunks.length,
+          partition,
+          sourceHost,
+          budget: recoveryBudget,
+          compactRecovery: true
+        });
+        const recoverySchema = buildProviderJsonSchema({
+          maxCandidateUpdates: candidateUpdatesMaxItemsForChunk(recoveryReq.toClassify.length, recoveryReq.refinableResolved),
+          maxEntities: recoveryBudget.maxEntities,
+          maxRelationships: recoveryBudget.maxRelationships
+        });
+        const recovered = await followUpCall('recovery', recoveryReq.user, recoverySchema, 'recovering');
+        processed = checkOutputBudget(processAiResponseText(recovered.text, chunkCtx), recoveryBudget);
+        const recoveryClass = classifyChunkOutcome(processed, recovered.timing);
+        processed = annotateWorkloadFailure(processed, recoveryClass, recovered.timing);
+        timings[timings.length - 1].outcome = recoveryClass;
+        timings[timings.length - 1].decision = recoveryClass === CHUNK_OUTCOMES.OK ? 'accept' : 'fail_closed';
+      } else {
+        primaryTiming.decision = 'fail_closed';
+        processed.details = [
+          ...(processed.details || []),
+          { path: '(recovery)', message: 'Compact recovery skipped: insufficient remaining analysis budget' }
+        ];
+      }
+    } else if (failureClass === CHUNK_OUTCOMES.MALFORMED) {
+      // Naturally completed but malformed/schema-invalid → one bounded repair.
       // Repair may spend the protected reserve; it must not require lastCall*0.75.
       const remaining = deadlineAt - Date.now();
       if (remaining >= minRepairMs) {
-        const repairStarted = Date.now();
-        try {
-          aiCalls += 1;
-          repairAttempted = true;
-          const repairUser = buildRepairPrompt({
-            errors: processed.details || [{ message: processed.error }],
-            previousOutputSample: processed.raw_sample || capRawOutputSample(text)
-          });
-          const repaired = await callProvider(
-            settings,
-            { system, user: repairUser },
-            {
-              analysisStartedAt,
-              callDeadlineAt: deadlineAt,
-              signal: hooks.signal,
-              keepAlive: '5m',
-              formatSchema: formatSchemaFull,
-              onActivity: async () => {
-                await hooks.onProgress?.({
-                  ...progressBase(),
-                  current_chunk: chunk.chunk_key,
-                  current_chunk_index: i + 1,
-                  repairing: true
-                });
-              }
-            }
-          );
-          timings.push(timingEntry('repair', chunk.chunk_key, repairStarted, repaired, { prompt_chars: repairUser.length }));
-          processed = processAiResponseText(repaired.text, chunkCtx);
-        } catch (err) {
-          timings.push(
-            timingEntry('repair', chunk.chunk_key, repairStarted, { timing: err?.timing }, {
-              failed: err?.code || 'error',
-              output_chars: err?.timing?.output_chars ?? 0,
-              http_status: err?.http_status ?? null
-            })
-          );
-          if (err?.code === AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE) {
-            const e = deadlineError();
-            await hooks.markChunkFailed?.(chunk, e.code, e.message, {
-              schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
-              raw_output_sample: capRawOutputSample(text),
-              timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
-            });
-            throw e;
-          }
-          if (err && typeof err === 'object') {
-            err.progress = err.progress || {
-              ...progressBase(),
-              current_chunk: chunk.chunk_key,
-              current_chunk_index: i + 1,
-              analysis_chunks_remaining: chunks.length - partials.length,
-              elapsed_ms: Date.now() - analysisStartedAt,
-              total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
-              recovery_reserve_ms: reserveMs
-            };
-            err.schema_version = err.schema_version || THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION;
-            if (err.provider_error && !Array.isArray(err.details)) {
-              err.details = [err.provider_error];
-            }
-          }
-          await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || 'repair failed', {
-            schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
-            validation_details: err?.details || [],
-            raw_output_sample: capRawOutputSample(text),
-            timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
-          });
-          throw err;
-        }
+        primaryTiming.decision = 'repair';
+        repairAttempted = true;
+        const repairUser = buildRepairPrompt({
+          errors: processed.details || [{ message: processed.error }],
+          previousOutputSample: processed.raw_sample || capRawOutputSample(text)
+        });
+        const repaired = await followUpCall('repair', repairUser, formatSchema, 'repairing');
+        processed = checkOutputBudget(processAiResponseText(repaired.text, chunkCtx), budget);
+        const repairClass = classifyChunkOutcome(processed, repaired.timing);
+        processed = annotateWorkloadFailure(processed, repairClass, repaired.timing);
+        timings[timings.length - 1].outcome = repairClass;
+        timings[timings.length - 1].decision = repairClass === CHUNK_OUTCOMES.OK ? 'accept' : 'fail_closed';
       } else {
+        primaryTiming.decision = 'fail_closed';
         processed.details = [
           ...(processed.details || []),
           { path: '(repair)', message: 'Repair skipped: insufficient remaining analysis budget' }
         ];
       }
+    } else if (failureClass === CHUNK_OUTCOMES.AMBIGUOUS) {
+      // Competing payloads: choosing one would accept an ambiguous answer.
+      primaryTiming.decision = 'fail_closed';
+    } else {
+      primaryTiming.decision = 'accept';
     }
 
     if (!processed.ok) {
@@ -552,20 +716,12 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         details: processed.details,
         raw_sample: processed.raw_sample,
         rejected: processed.rejected,
-        progress: {
-          ...progressBase(),
-          current_chunk: chunk.chunk_key,
-          current_chunk_index: i + 1,
-          analysis_chunks_remaining: chunks.length - partials.length,
-          elapsed_ms: Date.now() - analysisStartedAt,
-          total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
-          recovery_reserve_ms: reserveMs
-        }
+        progress: failureProgress()
       });
       await hooks.markChunkFailed?.(chunk, err.code, err.message, {
         schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
         validation_details: processed.details || [],
-        raw_output_sample: processed.raw_sample || capRawOutputSample(text),
+        raw_output_sample: formatOutputSamples(samples),
         rejected_items: processed.rejected || [],
         timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
       });
@@ -584,7 +740,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       ...progressBase(),
       current_chunk: chunk.chunk_key,
       current_chunk_index: i + 1,
-      repair_attempted: repairAttempted
+      repair_attempted: repairAttempted,
+      recovery_attempted: recoveryAttempted
     });
   }
 
@@ -639,7 +796,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
               callDeadlineAt: deadlineAt,
               signal: hooks.signal,
               keepAlive: '5m',
-              formatSchema: formatSchemaFull,
+              formatSchema: formatSchemaSynthesis,
               onActivity: async () => {
                 await hooks.onProgress?.({ ...progressBase(), synthesizing: true });
               }

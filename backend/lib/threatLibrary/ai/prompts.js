@@ -1,5 +1,5 @@
 /**
- * Prompt construction for Threat Library AI analysis (semantic-v5).
+ * Prompt construction for Threat Library AI analysis (semantic-v6).
  * Report content is always untrusted DATA — never instructions.
  *
  * The model receives the evidence model, not raw guesses:
@@ -15,7 +15,8 @@
 import {
   THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
   CANDIDATE_ROLE_VALUES,
-  AI_OUTPUT_BOUNDS
+  AI_OUTPUT_BOUNDS,
+  outputBudget
 } from './contract.js';
 import { RELATIONSHIP_TYPES } from '../relationshipPolicy.js';
 
@@ -29,6 +30,54 @@ export const RELATIONSHIP_LINE =
   'names BOTH endpoints and quote that sentence verbatim in evidence_text; relationships without such evidence are discarded. ' +
   'The report publisher/author is never related to a threat merely because it published, analyzed or detects it. ' +
   'File hashes (md5/sha1/sha256) are files: their role is malware_sample, never an infrastructure role.';
+
+/**
+ * Relationships are a selective graph of what the report STATES, not a
+ * prose-to-triple (or indicator-list-to-triple) conversion. Mirrors what
+ * relationshipPolicy.js can accept, so the model does not spend its output
+ * budget on relationships that are discarded anyway.
+ */
+export const RELATIONSHIP_SELECTION_LINES = Object.freeze([
+  'Relationships are selective, not exhaustive: return only the most operationally useful facts the report states,',
+  'highest value first: threat_actor/campaign uses malware/tool; actor/malware exploits vulnerability;',
+  'malware/tool communicates_with infrastructure; campaign targets organization/sector; malware drops/downloads a file;',
+  'infrastructure associated with a campaign. Skip generic narrative facts, remediation advice and background.',
+  'Never create one relationship per indicator because it appears in the RESOLVED list, an IOC table or an indicator',
+  'appendix: that attribution is already recorded deterministically. Link an indicator (candidate_id) only when a body',
+  'sentence names that exact value together with the entity (e.g. "the backdoor communicates with its C2 server 1.2.3.4").',
+  'RESOLVED entries with status=context_only are background only: never a relationship endpoint by candidate_id (except as',
+  'the object of targets) and never a candidate_updates entry. Relate a CVE or ATT&CK technique through a vulnerability /',
+  'attack_pattern entity named by its id (e.g. threat_actor exploits vulnerability "CVE-2099-0001").',
+  'Deduplicate: at most one relationship per subject + relationship_type + object, even when several sentences support it;',
+  'refer to an entity by one canonical name (put alternative names in aliases).'
+]);
+
+export const EVIDENCE_TEXT_LINE =
+  `evidence_text: the single report sentence that states the fact, copied verbatim (at most ${AI_OUTPUT_BOUNDS.evidenceTextMaxLengthGeneration} characters; ` +
+  'trim to the relevant clause if longer). Never paraphrase ("the report lists ..."), never join several sentences.';
+
+export const ENTITY_SELECTION_LINE =
+  'entities: one entry per real-world actor, campaign, malware, tool, vulnerability, targeted organization or named ' +
+  'infrastructure the report discusses; aliases go in aliases[], not separate entities; skip generic technologies, ' +
+  `products and vendors that are neither used nor targeted; description at most one short sentence (${AI_OUTPUT_BOUNDS.entityDescriptionMaxLengthGeneration} characters).`;
+
+export const CANDIDATE_UPDATE_LINE =
+  'candidate_updates: exactly one entry per TO CLASSIFY candidate (keyed by candidate_id); never drop one to save space. ' +
+  'Do NOT return entries for RESOLVED indicators unless the text gives a more specific malicious role for that exact ' +
+  'value (same candidate_id, keep its status).';
+
+/**
+ * Numeric per-response budget. candidate_updates are generated before
+ * relationships (schema order), so required decisions cannot be starved.
+ * @param {{ maxEntities: number, maxRelationships: number }} [budget]
+ */
+export function outputBudgetLine(budget = outputBudget('chunk')) {
+  return (
+    `Output budget: at most ${budget.maxEntities} entities and at most ${budget.maxRelationships} relationships ` +
+    `(fewer is fine; an empty relationships array is valid); summary at most ${AI_OUTPUT_BOUNDS.summaryMaxLengthChunk} characters. ` +
+    'Emit compact JSON without indentation or line breaks.'
+  );
+}
 
 export function buildSystemPrompt() {
   return [
@@ -61,7 +110,8 @@ export function buildSystemPrompt() {
     'Reason from semantic meaning in any language; do not require English keywords.',
     'Do not invent maliciousness from general cybersecurity knowledge outside the report.',
     'confidence must be a number between 0 and 1 (not words like high/medium/low).',
-    `Output budgets: at most ${AI_OUTPUT_BOUNDS.entityMaxItemsChunk} entities, at most ${AI_OUTPUT_BOUNDS.relationshipMaxItemsChunk} relationships; summary concise; evidence_text one short sentence. Always emit one candidate_updates entry per TO CLASSIFY candidate — do not drop required updates to stay short.`,
+    'Relationships and entities are selective (the most operationally useful facts), never one per sentence or per listed indicator.',
+    'Always emit one candidate_updates entry per TO CLASSIFY candidate; do not drop required updates to stay short.',
     'Return ONLY a single JSON object matching the schema. No markdown fences. No explanations.',
     `Contract: ${THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION}`
   ].join(' ');
@@ -133,25 +183,38 @@ export const TLP_LINE =
   'tlp: ONLY the exact TLP marking written in the report text (e.g. "TLP:AMBER"); otherwise null. '
   + 'Never infer a TLP from how sensitive, political or serious the content is.';
 
+/**
+ * Prepended to a chunk prompt for the single compact regeneration after the
+ * first attempt exhausted the generation ceiling / output budget.
+ */
+export const COMPACT_RECOVERY_LINE =
+  'A previous answer for this chunk ran out of output space because it listed too many items. Answer again, more ' +
+  'selectively: keep every required TO CLASSIFY decision, keep only the highest-value entities and relationships, ' +
+  'and keep every text field short.';
+
 export function buildChunkPrompt(input) {
   const toClassify = (input.toClassify || []).slice(0, 250).map(formatCandidateEvidenceLine).join('\n');
   const resolved = (input.resolved || []).slice(0, 300).map(formatResolvedCandidateLine).join('\n');
+  const budget = input.budget || outputBudget('chunk');
   return [
+    ...(input.compactRecovery ? [COMPACT_RECOVERY_LINE] : []),
     `Analyze chunk ${input.chunkIndex + 1} of ${input.chunkTotal} from a threat report.`,
     'Return JSON with keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships.',
-    'Focus on THIS chunk only. Extract entities (actors, malware, tools, campaigns) and relationships they have with',
-    'the RESOLVED and TO CLASSIFY indicators (e.g. threat_actor uses candidate; malware communicates-with candidate).',
-    'candidate_updates: one entry per TO CLASSIFY candidate present in this chunk, keyed by candidate_id.',
-    'RESOLVED indicators are already decided by report evidence: do not reclassify them; you may add a role refinement',
-    'entry (same candidate_id, keep its status) only when the text gives a more specific malicious role.',
+    'Focus on THIS chunk only.',
+    CANDIDATE_UPDATE_LINE,
+    'RESOLVED indicators are already decided by report evidence: do not reclassify them.',
+    ENTITY_SELECTION_LINE,
+    ...RELATIONSHIP_SELECTION_LINES,
     ENTITY_TYPE_LINE,
     ASSESSMENT_LINE,
     ROLE_LINE,
     RELATIONSHIP_LINE,
+    EVIDENCE_TEXT_LINE,
     'evidence_block_ids must reference block ids present in this chunk.',
-    'subject_ref/object_ref for entities use entity name; for candidates use candidate_id.',
+    'subject_ref/object_ref for entities use entity name; for candidates use candidate_id. Every entity used in a',
+    'relationship must also be listed in entities with exactly that name (otherwise the relationship is discarded).',
     'confidence must be a number between 0 and 1 (never "high"/"medium"/"low").',
-    `Output budgets: at most ${AI_OUTPUT_BOUNDS.entityMaxItemsChunk} entities, at most ${AI_OUTPUT_BOUNDS.relationshipMaxItemsChunk} relationships; summary concise; evidence_text one short sentence. Always emit one candidate_updates entry per TO CLASSIFY candidate — do not drop required updates to stay short.`,
+    outputBudgetLine(budget),
     TLP_LINE,
     'No markdown fences. No explanations.',
     '',
@@ -182,7 +245,8 @@ export function buildSynthesisPrompt(input) {
   return [
     'Synthesize a final Threat Library JSON object from the PARTIAL chunk analyses below.',
     'Return keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships.',
-    'confidence must be a number 0..1. Do not invent indicators. Merge duplicate entities and relationships.',
+    'confidence must be a number 0..1. Do not invent indicators. Merge duplicate entities and relationships',
+    '(one relationship per subject + relationship_type + object; one entity per real-world entity).',
     'Copy candidate_updates through unchanged (same candidate_id, assessment, role); never add new ones.',
     TLP_LINE,
     'Write one coherent summary (max 1500 characters).',
