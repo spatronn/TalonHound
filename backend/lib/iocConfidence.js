@@ -592,6 +592,54 @@ export async function buildIocConfidenceSummaryForDetails(pool, { rows, seedPubl
   });
 }
 
+/** Observable types stored in the ioc_file_hash partition (file-artifact aliases live here). */
+export const FILE_HASH_OBSERVABLE_TYPES = Object.freeze(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
+
+/**
+ * ioc_items rows by id, served by the (observable_type, id) primary key.
+ *
+ * ioc_items is LIST-partitioned by observable_type and has no index led by `id`,
+ * so `WHERE id = ANY(...)` alone scans every partition (~1.8 GB in prod). ids come
+ * from one shared sequence, so qualifying the lookup with any type set that
+ * contains each row's real type returns exactly the same rows. The candidate
+ * types are the page's display types plus, when file hashes or artifact aliases
+ * are involved, every file-hash type (canonicalization only rewrites display
+ * type/value among file-hash aliases of one artifact). Ids still unresolved —
+ * e.g. a row in an unexpected partition — fall back to the id-only lookup, so
+ * results never depend on the type hint being complete.
+ * @param {{ query: Function }} pool
+ * @param {number[]} ids
+ * @param {string[]} candidateTypes
+ */
+export async function loadIocItemRowsById(pool, ids, candidateTypes) {
+  const sql = `SELECT i.id, i.observable_type, i.confidence, i.analyst_confidence_override, i.ioc_source_id, i.source_name
+       FROM ioc_items i`;
+  const { rows } = await pool.query(
+    `${sql}
+       WHERE i.observable_type = ANY($2::text[])
+         AND i.id = ANY($1::bigint[])`,
+    [ids, candidateTypes]
+  );
+  const found = new Set(rows.map((r) => Number(r.id)));
+  const missing = ids.filter((id) => !found.has(Number(id)));
+  if (!missing.length) return rows;
+  const { rows: rest } = await pool.query(`${sql}
+       WHERE i.id = ANY($1::bigint[])`, [missing]);
+  return rows.concat(rest);
+}
+
+/**
+ * @param {Array<{ observable_type?: string }>} items
+ * @param {boolean} hasAliases linked ids beyond the page seeds
+ */
+function candidateIocItemTypes(items, hasAliases) {
+  const types = new Set((items || []).map((x) => String(x?.observable_type || '').trim().toLowerCase()).filter(Boolean));
+  if (hasAliases || [...types].some((t) => FILE_HASH_OBSERVABLE_TYPES.includes(t))) {
+    for (const t of FILE_HASH_OBSERVABLE_TYPES) types.add(t);
+  }
+  return [...types];
+}
+
 export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}) {
   const includeInactiveMemberships = Boolean(opts.includeInactiveMemberships);
   const keyed = (items || []).filter((x) => Number.isFinite(Number(x?.id)) && String(x?.observable_type || '').trim());
@@ -615,9 +663,11 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
     ...[...linkedBySeed.values()].flat().map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0)
   ])];
 
-  // Look up by id only — list canonicalization may rewrite observable_type to the
-  // primary SHA256 while the ioc_items / membership rows remain on an alias type.
-  const [{ rows: mRows }, { rows: iocItemRows }] = await Promise.all([
+  // Resolve by id, never by the (possibly rewritten) display type alone — list
+  // canonicalization may show the primary SHA256 while the ioc_items / membership
+  // rows remain on an alias type. The ioc_items lookup is type-qualified only so it
+  // can use the primary key (see loadIocItemRowsById).
+  const [{ rows: mRows }, iocItemRows] = await Promise.all([
     pool.query(
       `SELECT m.ioc_item_id, m.ioc_observable_type, m.status, m.explicit_confidence,
               f.key AS feed_key, f.name AS feed_name, f.default_confidence AS feed_default_confidence
@@ -626,12 +676,7 @@ export async function buildDisplayConfidenceForItems(pool, items = [], opts = {}
        WHERE m.ioc_item_id = ANY($1::bigint[])`,
       [allIds]
     ),
-    pool.query(
-      `SELECT i.id, i.observable_type, i.confidence, i.analyst_confidence_override, i.ioc_source_id, i.source_name
-       FROM ioc_items i
-       WHERE i.id = ANY($1::bigint[])`,
-      [allIds]
-    )
+    loadIocItemRowsById(pool, allIds, candidateIocItemTypes(keyed, allIds.length > new Set(ids).size))
   ]);
 
   const byId = new Map();
