@@ -69,8 +69,12 @@ export {
  * requires a source span that is not a subspan of a larger hostname.
  * v9: defanged Domain table spellings (`host[.]tld`) are refanged before the
  * hostname-syntax gate so typed indicator rows survive as domain candidates.
+ * v10: filesystem path segments and deployable / server-page extensions (war,
+ * ear, jspx, …) resolve as technical artifacts; a value typed as an artifact by
+ * a table row joins the document-level vote, so body mentions never split it
+ * into a separate domain; a declared Domain row is never outvoted.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v9';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v10';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -526,7 +530,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     mutex_label: 100, code_label: 100, config_label: 100, registry_label: 100, file_label: 100, path_label: 100,
     command_label: 100, process_label: 100, metadata_label: 100,
     network_relation: 50,
-    single_instance_identifier_context: 50, inline_artifact_label: 50,
+    single_instance_identifier_context: 50, inline_artifact_label: 50, path_segment: 50,
     url_host: 40, explicit_indicator_row: 40, url_path_basename: 40,
     code_identifier_shape: 30, code_context: 30, multi_dot_ext: 30, file_extension: 30, extension_without_host_context: 20,
     method_suffix: 30, code_block_weak_suffix: 20,
@@ -541,7 +545,16 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
    * Decide every deferred dotted token and materialize its candidate.
    */
   function resolvePendingDotted() {
-    for (const [, pending] of pendingDotted) {
+    // Same value already typed as an artifact by a source-typed table row
+    // ("File Name" column): that reading votes too, so one value never splits
+    // into a domain (body mentions) and an artifact (the table).
+    const tableArtifacts = new Map();
+    for (const entry of byKey.values()) {
+      if (!NON_NETWORK_RESOLVED_TYPES.has(entry.candidate_type)) continue;
+      if (!entry.occurrences.some((o) => o.form === OCCURRENCE_FORMS.TABLE_ROW)) continue;
+      tableArtifacts.set(String(entry.normalized_value).toLowerCase(), entry);
+    }
+    for (const [id, pending] of pendingDotted) {
       let domainScore = 0;
       let artifactScore = 0;
       let best = null;
@@ -551,7 +564,12 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         else artifactScore += w;
         if (!best || w > best.w) best = { w, occ };
       }
-      const isDomain = domainScore > artifactScore;
+      const tableArtifact = tableArtifacts.get(String(id).toLowerCase()) || null;
+      if (tableArtifact) artifactScore += READING_WEIGHT[tableArtifact.typing_reason] ?? READING_WEIGHT.file_label;
+      // A source-declared network type (typed Domain row / column) is never outvoted:
+      // explicit indicator tables stay complete.
+      const declaredNetwork = pending.occurrences.some((o) => o.typed.reason === 'declared_network_type');
+      const isDomain = declaredNetwork || domainScore > artifactScore;
       const winning = pending.occurrences
         .filter((o) => (o.typed.kind === 'domain') === isDomain)
         .sort((a, b) => (READING_WEIGHT[b.typed.reason] ?? 5) - (READING_WEIGHT[a.typed.reason] ?? 5))[0] || best.occ;
@@ -562,7 +580,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       );
       if (!isDomain) {
         countReason(typeDiag.excluded_reasons, typed.reason);
-        const retain = labelled || asserted;
+        // A table-typed artifact identity already exists: body mentions attach to it.
+        const retain = labelled || asserted || Boolean(tableArtifact);
         if (!retain) {
           // Incidental identifiers in prose (bytes.Index, Foo.Bar.Baz) are not report intelligence.
           typeDiag.artifact_occurrences_dropped += pending.occurrences.length;
@@ -580,6 +599,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         }
       }
       const candidateType = isDomain ? 'domain' : RESOLVED_TYPES.TECHNICAL_ARTIFACT;
+      // Artifact reading joins the table's artifact identity when one exists.
+      const artifactValue = !isDomain && tableArtifact && tableArtifact.candidate_type === candidateType
+        ? tableArtifact.normalized_value
+        : pending.token;
       for (const occ of pending.occurrences) {
         const typingMeta = {
           ...(occ.extra.typing || {}),
@@ -589,7 +612,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         };
         const entry = materialize({
           candidateType,
-          normalizedValue: isDomain ? occ.n.normalizedValue : pending.token,
+          normalizedValue: isDomain ? occ.n.normalizedValue : artifactValue,
           originalValue: occ.extra.originalValue || occ.n.originalValue,
           n: occ.n,
           block: occ.block,
@@ -604,7 +627,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         const last = entry.occurrences[entry.occurrences.length - 1];
         if (last && last.block_id === (occ.block?.id || null)) last.typing_reason = occ.typed.reason;
       }
-      const entry = byKey.get(candidateKey(candidateType, isDomain ? pending.occurrences[0].n.normalizedValue : pending.token));
+      const entry = byKey.get(candidateKey(candidateType, isDomain ? pending.occurrences[0].n.normalizedValue : artifactValue));
       if (entry) {
         entry.type_scores = { domain: domainScore, artifact: artifactScore };
       }

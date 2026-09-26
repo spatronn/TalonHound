@@ -253,6 +253,8 @@ const FILE_EXT_HINT = new Set([
   'lnk', 'url', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'rtf', 'pdf',
   'zip', 'rar', '7z', 'gz', 'tar', 'iso', 'img',
   'php', 'asp', 'aspx', 'jsp', 'cgi',
+  // Java / .NET / server-page deployables and handlers (none is a DNS suffix).
+  'war', 'ear', 'jspx', 'jspf', 'ashx', 'asmx', 'ascx', 'axd', 'cshtml', 'phtml', 'shtml', 'cfm',
   'txt', 'log', 'dat', 'bin', 'cfg', 'ini', 'xml', 'json', 'csv',
   'enc', 'locked', 'crypt', 'payload', 'tmp', 'temp',
   'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'svg',
@@ -558,6 +560,7 @@ export function resolveDottedToken(raw, ctx = {}) {
   const explicitRow = ctx.strongZone === true && (ctx.form === 'table_row' || ctx.form === 'list_row');
   // Key position: `token = value` / `"token": value` (never `token://`).
   const assignmentKey = /^["'`]?\s*(?:=(?!=)|:(?!\/\/)\s*(?:["'`\d[{]|true|false|null))/.test(after) && !declaredNetwork;
+  const pathSegment = isPathSegmentPosition(before, after);
   Object.assign(signals, {
     suffix_strength: strength,
     code_shape: codeShape,
@@ -569,7 +572,8 @@ export function resolveDottedToken(raw, ctx = {}) {
     clause_network_words: clauseNetwork,
     code_context: codeContext,
     explicit_indicator_row: explicitRow,
-    assignment_key: assignmentKey
+    assignment_key: assignmentKey,
+    path_segment: pathSegment
   });
 
   // 1. Source-typed labels are authoritative for the reading (not for validity).
@@ -580,7 +584,12 @@ export function resolveDottedToken(raw, ctx = {}) {
   if (basenames.has(lower)) return out('technical_artifact', 'url_path_basename');
   if (hosts.has(lower)) return out('domain', 'url_host');
 
-  // 3. Filename shapes (extension in TLD position).
+  // 3. Filesystem path segment (`.../app.war/x.jsp`, `dir\name.ext\file`): a
+  //    directory or file inside a path, not a host. A URL authority (`//host`)
+  //    is not a path segment, and a DNS-shaped suffix keeps the other rules.
+  if (pathSegment && strength !== 'strong') return out('technical_artifact', 'path_segment');
+
+  // 4. Filename shapes (extension in TLD position).
   if (FILE_EXT_HINT.has(last)) {
     const fileLabel = /(file\s*name|filename|file\s*:|dosya|资源|文件名|样本|payload|download|保存|lnk|resource|dropped|saved\s+as)/i.test(clause);
     if (fileLabel) return out('technical_artifact', 'file_label');
@@ -589,22 +598,22 @@ export function resolveDottedToken(raw, ctx = {}) {
     if (!inlineNetwork && !clauseNetwork) return out('technical_artifact', 'extension_without_host_context');
   }
 
-  // 4. Inline label right at the token decides before generic clause words.
+  // 5. Inline label right at the token decides before generic clause words.
   if (inlineArtifact) return out('technical_artifact', artifactReasonFrom(before, 'inline_artifact_label'), true);
   if (inlineNetwork) return out('domain', 'network_relation', true);
 
-  // 5. Assignment / key position (`agent.server.host = …`, `"a.b.c": …`) is a
+  // 6. Assignment / key position (`agent.server.host = …`, `"a.b.c": …`) is a
   //    configuration key whatever the suffix looks like.
   if (assignmentKey) return out('technical_artifact', 'config_context');
 
-  // 6. Clause vocabulary: an artifact reading with no network relation stated.
+  // 7. Clause vocabulary: an artifact reading with no network relation stated.
   //    A DNS-shaped suffix is not overturned by loose clause words ("the module
   //    downloads from evil.com") — only by a label at the token.
   if (clauseArtifact && !clauseNetwork && strength !== 'strong') {
     return out('technical_artifact', artifactReasonFrom(clause, 'artifact_context'));
   }
 
-  // 6. Symbolic identifier shape (case segmentation, underscores) is a code signal
+  // 8. Symbolic identifier shape (case segmentation, underscores) is a code signal
   //    unless the source states a network relation for this exact token.
   if (codeShape) {
     if (strength === 'strong' && clauseNetwork && !clauseArtifact) return out('domain', 'network_context_mixed_case');
@@ -620,11 +629,11 @@ export function resolveDottedToken(raw, ctx = {}) {
     return out('technical_artifact', artifactReasonFrom(clause, 'artifact_context'));
   }
 
-  // 7. Provenance: an indicator row inside a publisher-curated indicator list
+  // 9. Provenance: an indicator row inside a publisher-curated indicator list
   //    is an explicit assertion even for an unusual suffix.
   if (explicitRow) return out('domain', 'explicit_indicator_row');
 
-  // 8. Syntax alone.
+  // 10. Syntax alone.
   if (labels.length === 2 && CODE_WORD_LAST_LABEL_RE.test(last) && strength !== 'strong') {
     return out('technical_artifact', 'method_suffix');
   }
@@ -633,6 +642,21 @@ export function resolveDottedToken(raw, ctx = {}) {
   // only a code-word / file-extension / implausible suffix is.
   if (strength === 'weak') return out('technical_artifact', codeContext ? 'code_block_weak_suffix' : 'no_network_semantics');
   return out('domain', 'hostname_shape');
+}
+
+/**
+ * Is the token a segment of a filesystem / URL path rather than a host?
+ * Preceded by a single `/` or `\` (not a `//` URL authority or a `\\` UNC
+ * host), or followed by a `\` after a non-host position (Windows path).
+ * @param {string} before text right before the token
+ * @param {string} after text right after the token
+ */
+export function isPathSegmentPosition(before, after) {
+  const b = String(before || '');
+  const a = String(after || '');
+  if (/(?:\/\/|\\\\)$/.test(b)) return false;
+  if (/[\\/]$/.test(b)) return true;
+  return /^\\/.test(a);
 }
 
 function artifactReasonFrom(text, fallback) {
@@ -715,6 +739,7 @@ export function artifactKindFor(reason) {
   if (/single_instance|mutex/.test(r)) return 'mutex';
   if (/^code_|method_suffix|code_block/.test(r)) return 'code';
   if (/url_path_basename|file_/.test(r) || r === 'multi_dot_ext' || r === 'extension_without_host_context') return 'file';
+  if (r === 'path_segment') return 'path';
   const m = r.match(/^(config|registry|path|command|process|metadata|file|code)_(?:label|context)$/);
   if (m) return m[1];
   return 'identifier';
