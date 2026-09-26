@@ -568,6 +568,9 @@ export async function runAnalysisPipeline(pool, ctx) {
           issues: Array.isArray(aiErr.details) ? aiErr.details.slice(0, 30) : [],
           schema_version: aiErr.schema_version || null,
           rejected: Array.isArray(aiErr.rejected) ? aiErr.rejected.slice(0, 30) : [],
+          provider_error: aiErr.provider_error && typeof aiErr.provider_error === 'object'
+            ? aiErr.provider_error
+            : null,
           progress: progressDetail
             ? {
                 analysis_chunks_total: progressDetail.analysis_chunks_total ?? null,

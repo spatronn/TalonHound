@@ -12,7 +12,11 @@
  *  - A URL's host is parser-derived metadata, never a separate assertion.
  */
 
-import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, CANDIDATE_ROLE_VALUES } from './contract.js';
+import {
+  THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+  CANDIDATE_ROLE_VALUES,
+  AI_OUTPUT_BOUNDS
+} from './contract.js';
 import { RELATIONSHIP_TYPES } from '../relationshipPolicy.js';
 
 export const ENTITY_TYPE_LINE =
@@ -57,6 +61,7 @@ export function buildSystemPrompt() {
     'Reason from semantic meaning in any language; do not require English keywords.',
     'Do not invent maliciousness from general cybersecurity knowledge outside the report.',
     'confidence must be a number between 0 and 1 (not words like high/medium/low).',
+    `Output budgets: at most ${AI_OUTPUT_BOUNDS.entityMaxItemsChunk} entities, at most ${AI_OUTPUT_BOUNDS.relationshipMaxItemsChunk} relationships; summary concise; evidence_text one short sentence. Always emit one candidate_updates entry per TO CLASSIFY candidate — do not drop required updates to stay short.`,
     'Return ONLY a single JSON object matching the schema. No markdown fences. No explanations.',
     `Contract: ${THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION}`
   ].join(' ');
@@ -146,6 +151,7 @@ export function buildChunkPrompt(input) {
     'evidence_block_ids must reference block ids present in this chunk.',
     'subject_ref/object_ref for entities use entity name; for candidates use candidate_id.',
     'confidence must be a number between 0 and 1 (never "high"/"medium"/"low").',
+    `Output budgets: at most ${AI_OUTPUT_BOUNDS.entityMaxItemsChunk} entities, at most ${AI_OUTPUT_BOUNDS.relationshipMaxItemsChunk} relationships; summary concise; evidence_text one short sentence. Always emit one candidate_updates entry per TO CLASSIFY candidate — do not drop required updates to stay short.`,
     TLP_LINE,
     'No markdown fences. No explanations.',
     '',

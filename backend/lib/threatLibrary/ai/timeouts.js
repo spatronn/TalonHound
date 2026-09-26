@@ -214,3 +214,56 @@ export function classifyProviderHttpError(status, bodyText = '') {
   }
   return AI_FAILURE_CODES.PROVIDER_HTTP_ERROR;
 }
+
+const PROVIDER_ERROR_MESSAGE_MAX = 400;
+
+function stripSecrets(text) {
+  return String(text || '')
+    .replace(/bearer\s+[a-z0-9._-]+/gi, 'bearer [redacted]')
+    .replace(/authorization:\s*[^\n]*/gi, 'authorization: [redacted]')
+    .replace(/api[_-]?key["']?\s*[:=]\s*["']?[^\s"',}]+/gi, 'api_key=[redacted]');
+}
+
+/**
+ * Bounded, sanitized provider HTTP error for persistence / progress.
+ * Unwraps Ollama's `{ error: "<json string>" }` envelope. Never keeps
+ * authorization headers, API keys, or an unbounded body.
+ * @param {number} status
+ * @param {string} [bodyText]
+ */
+export function sanitizeProviderHttpError(status, bodyText = '') {
+  const raw = stripSecrets(String(bodyText || '')).slice(0, 2000);
+  let node = raw;
+  for (let i = 0; i < 4; i += 1) {
+    if (typeof node === 'string') {
+      try {
+        node = JSON.parse(node);
+      } catch {
+        break;
+      }
+      continue;
+    }
+    if (node && typeof node === 'object' && typeof node.error === 'string') {
+      node = node.error;
+      continue;
+    }
+    break;
+  }
+  const inner =
+    node && typeof node === 'object'
+      ? (node.error && typeof node.error === 'object' ? node.error : node)
+      : null;
+  const message = stripSecrets(
+    inner && typeof inner === 'object'
+      ? inner.message || inner.error || ''
+      : typeof node === 'string'
+        ? node
+        : raw
+  ).replace(/\s+/g, ' ').trim();
+  return {
+    http_status: Number(status) || 0,
+    code: inner && inner.code != null ? String(inner.code).slice(0, 64) : null,
+    type: inner && inner.type != null ? String(inner.type).slice(0, 64) : null,
+    message: (message || 'provider http error').slice(0, PROVIDER_ERROR_MESSAGE_MAX)
+  };
+}

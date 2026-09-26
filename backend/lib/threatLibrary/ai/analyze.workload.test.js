@@ -17,10 +17,14 @@ import {
 import {
   buildProviderJsonSchema,
   candidateUpdatesMaxItemsForChunk,
+  providerSafeMaxLength,
   AI_OUTPUT_BOUNDS,
+  OLLAMA_UNPARSEABLE_MAX_LENGTH,
+  OLLAMA_SAFE_ALIAS_FOR_UNPARSEABLE_MAX_LENGTH,
   THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
 } from './contract.js';
-import { AI_FAILURE_CODES, resolveAiTimeoutPolicy, resolveRecoveryReserveMs, resolveMinPrimaryCallMs, resolveMinRepairMs } from './timeouts.js';
+import { AI_FAILURE_CODES, aiFailure, resolveAiTimeoutPolicy, resolveRecoveryReserveMs, resolveMinPrimaryCallMs, resolveMinRepairMs } from './timeouts.js';
+import { buildSystemPrompt, buildChunkPrompt } from './prompts.js';
 import { validateAiStructure } from './schema.js';
 import { mergeAiCandidateUpdates } from '../pipeline.js';
 import { extractCandidatesFromDocument } from '../candidateExtraction.js';
@@ -123,6 +127,17 @@ test('provider JSON schema requires candidate_id (join key) on every candidate u
   assert.ok(schema.properties.candidate_updates.items.properties.role.enum.includes('malware_sample'));
 });
 
+function collectMaxLengths(node, acc = []) {
+  if (!node || typeof node !== 'object') return acc;
+  if (Array.isArray(node)) {
+    node.forEach((n) => collectMaxLengths(n, acc));
+    return acc;
+  }
+  if (node.maxLength != null) acc.push(node.maxLength);
+  for (const v of Object.values(node)) collectMaxLengths(v, acc);
+  return acc;
+}
+
 test('provider JSON schema bounds match the documented contract and stay ≤ Zod', () => {
   const schema = buildProviderJsonSchema();
   const B = AI_OUTPUT_BOUNDS;
@@ -149,6 +164,94 @@ test('provider JSON schema bounds match the documented contract and stay ≤ Zod
     relationships: []
   };
   assert.equal(validateAiStructure(maxValid).ok, true);
+});
+
+test('provider schema remaps Ollama-unparseable maxLength 2000 and never emits it', () => {
+  assert.equal(providerSafeMaxLength(2000), 1999);
+  assert.equal(providerSafeMaxLength(1999), 1999);
+  assert.equal(providerSafeMaxLength(4000), 4000);
+  const schema = buildProviderJsonSchema();
+  const lengths = collectMaxLengths(schema);
+  assert.equal(lengths.includes(OLLAMA_UNPARSEABLE_MAX_LENGTH), false);
+  assert.equal(
+    schema.properties.entities.items.properties.description.maxLength,
+    OLLAMA_SAFE_ALIAS_FOR_UNPARSEABLE_MAX_LENGTH
+  );
+  assert.equal(
+    schema.properties.candidate_updates.items.properties.normalized_value.maxLength,
+    OLLAMA_SAFE_ALIAS_FOR_UNPARSEABLE_MAX_LENGTH
+  );
+  assert.ok(schema.properties.entities.items.properties.description.maxLength <= AI_OUTPUT_BOUNDS.entityDescriptionMaxLength);
+  assert.ok(schema.properties.candidate_updates.items.properties.normalized_value.maxLength <= AI_OUTPUT_BOUNDS.normalizedValueMaxLength);
+});
+
+test('runtime Zod still rejects over-limit fields the provider grammar cannot express at 2000', () => {
+  const B = AI_OUTPUT_BOUNDS;
+  const base = { summary: 's', entities: [], candidate_updates: [], relationships: [] };
+  assert.equal(validateAiStructure({ ...base, entities: Array.from({ length: B.entityMaxItemsMerged + 1 }, (_, i) => ({ entity_type: 'threat_actor', name: `A${i}` })) }).ok, false);
+  assert.equal(validateAiStructure({ ...base, relationships: Array.from({ length: B.relationshipMaxItemsMerged + 1 }, () => ({ subject_kind: 'entity', subject_ref: 'a', relationship_type: 'uses', object_kind: 'entity', object_ref: 'b' })) }).ok, false);
+  assert.equal(validateAiStructure({ ...base, summary: 'x'.repeat(B.summaryMaxLengthMerged + 1) }).ok, false);
+  assert.equal(validateAiStructure({
+    ...base,
+    entities: [{ entity_type: 'malware', name: 'M', evidence_text: 'e'.repeat(B.evidenceTextMaxLength + 1) }]
+  }).ok, false);
+  assert.equal(validateAiStructure({
+    ...base,
+    candidate_updates: Array.from({ length: B.candidateUpdatesMaxItems + 1 }, (_, i) => ({
+      candidate_id: `c${i}`,
+      candidate_type: 'domain',
+      normalized_value: `v${i}.example`,
+      assessment: 'unknown',
+      role: 'unknown'
+    }))
+  }).ok, false);
+  assert.equal(validateAiStructure({
+    ...base,
+    entities: [{ entity_type: 'malware', name: 'M', description: 'd'.repeat(B.entityDescriptionMaxLength) }]
+  }).ok, true);
+  assert.equal(validateAiStructure({
+    ...base,
+    entities: [{ entity_type: 'malware', name: 'M', description: 'd'.repeat(B.entityDescriptionMaxLength + 1) }]
+  }).ok, false);
+});
+
+test('candidate_updates provider capacity follows the chunk workload and stays under the Zod ceiling', () => {
+  const needed = candidateUpdatesMaxItemsForChunk(45, 9);
+  assert.equal(needed, 54);
+  assert.ok(needed <= AI_OUTPUT_BOUNDS.candidateUpdatesMaxItems);
+  const schema = buildProviderJsonSchema({ maxCandidateUpdates: needed });
+  assert.equal(schema.properties.candidate_updates.maxItems, 54);
+  const legitimate = {
+    summary: 's',
+    entities: [],
+    candidate_updates: Array.from({ length: 45 }, (_, i) => ({
+      candidate_id: `c${i}`,
+      candidate_type: 'domain',
+      normalized_value: `host${i}.example`,
+      assessment: 'unknown',
+      role: 'unknown'
+    })),
+    relationships: []
+  };
+  assert.equal(validateAiStructure(legitimate).ok, true);
+});
+
+test('prompts include semantic output budgets without weakening required candidate updates', () => {
+  const sys = buildSystemPrompt();
+  assert.match(sys, /at most 80 entities/);
+  assert.match(sys, /at most 80 relationships/);
+  assert.match(sys, /one candidate_updates entry per TO CLASSIFY/);
+  const chunk = buildChunkPrompt({
+    documentTitle: 't',
+    language: 'en',
+    chunkIndex: 0,
+    chunkTotal: 1,
+    blocksText: 'body',
+    blockIds: ['b1'],
+    toClassify: [],
+    resolved: []
+  });
+  assert.match(chunk, /do not drop required updates/i);
 });
 
 test('primary provider call deadline protects the recovery reserve', async () => {
@@ -427,4 +530,47 @@ test('parse failure keeps timing/progress and does not merge or persist a chunk 
   assert.ok(Array.isArray(failed[0].meta.timing));
   const merged = mergeAiCandidateUpdates([], { candidate_updates: [{ candidate_type: 'domain', normalized_value: 'evil.example', assessment: 'malicious' }] });
   assert.equal(merged.length, 0, 'empty deterministic set stays empty — AI cannot insert identities');
+});
+
+test('provider HTTP 400 grammar failure persists sanitized diagnostic and timing, no AI result', async () => {
+  const doc = createCanonicalDocument({ title: 'Grammar', language: 'en', blocks: [{ id: 'b0', type: 'paragraph', page: 1, text: 'text' }] });
+  const saved = [];
+  const failed = [];
+  const err = await analyzeThreatDocument(
+    settings,
+    { document: doc, candidates: [] },
+    {
+      callProvider: async () => {
+        const e = aiFailure(
+          AI_FAILURE_CODES.PROVIDER_HTTP_ERROR,
+          'AI provider error (400): Failed to initialize samplers: failed to parse grammar'
+        );
+        e.http_status = 400;
+        e.provider_error = {
+          http_status: 400,
+          code: '400',
+          type: 'invalid_request_error',
+          message: 'Failed to initialize samplers: failed to parse grammar'
+        };
+        e.timing = { total_ms: 41, prompt_chars: 120, output_chars: 0 };
+        throw e;
+      },
+      saveChunkResult: async (chunk, value) => saved.push({ chunk, value }),
+      markChunkFailed: async (chunk, code, message, meta) => failed.push({ chunk, code, message, meta })
+    }
+  ).catch((e) => e);
+  assert.equal(err.code, AI_FAILURE_CODES.PROVIDER_HTTP_ERROR);
+  assert.match(err.message, /failed to parse grammar/i);
+  assert.ok(err.progress);
+  assert.ok(Array.isArray(err.progress.timing));
+  assert.equal(err.progress.timing[0].output_chars, 0);
+  assert.equal(err.progress.timing[0].http_status, 400);
+  assert.equal(err.progress.timing[0].failed, AI_FAILURE_CODES.PROVIDER_HTTP_ERROR);
+  assert.deepEqual(err.details[0].message, 'Failed to initialize samplers: failed to parse grammar');
+  assert.equal(saved.length, 0);
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].code, AI_FAILURE_CODES.PROVIDER_HTTP_ERROR);
+  assert.ok(Array.isArray(failed[0].meta.timing));
+  assert.equal(failed[0].meta.timing[0].output_chars, 0);
+  assert.match(failed[0].meta.validation_details[0].message, /failed to parse grammar/i);
 });

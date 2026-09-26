@@ -408,14 +408,42 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         }
       );
     } catch (err) {
-      timings.push(timingEntry('chunk', chunk.chunk_key, started, null, { prompt_chars: req.promptChars, failed: err?.code || 'error' }));
+      timings.push(
+        timingEntry('chunk', chunk.chunk_key, started, { timing: err?.timing }, {
+          prompt_chars: req.promptChars,
+          output_chars: err?.timing?.output_chars ?? 0,
+          failed: err?.code || 'error',
+          http_status: err?.http_status ?? null
+        })
+      );
+      const providerProgress = {
+        ...progressBase(),
+        current_chunk: chunk.chunk_key,
+        current_chunk_index: i + 1,
+        analysis_chunks_remaining: chunks.length - partials.length,
+        elapsed_ms: Date.now() - analysisStartedAt,
+        total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
+        recovery_reserve_ms: reserveMs
+      };
       if (err?.code === AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE) {
         const e = deadlineError();
-        await hooks.markChunkFailed?.(chunk, e.code, e.message, { schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION });
+        await hooks.markChunkFailed?.(chunk, e.code, e.message, {
+          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+          timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
+        });
         throw e;
       }
+      if (err && typeof err === 'object') {
+        err.progress = err.progress || providerProgress;
+        err.schema_version = err.schema_version || THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION;
+        if (err.provider_error && !Array.isArray(err.details)) {
+          err.details = [err.provider_error];
+        }
+      }
       await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || 'chunk failed', {
-        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+        validation_details: err?.details || [],
+        timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
       });
       throw err;
     }
@@ -471,18 +499,42 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           timings.push(timingEntry('repair', chunk.chunk_key, repairStarted, repaired, { prompt_chars: repairUser.length }));
           processed = processAiResponseText(repaired.text, chunkCtx);
         } catch (err) {
-          timings.push(timingEntry('repair', chunk.chunk_key, repairStarted, null, { failed: err?.code || 'error' }));
+          timings.push(
+            timingEntry('repair', chunk.chunk_key, repairStarted, { timing: err?.timing }, {
+              failed: err?.code || 'error',
+              output_chars: err?.timing?.output_chars ?? 0,
+              http_status: err?.http_status ?? null
+            })
+          );
           if (err?.code === AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE) {
             const e = deadlineError();
             await hooks.markChunkFailed?.(chunk, e.code, e.message, {
               schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
-              raw_output_sample: capRawOutputSample(text)
+              raw_output_sample: capRawOutputSample(text),
+              timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
             });
             throw e;
           }
+          if (err && typeof err === 'object') {
+            err.progress = err.progress || {
+              ...progressBase(),
+              current_chunk: chunk.chunk_key,
+              current_chunk_index: i + 1,
+              analysis_chunks_remaining: chunks.length - partials.length,
+              elapsed_ms: Date.now() - analysisStartedAt,
+              total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
+              recovery_reserve_ms: reserveMs
+            };
+            err.schema_version = err.schema_version || THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION;
+            if (err.provider_error && !Array.isArray(err.details)) {
+              err.details = [err.provider_error];
+            }
+          }
           await hooks.markChunkFailed?.(chunk, err?.code || 'ai_failed', err?.message || 'repair failed', {
             schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
-            raw_output_sample: capRawOutputSample(text)
+            validation_details: err?.details || [],
+            raw_output_sample: capRawOutputSample(text),
+            timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
           });
           throw err;
         }

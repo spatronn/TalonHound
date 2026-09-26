@@ -7,6 +7,7 @@ import {
   AI_FAILURE_CODES,
   aiFailure,
   classifyProviderHttpError,
+  sanitizeProviderHttpError,
   resolveAiTimeoutPolicy,
   resolveHeaderWaitMs
 } from './timeouts.js';
@@ -418,7 +419,17 @@ export async function callAiProvider(settings, messages, hooks = {}) {
         bodyText = '';
       }
       const code = classifyProviderHttpError(res.status, bodyText);
-      throw aiFailure(code, `AI provider error (${res.status})`);
+      const diagnostic = sanitizeProviderHttpError(res.status, bodyText);
+      const err = aiFailure(code, `AI provider error (${res.status}): ${diagnostic.message}`);
+      err.http_status = diagnostic.http_status;
+      err.provider_error = diagnostic;
+      err.timing = {
+        total_ms: Date.now() - callStartedAt,
+        headers_ms: headersAt ? headersAt - callStartedAt : null,
+        prompt_chars: promptChars,
+        output_chars: 0
+      };
+      throw err;
     }
 
     const parseLine =

@@ -43,7 +43,36 @@ export const CANDIDATE_ROLE_VALUES = Object.freeze([
  * in tokens (10.5k chars ≈ 2.6k tokens) and enough to close a schema-capped
  * JSON object. Typical bounded output finishes far earlier; this is only a
  * ceiling so generation cannot fill the loaded 32k context.
+ *
+ * Ollama 0.34.0 (llama.cpp GBNF) cannot compile JSON Schema `maxLength: 2000`
+ * at all — even `{ type: "string", maxLength: 2000 }` returns HTTP 400
+ * "Failed to initialize samplers: failed to parse grammar". 1999 and 2001
+ * both compile. Provider grammar remaps 2000 → 1999; Zod keeps 2000.
  */
+export const OLLAMA_UNPARSEABLE_MAX_LENGTH = 2000;
+export const OLLAMA_SAFE_ALIAS_FOR_UNPARSEABLE_MAX_LENGTH = 1999;
+
+/**
+ * Provider-safe maxLength. Omits non-positive values. Remaps the one
+ * integer Ollama 0.34.0 cannot compile so the rest of the bounded schema
+ * can stay in the grammar.
+ * @param {number} n
+ * @returns {number|undefined}
+ */
+export function providerSafeMaxLength(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return undefined;
+  if (v === OLLAMA_UNPARSEABLE_MAX_LENGTH) return OLLAMA_SAFE_ALIAS_FOR_UNPARSEABLE_MAX_LENGTH;
+  return v;
+}
+
+function providerString(maxLength, { nullable = false } = {}) {
+  const schema = nullable ? { type: ['string', 'null'] } : { type: 'string' };
+  const safe = providerSafeMaxLength(maxLength);
+  if (safe != null) schema.maxLength = safe;
+  return schema;
+}
+
 export const AI_OUTPUT_BOUNDS = Object.freeze({
   summaryMaxLengthChunk: 4000,
   summaryMaxLengthMerged: 8000,
@@ -98,11 +127,11 @@ export function buildProviderJsonSchema(opts = {}) {
     B.candidateUpdatesMaxItems,
     Math.max(1, Number(opts.maxCandidateUpdates) || B.candidateUpdatesMaxItems)
   );
-  const evidenceText = { type: ['string', 'null'], maxLength: B.evidenceTextMaxLength };
+  const evidenceText = providerString(B.evidenceTextMaxLength, { nullable: true });
   const evidenceBlocks = {
     type: 'array',
     maxItems: B.evidenceBlockIdMaxItems,
-    items: { type: 'string', maxLength: B.evidenceBlockIdMaxLength }
+    items: providerString(B.evidenceBlockIdMaxLength)
   };
 
   return {
@@ -110,10 +139,10 @@ export function buildProviderJsonSchema(opts = {}) {
     additionalProperties: false,
     required: ['summary', 'entities', 'candidate_updates', 'relationships'],
     properties: {
-      summary: { type: 'string', maxLength: B.summaryMaxLengthChunk },
-      report_type: { type: ['string', 'null'], maxLength: B.reportTypeMaxLength },
-      language: { type: ['string', 'null'], maxLength: B.languageMaxLength },
-      tlp: { type: ['string', 'null'], maxLength: B.tlpMaxLength },
+      summary: providerString(B.summaryMaxLengthChunk),
+      report_type: providerString(B.reportTypeMaxLength, { nullable: true }),
+      language: providerString(B.languageMaxLength, { nullable: true }),
+      tlp: providerString(B.tlpMaxLength, { nullable: true }),
       confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
       entities: {
         type: 'array',
@@ -136,13 +165,13 @@ export function buildProviderJsonSchema(opts = {}) {
                 'attack_pattern'
               ]
             },
-            name: { type: 'string', maxLength: B.entityNameMaxLength },
+            name: providerString(B.entityNameMaxLength),
             aliases: {
               type: 'array',
               maxItems: B.entityAliasMaxItems,
-              items: { type: 'string', maxLength: B.entityAliasMaxLength }
+              items: providerString(B.entityAliasMaxLength)
             },
-            description: { type: ['string', 'null'], maxLength: B.entityDescriptionMaxLength },
+            description: providerString(B.entityDescriptionMaxLength, { nullable: true }),
             confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
             evidence_block_ids: evidenceBlocks,
             evidence_text: evidenceText
@@ -158,9 +187,9 @@ export function buildProviderJsonSchema(opts = {}) {
           // candidate_id is the join key — a grammar-constrained model must not omit it.
           required: ['candidate_id', 'assessment'],
           properties: {
-            candidate_id: { type: 'string', maxLength: B.candidateIdMaxLength },
-            candidate_type: { type: 'string', maxLength: B.candidateTypeMaxLength },
-            normalized_value: { type: 'string', maxLength: B.normalizedValueMaxLength },
+            candidate_id: providerString(B.candidateIdMaxLength),
+            candidate_type: providerString(B.candidateTypeMaxLength),
+            normalized_value: providerString(B.normalizedValueMaxLength),
             assessment: {
               type: 'string',
               enum: ['malicious', 'suspicious', 'context_only', 'unknown', 'invalid']
@@ -170,10 +199,10 @@ export function buildProviderJsonSchema(opts = {}) {
             evidence_block_ids: {
               type: 'array',
               maxItems: 10,
-              items: { type: 'string', maxLength: B.evidenceBlockIdMaxLength }
+              items: providerString(B.evidenceBlockIdMaxLength)
             },
             evidence_text: evidenceText,
-            section: { type: ['string', 'null'], maxLength: B.sectionMaxLength }
+            section: providerString(B.sectionMaxLength, { nullable: true })
           }
         }
       },
@@ -186,16 +215,16 @@ export function buildProviderJsonSchema(opts = {}) {
           required: ['subject_kind', 'subject_ref', 'relationship_type', 'object_kind', 'object_ref'],
           properties: {
             subject_kind: { type: 'string', enum: ['entity', 'candidate'] },
-            subject_ref: { type: 'string', maxLength: B.refMaxLength },
-            relationship_type: { type: 'string', maxLength: B.relationshipTypeMaxLength },
+            subject_ref: providerString(B.refMaxLength),
+            relationship_type: providerString(B.relationshipTypeMaxLength),
             object_kind: { type: 'string', enum: ['entity', 'candidate'] },
-            object_ref: { type: 'string', maxLength: B.refMaxLength },
-            role: { type: ['string', 'null'], maxLength: B.roleMaxLength },
+            object_ref: providerString(B.refMaxLength),
+            role: providerString(B.roleMaxLength, { nullable: true }),
             confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
             evidence_block_ids: {
               type: 'array',
               maxItems: 10,
-              items: { type: 'string', maxLength: B.evidenceBlockIdMaxLength }
+              items: providerString(B.evidenceBlockIdMaxLength)
             },
             evidence_text: evidenceText
           }
