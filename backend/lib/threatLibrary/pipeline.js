@@ -473,6 +473,22 @@ export async function runAnalysisPipeline(pool, ctx) {
 
     let aiValue = null;
     let aiMeta = null;
+    const progressGate = createProgressGate(async (progress) => {
+      if (await isAnalysisCancelRequested(pool, report.id)) {
+        abort.abort();
+      }
+      await updateJob(pool, ctx.jobId, {
+        status: 'running',
+        stage: 'analyzing',
+        progress
+      });
+      await updateReportStatus(pool, report.id, {
+        analysis_status: 'analyzing',
+        import_status: 'processing',
+        analysis_progress: mergeAnalysisProgress(progressCarry, progress),
+        analysis_run_id: runId
+      });
+    });
     try {
       const ai = await analyzeThreatDocument(
         aiSettings,
@@ -487,24 +503,10 @@ export async function runAnalysisPipeline(pool, ctx) {
             saveAnalysisChunkResult(pool, report.id, runId, chunk, result, meta || {}),
           markChunkFailed: async (chunk, code, message, meta) =>
             markAnalysisChunkFailed(pool, report.id, runId, chunk, code, message, meta || {}),
-          onProgress: async (progress) => {
-            if (await isAnalysisCancelRequested(pool, report.id)) {
-              abort.abort();
-            }
-            await updateJob(pool, ctx.jobId, {
-              status: 'running',
-              stage: 'analyzing',
-              progress
-            });
-            await updateReportStatus(pool, report.id, {
-              analysis_status: 'analyzing',
-              import_status: 'processing',
-              analysis_progress: mergeAnalysisProgress(progressCarry, progress),
-              analysis_run_id: runId
-            });
-          }
+          onProgress: (progress) => progressGate.push(progress)
         }
       );
+      await progressGate.close();
       if (!ai.ok) {
         throw Object.assign(new Error(ai.error || 'AI validation failed'), {
           code: AI_FAILURE_CODES.AI_VALIDATION,
@@ -525,6 +527,8 @@ export async function runAnalysisPipeline(pool, ctx) {
         timing: ai.meta?.timing
       });
     } catch (aiErr) {
+      // No in-flight "analyzing" progress write may land after the terminal status below.
+      await progressGate.close();
       const code = aiErr.code || 'ai_failed';
       if (code !== AI_FAILURE_CODES.JOB_CANCELLED) {
         // best-effort mark current chunk failed is handled inside analyze when save fails
@@ -829,6 +833,31 @@ export function decideCandidateReuse(input) {
  * @param {{ candidate_updates?: object[] }|null} aiValue
  * @param {{ sourceText?: string, document?: object }} [opts]
  */
+/**
+ * Serializes AI progress writes and closes them once analysis settles. The
+ * stream client fires activity callbacks without awaiting them, so without
+ * this an in-flight "analyzing" progress write could land after the terminal
+ * failure write and leave a failed report looking active (Retry then sees an
+ * "already running" analysis with no job).
+ * @param {(progress: object) => Promise<void>} write
+ */
+export function createProgressGate(write) {
+  let closed = false;
+  let tail = Promise.resolve();
+  return {
+    push(progress) {
+      if (closed) return Promise.resolve();
+      const next = tail.then(() => (closed ? undefined : write(progress)));
+      tail = next.catch(() => {});
+      return next;
+    },
+    async close() {
+      closed = true;
+      await tail;
+    }
+  };
+}
+
 export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
   const sourceText = opts.sourceText || (opts.document ? sourceTextFromDocument(opts.document) : '');
   const keep = (c) => {
