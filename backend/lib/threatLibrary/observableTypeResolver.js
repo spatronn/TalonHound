@@ -30,7 +30,7 @@ import { refangObservable } from './defang.js';
 import { isValidIpAddress } from '../publicIp.js';
 
 /** Bump when typing / promotion semantics change (feeds the candidate contract). */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v1';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v2';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -504,7 +504,9 @@ function stripTrailingPunct(s) {
 
 /**
  * Resolve a hostname-shaped token using canonical syntax + source semantics +
- * provenance. `raw` must be the ORIGINAL spelling (case preserved).
+ * provenance. `raw` is the ORIGINAL spelling (case preserved). Publisher
+ * defanging (`[.]`, `(.)`, `{.}`) is refanged before the hostname-syntax
+ * gate so a typed Domain table row is not skipped as invalid syntax.
  *
  * @param {string} raw
  * @param {{
@@ -522,7 +524,8 @@ function stripTrailingPunct(s) {
  */
 export function resolveDottedToken(raw, ctx = {}) {
   const original = String(raw || '').trim().replace(/\.$/, '');
-  const lower = original.toLowerCase();
+  const refanged = (refangObservable(original) || original).replace(/\.$/, '');
+  const lower = refanged.toLowerCase();
   const labels = lower.split('.').filter(Boolean);
   const signals = {};
   const out = (kind, reason, labelled = false) => ({
@@ -546,7 +549,7 @@ export function resolveDottedToken(raw, ctx = {}) {
   const { before, after, clause } = clauseAround(surrounding, original);
   const strength = suffixStrength(labels);
   const last = labels[labels.length - 1];
-  const codeShape = hasCodeIdentifierShape(original, { suffixStrength: strength });
+  const codeShape = hasCodeIdentifierShape(refanged, { suffixStrength: strength });
   const inlineArtifact = ARTIFACT_LABEL_BEFORE_RE.test(before);
   const inlineNetwork = NETWORK_RELATION_BEFORE_RE.test(before) || /^www\./.test(lower);
   const clauseArtifact = ARTIFACT_CLAUSE_RE.test(clause);

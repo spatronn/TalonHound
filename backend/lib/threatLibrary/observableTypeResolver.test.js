@@ -23,7 +23,7 @@ import {
 import { normalizeCandidateValue } from './candidateValue.js';
 
 test('resolver has its own internal contract version', () => {
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v1');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v2');
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('technical_artifact'));
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('relative_path'));
 });
@@ -92,6 +92,16 @@ test('malware connects to c2.evil-example.com → domain; typed row Domain | c2.
   const typed = resolveDottedToken('c2.evil-example.com', { typeLabel: 'Domain', form: 'table_row' });
   assert.equal(typed.kind, 'domain');
   assert.equal(typed.reason, 'declared_network_type');
+});
+
+test('defanged Domain-table spellings pass the hostname-syntax gate', () => {
+  const ctx = { typeLabel: 'Domain', declaredType: 'domain', form: 'table_row', strongZone: true };
+  for (const raw of ['op-console[.]shop', 'skimmer-cdn(.)shop', 'payload-host{.}shop']) {
+    const r = resolveDottedToken(raw, ctx);
+    assert.equal(r.kind, 'domain', raw);
+    assert.equal(r.reason, 'declared_network_type', raw);
+  }
+  assert.equal(resolveDottedToken('Loader.Program.Main').kind, 'technical_artifact');
 });
 
 test('type labels are authoritative for the reading: Mutex | evil.com is not a network IOC, Domain | x.internal is', () => {

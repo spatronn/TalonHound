@@ -132,7 +132,7 @@ function extractFromHtml(html, url = 'https://socradar.example/blog/cve-2025-252
 test('internal contracts bumped for structured table extraction (product VERSION untouched)', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v3');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v2');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v8');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v9');
   const version = fs.readFileSync(path.join(here, '..', '..', '..', 'VERSION'), 'utf8').trim();
   assert.equal(version, '0.1.1-beta.11');
 });
@@ -501,6 +501,31 @@ test('merge: final set = deterministic ∪ AI-classified; AI never replaces or d
   assertSetEquality(explicitSet(none), expectedKeys, 'merge-empty');
   const nul = mergeAiCandidateUpdates(candidates, null);
   assertSetEquality(explicitSet(nul), expectedKeys, 'merge-null');
+});
+
+test('typed IOC table: defanged Domain rows stay domains; scheme-less URL rows stay URLs; host is independent', () => {
+  const html = `<html lang="en"><body><article>
+<h2>Indicators of Compromise</h2>
+<table>
+<thead><tr><th>Type</th><th>IOC</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>IP</td><td>203.0.113.77</td><td>C2</td></tr>
+<tr><td>Domain</td><td>op-console[.]shop</td><td>Operator console</td></tr>
+<tr><td>Domain</td><td>skimmer-cdn[.]shop</td><td>Skimmer host</td></tr>
+<tr><td>URL</td><td>skimmer-cdn[.]shop/js/load.js</td><td>Skimmer URL</td></tr>
+</tbody>
+</table>
+</article></body></html>`;
+  const { candidates, diagnostics } = extractFromHtml(html, 'https://vendor.example/research/skimmer-campaign');
+  const byKey = new Map(candidates.map((c) => [keyOf(c), c]));
+  assert.equal(diagnostics.type_resolution.rejected_values.not_hostname_syntax, undefined);
+  assert.ok(byKey.has('domain:op-console.shop'), 'defanged Domain row must become a domain candidate');
+  assert.ok(byKey.has('domain:skimmer-cdn.shop'), 'Domain row that is also a URL host stays an independent domain');
+  assert.ok(byKey.has('url:skimmer-cdn.shop/js/load.js'), 'scheme-less URL row stays a URL');
+  assert.equal(byKey.get('domain:op-console.shop').source_assertion, 'explicit_ioc');
+  assert.equal(byKey.get('domain:skimmer-cdn.shop').source_assertion, 'explicit_ioc');
+  assert.equal(byKey.get('url:skimmer-cdn.shop/js/load.js').source_assertion, 'explicit_ioc');
+  assert.equal(byKey.has('domain:vendor.example'), false, 'report host is not promoted as a finding');
 });
 
 test('retry: outdated extraction contract or rebuilt document refreshes candidates and starts a new analysis run', () => {

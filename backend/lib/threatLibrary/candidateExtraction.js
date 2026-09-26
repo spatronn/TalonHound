@@ -66,8 +66,10 @@ export {
  * v8: IPv4 / IPv6 token boundaries — a numeric DNS prefix such as
  * `128.200.178.68.host.example.com` is not a standalone IP; acceptance
  * requires a source span that is not a subspan of a larger hostname.
+ * v9: defanged Domain table spellings (`host[.]tld`) are refanged before the
+ * hostname-syntax gate so typed indicator rows survive as domain candidates.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v8';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v9';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
