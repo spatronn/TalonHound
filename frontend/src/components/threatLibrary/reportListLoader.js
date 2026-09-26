@@ -29,23 +29,23 @@ export function createReportListLoader({ fetchPage, pageSize = REPORT_LIST_PAGE_
     },
 
     /**
-     * Issue the request for { search, page }. Resolves to one of:
+     * Issue the request for { search, page, pageSize }. Resolves to one of:
      *  - { kind: 'applied', items, total }   newest response, page is valid
      *  - { kind: 'clamped', total, page }    newest response but the page is past the end -> reload `page`
      *  - { kind: 'stale' }                   superseded by a later load (or aborted): ignore
      *  - { kind: 'error', message }          newest response failed
      */
-    async load({ search = '', page = 1 } = {}) {
+    async load({ search = '', page = 1, pageSize: size = pageSize } = {}) {
       seq += 1;
       const mySeq = seq;
       if (controller) controller.abort();
       controller = makeController();
-      const params = buildReportListQueryParams({ search, page, pageSize });
+      const params = buildReportListQueryParams({ search, page, pageSize: size });
       try {
         const data = await fetchPage(params, controller.signal);
         if (mySeq !== seq) return { kind: 'stale' };
         const total = Number(data?.total || 0);
-        const clamped = clampReportListPage(page, total, pageSize);
+        const clamped = clampReportListPage(page, total, params.limit);
         if (clamped !== page) return { kind: 'clamped', total, page: clamped };
         return { kind: 'applied', items: Array.isArray(data?.items) ? data.items : [], total };
       } catch (err) {

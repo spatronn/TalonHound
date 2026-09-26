@@ -18,6 +18,22 @@ export const REPORT_LIST_DEFAULT_LIMIT = 50;
 export const REPORT_LIST_MAX_LIMIT = 200;
 export const REPORT_LIST_SEARCH_MAX_LENGTH = 200;
 
+/** Page sizes the Threat Library list UI offers; the HTTP route accepts only these. */
+export const REPORT_LIST_PAGE_SIZES = Object.freeze([25, 50]);
+export const REPORT_LIST_DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * HTTP `limit` for the report list: one of REPORT_LIST_PAGE_SIZES, anything
+ * else (missing, junk, 10, 200, repeated params) falls back to the default so
+ * a hand-edited URL can never widen the page or error.
+ * @param {unknown} value
+ * @returns {number}
+ */
+export function parseReportListPageSize(value) {
+  const n = typeof value === 'string' && /^\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+  return REPORT_LIST_PAGE_SIZES.includes(n) ? n : REPORT_LIST_DEFAULT_PAGE_SIZE;
+}
+
 /** Metadata columns a report-list search matches against (substring, case-insensitive). */
 export const REPORT_LIST_SEARCH_COLUMNS = Object.freeze([
   'r.title',

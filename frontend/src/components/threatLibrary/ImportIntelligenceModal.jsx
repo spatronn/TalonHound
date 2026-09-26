@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { api } from '../../lib/api.js';
+import { formatUserDateTime } from '../../lib/formatDate.js';
 import ThreatLibraryModal, { ModalCancelButton } from './ThreatLibraryModal.jsx';
+import { describeImportOutcome } from './importOutcome.js';
 import { formatUploadBytes, importErrorMessage, multipartFormConfig } from './multipartUpload.js';
 import { ui } from './styles.js';
 
@@ -13,7 +15,7 @@ const TABS = [
   { id: 'thib', label: 'TalonHound Bundle' }
 ];
 
-export default function ImportIntelligenceModal({ open, onClose, onImported }) {
+export default function ImportIntelligenceModal({ open, onClose, onImported, onOpenReport }) {
   const [tab, setTab] = useState('url');
   const [url, setUrl] = useState('');
   const [pdfFile, setPdfFile] = useState(null);
@@ -23,6 +25,8 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
   const [busyLabel, setBusyLabel] = useState('');
   const [error, setError] = useState('');
   const [errorCode, setErrorCode] = useState('');
+  // Duplicate URL / PDF (already in the library): informational, not an error.
+  const [duplicate, setDuplicate] = useState(null);
 
   function reset() {
     setTab('url');
@@ -34,6 +38,7 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
     setBusyLabel('');
     setError('');
     setErrorCode('');
+    setDuplicate(null);
   }
 
   function handleClose() {
@@ -48,16 +53,34 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
     setErrorCode(typeof data?.code === 'string' ? data.code : '');
   }
 
+  /** Duplicate -> stay open with the notice; new import -> hand off and close. */
+  function finishImport(data) {
+    const outcome = describeImportOutcome(data);
+    if (outcome.kind === 'duplicate') {
+      setDuplicate(outcome);
+      return;
+    }
+    onImported?.(outcome.report);
+    reset();
+    onClose?.();
+  }
+
+  function openExistingReport() {
+    const reportId = duplicate?.reportId;
+    reset();
+    onClose?.();
+    if (reportId) onOpenReport?.(reportId);
+  }
+
   async function submitUrl() {
     setBusy(true);
     setBusyLabel('Importing URL…');
     setError('');
     setErrorCode('');
+    setDuplicate(null);
     try {
       const { data } = await api.post('/threat-library/import/url', { url: url.trim() });
-      onImported?.(data?.report);
-      reset();
-      onClose?.();
+      finishImport(data);
     } catch (err) {
       setImportError(err, 'URL import failed');
     } finally {
@@ -81,14 +104,13 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
     setBusyLabel('Uploading PDF…');
     setError('');
     setErrorCode('');
+    setDuplicate(null);
     try {
       const form = new FormData();
       form.append('file', pdfFile);
       // Do NOT set Content-Type manually — boundary must come from the browser.
       const { data } = await api.post('/threat-library/import/pdf', form, multipartFormConfig());
-      onImported?.(data?.report);
-      reset();
-      onClose?.();
+      finishImport(data);
     } catch (err) {
       setImportError(err, 'PDF import failed');
     } finally {
@@ -180,7 +202,7 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
             type="button"
             style={ui.tab(tab === t.id)}
             disabled={busy}
-            onClick={() => { setTab(t.id); setError(''); setErrorCode(''); }}
+            onClick={() => { setTab(t.id); setError(''); setErrorCode(''); setDuplicate(null); }}
           >
             {t.label}
           </button>
@@ -194,6 +216,21 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
         </div>
       ) : null}
 
+      {duplicate ? (
+        <div style={{ ...ui.infoBanner, marginBottom: 10 }} role="status" data-testid="tl-import-duplicate">
+          <strong style={{ display: 'block', marginBottom: 4 }}>{duplicate.message}</strong>
+          <div style={{ color: '#e2e8f0' }}>{duplicate.title}</div>
+          {duplicate.importedAt ? (
+            <div style={{ marginTop: 2, fontSize: 12 }}>Imported: {formatUserDateTime(duplicate.importedAt)}</div>
+          ) : null}
+          {onOpenReport ? (
+            <button type="button" style={{ ...ui.btn, marginTop: 8 }} onClick={openExistingReport}>
+              Open report
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       <form id="threat-library-import-form" onSubmit={onSubmit}>
         {tab === 'url' ? (
           <div>
@@ -204,7 +241,7 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
               type="url"
               placeholder="https://…"
               value={url}
-              onChange={(e) => setUrl(e.target.value)}
+              onChange={(e) => { setUrl(e.target.value); setDuplicate(null); }}
               disabled={busy}
               autoFocus
             />
@@ -222,7 +259,7 @@ export default function ImportIntelligenceModal({ open, onClose, onImported }) {
               type="file"
               accept="application/pdf,.pdf"
               disabled={busy}
-              onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+              onChange={(e) => { setPdfFile(e.target.files?.[0] || null); setDuplicate(null); }}
             />
             <span style={ui.helper}>
               Maximum size {formatUploadBytes(PDF_MAX_BYTES_UI)}. Text is extracted server-side, then analyzed for IOC candidates.

@@ -169,3 +169,42 @@ test('abort() cancels the in-flight request (unmount) and reports stale', async 
   assert.equal(calls[0].signal.aborted, true);
   assert.equal((await p).kind, 'stale');
 });
+
+test('rows per page: a 50-row load requests limit 50 and pages through 157 rows in 4 pages without gaps or repeats', async () => {
+  const seen = [];
+  const requested = [];
+  const loader = createReportListLoader({ fetchPage: async (params) => { requested.push(params); return serverPage(params); } });
+  for (let page = 1; page <= 4; page += 1) {
+    const r = await loader.load({ page, pageSize: 50 });
+    assert.equal(r.kind, 'applied');
+    assert.equal(r.total, 157);
+    seen.push(...r.items.map((x) => x.id));
+  }
+  assert.deepEqual(requested.map((p) => [p.limit, p.offset]), [[50, 0], [50, 50], [50, 100], [50, 150]]);
+  assert.equal(seen.length, 157);
+  assert.equal(new Set(seen).size, 157);
+  assert.equal(seen.at(-1), 'rep-157');
+});
+
+test('rows per page: page 7 at 25/page is past the end at 50/page and clamps to page 4', async () => {
+  const loader = createReportListLoader({ fetchPage: async (params) => serverPage(params) });
+  assert.deepEqual(await loader.load({ page: 7, pageSize: 50 }), { kind: 'clamped', total: 157, page: 4 });
+  const r = await loader.load({ page: 7, pageSize: 25 });
+  assert.equal(r.kind, 'applied');
+  assert.deepEqual(r.items.map((x) => x.id), ['rep-151', 'rep-152', 'rep-153', 'rep-154', 'rep-155', 'rep-156', 'rep-157']);
+});
+
+test('rows per page + search: the filtered total drives 25 vs 50 paging', async () => {
+  const requested = [];
+  const loader = createReportListLoader({ fetchPage: async (params) => { requested.push(params); return serverPage(params); } });
+  // "threat_report" matches the 79 odd ids.
+  const a = await loader.load({ search: 'threat_report', page: 2, pageSize: 50 });
+  assert.equal(a.total, 79);
+  assert.equal(a.items.length, 29);
+  const b = await loader.load({ search: 'threat_report', page: 4, pageSize: 25 });
+  assert.equal(b.items.length, 4);
+  assert.deepEqual(requested.map((p) => p.limit), [50, 25]);
+  // An unsupported size never reaches the API.
+  await loader.load({ page: 1, pageSize: 200 });
+  assert.equal(requested.at(-1).limit, 25);
+});

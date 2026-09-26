@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '030_threat_report_tags.sql');
-  assert.equal(meta.latestMigration, 30);
+  assert.equal(meta.latestMigrationFile, '031_threat_report_import_identity.sql');
+  assert.equal(meta.latestMigration, 31);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -229,5 +229,17 @@ test('030 adds threat_report_tags additively with deliberate FKs, PK and tag ind
   // Inheritance is derived at read time: the migration never touches direct IOC tags or existing data.
   for (const forbidden of ['ioc_tags', 'DROP ', 'DELETE FROM', 'UPDATE ', 'TRUNCATE', 'INSERT ', 'ALTER TABLE']) {
     assert.ok(!code.includes(forbidden), `030 must not contain ${forbidden.trim()}`);
+  }
+});
+
+test('031 adds the report import identity additively: nullable column + partial lookup indexes, no UNIQUE, no data rewrite', () => {
+  const sql = readFileSync(path.join(MIGRATIONS_DIR, '031_threat_report_import_identity.sql'), 'utf8');
+  const code = sql.replace(/^--.*$/gm, '');
+  assert.match(code, /ALTER TABLE public\.threat_reports\s+ADD COLUMN IF NOT EXISTS source_url_canonical text;/);
+  assert.match(code, /ON public\.threat_reports \(source_url_canonical\)\s+WHERE source_type = 'url' AND deleted_at IS NULL;/);
+  // PDF identity reuses the existing source_sha256 column (no competing hash field).
+  assert.match(code, /ON public\.threat_reports \(source_sha256\)\s+WHERE source_type = 'pdf' AND deleted_at IS NULL;/);
+  for (const forbidden of ['UNIQUE', 'NOT NULL DEFAULT', 'DROP ', 'DELETE FROM', 'UPDATE ', 'TRUNCATE', 'INSERT ', 'md5']) {
+    assert.ok(!code.includes(forbidden), `031 must not contain ${forbidden.trim()}`);
   }
 });

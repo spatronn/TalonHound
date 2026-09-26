@@ -157,7 +157,8 @@ test('THIB export uses the effective TLP and carries its provenance', () => {
 
 test('report list passes ?search= to the store and keeps the { items, total } response shape', () => {
   const block = routeSrc.slice(routeSrc.indexOf("app.get('/api/threat-library/reports',"), routeSrc.indexOf("app.get('/api/threat-library/reports/:publicId'"));
-  assert.match(block, /listThreatReports\(pool, \{\s*limit: req\.query\.limit,\s*offset: req\.query\.offset,[\s\S]*?search: req\.query\.search\s*\}\)/);
+  // limit is restricted to the UI page sizes (25 / 50) before it reaches the store.
+  assert.match(block, /listThreatReports\(pool, \{[\s\S]*?limit: parseReportListPageSize\(req\.query\.limit\),\s*offset: req\.query\.offset,[\s\S]*?search: req\.query\.search\s*\}\)/);
   // Report tags are batch-loaded once per page (no per-report query).
   assert.match(block, /const tagsByReport = await loadReportTagsByReportIds\(pool, result\.items\.map\(\(r\) => r\.id\)\);/);
   assert.match(block, /items: result\.items\.map\(\(r\) => publicReport\(\{ \.\.\.r, tags: tagsByReport\.get\(Number\(r\.id\)\) \|\| \[\] \}\)\),\s*total: result\.total/);

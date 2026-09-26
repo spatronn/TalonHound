@@ -6,6 +6,7 @@ import ImportIntelligenceModal from './ImportIntelligenceModal.jsx';
 import { statusLabel } from './stages.js';
 import {
   REPORT_LIST_PAGE_SIZE,
+  REPORT_LIST_PAGE_SIZE_OPTIONS,
   REPORT_LIST_SEARCH_DEBOUNCE_MS,
   REPORT_LIST_SEARCH_MAX_LENGTH,
   buildReportListUrlSearchParams,
@@ -39,15 +40,16 @@ function statusColors(report) {
 const searchInputStyle = { ...ui.input, padding: '8px 12px', fontSize: 13, minHeight: 36 };
 const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' };
 const pagerBtn = { ...ui.btn, minHeight: 30, padding: '4px 10px', fontSize: 12 };
+const pageSizeSelect = { ...ui.select, width: 'auto', minHeight: 30, padding: '4px 8px', fontSize: 12 };
 
 export default function ThreatLibraryPage({ AppShell, useSession }) {
   const { isAdmin, canWrite } = useSession();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  // The URL is the single source of truth for the debounced search term and
-  // the page (?search=&page=), so reload, Back/Forward and shared links all
-  // land on the same list state and nothing can fight the router.
-  const { search, page } = useMemo(() => parseReportListUrlState(searchParams), [searchParams]);
+  // The URL is the single source of truth for the debounced search term, the
+  // page and the rows per page (?search=&page=&limit=), so reload, Back/Forward
+  // and shared links all land on the same list state and nothing can fight the router.
+  const { search, page, pageSize } = useMemo(() => parseReportListUrlState(searchParams), [searchParams]);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -81,13 +83,13 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
-    const result = await loaderRef.current.load({ search, page });
+    const result = await loaderRef.current.load({ search, page, pageSize });
     if (result.kind === 'stale') return;
     if (result.kind === 'clamped') {
       // Result set shrank below this page (search narrowed, rows deleted):
       // keep the loading placeholder and reload the last valid page.
       setTotal(result.total);
-      setListUrl({ search, page: result.page });
+      setListUrl({ search, page: result.page, pageSize });
       return;
     }
     if (result.kind === 'error') {
@@ -99,7 +101,7 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
       setTotal(result.total);
     }
     setLoading(false);
-  }, [search, page, setListUrl]);
+  }, [search, page, pageSize, setListUrl]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -111,10 +113,10 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   useEffect(() => {
     const t = setTimeout(() => {
       const next = normalizeReportListSearch(searchInput);
-      if (next !== search) setListUrl({ search: next, page: 1 });
+      if (next !== search) setListUrl({ search: next, page: 1, pageSize });
     }, REPORT_LIST_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [searchInput, search, setListUrl]);
+  }, [searchInput, search, pageSize, setListUrl]);
 
   // URL term changed underneath the field (Back/Forward, shared link): reflect it,
   // but leave the raw input alone while it already normalises to the same term.
@@ -122,15 +124,17 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
     setSearchInput((prev) => (normalizeReportListSearch(prev) === search ? prev : search));
   }, [search]);
 
-  // Canonicalise a hand-typed URL (page=1, padded search, junk page) once; the
-  // serialised form of the parsed state is a fixed point, so this cannot loop.
+  // Canonicalise a hand-typed URL (page=1, padded search, junk page / limit)
+  // once; the serialised form of the parsed state is a fixed point, so this cannot loop.
   useEffect(() => {
-    setListUrl({ search, page });
-  }, [search, page, setListUrl]);
+    setListUrl({ search, page, pageSize });
+  }, [search, page, pageSize, setListUrl]);
 
-  const goToPage = (next) => setListUrl({ search, page: next });
+  const goToPage = (next) => setListUrl({ search, page: next, pageSize });
+  // A new page size restarts at page 1 so the first visible row is never skipped.
+  const changePageSize = (next) => setListUrl({ search, page: 1, pageSize: next });
 
-  const pagination = describeReportListPagination({ page, total, pageSize: REPORT_LIST_PAGE_SIZE });
+  const pagination = describeReportListPagination({ page, total, pageSize });
   const emptyState = describeReportListEmptyState({ loading, itemCount: items.length, total, search, canWrite });
 
   function onImported(report) {
@@ -244,6 +248,19 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
               {loading ? ' \u00b7 Updating\u2026' : ''}
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <label htmlFor="tl-report-page-size" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                Rows per page
+                <select
+                  id="tl-report-page-size"
+                  style={pageSizeSelect}
+                  value={pageSize}
+                  onChange={(e) => changePageSize(Number(e.target.value))}
+                >
+                  {REPORT_LIST_PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
               <button
                 type="button"
                 style={pagerBtn}
@@ -270,6 +287,7 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImported={onImported}
+        onOpenReport={(reportId) => navigate(`/threat-intelligence/threat-library/${reportId}`)}
       />
     </AppShell>
   );

@@ -2,14 +2,19 @@
  * Threat Library report-list helpers: search normalisation, pagination maths,
  * request params, URL state and the list empty-state descriptor. Pure
  * functions so the page behaviour is unit-testable without a DOM. Mirrors the
- * threat-actor / tag manager list conventions (25 per page, ?search=&page=).
+ * threat-actor / tag manager list conventions (25 per page, ?search=&page=),
+ * plus a 25 / 50 rows-per-page choice carried as ?limit= (the API parameter).
  */
 
+/** Default rows per page. */
 export const REPORT_LIST_PAGE_SIZE = 25;
+/** Rows-per-page choices; the API serves exactly these (anything else -> 25). */
+export const REPORT_LIST_PAGE_SIZE_OPTIONS = Object.freeze([25, 50]);
 export const REPORT_LIST_SEARCH_DEBOUNCE_MS = 300;
 export const REPORT_LIST_SEARCH_MAX_LENGTH = 200;
 export const REPORT_LIST_SEARCH_PARAM = 'search';
 export const REPORT_LIST_PAGE_PARAM = 'page';
+export const REPORT_LIST_LIMIT_PARAM = 'limit';
 
 /** Trim and bound the search term; anything else is "no search". */
 export function normalizeReportListSearch(value) {
@@ -21,6 +26,12 @@ export function normalizeReportListSearch(value) {
 export function normalizeReportListPage(value) {
   const n = typeof value === 'number' ? value : Number(String(value ?? '').trim());
   return Number.isSafeInteger(n) && n >= 1 ? n : 1;
+}
+
+/** One of REPORT_LIST_PAGE_SIZE_OPTIONS; anything else is the default (25). */
+export function normalizeReportListPageSize(value) {
+  const n = typeof value === 'number' ? value : Number(String(value ?? '').trim());
+  return REPORT_LIST_PAGE_SIZE_OPTIONS.includes(n) ? n : REPORT_LIST_PAGE_SIZE;
 }
 
 /** Last page that still has rows (1 when the list is empty). */
@@ -41,7 +52,7 @@ export function clampReportListPage(page, total, pageSize = REPORT_LIST_PAGE_SIZ
  * empty field on page 1 is byte-for-byte the unfiltered first-page request.
  */
 export function buildReportListQueryParams({ search = '', page = 1, pageSize = REPORT_LIST_PAGE_SIZE } = {}) {
-  const size = Math.max(1, Number(pageSize) || REPORT_LIST_PAGE_SIZE);
+  const size = normalizeReportListPageSize(pageSize);
   const p = normalizeReportListPage(page);
   const params = { limit: size, offset: (p - 1) * size };
   const q = normalizeReportListSearch(search);
@@ -49,23 +60,26 @@ export function buildReportListQueryParams({ search = '', page = 1, pageSize = R
   return params;
 }
 
-/** URL state: `?search=` only when active, `?page=` only past page 1. */
+/** URL state: `?search=` only when active, `?page=` only past page 1, `?limit=` only when not the default. */
 export function parseReportListUrlState(searchParams) {
   const params = searchParams && typeof searchParams.get === 'function'
     ? searchParams
     : new URLSearchParams(String(searchParams || ''));
   return {
     search: normalizeReportListSearch(params.get(REPORT_LIST_SEARCH_PARAM) || ''),
-    page: normalizeReportListPage(params.get(REPORT_LIST_PAGE_PARAM))
+    page: normalizeReportListPage(params.get(REPORT_LIST_PAGE_PARAM)),
+    pageSize: normalizeReportListPageSize(params.get(REPORT_LIST_LIMIT_PARAM))
   };
 }
 
-export function buildReportListUrlSearchParams({ search = '', page = 1 } = {}) {
+export function buildReportListUrlSearchParams({ search = '', page = 1, pageSize = REPORT_LIST_PAGE_SIZE } = {}) {
   const next = new URLSearchParams();
   const q = normalizeReportListSearch(search);
   if (q) next.set(REPORT_LIST_SEARCH_PARAM, q);
   const p = normalizeReportListPage(page);
   if (p > 1) next.set(REPORT_LIST_PAGE_PARAM, String(p));
+  const size = normalizeReportListPageSize(pageSize);
+  if (size !== REPORT_LIST_PAGE_SIZE) next.set(REPORT_LIST_LIMIT_PARAM, String(size));
   return next;
 }
 

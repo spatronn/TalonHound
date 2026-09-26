@@ -66,6 +66,12 @@ import {
 } from '../lib/threatLibrary/reportTagInheritance.js';
 import { resolveArtifactScopedIocIds } from '../lib/fileArtifacts/read.js';
 import { validateReportSourceUrl } from '../lib/threatLibrary/sourceUrl.js';
+import { parseReportListPageSize } from '../lib/threatLibrary/reportListQuery.js';
+import {
+  IMPORT_DUPLICATE_MESSAGES,
+  canonicalizeReportUrl,
+  claimReportImport
+} from '../lib/threatLibrary/importIdentity.js';
 import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
 import { defaultTimeoutsForProvider } from '../lib/threatLibrary/ai/timeouts.js';
 import {
@@ -221,6 +227,22 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     return job;
   }
 
+  /**
+   * Duplicate URL / PDF import: an expected no-op (200), not a failure. The
+   * existing report is returned so the client can link to it; nothing was
+   * created, fetched, extracted or queued.
+   * @param {object} existing threat_reports row
+   * @param {'url'|'sha256'} reason
+   */
+  async function duplicateImportBody(existing, reason) {
+    return {
+      already_imported: true,
+      duplicate_reason: reason,
+      message: IMPORT_DUPLICATE_MESSAGES[reason],
+      report: publicReport(await reportWithDetail(existing))
+    };
+  }
+
   // --- AI settings (admin) ---
   app.get('/api/threat-library/ai-settings', requireRole(ROLES.ADMIN), async (_req, res) => {
     try {
@@ -317,7 +339,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   app.get('/api/threat-library/reports', async (req, res) => {
     try {
       const result = await listThreatReports(pool, {
-        limit: req.query.limit,
+        // Only the UI page sizes (25 / 50) are served; anything else -> 25.
+        limit: parseReportListPageSize(req.query.limit),
         offset: req.query.offset,
         // Library navigation search over stored report metadata only.
         search: req.query.search
@@ -325,7 +348,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       const tagsByReport = await loadReportTagsByReportIds(pool, result.items.map((r) => r.id));
       return res.json({
         items: result.items.map((r) => publicReport({ ...r, tags: tagsByReport.get(Number(r.id)) || [] })),
-        total: result.total
+        total: result.total,
+        limit: result.limit,
+        offset: result.offset
       });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to list reports', detail: err.message });
@@ -416,17 +441,33 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       const policy = validateThreatLibraryUrl(url);
       if (!policy.ok) return res.status(400).json({ message: policy.error });
 
+      const canonicalUrl = canonicalizeReportUrl(policy.url);
+      if (!canonicalUrl) return res.status(400).json({ message: 'URL must be a valid http or https URL' });
+
       const actor = await actorOf(req);
-      const report = await createThreatReport(pool, {
+      // Duplicate check BEFORE any report row, job or queue entry exists: a
+      // URL already in the library is never fetched or analysed again.
+      const claim = await claimReportImport(pool, { kind: 'url', key: canonicalUrl }, (db) => createThreatReport(db, {
         title: policy.parsed.hostname || 'URL report',
         source_type: 'url',
         source_url: policy.url,
+        source_url_canonical: canonicalUrl,
         source_name: policy.parsed.hostname,
         tlp: normalizeTlp(req.body?.tlp || 'clear'),
         // A TLP supplied with the import request is an analyst assertion.
         tlp_source: req.body?.tlp ? 'manual' : 'default',
         created_by: actor?.publicId
-      });
+      }));
+      if (claim.duplicate) {
+        await writeAudit(req, buildImportAuditEvent({
+          sourceType: 'url',
+          report: claim.report,
+          user: actor,
+          details: { source_url: policy.url, host: policy.parsed.hostname, already_imported: true, duplicate_reason: 'url' }
+        }));
+        return res.status(200).json(await duplicateImportBody(claim.report, 'url'));
+      }
+      const report = claim.report;
       const jobRow = await createJob(pool, {
         reportId: report.id,
         jobType: 'analyze',
@@ -442,7 +483,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         details: { source_url: policy.url, host: policy.parsed.hostname }
       }));
 
-      return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
+      return res.status(202).json({ already_imported: false, report: publicReport(report), job_id: jobRow.public_id });
     } catch (err) {
       await writeAudit(req, buildImportFailedAuditEvent({
         sourceType: 'url',
@@ -507,7 +548,10 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         }
 
         const actor = await actorOf(req);
-        const report = await createThreatReport(pool, {
+        // validation.sha256 = SHA-256 of the original uploaded bytes. Checked
+        // BEFORE the file is stored, extracted or queued: identical bytes
+        // under any filename are the same report.
+        const claim = await claimReportImport(pool, { kind: 'sha256', key: validation.sha256 }, (db) => createThreatReport(db, {
           title: validation.fileName.replace(/\.pdf$/i, ''),
           source_type: 'pdf',
           source_file_name: validation.fileName,
@@ -516,7 +560,23 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           tlp: normalizeTlp(req.body?.tlp || 'clear'),
           tlp_source: req.body?.tlp ? 'manual' : 'default',
           created_by: actor?.publicId
-        });
+        }));
+        if (claim.duplicate) {
+          await writeAudit(req, buildImportAuditEvent({
+            sourceType: 'pdf',
+            report: claim.report,
+            user: actor,
+            details: {
+              file_name: validation.fileName,
+              sha256: validation.sha256,
+              size_bytes: validation.sizeBytes,
+              already_imported: true,
+              duplicate_reason: 'sha256'
+            }
+          }));
+          return res.status(200).json(await duplicateImportBody(claim.report, 'sha256'));
+        }
+        const report = claim.report;
 
         let stored;
         try {
@@ -525,6 +585,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             ext: '.pdf'
           });
         } catch (storeErr) {
+          // No PDF was kept, so the report can never be analysed: retire it
+          // rather than leave a hash identity that blocks re-uploading the file.
+          await deleteThreatReport(pool, report.id).catch(() => {});
           return res.status(500).json({
             message: 'Failed to store the uploaded PDF',
             code: 'pdf_storage_failed',
@@ -559,7 +622,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           }
         }));
 
-        return res.status(202).json({ report: publicReport(report), job_id: jobRow.public_id });
+        return res.status(202).json({ already_imported: false, report: publicReport(report), job_id: jobRow.public_id });
       } catch (err) {
         await writeAudit(req, buildImportFailedAuditEvent({
           sourceType: 'pdf',

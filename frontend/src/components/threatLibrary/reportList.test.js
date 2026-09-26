@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   REPORT_LIST_PAGE_SIZE,
+  REPORT_LIST_PAGE_SIZE_OPTIONS,
   REPORT_LIST_SEARCH_DEBOUNCE_MS,
   REPORT_LIST_SEARCH_MAX_LENGTH,
   buildReportListQueryParams,
@@ -11,6 +12,7 @@ import {
   describeReportListPagination,
   formatReportListShowingLabel,
   normalizeReportListPage,
+  normalizeReportListPageSize,
   normalizeReportListSearch,
   parseReportListUrlState,
   reportListTotalPages
@@ -62,16 +64,64 @@ test('a search term is sent alongside pagination, trimmed', () => {
 // --- URL state ----------------------------------------------------------------
 
 test('URL seeds search and page; page=1 and blank search are omitted when serialising', () => {
-  assert.deepEqual(parseReportListUrlState(new URLSearchParams('search=iranian&page=2')), { search: 'iranian', page: 2 });
-  assert.deepEqual(parseReportListUrlState('search=%20socradar%20'), { search: 'socradar', page: 1 });
-  assert.deepEqual(parseReportListUrlState(new URLSearchParams('page=5')), { search: '', page: 5 });
-  assert.deepEqual(parseReportListUrlState(null), { search: '', page: 1 });
+  assert.deepEqual(parseReportListUrlState(new URLSearchParams('search=iranian&page=2')), { search: 'iranian', page: 2, pageSize: 25 });
+  assert.deepEqual(parseReportListUrlState('search=%20socradar%20'), { search: 'socradar', page: 1, pageSize: 25 });
+  assert.deepEqual(parseReportListUrlState(new URLSearchParams('page=5')), { search: '', page: 5, pageSize: 25 });
+  assert.deepEqual(parseReportListUrlState(null), { search: '', page: 1, pageSize: 25 });
   assert.equal(buildReportListUrlSearchParams({ search: 'threat_report', page: 3 }).toString(), 'search=threat_report&page=3');
   assert.equal(buildReportListUrlSearchParams({ search: 'threat_report', page: 1 }).toString(), 'search=threat_report');
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 2 }).toString(), 'page=2');
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 1 }).toString(), '');
   const roundTrip = parseReportListUrlState(buildReportListUrlSearchParams({ search: 'cta-nk', page: 4 }));
-  assert.deepEqual(roundTrip, { search: 'cta-nk', page: 4 });
+  assert.deepEqual(roundTrip, { search: 'cta-nk', page: 4, pageSize: 25 });
+});
+
+// --- rows per page (25 / 50) ------------------------------------------------------
+
+test('page size options are 25 / 50 with 25 as the default; anything else normalises to 25', () => {
+  assert.deepEqual([...REPORT_LIST_PAGE_SIZE_OPTIONS], [25, 50]);
+  assert.equal(normalizeReportListPageSize(50), 50);
+  assert.equal(normalizeReportListPageSize('50'), 50);
+  assert.equal(normalizeReportListPageSize(' 25 '), 25);
+  for (const junk of [undefined, null, '', '10', '100', '200', 'abc', '-50', '50.5', 0, NaN]) {
+    assert.equal(normalizeReportListPageSize(junk), 25, String(junk));
+  }
+});
+
+test('limit=50 is requested with 50-row offsets; an invalid size never reaches the API', () => {
+  assert.deepEqual(buildReportListQueryParams({ page: 1, pageSize: 50 }), { limit: 50, offset: 0 });
+  assert.deepEqual(buildReportListQueryParams({ page: 3, pageSize: 50 }), { limit: 50, offset: 100 });
+  assert.deepEqual(buildReportListQueryParams({ search: 'apt', page: 2, pageSize: 50 }), { limit: 50, offset: 50, search: 'apt' });
+  assert.deepEqual(buildReportListQueryParams({ page: 2, pageSize: 10 }), { limit: 25, offset: 25 });
+  assert.deepEqual(buildReportListQueryParams({ page: 2, pageSize: 1000 }), { limit: 25, offset: 25 });
+});
+
+test('URL carries ?limit= only for a non-default size and round-trips with search + page', () => {
+  assert.equal(buildReportListUrlSearchParams({ search: 'apt', page: 2, pageSize: 50 }).toString(), 'search=apt&page=2&limit=50');
+  assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 50 }).toString(), 'limit=50');
+  assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 25 }).toString(), '', 'the default size is not written');
+  assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 999 }).toString(), '');
+  assert.deepEqual(parseReportListUrlState('search=apt&page=2&limit=50'), { search: 'apt', page: 2, pageSize: 50 });
+  for (const q of ['limit=10', 'limit=100', 'limit=abc', 'limit=', 'limit=-50']) {
+    assert.equal(parseReportListUrlState(q).pageSize, 25, q);
+  }
+  // Parsed state serialises to a fixed point, so the page's canonicalising effect cannot loop.
+  const canonical = buildReportListUrlSearchParams(parseReportListUrlState('limit=50&page=3&search=%20apt%20'));
+  assert.equal(canonical.toString(), 'search=apt&page=3&limit=50');
+  assert.equal(buildReportListUrlSearchParams(parseReportListUrlState(canonical)).toString(), canonical.toString());
+});
+
+test('50 rows per page: footer maths, last page and filtered totals', () => {
+  const first = describeReportListPagination({ page: 1, total: 157, pageSize: 50 });
+  assert.deepEqual([first.from, first.to, first.totalPages, first.pageLabel, first.hasPrevious, first.hasNext], [1, 50, 4, 'Page 1 of 4', false, true]);
+  const last = describeReportListPagination({ page: 4, total: 157, pageSize: 50 });
+  assert.deepEqual([last.from, last.to, last.hasNext, last.hasPrevious], [151, 157, false, true]);
+  assert.equal(formatReportListShowingLabel({ from: last.from, to: last.to, total: 157 }), 'Showing 151–157 of 157 reports');
+  // Same library at 25/page has 7 pages; page 7 at 25 is out of range at 50 and clamps to 4.
+  assert.equal(describeReportListPagination({ page: 7, total: 157, pageSize: 25 }).page, 7);
+  assert.equal(clampReportListPage(7, 157, 50), 4);
+  const filtered = describeReportListPagination({ page: 1, total: 40, pageSize: 50 });
+  assert.deepEqual([filtered.totalPages, filtered.to, filtered.hasNext], [1, 40, false]);
 });
 
 test('invalid URL page values fall back to page 1 without throwing', () => {

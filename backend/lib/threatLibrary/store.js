@@ -102,9 +102,9 @@ export async function createThreatReport(pool, fields) {
        title, source_type, source_name, source_url, source_file_name, source_sha256,
        published_at, language, tlp, confidence, report_type, summary,
        import_status, analysis_status, portable_id, bundle_id, created_by, tlp_source,
-       published_at_source, published_at_precision, published_at_raw
+       published_at_source, published_at_precision, published_at_raw, source_url_canonical
      ) VALUES (
-       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid,$18,$19,$20,$21
+       $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::uuid,$18,$19,$20,$21,$22
      ) RETURNING *`,
     [
       fields.title || 'Untitled report',
@@ -129,7 +129,9 @@ export async function createThreatReport(pool, fields) {
       // source is treated as unknown provenance (kept, never upgraded).
       fields.published_at && isValidPublicationDateSource(fields.published_at_source) ? String(fields.published_at_source).toLowerCase() : null,
       fields.published_at && isValidPublicationDatePrecision(fields.published_at_precision) ? String(fields.published_at_precision).toLowerCase() : null,
-      fields.published_at && fields.published_at_raw ? String(fields.published_at_raw).slice(0, 80) : null
+      fields.published_at && fields.published_at_raw ? String(fields.published_at_raw).slice(0, 80) : null,
+      // URL import identity (importIdentity.canonicalizeReportUrl); URL imports only.
+      fields.source_type === 'url' && fields.source_url_canonical ? String(fields.source_url_canonical) : null
     ]
   );
   return rows[0];
@@ -238,7 +240,7 @@ export async function listThreatReports(pool, { limit, offset, search } = {}) {
     `SELECT COUNT(*)::int AS total FROM threat_reports r ${where.sql}`,
     where.params
   );
-  return { items: rows, total: countRows[0]?.total || 0, search: opts.search };
+  return { items: rows, total: countRows[0]?.total || 0, search: opts.search, limit: opts.limit, offset: opts.offset };
 }
 
 export async function updateReportStatus(pool, reportId, patch) {

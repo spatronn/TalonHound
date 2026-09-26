@@ -1,14 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  REPORT_LIST_DEFAULT_PAGE_SIZE,
   REPORT_LIST_MAX_LIMIT,
+  REPORT_LIST_PAGE_SIZES,
   REPORT_LIST_SEARCH_COLUMNS,
   REPORT_LIST_SEARCH_MAX_LENGTH,
   buildReportListWhere,
   normalizeReportListSearch,
+  parseReportListPageSize,
   parseReportListQuery
 } from './reportListQuery.js';
 import { listThreatReports } from './store.js';
+
+// --- HTTP page size (25 / 50) ---------------------------------------------
+
+test('parseReportListPageSize serves only the UI page sizes and falls back to 25', () => {
+  assert.deepEqual([...REPORT_LIST_PAGE_SIZES], [25, 50]);
+  assert.equal(REPORT_LIST_DEFAULT_PAGE_SIZE, 25);
+  assert.equal(parseReportListPageSize(undefined), 25);
+  assert.equal(parseReportListPageSize('25'), 25);
+  assert.equal(parseReportListPageSize('50'), 50);
+  assert.equal(parseReportListPageSize(' 50 '), 50);
+  assert.equal(parseReportListPageSize(50), 50);
+  for (const junk of ['', '0', '10', '49', '51', '100', '200', '-25', '50.0', '5e1', '0x32', 'abc', ['50'], { n: 50 }, null, NaN]) {
+    assert.equal(parseReportListPageSize(junk), 25, JSON.stringify(junk));
+  }
+});
 
 // --- normalisation ----------------------------------------------------------
 
@@ -141,7 +159,7 @@ test('listThreatReports without search issues the unchanged baseline page + coun
   assert.deepEqual(page.params, [100, 0]);
   assert.match(count.sql, /SELECT COUNT\(\*\)::int AS total FROM threat_reports r WHERE r\.deleted_at IS NULL$/);
   assert.deepEqual(count.params, []);
-  assert.deepEqual(result, { items: [{ id: 1 }], total: 7, search: '' });
+  assert.deepEqual(result, { items: [{ id: 1 }], total: 7, search: '', limit: 100, offset: 0 });
 });
 
 test('listThreatReports applies the same search filter to the page and the count, before LIMIT/OFFSET', async () => {
