@@ -419,7 +419,8 @@ export async function runAnalysisPipeline(pool, ctx) {
           reportId: report.id,
           explicit_identities: tables.explicit_identities,
           candidates_created: tables.candidates_created,
-          missing_identities: (tables.missing_identities || []).slice(0, 40)
+          missing_identities: (tables.missing_identities || []).slice(0, 40),
+          dropped_asserted_identities: (tables.dropped_asserted_identities || []).slice(0, 40)
         });
       }
     }
@@ -879,6 +880,7 @@ export function compactExtractionDiagnostics(diagnostics) {
       rejection_reasons: t.rejection_reasons || {},
       inconsistent: t.inconsistent === true,
       missing_identities: (t.missing_identities || []).slice(0, 40),
+      dropped_asserted_identities: (t.dropped_asserted_identities || []).slice(0, 40),
       tables: (t.tables || [])
         .filter((x) => x.kind === 'ioc_table' || x.kind === 'identifier_table')
         .slice(0, 60)

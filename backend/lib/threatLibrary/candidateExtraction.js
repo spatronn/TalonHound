@@ -38,6 +38,7 @@ import {
   validateUrlCandidate
 } from './observableTypeResolver.js';
 import { ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
+import { createExplicitTableAssertionTracker } from './explicitTableCompleteness.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
 export {
@@ -250,6 +251,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       rejection_reasons: {},
       inconsistent: false,
       missing_identities: [],
+      dropped_asserted_identities: [],
       tables: []
     },
     /** Observable-type resolution: what the syntax guessed vs what the source supports. */
@@ -274,8 +276,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const rememberExample = (record) => {
     if (typeDiag.examples.length < 24) typeDiag.examples.push(record);
   };
-  /** identities asserted by explicit tables → must exist as candidates */
-  const explicitTableKeys = new Set();
+  /** IOC identities a valid explicit table asserted, recorded before add(). */
+  const explicitTableAssertions = createExplicitTableAssertionTracker();
+  /** Last rejection reason from add(); diagnostic only. */
+  let lastAddRejection = null;
 
   function occurrenceFor(block, extra = {}, focusValue = '') {
     const zone = block?.zone || 'unknown';
@@ -436,9 +440,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
    */
   function add(raw, hintType, block, extra = {}) {
     typeDiag.syntactic_occurrences += 1;
+    lastAddRejection = null;
     const n = normalizeCandidateValue(raw, hintType);
     if (!n.ok) {
-      countReason(typeDiag.rejected_values, n.error || 'unrecognized');
+      lastAddRejection = n.error || 'unrecognized';
+      countReason(typeDiag.rejected_values, lastAddRejection);
       return null;
     }
     // IP/IPv6: reject when this block's only evidence is a numeric prefix of a
@@ -447,7 +453,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     if (n.candidateType === 'ip' || n.candidateType === 'ipv6') {
       const sourceHay = extra.rowText || block?.text || '';
       if (sourceHay && isOnlyEmbeddedInDnsHostname(sourceHay, n.candidateType, n.normalizedValue)) {
-        countReason(typeDiag.rejected_values, 'embedded_in_dns_hostname');
+        lastAddRejection = 'embedded_in_dns_hostname';
+        countReason(typeDiag.rejected_values, lastAddRejection);
         return null;
       }
     }
@@ -470,7 +477,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         knownUrlHosts
       });
       if (typed.kind === 'skip') {
-        countReason(typeDiag.rejected_values, typed.reason);
+        lastAddRejection = typed.reason;
+        countReason(typeDiag.rejected_values, lastAddRejection);
         return null;
       }
       const id = n.normalizedValue;
@@ -595,9 +603,6 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         // pushOccurrence recorded the document-level reason; keep the per-occurrence one too.
         const last = entry.occurrences[entry.occurrences.length - 1];
         if (last && last.block_id === (occ.block?.id || null)) last.typing_reason = occ.typed.reason;
-        if (occ.extra.explicitTable && entry.is_ioc !== false) {
-          explicitTableKeys.add(candidateKey(entry.candidate_type, entry.normalized_value));
-        }
       }
       const entry = byKey.get(candidateKey(candidateType, isDomain ? pending.occurrences[0].n.normalizedValue : pending.token));
       if (entry) {
@@ -658,6 +663,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const related = relatedValuesFromDescription(row.description);
       for (const v of row.values) {
         t.values_asserted += 1;
+        const assertedIoc = Boolean(interp.explicit) && v.is_ioc !== false;
+        if (assertedIoc && v.candidate_type && v.normalized_value) {
+          explicitTableAssertions.rememberAsserted(v.candidate_type, v.normalized_value);
+        }
         const tableRow = {
           table_id: block.id,
           page: block.page ?? null,
@@ -689,8 +698,12 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           },
           explicitTable: Boolean(interp.explicit)
         });
-        if (entry && !entry.deferred && interp.explicit && entry.is_ioc !== false) {
-          explicitTableKeys.add(candidateKey(entry.candidate_type, entry.normalized_value));
+        if (assertedIoc && !entry) {
+          explicitTableAssertions.rememberDropped(
+            v.candidate_type,
+            v.normalized_value,
+            lastAddRejection || 'rejected'
+          );
         }
       }
     }
@@ -898,16 +911,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     out.push(entry);
   }
 
-  // Completeness gate: every identity a valid explicit table row asserted must
-  // be a persisted candidate. A mismatch is an internal extraction bug, not a
-  // source problem, and is surfaced for diagnosis rather than hidden.
+  // Completeness gate: every IOC identity a valid explicit table row asserted
+  // must exist as a candidate. Comparison is asserted − created, including
+  // identities that add() rejected. A mismatch is diagnostic only.
   const t = diagnostics.explicit_tables;
-  const created = out.filter((c) => Array.isArray(c.table_rows) && c.table_rows.some((r) => r.explicit));
-  t.candidates_created = created.length;
-  const createdKeys = new Set(created.map((c) => candidateKey(c.candidate_type, c.normalized_value)));
-  t.missing_identities = [...explicitTableKeys].filter((k) => !createdKeys.has(k)).map((k) => k.replace('\0', ':'));
-  t.inconsistent = t.missing_identities.length > 0;
-  t.explicit_identities = explicitTableKeys.size;
+  Object.assign(t, explicitTableAssertions.finalize(out));
   diagnostics.document_scope = documentScope;
   diagnostics.scope = buildScopeDiagnostics(annotated, out);
 

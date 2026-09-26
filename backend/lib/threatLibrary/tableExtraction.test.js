@@ -204,8 +204,10 @@ test('PDF fixture: explicit IOC set equals the 16 source assertions exactly', ()
   assert.equal(t.rows_valid, 16);
   assert.equal(t.rows_rejected, 0);
   assert.equal(t.candidates_created, 16);
+  assert.equal(t.explicit_identities, 16);
   assert.equal(t.inconsistent, false);
   assert.deepEqual(t.missing_identities, []);
+  assert.deepEqual(t.dropped_asserted_identities, []);
 
   // Every explicit row is resolved deterministically — no AI needed to rediscover it
   const explicit = candidates.filter((c) => expectedKeys.has(keyOf(c)));
@@ -266,6 +268,8 @@ test('English HTML: DOM tables give the identical explicit set; nav / advisory /
   assert.equal(diagnostics.explicit_tables.explicit_tables, 2);
   assert.equal(diagnostics.explicit_tables.rows_valid, 16);
   assert.equal(diagnostics.explicit_tables.inconsistent, false);
+  assert.deepEqual(diagnostics.explicit_tables.missing_identities, []);
+  assert.deepEqual(diagnostics.explicit_tables.dropped_asserted_identities, []);
 
   const urls = candidates.filter((c) => c.candidate_type === 'url');
   for (const u of urls) {
@@ -526,6 +530,11 @@ test('typed IOC table: defanged Domain rows stay domains; scheme-less URL rows s
   assert.equal(byKey.get('domain:skimmer-cdn.shop').source_assertion, 'explicit_ioc');
   assert.equal(byKey.get('url:skimmer-cdn.shop/js/load.js').source_assertion, 'explicit_ioc');
   assert.equal(byKey.has('domain:vendor.example'), false, 'report host is not promoted as a finding');
+  assert.equal(diagnostics.explicit_tables.values_asserted, 4);
+  assert.equal(diagnostics.explicit_tables.candidates_created, 4);
+  assert.equal(diagnostics.explicit_tables.inconsistent, false);
+  assert.deepEqual(diagnostics.explicit_tables.missing_identities, []);
+  assert.deepEqual(diagnostics.explicit_tables.dropped_asserted_identities, []);
 });
 
 test('retry: outdated extraction contract or rebuilt document refreshes candidates and starts a new analysis run', () => {
