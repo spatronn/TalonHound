@@ -40,3 +40,8 @@ test('retry progress marks resume for analyzing', () => {
   assert.equal(p.reused_document, true);
   assert.equal(p.reused_candidates, true);
 });
+
+test('retry progress preserves candidate_extraction_version when provided', () => {
+  const p = buildRetryProgress('analyzing', { candidate_extraction_version: 'tl-candidates-v9' });
+  assert.equal(p.candidate_extraction_version, 'tl-candidates-v9');
+});

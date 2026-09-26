@@ -3,7 +3,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { extractJsonObject } from './extract.js';
+import { extractJsonObject, capRawOutputSample } from './extract.js';
 import { normalizeConfidence, normalizeAiAnalysisInput } from './normalize.js';
 import { processAiResponseText, validateAiAnalysis } from './schema.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';
@@ -293,4 +293,54 @@ test('truncated JSON fails without partial persist path', () => {
   const r = processAiResponseText('{"summary":"broken","entities":[');
   assert.equal(r.ok, false);
   assert.equal(r.code, 'ai_output_parse_error');
+});
+
+test('two JSON objects are rejected and the first object is not accepted', () => {
+  const first = '{"summary":"first","entities":[],"candidate_updates":[],"relationships":[]}';
+  const second = '{"summary":"second","entities":[],"candidate_updates":[],"relationships":[]}';
+  const r = extractJsonObject(`${first}${second}`);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /multiple JSON objects/);
+  assert.equal(r.value, undefined);
+});
+
+test('valid JSON plus trailing prose is rejected', () => {
+  const r = extractJsonObject(
+    '{"summary":"ok","entities":[],"candidate_updates":[],"relationships":[]}\nThanks for reading.'
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.error, /mixed with unexpected prose/);
+});
+
+test('truncated relationship array is classified as truncated, not accepted', () => {
+  const r = extractJsonObject(
+    '{"summary":"ok","entities":[{"entity_type":"malware","name":"X"}],"candidate_updates":[],"relationships":[{"subject_kind":"entity"'
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.error, /truncated/);
+  assert.equal(r.value, undefined);
+});
+
+test('malformed fenced JSON is rejected', () => {
+  const r = extractJsonObject('```json\n{"summary":\n```');
+  assert.equal(r.ok, false);
+  assert.match(r.error, /Fenced JSON block is malformed/);
+});
+
+test('competing payload after a complete object is rejected', () => {
+  const r = extractJsonObject(
+    '{"summary":"a","entities":[],"candidate_updates":[],"relationships":[]}\n{"summary":"b","entities":[]}'
+  );
+  assert.equal(r.ok, false);
+  assert.match(r.error, /multiple JSON/);
+});
+
+test('capped diagnostic sample keeps head and tail, not the full runaway', () => {
+  const text = `${'H'.repeat(3000)}MIDDLE${'T'.repeat(3000)}`;
+  const sample = capRawOutputSample(text, 800);
+  assert.ok(sample.length < text.length);
+  assert.ok(sample.startsWith('H'.repeat(20)));
+  assert.ok(sample.endsWith('T'.repeat(20)));
+  assert.match(sample, /truncated \d+ chars/);
+  assert.equal(sample.includes('MIDDLE'), false);
 });

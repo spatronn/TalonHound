@@ -25,9 +25,13 @@ export function resolveRetryStartStatus(opts = {}) {
 /**
  * Progress payload for an accepted retry — keeps earlier stages visually complete.
  */
-export function buildRetryProgress(analysisStatus) {
+export function buildRetryProgress(analysisStatus, carry = {}) {
   const stage = String(analysisStatus || 'pending');
-  const base = { stage, resumed: true, analysis_chunks_completed: 0 };
+  const preserved = {};
+  if (carry.candidate_extraction_version) {
+    preserved.candidate_extraction_version = carry.candidate_extraction_version;
+  }
+  const base = { stage, resumed: true, analysis_chunks_completed: 0, ...preserved };
   if (stage === 'analyzing') {
     return {
       ...base,

@@ -21,8 +21,19 @@ import {
 import { processAiResponseText, validateAiAnalysis } from './schema.js';
 import { callAiProvider } from './client.js';
 import { assertAiReady } from './settings.js';
-import { AI_FAILURE_CODES, aiFailure, resolveAiTimeoutPolicy } from './timeouts.js';
-import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, buildProviderJsonSchema } from './contract.js';
+import {
+  AI_FAILURE_CODES,
+  aiFailure,
+  resolveAiTimeoutPolicy,
+  resolveRecoveryReserveMs,
+  resolveMinPrimaryCallMs,
+  resolveMinRepairMs
+} from './timeouts.js';
+import {
+  THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+  buildProviderJsonSchema,
+  candidateUpdatesMaxItemsForChunk
+} from './contract.js';
 import { capRawOutputSample } from './extract.js';
 import { chunkCanonicalDocument, flattenCanonicalText, collectBlockIds } from '../canonicalDocument.js';
 import { annotateDocumentZones } from '../documentZones.js';
@@ -248,6 +259,7 @@ function failChunk(code, message, extra = {}) {
 function timingEntry(kind, chunkKey, started, result, extra = {}) {
   const t = result?.timing || {};
   return {
+    ...t,
     kind,
     chunk_key: chunkKey,
     ms: Date.now() - started,
@@ -270,6 +282,10 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
   const policy = resolveAiTimeoutPolicy(settings);
   const analysisStartedAt = hooks.analysisStartedAt || Date.now();
   const deadlineAt = analysisStartedAt + policy.total_analysis_timeout_ms;
+  const reserveMs = resolveRecoveryReserveMs(policy);
+  const minPrimaryMs = resolveMinPrimaryCallMs(policy);
+  const minRepairMs = resolveMinRepairMs(policy);
+  const primaryDeadlineAt = deadlineAt - reserveMs;
   const callProvider = hooks.callProvider || callAiProvider;
   const allCandidates = withCandidateIds(input.candidates || []);
   const knownBlockIds = collectBlockIds(input.document);
@@ -289,7 +305,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
   }
 
   const system = buildSystemPrompt();
-  const formatSchema = buildProviderJsonSchema();
+  const formatSchemaFull = buildProviderJsonSchema();
   const partials = [];
   /** @type {object[]} */
   const timings = [];
@@ -318,7 +334,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         ai_calls: aiCalls,
         timing: timings,
         elapsed_ms: Date.now() - analysisStartedAt,
-        total_analysis_timeout_ms: policy.total_analysis_timeout_ms
+        total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
+        recovery_reserve_ms: reserveMs
       }
     });
 
@@ -359,6 +376,14 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       sourceHost
     });
     const chunkCands = [...req.toClassify, ...req.resolved];
+    const formatSchema = buildProviderJsonSchema({
+      maxCandidateUpdates: candidateUpdatesMaxItemsForChunk(req.toClassify.length, req.resolved.length)
+    });
+
+    const remainingBeforeCall = deadlineAt - Date.now();
+    if (remainingBeforeCall < reserveMs + minPrimaryMs) {
+      throw deadlineError();
+    }
 
     let result;
     const started = Date.now();
@@ -369,6 +394,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         { system, user: req.user },
         {
           analysisStartedAt,
+          callDeadlineAt: primaryDeadlineAt,
           signal: hooks.signal,
           keepAlive: i < chunks.length - 1 ? '15m' : '5m',
           formatSchema,
@@ -412,10 +438,9 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     let processed = processAiResponseText(text, chunkCtx);
     let repairAttempted = false;
     if (!processed.ok) {
-      // One bounded repair call, only if the remaining budget can plausibly fit it.
-      const lastMs = timings[timings.length - 1]?.ms || 0;
+      // Repair may spend the protected reserve; it must not require lastCall*0.75.
       const remaining = deadlineAt - Date.now();
-      if (remaining > Math.max(60_000, lastMs * 0.75)) {
+      if (remaining >= minRepairMs) {
         const repairStarted = Date.now();
         try {
           aiCalls += 1;
@@ -429,9 +454,10 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
             { system, user: repairUser },
             {
               analysisStartedAt,
+              callDeadlineAt: deadlineAt,
               signal: hooks.signal,
               keepAlive: '5m',
-              formatSchema,
+              formatSchema: formatSchemaFull,
               onActivity: async () => {
                 await hooks.onProgress?.({
                   ...progressBase(),
@@ -473,13 +499,23 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       const err = failChunk(code, processed.error || 'Chunk validation failed', {
         details: processed.details,
         raw_sample: processed.raw_sample,
-        rejected: processed.rejected
+        rejected: processed.rejected,
+        progress: {
+          ...progressBase(),
+          current_chunk: chunk.chunk_key,
+          current_chunk_index: i + 1,
+          analysis_chunks_remaining: chunks.length - partials.length,
+          elapsed_ms: Date.now() - analysisStartedAt,
+          total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
+          recovery_reserve_ms: reserveMs
+        }
       });
       await hooks.markChunkFailed?.(chunk, err.code, err.message, {
         schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
         validation_details: processed.details || [],
         raw_output_sample: processed.raw_sample || capRawOutputSample(text),
-        rejected_items: processed.rejected || []
+        rejected_items: processed.rejected || [],
+        timing: timings.filter((t) => t.chunk_key === chunk.chunk_key)
       });
       throw err;
     }
@@ -548,9 +584,10 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
             { system, user },
             {
               analysisStartedAt,
+              callDeadlineAt: deadlineAt,
               signal: hooks.signal,
               keepAlive: '5m',
-              formatSchema,
+              formatSchema: formatSchemaFull,
               onActivity: async () => {
                 await hooks.onProgress?.({ ...progressBase(), synthesizing: true });
               }
@@ -593,7 +630,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       synthesis,
       timing: timings,
       elapsed_ms: Date.now() - analysisStartedAt,
-      timeout_policy: policy,
+      timeout_policy: { ...policy, recovery_reserve_ms: reserveMs },
       schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
     }
   };

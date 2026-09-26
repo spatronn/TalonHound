@@ -14,8 +14,15 @@ import {
   selectSemanticBlocks,
   SYNTHESIS_CHUNK_KEY
 } from './analyze.js';
-import { buildProviderJsonSchema, THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';
-import { AI_FAILURE_CODES } from './timeouts.js';
+import {
+  buildProviderJsonSchema,
+  candidateUpdatesMaxItemsForChunk,
+  AI_OUTPUT_BOUNDS,
+  THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
+} from './contract.js';
+import { AI_FAILURE_CODES, resolveAiTimeoutPolicy, resolveRecoveryReserveMs, resolveMinPrimaryCallMs, resolveMinRepairMs } from './timeouts.js';
+import { validateAiStructure } from './schema.js';
+import { mergeAiCandidateUpdates } from '../pipeline.js';
 import { extractCandidatesFromDocument } from '../candidateExtraction.js';
 import { createCanonicalDocument } from '../canonicalDocument.js';
 
@@ -47,10 +54,26 @@ function okPayload(extra = {}) {
 
 function fakeProvider(calls, opts = {}) {
   return async (_settings, messages, hooks) => {
-    calls.push({ system: messages.system, user: messages.user, keepAlive: hooks?.keepAlive });
+    calls.push({
+      system: messages.system,
+      user: messages.user,
+      keepAlive: hooks?.keepAlive,
+      callDeadlineAt: hooks?.callDeadlineAt,
+      analysisStartedAt: hooks?.analysisStartedAt,
+      formatSchema: hooks?.formatSchema
+    });
     if (opts.delayMs) await new Promise((r) => setTimeout(r, opts.delayMs));
     const text = typeof opts.respond === 'function' ? opts.respond(messages, calls.length) : okPayload();
-    return { text, timing: { total_ms: opts.delayMs || 1, prompt_chars: messages.user.length, output_chars: text.length, thinking_chars: 0 } };
+    return {
+      text,
+      timing: {
+        total_ms: opts.delayMs || 1,
+        prompt_chars: messages.user.length,
+        output_chars: text.length,
+        thinking_chars: 0,
+        ...(opts.timing || {})
+      }
+    };
   };
 }
 
@@ -98,6 +121,48 @@ test('provider JSON schema requires candidate_id (join key) on every candidate u
   const schema = buildProviderJsonSchema();
   assert.deepEqual(schema.properties.candidate_updates.items.required, ['candidate_id', 'assessment']);
   assert.ok(schema.properties.candidate_updates.items.properties.role.enum.includes('malware_sample'));
+});
+
+test('provider JSON schema bounds match the documented contract and stay ≤ Zod', () => {
+  const schema = buildProviderJsonSchema();
+  const B = AI_OUTPUT_BOUNDS;
+  assert.equal(schema.properties.entities.maxItems, B.entityMaxItemsChunk);
+  assert.equal(schema.properties.relationships.maxItems, B.relationshipMaxItemsChunk);
+  assert.equal(schema.properties.candidate_updates.maxItems, B.candidateUpdatesMaxItems);
+  assert.equal(schema.properties.summary.maxLength, B.summaryMaxLengthChunk);
+  assert.equal(schema.properties.entities.items.properties.evidence_text.maxLength, B.evidenceTextMaxLength);
+  assert.ok(B.entityMaxItemsChunk <= B.entityMaxItemsMerged);
+  assert.ok(B.relationshipMaxItemsChunk <= B.relationshipMaxItemsMerged);
+  assert.ok(B.summaryMaxLengthChunk <= B.summaryMaxLengthMerged);
+  assert.equal(candidateUpdatesMaxItemsForChunk(2, 20), 22);
+  assert.equal(candidateUpdatesMaxItemsForChunk(0, 0), 8);
+  const workloadSchema = buildProviderJsonSchema({ maxCandidateUpdates: candidateUpdatesMaxItemsForChunk(2, 20) });
+  assert.equal(workloadSchema.properties.candidate_updates.maxItems, 22);
+
+  const maxValid = {
+    summary: 's',
+    entities: Array.from({ length: B.entityMaxItemsChunk }, (_, i) => ({
+      entity_type: 'threat_actor',
+      name: `Actor ${i}`
+    })),
+    candidate_updates: [],
+    relationships: []
+  };
+  assert.equal(validateAiStructure(maxValid).ok, true);
+});
+
+test('primary provider call deadline protects the recovery reserve', async () => {
+  const doc = createCanonicalDocument({ title: 'Reserve', language: 'en', blocks: [{ id: 'b0', type: 'paragraph', page: 1, text: 'text' }] });
+  const calls = [];
+  const started = Date.now();
+  await analyzeThreatDocument(settings, { document: doc, candidates: [] }, {
+    analysisStartedAt: started,
+    callProvider: fakeProvider(calls)
+  });
+  const reserve = resolveRecoveryReserveMs(resolveAiTimeoutPolicy(settings));
+  assert.equal(reserve, 180_000);
+  assert.equal(calls[0].callDeadlineAt, started + 1_800_000 - reserve);
+  assert.ok(calls[0].formatSchema.properties.relationships.maxItems);
 });
 
 test('only ai_needed candidates are asked for; explicit assertions cannot be downgraded by the model', async () => {
@@ -171,11 +236,17 @@ test('total deadline after partial progress → failure carries checkpoint progr
     }
   };
   const calls = [];
-  // Budget: 60s minimum ceiling, started 59.4s ago → first chunk (600ms) completes, then the loop hits the deadline.
+  const tight = { ...settings, max_input_chars: 12000, total_analysis_timeout_ms: 60_000 };
+  const policy = resolveAiTimeoutPolicy(tight);
+  const reserve = resolveRecoveryReserveMs(policy);
+  const minPrimary = resolveMinPrimaryCallMs(policy);
+  // Enough budget to start exactly one primary call; the 800ms first call
+  // leaves less than reserve+minPrimary for chunk 2.
+  const remainingAtStart = reserve + minPrimary + 300;
   const err = await analyzeThreatDocument(
-    { ...settings, max_input_chars: 12000, total_analysis_timeout_ms: 60_000 },
+    tight,
     { document: doc, candidates: [] },
-    { ...hooks, analysisStartedAt: Date.now() - 59_400, callProvider: fakeProvider(calls, { delayMs: 700 }) }
+    { ...hooks, analysisStartedAt: Date.now() - (60_000 - remainingAtStart), callProvider: fakeProvider(calls, { delayMs: 800 }) }
   ).catch((e) => e);
   assert.equal(err.code, AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
   assert.equal(err.progress.analysis_chunks_total, chunks.length);
@@ -236,7 +307,7 @@ test('synthesis is optional: skipped when budget is short, failure never loses c
   const tight = await analyzeThreatDocument(
     { ...synthSettings, total_analysis_timeout_ms: 60_000 },
     { document: doc, candidates: [] },
-    { analysisStartedAt: Date.now() - 55_000, callProvider: fakeProvider(calls) }
+    { analysisStartedAt: Date.now() - 20_000, callProvider: fakeProvider(calls) }
   );
   assert.equal(tight.ok, true);
   assert.equal(tight.meta.synthesis.skipped_reason, 'insufficient_budget');
@@ -294,11 +365,66 @@ test('repair call is bounded by remaining budget and only fires on invalid outpu
   assert.equal(repaired.meta.timing.filter((t) => t.kind === 'repair').length, 1);
 
   calls = [];
+  const tight = { ...settings, total_analysis_timeout_ms: 60_000 };
+  const policy = resolveAiTimeoutPolicy(tight);
+  const reserve = resolveRecoveryReserveMs(policy);
+  const minPrimary = resolveMinPrimaryCallMs(policy);
+  const minRepair = resolveMinRepairMs(policy);
+  const remainingAtStart = reserve + minPrimary + 400;
   const noBudget = await analyzeThreatDocument(
-    { ...settings, total_analysis_timeout_ms: 60_000 },
+    tight,
     { document: doc, candidates: [] },
-    { analysisStartedAt: Date.now() - 30_000, callProvider: fakeProvider(calls, { respond: () => 'not json at all' }) }
+    {
+      analysisStartedAt: Date.now() - (60_000 - remainingAtStart),
+      callProvider: fakeProvider(calls, {
+        delayMs: remainingAtStart - minRepair + 250,
+        respond: () => 'not json at all'
+      })
+    }
   ).catch((e) => e);
   assert.equal(calls.length, 1, 'no repair when the remaining budget cannot fit it');
   assert.ok(noBudget.details.some((d) => /Repair skipped/.test(d.message)));
+  assert.ok(minRepair > 0);
+});
+
+test('a new chunk is not started when remaining budget cannot cover reserve + min call', async () => {
+  const doc = createCanonicalDocument({ title: 'NoStart', language: 'en', blocks: [{ id: 'b0', type: 'paragraph', page: 1, text: 'text' }] });
+  const calls = [];
+  const err = await analyzeThreatDocument(
+    { ...settings, total_analysis_timeout_ms: 60_000 },
+    { document: doc, candidates: [] },
+    { analysisStartedAt: Date.now() - 55_000, callProvider: fakeProvider(calls) }
+  ).catch((e) => e);
+  assert.equal(err.code, AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
+  assert.equal(calls.length, 0);
+});
+
+test('parse failure keeps timing/progress and does not merge or persist a chunk result', async () => {
+  const doc = createCanonicalDocument({ title: 'FailObs', language: 'en', blocks: [{ id: 'b0', type: 'paragraph', page: 1, text: 'text' }] });
+  const calls = [];
+  const saved = [];
+  const failed = [];
+  const err = await analyzeThreatDocument(
+    settings,
+    { document: doc, candidates: [] },
+    {
+      callProvider: fakeProvider(calls, {
+        respond: () => 'not json at all',
+        timing: { eval_count: 12, prompt_eval_count: 40 }
+      }),
+      saveChunkResult: async (chunk, value) => saved.push({ chunk, value }),
+      markChunkFailed: async (chunk, code, message, meta) => failed.push({ chunk, code, message, meta })
+    }
+  ).catch((e) => e);
+  assert.equal(err.code, AI_FAILURE_CODES.AI_OUTPUT_PARSE_ERROR);
+  assert.ok(err.progress);
+  assert.ok(Array.isArray(err.progress.timing));
+  assert.equal(err.progress.timing[0].output_chars, 'not json at all'.length);
+  assert.equal(err.progress.timing[0].eval_count, 12);
+  assert.equal(saved.length, 0);
+  assert.equal(failed.length, 1);
+  assert.equal(failed[0].code, AI_FAILURE_CODES.AI_OUTPUT_PARSE_ERROR);
+  assert.ok(Array.isArray(failed[0].meta.timing));
+  const merged = mergeAiCandidateUpdates([], { candidate_updates: [{ candidate_type: 'domain', normalized_value: 'evil.example', assessment: 'malicious' }] });
+  assert.equal(merged.length, 0, 'empty deterministic set stays empty — AI cannot insert identities');
 });

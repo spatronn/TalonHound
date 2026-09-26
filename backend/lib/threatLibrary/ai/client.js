@@ -11,6 +11,10 @@ import {
   resolveHeaderWaitMs
 } from './timeouts.js';
 import { assertAiReady } from './settings.js';
+import { AI_OUTPUT_BOUNDS } from './contract.js';
+
+/** Last-resort Ollama generation ceiling. See AI_OUTPUT_BOUNDS.numPredict. */
+export const OLLAMA_NUM_PREDICT = AI_OUTPUT_BOUNDS.numPredict;
 
 /**
  * @param {object} settings
@@ -89,6 +93,7 @@ export async function consumeProviderStream(body, opts) {
   let buffer = '';
   let text = '';
   let thinking = 0;
+  let providerMetrics = null;
   let gotFirst = false;
   let firstTokenAt = null;
   let lastActivity = Date.now();
@@ -163,10 +168,11 @@ export async function consumeProviderStream(body, opts) {
         if (!trimmed) continue;
         if (opts.parseLine) {
           const before = text;
-          const acc = { text, thinking };
+          const acc = { text, thinking, provider_metrics: providerMetrics };
           opts.parseLine(trimmed, acc);
           text = acc.text;
           thinking = acc.thinking || thinking;
+          if (acc.provider_metrics) providerMetrics = acc.provider_metrics;
           if (text !== before) {
             lastActivity = Date.now();
             opts.onChunkText?.(text.slice(before.length));
@@ -179,10 +185,11 @@ export async function consumeProviderStream(body, opts) {
     }
     if (buffer.trim()) {
       if (opts.parseLine) {
-        const acc = { text, thinking };
+        const acc = { text, thinking, provider_metrics: providerMetrics };
         opts.parseLine(buffer.trim(), acc);
         text = acc.text;
         thinking = acc.thinking || thinking;
+        if (acc.provider_metrics) providerMetrics = acc.provider_metrics;
       } else {
         text += buffer;
       }
@@ -202,6 +209,7 @@ export async function consumeProviderStream(body, opts) {
     opts.stats.first_token_ms = firstTokenAt ? firstTokenAt - started : null;
     opts.stats.thinking_chars = thinking;
     opts.stats.output_chars = text.length;
+    if (providerMetrics) opts.stats.provider_metrics = providerMetrics;
   }
   return text;
 }
@@ -236,7 +244,29 @@ function parseAnthropicSseLine(line, acc) {
   }
 }
 
-function parseOllamaNdjsonLine(line, acc) {
+function pickOllamaMetrics(json) {
+  if (!json || json.done !== true) return null;
+  const keys = [
+    'prompt_eval_count',
+    'eval_count',
+    'total_duration',
+    'load_duration',
+    'prompt_eval_duration',
+    'eval_duration'
+  ];
+  const out = {};
+  let any = false;
+  for (const key of keys) {
+    const n = Number(json[key]);
+    if (Number.isFinite(n)) {
+      out[key] = n;
+      any = true;
+    }
+  }
+  return any ? out : null;
+}
+
+export function parseOllamaNdjsonLine(line, acc) {
   if (!line || line[0] !== '{') return;
   try {
     const json = JSON.parse(line);
@@ -244,6 +274,8 @@ function parseOllamaNdjsonLine(line, acc) {
     if (piece) acc.text += piece;
     // Reasoning models stream "thinking" separately; it never reaches the JSON output.
     if (json.message?.thinking) acc.thinking = (acc.thinking || 0) + String(json.message.thinking).length;
+    const metrics = pickOllamaMetrics(json);
+    if (metrics) acc.provider_metrics = metrics;
     if (json.error) {
       const err = aiFailure(AI_FAILURE_CODES.PROVIDER_HTTP_ERROR, String(json.error));
       throw err;
@@ -269,7 +301,12 @@ export async function callAiProvider(settings, messages, hooks = {}) {
   const policy = resolveAiTimeoutPolicy(settings);
   const endpoint = resolveProviderEndpoint(settings);
   const analysisStartedAt = hooks.analysisStartedAt || Date.now();
-  const totalDeadlineAt = analysisStartedAt + policy.total_analysis_timeout_ms;
+  const globalDeadlineAt = analysisStartedAt + policy.total_analysis_timeout_ms;
+  const hookedDeadline = Number(hooks.callDeadlineAt);
+  const totalDeadlineAt =
+    Number.isFinite(hookedDeadline) && hookedDeadline > 0
+      ? Math.min(globalDeadlineAt, hookedDeadline)
+      : globalDeadlineAt;
   const controller = new AbortController();
   const onOuterAbort = () => controller.abort(hooks.signal.reason || aiFailure(AI_FAILURE_CODES.JOB_CANCELLED));
   if (hooks.signal) {
@@ -300,7 +337,11 @@ export async function callAiProvider(settings, messages, hooks = {}) {
           // not need chain-of-thought; older Ollama versions ignore the field.
           think: false,
           keep_alive: hooks.keepAlive || '15m',
-          options: { temperature: 0.1 },
+          options: {
+            temperature: 0.1,
+            // Last-resort token ceiling; schema maxItems should stop generation first.
+            num_predict: Number(hooks.numPredict) > 0 ? Number(hooks.numPredict) : OLLAMA_NUM_PREDICT
+          },
           messages: [
             { role: 'system', content: messages.system },
             { role: 'user', content: messages.user }
@@ -405,7 +446,8 @@ export async function callAiProvider(settings, messages, hooks = {}) {
       prompt_chars: promptChars,
       output_chars: stats.output_chars ?? text.length,
       thinking_chars: stats.thinking_chars ?? 0,
-      provider: endpoint.kind
+      provider: endpoint.kind,
+      ...(stats.provider_metrics || {})
     };
     return { text, policy, timing };
   } catch (err) {

@@ -28,7 +28,7 @@ import {
 } from './candidateExtraction.js';
 import { interpretIocTable, parseDeclaredType, headerIntent, looksLikeIocTableHeader } from './tableSemantics.js';
 import { annotateDocumentZones } from './documentZones.js';
-import { mergeAiCandidateUpdates, decideCandidateReuse, isDocumentContractCurrent } from './pipeline.js';
+import { mergeAiCandidateUpdates, decideCandidateReuse, isDocumentContractCurrent, mergeAnalysisProgress } from './pipeline.js';
 import { partitionCandidatesForAi } from './ai/analyze.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { refangObservable } from './defang.js';
@@ -547,4 +547,13 @@ test('retry: outdated extraction contract or rebuilt document refreshes candidat
   const blocks = [{ id: 'p1-b01', type: 'paragraph', text: 'x', page: 1 }];
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { blocks, meta: { extractor: 'threat_library_pdf_v2' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v1' } }), false);
+});
+
+test('analysis_progress stage writes keep candidate_extraction_version', () => {
+  const merged = mergeAnalysisProgress(
+    { candidate_extraction_version: 'tl-candidates-v9' },
+    { stage: 'analyzing', analysis_chunks_total: 2 }
+  );
+  assert.equal(merged.stage, 'analyzing');
+  assert.equal(merged.candidate_extraction_version, 'tl-candidates-v9');
 });

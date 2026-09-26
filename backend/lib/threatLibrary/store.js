@@ -429,9 +429,9 @@ export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chu
     `INSERT INTO threat_library_analysis_chunks (
        report_id, analysis_run_id, chunk_index, chunk_key, status, block_ids,
        error_code, error_message, schema_version, validation_details, raw_output_sample, rejected_items,
-       attempt_count, started_at, updated_at
+       timing, attempt_count, started_at, updated_at
      ) VALUES (
-       $1, $2::uuid, $3, $4, 'failed', $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11::jsonb, 1, NOW(), NOW()
+       $1, $2::uuid, $3, $4, 'failed', $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12::jsonb, 1, NOW(), NOW()
      )
      ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
        status = 'failed',
@@ -441,6 +441,7 @@ export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chu
        validation_details = EXCLUDED.validation_details,
        raw_output_sample = EXCLUDED.raw_output_sample,
        rejected_items = EXCLUDED.rejected_items,
+       timing = EXCLUDED.timing,
        attempt_count = threat_library_analysis_chunks.attempt_count + 1,
        updated_at = NOW()`,
     [
@@ -454,7 +455,8 @@ export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chu
       meta.schema_version || null,
       JSON.stringify(meta.validation_details || []),
       meta.raw_output_sample || null,
-      JSON.stringify(meta.rejected_items || [])
+      JSON.stringify(meta.rejected_items || []),
+      JSON.stringify(meta.timing || [])
     ]
   );
 }

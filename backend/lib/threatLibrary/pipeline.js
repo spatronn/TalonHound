@@ -155,17 +155,25 @@ export async function runAnalysisPipeline(pool, ctx) {
 
   const abort = new AbortController();
   const analysisStartedAt = Date.now();
+  const progressCarry = {
+    candidate_extraction_version:
+      report.analysis_progress?.candidate_extraction_version ||
+      report.canonical_document?.meta?.candidate_extraction_version ||
+      null,
+    extraction_diagnostics: report.analysis_progress?.extraction_diagnostics || null
+  };
 
   const setStage = async (stage, extra = {}) => {
+    const analysis_progress = mergeAnalysisProgress(progressCarry, { stage, ...extra });
     await updateJob(pool, ctx.jobId, {
       status: 'running',
       stage,
-      progress: { stage, ...extra }
+      progress: analysis_progress
     });
     await updateReportStatus(pool, report.id, {
       analysis_status: stage === 'candidates' ? 'extracting' : stage,
       import_status: 'processing',
-      analysis_progress: { stage, ...extra },
+      analysis_progress,
       clear_failure: true
     });
   };
@@ -360,6 +368,8 @@ export async function runAnalysisPipeline(pool, ctx) {
 
     if (shouldReuseCandidates) {
       candidates = await loadReportCandidatesForAnalysis(pool, report.id);
+      progressCarry.candidate_extraction_version =
+        progressCarry.candidate_extraction_version || THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
       log.info('reusing candidates', {
         reportId: report.id,
         count: candidates.length,
@@ -390,6 +400,8 @@ export async function runAnalysisPipeline(pool, ctx) {
       candidates = extracted.candidates;
       extractionDiagnostics = extracted.diagnostics;
       await replaceCandidates(pool, report.id, candidates);
+      progressCarry.candidate_extraction_version = THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
+      progressCarry.extraction_diagnostics = compactExtractionDiagnostics(extractionDiagnostics);
       const tables = extracted.diagnostics?.explicit_tables || {};
       const typing = extracted.diagnostics?.type_resolution || {};
       log.info('candidate count', {
@@ -487,7 +499,7 @@ export async function runAnalysisPipeline(pool, ctx) {
             await updateReportStatus(pool, report.id, {
               analysis_status: 'analyzing',
               import_status: 'processing',
-              analysis_progress: progress,
+              analysis_progress: mergeAnalysisProgress(progressCarry, progress),
               analysis_run_id: runId
             });
           }
@@ -772,6 +784,24 @@ export async function runAnalysisPipeline(pool, ctx) {
  * semantic analysis starts a new run (older chunk checkpoints are incompatible).
  * @param {{ priorExtractionVersion: string|null, documentRebuilt: boolean, existingCount: number, resumePreferred: boolean, refreshCandidates: boolean }} input
  */
+/**
+ * Keep extraction provenance on analysis_progress across stage writes.
+ * setStage('analyzing') used to replace the object and drop the version,
+ * which made Retry re-extract an already-valid deterministic candidate set.
+ * @param {{ candidate_extraction_version?: string|null, extraction_diagnostics?: object|null }} carry
+ * @param {object} extra
+ */
+export function mergeAnalysisProgress(carry, extra = {}) {
+  const out = { ...(extra && typeof extra === 'object' ? extra : {}) };
+  if (out.candidate_extraction_version == null && carry?.candidate_extraction_version) {
+    out.candidate_extraction_version = carry.candidate_extraction_version;
+  }
+  if (out.extraction_diagnostics == null && carry?.extraction_diagnostics) {
+    out.extraction_diagnostics = carry.extraction_diagnostics;
+  }
+  return out;
+}
+
 export function decideCandidateReuse(input) {
   const extractionChanged =
     input.priorExtractionVersion !== THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION || input.documentRebuilt === true;

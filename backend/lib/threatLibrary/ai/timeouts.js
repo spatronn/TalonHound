@@ -135,6 +135,37 @@ export function resolveAiTimeoutPolicy(settings) {
 }
 
 /**
+ * Wall-clock reserved for one bounded repair after a primary provider call.
+ * Production 30-minute ceiling → 180s (warm repair of a schema-capped payload).
+ * Never more than 15% of the total ceiling so short test/policy budgets still run.
+ * @param {ReturnType<typeof resolveAiTimeoutPolicy>} policy
+ */
+export function resolveRecoveryReserveMs(policy) {
+  const total = Number(policy?.total_analysis_timeout_ms) || 1_800_000;
+  return Math.min(180_000, Math.max(10_000, Math.floor(total * 0.15)));
+}
+
+/**
+ * Do not start a primary chunk unless at least this much remains after the reserve.
+ * Production → 120s, which is below the 249s healthy-chunk observation so a
+ * later chunk still starts; short budgets scale to 10% of the ceiling.
+ * @param {ReturnType<typeof resolveAiTimeoutPolicy>} policy
+ */
+export function resolveMinPrimaryCallMs(policy) {
+  const total = Number(policy?.total_analysis_timeout_ms) || 1_800_000;
+  return Math.min(120_000, Math.max(5_000, Math.floor(total * 0.1)));
+}
+
+/**
+ * Minimum remaining global budget required to start a repair call.
+ * Production keeps the historical 60s floor; short budgets use the reserve.
+ * @param {ReturnType<typeof resolveAiTimeoutPolicy>} policy
+ */
+export function resolveMinRepairMs(policy) {
+  return Math.min(60_000, resolveRecoveryReserveMs(policy));
+}
+
+/**
  * How long to wait for HTTP response headers from the provider.
  * Local Ollama often withholds headers until prompt processing / model load
  * completes — that latency belongs to first-token budget, not TCP connect.

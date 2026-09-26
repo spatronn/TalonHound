@@ -7,6 +7,9 @@ import {
   resolveAiTimeoutPolicy,
   resolveHeaderWaitMs,
   isLocalAiProvider,
+  resolveRecoveryReserveMs,
+  resolveMinPrimaryCallMs,
+  resolveMinRepairMs,
   AI_FAILURE_CODES
 } from './timeouts.js';
 import { consumeProviderStream } from './client.js';
@@ -173,6 +176,18 @@ test('buildAnalysisChunks covers full document without discarding blocks', () =>
   assert.ok(chunks.length >= 2);
   const covered = new Set(chunks.flatMap((c) => c.block_ids));
   assert.equal(covered.size, 50);
+});
+
+test('recovery reserve is 180s on the 30-minute ceiling and scales down for short budgets', () => {
+  const local = resolveAiTimeoutPolicy({ provider: 'ollama', total_analysis_timeout_ms: 1_800_000 });
+  assert.equal(local.total_analysis_timeout_ms, 1_800_000);
+  assert.equal(resolveRecoveryReserveMs(local), 180_000);
+  assert.equal(resolveMinPrimaryCallMs(local), 120_000);
+  assert.equal(resolveMinRepairMs(local), 60_000);
+  const short = resolveAiTimeoutPolicy({ provider: 'ollama', total_analysis_timeout_ms: 60_000 });
+  assert.equal(resolveRecoveryReserveMs(short), 10_000);
+  assert.equal(resolveMinPrimaryCallMs(short), 6_000);
+  assert.equal(resolveMinRepairMs(short), 10_000);
 });
 
 test('candidatesForChunk prefers evidence-local candidates', () => {

@@ -889,7 +889,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           const candidateCount = await countReportCandidates(pool, report.id);
           const hasDocument = Boolean(report.canonical_document?.blocks?.length);
           const startStatus = resolveRetryStartStatus({ hasDocument, candidateCount });
-          const progress = buildRetryProgress(startStatus);
+          const progress = buildRetryProgress(startStatus, {
+            candidate_extraction_version: report.analysis_progress?.candidate_extraction_version || null
+          });
           const updated = await updateReportStatus(pool, report.id, {
             analysis_status: startStatus,
             import_status: 'processing',
@@ -909,7 +911,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const candidateCount = await countReportCandidates(pool, report.id);
         const hasDocument = Boolean(report.canonical_document?.blocks?.length);
         const startStatus = resolveRetryStartStatus({ hasDocument, candidateCount });
-        const progress = buildRetryProgress(startStatus);
+        const progress = buildRetryProgress(startStatus, {
+          candidate_extraction_version: report.analysis_progress?.candidate_extraction_version || null
+        });
 
         // Commit active status + clear stale failure BEFORE enqueue/202 so UI polling sees analyzing.
         const updated = await updateReportStatus(pool, report.id, {

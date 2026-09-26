@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { normalizeAiAnalysisInput } from './normalize.js';
 import { extractJsonObject, capRawOutputSample } from './extract.js';
-import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';
+import { AI_OUTPUT_BOUNDS, THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';
 
 const conf = z.number().min(0).max(1).nullable().optional();
 
@@ -39,49 +39,51 @@ export const entityTypeEnum = z.enum([
   'attack_pattern'
 ]);
 
+const B = AI_OUTPUT_BOUNDS;
+
 export const aiEntitySchema = z.object({
   entity_type: entityTypeEnum,
-  name: z.string().min(1).max(300),
-  aliases: z.array(z.string().max(200)).max(20).optional().default([]),
-  description: z.string().max(2000).optional().nullable(),
+  name: z.string().min(1).max(B.entityNameMaxLength),
+  aliases: z.array(z.string().max(B.entityAliasMaxLength)).max(B.entityAliasMaxItems).optional().default([]),
+  description: z.string().max(B.entityDescriptionMaxLength).optional().nullable(),
   confidence: conf,
-  evidence_block_ids: z.array(z.string().max(64)).max(20).optional().default([]),
-  evidence_text: z.string().max(1000).optional().nullable()
+  evidence_block_ids: z.array(z.string().max(B.evidenceBlockIdMaxLength)).max(B.evidenceBlockIdMaxItems).optional().default([]),
+  evidence_text: z.string().max(B.evidenceTextMaxLength).optional().nullable()
 });
 
 export const aiCandidateUpdateSchema = z.object({
-  candidate_id: z.string().min(1).max(64).optional().nullable(),
-  candidate_type: z.string().min(1).max(32),
-  normalized_value: z.string().min(1).max(2000),
+  candidate_id: z.string().min(1).max(B.candidateIdMaxLength).optional().nullable(),
+  candidate_type: z.string().min(1).max(B.candidateTypeMaxLength),
+  normalized_value: z.string().min(1).max(B.normalizedValueMaxLength),
   assessment: assessmentEnum,
-  role: roleEnum.or(z.string().max(64)),
+  role: roleEnum.or(z.string().max(B.roleMaxLength)),
   confidence: conf,
-  evidence_block_ids: z.array(z.string().max(64)).max(10).optional().default([]),
-  evidence_text: z.string().max(1000).optional().nullable(),
-  section: z.string().max(300).optional().nullable()
+  evidence_block_ids: z.array(z.string().max(B.evidenceBlockIdMaxLength)).max(10).optional().default([]),
+  evidence_text: z.string().max(B.evidenceTextMaxLength).optional().nullable(),
+  section: z.string().max(B.sectionMaxLength).optional().nullable()
 });
 
 export const aiRelationshipSchema = z.object({
   subject_kind: z.enum(['entity', 'candidate']),
-  subject_ref: z.string().min(1).max(400),
-  relationship_type: z.string().min(1).max(64),
+  subject_ref: z.string().min(1).max(B.refMaxLength),
+  relationship_type: z.string().min(1).max(B.relationshipTypeMaxLength),
   object_kind: z.enum(['entity', 'candidate']),
-  object_ref: z.string().min(1).max(400),
-  role: z.string().max(64).optional().nullable(),
+  object_ref: z.string().min(1).max(B.refMaxLength),
+  role: z.string().max(B.roleMaxLength).optional().nullable(),
   confidence: conf,
-  evidence_block_ids: z.array(z.string().max(64)).max(10).optional().default([]),
-  evidence_text: z.string().max(1000).optional().nullable()
+  evidence_block_ids: z.array(z.string().max(B.evidenceBlockIdMaxLength)).max(10).optional().default([]),
+  evidence_text: z.string().max(B.evidenceTextMaxLength).optional().nullable()
 });
 
 export const aiAnalysisSchema = z.object({
-  summary: z.string().max(8000),
-  report_type: z.string().max(64).optional().nullable(),
-  language: z.string().max(16).optional().nullable(),
-  tlp: z.string().max(32).optional().nullable(),
+  summary: z.string().max(B.summaryMaxLengthMerged),
+  report_type: z.string().max(B.reportTypeMaxLength).optional().nullable(),
+  language: z.string().max(B.languageMaxLength).optional().nullable(),
+  tlp: z.string().max(B.tlpMaxLength).optional().nullable(),
   confidence: conf,
-  entities: z.array(aiEntitySchema).max(100).optional().default([]),
-  candidate_updates: z.array(aiCandidateUpdateSchema).max(500).optional().default([]),
-  relationships: z.array(aiRelationshipSchema).max(300).optional().default([])
+  entities: z.array(aiEntitySchema).max(B.entityMaxItemsMerged).optional().default([]),
+  candidate_updates: z.array(aiCandidateUpdateSchema).max(B.candidateUpdatesMaxItems).optional().default([]),
+  relationships: z.array(aiRelationshipSchema).max(B.relationshipMaxItemsMerged).optional().default([])
 });
 
 function zodIssues(error) {
