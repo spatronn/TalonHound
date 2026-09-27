@@ -92,10 +92,24 @@ export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v11';
  * sentence, or a running footer glued onto a C2 discussion).
  * @param {string} text
  * @param {string} value
+ * @param {number} [radius]
+ * @param {number} [ordinal] which spelling of `value` in `text` this occurrence is (0 = first)
  */
-export function surroundingWindow(text, value, radius = 140) {
+export function surroundingWindow(text, value, radius = 140, ordinal = 0) {
   const hay = String(text || '');
   if (!hay) return null;
+  if (ordinal > 0) {
+    // Anchor on the ordinal-th spelling of the value (an earlier copy in the
+    // same block was not this occurrence, e.g. a URL component). The window
+    // never reaches back over that earlier copy; unknown ordinal → first hit.
+    const hits = hitOffsets(hay, value);
+    if (hits.length > ordinal) {
+      const idx = hits[ordinal];
+      const len = String(value).length;
+      const start = Math.max(idx - radius, hits[ordinal - 1] + len);
+      return hay.slice(start, idx + len + radius);
+    }
+  }
   const needles = [...new Set([
     String(value || ''),
     String(value || '').replace(/\./g, '[.]'),
@@ -216,6 +230,23 @@ function insideAnySpan(spans, start, end) {
   }
   return false;
 }
+
+/** Case-insensitive, non-overlapping offsets of `value` in `text`. */
+function hitOffsets(text, value) {
+  const hay = String(text || '').toLowerCase();
+  const needle = String(value || '').toLowerCase();
+  const out = [];
+  if (!needle) return out;
+  for (let i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + needle.length)) out.push(i);
+  return out;
+}
+
+/** File hashes, longest first: `\b` keeps a shorter length from matching inside a longer hex run. */
+const HASH_PATTERNS = [
+  [SHA256_RE, 'sha256'],
+  [SHA1_RE, 'sha1'],
+  [MD5_RE, 'md5']
+];
 
 /**
  * Candidate key used everywhere (DB unique constraint mirrors it).
@@ -345,7 +376,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       row_shape: rowShape,
       port: extra.port ?? null,
       table_row: extra.tableRow ? extra.tableRow.row_index : null,
-      surrounding_text: text ? surroundingWindow(text, focus) : null,
+      surrounding_text: text ? surroundingWindow(text, focus, 140, extra.focusOrdinal || 0) : null,
       typing_reason: extra.typingReason || null
     };
   }
@@ -892,9 +923,18 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (!ipv4MatchIsStandalone(text, start, end)) continue;
       add(m[0], 'ipv6', block, { form: standaloneForm });
     }
-    for (const m of text.matchAll(SHA256_RE)) add(m[0], 'sha256', block, { form: standaloneForm });
-    for (const m of text.matchAll(SHA1_RE)) add(m[0], 'sha1', block, { form: standaloneForm });
-    for (const m of text.matchAll(MD5_RE)) add(m[0], 'md5', block, { form: standaloneForm });
+    // A hex run inside a URL / scheme-less resource span is that URL's path,
+    // query or fragment component, not an independent file-hash occurrence.
+    // Containment is per occurrence: a standalone spelling of the same value
+    // in this block (or elsewhere) still creates the hash, and its evidence
+    // window is anchored on that spelling, not on the URL copy.
+    for (const [re, type] of HASH_PATTERNS) {
+      for (const m of text.matchAll(re)) {
+        if (insideAnySpan(urlSpans, m.index, m.index + m[0].length)) continue;
+        const focusOrdinal = hitOffsets(text.slice(0, m.index), m[0]).length;
+        add(m[0], type, block, { form: standaloneForm, focusOrdinal });
+      }
+    }
     for (const m of text.matchAll(CVE_RE)) add(m[0], 'cve', block, { form: standaloneForm });
     for (const m of text.matchAll(ATTACK_RE)) {
       if (/^T(1\d{3}|10\d{2}|11\d{2}|12\d{2}|15\d{2}|16\d{2})/.test(m[0])) {
