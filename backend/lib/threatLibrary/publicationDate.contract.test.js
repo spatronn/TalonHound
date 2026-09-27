@@ -57,7 +57,18 @@ test('store: createThreatReport only persists provenance next to a value; update
   assert.match(upd, /published_at = \$2,\s*published_at_source = \$3,\s*published_at_precision = \$4,\s*published_at_raw = \$5,\s*updated_at = NOW\(\)\s*WHERE id = \$1/);
   assert.doesNotMatch(upd, /import_status|analysis_status|tlp|title/);
   assert.match(upd, /throw Object\.assign\(new Error\('Invalid publication date fields'\)/);
-  assert.match(store, /ORDER BY r\.published_at DESC NULLS LAST, r\.created_at DESC/, 'threat-context chronology: publication date first, import date as fallback');
+
+  // Threat-context chronology cannot be the SQL ORDER BY: DISTINCT ON (report_id)
+  // requires the query to start with report_id (hash-alias pick). Analyst order
+  // is the JS sort that follows: published_at DESC NULLS LAST, created_at DESC.
+  const ctx = store.slice(store.indexOf('export async function getIocThreatContext('));
+  assert.match(ctx, /SELECT DISTINCT ON \(c\.report_id\)/);
+  assert.match(ctx, /ORDER BY c\.report_id,/);
+  assert.doesNotMatch(ctx, /ORDER BY r\.published_at DESC NULLS LAST, r\.created_at DESC/);
+  assert.match(ctx, /candidates\.sort\(\(a, b\) => \{/);
+  assert.match(ctx, /if \(aOk && bOk && ap !== bp\) return bp - ap/, 'dated claims: newest publication first');
+  assert.match(ctx, /if \(aOk !== bOk\) return aOk \? -1 : 1/, 'unknown publication date sorts after every dated report');
+  assert.match(ctx, /if \(acOk && bcOk && ac !== bc\) return bc - ac/, 'import date is the fallback');
 });
 
 const REPORT = {
