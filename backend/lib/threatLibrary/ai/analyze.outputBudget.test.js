@@ -206,8 +206,8 @@ test('chunk prompt communicates relationship budget, priority, dedup, concise ev
   assert.equal(/at most 80/.test(buildSystemPrompt()), false);
   assert.match(prompt, /report_tags, mitre_attack/);
   assert.match(prompt, /3–5 high-signal report-level concepts/);
-  assert.match(prompt, /only ATT&CK techniques THIS REPORT describes/);
-  assert.match(prompt, /Do not guess names or tactics/);
+  assert.match(prompt, /only techniques THIS REPORT evidences/);
+  assert.match(prompt, /No guessed names or tactics/);
 });
 
 test('compact recovery prompt keeps every TO CLASSIFY line and carries the smaller budget', () => {
