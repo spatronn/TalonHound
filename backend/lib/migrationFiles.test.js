@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '031_threat_report_import_identity.sql');
-  assert.equal(meta.latestMigration, 31);
+  assert.equal(meta.latestMigrationFile, '032_published_feed_failure_backoff.sql');
+  assert.equal(meta.latestMigration, 32);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {

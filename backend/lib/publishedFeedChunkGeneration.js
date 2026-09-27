@@ -148,6 +148,18 @@ async function openChunkWriters(cfg, feed, window, chunkCount, chunkKey, formats
   return slots;
 }
 
+/**
+ * Remove chunk files this generation created (never files it reused: a reused
+ * content-addressed file may belong to the active or another generation).
+ */
+async function removeCreatedChunkFiles(cfg, chunks) {
+  for (const chunk of chunks || []) {
+    if (!chunk?.created || !chunk.storage_path) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await removeFileQuiet(resolveStoredArtifactPath(cfg.storageDir, chunk.storage_path));
+  }
+}
+
 async function discardSlots(slots) {
   for (const slot of Object.values(slots || {})) {
     if (!slot.stream.destroyed) slot.stream.destroy();
@@ -155,8 +167,7 @@ async function discardSlots(slots) {
   }
 }
 
-async function finishChunkWriters(cfg, feed, window, chunkCount, chunkKey, slots) {
-  const out = [];
+async function finishChunkWriters(cfg, feed, window, chunkCount, chunkKey, slots, out) {
   for (const slot of Object.values(slots)) {
     const finished = slot.writer.finish();
     // eslint-disable-next-line no-await-in-loop
@@ -182,10 +193,10 @@ async function finishChunkWriters(cfg, feed, window, chunkCount, chunkKey, slots
       byte_length: finished.byte_length,
       item_count: finished.item_count,
       storage_path: toRelativeChunkPath(cfg.storageDir, finalPath),
+      created: !committed.reused,
       physical_bytes_written: committed.reused ? 0 : finished.byte_length
     });
   }
-  return out;
 }
 
 async function addProjectionRow(slots, row) {
@@ -248,7 +259,7 @@ async function generateChunkFiles(db, feed, window, chunkCount, affectedChunkKey
         if (currentKey !== key) {
           if (slots) {
             // eslint-disable-next-line no-await-in-loop
-            chunks.push(...await finishChunkWriters(cfg, feed, window, chunkCount, currentKey, slots));
+            await finishChunkWriters(cfg, feed, window, chunkCount, currentKey, slots, chunks);
           }
           currentKey = key;
           // eslint-disable-next-line no-await-in-loop
@@ -259,10 +270,11 @@ async function generateChunkFiles(db, feed, window, chunkCount, affectedChunkKey
       }
     }
     await db.query('CLOSE pf_chunk_cur').catch(() => {});
-    if (slots) chunks.push(...await finishChunkWriters(cfg, feed, window, chunkCount, currentKey, slots));
+    if (slots) await finishChunkWriters(cfg, feed, window, chunkCount, currentKey, slots, chunks);
   } catch (err) {
     await db.query('CLOSE pf_chunk_cur').catch(() => {});
     await discardSlots(slots);
+    await removeCreatedChunkFiles(cfg, chunks);
     throw err;
   }
   return {
@@ -360,7 +372,25 @@ function throwIfInjected(failAt, stage) {
   }
 }
 
-export async function buildAndActivateChunkGeneration(db, feed, {
+export async function buildAndActivateChunkGeneration(db, feed, options = {}) {
+  // Files written for this generation become reachable only when the caller COMMITs.
+  // A failure inside the build rolls those rows back, so the files it created are removed
+  // here; files that outlive a killed process are reclaimed by the orphan GC.
+  const written = { cfg: null, chunks: [], recencyHeadPath: null };
+  try {
+    return await buildAndActivate(db, feed, options, written);
+  } catch (err) {
+    if (written.cfg) {
+      await removeCreatedChunkFiles(written.cfg, written.chunks);
+      if (written.recencyHeadPath) {
+        await removeFileQuiet(resolveStoredArtifactPath(written.cfg.storageDir, written.recencyHeadPath));
+      }
+    }
+    throw err;
+  }
+}
+
+async function buildAndActivate(db, feed, {
   window = 'all',
   iocTypeKey,
   configHash,
@@ -371,11 +401,12 @@ export async function buildAndActivateChunkGeneration(db, feed, {
   metrics = {},
   failAt = null,
   generateChunks = generateChunkFiles
-}) {
+}, written) {
   if (String(feed.chunk_backfill_status || '') !== 'ready') {
     throw Object.assign(new Error('Published Feed chunk backfill is not ready'), { code: 'CHUNK_BACKFILL_NOT_READY' });
   }
   const cfg = getPublishedFeedArtifactConfig();
+  written.cfg = cfg;
   const formats = resolvePublishedFeedFormats(feed);
   const chunkCount = Number(feed.chunk_count)
     || choosePublishedFeedChunkCount(Number(expectedItemCount || 0));
@@ -451,6 +482,7 @@ export async function buildAndActivateChunkGeneration(db, feed, {
   const generated = await generateChunks(
     db, feed, window, chunkCount, affected, formats, cfg, generationAsOf
   );
+  written.chunks = generated.chunks;
   throwIfInjected(failAt, 'after_chunks');
   const chunkIds = await upsertChunkRows(db, generated.chunks);
   const affectedSet = new Set(affected);
@@ -484,6 +516,7 @@ export async function buildAndActivateChunkGeneration(db, feed, {
   const recencyHead = formats.includes('txt')
     ? await writeRecencyHead(db, cfg, feed, window, id, generationAsOf)
     : null;
+  written.recencyHeadPath = recencyHead?.storage_path || null;
   for (const format of formats) {
     // eslint-disable-next-line no-await-in-loop
     const { rows: refs } = await db.query(

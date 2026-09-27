@@ -52,6 +52,9 @@ function toPublicFeed(row, extra = {}) {
     last_generated_at: row.last_generated_at,
     last_status: row.last_status,
     last_error: row.last_error,
+    consecutive_failures: Number(row.consecutive_failures || 0),
+    failing_since: row.failing_since || null,
+    first_failure_error: row.first_failure_error || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     ...extra

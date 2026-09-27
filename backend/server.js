@@ -7044,18 +7044,24 @@ app.listen(port, async () => {
       return cleanupPublishedFeedChunkGenerations(pool);
     })
     .catch(() => {});
+  // Chunk retention first, then the throttled orphan sweep that reclaims files a killed
+  // generation could not clean up itself (publishedFeedArtifact/orphanGc.js).
+  const publishedFeedArtifactLog = createServiceLogger('published-feeds');
+  const cleanupPublishedFeedChunkArtifacts = async (p) => {
+    const { cleanupPublishedFeedChunkGenerations } = await import('./lib/publishedFeedChunkGeneration.js');
+    const result = await cleanupPublishedFeedChunkGenerations(p);
+    const { runPublishedFeedOrphanGcIfDue } = await import('./lib/publishedFeedArtifact/orphanGc.js');
+    await runPublishedFeedOrphanGcIfDue(p, { log: publishedFeedArtifactLog }).catch((err) => {
+      publishedFeedArtifactLog.warn('published feed orphan gc failed', { error: String(err?.message || err) });
+    });
+    return result;
+  };
   runPublishedFeedSchedulerTick(pool, {
-    cleanupPublishedFeedChunkGenerations: async (p) => {
-      const { cleanupPublishedFeedChunkGenerations } = await import('./lib/publishedFeedChunkGeneration.js');
-      return cleanupPublishedFeedChunkGenerations(p);
-    }
+    cleanupPublishedFeedChunkGenerations: cleanupPublishedFeedChunkArtifacts
   }).catch(() => {});
   setInterval(() => {
     runPublishedFeedSchedulerTick(pool, {
-      cleanupPublishedFeedChunkGenerations: async (p) => {
-        const { cleanupPublishedFeedChunkGenerations } = await import('./lib/publishedFeedChunkGeneration.js');
-        return cleanupPublishedFeedChunkGenerations(p);
-      }
+      cleanupPublishedFeedChunkGenerations: cleanupPublishedFeedChunkArtifacts
     }).catch(() => {});
   }, PUBLISHED_FEED_TICK_MS);
   // Update checks are best-effort and never affect readiness/health.

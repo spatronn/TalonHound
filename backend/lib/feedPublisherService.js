@@ -108,6 +108,19 @@ export function publishedFeedGenerationLockKeys(feedId) {
 
 export { FEED_EXPORT_MAX_LIMIT };
 
+/**
+ * Failure-streak columns for the terminal status UPDATE ($2 = last_status, $3 = last_error).
+ * Right-hand sides read the pre-update row, so the first failure of a streak records its own
+ * error and time; any non-failed outcome clears the streak.
+ */
+const FAILURE_STREAK_SET_SQL = `consecutive_failures = CASE WHEN $2 = 'failed' THEN consecutive_failures + 1 ELSE 0 END,
+           failing_since = CASE WHEN $2 <> 'failed' THEN NULL ELSE COALESCE(failing_since, NOW()) END,
+           first_failure_error = CASE
+             WHEN $2 <> 'failed' THEN NULL
+             WHEN failing_since IS NULL THEN left($3, 2000)
+             ELSE first_failure_error
+           END`;
+
 const WINDOW_INTERVALS = {
   '1d': '1 day',
   '3d': '3 days',
@@ -2184,6 +2197,19 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       }
     } catch (err) {
       const msg = String(err?.message || err);
+      feedLog.warn('published feed window generation failed', {
+        feed_id: id,
+        feed_name: feedName,
+        snapshot_window: window,
+        error: msg.slice(0, 1000),
+        code: err?.code || null,
+        stage: err?.stage || null,
+        generation_id: err?.generation_id || null,
+        format: err?.format || null,
+        expected_item_count: err?.expected_item_count ?? null,
+        actual_item_count: err?.actual_item_count ?? null,
+        force
+      });
       const paramsJson = {
         ioc_type: iocTypeKey,
         ioc_types: iocTypes,
@@ -2217,7 +2243,8 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
       `UPDATE published_feeds
        SET last_generated_at = NOW(),
            last_status = $2,
-           last_error = $3
+           last_error = $3,
+           ${FAILURE_STREAK_SET_SQL}
        WHERE id = $1`,
       [id, lastStatus, lastError]
     );
@@ -2232,6 +2259,9 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
        SET last_generated_at = NOW(),
            last_status = 'success',
            last_error = NULL,
+           consecutive_failures = 0,
+           failing_since = NULL,
+           first_failure_error = NULL,
            last_refresh_checked_at = NOW(),
            last_refresh_mode = COALESCE(last_refresh_mode, 'noop')
        WHERE id = $1`,
@@ -2297,6 +2327,31 @@ export function resolvePublishedFeedTickMs(envValue = process.env.PUBLISHED_FEED
   return Math.max(n, PUBLISHED_FEED_TICK_MS_MIN);
 }
 
+/** Upper bound for the failure backoff (default 6 hours). */
+export const PUBLISHED_FEED_FAILURE_BACKOFF_MAX_MINUTES_DEFAULT = 360;
+
+export function resolvePublishedFeedFailureBackoffMaxMinutes(
+  value = process.env.PUBLISHED_FEED_FAILURE_BACKOFF_MAX_MINUTES
+) {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 5 ? Math.trunc(n) : PUBLISHED_FEED_FAILURE_BACKOFF_MAX_MINUTES_DEFAULT;
+}
+
+/**
+ * Scheduled interval for a feed. A feed on a failure streak doubles its interval per
+ * consecutive failure (capped), so a permanently failing generation cannot run at the
+ * normal refresh cadence forever. Never shorter than the configured interval; manual
+ * Regenerate (force) does not consult the schedule.
+ */
+export function publishedFeedScheduleIntervalMs(row) {
+  const baseMinutes = Math.max(Number(row?.refresh_interval_minutes || 15), 5);
+  const failures = Math.max(0, Math.trunc(Number(row?.consecutive_failures) || 0));
+  if (failures <= 1) return baseMinutes * 60 * 1000;
+  const capMinutes = Math.max(resolvePublishedFeedFailureBackoffMaxMinutes(), baseMinutes);
+  const backoffMinutes = Math.min(baseMinutes * 2 ** Math.min(failures - 1, 20), capMinutes);
+  return backoffMinutes * 60 * 1000;
+}
+
 /**
  * Cheap due check for scheduled Published Feed refresh.
  *
@@ -2310,7 +2365,7 @@ export function resolvePublishedFeedTickMs(envValue = process.env.PUBLISHED_FEED
  */
 export function isPublishedFeedDue(row, nowMs = Date.now()) {
   if (row?.enabled === false) return false;
-  const intervalMs = Math.max(Number(row?.refresh_interval_minutes || 15), 5) * 60 * 1000;
+  const intervalMs = publishedFeedScheduleIntervalMs(row);
   if (!row?.last_generated_at) return true;
   const completedAt = new Date(row.last_generated_at).getTime();
   if (!Number.isFinite(completedAt)) return true;
@@ -2324,7 +2379,7 @@ export function publishedFeedDueAtMs(row) {
   if (!row?.last_generated_at) return 0;
   const completedAt = new Date(row.last_generated_at).getTime();
   if (!Number.isFinite(completedAt)) return 0;
-  const intervalMs = Math.max(Number(row?.refresh_interval_minutes || 15), 5) * 60 * 1000;
+  const intervalMs = publishedFeedScheduleIntervalMs(row);
   const durationMs = Math.max(0, Number(row.last_refresh_ms) || 0);
   return completedAt - Math.min(durationMs, intervalMs) + intervalMs;
 }
@@ -2344,7 +2399,8 @@ export function resolvePublishedFeedMaxConcurrency(
 export async function regenerateAllEnabledFeeds(pool, options = {}) {
   const nowMs = Number.isFinite(options.nowMs) ? options.nowMs : Date.now();
   const { rows } = await pool.query(
-    `SELECT id, name, refresh_interval_minutes, last_generated_at, last_refresh_ms, enabled
+    `SELECT id, name, refresh_interval_minutes, last_generated_at, last_refresh_ms, enabled,
+            consecutive_failures
      FROM published_feeds
      WHERE enabled = TRUE`
   );

@@ -114,10 +114,10 @@ async function openMultiFormatWriters(cfg, feed, generationId, formats) {
 async function finalizeMultiFormatWriters(feed, generationId, slots) {
   const generatedAt = new Date().toISOString();
   const artifacts = [];
-  let itemCount = 0;
+  const counts = {};
   for (const slot of Object.values(slots)) {
     const finished = slot.writer.finish();
-    itemCount = finished.item_count;
+    counts[slot.format] = finished.item_count;
     if (slot.format === 'json' || slot.format === 'stix') {
       await finalizeStream(slot.bodyStream);
       const finalWrite = makeSinkWriter(slot.finalPartStream);
@@ -143,7 +143,18 @@ async function finalizeMultiFormatWriters(feed, generationId, slots) {
   }
   const FORMAT_ORDER = ['txt', 'json', 'stix'];
   artifacts.sort((a, b) => FORMAT_ORDER.indexOf(a.format) - FORMAT_ORDER.indexOf(b.format));
-  return { artifacts, itemCount, generationId };
+  return { artifacts, itemCount: publishedItemCount(counts), generationId };
+}
+
+/**
+ * Feed item count = published items (TXT, else JSON). STIX may legitimately emit fewer
+ * objects (items without the timestamps an Indicator requires are skipped), so it is only
+ * authoritative for a STIX-only feed. Chunk manifests and projection rows count TXT/JSON.
+ */
+export function publishedItemCount(counts) {
+  if (counts.txt != null) return counts.txt;
+  if (counts.json != null) return counts.json;
+  return counts.stix ?? 0;
 }
 
 function wrapArtifactResult(base, extras = {}) {
