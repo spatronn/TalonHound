@@ -12,6 +12,7 @@ import {
   buildSourceUrlAuditEvent,
   buildTlpAuditEvent,
   buildReportTagAuditEvent,
+  buildReportMitreAuditEvent,
   buildThibExportAuditEvent,
   reportAuditEntity,
   reportAuditSnapshot,
@@ -64,6 +65,11 @@ import {
   removeReportTag,
   countReportTagInheritingIocs
 } from '../lib/threatLibrary/reportTags.js';
+import {
+  loadReportMitreMappings,
+  upsertManualReportMitre,
+  removeReportMitre
+} from '../lib/threatLibrary/reportIntelligence.js';
 import {
   reportTagInheritanceEligibleSql,
   loadInheritedReportTagRows,
@@ -179,7 +185,8 @@ function publicReport(row) {
     updated_at: row.updated_at,
     finalized_at: row.finalized_at,
     // Analyst-managed report tags (campaign/threat context), present when loaded.
-    ...(Array.isArray(row.tags) ? { tags: row.tags } : {})
+    ...(Array.isArray(row.tags) ? { tags: row.tags } : {}),
+    ...(Array.isArray(row.mitre_attack) ? { mitre_attack: row.mitre_attack } : {})
   };
 }
 
@@ -212,11 +219,15 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     await audit.auditLog({ req, ...event });
   }
 
-  /** Counts + analyst report tags for report responses (one extra small query). */
+  /** Counts + tags + MITRE for a single report (two small queries, not N+1). */
   async function reportWithDetail(row) {
     if (!row) return row;
     const counted = await attachReportCounts(pool, row);
-    return { ...counted, tags: await loadReportTags(pool, row.id) };
+    const [tags, mitre_attack] = await Promise.all([
+      loadReportTags(pool, row.id),
+      loadReportMitreMappings(pool, row.id)
+    ]);
+    return { ...counted, tags, mitre_attack };
   }
 
   /**
@@ -1150,6 +1161,69 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         return await reportTagMutation(req, res, { added: false });
       } catch (err) {
         return res.status(500).json({ message: 'Failed to remove report tag', detail: err.message });
+      }
+    }
+  );
+
+  app.post(
+    '/api/threat-library/reports/:publicId/mitre',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const result = await upsertManualReportMitre(
+          pool,
+          report.id,
+          req.body?.technique_id,
+          req.body?.evidence
+        );
+        if (!result.ok) {
+          const status = result.reason === 'unknown_id' || result.reason === 'malformed_id' ? 400 : 400;
+          return res.status(status).json({
+            message: 'Invalid or unknown ATT&CK technique id',
+            code: result.reason || 'invalid_technique'
+          });
+        }
+        await writeAudit(req, buildReportMitreAuditEvent({
+          report,
+          mapping: result.mapping,
+          added: true,
+          user: req.user
+        }));
+        return res.json({
+          changed: true,
+          mapping: result.mapping,
+          mitre_attack: await loadReportMitreMappings(pool, report.id)
+        });
+      } catch (err) {
+        return res.status(500).json({ message: 'Failed to add ATT&CK mapping', detail: err.message });
+      }
+    }
+  );
+
+  app.delete(
+    '/api/threat-library/reports/:publicId/mitre/:attackId',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const changed = await removeReportMitre(pool, report.id, req.params.attackId);
+        if (changed) {
+          await writeAudit(req, buildReportMitreAuditEvent({
+            report,
+            mapping: { technique_id: req.params.attackId },
+            added: false,
+            user: req.user
+          }));
+        }
+        return res.json({
+          changed,
+          mitre_attack: await loadReportMitreMappings(pool, report.id)
+        });
+      } catch (err) {
+        return res.status(500).json({ message: 'Failed to remove ATT&CK mapping', detail: err.message });
       }
     }
   );

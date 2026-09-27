@@ -214,6 +214,8 @@ export const AUDIT_ACTION = Object.freeze({
   THREAT_LIBRARY_REPORT_TLP_UPDATED: 'threat_library.report.tlp.updated',
   THREAT_LIBRARY_REPORT_TAG_ADDED: 'threat_library.report.tag.added',
   THREAT_LIBRARY_REPORT_TAG_REMOVED: 'threat_library.report.tag.removed',
+  THREAT_LIBRARY_REPORT_MITRE_ADDED: 'threat_library.report.mitre.added',
+  THREAT_LIBRARY_REPORT_MITRE_REMOVED: 'threat_library.report.mitre.removed',
   THREAT_LIBRARY_REPORT_DELETED: 'threat_library.report.deleted',
   THREAT_LIBRARY_THIB_EXPORTED: 'threat_library.thib.exported',
 });
@@ -419,6 +421,8 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_TLP_UPDATED]: 'Threat Library › TLP Updated',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_TAG_ADDED]: 'Threat Library › Report Tag Added',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_TAG_REMOVED]: 'Threat Library › Report Tag Removed',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_MITRE_ADDED]: 'Threat Library › ATT&CK Mapping Added',
+  [AUDIT_ACTION.THREAT_LIBRARY_REPORT_MITRE_REMOVED]: 'Threat Library › ATT&CK Mapping Removed',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_DELETED]: 'Threat Library › Report Deleted',
   [AUDIT_ACTION.THREAT_LIBRARY_THIB_EXPORTED]: 'Threat Library › THIB Exported',
   // Legacy action names written before the Threat Library audit model existed.

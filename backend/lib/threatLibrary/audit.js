@@ -297,6 +297,26 @@ export function buildReportTagAuditEvent({ report, tag, added, inheritingIocCoun
   };
 }
 
+export function buildReportMitreAuditEvent({ report, mapping, added, user }) {
+  const techniqueId = mapping?.technique_id || null;
+  return {
+    action: added
+      ? AUDIT_ACTION.THREAT_LIBRARY_REPORT_MITRE_ADDED
+      : AUDIT_ACTION.THREAT_LIBRARY_REPORT_MITRE_REMOVED,
+    ...reportAuditEntity(report),
+    severity: AUDIT_SEVERITY.INFO,
+    status: AUDIT_STATUS.SUCCESS,
+    before: added ? null : { technique_id: techniqueId },
+    after: added ? { technique_id: techniqueId } : null,
+    metadata: {
+      ...reportAuditSnapshot(report),
+      initiated_by: initiatedBy(user),
+      technique_id: techniqueId,
+      technique_name: mapping?.technique_name || null
+    }
+  };
+}
+
 export function buildDeleteAuditEvent({ report, user }) {
   return {
     action: AUDIT_ACTION.THREAT_LIBRARY_REPORT_DELETED,

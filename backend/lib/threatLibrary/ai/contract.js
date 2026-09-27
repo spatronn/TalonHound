@@ -13,8 +13,11 @@
  * entity / relationship / text caps are sized from healthy production output;
  * a generation-ceiling hit is a workload failure recovered by one compact
  * regeneration, never by syntax repair.
+ * v7: optional report_tags + mitre_attack (compact, never required). Core IOC
+ * extraction is unchanged; malformed enrichment is stripped rather than
+ * failing the chunk.
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v6';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v7';
 
 export const CANDIDATE_ROLE_VALUES = Object.freeze([
   'command_and_control',
@@ -125,6 +128,12 @@ export const AI_OUTPUT_BOUNDS = Object.freeze({
   refMaxLength: 400,
   relationshipTypeMaxLength: 64,
   roleMaxLength: 64,
+  reportTagMaxItems: 5,
+  reportTagMaxLength: 40,
+  mitreMaxItemsChunk: 8,
+  mitreMaxItemsMerged: 16,
+  mitreTechniqueIdMaxLength: 16,
+  mitreEvidenceMaxLength: 240,
   numPredict: 10240
 });
 
@@ -277,6 +286,25 @@ export function buildProviderJsonSchema(opts = {}) {
               items: providerString(B.evidenceBlockIdMaxLength)
             },
             evidence_text: evidenceText
+          }
+        }
+      },
+      report_tags: {
+        type: 'array',
+        maxItems: B.reportTagMaxItems,
+        items: providerString(B.reportTagMaxLength)
+      },
+      mitre_attack: {
+        type: 'array',
+        maxItems: B.mitreMaxItemsChunk,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['technique_id', 'evidence', 'confidence'],
+          properties: {
+            technique_id: providerString(B.mitreTechniqueIdMaxLength),
+            evidence: providerString(B.mitreEvidenceMaxLength),
+            confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 }
           }
         }
       }

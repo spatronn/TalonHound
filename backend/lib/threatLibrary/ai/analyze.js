@@ -42,6 +42,7 @@ import {
 import { capRawOutputSample } from './extract.js';
 import { chunkCanonicalDocument, flattenCanonicalText, collectBlockIds } from '../canonicalDocument.js';
 import { annotateDocumentZones } from '../documentZones.js';
+import { mergeReportIntelligence } from '../reportIntelligence.js';
 
 export const SYNTHESIS_CHUNK_KEY = 'synthesis';
 
@@ -216,7 +217,9 @@ export function mergeAnalyses(parts, ctx) {
     confidence: null,
     entities: [],
     candidate_updates: [],
-    relationships: []
+    relationships: [],
+    report_tags: [],
+    mitre_attack: []
   };
 
   const entityMap = new Map();
@@ -252,6 +255,13 @@ export function mergeAnalyses(parts, ctx) {
   merged.entities = [...entityMap.values()];
   merged.candidate_updates = [...candidateMap.values()];
   merged.summary = summaries.filter(Boolean).join('\n\n').slice(0, 8000) || 'Analysis complete.';
+  const intel = mergeReportIntelligence(parts);
+  merged.report_tags = intel.report_tags;
+  merged.mitre_attack = [...intel.mitre_proposals.values()].map((m) => ({
+    technique_id: m.technique_id,
+    evidence: m.evidence || null,
+    confidence: m.confidence
+  }));
 
   return validateAiAnalysis(merged, ctx);
 }
@@ -751,6 +761,17 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       details: merged.details
     });
   }
+  const chunkIntel = {
+    report_tags: merged.value.report_tags || [],
+    mitre_attack: merged.value.mitre_attack || []
+  };
+
+  function overlayChunkIntelligence(processed) {
+    if (!processed?.ok || !processed.value) return processed;
+    processed.value.report_tags = chunkIntel.report_tags;
+    processed.value.mitre_attack = chunkIntel.mitre_attack;
+    return processed;
+  }
 
   // Optional synthesis: only over validated partials, only with budget, never fatal.
   let synthesis = { attempted: false, used: false, skipped_reason: partials.length > 1 ? null : 'single_chunk' };
@@ -759,7 +780,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     if (cachedSynth?.ok && cachedSynth.value && cachedSynth.schema_version === THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION) {
       const processed = validateAiAnalysis(cachedSynth.value, ctx);
       if (processed.ok) {
-        merged = processed;
+        merged = overlayChunkIntelligence(processed);
         synthesis = { attempted: false, used: true, skipped_reason: 'cached' };
       }
     }
@@ -779,7 +800,12 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
               summary: p.summary,
               entities: (p.entities || []).map((e) => ({ type: e.entity_type, name: e.name })),
               candidate_updates: (p.candidate_updates || []).slice(0, 80),
-              relationships: (p.relationships || []).slice(0, 40)
+              relationships: (p.relationships || []).slice(0, 40),
+              report_tags: (p.report_tags || []).slice(0, 5),
+              mitre_attack: (p.mitre_attack || []).slice(0, 8).map((m) => ({
+                technique_id: m.technique_id,
+                confidence: m.confidence
+              }))
             }).slice(0, 3500)}`
           )
           .join('\n');
@@ -805,7 +831,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           timings.push(timingEntry('synthesis', SYNTHESIS_CHUNK_KEY, started, result, { prompt_chars: user.length }));
           const processed = processAiResponseText(result.text, ctx);
           if (processed.ok) {
-            merged = processed;
+            merged = overlayChunkIntelligence(processed);
             synthesis.used = true;
             await hooks.saveChunkResult?.(
               { chunk_index: chunks.length, chunk_key: SYNTHESIS_CHUNK_KEY, block_ids: [] },

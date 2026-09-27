@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_MITRE_REFERENCE_PATH = path.resolve(__dirname, '../../data/mitre-attack-reference.json');
 
-/** @typedef {{ id: string, name: string, type: 'tactic'|'technique'|'sub-technique', url: string }} MitreReferenceRecord */
+/** @typedef {{ id: string, name: string, type: 'tactic'|'technique'|'sub-technique', url: string, tactics: string[] }} MitreReferenceRecord */
 
 /** @type {Map<string, MitreReferenceRecord> | null} */
 let referenceCache = null;
@@ -23,7 +23,12 @@ function normalizeReferenceRecord(record) {
   const url = String(record.url || '').trim();
   if (!id || !name || !url) return null;
   if (!['tactic', 'technique', 'sub-technique'].includes(type)) return null;
-  return { id, name, type, url };
+  const tactics = [...new Set(
+    (Array.isArray(record.tactics) ? record.tactics : [])
+      .map((t) => String(t || '').trim())
+      .filter((t) => /^TA\d{4}$/.test(t))
+  )];
+  return { id, name, type, url, tactics };
 }
 
 export async function loadMitreReference(referencePath = DEFAULT_MITRE_REFERENCE_PATH) {
@@ -39,11 +44,59 @@ export async function loadMitreReference(referencePath = DEFAULT_MITRE_REFERENCE
 }
 
 export function isValidMitreAttackId(id) {
-  const s = String(id || '').trim();
-  if (/^TA\d{4}$/.test(s)) return true;
-  if (/^T\d{4}$/.test(s)) return true;
-  if (/^T\d{4}\.\d{3}$/.test(s)) return true;
-  return false;
+  return normalizeMitreAttackId(id) != null;
+}
+
+/** Uppercase Txxxx / Txxxx.xxx / TAxxxx, or null. */
+export function normalizeMitreAttackId(id) {
+  const s = String(id || '').trim().toUpperCase();
+  if (/^TA\d{4}$/.test(s)) return s;
+  if (/^T\d{4}$/.test(s)) return s;
+  if (/^T\d{4}\.\d{3}$/.test(s)) return s;
+  return null;
+}
+
+/**
+ * Catalog lookup that never throws — unknown or malformed IDs return null.
+ * @param {Map<string, MitreReferenceRecord>|null|undefined} reference
+ * @param {unknown} attackId
+ */
+export function lookupMitreRecord(reference, attackId) {
+  const id = normalizeMitreAttackId(attackId);
+  if (!id || !reference) return null;
+  return reference.get(id) || null;
+}
+
+/**
+ * Technique / sub-technique with canonical tactic records. Tactics and names
+ * come from the catalog, never from the model.
+ * @returns {{
+ *   technique_id: string,
+ *   technique_name: string,
+ *   attack_type: 'technique'|'sub-technique',
+ *   url: string,
+ *   tactics: Array<{ id: string, name: string, url: string }>
+ * }|null}
+ */
+export function resolveCanonicalTechnique(reference, attackId) {
+  const rec = lookupMitreRecord(reference, attackId);
+  if (!rec || rec.type === 'tactic') return null;
+  const tactics = [];
+  const seen = new Set();
+  for (const tid of rec.tactics || []) {
+    if (seen.has(tid)) continue;
+    const tactic = reference.get(tid);
+    if (!tactic || tactic.type !== 'tactic') continue;
+    seen.add(tid);
+    tactics.push({ id: tactic.id, name: tactic.name, url: tactic.url });
+  }
+  return {
+    technique_id: rec.id,
+    technique_name: rec.name,
+    attack_type: rec.type,
+    url: rec.url,
+    tactics
+  };
 }
 
 export function resolveMitreAttackRecord(reference, attackId) {

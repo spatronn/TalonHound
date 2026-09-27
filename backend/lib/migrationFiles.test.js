@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '033_threat_library_ai_concurrency.sql');
-  assert.equal(meta.latestMigration, 33);
+  assert.equal(meta.latestMigrationFile, '034_threat_report_mitre_mappings.sql');
+  assert.equal(meta.latestMigration, 34);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -241,5 +241,18 @@ test('031 adds the report import identity additively: nullable column + partial 
   assert.match(code, /ON public\.threat_reports \(source_sha256\)\s+WHERE source_type = 'pdf' AND deleted_at IS NULL;/);
   for (const forbidden of ['UNIQUE', 'NOT NULL DEFAULT', 'DROP ', 'DELETE FROM', 'UPDATE ', 'TRUNCATE', 'INSERT ', 'md5']) {
     assert.ok(!code.includes(forbidden), `031 must not contain ${forbidden.trim()}`);
+  }
+});
+
+test('034 adds threat_report_mitre_mappings additively with PK, attack index and id check', () => {
+  const sql = readFileSync(path.join(MIGRATIONS_DIR, '034_threat_report_mitre_mappings.sql'), 'utf8');
+  const code = sql.replace(/^--.*$/gm, '');
+  assert.ok(code.includes('CREATE TABLE IF NOT EXISTS public.threat_report_mitre_mappings'));
+  assert.ok(code.includes('REFERENCES public.threat_reports(id) ON DELETE CASCADE'));
+  assert.ok(code.includes('PRIMARY KEY (report_id, attack_id)'));
+  assert.ok(code.includes('ON public.threat_report_mitre_mappings (attack_id)'));
+  assert.ok(code.includes("attack_id ~ '^T[0-9]{4}(\\.[0-9]{3})?$'"));
+  for (const forbidden of ['DROP ', 'DELETE FROM', 'UPDATE ', 'TRUNCATE', 'ALTER TABLE']) {
+    assert.ok(!code.includes(forbidden), `034 must not contain ${forbidden.trim()}`);
   }
 });

@@ -35,6 +35,19 @@ test('resolveBundledMitreMappings rejects duplicate ids', async () => {
   );
 });
 
+test('resolveCanonicalTechnique uses catalog name and tactics, not caller-supplied labels', async () => {
+  invalidateMitreReferenceCache();
+  const { loadMitreReference, resolveCanonicalTechnique } = await import('./mitreReference.js');
+  const reference = await loadMitreReference();
+  const rec = resolveCanonicalTechnique(reference, 't1566.002');
+  assert.equal(rec.technique_id, 'T1566.002');
+  assert.equal(rec.technique_name, 'Spearphishing Link');
+  assert.equal(rec.attack_type, 'sub-technique');
+  assert.ok(rec.tactics.some((t) => t.id === 'TA0001' && t.name === 'Initial Access'));
+  assert.equal(resolveCanonicalTechnique(reference, 'T9999'), null);
+  assert.equal(resolveCanonicalTechnique(reference, 'TA0001'), null);
+});
+
 test('resolveMitreAttackRecord rejects unknown bundled ids', async () => {
   invalidateMitreReferenceCache();
   const { loadMitreReference } = await import('./mitreReference.js');

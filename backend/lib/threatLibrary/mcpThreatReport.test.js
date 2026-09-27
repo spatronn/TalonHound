@@ -70,6 +70,8 @@ function fakePool({ report = reportRow(), snap = snapshot() } = {}) {
       if (n.includes('FROM threat_relationships WHERE report_id = $1')) return { rows: snap.relationships };
       if (n.includes('FROM threat_report_artifacts')) return { rows: snap.artifacts };
       if (n.includes('FROM threat_library_jobs')) return { rows: snap.jobs };
+      if (n.includes('FROM threat_report_tags')) return { rows: snap.tags || [] };
+      if (n.includes('FROM threat_report_mitre_mappings')) return { rows: snap.mitre_rows || [] };
       throw new Error(`Unexpected SQL: ${n.slice(0, 90)}`);
     }
   };
@@ -98,6 +100,8 @@ test('serializeThreatReport: allow-listed metadata + summary, no body/diagnostic
   assert.equal(out.created_at, '2026-09-16T00:30:21.000Z');
   assert.equal(out.finalized_at, '2026-09-17T23:39:16.000Z');
   assert.deepEqual(out.counts, { indicators: 2, entities: 2, relationships: 1 });
+  assert.deepEqual(out.tags, []);
+  assert.deepEqual(out.mitre_attack, []);
   for (const k of ['canonical_document', 'failure_reason', 'failure_details', 'analysis_progress', 'candidate_summary', 'artifacts', 'jobs', 'source_sha256']) {
     assert.equal(k in out, false, `${k} must not be exposed`);
   }
@@ -177,8 +181,8 @@ test('loadThreatReportForMcp: fixed query count (report + snapshot), no per-indi
   const out = await loadThreatReportForMcp(pool, { id: REPORT_ID, indicator_limit: 500 });
   assert.equal(out.status, 200);
   assert.equal(out.body.indicators.returned, 300);
-  // getReportByPublicId + loadReportSnapshot(getReportById, candidates, entities, relationships, artifacts, jobs)
-  assert.equal(pool.queries.length, 7);
+  // getReportByPublicId + snapshot (6) + tags + mitre (batched, not per-row)
+  assert.equal(pool.queries.length, 9);
   assert.equal(pool.queries.some((q) => /^(INSERT|UPDATE|DELETE)/i.test(q.sql)), false);
 });
 

@@ -47,10 +47,10 @@ MITRE ATT&CK is a **separate optional reference layer** stored in `threat_classi
 
 - TalonHound does **not** import the full ATT&CK catalog as classifications.
 - A built-in classification may have zero, one, or multiple curated mappings.
-- Mappings are validated against the bundled snapshot `backend/data/mitre-attack-reference.json`.
+- Mappings are validated against the bundled Enterprise snapshot `backend/data/mitre-attack-reference.json` (same catalog Threat Library uses for report mappings).
 - Official ATT&CK URLs are stored for admin display links.
 
-**Runtime does not contact MITRE.** Fresh install, upgrade, and normal operation work offline.
+**Runtime does not contact MITRE.** Fresh install, upgrade, and normal operation work offline. Rebuild the snapshot with `node backend/scripts/build-mitre-attack-reference.js` when updating the catalog.
 
 Maintainers can validate bundled mappings locally:
 
@@ -62,7 +62,7 @@ npm run threat-classifications:validate-mitre -- --dry-run
 
 ### MITRE attribution
 
-MITRE ATT&CK® is a registered trademark of The MITRE Corporation. TalonHound bundles a minimal ATT&CK reference subset for classification mappings only. See the [MITRE ATT&CK Terms of Use](https://attack.mitre.org/resources/terms-of-use/) for upstream terms.
+MITRE ATT&CK® is a registered trademark of The MITRE Corporation. TalonHound bundles an offline Enterprise ATT&CK catalog for classification mappings and Threat Library report mappings. See the [MITRE ATT&CK Terms of Use](https://attack.mitre.org/resources/terms-of-use/) for upstream terms.
 
 ## Custom classifications
 

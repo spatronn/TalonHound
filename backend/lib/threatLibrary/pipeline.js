@@ -43,6 +43,7 @@ import {
 import { resolveEffectiveTlp } from './tlpPolicy.js';
 import { buildEvidenceIndex, publisherTokens, validateRelationship } from './relationshipPolicy.js';
 import { detectReportPublicationDate, resolvePublicationDateUpdate } from './publicationDate.js';
+import { persistReportIntelligence } from './reportIntelligence.js';
 import { createServiceLogger } from '../appLogger.js';
 
 const log = createServiceLogger('threat-library');
@@ -688,6 +689,14 @@ export async function runAnalysisPipeline(pool, ctx) {
     }
     await replaceRelationships(pool, report.id, relRows);
 
+    let reportIntelligence = null;
+    try {
+      reportIntelligence = await persistReportIntelligence(pool, report.id, aiValue, { log });
+    } catch (err) {
+      log.warn('report intelligence persist failed (non-fatal)', { reportId: report.id, error: err.message });
+      reportIntelligence = { error: err.message };
+    }
+
     // Effective TLP: manual override > explicit marking in the document >
     // safe default. The model's `tlp` is recorded as a hint only — a
     // sharing restriction is never inferred from subject matter.
@@ -714,6 +723,7 @@ export async function runAnalysisPipeline(pool, ctx) {
         entity_count: (aiValue.entities || []).length,
         relationship_count: relRows.length,
         candidate_update_count: (aiValue.candidate_updates || []).length,
+        report_intelligence: reportIntelligence,
         ai_calls: aiMeta?.ai_calls ?? null,
         chunks_total: aiMeta?.chunks_total ?? null,
         chunks_from_cache: aiMeta?.chunks_from_cache ?? null,

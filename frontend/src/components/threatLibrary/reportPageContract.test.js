@@ -64,6 +64,16 @@ test('enum cells go through display labels; canonical values feed only compariso
   assert.match(pageSrc, /c\.candidate_type === 'cidr'/, 'canonical comparison for the CIDR note');
 });
 
+test('Overview hosts Tags and MITRE; Source and Indicators stay free of that intelligence', () => {
+  assert.match(pageSrc, /data-testid="overview-tags"/);
+  assert.match(pageSrc, /<ReportMitreSection/);
+  assert.match(pageSrc, /<ReportTagsEditor/);
+  const source = pageSrc.slice(pageSrc.indexOf('view === REPORT_VIEWS.SOURCE'));
+  const indicators = pageSrc.slice(pageSrc.indexOf('view === REPORT_VIEWS.INDICATORS'), pageSrc.indexOf('view === REPORT_VIEWS.ENTITIES'));
+  assert.doesNotMatch(source, /ReportMitreSection|overview-tags/);
+  assert.doesNotMatch(indicators, /ReportMitreSection|overview-tags/);
+});
+
 test('overview metrics and report details come from the loaded rows, never hardcoded', () => {
   assert.match(pageSrc, /const metrics = useMemo\(\(\) => buildOverviewMetrics\(candidates, report\)/);
   assert.match(pageSrc, /\{metrics\.available \? \(/);

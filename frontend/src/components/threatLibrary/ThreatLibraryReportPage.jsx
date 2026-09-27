@@ -60,7 +60,8 @@ import {
 import { TlpBadge, isElevatedTlp, normalizeTlp, tlpDisplay } from './tlp.jsx';
 import ThreatLibraryModal, { ModalCancelButton } from './ThreatLibraryModal.jsx';
 import ReportTagsEditor from './ReportTagsEditor.jsx';
-import { mergeReportPayload } from './reportTags.js';
+import ReportMitreSection from './ReportMitreSection.jsx';
+import { mergeReportIntelPayload } from './reportMitre.js';
 import {
   TLP_OPTIONS,
   canEditTlp,
@@ -881,7 +882,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     try {
       const { data } = await api.post(`/threat-library/reports/${reportId}/retry`);
       const applied = applyRetryAcceptedState(data);
-      if (applied.report) setReport((prev) => mergeReportPayload(prev, applied.report));
+      if (applied.report) setReport((prev) => mergeReportIntelPayload(prev, applied.report));
       if (applied.job) setJob(applied.job);
       // The review set is being rebuilt: previous rows are no longer current.
       setCandidates([]);
@@ -900,7 +901,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       const code = err?.response?.data?.code;
       if (code === 'analysis_already_running' && err?.response?.data?.report) {
         const applied = applyRetryAcceptedState(err.response.data);
-        if (applied.report) setReport((prev) => mergeReportPayload(prev, applied.report));
+        if (applied.report) setReport((prev) => mergeReportIntelPayload(prev, applied.report));
         if (applied.job) setJob(applied.job);
         setCandidates([]);
         setSelected(new Set());
@@ -1236,6 +1237,27 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 <DetailList items={reportDetails} testId="report-details" className="tl-dl--info" />
               </div>
             </div>
+            {(Array.isArray(report.tags) && report.tags.length) || canWrite ? (
+              <section className="tl-intel" data-testid="overview-tags">
+                <h2 className="tl-heading">Tags</h2>
+                <ReportTagsEditor
+                  reportId={reportId}
+                  tags={report.tags}
+                  canWrite={canWrite}
+                  disabled={Boolean(busy)}
+                  onChange={(nextTags) => setReport((prev) => (prev ? { ...prev, tags: nextTags } : prev))}
+                  onError={(message) => setError(message)}
+                />
+              </section>
+            ) : null}
+            <ReportMitreSection
+              reportId={reportId}
+              mappings={report.mitre_attack}
+              canWrite={canWrite}
+              disabled={Boolean(busy)}
+              onChange={(next) => setReport((prev) => (prev ? { ...prev, mitre_attack: next } : prev))}
+              onError={(message) => setError(message)}
+            />
           </div>
         ) : null}
 
