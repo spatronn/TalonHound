@@ -208,3 +208,19 @@ test('rows per page + search: the filtered total drives 25 vs 50 paging', async 
   await loader.load({ page: 1, pageSize: 200 });
   assert.equal(requested.at(-1).limit, 25);
 });
+
+test('explicit sort is forwarded on the same request as search/pagination; default omits sort params', async () => {
+  const requested = [];
+  const loader = createReportListLoader({ fetchPage: async (params) => { requested.push(params); return serverPage(params); } });
+  await loader.load({ search: 'zscaler', page: 2, sort: 'published', order: 'desc' });
+  assert.deepEqual(requested[0], {
+    limit: 25,
+    offset: 25,
+    search: 'zscaler',
+    sort: 'published',
+    order: 'desc'
+  });
+  await loader.load({ page: 1 });
+  assert.deepEqual(requested[1], { limit: 25, offset: 0 });
+  assert.equal('sort' in requested[1], false);
+});

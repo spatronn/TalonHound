@@ -9,7 +9,12 @@ import {
   buildReportListWhere,
   normalizeReportListSearch,
   parseReportListPageSize,
-  parseReportListQuery
+  parseReportListQuery,
+  parseReportListSort,
+  buildReportListOrderBy,
+  REPORT_LIST_DEFAULT_ORDER_SQL,
+  REPORT_LIST_SORT_FIELDS,
+  REPORT_LIST_SORT_TIEBREAK_SQL
 } from './reportListQuery.js';
 import { listThreatReports } from './store.js';
 
@@ -54,14 +59,16 @@ test('normalizeReportListSearch bounds the length and strips control characters'
 });
 
 test('parseReportListQuery keeps the existing limit/offset bounds and adds search', () => {
-  assert.deepEqual(parseReportListQuery({}), { limit: 50, offset: 0, search: '' });
-  assert.deepEqual(parseReportListQuery({ limit: '100', offset: '0' }), { limit: 100, offset: 0, search: '' });
+  assert.deepEqual(parseReportListQuery({}), { limit: 50, offset: 0, search: '', sort: null, order: null });
+  assert.deepEqual(parseReportListQuery({ limit: '100', offset: '0' }), { limit: 100, offset: 0, search: '', sort: null, order: null });
   assert.deepEqual(parseReportListQuery({ limit: '9999', offset: '-5', search: ' ncsc ' }), {
     limit: REPORT_LIST_MAX_LIMIT,
     offset: 0,
-    search: 'ncsc'
+    search: 'ncsc',
+    sort: null,
+    order: null
   });
-  assert.deepEqual(parseReportListQuery({ limit: 'abc', offset: 'abc', search: 'x' }), { limit: 50, offset: 0, search: 'x' });
+  assert.deepEqual(parseReportListQuery({ limit: 'abc', offset: 'abc', search: 'x' }), { limit: 50, offset: 0, search: 'x', sort: null, order: null });
 });
 
 test('parseReportListQuery never lets a non-finite or unsafe offset reach the driver', () => {
@@ -73,7 +80,7 @@ test('parseReportListQuery never lets a non-finite or unsafe offset reach the dr
   assert.equal(parseReportListQuery({ limit: '1e400' }).limit, REPORT_LIST_MAX_LIMIT);
   assert.equal(parseReportListQuery({ limit: '25.7' }).limit, 25);
   // Page-style requests from the UI: page 7 of a 25-per-page list.
-  assert.deepEqual(parseReportListQuery({ limit: '25', offset: '150' }), { limit: 25, offset: 150, search: '' });
+  assert.deepEqual(parseReportListQuery({ limit: '25', offset: '150' }), { limit: 25, offset: 150, search: '', sort: null, order: null });
 });
 
 // --- WHERE clause -------------------------------------------------------------

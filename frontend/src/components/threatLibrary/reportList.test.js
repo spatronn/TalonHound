@@ -64,16 +64,16 @@ test('a search term is sent alongside pagination, trimmed', () => {
 // --- URL state ----------------------------------------------------------------
 
 test('URL seeds search and page; page=1 and blank search are omitted when serialising', () => {
-  assert.deepEqual(parseReportListUrlState(new URLSearchParams('search=iranian&page=2')), { search: 'iranian', page: 2, pageSize: 25 });
-  assert.deepEqual(parseReportListUrlState('search=%20socradar%20'), { search: 'socradar', page: 1, pageSize: 25 });
-  assert.deepEqual(parseReportListUrlState(new URLSearchParams('page=5')), { search: '', page: 5, pageSize: 25 });
-  assert.deepEqual(parseReportListUrlState(null), { search: '', page: 1, pageSize: 25 });
+  assert.deepEqual(parseReportListUrlState(new URLSearchParams('search=iranian&page=2')), { search: 'iranian', page: 2, pageSize: 25, sort: '', order: '' });
+  assert.deepEqual(parseReportListUrlState('search=%20socradar%20'), { search: 'socradar', page: 1, pageSize: 25, sort: '', order: '' });
+  assert.deepEqual(parseReportListUrlState(new URLSearchParams('page=5')), { search: '', page: 5, pageSize: 25, sort: '', order: '' });
+  assert.deepEqual(parseReportListUrlState(null), { search: '', page: 1, pageSize: 25, sort: '', order: '' });
   assert.equal(buildReportListUrlSearchParams({ search: 'threat_report', page: 3 }).toString(), 'search=threat_report&page=3');
   assert.equal(buildReportListUrlSearchParams({ search: 'threat_report', page: 1 }).toString(), 'search=threat_report');
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 2 }).toString(), 'page=2');
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 1 }).toString(), '');
   const roundTrip = parseReportListUrlState(buildReportListUrlSearchParams({ search: 'cta-nk', page: 4 }));
-  assert.deepEqual(roundTrip, { search: 'cta-nk', page: 4, pageSize: 25 });
+  assert.deepEqual(roundTrip, { search: 'cta-nk', page: 4, pageSize: 25, sort: '', order: '' });
 });
 
 // --- rows per page (25 / 50) ------------------------------------------------------
@@ -101,7 +101,7 @@ test('URL carries ?limit= only for a non-default size and round-trips with searc
   assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 50 }).toString(), 'limit=50');
   assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 25 }).toString(), '', 'the default size is not written');
   assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 999 }).toString(), '');
-  assert.deepEqual(parseReportListUrlState('search=apt&page=2&limit=50'), { search: 'apt', page: 2, pageSize: 50 });
+  assert.deepEqual(parseReportListUrlState('search=apt&page=2&limit=50'), { search: 'apt', page: 2, pageSize: 50, sort: '', order: '' });
   for (const q of ['limit=10', 'limit=100', 'limit=abc', 'limit=', 'limit=-50']) {
     assert.equal(parseReportListUrlState(q).pageSize, 25, q);
   }

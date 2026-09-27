@@ -3,7 +3,8 @@
  * request params, URL state and the list empty-state descriptor. Pure
  * functions so the page behaviour is unit-testable without a DOM. Mirrors the
  * threat-actor / tag manager list conventions (25 per page, ?search=&page=),
- * plus a 25 / 50 rows-per-page choice carried as ?limit= (the API parameter).
+ * plus a 25 / 50 rows-per-page choice carried as ?limit= (the API parameter)
+ * and an optional explicit sort as ?sort=&order=.
  */
 
 /** Default rows per page. */
@@ -15,6 +16,21 @@ export const REPORT_LIST_SEARCH_MAX_LENGTH = 200;
 export const REPORT_LIST_SEARCH_PARAM = 'search';
 export const REPORT_LIST_PAGE_PARAM = 'page';
 export const REPORT_LIST_LIMIT_PARAM = 'limit';
+export const REPORT_LIST_SORT_PARAM = 'sort';
+export const REPORT_LIST_ORDER_PARAM = 'order';
+
+/** Keys accepted by GET /threat-library/reports?sort=&order=. */
+export const REPORT_LIST_SORTABLE_COLUMNS = Object.freeze([
+  'report',
+  'source',
+  'tlp',
+  'entities',
+  'indicators',
+  'matched',
+  'status',
+  'published',
+  'imported'
+]);
 
 /** Trim and bound the search term; anything else is "no search". */
 export function normalizeReportListSearch(value) {
@@ -51,12 +67,68 @@ export function clampReportListPage(page, total, pageSize = REPORT_LIST_PAGE_SIZ
  * limit/offset (the API contract); `search` is only sent when non-blank so an
  * empty field on page 1 is byte-for-byte the unfiltered first-page request.
  */
-export function buildReportListQueryParams({ search = '', page = 1, pageSize = REPORT_LIST_PAGE_SIZE } = {}) {
+/** Whitelisted sort field, or '' for the canonical default order. */
+export function normalizeReportListSort(value) {
+  const v = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return REPORT_LIST_SORTABLE_COLUMNS.includes(v) ? v : '';
+}
+
+/** `asc` / `desc` only; anything else is no explicit order. */
+export function normalizeReportListOrder(value) {
+  const v = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return v === 'asc' || v === 'desc' ? v : '';
+}
+
+/** Both sort and order must be valid; a partial or junk pair is the default. */
+export function parseReportListSortState(sort, order) {
+  const nextSort = normalizeReportListSort(sort);
+  const nextOrder = normalizeReportListOrder(order);
+  if (!nextSort || !nextOrder) return { sort: '', order: '' };
+  return { sort: nextSort, order: nextOrder };
+}
+
+/**
+ * Three-state cycle for one column: default → ASC → DESC → default.
+ * Clicking a different column starts that column at ASC.
+ */
+export function cycleReportListSort(currentSort, currentOrder, column) {
+  const col = normalizeReportListSort(column);
+  if (!col) return { sort: '', order: '' };
+  const active = parseReportListSortState(currentSort, currentOrder);
+  if (active.sort !== col) return { sort: col, order: 'asc' };
+  if (active.order === 'asc') return { sort: col, order: 'desc' };
+  return { sort: '', order: '' };
+}
+
+export function reportListAriaSort(currentSort, currentOrder, column) {
+  const active = parseReportListSortState(currentSort, currentOrder);
+  if (active.sort !== column) return 'none';
+  return active.order === 'desc' ? 'descending' : 'ascending';
+}
+
+export function reportListSortMarker(currentSort, currentOrder, column) {
+  const active = parseReportListSortState(currentSort, currentOrder);
+  if (active.sort !== column) return '';
+  return active.order === 'desc' ? ' ↓' : ' ↑';
+}
+
+export function buildReportListQueryParams({
+  search = '',
+  page = 1,
+  pageSize = REPORT_LIST_PAGE_SIZE,
+  sort = '',
+  order = ''
+} = {}) {
   const size = normalizeReportListPageSize(pageSize);
   const p = normalizeReportListPage(page);
   const params = { limit: size, offset: (p - 1) * size };
   const q = normalizeReportListSearch(search);
   if (q) params[REPORT_LIST_SEARCH_PARAM] = q;
+  const parsed = parseReportListSortState(sort, order);
+  if (parsed.sort) {
+    params[REPORT_LIST_SORT_PARAM] = parsed.sort;
+    params[REPORT_LIST_ORDER_PARAM] = parsed.order;
+  }
   return params;
 }
 
@@ -65,14 +137,26 @@ export function parseReportListUrlState(searchParams) {
   const params = searchParams && typeof searchParams.get === 'function'
     ? searchParams
     : new URLSearchParams(String(searchParams || ''));
+  const parsed = parseReportListSortState(
+    params.get(REPORT_LIST_SORT_PARAM),
+    params.get(REPORT_LIST_ORDER_PARAM)
+  );
   return {
     search: normalizeReportListSearch(params.get(REPORT_LIST_SEARCH_PARAM) || ''),
     page: normalizeReportListPage(params.get(REPORT_LIST_PAGE_PARAM)),
-    pageSize: normalizeReportListPageSize(params.get(REPORT_LIST_LIMIT_PARAM))
+    pageSize: normalizeReportListPageSize(params.get(REPORT_LIST_LIMIT_PARAM)),
+    sort: parsed.sort,
+    order: parsed.order
   };
 }
 
-export function buildReportListUrlSearchParams({ search = '', page = 1, pageSize = REPORT_LIST_PAGE_SIZE } = {}) {
+export function buildReportListUrlSearchParams({
+  search = '',
+  page = 1,
+  pageSize = REPORT_LIST_PAGE_SIZE,
+  sort = '',
+  order = ''
+} = {}) {
   const next = new URLSearchParams();
   const q = normalizeReportListSearch(search);
   if (q) next.set(REPORT_LIST_SEARCH_PARAM, q);
@@ -80,6 +164,11 @@ export function buildReportListUrlSearchParams({ search = '', page = 1, pageSize
   if (p > 1) next.set(REPORT_LIST_PAGE_PARAM, String(p));
   const size = normalizeReportListPageSize(pageSize);
   if (size !== REPORT_LIST_PAGE_SIZE) next.set(REPORT_LIST_LIMIT_PARAM, String(size));
+  const parsed = parseReportListSortState(sort, order);
+  if (parsed.sort) {
+    next.set(REPORT_LIST_SORT_PARAM, parsed.sort);
+    next.set(REPORT_LIST_ORDER_PARAM, parsed.order);
+  }
   return next;
 }
 

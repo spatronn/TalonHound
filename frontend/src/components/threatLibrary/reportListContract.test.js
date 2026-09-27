@@ -40,7 +40,7 @@ test('typing updates searchInput; Escape clears it', () => {
 });
 
 test('URL is the single source of truth for search + page; the field is the only local search state', () => {
-  assert.match(pageSrc, /const \{ search, page, pageSize \} = useMemo\(\(\) => parseReportListUrlState\(searchParams\), \[searchParams\]\);/);
+  assert.match(pageSrc, /const \{ search, page, pageSize, sort, order \} = useMemo\(\(\) => parseReportListUrlState\(searchParams\), \[searchParams\]\);/);
   assert.match(pageSrc, /const \[searchInput, setSearchInput\] = useState\(search\);/);
   assert.doesNotMatch(pageSrc, /useState\(initial/);
   assert.doesNotMatch(pageSrc, /const \[search, setSearch\]|const \[page, setPage\]|const \[pageSize, setPageSize\]/, 'no shadow copies of URL state that could fight the router');
@@ -50,31 +50,31 @@ test('URL is the single source of truth for search + page; the field is the only
 });
 
 test('requests are debounced and a changed term (including clearing) resets to page 1', () => {
-  const debounce = pageSrc.slice(pageSrc.indexOf('const t = setTimeout(() => {'), pageSrc.indexOf('}, [searchInput, search, pageSize, setListUrl]);'));
-  assert.match(debounce, /const next = normalizeReportListSearch\(searchInput\);\s*if \(next !== search\) setListUrl\(\{ search: next, page: 1, pageSize \}\);/);
+  const debounce = pageSrc.slice(pageSrc.indexOf('const t = setTimeout(() => {'), pageSrc.indexOf('}, [searchInput, search, pageSize, sort, order, setListUrl]);'));
+  assert.match(debounce, /const next = normalizeReportListSearch\(searchInput\);\s*if \(next !== search\) setListUrl\(\{ search: next, page: 1, pageSize, sort, order \}\);/);
   assert.match(debounce, /\}, REPORT_LIST_SEARCH_DEBOUNCE_MS\);\s*return \(\) => clearTimeout\(t\);/);
-  // load depends on the URL-derived term and page, never on the raw input.
-  assert.match(pageSrc, /\}, \[search, page, pageSize, setListUrl\]\);\s*useEffect\(\(\) => \{\s*load\(\)\.catch/);
+  // load depends on the URL-derived term, page and sort, never on the raw input.
+  assert.match(pageSrc, /\}, \[search, page, pageSize, sort, order, setListUrl\]\);\s*useEffect\(\(\) => \{\s*load\(\)\.catch/);
   assert.doesNotMatch(pageSrc, /\}, \[searchInput, search, pageSize, setListUrl\]\);[\s\S]*loaderRef\.current\.load/);
 });
 
 test('Back/Forward and shared links: the field follows the URL term; hand-typed URLs are canonicalised (fixed point, no loop)', () => {
   assert.match(pageSrc, /setSearchInput\(\(prev\) => \(normalizeReportListSearch\(prev\) === search \? prev : search\)\);\s*\}, \[search\]\);/);
-  assert.match(pageSrc, /useEffect\(\(\) => \{\s*setListUrl\(\{ search, page, pageSize \}\);\s*\}, \[search, page, pageSize, setListUrl\]\);/);
+  assert.match(pageSrc, /useEffect\(\(\) => \{\s*setListUrl\(\{ search, page, pageSize, sort, order \}\);\s*\}, \[search, page, pageSize, sort, order, setListUrl\]\);/);
 });
 
 test('every list request (initial, search, page, Refresh) goes through the single loader', () => {
   assert.match(pageSrc, /loaderRef\.current = createReportListLoader\(\{\s*pageSize: REPORT_LIST_PAGE_SIZE,\s*fetchPage: async \(params, signal\) => \(await api\.get\('\/threat-library\/reports', \{ params, signal \}\)\)\.data\s*\}\);/);
-  assert.match(pageSrc, /const result = await loaderRef\.current\.load\(\{ search, page, pageSize \}\);/);
+  assert.match(pageSrc, /const result = await loaderRef\.current\.load\(\{ search, page, pageSize, sort, order \}\);/);
   assert.equal((pageSrc.match(/api\.get\(/g) || []).length, 1, 'exactly one list request site');
   assert.doesNotMatch(pageSrc, /\.slice\(/, 'no client-side slicing of a larger result set');
   assert.doesNotMatch(pageSrc, /limit: 100/);
 });
 
 test('stale outcomes are ignored, clamped outcomes move to the last valid page and keep loading', () => {
-  const load = pageSrc.slice(pageSrc.indexOf('const load = useCallback'), pageSrc.indexOf('}, [search, page, pageSize, setListUrl]);'));
+  const load = pageSrc.slice(pageSrc.indexOf('const load = useCallback'), pageSrc.indexOf('}, [search, page, pageSize, sort, order, setListUrl]);'));
   assert.match(load, /if \(result\.kind === 'stale'\) return;/);
-  assert.match(load, /if \(result\.kind === 'clamped'\) \{[\s\S]*?setTotal\(result\.total\);\s*setListUrl\(\{ search, page: result\.page, pageSize \}\);\s*return;\s*\}/);
+  assert.match(load, /if \(result\.kind === 'clamped'\) \{[\s\S]*?setTotal\(result\.total\);\s*setListUrl\(\{ search, page: result\.page, pageSize, sort, order \}\);\s*return;\s*\}/);
   assert.match(load, /if \(result\.kind === 'error'\) \{\s*setError\(result\.message\);\s*setItems\(\[\]\);\s*setTotal\(0\);/);
   assert.match(load, /setItems\(result\.items\);\s*setTotal\(result\.total\);\s*\}\s*setLoading\(false\);/);
   assert.match(pageSrc, /useEffect\(\(\) => \(\) => loaderRef\.current\?\.abort\(\), \[\]\);/, 'unmount aborts the in-flight request');
@@ -95,7 +95,7 @@ test('zero-result search shows the search-specific empty state; out-of-range pag
 test('Refresh re-runs load() with the active search and page; import/AI settings untouched', () => {
   assert.match(pageSrc, /<button type="button" style=\{ui\.btn\} onClick=\{\(\) => load\(\)\.catch\(\(\) => \{\}\)\}>Refresh<\/button>/);
   // load() closes over the current URL-derived search and page, so Refresh keeps both.
-  assert.match(pageSrc, /loaderRef\.current\.load\(\{ search, page, pageSize \}\)[\s\S]*?\}, \[search, page, pageSize, setListUrl\]\);/);
+  assert.match(pageSrc, /loaderRef\.current\.load\(\{ search, page, pageSize, sort, order \}\)[\s\S]*?\}, \[search, page, pageSize, sort, order, setListUrl\]\);/);
   assert.match(pageSrc, /<Link to="\/threat-intelligence\/threat-library\/ai-settings"/);
   assert.match(pageSrc, /onClick=\{\(\) => setImportOpen\(true\)\}/);
   assert.match(pageSrc, /<ImportIntelligenceModal\s+open=\{importOpen\}\s+onClose=\{\(\) => setImportOpen\(false\)\}\s+onImported=\{onImported\}/);
@@ -103,9 +103,10 @@ test('Refresh re-runs load() with the active search and page; import/AI settings
 
 test('URL carries ?search=&page= and pager clicks write the URL (replace, not push)', () => {
   assert.match(pageSrc, /const \[searchParams, setSearchParams\] = useSearchParams\(\);/);
-  assert.match(pageSrc, /const goToPage = \(next\) => setListUrl\(\{ search, page: next, pageSize \}\);/);
-  // Changing the page size keeps the search and restarts at page 1.
-  assert.match(pageSrc, /const changePageSize = \(next\) => setListUrl\(\{ search, page: 1, pageSize: next \}\);/);
+  assert.match(pageSrc, /const goToPage = \(next\) => setListUrl\(\{ search, page: next, pageSize, sort, order \}\);/);
+  // Changing the page size keeps the search/sort and restarts at page 1.
+  assert.match(pageSrc, /const changePageSize = \(next\) => setListUrl\(\{ search, page: 1, pageSize: next, sort, order \}\);/);
+  assert.match(pageSrc, /const next = cycleReportListSort\(sort, order, column\);\s*setListUrl\(\{ search, page: 1, pageSize, sort: next\.sort, order: next\.order \}\);/);
   assert.doesNotMatch(pageSrc, /navigate\(`\/threat-intelligence\/threat-library\?/, 'pager never pushes history entries');
 });
 
@@ -143,11 +144,14 @@ const LIST_COLUMNS = ['Report', 'Source', 'TLP', 'Entities', 'Indicators', 'Matc
 
 test('report list columns: Published immediately before Imported, Type still absent, order fixed', () => {
   const thead = pageSrc.slice(pageSrc.indexOf('<thead>'), pageSrc.indexOf('</thead>'));
-  const headers = [...thead.matchAll(/<th style=\{ui\.th\}>([^<]+)<\/th>/g)].map((m) => m[1]);
+  const headers = [...thead.matchAll(/label="([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(headers, LIST_COLUMNS);
   assert.equal(headers.at(-2), 'Published');
   assert.equal(headers.at(-1), 'Imported');
   assert.ok(!headers.includes('Type'));
+  assert.match(pageSrc, /aria-sort=\{ariaSort\}/);
+  assert.match(pageSrc, /<button\s+type="button"/);
+  assert.match(pageSrc, /cycleReportListSort/);
 });
 
 test('report list body renders Published from publication date and Imported from created_at independently', () => {

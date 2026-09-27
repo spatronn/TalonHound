@@ -10,11 +10,14 @@ import {
   REPORT_LIST_SEARCH_DEBOUNCE_MS,
   REPORT_LIST_SEARCH_MAX_LENGTH,
   buildReportListUrlSearchParams,
+  cycleReportListSort,
   describeReportListEmptyState,
   describeReportListPagination,
   formatReportListShowingLabel,
   normalizeReportListSearch,
-  parseReportListUrlState
+  parseReportListUrlState,
+  reportListAriaSort,
+  reportListSortMarker
 } from './reportList.js';
 import { createReportListLoader } from './reportListLoader.js';
 import { indicatorListCell } from './reportPhase.js';
@@ -42,15 +45,62 @@ const searchInputStyle = { ...ui.input, padding: '8px 12px', fontSize: 13, minHe
 const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' };
 const pagerBtn = { ...ui.btn, minHeight: 30, padding: '4px 10px', fontSize: 12 };
 const pageSizeSelect = { ...ui.select, width: 'auto', minHeight: 30, padding: '4px 8px', fontSize: 12 };
+const sortHeaderBtn = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 2,
+  width: '100%',
+  margin: 0,
+  padding: '10px 8px',
+  border: 'none',
+  background: 'transparent',
+  color: 'inherit',
+  font: 'inherit',
+  fontWeight: 600,
+  fontSize: 12,
+  lineHeight: 1.2,
+  textAlign: 'left',
+  whiteSpace: 'nowrap',
+  cursor: 'pointer',
+  borderRadius: 4
+};
+
+function SortableTh({ label, column, sort, order, onCycle }) {
+  const active = sort === column;
+  const ariaSort = reportListAriaSort(sort, order, column);
+  const marker = reportListSortMarker(sort, order, column);
+  return (
+    <th style={{ ...ui.th, padding: 0 }} aria-sort={ariaSort}>
+      <button
+        type="button"
+        style={{ ...sortHeaderBtn, color: active ? '#e2e8f0' : '#94a3b8' }}
+        onClick={() => onCycle(column)}
+        onMouseEnter={(e) => { e.currentTarget.style.color = '#e2e8f0'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = active ? '#e2e8f0' : '#94a3b8'; }}
+        onFocus={(e) => { e.currentTarget.style.outline = '1px solid #475569'; e.currentTarget.style.outlineOffset = '1px'; }}
+        onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
+        aria-label={
+          active
+            ? `${label}, sorted ${order === 'desc' ? 'descending' : 'ascending'}. Activate to cycle sort.`
+            : `Sort by ${label}`
+        }
+      >
+        {label}
+        {marker ? <span aria-hidden="true">{marker}</span> : null}
+      </button>
+    </th>
+  );
+}
 
 export default function ThreatLibraryPage({ AppShell, useSession }) {
   const { isAdmin, canWrite } = useSession();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // The URL is the single source of truth for the debounced search term, the
-  // page and the rows per page (?search=&page=&limit=), so reload, Back/Forward
-  // and shared links all land on the same list state and nothing can fight the router.
-  const { search, page, pageSize } = useMemo(() => parseReportListUrlState(searchParams), [searchParams]);
+  // page, the rows per page and the optional explicit sort
+  // (?search=&page=&limit=&sort=&order=), so reload, Back/Forward and shared
+  // links all land on the same list state and nothing can fight the router.
+  const { search, page, pageSize, sort, order } = useMemo(() => parseReportListUrlState(searchParams), [searchParams]);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -84,13 +134,13 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
-    const result = await loaderRef.current.load({ search, page, pageSize });
+    const result = await loaderRef.current.load({ search, page, pageSize, sort, order });
     if (result.kind === 'stale') return;
     if (result.kind === 'clamped') {
       // Result set shrank below this page (search narrowed, rows deleted):
       // keep the loading placeholder and reload the last valid page.
       setTotal(result.total);
-      setListUrl({ search, page: result.page, pageSize });
+      setListUrl({ search, page: result.page, pageSize, sort, order });
       return;
     }
     if (result.kind === 'error') {
@@ -102,7 +152,7 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
       setTotal(result.total);
     }
     setLoading(false);
-  }, [search, page, pageSize, setListUrl]);
+  }, [search, page, pageSize, sort, order, setListUrl]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -114,10 +164,10 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   useEffect(() => {
     const t = setTimeout(() => {
       const next = normalizeReportListSearch(searchInput);
-      if (next !== search) setListUrl({ search: next, page: 1, pageSize });
+      if (next !== search) setListUrl({ search: next, page: 1, pageSize, sort, order });
     }, REPORT_LIST_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [searchInput, search, pageSize, setListUrl]);
+  }, [searchInput, search, pageSize, sort, order, setListUrl]);
 
   // URL term changed underneath the field (Back/Forward, shared link): reflect it,
   // but leave the raw input alone while it already normalises to the same term.
@@ -128,12 +178,16 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   // Canonicalise a hand-typed URL (page=1, padded search, junk page / limit)
   // once; the serialised form of the parsed state is a fixed point, so this cannot loop.
   useEffect(() => {
-    setListUrl({ search, page, pageSize });
-  }, [search, page, pageSize, setListUrl]);
+    setListUrl({ search, page, pageSize, sort, order });
+  }, [search, page, pageSize, sort, order, setListUrl]);
 
-  const goToPage = (next) => setListUrl({ search, page: next, pageSize });
+  const goToPage = (next) => setListUrl({ search, page: next, pageSize, sort, order });
   // A new page size restarts at page 1 so the first visible row is never skipped.
-  const changePageSize = (next) => setListUrl({ search, page: 1, pageSize: next });
+  const changePageSize = (next) => setListUrl({ search, page: 1, pageSize: next, sort, order });
+  const cycleSort = (column) => {
+    const next = cycleReportListSort(sort, order, column);
+    setListUrl({ search, page: 1, pageSize, sort: next.sort, order: next.order });
+  };
 
   const pagination = describeReportListPagination({ page, total, pageSize });
   const emptyState = describeReportListEmptyState({ loading, itemCount: items.length, total, search, canWrite });
@@ -193,15 +247,15 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
           <table width="100%" cellPadding="0" style={{ borderCollapse: 'collapse', fontSize: 13, background: 'transparent' }}>
             <thead>
               <tr style={ui.thead}>
-                <th style={ui.th}>Report</th>
-                <th style={ui.th}>Source</th>
-                <th style={ui.th}>TLP</th>
-                <th style={ui.th}>Entities</th>
-                <th style={ui.th}>Indicators</th>
-                <th style={ui.th}>Matched</th>
-                <th style={ui.th}>Status</th>
-                <th style={ui.th}>Published</th>
-                <th style={ui.th}>Imported</th>
+                <SortableTh label="Report" column="report" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Source" column="source" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="TLP" column="tlp" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Entities" column="entities" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Indicators" column="indicators" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Matched" column="matched" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Status" column="status" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Published" column="published" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Imported" column="imported" sort={sort} order={order} onCycle={cycleSort} />
               </tr>
             </thead>
             <tbody>

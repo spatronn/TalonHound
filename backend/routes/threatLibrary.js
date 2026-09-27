@@ -375,7 +375,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         limit: parseReportListPageSize(req.query.limit),
         offset: req.query.offset,
         // Library navigation search over stored report metadata only.
-        search: req.query.search
+        search: req.query.search,
+        sort: req.query.sort,
+        order: req.query.order
       });
       const tagsByReport = await loadReportTagsByReportIds(pool, result.items.map((r) => r.id));
       return res.json({

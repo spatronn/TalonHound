@@ -268,6 +268,26 @@ The Threat Library list (`/threat-intelligence/threat-library`) shows two indepe
 
 The list endpoint already selected these columns (`SELECT r.*`); the list serializer is `publicReport` / `serializePublicationDate`.
 
+## Report list sorting
+
+Column headers on `/threat-intelligence/threat-library` are three-state and **server-side**: default → ASC → DESC → default. Only one explicit sort is active. Default (third click, or no `sort`/`order` query params) is exactly `ORDER BY r.created_at DESC` — the pre-existing newest-imported-first order. Do not simulate default with Published or Imported.
+
+API: `GET /api/threat-library/reports?sort=&order=` with a whitelist. Unsupported values fall back to the default order; user input is never interpolated into SQL.
+
+| Column | `sort=` | ORDER BY |
+|---|---|---|
+| Report | `report` | `LOWER(title)` NULLS LAST |
+| Source | `source` | list display source (`source_name`, else URL / PDF name / THIB) NULLS LAST |
+| TLP | `tlp` | stored TLP 2.0 restriction rank (clear → red) |
+| Entities | `entities` | `entity_count` (integer) |
+| Indicators | `indicators` | review-set count when review-ready/finalized, else raw `indicator_count` |
+| Matched | `matched` | `matched_count` (integer) |
+| Status | `status` | `analysis_status` NULLS LAST |
+| Published | `published` | `published_at` **NULLS LAST both directions** (never `created_at`) |
+| Imported | `imported` | `created_at` |
+
+Explicit sorts add `created_at DESC, id DESC` (Imported uses `created_at` + `id` in the requested direction). `ORDER BY` is applied to the filtered set before `LIMIT`/`OFFSET`. Changing sort or search resets to page 1; page/page-size changes keep the active sort. URL: `?sort=published&order=desc` — omitted when default.
+
 ## Async processing
 
 BullMQ queue `threat-library` + `threat-library-worker` service. Stages persist on `threat_reports` / `threat_library_jobs` for real UI progress.

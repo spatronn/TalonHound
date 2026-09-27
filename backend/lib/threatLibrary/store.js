@@ -8,7 +8,7 @@ import { isValidTlpSource } from './tlpPolicy.js';
 import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
 import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility, publisherAuthoritativeIocMembershipSql } from './evidencePolicy.js';
-import { buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
+import { buildReportListOrderBy, buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
 
 export async function getAiSettings(pool) {
@@ -233,14 +233,15 @@ export async function attachReportCounts(pool, report) {
  * Page of reports plus the total for the same filter. `search` is applied
  * before LIMIT/OFFSET so `total` always describes the filtered set.
  */
-export async function listThreatReports(pool, { limit, offset, search } = {}) {
-  const opts = parseReportListQuery({ limit, offset, search });
+export async function listThreatReports(pool, { limit, offset, search, sort, order } = {}) {
+  const opts = parseReportListQuery({ limit, offset, search, sort, order });
   const where = buildReportListWhere({ search: opts.search }, 1);
+  const orderBy = buildReportListOrderBy(opts);
   const { rows } = await pool.query(
     `SELECT r.*, ${REPORT_COUNT_COLUMNS}
      FROM threat_reports r
      ${where.sql}
-     ORDER BY r.created_at DESC
+     ${orderBy.sql}
      LIMIT $${where.nextParamIndex} OFFSET $${where.nextParamIndex + 1}`,
     [...where.params, opts.limit, opts.offset]
   );

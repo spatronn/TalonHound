@@ -29,18 +29,18 @@ export function createReportListLoader({ fetchPage, pageSize = REPORT_LIST_PAGE_
     },
 
     /**
-     * Issue the request for { search, page, pageSize }. Resolves to one of:
+     * Issue the request for { search, page, pageSize, sort, order }. Resolves to one of:
      *  - { kind: 'applied', items, total }   newest response, page is valid
      *  - { kind: 'clamped', total, page }    newest response but the page is past the end -> reload `page`
      *  - { kind: 'stale' }                   superseded by a later load (or aborted): ignore
      *  - { kind: 'error', message }          newest response failed
      */
-    async load({ search = '', page = 1, pageSize: size = pageSize } = {}) {
+    async load({ search = '', page = 1, pageSize: size = pageSize, sort = '', order = '' } = {}) {
       seq += 1;
       const mySeq = seq;
       if (controller) controller.abort();
       controller = makeController();
-      const params = buildReportListQueryParams({ search, page, pageSize: size });
+      const params = buildReportListQueryParams({ search, page, pageSize: size, sort, order });
       try {
         const data = await fetchPage(params, controller.signal);
         if (mySeq !== seq) return { kind: 'stale' };
