@@ -162,6 +162,45 @@ test('API-shaped MODE A payload without scope flag still hides narrative-only ha
   ]);
 });
 
+test('IOC-heading value lines stored as body_mention still appear under Indicators', () => {
+  const appendixDomain = {
+    candidate_type: 'domain',
+    normalized_value: 'briccorp.com',
+    assessment: 'malicious',
+    match_state: 'existing',
+    review_status: 'approved',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: {
+      source_assertion: 'body_mention',
+      document_has_authoritative_scope: true,
+      occurrences: [{ zone: 'explicit_ioc_section', surrounding_text: 'briccorp[.]com' }]
+    }
+  };
+  const narrativeHash = {
+    candidate_type: 'md5',
+    normalized_value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: {
+      source_assertion: 'body_mention',
+      document_has_authoritative_scope: true,
+      occurrences: [{ zone: 'report_body', section_heading: 'HTML attachment analysis' }]
+    }
+  };
+  assert.equal(isPublisherAuthoritativeReportIocMember(appendixDomain), true);
+  assert.equal(isReviewIndicator(appendixDomain), true);
+  assert.equal(isReviewIndicator(narrativeHash), false);
+  assert.deepEqual(
+    filterReviewCandidates([appendixDomain, narrativeHash], { tab: 'indicators' }).map((c) => c.normalized_value),
+    ['briccorp.com']
+  );
+  assert.equal(filterReviewCandidates([appendixDomain, narrativeHash], { tab: 'all' }).length, 2);
+});
+
 test('MODE B narrative malicious remains an Indicator', () => {
   const narrative = {
     candidate_type: 'md5',

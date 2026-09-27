@@ -22,16 +22,36 @@ const EXPLICIT_PUBLISHER_IOC_ASSERTIONS = new Set([
   'explicit_operational_infrastructure'
 ]);
 
+const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = new Set([
+  'explicit_ioc_section',
+  'c2_section',
+  'sample_table',
+  'operational_infrastructure'
+]);
+
 function hasAuthoritativePublisherIocScope(candidate) {
   const ev = (candidate && candidate.evidence) || {};
   return candidate?.document_has_authoritative_scope === true
     || ev.document_has_authoritative_scope === true;
 }
 
+function candidateOccurrences(candidate) {
+  const ev = (candidate && candidate.evidence) || {};
+  if (Array.isArray(candidate?.occurrences) && candidate.occurrences.length) return candidate.occurrences;
+  return Array.isArray(ev.occurrences) ? ev.occurrences : [];
+}
+
+function hasPublisherIocSectionOccurrence(candidate) {
+  return candidateOccurrences(candidate).some((occ) => (
+    AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.has(String(occ?.zone || ''))
+  ));
+}
+
 function isPublisherAssertedReportIoc(candidate) {
   const ev = (candidate && candidate.evidence) || {};
   const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
-  return EXPLICIT_PUBLISHER_IOC_ASSERTIONS.has(assertion);
+  if (EXPLICIT_PUBLISHER_IOC_ASSERTIONS.has(assertion)) return true;
+  return hasPublisherIocSectionOccurrence(candidate);
 }
 
 /**

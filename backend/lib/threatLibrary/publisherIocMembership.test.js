@@ -313,6 +313,52 @@ test('P14: globally existing IOC that is narrative-only here is not a report mem
   assert.equal(classifyCreateEligibility({ ...row, review_status: 'approved' }).eligible, false);
 });
 
+test('IOC-heading value lines stored as body_mention still count as publisher members', () => {
+  const appendixDomain = {
+    candidate_type: 'domain',
+    normalized_value: 'briccorp.com',
+    assessment: 'malicious',
+    match_state: 'existing',
+    review_status: 'approved',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: {
+      source_assertion: 'body_mention',
+      document_has_authoritative_scope: true,
+      occurrences: [{
+        block_id: 'b073',
+        zone: 'explicit_ioc_section',
+        section_heading: 'Indicators of compromise (IOCs)',
+        form: 'standalone',
+        surrounding_text: 'briccorp[.]com'
+      }]
+    }
+  };
+  const narrativeHash = {
+    candidate_type: 'md5',
+    normalized_value: MD5,
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: {
+      source_assertion: 'body_mention',
+      document_has_authoritative_scope: true,
+      occurrences: [{
+        block_id: 'b035',
+        zone: 'report_body',
+        section_heading: 'HTML attachment analysis',
+        form: 'standalone'
+      }]
+    }
+  };
+  assert.equal(isPublisherAuthoritativeReportIocMember(appendixDomain), true);
+  assert.equal(isActionableReviewIndicator(appendixDomain), true);
+  assert.equal(isPublisherAuthoritativeReportIocMember(narrativeHash), false);
+  assert.equal(isActionableReviewIndicator(narrativeHash), false);
+});
+
 test('P15: same identity explicitly asserted in two reports keeps independent membership', () => {
   const shared = 'shared-c2.hub.net';
   const reportA = {

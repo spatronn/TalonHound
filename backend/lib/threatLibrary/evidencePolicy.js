@@ -57,11 +57,33 @@ export function hasAuthoritativePublisherIocScope(candidate) {
     || ev.document_has_authoritative_scope === true;
 }
 
+const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = Object.freeze([
+  'explicit_ioc_section',
+  'c2_section',
+  'sample_table',
+  'operational_infrastructure'
+]);
+
+function candidateOccurrences(candidate) {
+  const ev = evidenceRecord(candidate);
+  if (Array.isArray(candidate?.occurrences) && candidate.occurrences.length) return candidate.occurrences;
+  return Array.isArray(ev.occurrences) ? ev.occurrences : [];
+}
+
+/** True when a stored occurrence sits in a publisher-curated IOC structure. */
+export function hasPublisherIocSectionOccurrence(candidate) {
+  return candidateOccurrences(candidate).some((occ) => (
+    AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.includes(String(occ?.zone || ''))
+  ));
+}
+
 /** True when this identity was explicitly asserted in a curated publisher IOC structure. */
 export function isPublisherAssertedReportIoc(candidate) {
   const ev = evidenceRecord(candidate);
   const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
-  return EXPLICIT_PUBLISHER_IOC_ASSERTION_SET.has(assertion);
+  if (EXPLICIT_PUBLISHER_IOC_ASSERTION_SET.has(assertion)) return true;
+  // Older extracts may still say body_mention for value lines under an IOC heading.
+  return hasPublisherIocSectionOccurrence(candidate);
 }
 
 /**
@@ -85,6 +107,16 @@ export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
     COALESCE(${p}evidence->>'document_has_authoritative_scope', 'false') <> 'true'
     OR COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') IN (
       'explicit_ioc', 'explicit_c2', 'explicit_operational_infrastructure'
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(COALESCE(${p}evidence->'occurrences', '[]'::jsonb)) AS occ
+      WHERE occ->>'zone' IN (
+        'explicit_ioc_section',
+        'c2_section',
+        'sample_table',
+        'operational_infrastructure'
+      )
     )
   )`;
 }
