@@ -81,7 +81,7 @@ test('stale outcomes are ignored, clamped outcomes move to the last valid page a
 });
 
 test('loading and error states: Loading row, role=alert error', () => {
-  assert.match(pageSrc, /emptyState\.kind === 'loading' \? \(\s*<tr style=\{ui\.tr\}><td colSpan=\{8\} style=\{ui\.td\}>Loading/);
+  assert.match(pageSrc, /emptyState\.kind === 'loading' \? \(\s*<tr style=\{ui\.tr\}><td colSpan=\{9\} style=\{ui\.td\}>Loading/);
   assert.match(pageSrc, /\{error \? <div style=\{\{ \.\.\.ui\.error, marginBottom: 12 \}\} role="alert">\{error\}<\/div> : null\}/);
 });
 
@@ -135,36 +135,33 @@ test('row click navigation is preserved', () => {
   assert.match(pageSrc, /onClick=\{\(\) => navigate\(`\/threat-intelligence\/threat-library\/\$\{row\.id\}`\)\}/);
 });
 
-// Column contract. Two list-only removals, both keeping the DB/API/MCP/THIB
-// fields and the detail page untouched:
-// - `Published` (threat_reports.published_at) is never set by the URL/PDF
-//   import pipeline — only THIB bundle imports can carry it — so the list showed
-//   "—" for every report.
-// - `Type` (threat_reports.report_type) is free text the AI synthesis may or
-//   may not return (no enum, no normalisation), rendered raw ("threat_report",
-//   "—"); it stays searchable server-side and humanised on the detail page.
-const LIST_COLUMNS = ['Report', 'Source', 'TLP', 'Entities', 'Indicators', 'Matched', 'Status', 'Imported'];
+// Column contract. `Published` is the original report publication date
+// (`published_at` / `published_date` via formatPublicationDate). `Imported`
+// is created_at. They are never substituted for each other. `Type` stays off
+// the list (free text; still on the detail page).
+const LIST_COLUMNS = ['Report', 'Source', 'TLP', 'Entities', 'Indicators', 'Matched', 'Status', 'Published', 'Imported'];
 
-test('report list columns: no Published/Type columns, Imported kept last, order fixed', () => {
+test('report list columns: Published immediately before Imported, Type still absent, order fixed', () => {
   const thead = pageSrc.slice(pageSrc.indexOf('<thead>'), pageSrc.indexOf('</thead>'));
   const headers = [...thead.matchAll(/<th style=\{ui\.th\}>([^<]+)<\/th>/g)].map((m) => m[1]);
   assert.deepEqual(headers, LIST_COLUMNS);
-  assert.ok(!headers.includes('Published'));
-  assert.ok(!headers.includes('Type'));
+  assert.equal(headers.at(-2), 'Published');
   assert.equal(headers.at(-1), 'Imported');
+  assert.ok(!headers.includes('Type'));
 });
 
-test('report list body renders exactly one cell per header and no published_at / report_type cell', () => {
+test('report list body renders Published from publication date and Imported from created_at independently', () => {
   const rowStart = pageSrc.indexOf('items.map((row) => (');
   const rowEnd = pageSrc.indexOf('</tbody>', rowStart);
   const row = pageSrc.slice(rowStart, rowEnd);
   const cells = row.match(/<td style=\{(?:ui\.td|\{ \.\.\.ui\.td[^}]*\})\}/g) || [];
   assert.equal(cells.length, LIST_COLUMNS.length, 'body cells must align with the header columns');
-  assert.doesNotMatch(row, /published_at|report_type/);
-  assert.doesNotMatch(pageSrc, /published_at|report_type/, 'list page no longer reads either field at all');
-  // The Source cell still carries the source_type sub-line (url / pdf / thib).
+  assert.match(pageSrc, /import \{ formatPublicationDate, publicationDateTitle \} from '\.\/publicationDate\.js'/);
+  assert.match(row, /\{formatPublicationDate\(row\) \|\| '—'\}/);
+  assert.doesNotMatch(row, /formatPublicationDate\(row\) \|\| formatUserDateTime/);
+  assert.doesNotMatch(row, /formatUserDateTime\(row\.published_at\)/);
+  assert.doesNotMatch(row, /report_type/);
   assert.match(row, /\{row\.source_type \|\| '—'\}/);
-  // Imported column still renders created_at through the canonical formatter.
   assert.match(row, /<td style=\{ui\.td\}>\{row\.created_at \? formatUserDateTime\(row\.created_at\) : '—'\}<\/td>\s*<\/tr>/);
 });
 

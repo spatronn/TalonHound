@@ -9,6 +9,7 @@ import { isValidPublicationDateSource, isValidPublicationDatePrecision } from '.
 import { deleteReportArtifacts } from './artifactStore.js';
 import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility, publisherAuthoritativeIocMembershipSql } from './evidencePolicy.js';
 import { buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
+import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
 
 export async function getAiSettings(pool) {
   const { rows } = await pool.query(`SELECT * FROM threat_library_ai_settings WHERE id = 1`);
@@ -43,6 +44,10 @@ export async function updateAiSettings(pool, patch, userPublicId) {
     inactivityTimeoutMs = Number(patch.timeout_ms);
   }
   const legacyTimeoutMs = inactivityTimeoutMs ?? current?.timeout_ms ?? 60000;
+  const hasConcurrencyPatch = Object.prototype.hasOwnProperty.call(patch, 'max_concurrent_report_analyses');
+  const nextConcurrency = hasConcurrencyPatch
+    ? parseMaxConcurrentReportAnalyses(patch.max_concurrent_report_analyses)
+    : resolveMaxConcurrentReportAnalyses(current?.max_concurrent_report_analyses);
 
   const { rows } = await pool.query(
     `UPDATE threat_library_ai_settings SET
@@ -59,6 +64,7 @@ export async function updateAiSettings(pool, patch, userPublicId) {
        first_token_timeout_ms = COALESCE($12, first_token_timeout_ms),
        inactivity_timeout_ms = COALESCE($13, inactivity_timeout_ms),
        total_analysis_timeout_ms = COALESCE($14, total_analysis_timeout_ms),
+       max_concurrent_report_analyses = $15,
        updated_at = NOW(),
        updated_by = $10::uuid
      WHERE id = 1
@@ -77,7 +83,8 @@ export async function updateAiSettings(pool, patch, userPublicId) {
       Number.isFinite(connectionTimeoutMs) ? connectionTimeoutMs : null,
       Number.isFinite(firstTokenTimeoutMs) ? firstTokenTimeoutMs : null,
       Number.isFinite(inactivityTimeoutMs) ? inactivityTimeoutMs : null,
-      Number.isFinite(totalTimeoutMs) ? totalTimeoutMs : null
+      Number.isFinite(totalTimeoutMs) ? totalTimeoutMs : null,
+      nextConcurrency
     ]
   );
   return rows[0];

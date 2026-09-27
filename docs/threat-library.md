@@ -64,7 +64,7 @@ Supported providers:
 - Ollama / local
 - OpenAI-compatible endpoint
 
-Settings: provider, base URL, model, API key, connection / first-response / inactivity / total analysis timeouts, max characters per chunk.
+Settings: provider, base URL, model, API key, connection / first-response / inactivity / total analysis timeouts, max characters per chunk, and **concurrent report analyses**.
 
 Secrets:
 
@@ -257,9 +257,47 @@ rewritten; they only receive a readable label.
 - URL→PDF auto-ingest not supported (upload PDF tab)
 - Not a MISP/OpenCTI replacement
 
+## Report list dates
+
+The Threat Library list (`/threat-intelligence/threat-library`) shows two independent timestamps:
+
+| Column | Canonical field | Meaning |
+|---|---|---|
+| **Published** | `threat_reports.published_at` (+ `published_date` / `published_at_precision` / `published_at_source`) | When the original intelligence/report was published. Same value as report detail. Date-only sources render as a calendar day; missing values show `—`. Never inferred from import time. |
+| **Imported** | `threat_reports.created_at` | When TalonHound ingested the report. |
+
+The list endpoint already selected these columns (`SELECT r.*`); the list serializer is `publicReport` / `serializePublicationDate`.
+
 ## Async processing
 
 BullMQ queue `threat-library` + `threat-library-worker` service. Stages persist on `threat_reports` / `threat_library_jobs` for real UI progress.
+
+URL and PDF imports share one analysis pipeline and one concurrency budget. THIB imports skip AI.
+
+### Concurrent report analyses
+
+AI Settings field: `max_concurrent_report_analyses` (UI: **Concurrent report analyses**).
+
+| | |
+|---|---|
+| Default | **2** — matches the historical `THREAT_LIBRARY_WORKER_CONCURRENCY` default so existing installations keep the same throughput until an administrator changes the setting |
+| Range | integer **1–4** (backend + frontend validated; DB CHECK) |
+| Applies to | the common URL/PDF AI-analysis job (`analyze` / `retry`), not a batch size |
+| Persistence | `threat_library_ai_settings` (same singleton row as provider settings). Takes effect without restart |
+
+**Queue.** Import HTTP creates the report + a `threat_library_jobs` row (`status=queued`, `bullmq_job_id` null) and returns 202. A job occupies a slot only after it is claimed (`bullmq_job_id` set) and while `status` is `queued` or `running`. Unclaimed jobs stay **Queued** (`analysis_status=pending`) — they do not look like Analyzing.
+
+**FIFO.** Claim order is `created_at ASC, id ASC`. A new import cannot jump ahead of older queued jobs.
+
+**Claim.** `dispatchQueuedThreatLibraryAnalyses` takes `pg_advisory_xact_lock(hashtext('threat-library.analysis_slots'))`, counts occupied slots, then `SELECT … FOR UPDATE SKIP LOCKED` of the next eligible jobs. Two schedulers cannot both observe `occupied=0` and start work when the limit is 1.
+
+**Slot release.** Completing, failing, or cancelling a claimed job (including a terminal retry-exhausted state) frees a slot. The worker then claims the next queued job automatically — no Refresh / Analyze / Finalize / restart.
+
+**Runtime changes.** Increasing the limit immediately claims more queued jobs. Decreasing it never kills in-flight analyses; new claims wait until `active < new limit`.
+
+**Restart / stale jobs.** Queued (`bullmq_job_id` null) jobs survive backend/worker restart. On worker ready, interrupted `running` jobs whose BullMQ state is gone are re-queued (not left occupying a slot). A still-live BullMQ job is left alone so the same report is not analyzed twice. A 30s safety-net dispatch covers a missed completion hook; import/complete/settings already wake the scheduler directly.
+
+**Worker process ceiling.** `THREAT_LIBRARY_WORKER_CONCURRENCY` (Compose default 4) is the BullMQ worker capacity. It must be ≥ the setting maximum so a runtime increase does not require a compose change. The setting is the real limiter.
 
 The worker must run the same backend image as the API (`talonhound-backend:local`). Building only the `backend` service and recreating workers without a shared image tag previously left the worker on a stale AbortController timeout path.
 

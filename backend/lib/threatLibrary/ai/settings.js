@@ -4,6 +4,7 @@
 
 import { AI_PROVIDERS } from '../constants.js';
 import { AI_FAILURE_CODES, aiFailure, resolveAiTimeoutPolicy, defaultTimeoutsForProvider } from './timeouts.js';
+import { MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT, resolveMaxConcurrentReportAnalyses } from '../analysisConcurrency.js';
 
 function maskKey(k) {
   const s = String(k);
@@ -28,6 +29,7 @@ export function maskAiSettingsForClient(settings) {
       inactivity_timeout_ms: defaults.inactivity_timeout_ms,
       total_analysis_timeout_ms: defaults.total_analysis_timeout_ms,
       max_input_chars: 120000,
+      max_concurrent_report_analyses: MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
       api_key_configured: false,
       masked_key: null,
       privacy_ack_at: null,
@@ -48,6 +50,7 @@ export function maskAiSettingsForClient(settings) {
     inactivity_timeout_ms: policy.inactivity_timeout_ms,
     total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
     max_input_chars: settings.max_input_chars || 120000,
+    max_concurrent_report_analyses: resolveMaxConcurrentReportAnalyses(settings.max_concurrent_report_analyses),
     api_key_configured: key.length > 0,
     masked_key: key ? maskKey(key) : null,
     privacy_ack_at: settings.privacy_ack_at || null,

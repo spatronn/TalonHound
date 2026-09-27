@@ -29,7 +29,12 @@ import { exportThibBundle, validateThibBundle, previewThibImport } from '../lib/
 import { importThibBundle } from '../lib/threatLibrary/thibImport.js';
 import { applyCandidateReviewActions, finalizeReport } from '../lib/threatLibrary/reviewService.js';
 import { storeArtifactBuffer } from '../lib/threatLibrary/artifactStore.js';
-import { getThreatLibraryJobOptions } from '../lib/threatLibrary/queueConfig.js';
+import {
+  AnalysisConcurrencySettingError,
+  cancelUnclaimedAnalysisJobs,
+  dispatchQueuedThreatLibraryAnalyses,
+  enqueueClaimedThreatLibraryJob
+} from '../lib/threatLibrary/analysisConcurrency.js';
 import {
   getAiSettings,
   updateAiSettings,
@@ -214,19 +219,33 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     return { ...counted, tags: await loadReportTags(pool, row.id) };
   }
 
-  async function enqueueAnalyze(reportId, jobRow, extra = {}) {
+  /**
+   * Persist the job as queued, then claim up to the configured AI concurrency
+   * slots. Import HTTP returns without waiting for a slot.
+   */
+  async function scheduleAnalysis(reportId, jobRow, extra = {}, progress = null) {
+    if ((extra && Object.keys(extra).length) || progress) {
+      await updateJob(pool, jobRow.id, {
+        status: 'queued',
+        stage: 'queued',
+        progress: { ...(progress || {}), dispatch: extra }
+      });
+    }
     if (!queue) {
       const err = new Error('Threat Library queue unavailable');
       err.code = 'queue_unavailable';
       throw err;
     }
-    const job = await queue.add(
-      extra.jobType || 'analyze',
-      { reportId, jobId: jobRow.id, ...extra },
-      getThreatLibraryJobOptions()
-    );
-    await updateJob(pool, jobRow.id, { bullmq_job_id: String(job.id) });
-    return job;
+    return dispatchQueuedThreatLibraryAnalyses(pool, {
+      enqueue: (job) => enqueueClaimedThreatLibraryJob(queue, job)
+    });
+  }
+
+  async function dispatchQueuedAnalyses() {
+    if (!queue) return { claimed: [], occupied: 0, limit: 0, available: 0 };
+    return dispatchQueuedThreatLibraryAnalyses(pool, {
+      enqueue: (job) => enqueueClaimedThreatLibraryJob(queue, job)
+    });
   }
 
   /**
@@ -292,11 +311,22 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           model: updated.model,
           api_key_updated: Boolean(body.api_key),
           inactivity_timeout_ms: updated.inactivity_timeout_ms,
-          total_analysis_timeout_ms: updated.total_analysis_timeout_ms
+          total_analysis_timeout_ms: updated.total_analysis_timeout_ms,
+          max_concurrent_report_analyses: updated.max_concurrent_report_analyses
         }
       });
+      // Increasing the limit must start queued reports without a restart.
+      // Decreasing never cancels in-flight analyses; dispatch simply claims 0.
+      try {
+        await dispatchQueuedAnalyses();
+      } catch (dispatchErr) {
+        // Settings are already persisted; the worker safety net will claim next.
+      }
       return res.json({ settings: maskAiSettingsForClient(updated) });
     } catch (err) {
+      if (err instanceof AnalysisConcurrencySettingError || err.code === 'invalid_max_concurrent_report_analyses') {
+        return res.status(400).json({ message: err.message, code: err.code });
+      }
       return res.status(500).json({ message: 'Failed to update AI settings', detail: err.message });
     }
   });
@@ -477,7 +507,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         jobType: 'analyze',
         requestedBy: actor?.publicId
       });
-      await enqueueAnalyze(report.id, jobRow, { sourceUrl: policy.url });
+      await scheduleAnalysis(report.id, jobRow, { sourceUrl: policy.url, jobType: 'analyze' });
 
       await writeAudit(req, buildImportAuditEvent({
         sourceType: 'url',
@@ -612,7 +642,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           jobType: 'analyze',
           requestedBy: actor?.publicId
         });
-        await enqueueAnalyze(report.id, jobRow);
+        await scheduleAnalysis(report.id, jobRow, { jobType: 'analyze' });
 
         await writeAudit(req, buildImportAuditEvent({
           sourceType: 'pdf',
@@ -895,13 +925,15 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         }
 
         const { rows: activeJobs } = await pool.query(
-          `SELECT public_id FROM threat_library_jobs
+          `SELECT public_id, status, bullmq_job_id FROM threat_library_jobs
            WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
            ORDER BY id DESC LIMIT 1`,
           [report.id]
         );
         if (activeJobs[0]) {
-          // Job queued/running but report still terminal (race) — promote report to active.
+          // Job queued/running but report still terminal (race) — leave failed.
+          // Only show an in-progress stage when a worker has already claimed it.
+          const claimed = activeJobs[0].status === 'running' || Boolean(activeJobs[0].bullmq_job_id);
           const candidateCount = await countReportCandidates(pool, report.id);
           const hasDocument = Boolean(report.canonical_document?.blocks?.length);
           const startStatus = resolveRetryStartStatus({ hasDocument, candidateCount });
@@ -909,7 +941,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             candidate_extraction_version: report.analysis_progress?.candidate_extraction_version || null
           });
           const updated = await updateReportStatus(pool, report.id, {
-            analysis_status: startStatus,
+            analysis_status: claimed ? startStatus : 'pending',
             import_status: 'processing',
             analysis_progress: progress,
             clear_failure: true,
@@ -931,9 +963,11 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           candidate_extraction_version: report.analysis_progress?.candidate_extraction_version || null
         });
 
-        // Commit active status + clear stale failure BEFORE enqueue/202 so UI polling sees analyzing.
+        // Leave failed immediately (pending = Queued) without looking like
+        // Analyzing while waiting for a concurrency slot. The worker updates
+        // the stage once the job is claimed.
         const updated = await updateReportStatus(pool, report.id, {
-          analysis_status: startStatus,
+          analysis_status: 'pending',
           import_status: 'processing',
           analysis_progress: progress,
           clear_failure: true,
@@ -945,26 +979,28 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           jobType: 'retry',
           requestedBy: (await actorOf(req))?.publicId
         });
-        await updateJob(pool, jobRow.id, {
-          status: 'queued',
-          stage: startStatus,
-          progress
-        });
-        await enqueueAnalyze(report.id, jobRow, {
+        await scheduleAnalysis(report.id, jobRow, {
           sourceUrl: report.source_url || undefined,
           resumeAnalysis: true,
           jobType: 'retry',
-          // Keep analysis_run_id so completed chunks resume
           newAnalysisRun: req.body?.reset_checkpoints === true
-        });
+        }, progress);
         return res.status(202).json({
           report: publicReport(await reportWithDetail(updated)),
           job_id: jobRow.public_id,
           job: {
             public_id: jobRow.public_id,
             status: 'queued',
-            stage: startStatus,
-            progress
+            stage: 'queued',
+            progress: {
+              ...progress,
+              dispatch: {
+                sourceUrl: report.source_url || undefined,
+                resumeAnalysis: true,
+                jobType: 'retry',
+                newAnalysisRun: req.body?.reset_checkpoints === true
+              }
+            }
           },
           resumed: true,
           already_running: false,
@@ -983,11 +1019,17 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       try {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
+        const cancelledQueued = await cancelUnclaimedAnalysisJobs(pool, report.id);
         const updated = await requestAnalysisCancel(pool, report.id);
+        if (cancelledQueued.length) {
+          await dispatchQueuedAnalyses().catch(() => {});
+        }
         return res.json({
           ok: true,
           report: publicReport(await reportWithDetail(updated)),
-          message: 'Cancel requested. The worker will stop at the next safe checkpoint.'
+          message: cancelledQueued.length
+            ? 'Queued analysis cancelled before a worker claimed it.'
+            : 'Cancel requested. The worker will stop at the next safe checkpoint.'
         });
       } catch (err) {
         return res.status(500).json({ message: 'Cancel failed', detail: err.message });

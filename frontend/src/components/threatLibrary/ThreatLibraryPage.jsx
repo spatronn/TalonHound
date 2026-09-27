@@ -18,6 +18,7 @@ import {
 } from './reportList.js';
 import { createReportListLoader } from './reportListLoader.js';
 import { indicatorListCell } from './reportPhase.js';
+import { formatPublicationDate, publicationDateTitle } from './publicationDate.js';
 import { TlpBadge, isElevatedTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
 
@@ -199,15 +200,16 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                 <th style={ui.th}>Indicators</th>
                 <th style={ui.th}>Matched</th>
                 <th style={ui.th}>Status</th>
+                <th style={ui.th}>Published</th>
                 <th style={ui.th}>Imported</th>
               </tr>
             </thead>
             <tbody>
               {emptyState.kind === 'loading' ? (
-                <tr style={ui.tr}><td colSpan={8} style={ui.td}>Loading…</td></tr>
+                <tr style={ui.tr}><td colSpan={9} style={ui.td}>Loading…</td></tr>
               ) : emptyState.kind !== 'none' ? (
                 <tr style={ui.tr}>
-                  <td colSpan={8} style={{ ...ui.td, color: '#94a3b8' }} data-testid={`report-list-${emptyState.kind}`}>
+                  <td colSpan={9} style={{ ...ui.td, color: '#94a3b8' }} data-testid={`report-list-${emptyState.kind}`}>
                     {emptyState.message}{emptyState.hint ? ` ${emptyState.hint}` : ''}
                   </td>
                 </tr>
@@ -233,6 +235,9 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                   <td style={ui.td}>{row.matched_count ?? 0}</td>
                   <td style={ui.td}>
                     <span style={badgeStyle(statusColors(row))}>{statusLabel(row)}</span>
+                  </td>
+                  <td style={ui.td} title={publicationDateTitle(row) || undefined}>
+                    {formatPublicationDate(row) || '—'}
                   </td>
                   <td style={ui.td}>{row.created_at ? formatUserDateTime(row.created_at) : '—'}</td>
                 </tr>

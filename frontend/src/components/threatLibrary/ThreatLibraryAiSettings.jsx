@@ -3,6 +3,12 @@ import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
 import { ui } from './styles.js';
+import {
+  MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
+  MAX_CONCURRENT_REPORT_ANALYSES_MAX,
+  MAX_CONCURRENT_REPORT_ANALYSES_MIN,
+  parseConcurrentReportAnalyses
+} from './aiSettingsConcurrency.js';
 
 const PROVIDERS = [
   { value: 'openai', label: 'OpenAI' },
@@ -37,6 +43,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
     inactivity_timeout_ms: 180000,
     total_analysis_timeout_ms: 900000,
     max_input_chars: 120000,
+    max_concurrent_report_analyses: MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
     api_key: '',
     privacy_ack: false
   });
@@ -59,6 +66,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
         inactivity_timeout_ms: s?.inactivity_timeout_ms || s?.timeout_ms || 180000,
         total_analysis_timeout_ms: s?.total_analysis_timeout_ms || 900000,
         max_input_chars: s?.max_input_chars || 120000,
+        max_concurrent_report_analyses: parseConcurrentReportAnalyses(s?.max_concurrent_report_analyses) || MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
         api_key: '',
         privacy_ack: Boolean(s?.privacy_ack_at)
       }));
@@ -91,6 +99,11 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
     setSaving(true);
     setError('');
     setSuccess('');
+    const concurrency = parseConcurrentReportAnalyses(form.max_concurrent_report_analyses);
+    if (concurrency == null) {
+      setError(`Concurrent report analyses must be an integer between ${MAX_CONCURRENT_REPORT_ANALYSES_MIN} and ${MAX_CONCURRENT_REPORT_ANALYSES_MAX}.`);
+      return;
+    }
     try {
       const body = {
         enabled: form.enabled,
@@ -103,6 +116,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
         total_analysis_timeout_ms: Number(form.total_analysis_timeout_ms) || 900000,
         timeout_ms: Number(form.inactivity_timeout_ms) || 180000,
         max_input_chars: Number(form.max_input_chars) || 120000,
+        max_concurrent_report_analyses: concurrency,
         privacy_ack: form.privacy_ack === true
       };
       if (form.api_key.trim()) body.api_key = form.api_key.trim();
@@ -250,6 +264,24 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
                   onChange={(e) => setField('max_input_chars', e.target.value)}
                 />
                 <span style={ui.helper}>Budget per model request. Long reports are processed in multiple chunks — content is not discarded.</span>
+              </div>
+              <div>
+                <label style={ui.label} htmlFor="tl-ai-concurrency">Concurrent report analyses</label>
+                <input
+                  id="tl-ai-concurrency"
+                  style={ui.input}
+                  type="number"
+                  min={MAX_CONCURRENT_REPORT_ANALYSES_MIN}
+                  max={MAX_CONCURRENT_REPORT_ANALYSES_MAX}
+                  step={1}
+                  value={form.max_concurrent_report_analyses}
+                  onChange={(e) => setField('max_concurrent_report_analyses', e.target.value)}
+                />
+                <span style={ui.helper}>
+                  Maximum number of Threat Library reports that can be analyzed by AI at the same time (1–4).
+                  Additional imports remain queued until a slot becomes available.
+                  Increasing this value starts queued reports immediately; decreasing it does not stop analyses that are already running.
+                </span>
               </div>
             </div>
 

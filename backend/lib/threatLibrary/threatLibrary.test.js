@@ -271,5 +271,6 @@ test('AI settings mask never returns raw key', () => {
   assert.equal(masked.api_key, undefined);
   assert.ok(!String(masked.masked_key).includes('sk-secret-value'));
   assert.equal(masked.inactivity_timeout_ms, 180000);
+  assert.equal(masked.max_concurrent_report_analyses, 2);
   assert.ok(masked.timeout_policy);
 });

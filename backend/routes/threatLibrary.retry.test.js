@@ -30,12 +30,46 @@ function harness({ report, jobs }) {
         return { rows: [state.report] };
       }
       if (/INSERT INTO threat_library_jobs/.test(s)) {
-        const job = { id: state.jobs.length + 100, public_id: `job-${state.jobs.length + 100}`, status: 'queued' };
+        const job = {
+          id: state.jobs.length + 100,
+          public_id: `job-${state.jobs.length + 100}`,
+          report_id: state.report.id,
+          job_type: 'retry',
+          status: 'queued',
+          bullmq_job_id: null,
+          progress: {},
+          created_at: new Date(),
+          source_url: state.report.source_url || null,
+          source_type: state.report.source_type || 'url'
+        };
         state.jobs.push(job);
         return { rows: [job] };
       }
+      if (/^BEGIN|^COMMIT|^ROLLBACK/.test(s.trim())) return { rows: [] };
+      if (/FROM threat_library_ai_settings/.test(s)) return { rows: [{ max_concurrent_report_analyses: 2 }] };
+      if (/AS occupied/.test(s) && /threat_library_jobs/.test(s)) {
+        return { rows: [{ occupied: state.jobs.filter((j) => ['queued', 'running'].includes(j.status) && j.bullmq_job_id).length }] };
+      }
+      if (/FOR UPDATE OF j SKIP LOCKED/.test(s)) {
+        const available = params[1] ?? 2;
+        return {
+          rows: state.jobs
+            .filter((j) => j.status === 'queued' && !j.bullmq_job_id)
+            .slice(0, available)
+            .map((j) => ({ ...j, report_public_id: state.report.public_id }))
+        };
+      }
+      if (/SET bullmq_job_id = \$2/.test(s) || (/bullmq_job_id = \$2/.test(s) && /threat_library_jobs/.test(s))) {
+        const job = state.jobs.find((j) => j.id === params[0] && !j.bullmq_job_id);
+        if (!job) return { rows: [], rowCount: 0 };
+        job.bullmq_job_id = params[1];
+        return { rows: [{ id: job.id }], rowCount: 1 };
+      }
       if (/UPDATE threat_library_jobs SET/.test(s)) return { rows: [state.jobs.find((j) => j.id === params[0]) || {}] };
       return { rows: [] };
+    },
+    async connect() {
+      return { query: (...args) => pool.query(...args), release() {} };
     }
   };
   const queue = { async add(name, data) { enqueued.push({ name, data }); return { id: String(enqueued.length) }; } };

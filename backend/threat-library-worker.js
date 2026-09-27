@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import IORedis from 'ioredis';
-import { Worker } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { createServiceLogger } from './lib/appLogger.js';
 import { getThreatLibraryQueueName, getThreatLibraryWorkerOptions } from './lib/threatLibrary/queueConfig.js';
@@ -13,6 +13,12 @@ import { runAnalysisPipeline } from './lib/threatLibrary/pipeline.js';
 import { updateJob, getReportById, updateReportStatus } from './lib/threatLibrary/store.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { auditAnalysisOutcome } from './lib/threatLibrary/audit.js';
+import {
+  dispatchQueuedThreatLibraryAnalyses,
+  enqueueClaimedThreatLibraryJob,
+  recoverInterruptedAnalysisJobs,
+  resolveThreatLibraryWorkerConcurrency
+} from './lib/threatLibrary/analysisConcurrency.js';
 
 const log = createServiceLogger('threat-library-worker');
 
@@ -42,10 +48,35 @@ const pool = new Pool({
 
 const auditService = createAuditLogService(pool);
 const redis = new IORedis(getRedisUrl(), { maxRetriesPerRequest: null });
-const concurrency = Math.min(Math.max(Number(process.env.THREAT_LIBRARY_WORKER_CONCURRENCY || 2), 1), 4);
+const queueName = getThreatLibraryQueueName();
+const queue = new Queue(queueName, { connection: redis });
+const concurrency = resolveThreatLibraryWorkerConcurrency();
+const workerStartedAt = Date.now();
+
+async function dispatchQueuedAnalyses() {
+  return dispatchQueuedThreatLibraryAnalyses(pool, {
+    enqueue: (job) => enqueueClaimedThreatLibraryJob(queue, job)
+  });
+}
+
+async function releaseSlotAndDispatch(reason, fields = {}) {
+  log.info('report completed', { reason, ...fields });
+  try {
+    const result = await dispatchQueuedAnalyses();
+    if (result.claimed.length) {
+      log.info('next queued report claimed', {
+        claimed: result.claimed.map((c) => ({ jobId: c.jobId, reportId: c.reportId })),
+        occupied: result.occupied,
+        limit: result.limit
+      });
+    }
+  } catch (err) {
+    log.warn('failed to dispatch queued analyses', { error: err?.message });
+  }
+}
 
 const worker = new Worker(
-  getThreatLibraryQueueName(),
+  queueName,
   async (job) => {
     const reportId = Number(job.data?.reportId);
     const jobId = Number(job.data?.jobId);
@@ -60,25 +91,27 @@ const worker = new Worker(
       aiClient: 'streaming-v3'
     });
     await updateJob(pool, jobId, { status: 'running', stage: 'starting', bullmq_job_id: String(job.id) });
-    const result = await runAnalysisPipeline(pool, {
-      reportId,
-      jobId,
-      sourceUrl: job.data?.sourceUrl,
-      resumeAnalysis: job.data?.resumeAnalysis === true,
-      jobType: job.data?.jobType || job.name,
-      newAnalysisRun: job.data?.newAnalysisRun === true
-    });
-    log.info('job finished', { bullmqJobId: job.id, reportId, ok: result?.ok === true, code: result?.code });
-    // Audit the committed outcome with the initiating user as actor and this
-    // worker as executor (source=worker).
-    await auditAnalysisOutcome(pool, auditService, {
-      reportId,
-      jobId,
-      ok: result?.ok === true,
-      code: result?.code || null,
-      summary: result?.summary || null
-    });
-    return result;
+    try {
+      const result = await runAnalysisPipeline(pool, {
+        reportId,
+        jobId,
+        sourceUrl: job.data?.sourceUrl,
+        resumeAnalysis: job.data?.resumeAnalysis === true,
+        jobType: job.data?.jobType || job.name,
+        newAnalysisRun: job.data?.newAnalysisRun === true
+      });
+      log.info('job finished', { bullmqJobId: job.id, reportId, ok: result?.ok === true, code: result?.code });
+      await auditAnalysisOutcome(pool, auditService, {
+        reportId,
+        jobId,
+        ok: result?.ok === true,
+        code: result?.code || null,
+        summary: result?.summary || null
+      });
+      return result;
+    } finally {
+      await releaseSlotAndDispatch(job.data?.jobType || job.name, { bullmqJobId: job.id, reportId, jobId });
+    }
   },
   {
     connection: redis,
@@ -118,20 +151,64 @@ worker.on('failed', async (job, err) => {
     } catch (e) {
       log.warn('failed to mark report after worker failure', { error: e?.message });
     }
+    await releaseSlotAndDispatch('worker_failed', { bullmqJobId: job?.id, reportId, jobId });
   }
 });
 
+async function recoverThenDispatch() {
+  try {
+    const active = await queue.getJobs(['active']);
+    for (const job of active) {
+      if (job.processedOn && job.processedOn < workerStartedAt - 2000) {
+        await job.moveToFailed(new Error('worker_restarted'), job.token, true).catch(() => {});
+        log.info('stale analysis recovered', {
+          bullmqJobId: job.id,
+          reportId: job.data?.reportId || null,
+          reason: 'worker_restarted'
+        });
+      }
+    }
+    const recovered = await recoverInterruptedAnalysisJobs(pool, {
+      getJobState: async (id) => {
+        const job = await queue.getJob(id);
+        return job ? job.getState() : null;
+      }
+    });
+    const dispatched = await dispatchQueuedAnalyses();
+    log.info('scheduler recovered', {
+      recovered: recovered.length,
+      claimed: dispatched.claimed.length,
+      occupied: dispatched.occupied,
+      limit: dispatched.limit
+    });
+  } catch (err) {
+    log.warn('failed to recover queued analyses', { error: err?.message });
+  }
+}
+
 worker.on('ready', () => {
   log.info('worker ready', {
-    queue: getThreatLibraryQueueName(),
+    queue: queueName,
     concurrency,
     aiClient: 'streaming-v3',
     version: process.env.TALONHOUND_VERSION || null
   });
+  recoverThenDispatch().catch(() => {});
 });
 
+// Bounded safety net only: import/complete/settings already dispatch directly.
+const DISPATCH_SAFETY_MS = 30_000;
+const safetyTimer = setInterval(() => {
+  dispatchQueuedAnalyses().catch((err) => {
+    log.warn('failed to dispatch queued analyses', { error: err?.message, source: 'safety_net' });
+  });
+}, DISPATCH_SAFETY_MS);
+if (typeof safetyTimer.unref === 'function') safetyTimer.unref();
+
 async function shutdown() {
+  clearInterval(safetyTimer);
   await worker.close();
+  await queue.close();
   await redis.quit();
   await pool.end();
   process.exit(0);

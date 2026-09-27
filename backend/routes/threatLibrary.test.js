@@ -65,11 +65,14 @@ test('cancel analysis endpoint exists and is analyst-gated', () => {
   assert.match(routeSrc, /requestAnalysisCancel/);
 });
 
-test('AI settings accept multi-timeout fields', () => {
+test('AI settings accept multi-timeout fields and concurrency limit', () => {
   assert.match(routeSrc, /first_token_timeout_ms/);
   assert.match(routeSrc, /inactivity_timeout_ms/);
   assert.match(routeSrc, /total_analysis_timeout_ms/);
   assert.match(routeSrc, /defaultTimeoutsForProvider/);
+  assert.match(routeSrc, /max_concurrent_report_analyses/);
+  assert.match(routeSrc, /AnalysisConcurrencySettingError/);
+  assert.match(routeSrc, /dispatchQueuedAnalyses\(\)/);
 });
 
 test('PDF import returns structured failure codes and multer size mapping', () => {
@@ -187,7 +190,7 @@ test('public candidate evidence carries publisher IOC scope for Indicators membe
   assert.equal(publicCandidateEvidence({ source_assertion: 'explicit_ioc' }).document_has_authoritative_scope, false);
 });
 
-test('publicReport keeps published_at and report_type in the API contract (list columns were removed UI-side only)', () => {
+test('publicReport keeps published_at and report_type in the API contract (list Published reuses this serializer)', () => {
   const block = routeSrc.slice(routeSrc.indexOf('function publicReport(row)'), routeSrc.indexOf('\n}\n', routeSrc.indexOf('function publicReport(row)')));
   // published_at / published_date / precision / source come from the shared serializer.
   assert.match(block, /\.\.\.serializePublicationDate\(row\),/);
@@ -195,4 +198,40 @@ test('publicReport keeps published_at and report_type in the API contract (list 
   assert.match(block, /created_at: row\.created_at/);
   assert.match(block, /finalized_at: row\.finalized_at/, 'finalized_at stays in the API even though the Overview no longer shows it');
   assert.match(block, /confidence: row\.confidence,/, 'report-level confidence stays in the API even though the Overview no longer shows it');
+});
+
+test('list and detail share publicReport so Published is the canonical publication date, not Imported', async () => {
+  const { serializePublicationDate } = await import('../lib/threatLibrary/publicationDate.js');
+  const row = {
+    public_id: '11111111-2222-4333-8444-555555555555',
+    title: 'Vendor report',
+    source_type: 'url',
+    published_at: new Date('2026-09-15T00:00:00Z'),
+    published_at_precision: 'date',
+    published_at_source: 'json_ld',
+    published_at_raw: '15 September 2026',
+    created_at: new Date('2026-09-16T00:30:21Z'),
+    tlp: 'clear',
+    analysis_status: 'ready',
+    import_status: 'ready'
+  };
+  const published = serializePublicationDate(row);
+  assert.equal(published.published_date, '2026-09-15');
+  assert.equal(published.published_at_precision, 'date');
+  assert.notEqual(String(published.published_at), String(row.created_at));
+  const missing = serializePublicationDate({ ...row, published_at: null, published_at_precision: null, published_at_source: null, published_at_raw: null });
+  assert.equal(missing.published_at, null);
+  assert.equal(missing.published_date, null);
+  assert.ok(row.created_at, 'Imported remains present when Published is unknown');
+  const listBlock = routeSrc.slice(routeSrc.indexOf("app.get('/api/threat-library/reports',"), routeSrc.indexOf("app.get('/api/threat-library/reports/:publicId'"));
+  assert.match(listBlock, /publicReport\(/);
+  assert.match(routeSrc, /\.\.\.serializePublicationDate\(row\),/);
+});
+
+test('imports schedule through the shared concurrency dispatcher rather than starting AI immediately', () => {
+  assert.match(routeSrc, /async function scheduleAnalysis\(/);
+  assert.match(routeSrc, /dispatchQueuedThreatLibraryAnalyses/);
+  assert.match(routeSrc, /await scheduleAnalysis\(report\.id, jobRow, \{ sourceUrl: policy\.url, jobType: 'analyze' \}\)/);
+  assert.match(routeSrc, /await scheduleAnalysis\(report\.id, jobRow, \{ jobType: 'analyze' \}\)/);
+  assert.match(routeSrc, /max_concurrent_report_analyses/);
 });

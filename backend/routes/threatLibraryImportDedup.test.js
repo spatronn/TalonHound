@@ -64,9 +64,50 @@ function createPool(state) {
       return { rows: rows.slice(0, 1) };
     }
     if (/^INSERT INTO threat_library_jobs/.test(flat)) {
-      const job = { id: state.jobs.length + 1, public_id: `job-${state.jobs.length + 1}`, report_id: params[0] };
+      const job = {
+        id: state.jobs.length + 1,
+        public_id: `job-${state.jobs.length + 1}`,
+        report_id: params[0],
+        job_type: params[1] || 'analyze',
+        status: 'queued',
+        bullmq_job_id: null,
+        progress: {},
+        created_at: new Date(Date.UTC(2026, 8, 1, 10, state.jobs.length)),
+        source_type: state.reports.find((r) => r.id === params[0])?.source_type || 'url',
+        source_url: state.reports.find((r) => r.id === params[0])?.source_url || null
+      };
       state.jobs.push(job);
       return { rows: [job], rowCount: 1 };
+    }
+    if (/^BEGIN|^COMMIT|^ROLLBACK/.test(flat)) return { rows: [], rowCount: 0 };
+    if (/FROM threat_library_ai_settings/.test(flat)) {
+      return { rows: [{ max_concurrent_report_analyses: state.maxConcurrent ?? 2 }] };
+    }
+    if (/AS occupied/.test(flat) && /threat_library_jobs/.test(flat)) {
+      return { rows: [{ occupied: state.jobs.filter((j) => ['queued', 'running'].includes(j.status || 'queued') && j.bullmq_job_id).length }] };
+    }
+    if (/FOR UPDATE OF j SKIP LOCKED/.test(flat)) {
+      const available = params[1] ?? params[0];
+      const rows = state.jobs
+        .filter((j) => (j.status || 'queued') === 'queued' && !j.bullmq_job_id)
+        .slice(0, available)
+        .map((j) => {
+          const report = state.reports.find((r) => r.id === j.report_id) || {};
+          return { ...j, source_url: report.source_url || null, report_public_id: report.public_id, source_type: report.source_type || j.source_type };
+        });
+      return { rows };
+    }
+    if (/SET bullmq_job_id = \$2/.test(flat) || /bullmq_job_id = \$2/.test(flat) && /threat_library_jobs/.test(flat)) {
+      const job = state.jobs.find((j) => j.id === params[0] && !j.bullmq_job_id);
+      if (!job) return { rows: [], rowCount: 0 };
+      job.bullmq_job_id = params[1];
+      return { rows: [{ id: job.id }], rowCount: 1 };
+    }
+    if (/UPDATE threat_library_jobs SET/.test(flat)) {
+      const job = state.jobs.find((j) => j.id === params[0]);
+      if (job && params[5]) job.bullmq_job_id = params[5];
+      if (job && params[3]) job.progress = params[3];
+      return { rows: [job || {}], rowCount: job ? 1 : 0 };
     }
     if (/^INSERT INTO threat_report_artifacts/.test(flat)) {
       state.artifacts.push({ report_id: params[0] });
@@ -190,7 +231,9 @@ test('URL: canonical-equivalent spellings are duplicates; a different document (
       assert.equal(res.body.already_imported, false, different);
     }
     assert.equal(state.reportInserts, 5);
-    assert.equal(state.queued.length, 5);
+    assert.equal(state.jobs.length, 5);
+    assert.equal(state.queued.length, 2, 'default max_concurrent_report_analyses=2 claims only two AI jobs');
+    assert.equal(state.jobs.filter((j) => !j.bullmq_job_id).length, 3);
   });
 });
 
@@ -290,6 +333,19 @@ test('PDF: URL and PDF identities are independent (a PDF hash never matches a UR
     const res = await importPdf(base, pdfBytes('x'), 'r.pdf');
     assert.equal(res.status, 202);
     assert.equal(state.queued.length, 2);
+  });
+});
+
+test('URL and PDF imports share the same AI concurrency budget (limit=1)', async () => {
+  await withServer(async ({ base, state }) => {
+    state.maxConcurrent = 1;
+    const url = await importUrl(base, 'https://vendor.example/shared-budget');
+    const pdf = await importPdf(base, pdfBytes('shared-budget'), 'shared.pdf');
+    assert.equal(url.status, 202);
+    assert.equal(pdf.status, 202);
+    assert.equal(state.jobs.length, 2);
+    assert.equal(state.queued.length, 1, 'only one analysis may start');
+    assert.equal(state.jobs.filter((j) => !j.bullmq_job_id).length, 1);
   });
 });
 
