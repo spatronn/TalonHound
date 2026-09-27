@@ -175,6 +175,29 @@ export function mergeMitreProposals(lists) {
   return { byId, rejected, proposed };
 }
 
+const ATTACHMENT_DELIVERY_RE = /\b(?:html attachment|malicious attachment|email attachments?|attached (?:file|html|document)|open(?:ing)? the (?:html )?attachment)\b/i;
+const LINK_IN_MESSAGE_RE = /\b(?:spearphishing link|link in the (?:email|message)|malicious (?:url|link) in the (?:email|message)|clicked (?:a |the )?link)\b/i;
+
+/**
+ * Correct T1566.001 vs T1566.002 when evidence names one delivery channel
+ * and the model picked the other. An attachment that later opens a website
+ * remains attachment delivery. Generic "phishing email" stays the parent.
+ */
+export function reconcilePhishingDeliveryTechnique(techniqueId, evidence) {
+  const id = normalizeMitreAttackId(techniqueId);
+  if (!id || !id.startsWith('T1566')) return { technique_id: id, remapped_from: null };
+  const ev = String(evidence || '');
+  const attachment = ATTACHMENT_DELIVERY_RE.test(ev);
+  const link = LINK_IN_MESSAGE_RE.test(ev);
+  if (attachment && !link && (id === 'T1566.002' || id === 'T1566')) {
+    return { technique_id: 'T1566.001', remapped_from: id === 'T1566.001' ? null : id };
+  }
+  if (link && !attachment && (id === 'T1566.001' || id === 'T1566')) {
+    return { technique_id: 'T1566.002', remapped_from: id === 'T1566.002' ? null : id };
+  }
+  return { technique_id: id, remapped_from: null };
+}
+
 function coerceMitreItem(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ok: false, reason: 'malformed' };
@@ -187,9 +210,11 @@ function coerceMitreItem(raw) {
   if (confidence == null || confidence === '') confidence = 0;
   const n = Number(confidence);
   if (!Number.isFinite(n)) return { ok: false, reason: 'malformed_confidence' };
+  const channel = reconcilePhishingDeliveryTechnique(id, evidence);
   return {
     ok: true,
-    technique_id: id,
+    technique_id: channel.technique_id,
+    remapped_from: channel.remapped_from,
     evidence,
     confidence: Math.max(0, Math.min(1, n))
   };

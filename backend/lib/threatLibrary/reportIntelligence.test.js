@@ -5,6 +5,7 @@ import {
   mergeReportTags,
   mergeMitreProposals,
   mergeReportIntelligence,
+  reconcilePhishingDeliveryTechnique,
   validateMitreMappings,
   persistAiReportTags,
   persistAiReportMitre,
@@ -102,6 +103,32 @@ test('canonical name/tactic come from catalog, not the model', async () => {
   assert.equal(accepted[0].technique_name, 'Phishing');
   assert.ok(accepted[0].tactics.some((t) => t.name === 'Initial Access'));
   assert.equal(accepted[0].tactics.some((t) => t.name === 'Impact'), false);
+});
+
+test('phishing delivery channel is taken from evidence, not the model sub-technique', async () => {
+  assert.equal(
+    reconcilePhishingDeliveryTechnique('T1566.002', 'The report states victims opened an HTML attachment.').technique_id,
+    'T1566.001'
+  );
+  assert.equal(
+    reconcilePhishingDeliveryTechnique('T1566.001', 'The report states the message asked victims to open a link in the email.').technique_id,
+    'T1566.002'
+  );
+  assert.equal(
+    reconcilePhishingDeliveryTechnique('T1566', 'The victim received a phishing email.').technique_id,
+    'T1566'
+  );
+  invalidateMitreReferenceCache();
+  const reference = await loadMitreReference();
+  const { accepted, rejected } = validateMitreMappings(
+    mergeMitreProposals([[mitreItem('T1566.002', {
+      evidence: 'The email tells the victim to open the HTML attachment.'
+    })]]),
+    reference
+  );
+  assert.deepEqual(accepted.map((m) => m.technique_id), ['T1566.001']);
+  assert.equal(accepted[0].technique_name, 'Spearphishing Attachment');
+  assert.equal(rejected.some((r) => r.technique_id === 'T1566.002'), false);
 });
 
 test('confidence floor is the shared MITRE accept threshold', () => {
