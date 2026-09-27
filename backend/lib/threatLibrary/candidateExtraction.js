@@ -83,8 +83,11 @@ export {
  * defanged URL is located in its own clause); benign-component mentions are
  * deterministic context; hosted objects are never the hosting provider;
  * structural completeness diagnostics.
+ * v12: a hash-shaped run inside a URL / scheme-less resource span is a URL
+ * component, not a file-hash occurrence (per occurrence: a standalone spelling
+ * of the same value still creates the hash, its window anchored on it).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v11';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v12';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
