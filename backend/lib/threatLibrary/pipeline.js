@@ -425,6 +425,17 @@ export async function runAnalysisPipeline(pool, ctx) {
         type_canonical_rejections: typing.canonical_rejections ?? 0,
         type_excluded_reasons: typing.excluded_reasons || {}
       });
+      const structural = extracted.diagnostics?.structural_completeness || null;
+      if (structural?.warning) {
+        // A curated IOC section / table did not yield deterministic assertions:
+        // its values rely on the model (or nothing). Diagnostic only.
+        log.warn('structured IOC section degraded to AI path', {
+          reportId: report.id,
+          tables_not_interpreted: structural.tables_not_interpreted.slice(0, 20),
+          degraded_blocks: structural.degraded_blocks.slice(0, 20),
+          degraded_candidates: structural.degraded_candidates
+        });
+      }
       if (tables.inconsistent) {
         // Valid explicit rows that produced no candidate: an extractor bug, never a source problem.
         log.warn('explicit IOC extraction inconsistency', {
@@ -927,6 +938,14 @@ export function compactExtractionDiagnostics(diagnostics) {
           relation_markers: diagnostics.scope.relation_markers || {},
           policy_decisions: diagnostics.scope.policy_decisions || {},
           candidates: (diagnostics.scope.candidates || []).slice(0, 80)
+        }
+      : undefined,
+    structural_completeness: diagnostics.structural_completeness
+      ? {
+          warning: diagnostics.structural_completeness.warning === true,
+          degraded_candidates: diagnostics.structural_completeness.degraded_candidates ?? 0,
+          tables_not_interpreted: (diagnostics.structural_completeness.tables_not_interpreted || []).slice(0, 20),
+          degraded_blocks: (diagnostics.structural_completeness.degraded_blocks || []).slice(0, 20)
         }
       : undefined,
     explicit_tables: {

@@ -26,11 +26,20 @@
  * ZH); structure (typed table rows, indicator lists) works for any language.
  */
 
+import { parse as parseDomainSuffix } from 'tldts';
 import { refangObservable } from './defang.js';
 import { isValidIpAddress } from '../publicIp.js';
 
-/** Bump when typing / promotion semantics change (feeds the candidate contract). */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v2';
+/**
+ * Bump when typing / promotion semantics change (feeds the candidate contract).
+ * v3: a last label that is not a delegated DNS suffix (`Minting.chm`,
+ * `payload.hta`, `query.iqy`) is a WEAK suffix: without network semantics or
+ * an explicit indicator row the token is a file / identifier artifact, never a
+ * domain by shape alone. Suffix knowledge stays a signal, not a gate: an
+ * internal name the source asserts (`update.corp.lan` "resolves through the
+ * internal DNS", a curated indicator row) is still a domain.
+ */
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v3';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -219,6 +228,35 @@ export function isHostnameSyntax(value) {
 }
 
 /**
+ * Suffixes outside the ICANN root that malware / researchers genuinely use as
+ * DNS names (Tor / I2P / alternative roots such as Namecoin, EmerCoin, OpenNIC)
+ * plus the RFC 6761 / 6762 special-use names that tests and examples use (those
+ * are flagged context-only as RFC examples downstream, not rejected here).
+ */
+const NON_ICANN_DNS_SUFFIXES = new Set([
+  'onion', 'i2p', 'exit', 'bit', 'bazar', 'coin', 'emc', 'lib',
+  'test', 'example', 'invalid', 'localhost', 'local'
+]);
+
+/**
+ * True when the value's last label is a delegated DNS suffix: an ICANN
+ * top-level domain from the Public Suffix List snapshot bundled with the
+ * `tldts` dependency (offline, deterministic, refreshed by upgrading the
+ * package), or one of NON_ICANN_DNS_SUFFIXES. A file extension in TLD position
+ * (`.chm`, `.hta`, `.iqy`, `.docx`) is not; delegated gTLDs that collide with
+ * extensions (`.one`, `.zip`, `.mov`) are, and stay context-decided.
+ * @param {string} value hostname-syntax value
+ */
+export function hasDelegatedDnsSuffix(value) {
+  const v = String(value || '').trim().toLowerCase().replace(/\.$/, '');
+  const labels = v.split('.');
+  if (labels.length < 2) return false;
+  if (NON_ICANN_DNS_SUFFIXES.has(labels[labels.length - 1])) return true;
+  const parsed = parseDomainSuffix(v, { allowPrivateDomains: false, detectIp: false, validateHostname: false });
+  return parsed.isIcann === true;
+}
+
+/**
  * Compact "looks like DNS" suffix knowledge: the ISO 3166 ccTLD set plus the
  * most common gTLDs. This is a SYNTAX signal (strong vs weak suffix), never a
  * safety allowlist — unknown suffixes still resolve as domains when the
@@ -275,6 +313,8 @@ export function suffixStrength(labels) {
   if (CC_TLDS.has(last) || COMMON_GTLDS.has(last)) return 'strong';
   if (CODE_WORD_LAST_LABEL_RE.test(last)) return 'weak';
   if (FILE_EXT_HINT.has(last)) return 'weak';
+  // Not a delegated DNS suffix (file extension / made-up label in TLD position).
+  if (!hasDelegatedDnsSuffix(labels.join('.'))) return 'weak';
   if (last.length > 12 || last.length < 2) return 'weak';
   if (/^\d+$/.test(last)) return 'weak';
   return 'plausible';
@@ -597,6 +637,11 @@ export function resolveDottedToken(raw, ctx = {}) {
     if (labels.length === 2 && labels[0].length <= 32) return out('technical_artifact', 'file_extension');
     if (!inlineNetwork && !clauseNetwork) return out('technical_artifact', 'extension_without_host_context');
   }
+
+  // 4b. Call syntax right at the token (`window.location.replace()`,
+  //     `Foo.Bar.run(x)`) is code, not a hostname — unless the suffix is a
+  //     DNS-shaped one ("evil.com(443)" stays a host with a port note).
+  if (/^\s*\(/.test(after) && strength !== 'strong') return out('technical_artifact', 'code_call');
 
   // 5. Inline label right at the token decides before generic clause words.
   if (inlineArtifact) return out('technical_artifact', artifactReasonFrom(before, 'inline_artifact_label'), true);

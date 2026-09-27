@@ -11,8 +11,8 @@ import { THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } from './extract/extractHtml.js'
 
 test('internal contract versions for this change', () => {
   assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v3');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v10');
-  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v2');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v11');
+  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v3');
   assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v6');
 });
 
@@ -24,7 +24,10 @@ test('outdated PDF/HTML canonical documents are rebuilt from the stored artifact
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { blocks, meta: { extractor: 'threat_library_pdf_v2' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v1' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } }), true);
-  assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_weixin_v2' } }), true);
+  // v3 keeps <br> line structure: v2 HTML documents are re-extracted from the retained source HTML.
+  assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v2' } }), false);
+  assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_weixin_v2' } }), false);
+  assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_weixin_v3' } }), true);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_text_v2' } }), true);
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { blocks: [] }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, null), false);

@@ -15,6 +15,7 @@
 
 import { collapseLetterSpacing, isObservableOnlyLine } from './pdfLayout.js';
 import { refangTextForExtraction } from './defang.js';
+import { FILE_EXT_HINT, suffixStrength, validateUrlCandidate } from './observableTypeResolver.js';
 
 export const INDICATOR_SCOPES = Object.freeze({
   AUTHORITATIVE: 'authoritative',
@@ -232,10 +233,19 @@ export function discoverDocumentIndicatorScope(blocks) {
  * structural forms (ip:port, indicator-list row).
  */
 const OPERATIONAL_RELATION_RE =
-  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing)?|connects?\s+to|communicat(?:es|ed|ing)\s+with|callback|payload|downloads?\s+(?:hxxps?:\/\/|https?:\/\/|from|OBSERVABLE)|downloaded?\s+from|fetch(?:es|ed)?\s+from|drops?\s+from|phish(?:ing)?|malware\s+(?:connects?|beacons?|talks?)|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure)|hard-?coded|(?:fetch|download|retriev|pull|load|deliver|drop|serv|stag|exfiltrat|upload)\w*\b[^.;]{0,60}?\b(?:from|to)\s+OBSERVABLE|(?:hosted|served|staged|stored)\s+(?:at|on)\s+OBSERVABLE)\b|回连|远控|木马连接|命令控制|komuta|bağlan(?:ır|ıyor|dı|maktadır)/i;
+  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing)?|connect(?:s|ed|ing)?\s+to|communicat(?:es|ed|ing)\s+with|callback|payload|downloads?\s+(?:hxxps?:\/\/|https?:\/\/|from|OBSERVABLE)|downloaded?\s+from|fetch(?:es|ed)?\s+from|drops?\s+from|phish(?:ing)?|malware\s+(?:connects?|beacons?|talks?)|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure)|hard-?coded|(?:fetch|download|retriev|pull|load|deliver|drop|serv|stag|exfiltrat|upload)\w*\b(?:[^.;]|\.(?!\s|$)){0,60}?\b(?:from|to)\s+(?:the\s+)?(?:(?:url|uri|domain|server|host|address|site|endpoint|link)\s+)?["'“”‘’`]?\s*OBSERVABLE|(?:hosted|served|staged|stored)\s+(?:at|on)\s+OBSERVABLE|(?:get|post|put|head|http|https)\s+requests?\s+(?:is\s+|was\s+)?(?:sent\s+)?(?:to|from)\s+(?:the\s+)?(?:(?:url|uri|domain|server|host|address|endpoint)\s+)?["'“”‘’`]?\s*OBSERVABLE|OBSERVABLE\s*["'“”‘’`]?\s+(?:was|were|is|are|has|have|had)\s+(?:\w+ly\s+)?(?:been\s+)?(?:\w+ly\s+)?(?:used|abused|leveraged|set\s+up)\s+to\s+(?:host|serve|stage|deliver|distribute)|OBSERVABLE\s*["'“”‘’`]?\s+(?:was|were|is|are|has|have|had)\s+(?:\w+ly\s+)?(?:been\s+)?(?:\w+ly\s+)?(?:hosted|served|staged)\s+(?:on|at|from|by)|(?:used|operated|controlled|owned|run|registered)\s+by\s+(?:the\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,4}?(?:threat\s+actors?|apt[\w-]*|attackers?|adversar(?:y|ies)|operators?|threat\s+group|intrusion\s+set)|attributed\s+to\s+(?:the\s+)?(?:[\w-]+\s+){0,3}?(?:apt[\w-]*|group|actors?|threat\s+actors?|operators?|intrusion\s+set))\b|回连|远控|木马连接|命令控制|komuta|bağlan(?:ır|ıyor|dı|maktadır)/i;
+
+/**
+ * The observable is the thing being hosted ("… was used to host the domain
+ * OBSERVABLE", "servers hosting OBSERVABLE"): infrastructure served it. The
+ * hosted object is never the hosting provider, whatever acquisition verb the
+ * sentence uses for the host itself.
+ */
+const HOSTED_OBJECT_RE =
+  /\bhost(?:s|ed|ing)?\s+(?:the\s+|a\s+|an\s+)?(?:(?:malicious|phishing|attacker|fake|rogue|c2|c&c)\s+)?(?:(?:domains?|sites?|websites?|pages?|payloads?|servers?|urls?|files?)\s+)?[-–—:]?\s*["'“”‘’`]?\s*OBSERVABLE/i;
 
 const PROVIDER_RELATION_RE =
-  /\b(?:purchased?|bought|rented?|leased?|registered?\s+(?:via|through|with|at)|subscri(?:bed|be)|procur(?:ed|e)|to\s+purchase|to\s+host|services?\s+such\s+as|infrastructure\s+provider|cloud\s+provider|hosting\s+provider|vps\s+provider|vpn\s+provider|used\s+(?:the\s+)?(?:commercial\s+)?(?:services?|providers?|vendors?|platforms?|vpn|vps|proxy|cloud(?:\s+provider)?)|from\s+(?:a\s+)?(?:vps|vpn|proxy|hosting|cloud)\s+(?:provider|vendor|service)|commercial\s+vpn)\b|satın\s+al|satın\s+ald|购买|租用|注册于/i;
+  /\b(?:purchased?|bought|rented?|leased?|registered?\s+(?:via|through|with|at)|subscri(?:bed|be)|procur(?:ed|e)|to\s+purchase|(?:rent|purchas|bought|buy|leas|subscrib|procur|acquir)\w*\b[^.;]{0,60}?\bto\s+host|services?\s+such\s+as|infrastructure\s+provider|cloud\s+provider|hosting\s+provider|vps\s+provider|vpn\s+provider|used\s+(?:the\s+)?(?:commercial\s+)?(?:services?|providers?|vendors?|platforms?|vpn|vps|proxy|cloud(?:\s+provider)?)|from\s+(?:a\s+)?(?:vps|vpn|proxy|hosting|cloud)\s+(?:provider|vendor|service)|commercial\s+vpn)\b|satın\s+al|satın\s+ald|购买|租用|注册于/i;
 
 const PROVIDER_CATALOGUE_RE =
   /\b(?:likely\s+to\s+purchase|to\s+obtain\s+(?:infrastructure|services?|prox(?:y|ies)|vps|vpn)|used\s+\w[\w.-]*\s+(?:to\s+purchase|for\s+(?:infrastructure|hosting|prox(?:y|ies)|vps)))\b/i;
@@ -249,6 +259,90 @@ const PROVIDER_CATALOGUE_RE =
 const CONTEXT_RELATION_RE =
   /\b(?:research(?:er|ers|ed)?|consult(?:ing|ancy|ants?)|according\s+to|reported\s+by|report(?:ed)?\s+(?:by|from)|documented\s+(?:by|in)|analys(?:ts?|is)\s+(?:at|from|by)|team\s+at|colleagues?\s+at|published\s+(?:by|on)|blog\s+post|advisory\s+(?:by|from)|whitepaper|write-?up|security\s+(?:firm|vendor|company|researchers?)|flagged\s+by|credit(?:s|ed)?\s+to|thanks\s+to|courtesy\s+of|our\s+(?:website|blog|site|portal))\b|araştırma|firması|şirketi|göre|研究(?:人员|团队)?|安全公司|据|\b[A-Z][\w&.'-]*(?:\s+[A-Z][\w&.'-]*){0,4}\s*[(（]\s*OBSERVABLE\s*[)）]/;
 
+/**
+ * Benign-component evidence: the source says the observable is a legitimate /
+ * signed / genuine component ("a legitimate component of <product> (host.exe,
+ * MD5 …)"). Negated by any maliciousness / abuse cue in the same
+ * window ("a trojanized version of the legitimate …", "legitimate-looking").
+ */
+const BENIGN_COMPONENT_RE =
+  /\b(?:legitimate|legit|benign|genuine|clean|non-malicious|not\s+malicious|official(?:ly)?\s+signed|digitally\s+signed|signed\s+by|trusted\s+(?:binary|component|executable|application|program|file))\b/i;
+const BENIGN_NEGATION_RE =
+  /\b(?:malicious|malware|trojan\w*|backdoor\w*|implant|fake|fraudulent|masquerad\w*|impersonat\w*|spoof\w*|disguis\w*|mimic\w*|look-?alike|typo-?squat\w*|legitimate[- ]looking|appears?\s+(?:to\s+be\s+)?legitimate|looks?\s+legitimate|abus\w*|hijack\w*|weaponi[sz]\w*|tamper\w*|modified|patched|compromised|infected|side-?load\w*|payload|loader|dropper)\b/i;
+
+/** Another hash / URL / IP token: the boundary of the window that describes this observable. */
+const FOREIGN_OBSERVABLE_TOKEN_RE =
+  /\b[a-f0-9]{32}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{64}\b|\b(?:hxxps?|https?):\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\bURL\b|\bIP\b/gi;
+
+/**
+ * True when the text describing this exact observable (same sentence, not
+ * crossing another hash / URL / IP) calls it a legitimate component and says
+ * nothing malicious about it.
+ * @param {string} masked surrounding text with this observable masked as OBSERVABLE
+ */
+export function describesBenignComponent(masked) {
+  const t = String(masked || '');
+  const at = t.indexOf('OBSERVABLE');
+  if (at < 0) return false;
+  const tail = at + 'OBSERVABLE'.length;
+  const before = t.slice(0, at);
+  let start = Math.max(before.lastIndexOf('. '), before.lastIndexOf('; '), before.lastIndexOf('! '), before.lastIndexOf('? '));
+  const base = start >= 0 ? start + 2 : 0;
+  start = base;
+  for (const m of before.slice(base).matchAll(FOREIGN_OBSERVABLE_TOKEN_RE)) {
+    start = Math.max(start, base + m.index + m[0].length);
+  }
+  const after = t.slice(tail);
+  let end = after.length;
+  const sentenceEnd = after.search(/[.;!?](?:\s|$)/);
+  if (sentenceEnd >= 0) end = Math.min(end, sentenceEnd);
+  const foreign = after.slice(0, end).search(FOREIGN_OBSERVABLE_TOKEN_RE);
+  if (foreign >= 0) end = foreign;
+  const window = `${before.slice(start)} OBSERVABLE ${after.slice(0, end)}`;
+  return BENIGN_COMPONENT_RE.test(window) && !BENIGN_NEGATION_RE.test(window);
+}
+
+/**
+ * Anaphor that refers back to the observable of the previous sentence, per
+ * observable kind ("… 198.51.100[.]7. This IP address was previously used by
+ * …"). Only the immediately following sentence is read, and only when it
+ * starts with the anaphor for the same kind of observable.
+ */
+const ANAPHOR_BY_KIND = Object.freeze({
+  ip: /^\s*(?:this|that|the\s+same)\s+(?:ip(?:v4|v6)?(?:\s+address)?|address|server|host|node)\b/i,
+  domain: /^\s*(?:this|that|the\s+same)\s+(?:domain(?:\s+name)?|hostname|host|server|site|website)\b/i,
+  url: /^\s*(?:this|that|the\s+same)\s+(?:url|uri|link|address|resource|page)\b/i,
+  hash: /^\s*(?:this|that|the\s+same)\s+(?:sample|file|hash|binary|executable|payload|document|dll|implant)\b/i
+});
+
+function observableKind(value) {
+  const v = String(Array.isArray(value) ? value[0] : value || '').trim();
+  if (/^https?:\/\//i.test(v) || /^[^\s/]+\.[^\s/]+\/\S/.test(v)) return 'url';
+  if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-f:]+:[0-9a-f:]*$/i.test(v)) return 'ip';
+  if (/^[a-f0-9]{32}$|^[a-f0-9]{40}$|^[a-f0-9]{64}$/i.test(v)) return 'hash';
+  return 'domain';
+}
+
+/**
+ * The sentence right after the one naming OBSERVABLE, when it opens with an
+ * anaphor for the same kind of observable ("This IP address …").
+ * @param {string} masked
+ * @param {string} kind
+ */
+function followingAnaphoricSentence(masked, kind) {
+  const t = String(masked || '');
+  const at = t.indexOf('OBSERVABLE');
+  if (at < 0) return null;
+  const rest = t.slice(at + 'OBSERVABLE'.length);
+  const end = rest.search(/[.!?](?:\s|$)/);
+  if (end < 0) return null;
+  const next = rest.slice(end + 1).trimStart();
+  const re = ANAPHOR_BY_KIND[kind];
+  if (!re || !re.test(next)) return null;
+  const stop = next.search(/[.!?](?:\s|$)/);
+  return stop >= 0 ? next.slice(0, stop) : next;
+}
+
 /** Value-only lines and "value – note" / "label: value" rows are structural indicator rows. */
 /** "1. ", "[2] ", "• " — a list marker must be followed by whitespace so "36.35.56.0/24" keeps its first octet. */
 const BULLET_PREFIX_RE = /^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s+|[-•*·]\s*)/;
@@ -257,6 +351,32 @@ const OTHER_OBSERVABLE_RE =
 
 const OBSERVABLE_TOKEN_RE =
   /^(?:https?:\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
+
+/**
+ * One scheme-less host/path URL value ("host.example/path/file.bin"), exactly
+ * as candidate extraction accepts it: DNS-shaped host with a strong suffix and
+ * a non-empty path. Relative paths / filesystem paths never qualify.
+ * @param {string} token refanged or source spelling, no surrounding prose
+ */
+export function isSchemeLessUrlToken(token) {
+  const t = refangTextForExtraction(String(token || '').trim()).replace(/[.,;)\]。，；]+$/, '');
+  if (!t || /\s/.test(t) || t.length > 2048) return false;
+  const slash = t.indexOf('/');
+  if (slash <= 0 || slash === t.length - 1) return false;
+  const v = validateUrlCandidate(t);
+  return v.ok === true && v.reason === 'scheme_less_url_with_dns_host' && v.host_kind === 'domain';
+}
+
+/**
+ * A line that is one indicator value (optionally bulleted): the observable-only
+ * line shapes, plus a scheme-less host/path URL value.
+ * @param {string} text
+ */
+export function isIndicatorValueLine(text) {
+  if (isObservableOnlyLine(text)) return true;
+  const t = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
+  return isSchemeLessUrlToken(t);
+}
 
 /**
  * A line made only of observables ("36.35.56.0/24 36.49.207.0/24", a <pre>
@@ -269,7 +389,7 @@ export function isObservableListLine(text) {
   if (!t || t.length > 2000) return false;
   const tokens = t.split(/[\s,;|，；]+/).filter(Boolean);
   if (!tokens.length) return false;
-  return tokens.every((tok) => OBSERVABLE_TOKEN_RE.test(tok.replace(/[.,;)\]。，；]+$/, '')));
+  return tokens.every((tok) => OBSERVABLE_TOKEN_RE.test(tok.replace(/[.,;)\]。，；]+$/, '')) || isSchemeLessUrlToken(tok));
 }
 
 /**
@@ -284,7 +404,7 @@ export function isIndicatorRowShape(text, value) {
   if (!t) return false;
   if (isObservableListLine(t)) return true;
   if (t.length > 160) return false;
-  if (isObservableOnlyLine(t)) return true;
+  if (isIndicatorValueLine(t)) return true;
   const v = refangTextForExtraction(String(value || '').trim());
   if (!v) return false;
   const idx = t.toLowerCase().indexOf(v.toLowerCase());
@@ -296,8 +416,27 @@ export function isIndicatorRowShape(text, value) {
   if (!annotation) return true;
   if (annotation.length > 80) return false;
   if (/[.!?。]$/.test(annotation) && annotation.split(/\s+/).length > 6) return false;
-  if (OTHER_OBSERVABLE_RE.test(annotation)) return false;
+  if (annotationHasOtherObservable(annotation)) return false;
   return true;
+}
+
+/**
+ * A second network observable in a row annotation ("H1 – also 1.2.3.4") makes
+ * the line prose, not a row. A file name ("H1 (loader.exe)", "H2 – map.aspx")
+ * is the usual annotation of a sample hash and does not count: a dotted token
+ * only counts when its suffix could be a DNS suffix.
+ * @param {string} annotation
+ */
+function annotationHasOtherObservable(annotation) {
+  const a = String(annotation || '');
+  if (/https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b/i.test(a)) return true;
+  for (const m of a.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/gi)) {
+    const labels = m[0].toLowerCase().split('.');
+    const last = labels[labels.length - 1];
+    if (FILE_EXT_HINT.has(last) || suffixStrength(labels) === 'weak') continue;
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -308,10 +447,9 @@ export function isIndicatorRowShape(text, value) {
  */
 export function clauseContaining(text, value) {
   const hay = String(text || '');
-  const needle = String(value || '').trim();
-  if (!needle) return hay;
+  const variants = spellingVariants(value);
+  if (!variants.length) return hay;
   const parts = hay.split(/(?<=[.;，；])\s+|,\s+|\s+(?:and|und|et|ve|和)\s+/);
-  const variants = [needle, needle.replace(/\[\.\]/g, '.'), needle.replace(/\./g, '[.]')];
   const hit = parts.find((p) => {
     const low = p.toLowerCase();
     return variants.some((v) => v && low.includes(String(v).toLowerCase()));
@@ -323,11 +461,32 @@ function escapeRegExp(s) {
   return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Every spelling under which the observable may appear in the source: the
+ * normalized value AND the original spelling, defanged / refanged, with and
+ * without the trailing "/" URL normalization adds to a bare host ("https://host"
+ * in the text vs "https://host/" as the identity). Longest first, so a longer
+ * spelling is masked before its prefix.
+ * @param {string|string[]|null} value
+ */
+function spellingVariants(value) {
+  const bases = (Array.isArray(value) ? value : [value]).map((v) => String(v || '').trim()).filter(Boolean);
+  const out = new Set();
+  for (const b of bases) {
+    for (const v of [b, b.replace(/\/$/, '')]) {
+      if (!v) continue;
+      out.add(v);
+      out.add(v.replace(/\[\.\]/g, '.'));
+      out.add(v.replace(/\./g, '[.]'));
+    }
+  }
+  return [...out].filter(Boolean).sort((a, b) => b.length - a.length);
+}
+
 function maskObservable(text, value) {
   const hay = String(text || '');
-  const needle = String(value || '').trim();
-  if (!needle) return hay;
-  const variants = [...new Set([needle, needle.replace(/\[\.\]/g, '.'), needle.replace(/\./g, '[.]')])];
+  const variants = spellingVariants(value);
+  if (!variants.length) return hay;
   let out = hay;
   for (const v of variants) {
     if (!v) continue;
@@ -338,15 +497,15 @@ function maskObservable(text, value) {
 
 /** Other URLs/IPs in the same sentence must not transfer "downloads https://X" onto Y. */
 function maskForeignNetworkTokens(text, keepValue) {
-  const keep = String(keepValue || '').toLowerCase();
+  const keeps = spellingVariants(keepValue).map((k) => k.toLowerCase());
   return String(text || '')
     .replace(/\b(?:hxxps?|https?):\/\/[^\s<>"'）)\]]+/gi, (m) => {
       const low = m.toLowerCase().replace(/hxxp/g, 'http');
-      if (keep && (low.includes(keep) || keep.includes(low))) return m;
+      if (keeps.some((k) => low.includes(k) || k.includes(low))) return m;
       return ' URL ';
     })
     .replace(/\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b/g, (m) => {
-      if (keep && keep.includes(m)) return m;
+      if (keeps.some((k) => k.includes(m))) return m;
       return ' IP ';
     });
 }
@@ -356,8 +515,10 @@ function maskForeignNetworkTokens(text, keepValue) {
  * @param {{ form?: string, block_type?: string|null, layout?: string|null, zone_reason?: string|null, structural_row?: boolean, row_shape?: boolean }} occ
  */
 function structuralRowOf(occ) {
-  if (occ.structural_row === true || occ.row_shape === true) return true;
   const form = String(occ.form || '');
+  // Domain part of an email address: never a row (see candidateExtraction).
+  if (form === 'email_domain') return false;
+  if (occ.structural_row === true || occ.row_shape === true) return true;
   if (form === 'table_row' || form === 'list_row' || form === 'ip_port') return true;
   const bt = String(occ.block_type || '');
   if (bt === 'list_item' || occ.layout === 'observable_row') return true;
@@ -400,7 +561,7 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'structural_row', authoritative, structural_row: true };
   }
 
-  const focusValue = opts.value || opts.original || '';
+  const focusValue = [opts.value, opts.original].filter(Boolean);
   const surrounding = refangTextForExtraction(String(surroundingText || ''));
   const full = maskForeignNetworkTokens(maskObservable(surrounding, focusValue), focusValue);
   const text = maskForeignNetworkTokens(
@@ -408,6 +569,12 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     focusValue
   );
   if (!text.trim()) return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'empty', authoritative, structural_row: false };
+
+  // Direction: the hosted object ("… used to host the domain OBSERVABLE") was
+  // served by infrastructure — an operational reading, never "provider".
+  if (HOSTED_OBJECT_RE.test(text) || HOSTED_OBJECT_RE.test(full)) {
+    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'operational', authoritative, structural_row: false };
+  }
 
   const operational = OPERATIONAL_RELATION_RE.test(text);
   const providerLocal = PROVIDER_RELATION_RE.test(text) || PROVIDER_CATALOGUE_RE.test(text);
@@ -426,8 +593,19 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     }
     return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: false };
   }
+  // A legitimate / signed component named as such is reference context,
+  // decided before the model ever sees it.
+  if (describesBenignComponent(full)) {
+    return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: false };
+  }
   if (CONTEXT_RELATION_RE.test(text)) {
     return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'contextual', authoritative, structural_row: false };
+  }
+  // The next sentence continues about this exact observable ("This IP address
+  // was used by the threat actor …"): its operational relation applies.
+  const anaphoric = followingAnaphoricSentence(full, observableKind(focusValue));
+  if (anaphoric && OPERATIONAL_RELATION_RE.test(anaphoric) && !PROVIDER_RELATION_RE.test(anaphoric)) {
+    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'operational', authoritative, structural_row: false };
   }
   return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'none', authoritative, structural_row: false };
 }

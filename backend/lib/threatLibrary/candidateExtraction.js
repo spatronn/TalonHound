@@ -26,10 +26,9 @@ import {
   pathBasenameFromUrl
 } from './candidateTyping.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
-import { isObservableOnlyLine } from './pdfLayout.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
-import { discoverDocumentIndicatorScope, isIndicatorRowShape } from './indicatorScope.js';
+import { discoverDocumentIndicatorScope, isIndicatorRowShape, isIndicatorValueLine } from './indicatorScope.js';
 import {
   NON_NETWORK_RESOLVED_TYPES,
   RESOLVED_TYPES,
@@ -38,7 +37,7 @@ import {
   validateUrlCandidate
 } from './observableTypeResolver.js';
 import { ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
-import { createExplicitTableAssertionTracker } from './explicitTableCompleteness.js';
+import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
 export {
@@ -73,8 +72,19 @@ export {
  * ear, jspx, …) resolve as technical artifacts; a value typed as an artifact by
  * a table row joins the document-level vote, so body mentions never split it
  * into a separate domain; a declared Domain row is never outvoted.
+ * v11: completeness hardening — <br> lines are rows (threat_library_html_v3);
+ * multi-value indicator cells verify a table column; nested, arbitrarily
+ * labelled sub-headings stay inside an open IOC section when indicator rows
+ * follow (tl-zones-v3); scheme-less URL rows are indicator rows; a file name
+ * annotation keeps a hash line a row; undelegated suffixes (`Minting.chm`) are
+ * weak, never domains by shape alone; the domain of an email address is never
+ * a row; prose sample hashes with no decisive relation reach the model instead
+ * of the curated-scope context rule; request / fetch URLs are operational (a
+ * defanged URL is located in its own clause); benign-component mentions are
+ * deterministic context; hosted objects are never the hosting provider;
+ * structural completeness diagnostics.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v10';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v11';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -102,7 +112,19 @@ export function surroundingWindow(text, value, radius = 140) {
       break;
     }
   }
-  if (idx < 0) return hay.slice(0, Math.min(280, hay.length));
+  if (idx < 0) {
+    // Defanged source spelling ("hxxps://host[.]tld" for "https://host.tld/"):
+    // locate the value in the refanged text, so the relation classifier reads
+    // the clause that mentions it rather than the paragraph's first sentences.
+    const refanged = refangTextForExtraction(hay);
+    const rlow = refanged.toLowerCase();
+    const bare = String(value || '').replace(/\/$/, '');
+    for (const n of [...new Set([String(value || ''), bare])].filter(Boolean)) {
+      const i = rlow.indexOf(n.toLowerCase());
+      if (i >= 0) return refanged.slice(Math.max(0, i - radius), i + n.length + radius);
+    }
+    return hay.slice(0, Math.min(280, hay.length));
+  }
   const start = Math.max(0, idx - radius);
   return hay.slice(start, idx + nlen + radius);
 }
@@ -137,7 +159,9 @@ export const OCCURRENCE_FORMS = Object.freeze({
   URL: 'url',
   IP_PORT: 'ip_port',
   LIST_ROW: 'list_row',
-  TABLE_ROW: 'table_row'
+  TABLE_ROW: 'table_row',
+  /** Domain part of an email address: parsed metadata of that address, never a row. */
+  EMAIL_DOMAIN: 'email_domain'
 });
 
 function stripUrlTrailingPunct(urlish) {
@@ -293,7 +317,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // Structural reading is decided here, where the whole block is visible:
     // row placement (list / table / observable-row layout / discovered list)
     // or a short "value – note" / "label: value" line.
-    const structuralRow =
+    // The domain inside an email address ("ops@mail.example") is never an
+    // indicator row by itself, whatever line / list the address sits on.
+    const emailPart = form === OCCURRENCE_FORMS.EMAIL_DOMAIN;
+    const structuralRow = !emailPart && (
       form === OCCURRENCE_FORMS.TABLE_ROW ||
       form === OCCURRENCE_FORMS.LIST_ROW ||
       form === OCCURRENCE_FORMS.IP_PORT ||
@@ -301,8 +328,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       block?.layout === 'observable_row' ||
       block?.zone_reason === 'observable_list' ||
       block?.zone_reason === 'cidr_list' ||
-      block?.zone_reason === 'ioc_table';
-    const rowShape = !structuralRow && text ? isIndicatorRowShape(text, focus || focusValue) : false;
+      block?.zone_reason === 'ioc_table');
+    const rowShape = !emailPart && !structuralRow && text ? isIndicatorRowShape(text, focus || focusValue) : false;
     return {
       block_id: block?.id || null,
       page: block?.page ?? null,
@@ -533,7 +560,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     single_instance_identifier_context: 50, inline_artifact_label: 50, path_segment: 50,
     url_host: 40, explicit_indicator_row: 40, url_path_basename: 40,
     code_identifier_shape: 30, code_context: 30, multi_dot_ext: 30, file_extension: 30, extension_without_host_context: 20,
-    method_suffix: 30, code_block_weak_suffix: 20,
+    method_suffix: 30, code_call: 30, code_block_weak_suffix: 20,
     network_context: 10, network_context_mixed_case: 10,
     artifact_context: 10, code_context_label: 10, config_context: 10, registry_context: 10, path_context: 10,
     command_context: 10, process_context: 10, metadata_context: 10, file_context: 10,
@@ -640,7 +667,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const isObservableRow = (block) =>
     block.type === 'list_item' ||
     block.layout === 'observable_row' ||
-    ((block.type === 'list' || block.type === 'table') && isObservableOnlyLine(block.text || ''));
+    ((block.type === 'list' || block.type === 'table') && isIndicatorValueLine(block.text || ''));
 
   /** Blocks handled row-by-row (typed indicator tables) — skipped by the regex passes. */
   const tableHandled = new Set();
@@ -878,8 +905,15 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
+      // `user@host.example`: the host is the address's domain (same
+      // no-over-derivation rule as a URL host). Email is not a candidate type,
+      // so the domain stays a candidate but never a structural row assertion.
+      const emailDomain = start > 0 && text[start - 1] === '@';
       // Original spelling: identifier segmentation (Loader.Program.Main) is case-visible.
-      add(m[0], 'domain', block, { form: standaloneForm, originalValue: m[0] });
+      add(m[0], 'domain', block, {
+        form: emailDomain ? OCCURRENCE_FORMS.EMAIL_DOMAIN : standaloneForm,
+        originalValue: m[0]
+      });
     }
   }
 
@@ -939,6 +973,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // identities that add() rejected. A mismatch is diagnostic only.
   const t = diagnostics.explicit_tables;
   Object.assign(t, explicitTableAssertions.finalize(out));
+  // Structured IOC section / table that degraded to the AI path (diagnostic only).
+  diagnostics.structural_completeness = structuralCompleteness(annotated.blocks || [], out);
   diagnostics.document_scope = documentScope;
   diagnostics.scope = buildScopeDiagnostics(annotated, out);
 

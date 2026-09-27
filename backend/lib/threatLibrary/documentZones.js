@@ -12,6 +12,7 @@ import {
   INDICATOR_HEADING_FORMS,
   classifyIndicatorHeading,
   classifySectionRole,
+  isIndicatorValueLine,
   isObservableListLine,
   zoneForSectionRole
 } from './indicatorScope.js';
@@ -23,8 +24,12 @@ import {
  * section once structurally confirmed; sub-labels inside an open section
  * inherit its scope (no per-subgroup run-length gate); ≥3-row discovery is a
  * fallback for unlabelled lists only.
+ * v3: document hierarchy — a heading nested under an open indicator section
+ * whose content starts with indicator rows continues it whatever its label;
+ * a prose sub-heading suspends the section and a later sibling sub-list
+ * resumes it; scheme-less host/path URL rows count as indicator rows.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v2';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v3';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -287,7 +292,7 @@ export function isIndicatorStructureBlock(b) {
 function isIndicatorRowBlock(b) {
   if (!b || b.layout === 'page_edge' || b.type === 'heading') return false;
   const text = String(b.text || '');
-  if (b.layout === 'observable_row' || isObservableListLine(text)) return true;
+  if (b.layout === 'observable_row' || isObservableListLine(text) || isIndicatorValueLine(text)) return true;
   if (b.type === 'list_item' || b.type === 'list' || (b.type === 'table' && !b.table)) {
     return text.length <= 160 && OBSERVABLE_IN_TEXT_RE.test(refangTextForExtraction(text));
   }
@@ -378,6 +383,25 @@ export function sectionHasIndicatorStructure(blocks, i, chromeIds, limit = 80) {
 }
 
 /**
+ * True when the content directly under heading i starts with indicator
+ * structure: an indicator row (value line, list of values, scheme-less URL
+ * row) or a table that reads as an IOC table. Prose first → false. Used to
+ * keep arbitrarily-labelled nested sub-headings inside an IOC section.
+ * @param {object[]} blocks
+ * @param {number} i heading index
+ * @param {Set<string>} chromeIds
+ */
+export function sectionOpensWithIndicatorContent(blocks, i, chromeIds) {
+  const next = nextContentBlock(blocks, i, chromeIds);
+  if (!next || next.type === 'heading') return false;
+  if (next.type === 'table' && next.table) {
+    const interp = interpretIocTable(next, {});
+    return interp.kind === 'ioc_table';
+  }
+  return isIndicatorRowBlock(next);
+}
+
+/**
  * Annotate canonical blocks with zone metadata (mutates copies).
  * Repeated running headers/footers never close an open indicator section.
  *
@@ -401,6 +425,8 @@ export function annotateDocumentZones(doc, opts = {}) {
   let currentTypeLabel = null;
   /** Heading that opened the current strong zone (scope ancestry for diagnostics + hierarchy). */
   let opening = { id: null, text: null, level: null, form: null };
+  /** Authoritative section closed by a deeper prose sub-heading (may resume). */
+  let suspended = null;
   /** Developer trace of scope decisions (bounded, not analyst UI). */
   const scopeTrace = [];
   const trace = (entry) => {
@@ -448,6 +474,7 @@ export function annotateDocumentZones(doc, opts = {}) {
     }
 
     if (headingZone && ZONE_OPENING_HEADINGS.has(headingZone)) {
+      suspended = null;
       currentZone = headingZone;
       currentRole = headingRole;
       currentTypeLabel = null;
@@ -485,16 +512,65 @@ export function annotateDocumentZones(doc, opts = {}) {
         !headingRole &&
         !headingZone &&
         isSubgroupLabelHeading(b, blocks, i, opening, footerIds);
-      if (!wrappedContinuation && !typedContinuation && !subgroupContinuation) {
+      // Document hierarchy: a heading nested deeper than the one that opened
+      // the section, whose own content starts with indicator rows, is a
+      // sub-list of that section whatever its label says ("VBS", "Stage 2
+      // payloads"). A deeper heading followed by prose ("About the author")
+      // still closes it.
+      const level = Number.isInteger(b.level) ? b.level : null;
+      const hierarchyContinuation =
+        inStrong &&
+        !typedContinuation &&
+        !wrappedContinuation &&
+        !subgroupContinuation &&
+        !headingRole &&
+        !headingZone &&
+        level != null &&
+        opening.level != null &&
+        level > opening.level &&
+        sectionOpensWithIndicatorContent(blocks, i, footerIds);
+      // A deeper heading that closed the section (a prose sub-topic) leaves it
+      // suspended: a later sibling sub-list under the same parent heading
+      // (typed label, or indicator rows beneath it) resumes it.
+      const resumed =
+        !inStrong &&
+        suspended != null &&
+        !headingRole &&
+        !headingZone &&
+        level != null &&
+        level > suspended.opening.level &&
+        (Boolean(labelHeading) || sectionOpensWithIndicatorContent(blocks, i, footerIds));
+      if (resumed) {
+        currentZone = suspended.zone;
+        currentRole = suspended.role;
+        opening = suspended.opening;
+        suspended = null;
+        b.zone_reason = 'subsection_resumed';
+        b.section_role = currentRole;
+        b.scope_opening_id = opening.id;
+        trace({ block_id: b.id, decision: 'resumed', zone: currentZone, heading: headingText.slice(0, 120), level, opened_by: opening.id });
+      } else if (!wrappedContinuation && !typedContinuation && !subgroupContinuation && !hierarchyContinuation) {
         if (inStrong) {
-          trace({ block_id: b.id, decision: 'reset', from_zone: currentZone, heading: headingText.slice(0, 120), level: Number.isInteger(b.level) ? b.level : null, opened_by: opening.id });
+          trace({ block_id: b.id, decision: 'reset', from_zone: currentZone, heading: headingText.slice(0, 120), level, opened_by: opening.id });
+          suspended =
+            level != null && opening.level != null && level > opening.level
+              ? { zone: currentZone, role: currentRole, opening }
+              : null;
+        } else if (suspended && (level == null || level <= suspended.opening.level)) {
+          suspended = null;
         }
         currentZone = 'report_body';
         currentRole = null;
         opening = { id: null, text: null, level: null, form: null };
         if (b.zone_reason !== 'indicator_heading_unconfirmed') b.zone_reason = 'heading_reset';
       } else {
-        b.zone_reason = typedContinuation ? 'typed_subheading' : subgroupContinuation ? 'subgroup_label' : 'heading_continuation';
+        b.zone_reason = typedContinuation
+          ? 'typed_subheading'
+          : subgroupContinuation
+            ? 'subgroup_label'
+            : hierarchyContinuation
+              ? 'nested_indicator_subheading'
+              : 'heading_continuation';
         b.section_role = currentRole;
         b.scope_opening_id = opening.id;
         trace({ block_id: b.id, decision: b.zone_reason, zone: currentZone, heading: headingText.slice(0, 120), opened_by: opening.id });
@@ -532,7 +608,7 @@ export function annotateDocumentZones(doc, opts = {}) {
       b.type !== 'table' &&
       !pageEdge &&
       !isRepeatedChrome &&
-      (b.type === 'list_item' || isObservableOnlyLine(text) || (b.type === 'code' && !/\s/.test(text)))
+      (b.type === 'list_item' || isIndicatorValueLine(text) || (b.type === 'code' && !/\s/.test(text)))
     ) {
       b.type_label = currentTypeLabel.label;
       if (currentTypeLabel.declared_type) b.declared_type_label = currentTypeLabel.declared_type;
@@ -596,7 +672,7 @@ export function applyObservableListZones(blocks) {
   };
   for (const b of blocks || []) {
     if (b.zone === 'header_footer') continue;
-    const row = b.type === 'list_item' || b.layout === 'observable_row' || isObservableOnlyLine(b.text);
+    const row = b.type === 'list_item' || b.layout === 'observable_row' || isIndicatorValueLine(b.text);
     if (row && String(b.text || '').length <= 400) {
       run.push(b);
     } else {

@@ -23,7 +23,7 @@ import {
 import { normalizeCandidateValue } from './candidateValue.js';
 
 test('resolver has its own internal contract version', () => {
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v2');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v3');
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('technical_artifact'));
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('relative_path'));
 });
@@ -139,14 +139,18 @@ test('code block context: weak suffix needs network evidence; strong suffix stil
   assert.equal(resolveDottedToken('cfg.server.timeout', { blockType: 'code', surroundingText: 'connects to cfg.server.timeout' }).kind, 'domain');
 });
 
-test('suffix strength: ccTLD/gTLD strong, code words / long labels weak, unknown short labels plausible', () => {
+test('suffix strength: ccTLD/gTLD strong, code words / long labels / undelegated suffixes weak, other delegated TLDs plausible', () => {
   assert.equal(suffixStrength(['evil', 'com']), 'strong');
   assert.equal(suffixStrength(['evil', 'co', 'uk']), 'strong');
   assert.equal(suffixStrength(['a', 'timeout']), 'weak');
   assert.equal(suffixStrength(['a', 'singleinstance']), 'weak');
   assert.equal(suffixStrength(['a', 'exe']), 'weak');
   assert.equal(suffixStrength(['verify-cloud', 'digital']), 'strong');
-  assert.equal(suffixStrength(['c2', 'staging', 'corpnet']), 'plausible');
+  // Not a delegated DNS suffix: weak (still a domain with network semantics / an explicit row — see above).
+  assert.equal(suffixStrength(['c2', 'staging', 'corpnet']), 'weak');
+  assert.equal(suffixStrength(['minting', 'chm']), 'weak');
+  // Delegated gTLDs outside the compact common set stay plausible.
+  assert.equal(suffixStrength(['brand', 'kaufen']), 'plausible');
 });
 
 test('hostname syntax: labels, alphabetic / IDN TLD, no whitespace or symbols', () => {

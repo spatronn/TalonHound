@@ -12,7 +12,12 @@
 import { parseDocument } from 'htmlparser2';
 import { createTableBlock } from '../canonicalDocument.js';
 
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v2';
+/**
+ * v3: `<br>` is a line boundary — a paragraph / container run / list item
+ * with several visual lines becomes one block per line (shared `line_group`),
+ * so row and list detection read each line as the publisher laid it out.
+ */
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v3';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -97,23 +102,55 @@ export function findElements(node, pred, out = []) {
   return out;
 }
 
+/** Line boundary marker produced by <br> while collecting inline text. */
+const LINE_BREAK = '\n';
+
 /**
- * Rendered text of a node (inline order, <br> → space, noise skipped).
+ * Split inline text on <br> boundaries into trimmed, whitespace-collapsed,
+ * non-empty lines.
+ * @param {string} raw
+ */
+export function splitRenderedLines(raw) {
+  return String(raw || '')
+    .split(LINE_BREAK)
+    .map((l) => l.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+/**
+ * Rendered text of a node as one line (inline order, <br> → space, noise
+ * skipped). Use textLinesOf to keep <br> line boundaries.
  * @param {object} node
  */
 export function textOf(node) {
+  return renderedText(node, false).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Visual lines of a node: `<br>` is a line boundary. Publishers write IOC
+ * appendices as "<p><b>Hashes</b><br>H1 (a.exe)<br>H2 (b.exe)</p>"; keeping
+ * the lines lets row / list detection read each value on its own, exactly as
+ * it would a <li> or a one-value <p>.
+ * @param {object} node
+ */
+export function textLinesOf(node) {
+  return splitRenderedLines(renderedText(node, true));
+}
+
+function renderedText(node, lineBreaks) {
   const parts = [];
   const walk = (n) => {
     if (!n) return;
     if (n.type === 'text') {
-      parts.push(String(n.data || ''));
+      // Author newlines are whitespace; only <br> is a line boundary.
+      parts.push(String(n.data || '').replace(/[\r\n]+/g, ' '));
       return;
     }
     if (!isElement(n)) return;
     const tag = tagOf(n);
     if (NOISE_TAGS.has(tag)) return;
     if (tag === 'br') {
-      parts.push(' ');
+      parts.push(lineBreaks ? LINE_BREAK : ' ');
       return;
     }
     if (tag === 'img') return;
@@ -123,7 +160,7 @@ export function textOf(node) {
     if (block || tag === 'td' || tag === 'th') parts.push(' ');
   };
   walk(node);
-  return parts.join('').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  return parts.join('');
 }
 
 /**
@@ -210,19 +247,37 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
     return block;
   };
 
+  /**
+   * One block per visual line. A single line is an ordinary block; several
+   * lines (<br>-separated) share `line_group` = the first line's block id so
+   * provenance can reassemble the paragraph.
+   */
+  const pushLines = (type, lines) => {
+    if (lines.length <= 1) return push(type, lines[0] || '');
+    let group = null;
+    for (const line of lines) {
+      const block = push(type, line, group ? { line_group: group } : {});
+      if (block && !group) {
+        group = block.id;
+        block.line_group = group;
+      }
+    }
+    return null;
+  };
+
   /** Pending inline text collected directly inside a container. */
   let pending = [];
   const flushPending = () => {
     if (!pending.length) return;
     const text = pending.join('');
     pending = [];
-    push('paragraph', text);
+    pushLines('paragraph', splitRenderedLines(text));
   };
 
   const walk = (node) => {
     if (!node) return;
     if (node.type === 'text') {
-      pending.push(String(node.data || ''));
+      pending.push(String(node.data || '').replace(/[\r\n]+/g, ' '));
       return;
     }
     if (!isElement(node)) {
@@ -245,7 +300,7 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
       // A paragraph may still wrap block children (lists, tables inside <blockquote>).
       const hasBlockChild = (node.children || []).some((c) => isElement(c) && (tagOf(c) === 'table' || tagOf(c) === 'ul' || tagOf(c) === 'ol' || tagOf(c) === 'pre'));
       if (!hasBlockChild) {
-        push('paragraph', textOf(node));
+        pushLines('paragraph', textLinesOf(node));
         return;
       }
       for (const c of node.children || []) walk(c);
@@ -296,13 +351,13 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
         if (isElement(c) && ['ul', 'ol', 'table', 'pre', 'p', 'div', 'blockquote'].includes(tagOf(c))) nested.push(c);
         else inline.push(c);
       }
-      push('list', textOf({ type: 'tag', name: 'span', children: inline }));
+      pushLines('list', textLinesOf({ type: 'tag', name: 'span', children: inline }));
       for (const c of nested) walk(c);
       flushPending();
       return;
     }
     if (tag === 'br') {
-      pending.push(' ');
+      pending.push(LINE_BREAK);
       return;
     }
     if (tag === 'img') return;

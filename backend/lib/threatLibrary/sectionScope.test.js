@@ -115,8 +115,8 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/casino/')
 }
 
 test('internal contracts bumped for the scope model (product VERSION untouched)', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v10');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v2');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v11');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v3');
   assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged — inheritance no longer depends on it');
 });
 
@@ -243,7 +243,7 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
 
   // Diagnostics explain the scope decisions without the analyst UI changing.
   const compact = compactExtractionDiagnostics(diagnostics);
-  assert.equal(compact.scope.zones_version, 'tl-zones-v2');
+  assert.equal(compact.scope.zones_version, 'tl-zones-v3');
   assert.ok(compact.scope.trace.some((t) => t.decision === 'open' && t.form === 'descriptive_suffix'));
   assert.ok(compact.scope.trace.some((t) => t.decision === 'reset' && t.from_zone === 'c2_section'));
   assert.ok(compact.scope.occurrence_kinds.list_item >= 8);

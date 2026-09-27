@@ -28,7 +28,7 @@ import {
 import { extractWeixinDocument, WEIXIN_EXTRACTOR_VERSION } from './adapters/weixin.js';
 
 export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = HTML_BLOCKS_VERSION;
-export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v2';
+export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v3';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */
 export const CURRENT_HTML_EXTRACTOR_VERSIONS = Object.freeze([

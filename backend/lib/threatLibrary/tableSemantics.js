@@ -249,7 +249,10 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   const refanged = refangObservable(source);
   if (!refanged) return { values: [], rejected: [], reason: 'empty_indicator' };
   const whole = parseToken(refanged, declared, ctx);
-  if (whole?.ok && !(whole.candidate_type === 'domain' && /\s/.test(refanged))) {
+  // One value only when the parsed identity carries no whitespace: a cell that
+  // lists several values ("H1 H2", "<br>"-separated) is split below, never
+  // accepted as one spaced "hash".
+  if (whole?.ok && !/\s/.test(String(whole.normalized_value || '')) && !(whole.candidate_type === 'domain' && /\s/.test(refanged))) {
     // `raw` is the faithful source spelling (defanged form kept for provenance).
     return { values: [{ ...whole, raw: source }], rejected: [], reason: null };
   }
@@ -277,18 +280,36 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   return { values, rejected, reason: values.length ? null : 'no_observable' };
 }
 
+/** Upper bound for a multi-value indicator cell (dozens of hashes in one <td>). */
+const MULTI_VALUE_CELL_MAX_CHARS = 20000;
+const MULTI_VALUE_CELL_MAX_TOKENS = 500;
+
 /**
- * True when a whole cell is one observable value (used for column scoring).
+ * Observable reading of a cell for column scoring: the whole cell is one
+ * observable value, or — the multi-value form publishers use for grouped
+ * indicators ("H1<br>H2<br>H3", "a.example, b.example") — EVERY token is an
+ * observable. The all-tokens rule mirrors parseIndicatorCell (which already
+ * splits such cells) while keeping prose out: a description that merely
+ * mentions one domain has non-observable words and never scores.
  * @param {string} cellText
  */
 function cellIsObservable(cellText) {
   const refanged = refangObservable(String(cellText || '').replace(/\s+/g, ' ').trim());
-  if (!refanged || refanged.length > 512) return null;
-  const parsed = parseToken(refanged, null);
-  if (!parsed?.ok) return null;
-  // Prose never parses as one value; a dotted phrase with spaces is not an identity.
-  if (/\s/.test(refanged)) return null;
-  return parsed;
+  if (!refanged) return null;
+  if (refanged.length <= 512 && !/\s/.test(refanged)) {
+    const parsed = parseToken(refanged, null);
+    return parsed?.ok ? parsed : null;
+  }
+  if (refanged.length > MULTI_VALUE_CELL_MAX_CHARS) return null;
+  const tokens = refanged.split(CELL_TOKEN_SPLIT_RE).filter(Boolean);
+  if (tokens.length < 2 || tokens.length > MULTI_VALUE_CELL_MAX_TOKENS) return null;
+  const parsed = [];
+  for (const tok of tokens) {
+    const p = parseToken(tok, null);
+    if (!p?.ok) return null;
+    parsed.push(p);
+  }
+  return { ...parsed[0], is_ioc: parsed.every((p) => p.is_ioc), multi_value: parsed.length };
 }
 
 /**

@@ -13,7 +13,7 @@ import {
 import { meaningfulCharCount } from '../quality.js';
 
 /** Bumped with the shared block extractor (v2: DOM walk + structured tables). */
-export const WEIXIN_EXTRACTOR_VERSION = 'threat_library_weixin_v2';
+export const WEIXIN_EXTRACTOR_VERSION = 'threat_library_weixin_v3';
 
 /**
  * @param {string} html

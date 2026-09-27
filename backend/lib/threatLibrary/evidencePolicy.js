@@ -54,6 +54,37 @@ const MALICIOUS_ROLES = new Set([
 
 const HASH_TYPES = new Set(['md5', 'sha1', 'sha256']);
 
+/** Relation markers that decide a prose occurrence one way or the other. */
+const DECISIVE_PROSE_MARKERS = new Set(['contextual', 'provider', 'benign', 'excluded_zone']);
+
+/**
+ * Every occurrence names the observable as a legitimate / signed component
+ * (marker `benign`) or sits in an excluded zone: reference context, whatever
+ * the zone or the model says.
+ * @param {object} candidate annotated candidate
+ */
+function isBenignComponentOnly(candidate) {
+  const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
+  return occ.length > 0 && occ.some((o) => o.relation_marker === 'benign') &&
+    occ.every((o) => o.relation_marker === 'benign' || o.relation_marker === 'excluded_zone');
+}
+
+/**
+ * A file hash mentioned in prose with no decisive relation either way ("the
+ * attachment with MD5 …", "RedCore Loader (MD5: …)"). When the publisher also
+ * curated an IOC section, such a mention is not automatically context: a hash
+ * names a sample, so the model assesses it. URLs / domains / IPs keep the
+ * curated-scope rule (documentation, advisory and vendor links are the common
+ * case); a URL reaches the model through an operational relation ("GET request
+ * to", "fetches … from").
+ * @param {object} candidate annotated candidate
+ */
+function isUndecidedProseSampleHash(candidate) {
+  if (!HASH_TYPES.has(String(candidate.candidate_type || ''))) return false;
+  const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
+  return occ.length > 0 && occ.every((o) => !DECISIVE_PROSE_MARKERS.has(String(o.relation_marker || '')));
+}
+
 /**
  * Roles a file hash can carry. A hash identifies a file, never a network
  * endpoint, so infrastructure roles (command_and_control, redirector,
@@ -230,6 +261,9 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   const hasAuthoritativeScope = candidate.document_has_authoritative_scope === true;
   const explicit = summary.hasStrong;
   const reportSource = candidate.is_report_source === true;
+  const benignComponent = !explicit && isBenignComponentOnly(candidate);
+  const proseForModel =
+    !explicit && hasAuthoritativeScope && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS && isUndecidedProseSampleHash(candidate);
 
   if (aiUpdate) {
     if (explicit) {
@@ -239,8 +273,9 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
       }
       candidate.ai_role_suggestion = aiUpdate.role || null;
     } else if (
+      benignComponent ||
       relation === SOURCE_RELATIONS.PROVIDER_SERVICE ||
-      (hasAuthoritativeScope && relation === SOURCE_RELATIONS.CONTEXTUAL && !summary.hasUnresolvedStrongNarrative)
+      (hasAuthoritativeScope && relation === SOURCE_RELATIONS.CONTEXTUAL && !summary.hasUnresolvedStrongNarrative && !proseForModel)
     ) {
       // Source-scope / provider relation dominate AI maliciousness guesses.
       if (aiUpdate.role === 'hosting_platform' || aiUpdate.role === 'legitimate_service' || aiUpdate.role === 'reference') {
@@ -294,6 +329,17 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = 'deterministic';
     if (candidate.confidence == null) candidate.confidence = 0.75;
+  } else if (benignComponent) {
+    // The source names this exact value as a legitimate / signed component.
+    candidate.assessment = 'context_only';
+    candidate.role = 'reference';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_benign_component';
+    candidate.source_assertion = SOURCE_ASSERTIONS.REFERENCE_ONLY;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
   } else if (relation === SOURCE_RELATIONS.PROVIDER_SERVICE) {
     candidate.assessment = 'context_only';
     candidate.role = candidate.role && (candidate.role === 'hosting_platform' || candidate.role === 'legitimate_service')
@@ -328,6 +374,15 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
       candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
       candidate.ai_needed = false;
     }
+  } else if (proseForModel) {
+    // A sample hash in prose with nothing decisive either way: the curated IOC
+    // section does not settle it, the model assesses it.
+    candidate.source_assertion = SOURCE_ASSERTIONS.BODY_MENTION;
+    candidate.evidence_strength = 'weak';
+    candidate.policy_decision = 'ai_needed_prose_sample_hash';
+    const decided = candidate.decision_source === 'ai' && candidate.assessment && candidate.assessment !== 'unknown';
+    candidate.ai_needed = !decided;
+    if (!candidate.decision_source) candidate.decision_source = 'pending';
   } else if (hasAuthoritativeScope && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS) {
     // Publisher already curated the operational indicator set. Narrative-only
     // mentions — including research / vendor / organisation names inside a C2

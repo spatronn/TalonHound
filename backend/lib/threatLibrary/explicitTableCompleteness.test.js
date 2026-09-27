@@ -35,8 +35,8 @@ function assertHealthyCompleteness(t, asserted, created) {
   assert.equal(t.inconsistent, false);
 }
 
-test('completeness contract is on tl-candidates-v10', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v10');
+test('completeness contract is on tl-candidates-v11', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v11');
 });
 
 // ---------------------------------------------------------------------------
