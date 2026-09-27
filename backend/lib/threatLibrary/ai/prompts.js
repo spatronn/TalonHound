@@ -117,6 +117,36 @@ export function buildSystemPrompt() {
   ].join(' ');
 }
 
+/** Context characters kept on each side of the observable in a candidate evidence excerpt. */
+export const EVIDENCE_EXCERPT_SIDE_CHARS = 60;
+
+/**
+ * Observable-centered excerpt of an occurrence window: up to `side` characters
+ * before and after the value, and the value itself is never cut. The block
+ * text is not always in the same prompt (a very large block or an overflowing
+ * last chunk is not flattened), so this excerpt must carry the observable and
+ * its local relation on its own. Unknown spelling → head of the window.
+ * @param {string} text occurrence surrounding_text
+ * @param {Array<string|null|undefined>} spellings source / normalized spellings of the value
+ * @param {number} [side]
+ */
+export function evidenceExcerpt(text, spellings, side = EVIDENCE_EXCERPT_SIDE_CHARS) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!t) return '';
+  const low = t.toLowerCase();
+  const variants = [...new Set(
+    (spellings || [])
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .flatMap((s) => [s, s.replace(/\/$/, ''), s.replace(/\./g, '[.]')])
+  )].sort((a, b) => b.length - a.length);
+  for (const v of variants) {
+    const i = low.indexOf(v.toLowerCase());
+    if (i >= 0) return t.slice(Math.max(0, i - side), i + v.length + side);
+  }
+  return t.slice(0, side * 2);
+}
+
 /**
  * One-line evidence record for a candidate the model must classify.
  * @param {object} c
@@ -131,9 +161,7 @@ export function formatCandidateEvidenceLine(c) {
       const page = o.page != null ? `p${o.page}` : 'p?';
       const block = o.block_id ? `${o.block_id}` : '';
       const port = o.port != null ? ` port=${o.port}` : '';
-      const snip = String(o.surrounding_text || '')
-        .replace(/\s+/g, ' ')
-        .slice(0, 100);
+      const snip = evidenceExcerpt(o.surrounding_text, [o.original_value, c.original_value, c.normalized_value]);
       return `${zone}@${page}${block ? `[${block}]` : ''}${port}${snip ? `(${snip})` : ''}`;
     })
     .join(' | ');
