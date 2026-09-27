@@ -172,6 +172,21 @@ test('report list passes ?search= to the store and keeps the { items, total } re
   assert.doesNotMatch(block, /analyzeThreatDocument|runAnalysisPipeline|fetch\(/);
 });
 
+test('public candidate evidence carries publisher IOC scope for Indicators membership', async () => {
+  assert.match(routeSrc, /document_has_authoritative_scope: evidence\.document_has_authoritative_scope === true/);
+  assert.match(routeSrc, /document_has_authoritative_scope: c\.document_has_authoritative_scope === true/);
+  const { publicCandidateEvidence } = await import('./threatLibrary.js');
+  const ev = publicCandidateEvidence({
+    source_assertion: 'body_mention',
+    document_has_authoritative_scope: true,
+    policy_decision: 'ai_needed_prose_sample_hash',
+    occurrences: []
+  });
+  assert.equal(ev.document_has_authoritative_scope, true);
+  assert.equal(ev.source_assertion, 'body_mention');
+  assert.equal(publicCandidateEvidence({ source_assertion: 'explicit_ioc' }).document_has_authoritative_scope, false);
+});
+
 test('publicReport keeps published_at and report_type in the API contract (list columns were removed UI-side only)', () => {
   const block = routeSrc.slice(routeSrc.indexOf('function publicReport(row)'), routeSrc.indexOf('\n}\n', routeSrc.indexOf('function publicReport(row)')));
   // published_at / published_date / precision / source come from the shared serializer.

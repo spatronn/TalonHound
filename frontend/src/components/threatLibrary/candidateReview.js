@@ -44,6 +44,26 @@ export function isPublisherAuthoritativeReportIocMember(candidate) {
 }
 
 /**
+ * The report detail API historically omitted document_has_authoritative_scope
+ * from public evidence. If the loaded set already contains publisher-asserted
+ * IOC identities, treat the document as MODE A so narrative-only rows cannot
+ * enter Indicators solely because they are malicious.
+ */
+export function withInferredPublisherIocScope(candidates) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (!list.some((c) => isPublisherAssertedReportIoc(c))) return list;
+  return list.map((c) => {
+    if (hasAuthoritativePublisherIocScope(c)) return c;
+    const ev = c.evidence && typeof c.evidence === 'object' ? c.evidence : {};
+    return {
+      ...c,
+      document_has_authoritative_scope: true,
+      evidence: { ...ev, document_has_authoritative_scope: true }
+    };
+  });
+}
+
+/**
  * A row belongs in the IOC review set when it is a network/file observable with
  * a real source occurrence that was not resolved as pure context (reference,
  * source URL, footer) or a non-IOC artifact. When the publisher curated an
@@ -285,7 +305,7 @@ export function candidateMatchesResultFilter(candidate, result) {
 }
 
 export function filterReviewCandidates(candidates, { tab, q, type, result } = {}) {
-  return (Array.isArray(candidates) ? candidates : []).filter((c) => (
+  return withInferredPublisherIocScope(candidates).filter((c) => (
     matchReviewFilter(c, tab || DEFAULT_REVIEW_FILTER)
     && candidateMatchesQuery(c, q)
     && candidateMatchesTypeFilter(c, type)

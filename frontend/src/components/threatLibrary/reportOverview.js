@@ -8,7 +8,7 @@
  * count and the rows the user sees after clicking that tab never disagree.
  */
 
-import { REVIEW_FILTERS, matchReviewFilter } from './candidateReview.js';
+import { REVIEW_FILTERS, matchReviewFilter, withInferredPublisherIocScope } from './candidateReview.js';
 import { resolveReportPhase, REPORT_PHASES, canShowReviewTable } from './reportPhase.js';
 import { statusLabel } from './stages.js';
 import { artifactTypeLabel, entityTypeLabel, humanizeEnum, languageLabel, sourceTypeLabel } from './reportDisplayLabels.js';
@@ -20,7 +20,7 @@ import { formatPublicationDate, publicationDateTitle } from './publicationDate.j
  * @returns {Record<string, number>} keyed by REVIEW_FILTERS id
  */
 export function buildReviewFilterCounts(candidates) {
-  const rows = Array.isArray(candidates) ? candidates : [];
+  const rows = withInferredPublisherIocScope(candidates);
   const counts = {};
   for (const f of REVIEW_FILTERS) {
     counts[f.id] = rows.reduce((n, c) => (matchReviewFilter(c, f.id) ? n + 1 : n), 0);

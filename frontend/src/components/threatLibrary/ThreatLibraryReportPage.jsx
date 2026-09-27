@@ -24,6 +24,7 @@ import {
   PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
   isReviewIndicator,
+  withInferredPublisherIocScope,
   describeAnalysisFailureDetail,
   confidenceLabel,
   filterReviewCandidates,
@@ -994,7 +995,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const phase = resolveReportPhase(report);
   const showReview = Boolean(report) && canShowReviewTable(report);
   const showPreliminary = Boolean(report) && !loading && (phase === REPORT_PHASES.PREPARING || phase === REPORT_PHASES.FAILED);
-  const reviewCount = useMemo(() => candidates.filter((c) => isReviewIndicator(c)).length, [candidates]);
+  const reviewCount = useMemo(
+    () => withInferredPublisherIocScope(candidates).filter((c) => isReviewIndicator(c)).length,
+    [candidates]
+  );
   const indicatorCount = describeIndicatorCount(report, showReview ? { reviewCount } : { rawCount: candidates.length || null });
   const metrics = useMemo(() => buildOverviewMetrics(candidates, report), [candidates, report]);
   const tabs = useMemo(() => buildReportTabs({

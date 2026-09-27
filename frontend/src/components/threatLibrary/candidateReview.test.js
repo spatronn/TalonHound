@@ -12,6 +12,7 @@ import {
   isPublisherAuthoritativeReportIocMember,
   isReviewIndicator,
   matchReviewFilter,
+  withInferredPublisherIocScope,
   DEFAULT_PAGE_SIZE,
   PAGE_SIZES,
   filterReviewCandidates,
@@ -128,6 +129,35 @@ test('MODE A Indicators list is the publisher-declared set only', () => {
   assert.equal(matchReviewFilter(globalButNarrative, 'existing'), false);
   assert.equal(matchReviewFilter(narrativeHash, 'all'), true);
   assert.deepEqual([explicit, narrativeHash, globalButNarrative].filter((c) => matchReviewFilter(c, 'indicators')).map((c) => c.normalized_value), [
+    'relay-voxmail.com'
+  ]);
+});
+
+test('API-shaped MODE A payload without scope flag still hides narrative-only hash', () => {
+  const explicit = {
+    candidate_type: 'domain',
+    normalized_value: 'relay-voxmail.com',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'explicit_ioc',
+    evidence: { source_assertion: 'explicit_ioc' }
+  };
+  const narrativeHash = {
+    candidate_type: 'md5',
+    normalized_value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: { source_assertion: 'body_mention' }
+  };
+  assert.equal(isReviewIndicator(narrativeHash), true, 'a lone row without scope stays MODE B');
+  const inferred = withInferredPublisherIocScope([explicit, narrativeHash]);
+  assert.equal(isReviewIndicator(inferred[1]), false);
+  assert.deepEqual(filterReviewCandidates([explicit, narrativeHash], { tab: 'indicators' }).map((c) => c.normalized_value), [
     'relay-voxmail.com'
   ]);
 });

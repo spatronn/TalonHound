@@ -90,7 +90,7 @@ const upload = multer({
  * Compact provenance for the review UI (occurrence list capped; no raw DB ids).
  * @param {object|null} evidence
  */
-function publicCandidateEvidence(evidence) {
+export function publicCandidateEvidence(evidence) {
   if (!evidence || typeof evidence !== 'object') return null;
   const occurrences = Array.isArray(evidence.occurrences) ? evidence.occurrences.slice(0, 12) : [];
   return {
@@ -102,6 +102,7 @@ function publicCandidateEvidence(evidence) {
     ai_needed: evidence.ai_needed === true,
     is_direct_source_observable: evidence.is_direct_source_observable !== false,
     is_parser_derived_metadata: evidence.is_parser_derived_metadata === true,
+    document_has_authoritative_scope: evidence.document_has_authoritative_scope === true,
     derived_from: evidence.derived_from || null,
     occurrence_count: evidence.occurrence_count ?? occurrences.length,
     zones: Array.isArray(evidence.zones) ? evidence.zones : [],
@@ -390,6 +391,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           promoted_at: c.promoted_at || null,
           is_ioc: c.is_ioc !== false,
           source_assertion: c.source_assertion || c.evidence?.source_assertion || null,
+          document_has_authoritative_scope: c.document_has_authoritative_scope === true
+            || c.evidence?.document_has_authoritative_scope === true,
           evidence: publicCandidateEvidence(c.evidence)
         })),
         entities: snap.entities.map((e) => ({
