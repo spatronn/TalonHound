@@ -36,6 +36,7 @@ import {
   isNoneEligibleBlock,
   isPendingActionableCandidate,
   NOT_CONTEXT_ONLY_SQL,
+  publisherAuthoritativeIocMembershipSql,
   previewCreateIocPromotion,
   PROMOTION_OUTCOMES,
   summarizePromotionResults
@@ -141,7 +142,8 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
          AND confidence IS NOT NULL AND confidence >= $2
          AND review_status = 'pending'
          AND is_ioc = true
-         AND ${NOT_CONTEXT_ONLY_SQL}`,
+         AND ${NOT_CONTEXT_ONLY_SQL}
+         AND ${publisherAuthoritativeIocMembershipSql('')}`,
       [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
     );
     ids = rows
@@ -180,7 +182,7 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   // Pre-update snapshot of the selection: the grouped audit event reports
   // changed vs already-in-state counts and the type distribution from it.
   const { rows: selectedBefore } = await pool.query(
-    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc
+    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc, source_assertion, evidence
      FROM threat_report_candidates
      WHERE report_id = $1 AND id = ANY($2::bigint[])`,
     [reportId, ids]
@@ -189,14 +191,15 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   let updated = ids.length;
   let skippedIds = [];
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {
-    // Non-IOC artifacts (mutex names, relative paths, code identifiers) and
-    // context-only rows are context, not IOC candidates: a mixed selection
-    // approves only the IOC candidates and reports the rest as skipped.
-    skippedIds = selectedBefore.filter((c) => isContextOnlyCandidate(c) || c.is_ioc === false).map((c) => Number(c.id));
+    // Non-IOC artifacts (mutex names, relative paths, code identifiers),
+    // context-only rows, and MODE A narrative-only observables are not report
+    // Indicators: a mixed selection approves only the review-set members.
+    skippedIds = selectedBefore.filter((c) => !isActionableReviewIndicator(c)).map((c) => Number(c.id));
     const res = await pool.query(
       `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
        WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true
-         AND ${NOT_CONTEXT_ONLY_SQL}`,
+         AND ${NOT_CONTEXT_ONLY_SQL}
+         AND ${publisherAuthoritativeIocMembershipSql('')}`,
       [reportId, ids]
     );
     updated = Number.isInteger(res?.rowCount) ? res.rowCount : Math.max(0, selectedBefore.length - skippedIds.length);

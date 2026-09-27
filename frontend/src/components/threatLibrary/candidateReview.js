@@ -16,10 +16,38 @@ export const DEFAULT_REVIEW_FILTER = 'indicators';
 
 const NON_IOC_TYPES = new Set(['cve', 'attack_technique']);
 
+const EXPLICIT_PUBLISHER_IOC_ASSERTIONS = new Set([
+  'explicit_ioc',
+  'explicit_c2',
+  'explicit_operational_infrastructure'
+]);
+
+function hasAuthoritativePublisherIocScope(candidate) {
+  const ev = (candidate && candidate.evidence) || {};
+  return candidate?.document_has_authoritative_scope === true
+    || ev.document_has_authoritative_scope === true;
+}
+
+function isPublisherAssertedReportIoc(candidate) {
+  const ev = (candidate && candidate.evidence) || {};
+  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
+  return EXPLICIT_PUBLISHER_IOC_ASSERTIONS.has(assertion);
+}
+
+/**
+ * MODE A: publisher-curated IOC section is authoritative for Indicators.
+ * MODE B: no such section — existing review predicates still apply.
+ */
+export function isPublisherAuthoritativeReportIocMember(candidate) {
+  if (!hasAuthoritativePublisherIocScope(candidate)) return true;
+  return isPublisherAssertedReportIoc(candidate);
+}
+
 /**
  * A row belongs in the IOC review set when it is a network/file observable with
  * a real source occurrence that was not resolved as pure context (reference,
- * source URL, footer) or a non-IOC artifact.
+ * source URL, footer) or a non-IOC artifact. When the publisher curated an
+ * authoritative IOC section, only explicitly asserted identities belong here.
  */
 export function isReviewIndicator(candidate) {
   if (!candidate) return false;
@@ -32,6 +60,7 @@ export function isReviewIndicator(candidate) {
   const review = String(candidate.review_status || '').toLowerCase();
   if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;
   if (state === 'invalid' || candidate.assessment === 'invalid') return false;
+  if (!isPublisherAuthoritativeReportIocMember(candidate)) return false;
   return true;
 }
 
@@ -54,8 +83,8 @@ export function matchReviewFilter(candidate, filter) {
   const state = String(candidate.match_state || '').toLowerCase();
   const review = String(candidate.review_status || '').toLowerCase();
   if (filter === 'indicators') return isReviewIndicator(candidate);
-  if (filter === 'existing') return state === 'existing' || Boolean(candidate.matched_ioc_id);
-  if (filter === 'new') return state === 'new';
+  if (filter === 'existing') return isReviewIndicator(candidate) && (state === 'existing' || Boolean(candidate.matched_ioc_id));
+  if (filter === 'new') return isReviewIndicator(candidate) && state === 'new';
   if (filter === 'context_only') return state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only';
   if (filter === 'needs_review') return (state === 'needs_review' || review === 'pending') && isReviewIndicator(candidate);
   return true;
@@ -333,6 +362,7 @@ export function classifyCreateOutcome(candidate) {
     || review === 'ignored' || review === 'context_only'
     || assessment === 'context_only' || assessment === 'invalid'
     || state === 'context_only' || state === 'invalid') return 'not_applicable';
+  if (!isPublisherAuthoritativeReportIocMember(c)) return 'not_applicable';
   if (!PROMOTABLE_TYPES.has(type)) return 'unsupported';
   if (review !== 'approved' && review !== 'created_ioc') return 'not_approved';
   if (assessment !== 'malicious' && assessment !== 'suspicious') return 'not_applicable';
@@ -477,7 +507,9 @@ export function selectionForAction(action, selectedRows) {
   if (!IOC_CANDIDATE_ACTIONS.has(String(action || ''))) {
     return { ids: rows.map((c) => c.id), excluded: 0 };
   }
-  const eligible = rows.filter((c) => !isContextOnlyCandidate(c));
+  const eligible = String(action) === 'context_only'
+    ? rows.filter((c) => !isContextOnlyCandidate(c))
+    : rows.filter((c) => isReviewIndicator(c));
   return { ids: eligible.map((c) => c.id), excluded: rows.length - eligible.length };
 }
 
@@ -513,8 +545,9 @@ export const NO_CREATABLE_HINT = 'No new approved indicators selected.';
  */
 export function describeReviewToolbar({ filter, selectedRows, busy = false } = {}) {
   const rows = Array.isArray(selectedRows) ? selectedRows : [];
-  const iocSelected = rows.filter((c) => !isContextOnlyCandidate(c)).length;
-  const contextOnlySelected = rows.length - iocSelected;
+  const iocSelected = rows.filter((c) => isReviewIndicator(c)).length;
+  const markableSelected = rows.filter((c) => !isContextOnlyCandidate(c)).length;
+  const contextOnlySelected = rows.length - markableSelected;
   const isBusy = Boolean(busy);
   const item = (id, enabled, extra = {}) => ({ id, label: REVIEW_TOOLBAR_LABELS[id], enabled: enabled && !isBusy, ...extra });
 
@@ -531,6 +564,7 @@ export function describeReviewToolbar({ filter, selectedRows, busy = false } = {
   }
 
   const noIocHint = rows.length > 0 && iocSelected === 0 ? 'Context Only rows are not IOC candidates.' : null;
+  const noMarkHint = rows.length > 0 && markableSelected === 0 ? 'Context Only rows are not IOC candidates.' : null;
   // Create IOCs needs at least one approved + new + supported row; existing
   // rows in a mixed selection never block the new ones.
   const creatable = rows.filter((c) => classifyCreateOutcome(c) === 'will_create').length;
@@ -538,7 +572,7 @@ export function describeReviewToolbar({ filter, selectedRows, busy = false } = {
   return {
     actions: [
       item('approve', iocSelected > 0, { hint: noIocHint }),
-      item('context_only', iocSelected > 0, { hint: noIocHint }),
+      item('context_only', markableSelected > 0, { hint: noMarkHint }),
       item('ignore', rows.length > 0),
       item('create_iocs', creatable > 0, { primary: true, hint: createHint }),
       item('approve_high_confidence_malicious', true)

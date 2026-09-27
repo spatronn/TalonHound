@@ -7,6 +7,20 @@
  * it is never exploded into host IPs and never truncated to a single address.
  */
 
+import {
+  isPublisherAuthoritativeReportIocMember,
+  publisherAuthoritativeIocMembershipSql
+} from './evidencePolicy.js';
+
+export {
+  hasAuthoritativePublisherIocScope,
+  isPublisherAssertedReportIoc,
+  isPublisherAuthoritativeReportIocMember,
+  publisherAuthoritativeIocMembershipSql
+} from './evidencePolicy.js';
+
+export const PUBLISHER_AUTHORITATIVE_IOC_MEMBERSHIP_SQL = publisherAuthoritativeIocMembershipSql('c');
+
 export const CREATABLE_IOC_TYPES = Object.freeze([
   'ip',
   'ipv6',
@@ -52,6 +66,9 @@ export function isAnalystApproved(candidate) {
 
 /**
  * Rows that belong in the analyst review set (mirrors frontend isReviewIndicator).
+ * When the publisher curated an authoritative IOC section, only explicitly
+ * asserted identities are report Indicators — a malicious narrative observable
+ * is not membership.
  */
 export function isActionableReviewIndicator(candidate) {
   if (!candidate || candidate.is_ioc === false) return false;
@@ -63,6 +80,7 @@ export function isActionableReviewIndicator(candidate) {
   const review = reviewOf(candidate);
   if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;
   if (state === 'invalid' || candidate.assessment === 'invalid') return false;
+  if (!isPublisherAuthoritativeReportIocMember(candidate)) return false;
   return true;
 }
 
@@ -146,6 +164,14 @@ export function classifyCreateEligibility(candidate) {
       eligible: false,
       outcome: PROMOTION_OUTCOMES.NOT_APPLICABLE,
       detail: 'No IOC creation expected for context-only or ignored indicators.'
+    };
+  }
+
+  if (!isPublisherAuthoritativeReportIocMember(candidate)) {
+    return {
+      eligible: false,
+      outcome: PROMOTION_OUTCOMES.NOT_APPLICABLE,
+      detail: 'Not a publisher-declared report IOC.'
     };
   }
 

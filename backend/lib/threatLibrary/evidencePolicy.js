@@ -37,6 +37,58 @@ export const SOURCE_ASSERTIONS = Object.freeze({
   NON_IOC: 'non_ioc'
 });
 
+/** Publisher-curated IOC assertions that grant report Indicators membership. */
+export const EXPLICIT_PUBLISHER_IOC_ASSERTIONS = Object.freeze([
+  SOURCE_ASSERTIONS.EXPLICIT_IOC,
+  SOURCE_ASSERTIONS.EXPLICIT_C2,
+  SOURCE_ASSERTIONS.EXPLICIT_OPERATIONAL
+]);
+
+const EXPLICIT_PUBLISHER_IOC_ASSERTION_SET = new Set(EXPLICIT_PUBLISHER_IOC_ASSERTIONS);
+
+function evidenceRecord(candidate) {
+  return candidate?.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
+}
+
+/** True when the document has a confidently identified publisher IOC section/list/table. */
+export function hasAuthoritativePublisherIocScope(candidate) {
+  const ev = evidenceRecord(candidate);
+  return candidate?.document_has_authoritative_scope === true
+    || ev.document_has_authoritative_scope === true;
+}
+
+/** True when this identity was explicitly asserted in a curated publisher IOC structure. */
+export function isPublisherAssertedReportIoc(candidate) {
+  const ev = evidenceRecord(candidate);
+  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
+  return EXPLICIT_PUBLISHER_IOC_ASSERTION_SET.has(assertion);
+}
+
+/**
+ * Report Indicators membership eligibility from existing provenance.
+ * MODE A (authoritative publisher IOC scope): only explicit publisher assertions.
+ * MODE B (no such scope): do not restrict membership here — existing review
+ * predicates still apply.
+ */
+export function isPublisherAuthoritativeReportIocMember(candidate) {
+  if (!hasAuthoritativePublisherIocScope(candidate)) return true;
+  return isPublisherAssertedReportIoc(candidate);
+}
+
+/**
+ * SQL equivalent of isPublisherAuthoritativeReportIocMember for
+ * `threat_report_candidates` rows. Pass a table alias (`c`) or empty string.
+ */
+export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
+  const p = alias ? `${alias}.` : '';
+  return `(
+    COALESCE(${p}evidence->>'document_has_authoritative_scope', 'false') <> 'true'
+    OR COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') IN (
+      'explicit_ioc', 'explicit_c2', 'explicit_operational_infrastructure'
+    )
+  )`;
+}
+
 /** Confidence assigned to an explicit report assertion (report says it is an IOC). */
 export const EXPLICIT_ASSERTION_CONFIDENCE = 0.9;
 

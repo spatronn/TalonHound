@@ -9,6 +9,7 @@ import {
   REVIEW_FILTERS,
   describeAnalysisFailureDetail,
   describeCandidateProvenance,
+  isPublisherAuthoritativeReportIocMember,
   isReviewIndicator,
   matchReviewFilter,
   DEFAULT_PAGE_SIZE,
@@ -90,6 +91,60 @@ test('default review filter shows real IOC candidates only', () => {
   ]);
   assert.equal(all.filter((c) => matchReviewFilter(c, 'all')).length, 5);
   assert.equal(all.filter((c) => matchReviewFilter(c, 'needs_review')).some((c) => c === derived), false);
+});
+
+test('MODE A Indicators list is the publisher-declared set only', () => {
+  const explicit = {
+    candidate_type: 'domain',
+    normalized_value: 'relay-voxmail.com',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'explicit_ioc',
+    evidence: { source_assertion: 'explicit_ioc', document_has_authoritative_scope: true }
+  };
+  const narrativeHash = {
+    candidate_type: 'md5',
+    normalized_value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: { source_assertion: 'body_mention', document_has_authoritative_scope: true }
+  };
+  const globalButNarrative = {
+    ...narrativeHash,
+    normalized_value: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    match_state: 'existing',
+    matched_ioc_id: 99
+  };
+  assert.equal(isPublisherAuthoritativeReportIocMember(explicit), true);
+  assert.equal(isReviewIndicator(explicit), true);
+  assert.equal(isReviewIndicator(narrativeHash), false);
+  assert.equal(isReviewIndicator(globalButNarrative), false);
+  assert.equal(matchReviewFilter(narrativeHash, 'new'), false);
+  assert.equal(matchReviewFilter(globalButNarrative, 'existing'), false);
+  assert.equal(matchReviewFilter(narrativeHash, 'all'), true);
+  assert.deepEqual([explicit, narrativeHash, globalButNarrative].filter((c) => matchReviewFilter(c, 'indicators')).map((c) => c.normalized_value), [
+    'relay-voxmail.com'
+  ]);
+});
+
+test('MODE B narrative malicious remains an Indicator', () => {
+  const narrative = {
+    candidate_type: 'md5',
+    normalized_value: 'cccccccccccccccccccccccccccccccc',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: { source_assertion: 'body_mention', document_has_authoritative_scope: false }
+  };
+  assert.equal(isReviewIndicator(narrative), true);
+  assert.equal(matchReviewFilter(narrative, 'indicators'), true);
 });
 
 test('provenance summary explains why a candidate exists', () => {

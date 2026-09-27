@@ -7,7 +7,7 @@ import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.
 import { isValidTlpSource } from './tlpPolicy.js';
 import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
-import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility } from './evidencePolicy.js';
+import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility, publisherAuthoritativeIocMembershipSql } from './evidencePolicy.js';
 import { buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 
 export async function getAiSettings(pool) {
@@ -198,7 +198,8 @@ const REVIEW_CANDIDATE_WHERE = `
   AND COALESCE(c.evidence->>'is_direct_source_observable', 'true') <> 'false'
   AND COALESCE(c.assessment, '') NOT IN ('context_only', 'invalid')
   AND COALESCE(c.match_state, '') NOT IN ('context_only', 'invalid')
-  AND COALESCE(c.review_status, '') <> 'context_only'`;
+  AND COALESCE(c.review_status, '') <> 'context_only'
+  AND ${publisherAuthoritativeIocMembershipSql('c')}`;
 
 const REPORT_COUNT_COLUMNS = `
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id) AS indicator_count,

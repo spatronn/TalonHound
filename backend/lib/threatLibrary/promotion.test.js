@@ -4,6 +4,7 @@ import { normalizeCandidateValue } from './candidateValue.js';
 import {
   CIDR_UNSUPPORTED_DETAIL,
   classifyCreateEligibility,
+  isActionableReviewIndicator,
   previewCreateIocPromotion,
   summarizePromotionResults,
   canExecutePromotion,
@@ -136,6 +137,48 @@ test('CIDR canonicalization never explodes /24 or drops the prefix', () => {
   assert.equal(v6.candidateType, 'cidr');
   assert.match(v6.normalizedValue, /\/32$/);
   assert.equal(v6.normalizedValue.includes(':'), true);
+});
+
+test('MODE A narrative-only malicious is not a report Indicator or createable', () => {
+  const narrative = cand({
+    candidate_type: 'md5',
+    normalized_value: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    source_assertion: 'body_mention',
+    evidence: { document_has_authoritative_scope: true, source_assertion: 'body_mention' }
+  });
+  assert.equal(isActionableReviewIndicator(narrative), false);
+  assert.equal(classifyCreateEligibility({ ...narrative, review_status: 'approved' }).outcome, PROMOTION_OUTCOMES.NOT_APPLICABLE);
+
+  const explicit = cand({
+    candidate_type: 'domain',
+    normalized_value: 'relay-voxmail.com',
+    source_assertion: 'explicit_ioc',
+    evidence: { document_has_authoritative_scope: true, source_assertion: 'explicit_ioc' }
+  });
+  assert.equal(isActionableReviewIndicator(explicit), true);
+  assert.equal(classifyCreateEligibility(explicit).outcome, PROMOTION_OUTCOMES.WILL_CREATE);
+});
+
+test('MODE B narrative malicious remains a report Indicator', () => {
+  const narrative = cand({
+    candidate_type: 'md5',
+    normalized_value: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    source_assertion: 'body_mention',
+    evidence: { document_has_authoritative_scope: false, source_assertion: 'body_mention' }
+  });
+  assert.equal(isActionableReviewIndicator(narrative), true);
+  assert.equal(classifyCreateEligibility({ ...narrative, review_status: 'approved' }).outcome, PROMOTION_OUTCOMES.WILL_CREATE);
+});
+
+test('global IOC match does not grant MODE A report membership', () => {
+  const narrative = cand({
+    source_assertion: 'body_mention',
+    matched_ioc_id: 99,
+    match_state: 'existing',
+    evidence: { document_has_authoritative_scope: true, source_assertion: 'body_mention' }
+  });
+  assert.equal(isActionableReviewIndicator(narrative), false);
+  assert.equal(classifyCreateEligibility(narrative).outcome, PROMOTION_OUTCOMES.NOT_APPLICABLE);
 });
 
 test('pending actionable candidates block finalize; context-only does not', () => {
