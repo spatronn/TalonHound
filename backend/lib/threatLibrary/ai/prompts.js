@@ -74,9 +74,12 @@ export const REPORT_TAG_LINE =
 
 export const MITRE_LINE =
   'mitre_attack: only ATT&CK techniques THIS REPORT describes with explicit behavioral evidence. ' +
-  'technique_id is required (T1566 or T1566.002). Do not guess names or tactics. ' +
-  'Use the most specific sub-technique the text supports; otherwise the parent. Do not invent attachment vs link vs service ' +
-  'sub-techniques without that evidence. Do not map a technique because an actor or malware family commonly uses it. ' +
+  'technique_id is the canonical Txxxx or Txxxx.xxx id. Do not guess names or tactics. ' +
+  'Use the most specific sub-technique the text supports; otherwise the parent. ' +
+  'Attachment vs link vs service are different sub-techniques: a message that carries a file or HTML attachment is ' +
+  'attachment delivery even if that file later opens a website; a spearphishing link is only when the message itself ' +
+  'asks the victim to open a URL. If the report only says phishing email, use the parent technique. ' +
+  'Do not map a technique because an actor or malware family commonly uses it. ' +
   'A .ps1 IOC is not enough without stated operational use. evidence = one short sentence from the report (not a long quote). ' +
   'confidence 0..1. Omit the array when nothing is evidenced.';
 

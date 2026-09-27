@@ -8,12 +8,20 @@ import { THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
 import { THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } from './extract/extractHtml.js';
+import { MITRE_LINE } from './ai/prompts.js';
 
 test('internal contract versions for this change', () => {
   assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v3');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v12');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v3');
   assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v7');
+});
+
+test('MITRE prompt distinguishes attachment delivery from a link in the message', () => {
+  assert.match(MITRE_LINE, /attachment delivery/i);
+  assert.match(MITRE_LINE, /spearphishing link/i);
+  assert.match(MITRE_LINE, /parent technique/i);
+  assert.doesNotMatch(MITRE_LINE, /T1566\.002/);
 });
 
 test('outdated PDF/HTML canonical documents are rebuilt from the stored artifact; current ones are reused', () => {
