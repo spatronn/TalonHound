@@ -72,8 +72,7 @@ test('TEST E — Entities / Indicators / Matched sort as integers, not text', ()
   const indicators = buildReportListOrderBy({ sort: 'indicators', order: 'asc' }).sql;
   const matched = buildReportListOrderBy({ sort: 'matched', order: 'desc' }).sql;
   assert.match(entities, /ORDER BY entity_count ASC, r\.created_at DESC, r\.id DESC/);
-  assert.match(indicators, /review_candidate_count/);
-  assert.match(indicators, /indicator_count/);
+  assert.match(indicators, /ORDER BY indicator_count ASC, r\.created_at DESC, r\.id DESC/);
   assert.match(matched, /ORDER BY matched_count DESC, r\.created_at DESC, r\.id DESC/);
   for (const sql of [entities, indicators, matched]) {
     assert.doesNotMatch(sql, /::text|::varchar|CAST\(/i);

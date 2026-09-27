@@ -280,7 +280,7 @@ API: `GET /api/threat-library/reports?sort=&order=` with a whitelist. Unsupporte
 | Source | `source` | list display source (`source_name`, else URL / PDF name / THIB) NULLS LAST |
 | TLP | `tlp` | stored TLP 2.0 restriction rank (clear → red) |
 | Entities | `entities` | `entity_count` (integer) |
-| Indicators | `indicators` | review-set count when review-ready/finalized, else raw `indicator_count` |
+| Indicators | `indicators` | `indicator_count` (integer; the list SELECT alias, not a formatted string) |
 | Matched | `matched` | `matched_count` (integer) |
 | Status | `status` | `analysis_status` NULLS LAST |
 | Published | `published` | `published_at` **NULLS LAST both directions** (never `created_at`) |

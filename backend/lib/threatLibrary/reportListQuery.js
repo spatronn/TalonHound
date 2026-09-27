@@ -102,15 +102,6 @@ const REPORT_LIST_TLP_SORT_SQL = `CASE r.tlp
 END`;
 
 /**
- * Indicators column number: review-set count for review-ready / finalized
- * reports, otherwise the raw candidate count shown as preliminary.
- */
-const REPORT_LIST_INDICATORS_SORT_SQL = `CASE
-  WHEN r.analysis_status IN ('review_required', 'ready', 'skipped') THEN review_candidate_count
-  ELSE indicator_count
-END`;
-
-/**
  * Parse an explicit list sort. Unsupported field or direction (including
  * injection-shaped values) falls back to the canonical default order.
  * Both `sort` and `order` must be valid; a partial pair is ignored.
@@ -150,7 +141,7 @@ export function buildReportListOrderBy({ sort, order } = {}) {
     source: `${REPORT_LIST_SOURCE_SORT_SQL} ${dir} NULLS LAST, ${tie}`,
     tlp: `${REPORT_LIST_TLP_SORT_SQL} ${dir}, ${tie}`,
     entities: `entity_count ${dir}, ${tie}`,
-    indicators: `${REPORT_LIST_INDICATORS_SORT_SQL} ${dir}, ${tie}`,
+    indicators: `indicator_count ${dir}, ${tie}`,
     matched: `matched_count ${dir}, ${tie}`,
     status: `r.analysis_status ${dir} NULLS LAST, ${tie}`,
     published: `r.published_at ${dir} NULLS LAST, ${tie}`,
