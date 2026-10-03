@@ -131,6 +131,25 @@ test('resolveMcpIocInput rejects invalid / empty / overlong', () => {
   assert.equal(resolveMcpIocInput(huge, 'domain', TEST_CONFIG).ok, false);
 });
 
+function classificationFactRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    observable_type: row.observable_type,
+    observable: row.observable ?? null,
+    threat_classification: row.threat_classification ?? null,
+    ioc_source_id: row.ioc_source_id ?? null,
+    source_name: row.source_name ?? null
+  };
+}
+
+function isCanonicalClassificationFactsQuery(normalized) {
+  return normalized.includes('FROM ioc_items')
+    && normalized.includes('threat_classification')
+    && normalized.includes('ioc_source_id')
+    && normalized.includes('source_name');
+}
+
 // Source membership reads (fetchObservableMembershipSummary, same as IOC Details).
 // A `sources` fixture row with ioc_source_id is a manual / custom IOC Source row;
 // without one it stands for a feed membership of the named feed.
@@ -182,6 +201,10 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
         && normalized.includes('ORDER BY created_at ASC')) {
         return { rows: existing ? [existing] : [] };
       }
+      // Canonical classification identity facts (loadCanonicalIocClassifications).
+      if (isCanonicalClassificationFactsQuery(normalized)) {
+        return { rows: existing ? [classificationFactRow(existing)] : [] };
+      }
       // Legacy-column / scoped-type batch read from hydrateIocApiMetadata.
       if (normalized.includes('SELECT id, observable_type, threat_classification FROM ioc_items WHERE id = ANY')) {
         return { rows: existing ? [{ id: existing.id, observable_type: existing.observable_type, threat_classification: existing.threat_classification ?? null }] : [] };
@@ -195,7 +218,8 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
           rows: classifications.map((slug) => ({
             ioc_id: existing?.id,
             ioc_observable_type: existing?.observable_type,
-            classification_slug: slug
+            classification_slug: slug,
+            source_type: 'analyst'
           }))
         };
       }
@@ -254,6 +278,10 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
         && normalized.includes('WHERE id = $1 AND observable_type = $2')) {
         return { rows: row ? [{ threat_classification: row.threat_classification ?? null }] : [] };
       }
+      // Canonical classification identity facts (loadCanonicalIocClassifications).
+      if (isCanonicalClassificationFactsQuery(normalized)) {
+        return { rows: row ? [classificationFactRow(row)] : [] };
+      }
       // Legacy-column batch read from hydrateIocApiMetadata.
       if (normalized.includes('SELECT id, observable_type, threat_classification FROM ioc_items WHERE id = ANY')) {
         return { rows: row ? [{ id: row.id, observable_type: row.observable_type, threat_classification: row.threat_classification ?? null }] : [] };
@@ -263,7 +291,8 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
           rows: classifications.map((slug) => ({
             ioc_id: row?.id,
             ioc_observable_type: row?.observable_type,
-            classification_slug: slug
+            classification_slug: slug,
+            source_type: 'analyst'
           }))
         };
       }
@@ -389,6 +418,9 @@ function makeBulkPool(foundRows, junctionRows = []) {
       // Feed classification proposals / analyst suppressions (hydrator): none by default.
       if (normalized.includes('FROM ioc_feed_source_evidence e')) return { rows: [] };
       if (normalized.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
+      if (isCanonicalClassificationFactsQuery(normalized)) {
+        return { rows: foundRows.map((r) => classificationFactRow(r)) };
+      }
       assert.match(normalized, /unnest/i);
       return { rows: foundRows };
     }
@@ -1927,6 +1959,11 @@ function makeAliasSourcePool({ evidenceReports = [] } = {}) {
       if (q.includes('FROM ioc_threat_classifications')) return { rows: [] };
       if (q.includes('FROM ioc_feed_source_evidence e')) return { rows: [] };
       if (q.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
+      if (isCanonicalClassificationFactsQuery(q)) {
+        return {
+          rows: [classificationFactRow(sha), classificationFactRow(md5)].filter(Boolean)
+        };
+      }
       if (q.includes('ioc_tags it')) return { rows: [] };
       throw new Error(`Unexpected SQL in alias source pool: ${q.slice(0, 120)}`);
     }

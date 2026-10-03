@@ -98,27 +98,31 @@ describe('enrichItemsWithThreatMetadata', () => {
 
 describe('buildThreatMetadataFields — details/list parity', () => {
   it('includes legacy column when junction empty + feed tag classifications (URLHaus dropper_downloader case)', async () => {
-    const pool = mockPool([
-      ['FROM ioc_threat_classifications', []],
-      ['FROM ioc_threat_classification_overrides', []]
-    ]);
     const row = {
       id: 3137797,
       observable_type: 'url',
+      observable: 'http://example.test/dropper',
       threat_classification: 'malware',
+      ioc_source_id: null,
+      source_name: 'URLhaus:abuse.ch',
       threat_actor_id: null,
       threat_actor_name: null
     };
-    const feedClassifications = [
-      {
-        value: 'dropper_downloader',
-        label: 'Dropper Downloader',
-        active: true,
-        origin: 'feed',
-        source_name: 'URLhaus:abuse.ch'
-      }
-    ];
-    const fields = await buildThreatMetadataFields(pool, row, { feedClassifications });
+    const pool = mockPool([
+      ['FROM ioc_items', [row]],
+      ['FROM ioc_threat_classifications', []],
+      ['FROM ioc_threat_classification_overrides', []],
+      ['FROM ioc_feed_source_evidence', [{
+        ioc_item_id: row.id,
+        ioc_observable_type: row.observable_type,
+        source_name: 'URLhaus:abuse.ch',
+        category: null,
+        note: 'tags=malware_download',
+        feed_key: 'urlhaus-abusech'
+      }]],
+      ['FROM ioc_threat_actors', []]
+    ]);
+    const fields = await buildThreatMetadataFields(pool, row);
     const effective = (fields.effective_threat_classifications || []).map((x) => x.value).sort();
     assert.deepEqual(
       effective,
@@ -130,31 +134,48 @@ describe('buildThreatMetadataFields — details/list parity', () => {
   });
 
   it('prefers junction over legacy when junction has rows', async () => {
-    const pool = mockPool([
-      ['FROM ioc_threat_classifications', [
-        { ioc_id: 10, ioc_observable_type: 'url', classification_slug: 'phishing' }
-      ]],
-      ['FROM ioc_threat_classification_overrides', []]
-    ]);
     const row = {
       id: 10,
       observable_type: 'url',
+      observable: 'http://example.test/phish',
       threat_classification: 'malware',
+      ioc_source_id: 3,
+      source_name: 'manual',
       threat_actor_id: null,
       threat_actor_name: null
     };
-    const fields = await buildThreatMetadataFields(pool, row, {
-      feedClassifications: []
-    });
+    const pool = mockPool([
+      ['FROM ioc_items', [row]],
+      ['FROM ioc_threat_classifications', [
+        { ioc_id: 10, ioc_observable_type: 'url', classification_slug: 'phishing', source_type: 'analyst' }
+      ]],
+      ['FROM ioc_threat_classification_overrides', []],
+      ['FROM ioc_feed_source_evidence', []],
+      ['FROM ioc_threat_actors', []]
+    ]);
+    const fields = await buildThreatMetadataFields(pool, row);
     const effective = (fields.effective_threat_classifications || []).map((x) => x.value);
+    // IOC-source row with junction: legacy malware is ignored (mirror), junction phishing remains.
     assert.deepEqual(effective, ['phishing']);
   });
 
   it('includes multi threat actors from junction (with legacy fallback)', async () => {
     const actorId = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    const row = {
+      id: 11,
+      observable_type: 'ip',
+      observable: '1.2.3.4',
+      threat_classification: 'unknown',
+      ioc_source_id: null,
+      source_name: 'feed',
+      threat_actor_id: null,
+      threat_actor_name: null
+    };
     const pool = mockPool([
+      ['FROM ioc_items', [row]],
       ['FROM ioc_threat_classifications', []],
       ['FROM ioc_threat_classification_overrides', []],
+      ['FROM ioc_feed_source_evidence', []],
       ['FROM ioc_threat_actors', [{
         ioc_id: 11,
         ioc_observable_type: 'ip',
@@ -165,14 +186,7 @@ describe('buildThreatMetadataFields — details/list parity', () => {
         active: true
       }]]
     ]);
-    const row = {
-      id: 11,
-      observable_type: 'ip',
-      threat_classification: null,
-      threat_actor_id: actorId,
-      threat_actor_name: 'APT29'
-    };
-    const fields = await buildThreatMetadataFields(pool, row, { feedClassifications: [] });
+    const fields = await buildThreatMetadataFields(pool, row);
     assert.equal(fields.threat_actor_id, actorId);
     assert.equal(fields.threat_actor_name, 'APT29');
     assert.equal(fields.threat_actors.length, 1);
