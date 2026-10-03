@@ -48,10 +48,54 @@ function makeDb(rows, { fetchFailAt = 0 } = {}) {
       const ids = params[0];
       return { rows: ids.map((id) => ({ ioc_id: id, names: [`tag-${id}`, 'malware'] })) };
     }
+    // Canonical classification loader: identity facts / same-observable siblings.
+    if (s.includes('FROM ioc_items') && s.includes('threat_classification') && s.includes('source_name')) {
+      if (Array.isArray(params[1]) && typeof params[1][0] === 'number') {
+        const ids = new Set([...(params[1] || []), ...(params[3] || [])].map(Number));
+        return {
+          rows: rows.filter((r) => ids.has(Number(r.id))).map((r) => ({
+            id: r.id,
+            observable_type: r.observable_type,
+            observable: r.observable,
+            threat_classification: null,
+            ioc_source_id: null,
+            source_name: r.source_name || null
+          }))
+        };
+      }
+      const keys = new Set((params[0] || []).map((t, i) => `${t}\0${params[1][i]}`));
+      return {
+        rows: rows.filter((r) => keys.has(`${r.observable_type}\0${r.observable}`)).map((r) => ({
+          id: r.id,
+          observable_type: r.observable_type,
+          observable: r.observable,
+          threat_classification: null,
+          ioc_source_id: null,
+          source_name: r.source_name || null
+        }))
+      };
+    }
+    // Junction rows (VALUES id/type pairs) — one batched query per export page.
     if (s.includes('FROM ioc_threat_classifications')) {
       calls.classifications += 1;
-      const ids = params[0];
-      return { rows: ids.map((id) => ({ ioc_id: id, names: ['phishing'] })) };
+      const out = [];
+      for (let i = 0; i + 1 < params.length; i += 2) {
+        out.push({
+          ioc_id: params[i],
+          ioc_observable_type: params[i + 1],
+          classification_slug: 'phishing',
+          source_type: 'analyst'
+        });
+      }
+      return { rows: out };
+    }
+    if (s.includes('FROM ioc_feed_source_evidence')) return { rows: [] };
+    if (s.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
+    if (s.includes('FROM threat_classifications WHERE slug')) {
+      return { rows: (params[0] || []).map((slug) => ({ slug, name: slug })) };
+    }
+    if (s.includes('threat_report_tags rt') || s.includes('FROM threat_report_candidates')) {
+      return { rows: [] };
     }
     if (s.includes('FROM ioc_threat_actors')) {
       calls.actors += 1;
