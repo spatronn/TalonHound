@@ -866,7 +866,7 @@ test('mcpLookupIoc: classification falls back to legacy column when junction emp
   assert.deepEqual(out.body.tags, ['coruna', 'encrypted', 'exploit-package', 'ios']);
 });
 
-test('mcpLookupIoc: junction classifications win over the legacy column', async () => {
+test('mcpLookupIoc: junction and distinct importer legacy both remain effective', async () => {
   const existing = threatFoxRow({ threat_classification: 'dropper_downloader' });
   const pool = makeLookupPool({
     existing,
@@ -874,7 +874,8 @@ test('mcpLookupIoc: junction classifications win over the legacy column', async 
     tags: INTEGRATION_TAGS
   });
   const out = await mcpLookupIoc(pool, { value: FEED_SHA256, type: 'hash' }, { config: TEST_CONFIG });
-  assert.deepEqual(out.body.classifications, ['ransomware', 'trojan']);
+  // Feed-created row: importer legacy is a feed proposal; junction asserts analyst slugs.
+  assert.deepEqual(out.body.classifications, ['dropper_downloader', 'ransomware', 'trojan']);
   assert.ok(!pool.queries.some((q) => q.sql.includes('SELECT threat_classification FROM ioc_items')));
 });
 
