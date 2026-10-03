@@ -126,9 +126,12 @@ async function insertSuppress(client, ioc, slug, sourceName = null) {
 async function dslMatches(client, query, ioc) {
   const { ast } = parseSearchQuery(query);
   const { sql, params } = buildWhereClause(ast, { fileArtifactsReadEnabled: false });
+  const idIdx = params.length + 1;
+  const typeIdx = params.length + 2;
   const { rows } = await client.query(
-    `SELECT i.id FROM ioc_items i WHERE i.id = $1 AND i.observable_type = $2 AND (${sql})`,
-    [ioc.id, ioc.observable_type, ...params]
+    `SELECT i.id FROM ioc_items i
+     WHERE i.id = $${idIdx} AND i.observable_type = $${typeIdx} AND (${sql})`,
+    [...params, ioc.id, ioc.observable_type]
   );
   return rows.length === 1;
 }
