@@ -28,8 +28,12 @@ import {
  * whose content starts with indicator rows continues it whatever its label;
  * a prose sub-heading suspends the section and a later sibling sub-list
  * resumes it; scheme-less host/path URL rows count as indicator rows.
+ * v4: a C2 / operational-infrastructure heading with a known level opens an
+ * authoritative section only when its subtree holds indicator structure
+ * (prose-only topics are narrative); a suspended section resumes only at a
+ * sibling of the heading that closed it, never inside that sub-topic.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v3';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v4';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -382,6 +386,33 @@ export function sectionHasIndicatorStructure(blocks, i, chromeIds, limit = 80) {
   return false;
 }
 
+/** Section zones whose label headings also title narrative topics. */
+const TOPIC_LABEL_ZONES = new Set(['c2_section', 'operational_infrastructure']);
+
+/**
+ * Structural confirmation over a heading's whole subtree (every block until a
+ * heading at the same or a shallower level), so typed sub-headings ("C2 › IPs")
+ * stay inside. Requires an integer level on heading i.
+ * @param {object[]} blocks
+ * @param {number} i heading index
+ * @param {Set<string>} chromeIds
+ */
+export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200) {
+  const level = blocks[i].level;
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
+    const n = blocks[j];
+    if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
+    if (n.type === 'heading') {
+      if (!Number.isInteger(n.level) || n.level <= level) return false;
+      continue;
+    }
+    seen += 1;
+    if (isIndicatorStructureBlock(n) || isIndicatorValueLine(String(n.text || ''))) return true;
+  }
+  return false;
+}
+
 /**
  * True when the content directly under heading i starts with indicator
  * structure: an indicator row (value line, list of values, scheme-less URL
@@ -473,6 +504,24 @@ export function annotateDocumentZones(doc, opts = {}) {
       headingRole = null;
     }
 
+    // "C2 infrastructure" / "Dead-drop C2 communication" name a topic as often
+    // as a list. With a known heading hierarchy such a heading opens an
+    // authoritative section only when its own subtree holds indicator
+    // structure; a prose-only topic is narrative, whatever the label says.
+    if (
+      headingZone &&
+      !descriptiveForm &&
+      TOPIC_LABEL_ZONES.has(headingZone) &&
+      b.type === 'heading' &&
+      Number.isInteger(b.level) &&
+      !subtreeHasIndicatorStructure(blocks, i, footerIds)
+    ) {
+      trace({ block_id: b.id, decision: 'topic_heading_unconfirmed', heading: headingText.slice(0, 120), zone: headingZone });
+      b.zone_reason = 'indicator_heading_unconfirmed';
+      headingZone = null;
+      headingRole = null;
+    }
+
     if (headingZone && ZONE_OPENING_HEADINGS.has(headingZone)) {
       suspended = null;
       currentZone = headingZone;
@@ -531,7 +580,9 @@ export function annotateDocumentZones(doc, opts = {}) {
         sectionOpensWithIndicatorContent(blocks, i, footerIds);
       // A deeper heading that closed the section (a prose sub-topic) leaves it
       // suspended: a later sibling sub-list under the same parent heading
-      // (typed label, or indicator rows beneath it) resumes it.
+      // (typed label, or indicator rows beneath it) resumes it. A heading
+      // nested under that prose sub-topic belongs to the sub-topic ("Integrated
+      // Coverage" › "Email Security"), never to the suspended section.
       const resumed =
         !inStrong &&
         suspended != null &&
@@ -539,6 +590,7 @@ export function annotateDocumentZones(doc, opts = {}) {
         !headingZone &&
         level != null &&
         level > suspended.opening.level &&
+        (suspended.closerLevel == null || level <= suspended.closerLevel) &&
         (Boolean(labelHeading) || sectionOpensWithIndicatorContent(blocks, i, footerIds));
       if (resumed) {
         currentZone = suspended.zone;
@@ -554,7 +606,7 @@ export function annotateDocumentZones(doc, opts = {}) {
           trace({ block_id: b.id, decision: 'reset', from_zone: currentZone, heading: headingText.slice(0, 120), level, opened_by: opening.id });
           suspended =
             level != null && opening.level != null && level > opening.level
-              ? { zone: currentZone, role: currentRole, opening }
+              ? { zone: currentZone, role: currentRole, opening, closerLevel: level }
               : null;
         } else if (suspended && (level == null || level <= suspended.opening.level)) {
           suspended = null;

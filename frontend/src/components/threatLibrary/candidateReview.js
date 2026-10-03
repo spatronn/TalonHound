@@ -41,10 +41,14 @@ function candidateOccurrences(candidate) {
   return Array.isArray(ev.occurrences) ? ev.occurrences : [];
 }
 
+// Zone alone is never membership: the occurrence must be a publisher assertion.
+// Occurrences without relation annotations (older extracts) keep the zone reading.
 function hasPublisherIocSectionOccurrence(candidate) {
-  return candidateOccurrences(candidate).some((occ) => (
-    AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.has(String(occ?.zone || ''))
-  ));
+  return candidateOccurrences(candidate).some((occ) => {
+    if (!AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.has(String(occ?.zone || ''))) return false;
+    if (occ?.asserted === true) return true;
+    return !occ?.occurrence_kind;
+  });
 }
 
 function isPublisherAssertedReportIoc(candidate) {

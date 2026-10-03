@@ -131,7 +131,10 @@ export function publicCandidateEvidence(evidence) {
       form: o.form || null,
       port: o.port ?? null,
       table_row: o.table_row ?? null,
-      surrounding_text: o.surrounding_text || null
+      surrounding_text: o.surrounding_text || null,
+      // Indicators membership reads the occurrence's assertion, not its zone.
+      occurrence_kind: o.occurrence_kind || null,
+      asserted: o.asserted === true
     }))
   };
 }

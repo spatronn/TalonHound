@@ -201,6 +201,35 @@ test('IOC-heading value lines stored as body_mention still appear under Indicato
   assert.equal(filterReviewCandidates([appendixDomain, narrativeHash], { tab: 'all' }).length, 2);
 });
 
+test('a prose mention inside the IOC section zone is not an Indicator (zone is not membership)', () => {
+  const inSection = (value, occ) => ({
+    candidate_type: 'domain',
+    normalized_value: value,
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    source_assertion: 'body_mention',
+    evidence: {
+      source_assertion: 'body_mention',
+      document_has_authoritative_scope: true,
+      occurrences: [{ zone: 'explicit_ioc_section', form: 'standalone', ...occ }]
+    }
+  });
+  const vendorLink = inSection('vendor-site.com', { occurrence_kind: 'narrative_mention', asserted: false });
+  const providerInC2 = { ...inSection('graph.example-cloud.com', { occurrence_kind: 'narrative_context', asserted: false }) };
+  providerInC2.evidence.occurrences[0].zone = 'c2_section';
+  const listedRow = inSection('relay-voxmail.com', { occurrence_kind: 'standalone_indicator_row', asserted: true });
+  assert.equal(isReviewIndicator(vendorLink), false);
+  assert.equal(isReviewIndicator(providerInC2), false);
+  assert.equal(isReviewIndicator(listedRow), true);
+  assert.deepEqual(
+    filterReviewCandidates([vendorLink, providerInC2, listedRow], { tab: 'indicators' }).map((c) => c.normalized_value),
+    ['relay-voxmail.com']
+  );
+  assert.equal(filterReviewCandidates([vendorLink, providerInC2, listedRow], { tab: 'all' }).length, 3);
+});
+
 test('MODE B narrative malicious remains an Indicator', () => {
   const narrative = {
     candidate_type: 'md5',

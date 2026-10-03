@@ -70,11 +70,20 @@ function candidateOccurrences(candidate) {
   return Array.isArray(ev.occurrences) ? ev.occurrences : [];
 }
 
-/** True when a stored occurrence sits in a publisher-curated IOC structure. */
+/**
+ * True when a stored occurrence is a publisher assertion inside a curated IOC
+ * structure. Zone alone is never membership: a prose mention inside an IOC /
+ * C2 section (a vendor link, a provider domain, a hex run of a hostname) was
+ * read by attachOccurrenceRelations and left unasserted. Occurrences stored
+ * before relation annotations existed (no occurrence_kind) keep the zone
+ * reading — they carry nothing better.
+ */
 export function hasPublisherIocSectionOccurrence(candidate) {
-  return candidateOccurrences(candidate).some((occ) => (
-    AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.includes(String(occ?.zone || ''))
-  ));
+  return candidateOccurrences(candidate).some((occ) => {
+    if (!AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.includes(String(occ?.zone || ''))) return false;
+    if (occ?.asserted === true) return true;
+    return !occ?.occurrence_kind;
+  });
 }
 
 /** True when this identity was explicitly asserted in a curated publisher IOC structure. */
@@ -117,6 +126,7 @@ export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
         'sample_table',
         'operational_infrastructure'
       )
+        AND (occ->>'asserted' = 'true' OR COALESCE(occ->>'occurrence_kind', '') = '')
     )
   )`;
 }

@@ -26,6 +26,7 @@ import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { plainTextToBlocks } from './pdfLayout.js';
 import { compactExtractionDiagnostics, mergeAiCandidateUpdates } from './pipeline.js';
 import { partitionCandidatesForAi } from './ai/analyze.js';
+import { isActionableReviewIndicator } from './promotion.js';
 import {
   INDICATOR_HEADING_FORMS,
   OCCURRENCE_KINDS,
@@ -115,8 +116,8 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/casino/')
 }
 
 test('internal contracts bumped for the scope model (product VERSION untouched)', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v12');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v3');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v13');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v4');
   assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged — inheritance no longer depends on it');
 });
 
@@ -177,8 +178,7 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
     ...F.c2.map((v) => `domain:${v}`),
     `domain:${F.decoy2}`,
     `domain:${F.single}`,
-    ...F.ips.map((v) => `ip:${v}`),
-    `url:${F.resource}`
+    ...F.ips.map((v) => `ip:${v}`)
   ]);
   assert.deepEqual([...maliciousKeys(candidates)].sort(), [...expected].sort());
 
@@ -210,13 +210,15 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
   // Annotated rows ("x – Decoy domain") are still rows.
   assert.equal(byVal(candidates, F.decoy2).occurrences.find((o) => o.zone === 'explicit_ioc_section').occurrence_kind, OCCURRENCE_KINDS.STANDALONE_INDICATOR_ROW);
 
-  // Contextual research firm inside the C2 section is not promoted.
+  // "Type 3: … C2 Domains …" titles a prose topic (no indicator structure in
+  // its subtree): narrative, not a curated C2 section. The research firm in it
+  // stays context under the curated appendix scope.
   const research = byVal(candidates, F.research);
   assert.ok(research, 'research domain retained as context');
   assert.equal(research.assessment, 'context_only');
   assert.equal(research.ai_needed, false);
-  assert.equal(research.policy_decision, 'context_only_contextual_mention_in_indicator_section');
-  assert.equal(research.occurrences[0].zone, 'c2_section');
+  assert.equal(research.policy_decision, 'context_only_narrative_with_authoritative_scope');
+  assert.equal(research.occurrences[0].zone, 'report_body');
   assert.equal(research.occurrences[0].occurrence_kind, OCCURRENCE_KINDS.NARRATIVE_CONTEXT);
   assert.equal(research.occurrences[0].relation_marker, 'contextual');
 
@@ -230,22 +232,27 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
   assert.equal(res.parsed.host, 'js.cache-mcp.com');
   assert.equal(res.typing_reason, 'scheme_less_url_with_dns_host');
   assert.equal(res.occurrences[0].occurrence_kind, OCCURRENCE_KINDS.NARRATIVE_ASSERTION, '"payload from" is an operational clause');
+  // Narrative-only (the appendix never lists it): the model assesses it, but it
+  // is not a report Indicator while the publisher curated an IOC section.
+  assert.equal(res.source_assertion, SOURCE_ASSERTIONS.BODY_MENTION);
+  assert.equal(res.ai_needed, true);
+  assert.equal(isActionableReviewIndicator({ ...res, evidence: buildCandidateEvidenceRecord(res) }), false);
   assert.equal(candidates.some((c) => /^https?:\/\//.test(String(c.normalized_value)) && c.normalized_value.includes('js.cache-mcp')), false, 'no absolute URL invented');
   assert.equal(candidates.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'js.cache-mcp.com'), false, 'host is parsed metadata, not a standalone domain');
   assert.equal(candidates.some((c) => String(c.normalized_value).toLowerCase() === 'layer.js'), false, 'path basename is neither a domain nor an artifact');
   assert.equal(diagnostics.type_resolution.scheme_less_resources.count, 1);
   assert.equal(diagnostics.type_resolution.scheme_less_resources.examples[0].decision, 'preserved_as_scheme_less_url');
 
-  // Nothing is left for the model.
+  // Only the narrative resource is left for the model.
   const summary = summarizeCandidateSet(candidates);
-  assert.equal(summary.ai_needed, 0);
-  assert.equal(partitionCandidatesForAi(candidates).toClassify.length, 0);
+  assert.equal(summary.ai_needed, 1);
+  assert.deepEqual(partitionCandidatesForAi(candidates).toClassify.map(keyOf), [`url:${F.resource}`]);
 
   // Diagnostics explain the scope decisions without the analyst UI changing.
   const compact = compactExtractionDiagnostics(diagnostics);
-  assert.equal(compact.scope.zones_version, 'tl-zones-v3');
+  assert.equal(compact.scope.zones_version, 'tl-zones-v4');
   assert.ok(compact.scope.trace.some((t) => t.decision === 'open' && t.form === 'descriptive_suffix'));
-  assert.ok(compact.scope.trace.some((t) => t.decision === 'reset' && t.from_zone === 'c2_section'));
+  assert.ok(compact.scope.trace.some((t) => t.decision === 'topic_heading_unconfirmed' && t.zone === 'c2_section'));
   assert.ok(compact.scope.occurrence_kinds.list_item >= 8);
   assert.equal(compact.type_resolution.scheme_less_resources.count, 1);
   const ev = buildCandidateEvidenceRecord(byVal(candidates, F.ips[0]));

@@ -36,6 +36,8 @@ export function createExplicitTableAssertionTracker() {
   const asserted = new Map();
   /** @type {Map<string, { type: string, value: string, reason: string }>} */
   const dropped = new Map();
+  /** @type {Map<string, string>} asserted key → identity key it was folded into */
+  const aliases = new Map();
 
   const rememberDropped = (type, value, reason) => {
     const key = explicitTableIdentityKey(type, value);
@@ -50,6 +52,10 @@ export function createExplicitTableAssertionTracker() {
       return key;
     },
     rememberDropped,
+    /** An asserted spelling that was folded into another identity (scheme-less → absolute URL). */
+    rememberAlias(type, fromValue, toValue) {
+      aliases.set(explicitTableIdentityKey(type, fromValue), explicitTableIdentityKey(type, toValue));
+    },
     finalize(createdCandidates) {
       const created = (createdCandidates || []).filter(
         (c) => Array.isArray(c.table_rows) && c.table_rows.some((r) => r.explicit)
@@ -57,7 +63,7 @@ export function createExplicitTableAssertionTracker() {
       const createdKeys = new Set(created.map((c) => explicitTableIdentityKey(c.candidate_type, c.normalized_value)));
       const missing = [];
       for (const [key, ident] of asserted) {
-        if (createdKeys.has(key)) continue;
+        if (createdKeys.has(key) || createdKeys.has(aliases.get(key))) continue;
         missing.push(formatExplicitTableIdentityKey(key));
         if (!dropped.has(key)) rememberDropped(ident.type, ident.value, 'not_materialized');
       }

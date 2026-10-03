@@ -36,7 +36,7 @@ import {
   validateCanonicalIocValue,
   validateUrlCandidate
 } from './observableTypeResolver.js';
-import { ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
+import { hexRunIsHostnameLabelFragment, ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
@@ -86,8 +86,14 @@ export {
  * v12: a hash-shaped run inside a URL / scheme-less resource span is a URL
  * component, not a file-hash occurrence (per occurrence: a standalone spelling
  * of the same value still creates the hash, its window anchored on it).
+ * v13: no non-declared identity in a curated report — a hex run joined to a
+ * hostname label by "-" (`pub-<hex>.cdn.dev`) is not a hash; typographic
+ * quotes close a URL token; an elided value (`[…]`) is not a URL
+ * (tl-type-resolver-v4); a scheme-less "host/path" joins the one absolute URL
+ * the report lists for it; prose-only C2 topics and vendor sidebars no longer
+ * open / resume a curated section (tl-zones-v4).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v12';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v13';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -155,13 +161,16 @@ const IPV4_PORT_RE =
   /(?<![A-Za-z0-9_-]\.)\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
 const IPV6_RE =
   /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b(?!\.[A-Za-z0-9_-])/g;
-const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]]+/gi;
+// Typographic quotes / guillemets never occur raw inside a URL (they are
+// percent-encoded); in prose they close a quoted URL ("“https://x/y.exe”").
+const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]‘’“”«»]+/gi;
 /**
  * Scheme-less network resource: DNS-shaped host + path ("js.cache-mcp.com/layer.js").
  * The publisher gave no scheme, so none is invented: the exact host/path is
  * the value. Not preceded by a scheme separator, "@" or another label.
  */
-const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`)\]，。；]+)/gi;
+const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`)\]，。；‘’“”«»]+)/gi;
+const URL_SCHEME_PREFIX_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
 const MD5_RE = /\b[a-fA-F0-9]{32}\b/g;
 const SHA1_RE = /\b[a-fA-F0-9]{40}\b/g;
@@ -182,7 +191,7 @@ export const OCCURRENCE_FORMS = Object.freeze({
 });
 
 function stripUrlTrailingPunct(urlish) {
-  return String(urlish || '').replace(/[),.;:!?\]。，；]+$/g, '');
+  return String(urlish || '').replace(/[),.;:!?\]。，；‘’“”«»]+$/g, '');
 }
 
 /**
@@ -696,6 +705,55 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     pendingDotted.clear();
   }
 
+  /** "Host/path" identity of a URL value: scheme dropped, host case-folded, path verbatim. */
+  function hostPathIdentity(value) {
+    const rest = String(value || '').replace(URL_SCHEME_PREFIX_RE, '');
+    const slash = rest.indexOf('/');
+    if (slash <= 0) return null;
+    return `${rest.slice(0, slash).toLowerCase()}${rest.slice(slash)}`;
+  }
+
+  function foldSchemeLessUrlAliases() {
+    /** host/path → absolute URL entries with that host/path */
+    const absolute = new Map();
+    for (const entry of byKey.values()) {
+      if (entry.candidate_type !== 'url' || !URL_SCHEME_PREFIX_RE.test(entry.normalized_value)) continue;
+      const id = hostPathIdentity(entry.normalized_value);
+      if (!id) continue;
+      if (!absolute.has(id)) absolute.set(id, []);
+      absolute.get(id).push(entry);
+    }
+    for (const [key, alias] of [...byKey]) {
+      // Scheme-less spellings come from prose / rows (Pass 1b) and table cells alike.
+      if (alias.candidate_type !== 'url' || URL_SCHEME_PREFIX_RE.test(alias.normalized_value)) continue;
+      const targets = absolute.get(hostPathIdentity(alias.normalized_value)) || [];
+      if (targets.length !== 1) continue;
+      const target = targets[0];
+      for (const occ of alias.occurrences) {
+        const dup = target.occurrences.some(
+          (o) => o.block_id && o.block_id === occ.block_id && (o.table_row == null || o.table_row === occ.table_row)
+        );
+        if (!dup) target.occurrences.push(occ);
+      }
+      for (const row of alias.table_rows || []) {
+        if (target.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) target.table_rows.push(row);
+      }
+      if (STRONG_IOC_ZONES.has(alias.zone) && !STRONG_IOC_ZONES.has(target.zone)) {
+        target.evidence_text = alias.evidence_text;
+        target.block_id = alias.block_id;
+        target.page_number = alias.page_number;
+        target.section = alias.section;
+        target.zone = alias.zone;
+      }
+      target.parsed.scheme_less_aliases = [...(target.parsed.scheme_less_aliases || []), alias.original_value].slice(0, 8);
+      for (const keys of urlHostIndex.values()) {
+        if (keys.delete(key)) keys.add(candidateKey('url', target.normalized_value));
+      }
+      explicitTableAssertions.rememberAlias('url', alias.normalized_value, target.normalized_value);
+      byKey.delete(key);
+    }
+  }
+
   const blocks = annotated.blocks || [];
   // Format-agnostic "indicator row": PDF list rows, HTML <li>/<td>, or any line that is a single observable.
   const isObservableRow = (block) =>
@@ -934,6 +992,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     for (const [re, type] of HASH_PATTERNS) {
       for (const m of text.matchAll(re)) {
         if (insideAnySpan(urlSpans, m.index, m.index + m[0].length)) continue;
+        // `pub-<hex>.r2.dev`: the run is part of a hostname label, not a hash.
+        if (hexRunIsHostnameLabelFragment(text, m.index, m.index + m[0].length)) continue;
         const focusOrdinal = hitOffsets(text.slice(0, m.index), m[0]).length;
         add(m[0], type, block, { form: standaloneForm, focusOrdinal });
       }
@@ -962,6 +1022,12 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   // Decide deferred dotted tokens (domain vs technical artifact) per document.
   resolvePendingDotted();
+
+  // One resource written "host/path" in one place and "https://host/path" in
+  // another is one identity: the scheme-less spelling joins the absolute URL
+  // the publisher wrote (no scheme is invented). When both http and https
+  // spellings exist the scheme is ambiguous and the value stays as written.
+  foldSchemeLessUrlAliases();
 
   // Finalize: evidence policy + parser-derived host cross references
   const out = [];

@@ -142,6 +142,27 @@ export function isOnlyEmbeddedInDnsHostname(sourceText, candidateType, candidate
 }
 
 /**
+ * True when a hex run at [start, end) is a fragment of a hyphenated DNS label
+ * (`pub-<32 hex>.r2.dev`, `<hex>-cdn.example.net`): the run is joined to the
+ * rest of its label by "-" and that label sits in a dotted hostname. Such a
+ * run is part of a hostname, not a file hash. A hash written as its own token
+ * (`<hash>`, `<hash>.exe`, `sha256:<hash>`) is untouched.
+ * @param {string} text already-refanged haystack
+ * @param {number} start
+ * @param {number} end
+ */
+export function hexRunIsHostnameLabelFragment(text, start, end) {
+  const hay = String(text || '');
+  if (hay[start - 1] !== '-' && hay[end] !== '-') return false;
+  let s = start;
+  while (s > 0 && /[A-Za-z0-9.-]/.test(hay[s - 1])) s -= 1;
+  let e = end;
+  while (e < hay.length && /[A-Za-z0-9.-]/.test(hay[e])) e += 1;
+  const token = hay.slice(s, e).replace(/^[.-]+|[.-]+$/g, '');
+  return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i.test(token);
+}
+
+/**
  * Match-time gate for a regex hit in already-refanged extractor text.
  * @param {string} refangedText
  * @param {number} start

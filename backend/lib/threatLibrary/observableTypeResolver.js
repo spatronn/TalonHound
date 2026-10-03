@@ -38,8 +38,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * domain by shape alone. Suffix knowledge stays a signal, not a gate: an
  * internal name the source asserts (`update.corp.lan` "resolves through the
  * internal DNS", a curated indicator row) is still a domain.
+ * v4: a publisher elision ("…", "[...]", "(…)") makes a URL invalid
+ * (`elided_value`); typographic quotes / guillemets are trailing punctuation.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v3';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v4';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -434,6 +436,9 @@ export function classifyPathLikeShape(refanged) {
   return 'other';
 }
 
+/** A publisher elision ("…", "[...]", "(…)") inside a value. */
+const ELIDED_VALUE_RE = /…|\[\s*(?:\.{2,}|…)\s*\]|\(\s*(?:\.{2,}|…)\s*\)/;
+
 /**
  * Validate a candidate URL value. Only an absolute URL (scheme + valid host)
  * is a network URL; relative paths, routes and filesystem paths are kept as
@@ -456,6 +461,11 @@ export function classifyPathLikeShape(refanged) {
 export function validateUrlCandidate(raw) {
   const refanged = refangObservable(raw);
   if (!refanged) return { ok: false, resolved_type: 'invalid', reason: 'empty' };
+  // "host/abc[…].pdf": the publisher elided part of the value — a placeholder,
+  // not an observable anyone can match.
+  if (ELIDED_VALUE_RE.test(String(raw || '')) || ELIDED_VALUE_RE.test(refanged)) {
+    return { ok: false, resolved_type: 'invalid', reason: 'elided_value' };
+  }
   const shape = classifyPathLikeShape(refanged);
   const [head, ...restParts] = refanged.split(/\s+/);
   const trailing = restParts.join(' ').trim() || null;
@@ -528,7 +538,7 @@ export function validateUrlCandidate(raw) {
 }
 
 function stripTrailingPunct(s) {
-  return String(s || '').replace(/[),.;:!?\]。，；]+$/g, '');
+  return String(s || '').replace(/[),.;:!?\]。，；‘’“”«»]+$/g, '');
 }
 
 // ---------------------------------------------------------------------------
