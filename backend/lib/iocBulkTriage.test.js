@@ -290,6 +290,20 @@ test('bulkAddClassification adds once then skips on repeat', async () => {
         respond: () => ({ rows: iocs, rowCount: 1 })
       },
       {
+        match: (sql) => sql.includes('FROM ioc_items') && sql.includes('ioc_source_id, threat_classification'),
+        respond: () => ({
+          rows: iocs.map((r) => ({
+            ioc_source_id: r.ioc_source_id ?? null,
+            threat_classification: r.threat_classification ?? 'unknown'
+          })),
+          rowCount: 1
+        })
+      },
+      {
+        match: (sql) => sql.includes('SELECT classification_slug FROM ioc_threat_classifications'),
+        respond: () => ({ rows: [], rowCount: 0 })
+      },
+      {
         match: (sql) => sql.includes('FROM ioc_threat_classification_overrides'),
         respond: () => ({ rows: overrideRows, rowCount: overrideRows.length })
       },

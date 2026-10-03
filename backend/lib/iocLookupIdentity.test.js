@@ -83,8 +83,28 @@ function aliasPool({ rows = [MD5_ROW], aliases = { [`sha1\0${SHA1}`]: [MD5_ROW],
       if (s.includes('SELECT id, observable_type, threat_classification FROM ioc_items WHERE id = ANY')) {
         return { rows: rows.filter((r) => params[0].map(Number).includes(Number(r.id))) };
       }
+      // Canonical classification identity facts (loadCanonicalIocClassifications).
+      if (s.includes('FROM ioc_items') && s.includes('threat_classification') && s.includes('ioc_source_id') && s.includes('source_name')) {
+        return {
+          rows: rows.map((r) => ({
+            id: r.id,
+            observable_type: r.observable_type,
+            observable: r.observable,
+            threat_classification: r.threat_classification ?? null,
+            ioc_source_id: r.ioc_source_id ?? null,
+            source_name: r.source_name ?? null
+          }))
+        };
+      }
       if (s.includes('FROM ioc_threat_classifications')) {
-        return { rows: rows.flatMap((r) => slugs.map((slug) => ({ ioc_id: r.id, ioc_observable_type: r.observable_type, classification_slug: slug }))) };
+        return {
+          rows: rows.flatMap((r) => slugs.map((slug) => ({
+            ioc_id: r.id,
+            ioc_observable_type: r.observable_type,
+            classification_slug: slug,
+            source_type: 'analyst'
+          })))
+        };
       }
       if (s.includes('ioc_tags it')) {
         const seeds = [...new Set(params[0].map(Number))];
