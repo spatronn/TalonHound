@@ -1,38 +1,46 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  computeEffectiveThreatClassifications,
-  planThreatClassificationEffectiveSave
-} from './iocThreatClassificationOverrides.js';
+import { planThreatClassificationEffectiveSave } from './iocThreatClassificationOverrides.js';
+import { computeCanonicalIocClassifications } from './iocCanonicalClassifications.js';
 
 const FEED = [
-  { value: 'malware', label: 'Malware', origin: 'feed', source_name: 'URLhaus' },
-  { value: 'dropper_downloader', label: 'Dropper Downloader', origin: 'feed', source_name: 'URLhaus:abuse.ch' }
+  { value: 'malware', label: 'Malware', origin: 'feed', source_name: 'URLhaus', source_names: ['URLhaus'] },
+  { value: 'dropper_downloader', label: 'Dropper Downloader', origin: 'feed', source_name: 'URLhaus:abuse.ch', source_names: ['URLhaus:abuse.ch'] }
 ];
 
+function fromParts({ feedClassifications = [], analystAdditionSlugs = [], activeSuppressions = [] } = {}) {
+  return computeCanonicalIocClassifications({
+    rows: [{
+      feed: feedClassifications,
+      junction: analystAdditionSlugs.map((slug) => ({ slug, source_type: 'analyst' })),
+      suppressions: activeSuppressions
+    }]
+  });
+}
+
 test('effective keeps feed minus suppressions plus analyst adds', () => {
-  const computed = computeEffectiveThreatClassifications({
+  const computed = fromParts({
     feedClassifications: FEED,
     analystAdditionSlugs: ['phishing'],
     activeSuppressions: [{ classification_slug: 'dropper_downloader' }]
   });
-  assert.deepEqual(
-    computed.effective_threat_classifications.map((x) => x.value),
-    ['malware', 'phishing']
-  );
-  assert.equal(computed.feed_classifications.length, 2);
-  assert.equal(computed.analyst_suppressions[0].value, 'dropper_downloader');
+  assert.deepEqual(computed.classifications, ['malware', 'phishing']);
+  assert.equal(computed.feed.length, 2);
+  assert.equal(computed.suppressions[0].classification_slug, 'dropper_downloader');
 });
 
 test('duplicate feed+analyst addition shows once with dual origin', () => {
-  const computed = computeEffectiveThreatClassifications({
+  const computed = fromParts({
     feedClassifications: FEED,
     analystAdditionSlugs: ['malware'],
     activeSuppressions: []
   });
-  assert.equal(computed.effective_threat_classifications.length, 2);
-  const malware = computed.effective_threat_classifications.find((x) => x.value === 'malware');
-  assert.deepEqual(malware.origins.sort(), ['analyst', 'feed']);
+  assert.equal(computed.classifications.length, 2);
+  const malware = computed.classification_context.find((x) => x.classification === 'malware');
+  assert.deepEqual(
+    malware.sources.map((s) => s.type).sort(),
+    ['analyst', 'feed']
+  );
 });
 
 test('plan save: unchecking feed creates suppress and keeps feed out of additions', () => {
@@ -63,11 +71,11 @@ test('plan save: restoring previously suppressed feed clears suppress list', () 
 });
 
 test('suppression of missing feed slug is stale-safe in compute (no crash)', () => {
-  const computed = computeEffectiveThreatClassifications({
-    feedClassifications: [{ value: 'malware', label: 'Malware', origin: 'feed' }],
+  const computed = fromParts({
+    feedClassifications: [{ value: 'malware', label: 'Malware', origin: 'feed', source_names: [] }],
     analystAdditionSlugs: [],
     activeSuppressions: [{ classification_slug: 'dropper_downloader', created_at: '2026-01-01' }]
   });
-  assert.deepEqual(computed.effective_threat_classifications.map((x) => x.value), ['malware']);
-  assert.equal(computed.analyst_suppressions[0].value, 'dropper_downloader');
+  assert.deepEqual(computed.classifications, ['malware']);
+  assert.equal(computed.suppressions[0].classification_slug, 'dropper_downloader');
 });

@@ -32,8 +32,8 @@ test('sortMigrationFiles is deterministic', () => {
 test('getLatestMigrationMeta reads numeric prefix from highest file', async () => {
   const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../migrations');
   const meta = await getLatestMigrationMeta(dir);
-  assert.equal(meta.latestMigrationFile, '034_threat_report_mitre_mappings.sql');
-  assert.equal(meta.latestMigration, 34);
+  assert.equal(meta.latestMigrationFile, '035_ioc_feed_evidence_classification_index.sql');
+  assert.equal(meta.latestMigration, 35);
 });
 
 test('009 snapshot constraint allows chunk_owned success rows', () => {
@@ -255,4 +255,49 @@ test('034 adds threat_report_mitre_mappings additively with PK, attack index and
   for (const forbidden of ['DROP ', 'DELETE FROM', 'UPDATE ', 'TRUNCATE', 'ALTER TABLE']) {
     assert.ok(!code.includes(forbidden), `034 must not contain ${forbidden.trim()}`);
   }
+});
+
+test('035 adds immutable feed-evidence classification helper + partial GIN index without rewriting IOC data', () => {
+  const sql = readFileSync(path.join(MIGRATIONS_DIR, '035_ioc_feed_evidence_classification_index.sql'), 'utf8');
+  const code = sql.replace(/^--.*$/gm, '');
+  assert.ok(code.includes('CREATE OR REPLACE FUNCTION public.ioc_feed_evidence_classification_slugs'));
+  assert.ok(code.includes('IMMUTABLE'));
+  assert.ok(code.includes('CREATE INDEX IF NOT EXISTS idx_ioc_feed_source_evidence_classification_slugs'));
+  assert.ok(code.includes('USING gin (public.ioc_feed_evidence_classification_slugs(category, note))'));
+  assert.ok(code.includes("WHERE public.ioc_feed_evidence_classification_slugs(category, note) <> ARRAY[]::text[]"));
+  for (const forbidden of ['DELETE FROM', 'UPDATE ', 'TRUNCATE', 'ALTER TABLE', 'INSERT ']) {
+    assert.ok(!code.includes(forbidden), `035 must not contain ${forbidden.trim()}`);
+  }
+});
+
+test('035 SQL vocabulary VALUES lists match feedClassificationVocabulary()', async () => {
+  const { feedClassificationVocabulary } = await import('./feedTagNormalization.js');
+  const sql = readFileSync(path.join(MIGRATIONS_DIR, '035_ioc_feed_evidence_classification_index.sql'), 'utf8');
+  const vocab = feedClassificationVocabulary();
+  const byKind = { category: [], tag: [], signature: [] };
+  for (const entry of vocab) byKind[entry.kind].push(entry);
+
+  // Extract each VALUES(...) block in order: category, tag, signature.
+  const blocks = [...sql.matchAll(/FROM \(VALUES\s*([\s\S]*?)\) AS v\(k, slug\)/g)].map((m) => m[1]);
+  assert.equal(blocks.length, 3, '035 must define category, tag, and signature VALUES lists');
+
+  function parsePairs(block) {
+    return [...block.matchAll(/\('([^']+)',\s*'([^']+)'\)/g)].map((m) => ({ key: m[1], slug: m[2] }));
+  }
+  const cats = parsePairs(blocks[0]);
+  const tags = parsePairs(blocks[1]);
+  const sigs = parsePairs(blocks[2]);
+
+  assert.deepEqual(
+    cats.sort((a, b) => a.key.localeCompare(b.key)),
+    byKind.category.map((e) => ({ key: e.key, slug: e.slug })).sort((a, b) => a.key.localeCompare(b.key))
+  );
+  assert.deepEqual(
+    tags.sort((a, b) => a.key.localeCompare(b.key)),
+    byKind.tag.map((e) => ({ key: e.key, slug: e.slug })).sort((a, b) => a.key.localeCompare(b.key))
+  );
+  assert.deepEqual(
+    sigs.sort((a, b) => a.key.localeCompare(b.key)),
+    byKind.signature.map((e) => ({ key: e.key, slug: e.slug })).sort((a, b) => a.key.localeCompare(b.key))
+  );
 });

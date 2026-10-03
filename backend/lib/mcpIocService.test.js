@@ -10,7 +10,7 @@ import {
   buildMcpSearchDsl
 } from './mcpIocService.js';
 import { parseSearchQuery } from './iocSearchDsl/index.js';
-import { loadEffectiveIocClassificationSlugs } from './iocThreatClassifications.js';
+import { loadCanonicalIocClassification } from './iocCanonicalClassifications.js';
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 import { API_SCOPE } from './apiKeyProfiles.js';
 import { MCP_DEFAULTS } from './mcpConfig.js';
@@ -455,7 +455,7 @@ function bulkRow(id, observable, observable_type, threat_classification = null) 
   };
 }
 function jrow(id, observable_type, classification_slug) {
-  return { ioc_id: id, ioc_observable_type: observable_type, classification_slug };
+  return { ioc_id: id, ioc_observable_type: observable_type, classification_slug, source_type: 'analyst' };
 }
 function bulkClassOf(out, value) {
   return out.body.existing.find((e) => e.value === value)?.classifications;
@@ -478,12 +478,12 @@ test('bulk_lookup_iocs: legacy classification preserved when no junction rows', 
   assert.deepEqual(bulkClassOf(out, md5), ['dropper_downloader']);
 });
 
-// Test 3 — junction + legacy both present: junction wins (canonical semantics).
-test('bulk_lookup_iocs: junction wins over legacy when both present', async () => {
+// Test 3 — junction + distinct importer legacy: both remain (canonical union).
+test('bulk_lookup_iocs: junction and distinct importer legacy both remain effective', async () => {
   const rows = [bulkRow(12, 'both.test', 'domain', 'phishing')];
   const pool = makeBulkPool(rows, [jrow(12, 'domain', 'command_and_control')]);
   const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: 'both.test', type: 'domain' }] }, { config: TEST_CONFIG });
-  assert.deepEqual(bulkClassOf(out, 'both.test'), ['command_and_control']);
+  assert.deepEqual(bulkClassOf(out, 'both.test'), ['command_and_control', 'phishing']);
 });
 
 // Test 4 — no duplicate slugs across multi-slug junction.
@@ -539,24 +539,38 @@ test('bulk_lookup_iocs: classification retrieval is a single batched query (no N
   assert.equal(pool.queries.filter((q) => /SELECT threat_classification FROM ioc_items/i.test(q.sql)).length, 0);
 });
 
-// Test 8 — parity: bulk classifications equal the effective single-IOC loader.
-test('bulk_lookup_iocs: parity with loadEffectiveIocClassificationSlugs', async () => {
+// Test 8 — parity: bulk classifications equal the canonical single-IOC loader.
+test('bulk_lookup_iocs: parity with loadCanonicalIocClassification', async () => {
   const rows = [bulkRow(40, 'parity.test', 'domain', 'unknown')];
   const junction = [jrow(40, 'domain', 'command_and_control')];
   const bulkPool = makeBulkPool(rows, junction);
   const out = await mcpBulkLookupIocs(bulkPool, { iocs: [{ value: 'parity.test', type: 'domain' }] }, { config: TEST_CONFIG });
 
-  // Single-IOC effective loader over the same junction + legacy fixture.
   const singlePool = {
     query: async (sql) => {
       const n = String(sql).replace(/\s+/g, ' ');
-      if (/FROM ioc_threat_classifications/i.test(n)) return { rows: junction };
-      if (/SELECT threat_classification FROM ioc_items/i.test(n)) return { rows: [{ threat_classification: 'unknown' }] };
+      if (/FROM ioc_threat_classifications/i.test(n)) {
+        return { rows: junction.map((r) => ({ ...r, source_type: 'analyst' })) };
+      }
+      if (/FROM ioc_items/i.test(n)) {
+        return {
+          rows: rows.map((r) => ({
+            id: r.id,
+            observable_type: r.observable_type,
+            observable: r.observable,
+            threat_classification: r.threat_classification,
+            ioc_source_id: null,
+            source_name: null
+          }))
+        };
+      }
+      if (/FROM ioc_feed_source_evidence/i.test(n)) return { rows: [] };
+      if (/FROM ioc_threat_classification_overrides/i.test(n)) return { rows: [] };
       return { rows: [] };
     }
   };
-  const single = await loadEffectiveIocClassificationSlugs(singlePool, 40, 'domain');
-  assert.deepEqual(bulkClassOf(out, 'parity.test'), single);
+  const single = await loadCanonicalIocClassification(singlePool, { id: 40, observable_type: 'domain' });
+  assert.deepEqual(bulkClassOf(out, 'parity.test'), single.classifications);
 });
 
 // --- search_iocs DSL construction (Findings #1 and #2) ---------------------

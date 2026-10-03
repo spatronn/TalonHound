@@ -3,7 +3,7 @@
  *
  *   classifications = canonical effective set (IOC Details):
  *     (feed proposals via the controlled feed vocabulary − analyst suppressions)
- *       ∪ analyst classifications
+ *       ∪ asserted classifications
  *   tags            = the IOC's own tags + report tags its own report evidence names
  *   report_context_tags = every linked report tag (report context, not IOC tags)
  */
@@ -12,12 +12,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   hydrateIocApiMetadata,
-  splitReportTags,
-  effectiveClassificationsFromParts
+  splitReportTags
 } from './iocApiMetadata.js';
+import { computeCanonicalIocClassifications } from './iocCanonicalClassifications.js';
 import { iocPairKey } from './iocThreatClassifications.js';
 
-const IOC = { id: 3484907, observable_type: 'sha256', threat_classification: 'unknown' };
+const IOC = {
+  id: 3484907,
+  observable_type: 'sha256',
+  observable: 'eddbd0ecf7195d38fefae5b9d393abfa79e6f3f94bde19308ecef130a05a42e5',
+  threat_classification: 'unknown',
+  ioc_source_id: null,
+  source_name: 'AlienVault OTX'
+};
 
 // Stored per-feed evidence of the reference CLOSEDQUORUM sample (prod shape).
 const OTX_EVIDENCE = {
@@ -59,7 +66,8 @@ function reportTagRow(name, iocEvidence, report = REPORT) {
   };
 }
 
-function makePool({ junction = [], evidence = [], suppressions = [], tags = [], reportTags = [] } = {}) {
+function makePool({ junction = [], evidence = [], suppressions = [], tags = [], reportTags = [], items = null } = {}) {
+  const iocRows = items || [IOC];
   const queries = [];
   return {
     queries,
@@ -68,10 +76,29 @@ function makePool({ junction = [], evidence = [], suppressions = [], tags = [], 
       queries.push(q);
       if (q.includes('threat_report_tags rt')) return { rows: reportTags };
       if (q.includes('FROM ioc_threat_classifications')) {
-        return { rows: junction.map((slug) => ({ ioc_id: IOC.id, ioc_observable_type: IOC.observable_type, classification_slug: slug })) };
+        return {
+          rows: junction.map((slug) => ({
+            ioc_id: IOC.id,
+            ioc_observable_type: IOC.observable_type,
+            classification_slug: slug,
+            source_type: 'analyst'
+          }))
+        };
       }
       if (q.includes('FROM ioc_feed_source_evidence e')) return { rows: evidence };
       if (q.includes('FROM ioc_threat_classification_overrides')) return { rows: suppressions };
+      if (q.includes('FROM ioc_items')) {
+        return {
+          rows: iocRows.map((r) => ({
+            id: r.id,
+            observable_type: r.observable_type,
+            observable: r.observable ?? null,
+            threat_classification: r.threat_classification ?? null,
+            ioc_source_id: r.ioc_source_id ?? null,
+            source_name: r.source_name ?? null
+          }))
+        };
+      }
       if (q.includes('ioc_tags it')) {
         return {
           rows: tags.map((t) => ({
@@ -97,9 +124,6 @@ async function hydrate(pool, row = IOC) {
 
 test('reference IOC: OTX infostealer evidence yields credential_theft; raw provider strings never become slugs', async () => {
   const meta = await hydrate(makePool({ evidence: [OTX_EVIDENCE, MB_EVIDENCE, TF_EVIDENCE] }));
-  // OTX "infostealer" → credential_theft (controlled feed vocabulary). MalwareBazaar
-  // category "CLOSEDQUORUM" (a family name) and ThreatFox category "payload" are not
-  // vocabulary terms, so they propose nothing.
   assert.deepEqual(meta.classifications, ['credential_theft']);
   assert.deepEqual(meta.classification_context, [
     { classification: 'credential_theft', sources: [{ type: 'feed', source_name: 'AlienVault OTX' }] }
@@ -138,9 +162,14 @@ test('analyst classification equal to a feed proposal shows once with both prove
   ]);
 });
 
-test('legacy column classification (no junction rows) stays an analyst classification', async () => {
-  const meta = await hydrate(makePool({ evidence: [] }), { ...IOC, threat_classification: 'malware' });
+test('provider/importer legacy column on a feed-created row is feed provenance, never analyst', async () => {
+  const row = { ...IOC, threat_classification: 'malware', source_name: 'ThreatFox:abuse.ch' };
+  const meta = await hydrate(makePool({ evidence: [], items: [row] }), row);
   assert.deepEqual(meta.classifications, ['malware']);
+  assert.deepEqual(meta.classification_context, [
+    { classification: 'malware', sources: [{ type: 'feed', source_name: 'ThreatFox:abuse.ch' }] }
+  ]);
+  assert.ok(!meta.classification_context[0].sources.some((s) => s.type === 'analyst'));
 });
 
 test('conflicting feed proposals are each listed with their own asserting source, deduped', async () => {
@@ -153,11 +182,13 @@ test('conflicting feed proposals are each listed with their own asserting source
   );
 });
 
-test('effectiveClassificationsFromParts: source-specific suppression only hides that source', () => {
-  const out = effectiveClassificationsFromParts({
-    feed: [{ value: 'phishing', source_name: 'Feed A', source_names: ['Feed A'] }],
-    analystSlugs: [],
-    suppressions: [{ classification_slug: 'phishing', source_name: 'Feed B' }]
+test('computeCanonicalIocClassifications: source-specific suppression only hides that source', () => {
+  const out = computeCanonicalIocClassifications({
+    rows: [{
+      feed: [{ value: 'phishing', source_name: 'Feed A', source_names: ['Feed A'] }],
+      junction: [],
+      suppressions: [{ classification_slug: 'phishing', source_name: 'Feed B' }]
+    }]
   });
   assert.deepEqual(out.classifications, ['phishing']);
 });
@@ -175,7 +206,6 @@ test('report tags without IOC-specific evidence are report context, never IOC ta
   for (const name of CONTEXT_ONLY_REPORT_TAGS) {
     assert.ok(!meta.tags.includes(name), `${name} must not become an IOC tag`);
     assert.ok(!meta.tag_context.some((c) => c.tag === name));
-    // ...but the report tag is not lost: it stays visible as report context.
     const ctx = meta.report_context_tags.find((c) => c.tag === name);
     assert.deepEqual(ctx, { tag: name, ioc_evidence: false, reports: [{ id: REPORT.id, title: REPORT.title, tlp: 'clear' }] });
   }

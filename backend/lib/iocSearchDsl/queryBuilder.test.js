@@ -302,9 +302,22 @@ test('tag not_contains negates the effective-tag membership', () => {
   assert.ok(flat(sql).startsWith('NOT (i.observable_type, i.id) IN ('));
 });
 
-test('classification matches slug OR label', () => {
-  const { sql } = build('classification equals "phishing"');
-  assert.match(sql, /itc\.classification_slug = \$1 OR LOWER\(tc\.name\) = \$1/);
+test('classification equals uses canonical membership over junction, stored column, and feed evidence', () => {
+  const { sql, params } = build('classification equals "phishing"');
+  assert.match(sql, /\(i\.observable_type, i\.id\) IN \(/);
+  assert.match(sql, /FROM ioc_threat_classifications itc/);
+  assert.match(sql, /itc\.classification_slug = ANY\(/);
+  assert.match(sql, /x\.threat_classification = ANY\(/);
+  assert.match(sql, /ioc_feed_evidence_classification_slugs/);
+  assert.match(sql, /ioc_threat_classification_overrides/);
+  assert.ok(params.some((p) => Array.isArray(p) && p.includes('phishing')));
+});
+
+test('classification not_equals anti-joins the identity closure', () => {
+  const { sql } = build('classification not_equals "phishing"');
+  assert.match(sql, /NOT EXISTS \(/);
+  assert.match(sql, /ioc_feed_evidence_classification_slugs/);
+  assert.match(sql, /FROM ioc_threat_classifications itc/);
 });
 
 test('threat_actor equals via EXISTS on ioc_threat_actors junction', () => {

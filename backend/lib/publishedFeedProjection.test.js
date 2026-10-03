@@ -111,6 +111,20 @@ describe('relative-date (rolling window) query feeds never use dirty-row increme
     assert.equal(feedSupportsIncrementalProjection({ ...READY, filter_mode: 'query', advanced_query: 'bogus (' }), true);
   });
 
+  it('feedSupportsIncrementalProjection disables incremental for classification queries', () => {
+    const classEq = { ...READY, filter_mode: 'query', advanced_query: 'classification equals "credential_theft"' };
+    const classNested = {
+      ...READY,
+      filter_mode: 'query',
+      advanced_query: 'type equals "sha256" AND (classification in ("malware","phishing") OR source equals "x")'
+    };
+    assert.equal(feedSupportsIncrementalProjection(classEq), false);
+    assert.equal(feedSupportsIncrementalProjection(classNested), false);
+    assert.equal(feedSupportsIncrementalProjection(ABSOLUTE), true);
+    assert.equal(canUseIncrementalRefresh(classEq), false);
+    assert.equal(decideRefreshMode(classEq, { streamingEnabled: true, incrementalEnabled: true }), 'full');
+  });
+
   it('canUseIncrementalRefresh is false for relative query feeds even when everything else allows it', () => {
     assert.equal(canUseIncrementalRefresh(ABSOLUTE), true, 'sanity: absolute query feed is otherwise eligible');
     assert.equal(canUseIncrementalRefresh(RELATIVE), false);

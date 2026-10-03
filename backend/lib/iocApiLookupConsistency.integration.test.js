@@ -25,7 +25,8 @@ import { mcpLookupIoc, mcpBulkLookupIocs, mcpGetIocContext, mcpSearchIocs } from
 import { searchApiIocs } from './apiIocReadService.js';
 import { hydrateIocApiMetadata } from './iocApiMetadata.js';
 import { loadCatalogTags } from './apiIocService.js';
-import { loadEffectiveIocClassificationSlugs, iocPairKey } from './iocThreatClassifications.js';
+import { loadCanonicalIocClassification } from './iocCanonicalClassifications.js';
+import { iocPairKey } from './iocThreatClassifications.js';
 
 let dbConfig = null;
 try {
@@ -428,9 +429,9 @@ describe('API/MCP IOC lookup identity + metadata consistency (real Postgres)', o
     const map = await hydrateIocApiMetadata(pool, rows);
     for (const r of rows) {
       const meta = map.get(iocPairKey(r.id, r.observable_type));
-      const single = await loadEffectiveIocClassificationSlugs(pool, r.id, r.observable_type);
+      const single = await loadCanonicalIocClassification(pool, { id: r.id, observable_type: r.observable_type });
       const singleTags = await loadCatalogTags(pool, r.id, r.observable_type);
-      assert.deepEqual(meta.classifications, single, `classifications for ${r.id}`);
+      assert.deepEqual(meta.classifications, single.classifications, `classifications for ${r.id}`);
       assert.deepEqual(meta.tags_detail, singleTags, `tags for ${r.id}`);
     }
   }));

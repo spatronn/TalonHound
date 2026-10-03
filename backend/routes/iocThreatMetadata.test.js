@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   enrichItemsWithThreatMetadata,
   batchLoadFeedClassifications,
-  mergeFeedClassificationsIntoItem,
+  mergeCanonicalClassificationsIntoItem,
   buildThreatMetadataFields
 } from './iocThreatMetadata.js';
 
@@ -269,56 +269,41 @@ describe('batchLoadFeedClassifications', () => {
   });
 });
 
-describe('mergeFeedClassificationsIntoItem', () => {
-  it('returns item unchanged when no feed classifications', () => {
+describe('mergeCanonicalClassificationsIntoItem', () => {
+  it('returns item unchanged when canonical map has no entry', () => {
     const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware', label: 'Malware' }] };
-    const feedMap = new Map();
-    const result = mergeFeedClassificationsIntoItem(item, feedMap);
-    assert.ok(result.threat_classifications.some((x) => x.value === 'malware'));
-    assert.equal(result.effective_threat_classifications.length, 1);
+    const result = mergeCanonicalClassificationsIntoItem(item, new Map());
+    assert.equal(result, item);
   });
 
-  it('applies suppressions so feed classification is excluded from effective set', () => {
-    const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware', label: 'Malware' }] };
-    const feedMap = new Map([
-      ['1|url', [{ value: 'dropper_downloader', label: 'Dropper Downloader', origin: 'feed' }]]
-    ]);
-    const suppressMap = new Map([
-      ['1|url', [{ classification_slug: 'dropper_downloader' }]]
-    ]);
-    const result = mergeFeedClassificationsIntoItem(item, feedMap, suppressMap);
+  it('overlays canonical effective fields including suppressions', async () => {
+    const { computeCanonicalIocClassifications } = await import('../lib/iocCanonicalClassifications.js');
+    const item = { id: 1, observable_type: 'url', note: 'keep-me' };
+    const canonical = computeCanonicalIocClassifications({
+      rows: [{
+        feed: [{ value: 'dropper_downloader', source_names: ['URLhaus'] }],
+        junction: [{ slug: 'malware', source_type: 'analyst' }],
+        suppressions: [{ classification_slug: 'dropper_downloader', source_name: null }]
+      }]
+    });
+    const result = mergeCanonicalClassificationsIntoItem(item, new Map([['1|url', canonical]]));
+    assert.equal(result.note, 'keep-me');
     assert.deepEqual(result.effective_threat_classifications.map((x) => x.value), ['malware']);
     assert.ok(result.suppressed_threat_classifications.some((x) => x.value === 'dropper_downloader'));
+    assert.ok(result.feed_threat_classifications.some((x) => x.value === 'dropper_downloader'));
+    assert.deepEqual(result.analyst_threat_classifications.map((x) => x.value), ['malware']);
   });
 
-  it('appends feed classifications not already in stored list', () => {
-    const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware', label: 'Malware' }] };
-    const feedMap = new Map([
-      ['1|url', [{ value: 'dropper_downloader', label: 'Dropper Downloader', active: true, origin: 'feed', source_name: 'URLhaus:abuse.ch' }]]
-    ]);
-    const result = mergeFeedClassificationsIntoItem(item, feedMap);
-    const slugs = result.threat_classifications.map((x) => x.value).sort();
-    assert.deepEqual(slugs, ['dropper_downloader', 'malware']);
-    assert.ok(result.effective_threat_classifications.some((x) => x.value === 'dropper_downloader'));
-  });
-
-  it('skips feed classifications already in stored list', () => {
-    const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware', label: 'Malware' }] };
-    const feedMap = new Map([
-      ['1|url', [{ value: 'malware', label: 'Malware', active: true, origin: 'feed', source_name: 'URLhaus:abuse.ch' }]]
-    ]);
-    const result = mergeFeedClassificationsIntoItem(item, feedMap);
-    assert.equal(result.threat_classifications.length, 1, 'duplicate slug must not be added');
-  });
-
-  it('does not mutate original item', () => {
-    const orig = [{ value: 'malware', label: 'Malware' }];
-    const item = { id: 1, observable_type: 'url', threat_classifications: orig };
-    const feedMap = new Map([
-      ['1|url', [{ value: 'dropper_downloader', label: 'Dropper Downloader', active: true, origin: 'feed' }]]
-    ]);
-    mergeFeedClassificationsIntoItem(item, feedMap);
-    assert.equal(orig.length, 1, 'original array must not be mutated');
+  it('does not mutate original item', async () => {
+    const { computeCanonicalIocClassifications } = await import('../lib/iocCanonicalClassifications.js');
+    const item = { id: 1, observable_type: 'url', threat_classifications: [{ value: 'malware' }] };
+    const canonical = computeCanonicalIocClassifications({
+      rows: [{ feed: [{ value: 'phishing', source_names: ['A'] }], junction: [], suppressions: [] }]
+    });
+    const result = mergeCanonicalClassificationsIntoItem(item, new Map([['1|url', canonical]]));
+    assert.notEqual(result, item);
+    assert.equal(item.threat_classifications.length, 1);
+    assert.ok(result.effective_threat_classifications.some((x) => x.value === 'phishing'));
   });
 });
 

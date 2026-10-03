@@ -14,7 +14,7 @@ import {
   annotateItemsWatchlisted
 } from '../userIocWatchlist.js';
 import { loadCatalogTags } from '../apiIocService.js';
-import { loadEffectiveIocClassificationSlugs } from '../iocThreatClassifications.js';
+import { loadCanonicalIocClassification } from '../iocCanonicalClassifications.js';
 import { resolveArtifactScopedIocIds } from './read.js';
 
 const MD5_IOC = 3472708;
@@ -107,11 +107,25 @@ function linkedPool({ watchlistIocs = [], tagsByIoc = new Map(), classByPair = n
         }
         return { rows: [...byName.values()], rowCount: byName.size };
       }
-      if (s.includes('FROM ioc_items WHERE id = ANY')) {
+      if (s.includes('FROM ioc_items')) {
         return {
           rows: [
-            { id: SHA256_IOC, observable_type: 'sha256' },
-            { id: MD5_IOC, observable_type: 'md5' }
+            {
+              id: SHA256_IOC,
+              observable_type: 'sha256',
+              observable: 'aa'.repeat(32),
+              threat_classification: 'unknown',
+              ioc_source_id: null,
+              source_name: null
+            },
+            {
+              id: MD5_IOC,
+              observable_type: 'md5',
+              observable: 'bb'.repeat(16),
+              threat_classification: 'unknown',
+              ioc_source_id: null,
+              source_name: null
+            }
           ]
         };
       }
@@ -120,14 +134,18 @@ function linkedPool({ watchlistIocs = [], tagsByIoc = new Map(), classByPair = n
         for (const [key, slugs] of classByPair.entries()) {
           const [id, type] = key.split('|');
           for (const slug of slugs) {
-            rows.push({ ioc_id: Number(id), ioc_observable_type: type, classification_slug: slug });
+            rows.push({
+              ioc_id: Number(id),
+              ioc_observable_type: type,
+              classification_slug: slug,
+              source_type: 'analyst'
+            });
           }
         }
         return { rows };
       }
-      if (s.includes('SELECT threat_classification FROM ioc_items')) {
-        return { rows: [{ threat_classification: null }] };
-      }
+      if (s.includes('FROM ioc_feed_source_evidence')) return { rows: [] };
+      if (s.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
       if (s.includes('FROM ioc_analyst_intelligence')) {
         const ids = (params[0] || []).map(Number);
         const rows = [];
@@ -224,8 +242,8 @@ describe('artifact-scoped analyst relations survive hash canonicalization', () =
         [`${MD5_IOC}|md5`, ['malware']]
       ]);
       const pool = linkedPool({ classByPair });
-      const slugs = await loadEffectiveIocClassificationSlugs(pool, SHA256_IOC, 'sha256', null);
-      assert.deepEqual(slugs, ['malware']);
+      const canonical = await loadCanonicalIocClassification(pool, { id: SHA256_IOC, observable_type: 'sha256' });
+      assert.deepEqual(canonical.classifications, ['malware']);
     });
   });
 

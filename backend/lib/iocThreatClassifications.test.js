@@ -6,8 +6,8 @@ import {
   diffThreatClassificationSlugs,
   legacyThreatClassificationColumnValue,
   parseThreatClassificationInput,
-  loadEffectiveIocClassificationSlugsBatch,
-  iocPairKey
+  isImporterStoredClassification,
+  writeLegacyClassificationMirror
 } from './iocThreatClassifications.js';
 
 describe('iocThreatClassifications', () => {
@@ -45,38 +45,88 @@ describe('iocThreatClassifications', () => {
     assert.deepEqual(diff.removed, []);
   });
 
-  it('loadEffectiveIocClassificationSlugsBatch: junction-then-legacy in one junction query', async () => {
-    const junctionRows = [
-      { ioc_id: 1, ioc_observable_type: 'domain', classification_slug: 'command_and_control' }
-    ];
-    let junctionQueries = 0;
-    let iocItemsReads = 0;
-    const pool = {
-      query: async (sql) => {
-        const n = String(sql).replace(/\s+/g, ' ');
-        if (/FROM ioc_threat_classifications/i.test(n)) { junctionQueries += 1; return { rows: junctionRows }; }
-        if (/FROM ioc_items/i.test(n)) { iocItemsReads += 1; return { rows: [] }; }
-        return { rows: [] };
-      }
-    };
-    const rows = [
-      { id: 1, observable_type: 'domain', threat_classification: 'unknown' }, // junction wins
-      { id: 2, observable_type: 'md5', threat_classification: 'dropper_downloader' }, // legacy
-      { id: 3, observable_type: 'ip', threat_classification: 'unknown' } // neither -> []
-    ];
-    const map = await loadEffectiveIocClassificationSlugsBatch(pool, rows);
-    assert.deepEqual(map.get(iocPairKey(1, 'domain')), ['command_and_control']);
-    assert.deepEqual(map.get(iocPairKey(2, 'md5')), ['dropper_downloader']);
-    assert.deepEqual(map.get(iocPairKey(3, 'ip')), []);
-    assert.equal(junctionQueries, 1, 'exactly one batched junction query for the whole batch');
-    assert.equal(iocItemsReads, 0, 'no per-IOC legacy re-read (uses provided threat_classification)');
+  it('isImporterStoredClassification: feed row legacy not mirrored by junction', () => {
+    assert.equal(
+      isImporterStoredClassification(
+        { ioc_source_id: null, threat_classification: 'dropper_downloader' },
+        []
+      ),
+      true
+    );
   });
 
-  it('loadEffectiveIocClassificationSlugsBatch: empty input issues no query', async () => {
-    let called = 0;
-    const pool = { query: async () => { called += 1; return { rows: [] }; } };
-    const map = await loadEffectiveIocClassificationSlugsBatch(pool, []);
-    assert.equal(map.size, 0);
-    assert.equal(called, 0);
+  it('isImporterStoredClassification: false when junction already mirrors the legacy value', () => {
+    assert.equal(
+      isImporterStoredClassification(
+        { ioc_source_id: null, threat_classification: 'dropper_downloader' },
+        ['dropper_downloader']
+      ),
+      false
+    );
+  });
+
+  it('isImporterStoredClassification: false for IOC-source rows', () => {
+    assert.equal(
+      isImporterStoredClassification(
+        { ioc_source_id: 9, threat_classification: 'phishing' },
+        []
+      ),
+      false
+    );
+  });
+
+  it('writeLegacyClassificationMirror preserves importer-stored feed values', async () => {
+    const updates = [];
+    const client = {
+      query: async (sql) => {
+        const s = String(sql);
+        if (s.includes('FROM ioc_items')) {
+          return { rows: [{ ioc_source_id: null, threat_classification: 'dropper_downloader' }] };
+        }
+        if (s.includes('FROM ioc_threat_classifications')) {
+          return { rows: [{ classification_slug: 'phishing' }] };
+        }
+        if (s.includes('UPDATE ioc_items')) {
+          updates.push(sql);
+          return { rows: [] };
+        }
+        throw new Error(`unexpected: ${s.slice(0, 80)}`);
+      }
+    };
+    const result = await writeLegacyClassificationMirror(client, {
+      iocId: 1,
+      observableType: 'url',
+      slugs: ['phishing']
+    });
+    assert.equal(result.written, false);
+    assert.equal(result.preserved, 'dropper_downloader');
+    assert.equal(updates.length, 0);
+  });
+
+  it('writeLegacyClassificationMirror updates when legacy is not an importer assertion', async () => {
+    const updates = [];
+    const client = {
+      query: async (sql, params) => {
+        const s = String(sql);
+        if (s.includes('FROM ioc_items')) {
+          return { rows: [{ ioc_source_id: 3, threat_classification: 'unknown' }] };
+        }
+        if (s.includes('FROM ioc_threat_classifications')) {
+          return { rows: [] };
+        }
+        if (s.includes('UPDATE ioc_items')) {
+          updates.push(params);
+          return { rows: [] };
+        }
+        throw new Error(`unexpected: ${s.slice(0, 80)}`);
+      }
+    };
+    const result = await writeLegacyClassificationMirror(client, {
+      iocId: 1,
+      observableType: 'domain',
+      slugs: ['phishing']
+    });
+    assert.equal(result.written, true);
+    assert.deepEqual(updates[0], [1, 'domain', 'phishing']);
   });
 });
