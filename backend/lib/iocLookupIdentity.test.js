@@ -90,9 +90,18 @@ function aliasPool({ rows = [MD5_ROW], aliases = { [`sha1\0${SHA1}`]: [MD5_ROW],
         const seeds = [...new Set(params[0].map(Number))];
         return { rows: seeds.flatMap((seed) => tags.map((name) => ({ seed_id: seed, name, type: 'threat', origins: ['manual'], source_name: null }))) };
       }
-      if (s.includes('LEFT JOIN ioc_sources')) {
-        return { rows: rows.filter((r) => r.observable_type === params[0] && r.observable === params[1]).map((r) => ({ ...r, ioc_source_id: 19, source_name: 'Threat_Library', catalog_source_name: 'Threat_Library' })) };
+      // Feed classification proposals / analyst suppressions (hydrator): none.
+      if (s.includes('FROM ioc_feed_source_evidence e')) return { rows: [] };
+      if (s.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
+      // Source memberships (IOC Details summary): the stored row belongs to the
+      // Threat_Library IOC Source; no feed memberships, no artifact link rows.
+      if (s.includes('FROM file_artifact_ioc_links l JOIN file_artifacts a')) return { rows: [] };
+      if (s.includes('FROM ioc_feed_memberships m')) return { rows: [] };
+      if (s.includes('FROM ioc_manual_source_memberships h')) return { rows: [] };
+      if (s.includes('SELECT DISTINCT ON (i.ioc_source_id)')) {
+        return { rows: rows.filter((r) => r.observable === params[0] && r.observable_type === params[1]).map((r) => ({ ioc_item_id: r.id, ioc_source_id: 19, source_name: 'Threat_Library', created_at: r.created_at, last_seen_at: r.last_seen_at, expires_at: null })) };
       }
+      if (s.includes('FROM threat_report_candidates c') && s.includes('GROUP BY r.public_id')) return { rows: [] };
       throw new Error(`Unexpected SQL: ${s.slice(0, 140)}`);
     }
   };
@@ -226,7 +235,7 @@ describe('BUG 2 — search results carry real metadata', () => {
     assert.equal(smallMap.size, 2);
     assert.equal(largeMap.size, 40);
     assert.equal(large.queries.length, small.queries.length);
-    assert.ok(large.queries.length <= 3, `junction + tags + inherited report tags only when rows carry legacy column (got ${large.queries.length})`);
+    assert.ok(large.queries.length <= 5, `junction + feed evidence + suppressions + tags + report tags only when rows carry legacy column (got ${large.queries.length})`);
     assert.deepEqual(largeMap.get(iocPairKey(1039, 'domain')).classifications, ['phishing']);
   });
 

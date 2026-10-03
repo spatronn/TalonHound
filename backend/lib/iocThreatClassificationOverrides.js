@@ -15,6 +15,7 @@ import {
   legacyThreatClassificationColumnValue,
   normalizeIocThreatClassificationSlugs
 } from './iocThreatClassifications.js';
+import { parseNoteFields, normalizeFeedTags } from './feedTagNormalization.js';
 
 export function classificationOverrideKey(slug, sourceName = null) {
   return `${String(slug || '').toLowerCase()}::${String(sourceName || '').trim().toLowerCase()}`;
@@ -283,4 +284,107 @@ export function buildThreatClassificationEffectiveFields(computed) {
 
 export function enrichmentLookupLabel(slug) {
   return lookupThreatClassificationEntry(slug)?.name || threatClassificationLabel(slug);
+}
+
+function isOverridesTableMissing(err) {
+  return String(err?.message || '').includes('ioc_threat_classification_overrides');
+}
+
+function iocPairValues(items) {
+  const pairs = (items || [])
+    .map((it) => ({ id: Number(it?.id), observable_type: String(it?.observable_type || '').trim() }))
+    .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
+  return {
+    pairs,
+    values: pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', '),
+    params: pairs.flatMap((p) => [p.id, p.observable_type])
+  };
+}
+
+/**
+ * Feed-derived classification proposals per IOC, from stored per-feed source
+ * evidence (ioc_feed_source_evidence) through the controlled feed vocabulary
+ * (feedTagNormalization.normalizeFeedTags — spelling-only tag/category/signature
+ * mapping; raw provider strings never become slugs). One entry per slug; the
+ * first asserting source is `source_name`, every asserting source is listed in
+ * `source_names`.
+ * @returns {Promise<Map<string, Array<{value:string,label:string,active:boolean,origin:'feed',source_name:string|null,source_names:string[]}>>>}
+ *   keyed by `${id}|${observable_type}`
+ */
+export async function batchLoadFeedClassifications(pool, items) {
+  const feedMap = new Map();
+  if (!items?.length) return feedMap;
+  const { pairs, values, params } = iocPairValues(items);
+  if (!pairs.length) return feedMap;
+
+  const { rows } = await pool.query(
+    `SELECT e.ioc_item_id, e.ioc_observable_type, e.source_name, e.category, e.note, f.key AS feed_key
+     FROM ioc_feed_source_evidence e
+     JOIN integration_feeds f ON f.integration_id = e.feed_id
+     WHERE (e.ioc_item_id, e.ioc_observable_type) IN (VALUES ${values})
+     ORDER BY e.created_at ASC, e.id ASC`,
+    params
+  );
+
+  const evidenceByKey = new Map();
+  for (const row of rows) {
+    const key = `${Number(row.ioc_item_id)}|${String(row.ioc_observable_type)}`;
+    if (!evidenceByKey.has(key)) evidenceByKey.set(key, []);
+    evidenceByKey.get(key).push(row);
+  }
+
+  for (const [key, evRows] of evidenceByKey.entries()) {
+    const bySlug = new Map();
+    for (const evRow of evRows) {
+      const noteFields = parseNoteFields(evRow.note);
+      const rawTagsStr = noteFields.tags || '';
+      const rawTags = rawTagsStr ? rawTagsStr.split(',').map((t) => t.trim()).filter(Boolean) : [];
+      const { classifications } = normalizeFeedTags({
+        sourceName: evRow.source_name,
+        rawTags,
+        category: evRow.category,
+        signature: noteFields.signature || null
+      });
+      for (const c of classifications) {
+        const known = bySlug.get(c.value);
+        if (!known) {
+          bySlug.set(c.value, { ...c, source_names: c.source_name ? [c.source_name] : [] });
+        } else if (c.source_name && !known.source_names.includes(c.source_name)) {
+          known.source_names.push(c.source_name);
+        }
+      }
+    }
+    if (bySlug.size) feedMap.set(key, [...bySlug.values()]);
+  }
+  return feedMap;
+}
+
+/**
+ * Active analyst suppressions per IOC (one query).
+ * @returns {Promise<Map<string, object[]>>} keyed by `${id}|${observable_type}`
+ */
+export async function batchLoadThreatClassificationSuppressions(pool, items) {
+  const map = new Map();
+  if (!items?.length) return map;
+  const { pairs, values, params } = iocPairValues(items);
+  if (!pairs.length) return map;
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT ioc_id, ioc_observable_type, classification_slug, source_name, created_at, created_by
+       FROM ioc_threat_classification_overrides
+       WHERE action = 'suppress'
+         AND cleared_at IS NULL
+         AND (ioc_id, ioc_observable_type) IN (VALUES ${values})`,
+      params
+    );
+    for (const row of rows) {
+      const key = `${Number(row.ioc_id)}|${String(row.ioc_observable_type)}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(row);
+    }
+  } catch (err) {
+    if (!isOverridesTableMissing(err)) throw err;
+  }
+  return map;
 }

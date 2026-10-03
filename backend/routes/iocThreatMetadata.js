@@ -9,14 +9,19 @@ import {
   validateIocThreatClassificationSlugs
 } from '../lib/iocThreatClassifications.js';
 import {
+  batchLoadFeedClassifications,
   buildThreatClassificationEffectiveFields,
   computeEffectiveThreatClassifications,
   listActiveThreatClassificationSuppressions,
   planThreatClassificationEffectiveSave,
   syncThreatClassificationOverrides
 } from '../lib/iocThreatClassificationOverrides.js';
+
+export {
+  batchLoadFeedClassifications,
+  batchLoadThreatClassificationSuppressions
+} from '../lib/iocThreatClassificationOverrides.js';
 import { resolveThreatActorById } from './threatActors.js';
-import { parseNoteFields, normalizeFeedTags } from '../lib/feedTagNormalization.js';
 import {
   buildMultiThreatActorResponseFields,
   emptyThreatActorResponseFields,
@@ -504,87 +509,6 @@ export function mergeThreatMetadataItem(item, metaMap) {
   const meta = metaMap?.get(key);
   if (meta) return { ...item, ...meta };
   return mergeIocThreatMetadataItem(item, null, null);
-}
-
-export async function batchLoadFeedClassifications(pool, items) {
-  const feedMap = new Map();
-  if (!items?.length) return feedMap;
-
-  const pairs = items
-    .map((it) => ({ id: Number(it?.id), observable_type: String(it?.observable_type || '').trim() }))
-    .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
-  if (!pairs.length) return feedMap;
-
-  const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
-  const params = pairs.flatMap((p) => [p.id, p.observable_type]);
-  const { rows } = await pool.query(
-    `SELECT e.ioc_item_id, e.ioc_observable_type, e.source_name, e.category, e.note, f.key AS feed_key
-     FROM ioc_feed_source_evidence e
-     JOIN integration_feeds f ON f.integration_id = e.feed_id
-     WHERE (e.ioc_item_id, e.ioc_observable_type) IN (VALUES ${values})`,
-    params
-  );
-
-  const evidenceByKey = new Map();
-  for (const row of rows) {
-    const key = `${Number(row.ioc_item_id)}|${String(row.ioc_observable_type)}`;
-    if (!evidenceByKey.has(key)) evidenceByKey.set(key, []);
-    evidenceByKey.get(key).push(row);
-  }
-
-  for (const [key, evRows] of evidenceByKey.entries()) {
-    const seenSlugs = new Set();
-    const feedClassifications = [];
-    for (const evRow of evRows) {
-      const noteFields = parseNoteFields(evRow.note);
-      const rawTagsStr = noteFields.tags || '';
-      const rawTags = rawTagsStr ? rawTagsStr.split(',').map((t) => t.trim()).filter(Boolean) : [];
-      const { classifications } = normalizeFeedTags({
-        sourceName: evRow.source_name,
-        rawTags,
-        category: evRow.category,
-        signature: noteFields.signature || null
-      });
-      for (const c of classifications) {
-        if (!seenSlugs.has(c.value)) {
-          feedClassifications.push(c);
-          seenSlugs.add(c.value);
-        }
-      }
-    }
-    if (feedClassifications.length) feedMap.set(key, feedClassifications);
-  }
-  return feedMap;
-}
-
-export async function batchLoadThreatClassificationSuppressions(pool, items) {
-  const map = new Map();
-  if (!items?.length) return map;
-  const pairs = items
-    .map((it) => ({ id: Number(it?.id), observable_type: String(it?.observable_type || '').trim() }))
-    .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
-  if (!pairs.length) return map;
-
-  try {
-    const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
-    const params = pairs.flatMap((p) => [p.id, p.observable_type]);
-    const { rows } = await pool.query(
-      `SELECT ioc_id, ioc_observable_type, classification_slug, source_name, created_at, created_by
-       FROM ioc_threat_classification_overrides
-       WHERE action = 'suppress'
-         AND cleared_at IS NULL
-         AND (ioc_id, ioc_observable_type) IN (VALUES ${values})`,
-      params
-    );
-    for (const row of rows) {
-      const key = `${Number(row.ioc_id)}|${String(row.ioc_observable_type)}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(row);
-    }
-  } catch (err) {
-    if (!isOverridesTableMissing(err)) throw err;
-  }
-  return map;
 }
 
 /**

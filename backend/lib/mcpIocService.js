@@ -36,9 +36,11 @@ import {
   HASH_OPERATORS
 } from './iocSearchDsl/fields.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
-import { findArtifactLinkedIocsByIocId } from './fileArtifacts/read.js';
+import { findArtifactLinkedIocsByIocId, resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
+import { fetchObservableMembershipSummary } from './iocActiveSources.js';
 import { collectDerivedInfrastructure, collectIocEnrichments } from './iocEnrichmentAggregator.js';
-import { loadIocThreatContext } from './threatLibrary/iocThreatContext.js';
+import { loadIocThreatContext, loadThreatLibraryEvidenceReports } from './threatLibrary/iocThreatContext.js';
+import { IOC_SOURCE_NAME as THREAT_LIBRARY_IOC_SOURCE_NAME } from './threatLibrary/constants.js';
 import { loadThreatReportForMcp } from './threatLibrary/mcpThreatReport.js';
 
 async function findExistingIoc(pool, type, value) {
@@ -147,27 +149,122 @@ function serializeLookupHit(row, extras = {}) {
       ? row.tags.map((t) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
       : [],
     sources: extras.sources || [],
+    historical_sources: extras.historical_sources || [],
+    evidence_sources: extras.evidence_sources || [],
     ...extras.rest
   };
 }
 
-async function loadIocSourcesForObservable(pool, type, value) {
-  const { rows } = await pool.query(
-    `SELECT i.id, i.ioc_source_id, i.source_name, i.status, i.created_at,
-            s.name AS catalog_source_name, s.active AS source_active, s.archived_at
-     FROM ioc_items i
-     LEFT JOIN ioc_sources s ON s.id = i.ioc_source_id
-     WHERE i.observable_type = $1 AND i.observable = $2
-     ORDER BY i.created_at ASC, i.id ASC`,
-    [type, value]
-  );
-  return rows.map((r) => ({
-    ioc_id: Number(r.id),
-    source_id: r.ioc_source_id != null ? Number(r.ioc_source_id) : null,
-    name: r.catalog_source_name || r.source_name || null,
-    status: r.status || null,
-    first_seen: r.created_at || null
-  }));
+/** One IOC source membership (feed or manual IOC Source) in the MCP shape. */
+function serializeMcpSource(src, iocId) {
+  return {
+    ioc_id: Number(iocId),
+    source_id: src.ioc_source_id != null ? Number(src.ioc_source_id) : null,
+    name: src.name || null,
+    source_type: src.source_type || null,
+    feed_key: src.feed_key || null,
+    status: src.status || null,
+    // Provider-specific: when THIS source first listed the IOC / last changed it.
+    first_seen: src.first_seen_at || null,
+    last_changed_at: src.last_changed_at || null,
+    expires_at: src.expires_at || null
+  };
+}
+
+function sortSources(list) {
+  return list.sort((a, b) => {
+    const at = a.first_seen ? Date.parse(a.first_seen) : Infinity;
+    const bt = b.first_seen ? Date.parse(b.first_seen) : Infinity;
+    if (at !== bt) return at - bt;
+    return String(a.name).localeCompare(String(b.name));
+  });
+}
+
+/**
+ * IOC sources = the IOC's source memberships, exactly as IOC Details shows them
+ * (fetchObservableMembershipSummary): every feed membership (ioc_feed_memberships,
+ * e.g. OTX + MalwareBazaar + ThreatFox on one ioc_items row) and every manual /
+ * custom IOC Source row. The ioc_items row's own source_name only names the
+ * source that created the row, so it is never the source list.
+ *
+ * Each entry is one provider's own membership with its own lifecycle
+ * (status / first_seen / last_changed_at / expires_at) — never merged across
+ * providers. For a file hash the proven exact-hash aliases of the same file
+ * (MD5/SHA1/SHA256 rows) are included, so canonicalization never hides a source
+ * attached to an alias row; one entry per provider name (the queried record's
+ * own membership first), `ioc_id` says which IOC row holds it. Historical
+ * (expired / purged / moved / removed) memberships of providers that are not
+ * active are listed separately.
+ *
+ * @returns {Promise<{ sources: object[], historical_sources: object[], scopeIds: number[] }>}
+ */
+async function loadIocSourceViews(pool, record) {
+  const recordId = Number(record.id);
+  const scopeIds = await resolveArtifactScopedIocIds(pool, recordId);
+  const rows = [{ id: recordId, observable: record.observable, observable_type: record.observable_type }];
+  const aliasIds = scopeIds.filter((id) => id !== recordId);
+  if (aliasIds.length) {
+    const { rows: aliasRows } = await pool.query(
+      `SELECT id, observable, observable_type FROM ioc_items WHERE id = ANY($1::bigint[]) ORDER BY id ASC`,
+      [aliasIds]
+    );
+    rows.push(...aliasRows);
+  }
+
+  const active = new Map();
+  const historical = new Map();
+  for (const row of rows) {
+    const summary = await fetchObservableMembershipSummary(pool, {
+      observable: row.observable,
+      observableType: row.observable_type,
+      iocItemIds: [Number(row.id)]
+    });
+    for (const src of summary.activeSources) {
+      if (src.name && !active.has(src.name)) active.set(src.name, serializeMcpSource(src, row.id));
+    }
+    for (const src of summary.historicalSources) {
+      if (src.name && !historical.has(src.name)) historical.set(src.name, serializeMcpSource(src, row.id));
+    }
+  }
+  for (const name of active.keys()) historical.delete(name);
+  return {
+    sources: sortSources([...active.values()]),
+    historical_sources: sortSources([...historical.values()]),
+    scopeIds: scopeIds.length ? scopeIds : [recordId]
+  };
+}
+
+/**
+ * Deduplicated "who provides intelligence about this IOC": every active IOC
+ * source (by name, once) plus Threat Library when an active report lists the
+ * IOC as one of its indicators. Presentation only — per-source lifecycle stays
+ * in `sources`; the report claims stay in threat_context.
+ */
+function buildEvidenceSources(sources, threatLibraryReports) {
+  const out = [];
+  for (const src of sources) {
+    if (src.name === THREAT_LIBRARY_IOC_SOURCE_NAME) continue;
+    out.push({ name: src.name, kind: src.source_type === 'feed' ? 'feed' : 'ioc_source' });
+  }
+  const tlSource = sources.some((src) => src.name === THREAT_LIBRARY_IOC_SOURCE_NAME);
+  if (threatLibraryReports.length || tlSource) {
+    out.push({
+      name: 'Threat Library',
+      kind: 'threat_library',
+      reports: threatLibraryReports.map((r) => ({ id: r.id, title: r.title, source_name: r.source_name }))
+    });
+  }
+  return out;
+}
+
+async function loadIocSourceEvidence(pool, record) {
+  const views = await loadIocSourceViews(pool, record);
+  const reports = await loadThreatLibraryEvidenceReports(pool, views.scopeIds);
+  return {
+    sources: views.sources,
+    historical_sources: views.historical_sources,
+    evidence_sources: buildEvidenceSources(views.sources, reports)
+  };
 }
 
 export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
@@ -190,15 +287,16 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
   }
   const existing = identity.row;
 
-  // classifications: junction table with legacy-column fallback (feed imports
-  // store the classification only on ioc_items.threat_classification).
+  // classifications: the canonical effective set IOC Details shows (feed
+  // proposals − analyst suppressions ∪ analyst classifications).
   // tags: all enabled catalog assignments, not just origin='manual' — source
-  // integration/feed tags are the ones the IOC Details UI shows. Same batched
-  // hydrator as search_iocs / bulk_lookup_iocs, keyed by the returned row's id.
+  // integration/feed tags are the ones the IOC Details UI shows — plus report
+  // tags the IOC's own report evidence names. Same batched hydrator as
+  // search_iocs / bulk_lookup_iocs, keyed by the returned row's id.
   // Sources are keyed by the returned (stored) row, never the queried alias.
-  const [metaMap, sources] = await Promise.all([
+  const [metaMap, sourceEvidence] = await Promise.all([
     hydrateIocApiMetadata(pool, [existing]),
-    loadIocSourcesForObservable(pool, existing.observable_type, existing.observable)
+    loadIocSourceEvidence(pool, existing)
   ]);
   const meta = metaMap.get(iocPairKey(existing.id, existing.observable_type)) || EMPTY_IOC_API_METADATA;
 
@@ -211,10 +309,14 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
         tags: meta.tags
       },
       {
-        sources,
+        ...sourceEvidence,
         rest: {
-          // Additive: provenance of each effective tag (direct and/or Threat Library report).
+          // Additive: who asserts each effective classification (feed sources / analyst).
+          classification_context: meta.classification_context,
+          // Additive: provenance of each tag (direct and/or Threat Library report evidence).
           tag_context: meta.tag_context,
+          // Additive: tags of linked reports — report context, not IOC tags.
+          report_context_tags: meta.report_context_tags,
           ...buildLookupMatchMetadata({
             queriedType: resolved.type,
             queriedValue: resolved.value,
@@ -411,14 +513,14 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   const body = rowOutcome.body;
 
   // Recompute native classifications/tags — getApiIoc uses the junction-only +
-  // origin='manual' loaders (public v1 contract), which drop feed-imported
-  // classifications (legacy column) and integration/feed tags. MCP must match
-  // the IOC Details UI, so use the shared effective hydrator (same one
-  // lookup_ioc / bulk_lookup_iocs / search_iocs use). The legacy column is
-  // read by the hydrator (body carries junction slugs, not the raw column).
-  const [metaMap, sources] = await Promise.all([
+  // origin='manual' loaders (public v1 contract), which drop feed-proposed
+  // classifications and integration/feed tags. MCP must match the IOC Details
+  // UI, so use the shared effective hydrator (same one lookup_ioc /
+  // bulk_lookup_iocs / search_iocs use). The legacy column is read by the
+  // hydrator (body carries junction slugs, not the raw column).
+  const [metaMap, sourceEvidence] = await Promise.all([
     hydrateIocApiMetadata(pool, [{ id: body.id, observable_type: body.type }]),
-    loadIocSourcesForObservable(pool, body.type, body.value)
+    loadIocSourceEvidence(pool, { id: body.id, observable: body.value, observable_type: body.type })
   ]);
   const meta = metaMap.get(iocPairKey(body.id, body.type)) || EMPTY_IOC_API_METADATA;
   const classificationSlugs = meta.classifications;
@@ -491,19 +593,29 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       type: body.type,
       status: body.status,
       confidence: body.confidence,
-      // Native TalonHound classification (effective analyst slugs).
+      // Canonical effective classification (IOC Details): feed proposals −
+      // analyst suppressions ∪ analyst classifications.
       classifications: classificationSlugs,
-      // Effective TalonHound tag names: the IOC's own tags (analyst + source-integration)
-      // plus tags inherited from linked Threat Library reports.
+      // Who asserts each effective classification (feed source names / analyst).
+      classification_context: meta.classification_context,
+      // IOC tag names: the IOC's own tags (analyst + source-integration) plus
+      // Threat Library report tags that the IOC's own report evidence names.
       tags: catalogTags.map((t) => t.name),
       // Same tags with origin so analyst / source / threat_library provenance is explicit.
       tags_detail: catalogTags,
-      // Additive: every source of each effective tag (direct origin, Threat Library reports).
+      // Additive: every source of each tag (direct origin, Threat Library report evidence).
       tag_context: meta.tag_context,
+      // Additive: tags of the linked reports — report-level context, NOT IOC tags
+      // unless ioc_evidence is true (then they are also in `tags`).
+      report_context_tags: meta.report_context_tags,
       note: body.note,
       first_seen: body.first_seen_at || body.created_at,
       last_seen: body.last_seen_in_source || body.last_seen_at || body.created_at,
-      sources,
+      // Per-provider source memberships (own lifecycle each); see loadIocSourceViews.
+      sources: sourceEvidence.sources,
+      historical_sources: sourceEvidence.historical_sources,
+      // Deduplicated providers with intelligence on this IOC (sources + Threat Library).
+      evidence_sources: sourceEvidence.evidence_sources,
       // Source-/feed-provided intelligence, kept distinct from native fields above.
       source_intelligence: sourceIntelligence,
       enrichment: enrichment === undefined ? undefined : enrichment,
@@ -656,8 +768,10 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
         classifications: meta.classifications,
         first_seen: hit.created_at || null,
         // Additive (parity with lookup_ioc / search_iocs).
+        classification_context: meta.classification_context,
         tags: meta.tags,
         tag_context: meta.tag_context,
+        report_context_tags: meta.report_context_tags,
         note: hit.note ?? null,
         ...buildLookupMatchMetadata({
           queriedType: r.type,

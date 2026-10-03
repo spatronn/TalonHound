@@ -131,7 +131,44 @@ test('resolveMcpIocInput rejects invalid / empty / overlong', () => {
   assert.equal(resolveMcpIocInput(huge, 'domain', TEST_CONFIG).ok, false);
 });
 
-function makeLookupPool({ existing = null, classifications = [], tags = [], sources = [] } = {}) {
+// Source membership reads (fetchObservableMembershipSummary, same as IOC Details).
+// A `sources` fixture row with ioc_source_id is a manual / custom IOC Source row;
+// without one it stands for a feed membership of the named feed.
+function membershipRowsFor(normalized, sources) {
+  if (normalized.includes('FROM ioc_feed_memberships m')) {
+    return sources.filter((s) => s.ioc_source_id == null).map((s, i) => ({
+      id: i + 1,
+      ioc_item_id: s.id,
+      status: s.membership_status || 'active',
+      purged_at: null,
+      purge_reason: null,
+      first_seen_in_feed: s.first_seen_in_feed || s.created_at,
+      last_seen_in_feed: s.created_at,
+      last_changed_in_source: s.last_changed_in_source || null,
+      policy_expires_at: null,
+      expires_at: null,
+      override_enabled: false,
+      explicit_confidence: null,
+      feed_key: s.feed_key || null,
+      feed_name: s.catalog_source_name || s.source_name,
+      feed_default_confidence: null
+    }));
+  }
+  if (normalized.includes('SELECT DISTINCT ON (i.ioc_source_id)')) {
+    return sources.filter((s) => s.ioc_source_id != null).map((s) => ({
+      ioc_item_id: s.id,
+      ioc_source_id: s.ioc_source_id,
+      source_name: s.catalog_source_name || s.source_name,
+      created_at: s.created_at,
+      last_seen_at: s.last_seen_at || null,
+      expires_at: null
+    }));
+  }
+  if (normalized.includes('FROM ioc_manual_source_memberships h')) return [];
+  return null;
+}
+
+function makeLookupPool({ existing = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [] } = {}) {
   const queries = [];
   return {
     queries,
@@ -174,8 +211,15 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
           }))
         };
       }
-      if (normalized.includes('FROM ioc_items i') && normalized.includes('LEFT JOIN ioc_sources')) {
-        return { rows: sources };
+      const membership = membershipRowsFor(normalized, sources);
+      if (membership) return { rows: membership };
+      if (normalized.includes('FROM ioc_feed_source_evidence e')) return { rows: evidence };
+      if (normalized.includes('FROM ioc_threat_classification_overrides')) return { rows: suppressions };
+      if (normalized.includes('FROM threat_report_candidates c') && normalized.includes('GROUP BY r.public_id')) {
+        return { rows: evidenceReports };
+      }
+      if (normalized.includes('FROM file_artifact_ioc_links') || normalized.includes('FROM file_artifacts')) {
+        return { rows: [] };
       }
       throw new Error(`Unexpected SQL in lookup pool: ${normalized.slice(0, 120)}`);
     }
@@ -184,7 +228,7 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
 // effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null } = {}) {
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null } = {}) {
   const queries = [];
   return {
     queries,
@@ -235,11 +279,15 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
           }))
         };
       }
-      if (normalized.includes('FROM ioc_items i') && normalized.includes('LEFT JOIN ioc_sources')) {
-        return { rows: sources };
-      }
+      const membership = membershipRowsFor(normalized, sources);
+      if (membership) return { rows: membership };
       if (normalized.includes('FROM ioc_feed_source_evidence')) {
         return { rows: evidence };
+      }
+      if (normalized.includes('FROM ioc_threat_classification_overrides')) return { rows: suppressions };
+      // Threat Library evidence-source reports (loadThreatLibraryEvidenceReports).
+      if (normalized.includes('FROM threat_report_candidates c') && normalized.includes('GROUP BY r.public_id')) {
+        return { rows: evidenceReports };
       }
       if (normalized.includes('FROM ioc_enrichments')) {
         return { rows: enrichment };
@@ -338,6 +386,9 @@ function makeBulkPool(foundRows, junctionRows = []) {
       if (/FROM ioc_threat_classifications/i.test(normalized)) {
         return { rows: junctionRows };
       }
+      // Feed classification proposals / analyst suppressions (hydrator): none by default.
+      if (normalized.includes('FROM ioc_feed_source_evidence e')) return { rows: [] };
+      if (normalized.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
       assert.match(normalized, /unnest/i);
       return { rows: foundRows };
     }
@@ -1374,7 +1425,9 @@ const READ_AUTH = { scopes: [API_SCOPE.MCP_IOC_READ], ownerRole: 'analyst' };
 
 // Report-tag inheritance (hydrator, 'threat_report_tags rt') is a separate, tags-only
 // read; Threat Context's own query budget is counted without it.
-const isInheritedTagQuery = (q) => q.sql.includes('threat_report_tags rt');
+const isInheritedTagQuery = (q) => q.sql.includes('threat_report_tags rt')
+  // evidence_sources' Threat Library report list (one grouped read) is not Threat Context.
+  || q.sql.includes('GROUP BY r.public_id');
 
 function threatContextQueries(pool) {
   return pool.queries.filter((q) => !isInheritedTagQuery(q)).filter((q) => q.sql.includes('FROM threat_report_candidates c')
@@ -1796,4 +1849,149 @@ test('bulk_lookup_iocs: still no Threat Library reads after report-context expan
   assert.equal(pool.queries.filter((q) => !isInheritedTagQuery(q)).some((q) => /threat_report_candidates|threat_relationships|threat_report_entities|threat_entities|threat_reports/.test(q.sql)), false);
   assert.deepEqual(Object.keys(out.body).sort(), ['counts', 'existing', 'invalid', 'missing', 'submitted']);
   assert.equal('threat_context' in out.body.existing[0], false);
+});
+
+// --- IOC sources = per-provider memberships (not the row's creating source) ----
+
+const CQ_SHA256 = 'eddbd0ecf7195d38fefae5b9d393abfa79e6f3f94bde19308ecef130a05a42e5';
+const CQ_MD5 = 'eb16b4f96693d5dca59711e8350bdad8';
+
+function feedMembership(id, iocItemId, key, name, firstSeen, status = 'active') {
+  return {
+    id, ioc_item_id: iocItemId, status, purged_at: null, purge_reason: null,
+    first_seen_in_feed: firstSeen, last_seen_in_feed: firstSeen, last_changed_in_source: null,
+    policy_expires_at: null, expires_at: null, override_enabled: false, explicit_confidence: null,
+    feed_key: key, feed_name: name, feed_default_confidence: null
+  };
+}
+
+// SHA256 record (created by OTX) + a proven MD5 alias of the same file.
+function makeAliasSourcePool({ evidenceReports = [] } = {}) {
+  const sha = {
+    id: 100, public_id: '7d703e8e-af15-4764-a9be-da80af1edd31', observable: CQ_SHA256, observable_type: 'sha256',
+    source_name: 'AlienVault OTX', ioc_source_id: null, status: 'active', confidence: 'high',
+    threat_classification: 'unknown', note: null, created_at: '2026-09-23T13:00:00.363Z'
+  };
+  const md5 = { id: 101, observable: CQ_MD5, observable_type: 'md5' };
+  const membershipsById = {
+    100: [
+      feedMembership(1, 100, 'alienvault-otx', 'AlienVault OTX', '2026-09-22T11:35:55.000Z'),
+      feedMembership(2, 100, 'malwarebazaar-abusech', 'MalwareBazaar abuse.ch', '2026-09-23T13:57:02.000Z'),
+      feedMembership(3, 100, 'threatfox-abusech', 'ThreatFox abuse.ch', '2026-09-23T15:02:24.000Z')
+    ],
+    101: [
+      // Same provider on the alias row with its own (different) lifecycle.
+      feedMembership(4, 101, 'malwarebazaar-abusech', 'MalwareBazaar abuse.ch', '2026-09-20T08:00:00.000Z'),
+      // Provider present ONLY on the alias row.
+      feedMembership(5, 101, 'urlhaus-abusech', 'URLhaus abuse.ch', '2026-09-24T09:00:00.000Z'),
+      // Expired on the alias while active on the record: not a historical source.
+      feedMembership(6, 101, 'threatfox-abusech', 'ThreatFox abuse.ch', '2026-09-01T00:00:00.000Z', 'expired')
+    ]
+  };
+  const queries = [];
+  return {
+    queries,
+    query: async (sql, params = []) => {
+      const q = String(sql).replace(/\s+/g, ' ').trim();
+      queries.push({ sql: q, params: [...params] });
+      if (q.includes('observable_type = $1 AND observable = $2') && q.includes('ORDER BY created_at ASC')) {
+        return { rows: params[1] === CQ_SHA256 ? [sha] : [] };
+      }
+      if (q.includes('FROM file_artifact_ioc_links l JOIN file_artifacts a')) {
+        return { rows: [{ artifact_id: 'art-1', status: 'active', merged_into_artifact_id: null }] };
+      }
+      if (q.includes('SELECT DISTINCT ON (ioc_item_id) ioc_item_id')) {
+        return { rows: [{ ioc_item_id: 100, ioc_public_id: sha.public_id }, { ioc_item_id: 101, ioc_public_id: null }] };
+      }
+      if (q.includes('WITH seeds AS')) return { rows: [] };
+      if (q.includes('SELECT id, observable, observable_type FROM ioc_items WHERE id = ANY')) return { rows: [md5] };
+      if (q.includes('FROM ioc_feed_memberships m')) return { rows: membershipsById[Number(params[0][0])] || [] };
+      if (q.includes('SELECT DISTINCT ON (i.ioc_source_id)')) return { rows: [] };
+      if (q.includes('FROM ioc_manual_source_memberships h')) return { rows: [] };
+      if (q.includes('FROM threat_report_candidates c') && q.includes('GROUP BY r.public_id')) return { rows: evidenceReports };
+      if (q.includes('threat_report_tags rt')) return { rows: [] };
+      if (q.includes('FROM ioc_threat_classifications')) return { rows: [] };
+      if (q.includes('FROM ioc_feed_source_evidence e')) return { rows: [] };
+      if (q.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
+      if (q.includes('ioc_tags it')) return { rows: [] };
+      throw new Error(`Unexpected SQL in alias source pool: ${q.slice(0, 120)}`);
+    }
+  };
+}
+
+function withArtifactReads(t) {
+  const prev = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  process.env.FILE_ARTIFACTS_READ_ENABLED = '1';
+  t.after(() => {
+    if (prev === undefined) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    else process.env.FILE_ARTIFACTS_READ_ENABLED = prev;
+  });
+}
+
+test('lookup_ioc sources: every provider membership (not just the creating row), one per provider, own lifecycle', async (t) => {
+  withArtifactReads(t);
+  const pool = makeAliasSourcePool({
+    evidenceReports: [{ public_id: '891705d9-f621-4549-8a56-8a38b4b0e9ec', title: 'The Closed Quorum', source_name: 'blog.talosintelligence.com', tlp: 'clear' }]
+  });
+  const out = await mcpLookupIoc(pool, { value: CQ_SHA256 }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.id, 100, 'identity unchanged: the stored SHA256 record');
+  assert.equal(out.body.matched_via, 'exact');
+
+  const names = out.body.sources.map((s) => s.name);
+  assert.deepEqual(names, ['AlienVault OTX', 'MalwareBazaar abuse.ch', 'ThreatFox abuse.ch', 'URLhaus abuse.ch']);
+  assert.equal(new Set(names).size, names.length, 'no duplicate provider');
+
+  // Provider-specific lifecycle stays with its provider and its own IOC row.
+  const byName = new Map(out.body.sources.map((s) => [s.name, s]));
+  assert.equal(byName.get('AlienVault OTX').first_seen, '2026-09-22T11:35:55.000Z');
+  assert.equal(byName.get('MalwareBazaar abuse.ch').first_seen, '2026-09-23T13:57:02.000Z',
+    'record membership wins; the alias membership lifecycle is not merged in');
+  assert.equal(byName.get('MalwareBazaar abuse.ch').ioc_id, 100);
+  assert.equal(byName.get('ThreatFox abuse.ch').first_seen, '2026-09-23T15:02:24.000Z');
+  assert.equal(byName.get('URLhaus abuse.ch').ioc_id, 101, 'alias-only source survives canonical SHA256 rendering');
+  assert.ok(out.body.sources.every((s) => s.source_type === 'feed' && s.status === 'active'));
+  assert.deepEqual(out.body.historical_sources, [], 'expired alias membership of an active provider is not historical');
+
+  assert.deepEqual(out.body.evidence_sources.map((e) => e.name), [
+    'AlienVault OTX', 'MalwareBazaar abuse.ch', 'ThreatFox abuse.ch', 'URLhaus abuse.ch', 'Threat Library'
+  ]);
+  const tl = out.body.evidence_sources.find((e) => e.kind === 'threat_library');
+  assert.deepEqual(tl.reports, [{ id: '891705d9-f621-4549-8a56-8a38b4b0e9ec', title: 'The Closed Quorum', source_name: 'blog.talosintelligence.com' }]);
+  // Threat Library evidence is read across the whole file identity.
+  const tlQuery = pool.queries.find((q) => q.sql.includes('GROUP BY r.public_id'));
+  assert.deepEqual([...tlQuery.params[0]].sort(), [100, 101]);
+});
+
+test('lookup_ioc evidence_sources: no Threat Library entry without a report', async (t) => {
+  withArtifactReads(t);
+  const out = await mcpLookupIoc(makeAliasSourcePool(), { value: CQ_SHA256 }, { config: TEST_CONFIG });
+  assert.equal(out.body.sources.length, 4);
+  assert.ok(out.body.evidence_sources.every((e) => e.kind === 'feed'));
+});
+
+test('get_ioc_context sources: OTX-created row with MalwareBazaar + ThreatFox memberships lists all of them', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({
+    row,
+    sources: [
+      { id: row.id, ioc_source_id: null, source_name: 'AlienVault OTX', feed_key: 'alienvault-otx', created_at: '2026-09-22T11:35:55.000Z' },
+      { id: row.id, ioc_source_id: null, source_name: 'MalwareBazaar abuse.ch', feed_key: 'malwarebazaar-abusech', created_at: '2026-09-23T13:57:02.000Z' },
+      { id: row.id, ioc_source_id: null, source_name: 'ThreatFox abuse.ch', feed_key: 'threatfox-abusech', created_at: '2026-09-23T15:02:24.000Z' },
+      { id: row.id, ioc_source_id: 7, source_name: 'Threat_Library', created_at: '2026-10-03T16:50:00.000Z' }
+    ],
+    evidenceReports: [{ public_id: 'r-1', title: 'Report', source_name: 'blog.example', tlp: 'clear' }]
+  });
+  const out = await mcpGetIocContext(pool, { value: 'zzyud.com', type: 'domain' }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.sources.map((s) => [s.name, s.source_type, s.first_seen]), [
+    ['AlienVault OTX', 'feed', '2026-09-22T11:35:55.000Z'],
+    ['MalwareBazaar abuse.ch', 'feed', '2026-09-23T13:57:02.000Z'],
+    ['ThreatFox abuse.ch', 'feed', '2026-09-23T15:02:24.000Z'],
+    ['Threat_Library', 'manual', '2026-10-03T16:50:00.000Z']
+  ]);
+  // The Threat Library IOC Source and its report evidence collapse into ONE evidence entry.
+  assert.deepEqual(out.body.evidence_sources.map((e) => e.name), [
+    'AlienVault OTX', 'MalwareBazaar abuse.ch', 'ThreatFox abuse.ch', 'Threat Library'
+  ]);
 });

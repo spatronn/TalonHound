@@ -19,6 +19,7 @@ import { getIocThreatContext } from './store.js';
 import { TLP_DISPLAY } from './constants.js';
 import { serializePublicationDate } from './publicationDate.js';
 import { findArtifactLinkedIocsByIocId } from '../fileArtifacts/read.js';
+import { reportTagInheritanceEligibleSql } from './reportTagInheritance.js';
 
 // Bounds for the per-claim report context. Persisted evidence already caps
 // occurrences at 40 per candidate (evidencePolicy.buildCandidateEvidenceRecord,
@@ -198,4 +199,48 @@ export async function loadIocThreatContext(pool, iocId) {
   }
   const ctx = await getIocThreatContext(pool, iocIds.length ? iocIds : iocId);
   return serializeIocThreatContext(ctx);
+}
+
+/**
+ * Threat Library reports that assert something about the IOC: active reports
+ * (Threat Context visibility) in which a candidate linked to one of `iocIds` is
+ * an IOC of the report — not a context-only / ignored / rejected / invalid
+ * mention (same candidate rule as report tag inheritance). One query, newest
+ * publication first. Used for the deduplicated evidence-source view; the full
+ * claims stay in threat_context.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} pool
+ * @param {Array<number|string>} iocIds IOC ids of one identity (artifact scope)
+ * @returns {Promise<Array<{ id: string, title: string, source_name: string|null, tlp: string|null }>>}
+ */
+export async function loadThreatLibraryEvidenceReports(pool, iocIds) {
+  const ids = [...new Set(
+    (Array.isArray(iocIds) ? iocIds : [iocIds])
+      .map((n) => Number(n))
+      .filter((n) => Number.isFinite(n) && n > 0)
+  )];
+  if (!ids.length) return [];
+  try {
+    const { rows } = await pool.query(
+      `SELECT r.public_id, r.title, r.source_name, r.tlp,
+              MAX(r.published_at) AS published_at, MAX(r.created_at) AS created_at
+       FROM threat_report_candidates c
+       JOIN threat_reports r ON r.id = c.report_id
+       WHERE c.matched_ioc_id = ANY($1::bigint[])
+         AND ${reportTagInheritanceEligibleSql('c', 'r')}
+       GROUP BY r.public_id, r.title, r.source_name, r.tlp
+       ORDER BY MAX(r.published_at) DESC NULLS LAST, MAX(r.created_at) DESC, r.public_id`,
+      [ids]
+    );
+    return rows.map((r) => ({
+      id: String(r.public_id),
+      title: r.title,
+      source_name: r.source_name || null,
+      tlp: r.tlp || null
+    }));
+  } catch (err) {
+    // Schema without Threat Library tables — no report evidence.
+    if (err && err.code === '42P01') return [];
+    throw err;
+  }
 }

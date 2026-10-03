@@ -189,13 +189,15 @@ export async function enrichExportBatch(db, baseRows) {
         [artifactIds]
       )
       : Promise.resolve({ rows: [] }),
-    // Effective tags = direct ioc_tags ∪ Threat Library report-inherited tags
-    // (same rule as `tag …` search), one batch query per page.
+    // IOC tags = direct ioc_tags ∪ Threat Library report tags the IOC's own
+    // report evidence names (same rule as `tag …` search), one batch query per page.
     loadInheritedReportTagRows(db, ids)
   ]);
 
   const tagMap = new Map(tagsRes.rows.map((r) => [Number(r.ioc_id), r.names || []]));
   for (const row of inheritedTagRows) {
+    // Report tags without IOC-specific evidence are report context, not IOC tags.
+    if (!row.ioc_evidence) continue;
     const names = tagMap.get(row.ioc_id) || [];
     if (!names.includes(row.name)) tagMap.set(row.ioc_id, [...names, row.name].sort());
   }

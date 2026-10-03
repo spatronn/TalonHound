@@ -1,14 +1,20 @@
 /**
- * Real-Postgres regression for Threat Library report tags → IOC effective tags.
+ * Real-Postgres regression for Threat Library report tags → IOC tags.
  *
- *   report tags (threat_report_tags) are inherited by IOC records linked to the
- *   report through an IOC-eligible candidate, at READ time. Direct ioc_tags rows
- *   are never written; classifications are never inherited.
+ *   Report context is not an IOC assertion: a report tag (threat_report_tags) is
+ *   an IOC tag only for IOC records linked through an IOC-eligible candidate
+ *   whose OWN evidence (evidence_text, occurrence heading / surrounding text)
+ *   names the tag — derived at READ time. Every other report tag stays report
+ *   context (report_context_tags). Direct ioc_tags rows are never written;
+ *   classifications are never inherited.
  *
- * Covers add/idempotent/remove, one report → many IOCs, direct+inherited dedup,
- * multi-report provenance, report deletion, context-only / rejected candidates,
- * search (DSL / MCP / REST), MCP lookup / context / bulk serialization, CSV
- * export enrichment, classification safety and bounded query counts.
+ * Covers add/idempotent/remove, report context vs IOC-level tags (sector /
+ * theme tags such as banking / government / healthcare / espionage / phishing /
+ * ransomware never spread to every IOC of the report), whole-term matching and
+ * spelling equivalence in SQL, direct+report dedup, multi-report provenance,
+ * report deletion, context-only / rejected candidates, search (DSL / MCP / REST),
+ * MCP lookup / context / bulk serialization, CSV export, classification safety
+ * and bounded query counts.
  *
  * Commits fixture rows (search opens its own transaction), so it only runs on a
  * disposable database (assertFileArtifactDbTestAllowed: ALLOW_FILE_ARTIFACT_DB_TESTS=1,
@@ -65,8 +71,15 @@ const T = {
   fin: `${MARK}-financial-sector`,
   phishing: `${MARK}-phishing`,
   clickfix: `${MARK}-clickfix`,
-  other: `${MARK}-other`
+  other: `${MARK}-other`,
+  // Report-level sector / theme context: never an IOC tag without IOC evidence.
+  banking: `${MARK}-banking`,
+  government: `${MARK}-government`,
+  healthcare: `${MARK}-healthcare`,
+  espionage: `${MARK}-espionage`,
+  ransomware: `${MARK}-ransomware`
 };
+const SECTOR_TAGS = [T.banking, T.government, T.healthcare, T.espionage, T.phishing, T.ransomware];
 const D = (n) => `${MARK}-${n}.example`;
 const tagIds = {};
 const ioc = {};
@@ -94,14 +107,18 @@ async function mkReport(client, key, { importStatus = 'ready' } = {}) {
   );
   rep[key] = { ...rows[0], id: Number(rows[0].id) };
 }
-async function link(client, reportKey, iocKey, { review = 'approved', assessment = 'malicious', isIoc = true, matchState = 'existing' } = {}) {
+async function link(client, reportKey, iocKey, {
+  review = 'approved', assessment = 'malicious', isIoc = true, matchState = 'existing',
+  evidenceText = null, occurrences = []
+} = {}) {
   const i = ioc[iocKey];
   await client.query(
     `INSERT INTO threat_report_candidates
        (report_id, candidate_type, original_value, normalized_value, assessment, review_status,
-        match_state, matched_ioc_id, matched_ioc_observable_type, is_ioc)
-     VALUES ($1, 'domain', $2, $2, $3, $4, $5, $6, 'domain', $7)`,
-    [rep[reportKey].id, i.observable, assessment, review, matchState, i.id, isIoc]
+        match_state, matched_ioc_id, matched_ioc_observable_type, is_ioc, evidence_text, evidence)
+     VALUES ($1, 'domain', $2, $2, $3, $4, $5, $6, 'domain', $7, $8, $9::jsonb)`,
+    [rep[reportKey].id, i.observable, assessment, review, matchState, i.id, isIoc,
+      evidenceText ?? i.observable, JSON.stringify({ occurrences })]
   );
 }
 async function effective(key) {
@@ -131,13 +148,13 @@ function countingPool() {
 }
 const searchValues = async (q) => (await mcpSearchIocs(pool, { query: q, limit: 50 }, { config: CONFIG })).body.items.map((x) => x.value).sort();
 
-describe('Threat Library report tags → IOC effective tags (real Postgres)', opts, () => {
+describe('Threat Library report tags → IOC tags (real Postgres)', opts, () => {
   before(async () => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       for (const name of Object.values(T)) await mkTag(client, name);
-      for (const k of ['one', 'two', 'three', 'x', 'benign', 'rejected', 'deletedonly', 'unrelated', 'directonly']) {
+      for (const k of ['one', 'two', 'three', 'x', 'benign', 'rejected', 'deletedonly', 'unrelated', 'directonly', 'near']) {
         await mkIoc(client, k, { note: `${k} note` });
       }
       for (let n = 0; n < 12; n += 1) await mkIoc(client, `fill${n}`);
@@ -145,14 +162,37 @@ describe('Threat Library report tags → IOC effective tags (real Postgres)', op
       await mkReport(client, 'B');
       await mkReport(client, 'C');
       await mkReport(client, 'F');
-      // Report A → IOC one/two/three/x; benign is context-only, rejected was rejected.
-      for (const k of ['one', 'two', 'three', 'x']) await link(client, 'A', k);
-      await link(client, 'A', 'benign', { review: 'context_only', assessment: 'context_only', isIoc: false, matchState: 'context_only' });
-      await link(client, 'A', 'rejected', { review: 'rejected' });
-      // Report B → IOC x. Report C → IOC deletedonly (C is deleted later).
-      await link(client, 'B', 'x');
-      await link(client, 'C', 'deletedonly');
-      for (let n = 0; n < 12; n += 1) await link(client, 'F', `fill${n}`);
+      // Report A → IOC one/two/three/x/near; benign is context-only, rejected was rejected.
+      // Only some candidates' OWN evidence names a report tag:
+      //   two   — evidence sentence names winpot;
+      //   three — an occurrence (table row) names financial_sector (underscore spelling)
+      //           under a heading that names atm;
+      //   near  — evidence names "<atm>osphere" / "pre<winpot>": substrings, not the terms.
+      await link(client, 'A', 'one');
+      await link(client, 'A', 'two', { evidenceText: `${D('two')} delivers the ${T.winpot} ATM jackpotting payload.` });
+      await link(client, 'A', 'three', {
+        occurrences: [{
+          zone: 'table',
+          section_heading: `Indicators: ${T.atm} infrastructure`,
+          surrounding_text: `${D('three')} | ${MARK} financial_sector | 2026-09-01`
+        }]
+      });
+      await link(client, 'A', 'x');
+      await link(client, 'A', 'near', { evidenceText: `${D('near')} ${T.atm}osphere pre${T.winpot}` });
+      await link(client, 'A', 'benign', {
+        review: 'context_only', assessment: 'context_only', isIoc: false, matchState: 'context_only',
+        evidenceText: `${D('benign')} legitimate ${T.winpot} research portal`
+      });
+      await link(client, 'A', 'rejected', { review: 'rejected', evidenceText: `${D('rejected')} ${T.winpot}` });
+      // Report B → IOC x, whose occurrence heading names winpot + financial-sector.
+      // Report C → IOC deletedonly (C is deleted later).
+      await link(client, 'B', 'x', {
+        occurrences: [{ zone: 'section', section_heading: `${T.winpot} / ${T.fin} C2`, surrounding_text: D('x') }]
+      });
+      await link(client, 'C', 'deletedonly', { evidenceText: `${D('deletedonly')} ${T.other} ${T.winpot}` });
+      for (let n = 0; n < 12; n += 1) {
+        await link(client, 'F', `fill${n}`, { evidenceText: `${D(`fill${n}`)} targets the ${T.fin}` });
+      }
       // Direct tags: one has a direct winpot + clickfix, directonly has clickfix.
       for (const [k, t] of [['one', T.winpot], ['one', T.clickfix], ['directonly', T.clickfix]]) {
         await client.query(
@@ -203,99 +243,134 @@ describe('Threat Library report tags → IOC effective tags (real Postgres)', op
     await addReportTag(pool, rep.A.id, tagIds[T.atm]);
   });
 
-  it('one report → every linked IOC exposes the report tags; ioc_tags is never written', async () => {
+  it('report-level sector / theme tags never become IOC tags without IOC evidence, but stay report context', async () => {
+    for (const t of SECTOR_TAGS) await addReportTag(pool, rep.A.id, tagIds[t]);
     const before = await directTagRowCount();
-    for (const k of ['two', 'three', 'x']) {
+    for (const k of ['one', 'two', 'three', 'x', 'near']) {
       const m = await effective(k);
-      assert.deepEqual(m.tags, [T.atm, T.winpot].sort(), k);
-      const ctx = m.tag_context.find((c) => c.tag === T.winpot);
-      assert.deepEqual(ctx.sources, [{ type: 'threat_library', report_id: rep.A.public_id, title: rep.A.title, tlp: 'clear' }]);
-      assert.equal(m.tags_detail.find((t) => t.name === T.winpot).origin, 'threat_library');
+      for (const t of SECTOR_TAGS) {
+        assert.ok(!m.tags.includes(t), `${k} must not carry report context tag ${t}`);
+        const ctx = m.report_context_tags.find((c) => c.tag === t);
+        assert.ok(ctx, `${k}: report tag ${t} is still visible as report context`);
+        assert.equal(ctx.ioc_evidence, false);
+        assert.deepEqual(ctx.reports.map((r) => r.id), [rep.A.public_id]);
+      }
     }
-    assert.equal(await directTagRowCount(), before);
+    // Report tags are not lost on the report itself.
+    const reportTagNames = (await loadReportTags(pool, rep.A.id)).map((t) => t.name);
+    for (const t of SECTOR_TAGS) assert.ok(reportTagNames.includes(t));
+    // DSL / MCP / REST search do not match on report-only context.
+    assert.deepEqual(await searchValues(`tag equals "${T.banking}"`), []);
+    assert.equal(await directTagRowCount(), before, 'ioc_tags is never written');
+    for (const t of SECTOR_TAGS) await removeReportTag(pool, rep.A.id, tagIds[t]);
   });
 
-  it('context-only, rejected and unlinked IOCs do not inherit', async () => {
+  it('IOC evidence (sentence, occurrence row, section heading) makes the report tag an IOC tag', async () => {
+    const two = await effective('two');
+    assert.deepEqual(two.tags, [T.winpot], 'evidence sentence names winpot; atm is only report context');
+    assert.deepEqual(two.tag_context.find((c) => c.tag === T.winpot).sources, [
+      { type: 'threat_library', report_id: rep.A.public_id, title: rep.A.title, tlp: 'clear', basis: 'ioc_evidence' }
+    ]);
+    assert.equal(two.tags_detail.find((t) => t.name === T.winpot).origin, 'threat_library');
+    assert.deepEqual(two.report_context_tags.map((t) => [t.tag, t.ioc_evidence]), [[T.atm, false], [T.winpot, true]]);
+
+    const three = await effective('three');
+    assert.deepEqual(three.tags, [T.atm], 'occurrence section heading names atm');
+  });
+
+  it('whole-term match only: substrings of a longer word are not evidence', async () => {
+    const near = await effective('near');
+    assert.deepEqual(near.tags, [], `"${T.atm}osphere" / "pre${T.winpot}" do not name the tags`);
+    assert.ok(near.report_context_tags.every((t) => t.ioc_evidence === false));
+  });
+
+  it('context-only, rejected and unlinked IOCs never get report tags even when their text names them', async () => {
     for (const k of ['benign', 'rejected', 'unrelated']) {
-      assert.deepEqual((await effective(k)).tags, [], k);
+      const m = await effective(k);
+      assert.deepEqual(m.tags, [], k);
+      assert.deepEqual(m.report_context_tags, [], `${k}: not an IOC of the report, so no report context either`);
     }
   });
 
-  it('direct + inherited same tag appears once; removing the report tag keeps the direct tag', async () => {
-    let m = await effective('one');
-    assert.deepEqual(m.tags, [T.clickfix, T.winpot, T.atm], 'direct tags first, inherited-only after');
-    assert.equal(m.tags.filter((t) => t === T.winpot).length, 1);
-    const winpot = m.tag_context.find((c) => c.tag === T.winpot);
-    assert.deepEqual(winpot.sources.map((s) => s.type), ['direct', 'threat_library']);
-    assert.equal(m.tags_detail.find((t) => t.name === T.winpot).origin, 'manual');
-    assert.ok(m.tags_detail.find((t) => t.name === T.winpot).origins.includes('threat_library'));
-
-    await removeReportTag(pool, rep.A.id, tagIds[T.winpot]);
-    m = await effective('one');
-    assert.ok(m.tags.includes(T.winpot), 'direct winpot survives');
+  it('explicit IOC tag is kept; a report without IOC evidence adds no provenance to it', async () => {
+    const m = await effective('one');
+    assert.deepEqual(m.tags, [T.clickfix, T.winpot]);
     assert.deepEqual(m.tag_context.find((c) => c.tag === T.winpot).sources, [{ type: 'direct', origin: 'manual' }]);
-    assert.ok(!(await effective('two')).tags.includes(T.winpot), 'inherited-only winpot is gone');
+    assert.equal(m.tags_detail.find((t) => t.name === T.winpot).origin, 'manual');
+    assert.ok(m.report_context_tags.some((t) => t.tag === T.winpot && t.ioc_evidence === false));
+    await removeReportTag(pool, rep.A.id, tagIds[T.winpot]);
+    assert.ok((await effective('one')).tags.includes(T.winpot), 'direct winpot survives report tag removal');
+    assert.ok(!(await effective('two')).tags.includes(T.winpot), 'report-only winpot is gone');
     await addReportTag(pool, rep.A.id, tagIds[T.winpot]);
   });
 
-  it('multiple reports: provenance lists both; removing one report keeps the tag through the other', async () => {
+  it('multiple reports: provenance lists only the reports whose IOC evidence names the tag; spelling variants match', async () => {
     await addReportTag(pool, rep.B.id, tagIds[T.winpot]);
     await addReportTag(pool, rep.B.id, tagIds[T.fin]);
+    await addReportTag(pool, rep.A.id, tagIds[T.fin]);
     let m = await effective('x');
-    assert.deepEqual(m.tags, [T.atm, T.fin, T.winpot].sort());
-    assert.deepEqual(
-      m.tag_context.find((c) => c.tag === T.winpot).sources.map((s) => s.report_id).sort(),
-      [rep.A.public_id, rep.B.public_id].sort()
-    );
-    await removeReportTag(pool, rep.A.id, tagIds[T.winpot]);
-    m = await effective('x');
-    assert.ok(m.tags.includes(T.winpot), 'still inherited through report B');
+    // x: report A has no x evidence; report B's heading names winpot and financial-sector.
+    assert.deepEqual(m.tags, [T.fin, T.winpot].sort());
     assert.deepEqual(m.tag_context.find((c) => c.tag === T.winpot).sources.map((s) => s.report_id), [rep.B.public_id]);
-    await addReportTag(pool, rep.A.id, tagIds[T.winpot]);
+    const ctx = m.report_context_tags.find((c) => c.tag === T.winpot);
+    assert.deepEqual(ctx.reports.map((r) => r.id).sort(), [rep.A.public_id, rep.B.public_id].sort());
+    // three: the occurrence row says "financial_sector" — same term as tag "...-financial-sector".
+    assert.ok((await effective('three')).tags.includes(T.fin), 'space / hyphen / underscore spellings are equivalent');
+    await removeReportTag(pool, rep.B.id, tagIds[T.winpot]);
+    m = await effective('x');
+    assert.ok(!m.tags.includes(T.winpot), 'no IOC evidence left for winpot on x');
+    assert.ok(m.report_context_tags.some((c) => c.tag === T.winpot), 'still report context through report A');
+    await removeReportTag(pool, rep.A.id, tagIds[T.fin]);
   });
 
-  it('report deletion removes only that report\'s inheritance', async () => {
+  it('report deletion removes only that report\'s tags', async () => {
     await addReportTag(pool, rep.C.id, tagIds[T.other]);
     await addReportTag(pool, rep.C.id, tagIds[T.winpot]);
     assert.deepEqual((await effective('deletedonly')).tags, [T.other, T.winpot].sort());
     const directBefore = await directTagRowCount();
     await deleteThreatReport(pool, rep.C.id);
-    assert.deepEqual((await effective('deletedonly')).tags, [], 'inheritance from the deleted report disappears');
+    const gone = await effective('deletedonly');
+    assert.deepEqual(gone.tags, [], 'tags from the deleted report disappear');
+    assert.deepEqual(gone.report_context_tags, []);
     assert.ok((await effective('one')).tags.includes(T.winpot), 'direct winpot untouched');
-    assert.ok((await effective('two')).tags.includes(T.winpot), 'inheritance from report A untouched');
+    assert.ok((await effective('two')).tags.includes(T.winpot), 'report A evidence tag untouched');
     assert.equal(await directTagRowCount(), directBefore);
   });
 
-  it('tag equals finds direct AND inherited IOCs and nothing unrelated (DSL / MCP / REST)', async () => {
-    const want = [D('one'), D('two'), D('three'), D('x')].sort();
+  it('tag equals finds direct AND evidence-backed report tags and nothing else (DSL / MCP / REST)', async () => {
+    const want = [D('one'), D('two')].sort();
     assert.deepEqual(await searchValues(`tag equals "${T.winpot}"`), want);
     const rest = await searchApiIocs(pool, { query: `tag equals "${T.winpot}"`, limit: 50 });
     assert.deepEqual(rest.body.items.map((x) => x.value).sort(), want);
     // Direct-only tag search unchanged.
     assert.deepEqual(await searchValues(`tag equals "${T.clickfix}"`), [D('directonly'), D('one')].sort());
-    // Inherited tag appears in the returned items' own tags.
+    // The report tag appears in the returned item's own tags.
     const item = rest.body.items.find((x) => x.value === D('two'));
     assert.ok(item.tags.includes(T.winpot));
     assert.ok(item.tag_context.some((c) => c.tag === T.winpot));
-    // `in` keeps effective semantics (NOT is deep-search only; covered by the builder unit test).
-    assert.deepEqual(await searchValues(`tag in ("${T.fin}", "${T.clickfix}")`), [D('directonly'), D('one'), D('x')].sort());
+    assert.deepEqual(await searchValues(`tag in ("${T.atm}", "${T.clickfix}")`), [D('directonly'), D('one'), D('three')].sort());
   });
 
-  it('after removing the report tag, search stops returning inherited-only IOCs', async () => {
+  it('after removing the report tag, search stops returning report-only IOCs', async () => {
     await removeReportTag(pool, rep.A.id, tagIds[T.atm]);
     assert.deepEqual(await searchValues(`tag equals "${T.atm}"`), []);
     await addReportTag(pool, rep.A.id, tagIds[T.atm]);
-    assert.deepEqual(await searchValues(`tag equals "${T.atm}"`), [D('one'), D('two'), D('three'), D('x')].sort());
+    assert.deepEqual(await searchValues(`tag equals "${T.atm}"`), [D('three')]);
   });
 
-  it('MCP lookup / get_ioc_context / bulk expose effective tags + tag_context', async () => {
+  it('MCP lookup / get_ioc_context / bulk expose IOC tags, tag_context and report_context_tags', async () => {
     const lookup = await mcpLookupIoc(pool, { value: D('two') }, { config: CONFIG });
-    assert.deepEqual(lookup.body.tags, [T.atm, T.winpot].sort());
-    assert.ok(lookup.body.tag_context.every((c) => c.sources.every((s) => s.type === 'threat_library')));
+    assert.deepEqual(lookup.body.tags, [T.winpot]);
+    assert.ok(lookup.body.tag_context.every((c) => c.sources.every((s) => s.type === 'threat_library' && s.basis === 'ioc_evidence')));
+    assert.ok(lookup.body.report_context_tags.some((t) => t.tag === T.atm && t.ioc_evidence === false));
     const ctx = await mcpGetIocContext(pool, { value: D('two') }, { config: CONFIG });
     assert.deepEqual(ctx.body.tags, lookup.body.tags);
     assert.deepEqual(ctx.body.tag_context, lookup.body.tag_context);
-    assert.equal(ctx.body.tags_detail.find((t) => t.name === T.atm).origin, 'threat_library');
+    assert.deepEqual(ctx.body.report_context_tags, lookup.body.report_context_tags);
+    assert.equal(ctx.body.tags_detail.find((t) => t.name === T.winpot).origin, 'threat_library');
+    // Threat Library is listed once as an evidence source; the report link is intact.
+    assert.deepEqual(ctx.body.evidence_sources.filter((e) => e.kind === 'threat_library').map((e) => e.reports.map((r) => r.id)), [[rep.A.public_id]]);
+    assert.ok(ctx.body.threat_context.claims.some((c) => c.report.id === rep.A.public_id));
     const bulk = await mcpBulkLookupIocs(pool, { iocs: [D('two'), D('directonly')] }, { config: CONFIG });
     const byValue = new Map(bulk.body.existing.map((e) => [e.value, e]));
     assert.deepEqual(byValue.get(D('two')).tags, lookup.body.tags);
@@ -306,7 +381,7 @@ describe('Threat Library report tags → IOC effective tags (real Postgres)', op
   it('report tags never change IOC classification', async () => {
     await addReportTag(pool, rep.A.id, tagIds[T.phishing]);
     const m = await effective('one');
-    assert.ok(m.tags.includes(T.phishing), 'report tag is inherited as a tag');
+    assert.ok(!m.tags.includes(T.phishing), 'no IOC evidence → report context only');
     assert.deepEqual(m.classifications, ['malware'], 'classification stays intrinsic');
     assert.deepEqual((await effective('two')).classifications, [], 'no classification appears from a report tag');
     const ctx = await mcpGetIocContext(pool, { value: D('one') }, { config: CONFIG });
@@ -314,22 +389,28 @@ describe('Threat Library report tags → IOC effective tags (real Postgres)', op
     await removeReportTag(pool, rep.A.id, tagIds[T.phishing]);
   });
 
-  it('IOC Details endpoint loader groups provenance per tag', async () => {
+  it('IOC Details Threat Context loader lists every report tag with its IOC-evidence flag', async () => {
+    await addReportTag(pool, rep.B.id, tagIds[T.winpot]);
     const rows = await loadInheritedReportTagRows(pool, [ioc.x.id]);
     const grouped = groupInheritedTagsBySeed(rows, new Map([[ioc.x.id, [ioc.x.id]]])).get(ioc.x.id);
     const winpot = grouped.find((t) => t.name === T.winpot);
-    assert.deepEqual(winpot.reports.map((r) => r.title).sort(), [rep.A.title, rep.B.title].sort());
+    assert.deepEqual(winpot.reports.map((r) => [r.title, r.ioc_evidence]).sort(), [[rep.A.title, false], [rep.B.title, true]].sort());
+    assert.equal(winpot.ioc_evidence, true);
+    await removeReportTag(pool, rep.B.id, tagIds[T.winpot]);
   });
 
-  it('CSV export tags column carries effective tags (one batch query)', async () => {
+  it('CSV export tags column carries IOC tags only (one batch query)', async () => {
     const rows = await enrichExportBatch(pool, [
       { id: ioc.two.id, observable: D('two'), observable_type: 'domain' },
-      { id: ioc.one.id, observable: D('one'), observable_type: 'domain' }
+      { id: ioc.one.id, observable: D('one'), observable_type: 'domain' },
+      { id: ioc.x.id, observable: D('x'), observable_type: 'domain' }
     ]);
     const tagsOf = (value) => rows.find((r) => r.observable === value).tags;
-    assert.ok(tagsOf(D('two')).includes(T.winpot), 'inherited tag exported');
+    assert.ok(tagsOf(D('two')).includes(T.winpot), 'evidence-backed report tag exported');
+    assert.ok(!tagsOf(D('two')).includes(T.atm), 'report context tag not exported as an IOC tag');
     assert.ok(tagsOf(D('one')).includes(T.clickfix), 'direct tag exported');
-    assert.equal(tagsOf(D('one')).filter((t) => t === T.winpot).length, 1, 'direct + inherited exported once');
+    assert.equal(tagsOf(D('one')).filter((t) => t === T.winpot).length, 1, 'direct + report exported once');
+    assert.ok(!tagsOf(D('x')).includes(T.winpot));
   });
 
   it('no N+1: hydration / search query counts do not grow with the number of IOCs', async () => {

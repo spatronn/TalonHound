@@ -255,10 +255,11 @@ class Builder {
   }
 
   // ---- text: tag (EXISTS over ioc_tags + tags) --------------------------
-  // ---- text: tag (effective tags) ---------------------------------------
-  // Matches an IOC whose EFFECTIVE tags satisfy the predicate: tags assigned directly
-  // (ioc_tags) OR inherited from an active Threat Library report linked to the IOC
-  // (threat_report_tags; see threatLibrary/reportTagInheritance.js). Same row-wise
+  // ---- text: tag (IOC-level tags) ---------------------------------------
+  // Matches an IOC whose IOC-level tags satisfy the predicate: tags assigned directly
+  // (ioc_tags) OR a tag of an active Threat Library report linked to the IOC that the
+  // IOC's own report evidence names (threat_report_tags; report-only context tags do
+  // not match — see threatLibrary/reportTagInheritance.js). Same row-wise
   // `(observable_type, id) IN (<direct> UNION <inherited>)` membership as file hashes —
   // never `EXISTS … OR EXISTS …`, which defeats semi-joins and walks every row.
   buildTag(node) {

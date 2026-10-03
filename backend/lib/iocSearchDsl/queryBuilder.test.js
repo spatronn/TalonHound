@@ -275,7 +275,12 @@ test('tag equals matches direct OR report-inherited tags with normalized lowerca
   assert.ok(flat(sql).includes("trc.review_status NOT IN ('ignored', 'context_only', 'rejected')"));
   // Both branches filter on the same bound, normalized tag name.
   assert.equal(countOf(sql, 't.name = $1'), 2);
-  assert.ok(!sql.includes('EXISTS'));
+  // Report tags count only when the IOC's own report evidence names the tag. That
+  // check is the single EXISTS, scoped to the candidate row inside the report
+  // branch — never an IOC-level `EXISTS … OR EXISTS …`.
+  assert.equal(countOf(sql, 'EXISTS'), 1);
+  assert.ok(flat(sql).includes('SELECT trc.evidence_text AS txt'));
+  assert.ok(flat(sql).startsWith('(i.observable_type, i.id) IN ('));
   assert.deepEqual(params, ['mirai']);
 });
 
