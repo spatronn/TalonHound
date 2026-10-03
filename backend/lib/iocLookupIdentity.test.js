@@ -255,7 +255,9 @@ describe('BUG 2 — search results carry real metadata', () => {
     assert.equal(smallMap.size, 2);
     assert.equal(largeMap.size, 40);
     assert.equal(large.queries.length, small.queries.length);
-    assert.ok(large.queries.length <= 5, `junction + feed evidence + suppressions + tags + report tags only when rows carry legacy column (got ${large.queries.length})`);
+    // Fixed batch: identity facts + siblings + junction + feed evidence + suppressions
+    // + tags + report tags (+ optional artifact-scope when FA reads are on). Never N×rows.
+    assert.ok(large.queries.length <= 8, `canonical classification + tags hydrator must stay O(1) queries (got ${large.queries.length})`);
     assert.deepEqual(largeMap.get(iocPairKey(1039, 'domain')).classifications, ['phishing']);
   });
 
