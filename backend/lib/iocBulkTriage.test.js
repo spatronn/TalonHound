@@ -401,7 +401,7 @@ test('bulkAddClassification preserves manual-create junction classifications (ad
     source_type: 'manual'
   }];
   let overrideRows = [];
-  const deletedJunction = [];
+  let deletedJunction = 0;
   const pool = makePool({
     list: [
       {
@@ -419,40 +419,34 @@ test('bulkAddClassification preserves manual-create junction classifications (ad
         respond: () => ({ rows: iocs, rowCount: 1 })
       },
       {
-        match: (sql) => sql.includes('FROM ioc_items') && sql.includes('ioc_source_id, threat_classification'),
+        match: (sql) => sql.includes('FROM ioc_items') && sql.includes('ioc_source_id'),
         respond: () => ({
           rows: [{ ioc_source_id: 7, threat_classification: 'malware' }],
           rowCount: 1
         })
       },
       {
-        match: (sql) => sql.includes('FROM ioc_threat_classifications') && sql.includes('VALUES'),
-        respond: () => ({
-          rows: junctionRows.map((r) => ({
-            ioc_id: r.ioc_id,
-            ioc_observable_type: r.ioc_observable_type,
-            classification_slug: r.classification_slug
-          })),
-          rowCount: junctionRows.length
-        })
+        match: (sql) => sql.includes('FROM ioc_threat_classifications'),
+        respond: (_sql, params) => {
+          const rows = junctionRows.filter((r) => {
+            if (params?.length >= 2 && !String(_sql).includes('VALUES')) {
+              return Number(r.ioc_id) === Number(params[0]);
+            }
+            return true;
+          });
+          return {
+            rows: rows.map((r) => ({
+              ioc_id: r.ioc_id,
+              ioc_observable_type: r.ioc_observable_type,
+              classification_slug: r.classification_slug,
+              source_type: r.source_type
+            })),
+            rowCount: rows.length
+          };
+        }
       },
       {
-        match: (sql) => sql.includes('SELECT classification_slug') && sql.includes('FROM ioc_threat_classifications')
-          && sql.includes('source_type'),
-        respond: () => ({
-          rows: junctionRows.map((r) => ({
-            classification_slug: r.classification_slug,
-            source_type: r.source_type
-          })),
-          rowCount: junctionRows.length
-        })
-      },
-      {
-        match: (sql) => sql.includes('FROM ioc_threat_classification_overrides') && sql.includes('VALUES'),
-        respond: () => ({ rows: [], rowCount: 0 })
-      },
-      {
-        match: (sql) => sql.includes('FROM ioc_threat_classification_overrides') && !sql.includes('VALUES'),
+        match: (sql) => sql.includes('FROM ioc_threat_classification_overrides'),
         respond: () => ({ rows: overrideRows, rowCount: overrideRows.length })
       },
       {
@@ -472,7 +466,7 @@ test('bulkAddClassification preserves manual-create junction classifications (ad
       {
         match: (sql) => sql.includes('DELETE FROM ioc_threat_classifications'),
         respond: () => {
-          deletedJunction.push(true);
+          deletedJunction += 1;
           return { rows: [], rowCount: 0 };
         }
       },
@@ -502,8 +496,8 @@ test('bulkAddClassification preserves manual-create junction classifications (ad
     req: {},
     audit: { auditSuccess: async () => {} }
   });
-  assert.equal(out.succeeded, 1);
-  assert.equal(deletedJunction.length, 0, 'add must not DELETE-replace junction rows');
+  assert.equal(out.succeeded, 1, out.results?.[0]?.message || 'expected success');
+  assert.equal(deletedJunction, 0, 'add must not DELETE-replace junction rows');
   const slugs = junctionRows.map((r) => r.classification_slug).sort();
   assert.deepEqual(slugs, ['credential_theft', 'malware']);
   const malware = junctionRows.find((r) => r.classification_slug === 'malware');
@@ -534,36 +528,31 @@ test('bulkAddClassification is additive across two IOCs with different existing 
         respond: () => ({ rows: iocs, rowCount: 2 })
       },
       {
-        match: (sql) => sql.includes('FROM ioc_items') && sql.includes('ioc_source_id, threat_classification'),
+        match: (sql) => sql.includes('FROM ioc_items') && sql.includes('ioc_source_id'),
         respond: () => ({ rows: [{ ioc_source_id: 1, threat_classification: 'unknown' }], rowCount: 1 })
       },
       {
-        match: (sql) => sql.includes('FROM ioc_threat_classifications') && sql.includes('VALUES'),
-        respond: () => ({
-          rows: junctionRows.map((r) => ({
-            ioc_id: r.ioc_id,
-            ioc_observable_type: r.ioc_observable_type,
-            classification_slug: r.classification_slug
-          })),
-          rowCount: junctionRows.length
-        })
+        match: (sql) => sql.includes('FROM ioc_threat_classifications'),
+        respond: (_sql, params) => {
+          const rows = junctionRows.filter((r) => {
+            if (params?.length >= 2 && !String(_sql).includes('VALUES')) {
+              return Number(r.ioc_id) === Number(params[0]);
+            }
+            return true;
+          });
+          return {
+            rows: rows.map((r) => ({
+              ioc_id: r.ioc_id,
+              ioc_observable_type: r.ioc_observable_type,
+              classification_slug: r.classification_slug,
+              source_type: r.source_type
+            })),
+            rowCount: rows.length
+          };
+        }
       },
       {
-        match: (sql) => sql.includes('SELECT classification_slug') && sql.includes('FROM ioc_threat_classifications')
-          && sql.includes('source_type'),
-        respond: (_sql, params) => ({
-          rows: junctionRows
-            .filter((r) => Number(r.ioc_id) === Number(params[0]))
-            .map((r) => ({ classification_slug: r.classification_slug, source_type: r.source_type })),
-          rowCount: 1
-        })
-      },
-      {
-        match: (sql) => sql.includes('FROM ioc_threat_classification_overrides') && sql.includes('VALUES'),
-        respond: () => ({ rows: [], rowCount: 0 })
-      },
-      {
-        match: (sql) => sql.includes('FROM ioc_threat_classification_overrides') && !sql.includes('VALUES'),
+        match: (sql) => sql.includes('FROM ioc_threat_classification_overrides'),
         respond: () => ({ rows: [], rowCount: 0 })
       },
       {
@@ -596,7 +585,7 @@ test('bulkAddClassification is additive across two IOCs with different existing 
     req: {},
     audit: { auditSuccess: async () => {} }
   });
-  assert.equal(out.succeeded, 2);
+  assert.equal(out.succeeded, 2, out.results?.map((r) => r.message).join('; ') || 'expected success');
   const forA = junctionRows.filter((r) => Number(r.ioc_id) === 21).map((r) => r.classification_slug).sort();
   const forB = junctionRows.filter((r) => Number(r.ioc_id) === 22).map((r) => r.classification_slug).sort();
   assert.deepEqual(forA, ['dropper_downloader', 'malware']);

@@ -45,7 +45,7 @@ const opts = {
 const MARK = `bulkcls${crypto.randomBytes(4).toString('hex')}`;
 
 async function ensureSource(client) {
-  const name = `ITest BulkCls ${MARK}`;
+  const name = `ITestBulkCls_${MARK}`;
   const { rows: existing } = await client.query(
     `SELECT id FROM ioc_sources WHERE name = $1 LIMIT 1`,
     [name]
@@ -84,7 +84,7 @@ async function insertManualIoc(client, { value, type = 'domain', sourceId, legac
      ) VALUES (
        gen_random_uuid(), $1, $2, $3, 'high', 'itest', $4, $5, 'active', NOW(), NOW(), $6
      ) RETURNING id, observable_type, observable, threat_classification, ioc_source_id, source_name`,
-    [value, type, `ITest BulkCls ${MARK}`, MARK, legacy, sourceId]
+    [value, type, `ITestBulkCls_${MARK}`, MARK, legacy, sourceId]
   );
   return rows[0];
 }
