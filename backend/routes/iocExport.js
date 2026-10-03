@@ -1,7 +1,10 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { csvEscape, parseIocExportQuery } from '../lib/iocExportHelpers.js';
 import { buildThreatClassificationResponseFields } from '../lib/threatClassification.js';
-import { loadIocThreatClassificationDetails } from '../lib/iocThreatClassifications.js';
+import {
+  canonicalClassificationResponseFields,
+  loadCanonicalIocClassifications
+} from '../lib/iocCanonicalClassifications.js';
 
 /**
  * @param {import('express').Express} app
@@ -136,14 +139,18 @@ export function registerIocExportRoutes(app, pool) {
         params
       );
 
-      const detailMap = await loadIocThreatClassificationDetails(
+      // Canonical effective classification (same as IOC Details / REST / MCP / DSL).
+      const canonicalMap = await loadCanonicalIocClassifications(
         pool,
         rowsQ.rows.map((row) => ({ id: row.id, observable_type: row.ioc_type }))
       );
 
       const items = rowsQ.rows.map((row) => {
         const key = `${Number(row.id)}|${String(row.ioc_type || '')}`;
-        const multi = detailMap.get(key) || buildThreatClassificationResponseFields(row);
+        const canonical = canonicalMap.get(key);
+        const multi = canonical
+          ? canonicalClassificationResponseFields(canonical)
+          : buildThreatClassificationResponseFields(row);
         const labels = (multi.threat_classifications || [])
           .filter((x) => x.value !== 'unknown')
           .map((x) => x.label)

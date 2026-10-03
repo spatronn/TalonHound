@@ -1,7 +1,8 @@
 /**
  * Analyst add/suppress overrides for IOC threat classifications.
- * Feed evidence remains immutable; effective =
- *   (feed classifications − active suppressions) ∪ analyst additions
+ * Feed evidence remains immutable; the effective set is computed in ONE place,
+ * iocCanonicalClassifications.js:
+ *   (feed classifications − active suppressions) ∪ asserted classifications
  */
 
 import {
@@ -10,106 +11,14 @@ import {
   threatClassificationLabel
 } from './threatClassification.js';
 import {
-  buildThreatClassificationEntry,
   buildMultiThreatClassificationResponseFields,
-  legacyThreatClassificationColumnValue,
-  normalizeIocThreatClassificationSlugs
+  normalizeIocThreatClassificationSlugs,
+  writeLegacyClassificationMirror
 } from './iocThreatClassifications.js';
 import { parseNoteFields, normalizeFeedTags } from './feedTagNormalization.js';
 
 export function classificationOverrideKey(slug, sourceName = null) {
   return `${String(slug || '').toLowerCase()}::${String(sourceName || '').trim().toLowerCase()}`;
-}
-
-/**
- * Pure effective-set math.
- * @param {Array<{value:string,label?:string,origin?:string,source_name?:string}>} feedClassifications
- * @param {string[]} analystAdditionSlugs
- * @param {Array<{classification_slug:string,source_name?:string|null}>} activeSuppressions
- */
-export function computeEffectiveThreatClassifications({
-  feedClassifications = [],
-  analystAdditionSlugs = [],
-  activeSuppressions = []
-} = {}) {
-  const suppressAll = new Set();
-  const suppressBySource = new Set();
-  for (const row of activeSuppressions || []) {
-    const slug = String(row.classification_slug || row.value || '').trim().toLowerCase();
-    if (!slug) continue;
-    const src = row.source_name != null ? String(row.source_name).trim() : '';
-    if (!src) suppressAll.add(slug);
-    else suppressBySource.add(`${slug}::${src.toLowerCase()}`);
-  }
-
-  const visibleFeed = [];
-  const seen = new Set();
-  for (const item of feedClassifications || []) {
-    const value = String(item?.value || '').trim();
-    if (!value || value.toLowerCase() === UNKNOWN_THREAT_CLASSIFICATION) continue;
-    const key = value.toLowerCase();
-    if (suppressAll.has(key)) continue;
-    const src = String(item?.source_name || '').trim().toLowerCase();
-    if (src && suppressBySource.has(`${key}::${src}`)) continue;
-    // If source-specific suppressions exist without a matching source, still show
-    // unless an all-source suppress exists (already handled).
-    if (seen.has(key)) continue;
-    seen.add(key);
-    visibleFeed.push({
-      value,
-      label: item.label || threatClassificationLabel(value),
-      origin: 'feed',
-      source_name: item.source_name || null,
-      active: item.active !== false,
-      system_default: Boolean(item.system_default)
-    });
-  }
-
-  const additions = [];
-  for (const slug of normalizeIocThreatClassificationSlugs(analystAdditionSlugs)) {
-    if (seen.has(slug)) {
-      // Already visible via feed — annotate dual provenance on existing entry
-      const existing = visibleFeed.find((x) => x.value.toLowerCase() === slug);
-      if (existing) existing.origins = ['feed', 'analyst'];
-      continue;
-    }
-    seen.add(slug);
-    const entry = buildThreatClassificationEntry(slug);
-    additions.push({
-      ...entry,
-      origin: 'analyst',
-      source_name: null,
-      origins: ['analyst']
-    });
-  }
-
-  for (const item of visibleFeed) {
-    if (!item.origins) item.origins = ['feed'];
-  }
-
-  return {
-    feed_classifications: (feedClassifications || []).map((item) => ({
-      value: item.value,
-      label: item.label || threatClassificationLabel(item.value),
-      origin: 'feed',
-      source_name: item.source_name || null,
-      active: item.active !== false
-    })),
-    analyst_additions: normalizeIocThreatClassificationSlugs(analystAdditionSlugs).map((slug) => ({
-      ...buildThreatClassificationEntry(slug),
-      origin: 'analyst',
-      source_name: null
-    })),
-    analyst_suppressions: (activeSuppressions || []).map((row) => ({
-      value: String(row.classification_slug || row.value || ''),
-      label: threatClassificationLabel(row.classification_slug || row.value),
-      origin: 'suppress',
-      source_name: row.source_name || null,
-      suppressed_at: row.created_at || row.suppressed_at || null,
-      suppressed_by: row.created_by || row.suppressed_by || null
-    })).filter((x) => x.value),
-    effective_threat_classifications: [...visibleFeed, ...additions]
-  };
 }
 
 /**
@@ -227,7 +136,11 @@ export async function syncThreatClassificationOverrides(client, {
     );
   }
 
-  // Keep junction mirrored to analyst additions for list/export/search compatibility
+  // Legacy column mirrors the analyst additions — except a feed importer's stored
+  // value, which is feed evidence (hidden by suppression, never overwritten).
+  // Decided against the junction rows as they are before this save.
+  await writeLegacyClassificationMirror(client, { iocId, observableType, slugs: additionSlugs });
+
   await client.query(
     `DELETE FROM ioc_threat_classifications WHERE ioc_id = $1 AND ioc_observable_type = $2`,
     [iocId, observableType]
@@ -242,12 +155,6 @@ export async function syncThreatClassificationOverrides(client, {
       [iocId, observableType, slug, actor]
     );
   }
-  const legacyValue = legacyThreatClassificationColumnValue(additionSlugs);
-  await client.query(
-    `UPDATE ioc_items SET threat_classification = $3 WHERE id = $1 AND observable_type = $2`,
-    [iocId, observableType, legacyValue]
-  );
-
   return {
     additions: additionSlugs,
     suppressions: suppressSlugs,

@@ -179,3 +179,28 @@ function listActiveThreatClassificationsSync() {
     .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name))
     .map((x) => ({ value: x.slug, label: x.name, system_default: x.system_default }));
 }
+
+/**
+ * Stored spellings that normalizeClassificationSlug resolves to each slug via
+ * the legacy alias map (e.g. 'c2' → command_and_control), including the
+ * space / hyphen variants the normalizer folds to '_'. Lets SQL match a stored
+ * ioc_items.threat_classification value with the same result as the JS
+ * normalizer, without normalizing the indexed column at query time.
+ * @returns {Array<[string, string]>} [stored spelling, slug]
+ */
+export function legacyClassificationSpellings() {
+  const out = new Map();
+  const add = (raw, slug) => {
+    for (const v of new Set([raw, raw.replace(/_/g, ' '), raw.replace(/_/g, '-')])) out.set(v, slug);
+  };
+  for (const [key, slug] of Object.entries(LEGACY_NORMALIZE_MAP)) {
+    const folded = key.trim().toLowerCase().replace(/[\s-]+/g, '_');
+    if (normalizeClassificationSlug(folded) === slug) add(folded, slug);
+  }
+  return [...out.entries()];
+}
+
+/** Loaded classification registry entries (null until loaded in this process). */
+export function listCachedThreatClassifications() {
+  return registryCache ? [...registryCache.values()] : null;
+}

@@ -5,17 +5,12 @@
  *
  * One implementation so those paths can never report different
  * classifications / tags for the same IOC. Semantics mirror the IOC Details UI:
- *   classifications — the canonical EFFECTIVE set the IOC list / details show
- *     (iocThreatClassificationOverrides.computeEffectiveThreatClassifications):
- *       (feed-proposed classifications − active analyst suppressions)
- *         ∪ analyst classifications
- *     Feed proposals come from stored per-feed source evidence through the
- *     controlled feed vocabulary (batchLoadFeedClassifications); analyst
- *     classifications are the junction slugs, or the legacy
- *     ioc_items.threat_classification column when the junction is empty
- *     (loadEffectiveIocClassificationSlugs). All three are unioned across
- *     proven file-artifact aliases. classification_context lists who asserts
- *     each effective slug (feed source names and/or analyst).
+ *   classifications — the canonical EFFECTIVE set (iocCanonicalClassifications.js),
+ *     identical to IOC Details, the IOC list, exports and the DSL `classification`:
+ *       (feed classifications − analyst suppressions) ∪ asserted classifications
+ *     classification_context lists who asserts each effective slug: `feed`
+ *     (source_name), `analyst` (explicit analyst / API assertion) or `legacy`
+ *     (stored value whose author cannot be proven — never shown as analyst).
  *   tags — the IOC's own catalog tags (loadCatalogTags: every origin, manual +
  *     integration) UNION Threat Library report tags that the IOC's own report
  *     evidence names (threatLibrary/reportTagInheritance.js), across the same
@@ -31,22 +26,14 @@
  *
  * Query budget is constant in the number of rows (no N+1):
  *   ≤1 artifact scope expansion (only when FILE_ARTIFACTS_READ_ENABLED)
- *   ≤1 ioc_items read (types of alias rows / legacy column not already held)
+ *   ≤1 ioc_items read (identity rows whose classification facts are not held)
  *   1 junction read, 1 feed-evidence read, 1 suppression read,
  *   1 tag read, 1 report-tag read
  */
 
 import { mapIocIdsToArtifactScopedIocIds } from './fileArtifacts/read.js';
-import {
-  iocPairKey,
-  loadIocThreatClassificationSlugs,
-  normalizeIocThreatClassificationSlugs
-} from './iocThreatClassifications.js';
-import {
-  batchLoadFeedClassifications,
-  batchLoadThreatClassificationSuppressions,
-  computeEffectiveThreatClassifications
-} from './iocThreatClassificationOverrides.js';
+import { iocPairKey } from './iocThreatClassifications.js';
+import { loadCanonicalIocClassifications } from './iocCanonicalClassifications.js';
 import { catalogTagFromAggregateRow } from './apiIocService.js';
 import { loadInheritedReportTagRows, groupInheritedTagsBySeed } from './threatLibrary/reportTagInheritance.js';
 
@@ -122,46 +109,11 @@ export function splitReportTags(reportTags) {
 }
 
 /**
- * Canonical effective classification slugs + per-slug provenance.
- * @param {{ feed: object[], analystSlugs: string[], suppressions: object[] }} parts
- */
-export function effectiveClassificationsFromParts({ feed = [], analystSlugs = [], suppressions = [] } = {}) {
-  const computed = computeEffectiveThreatClassifications({
-    feedClassifications: feed,
-    analystAdditionSlugs: analystSlugs,
-    activeSuppressions: suppressions
-  });
-  const sourceNamesBySlug = new Map();
-  for (const f of feed) {
-    const key = String(f.value).toLowerCase();
-    if (!sourceNamesBySlug.has(key)) sourceNamesBySlug.set(key, new Set());
-    for (const n of f.source_names || (f.source_name ? [f.source_name] : [])) sourceNamesBySlug.get(key).add(n);
-  }
-  const effective = computed.effective_threat_classifications
-    .map((c) => ({ value: c.value, origins: c.origins || [c.origin] }))
-    .sort((a, b) => (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
-  return {
-    classifications: effective.map((c) => c.value),
-    classification_context: effective.map((c) => {
-      const sources = [];
-      if (c.origins.includes('feed')) {
-        for (const name of [...(sourceNamesBySlug.get(c.value.toLowerCase()) || [])].sort()) {
-          sources.push({ type: 'feed', source_name: name });
-        }
-      }
-      if (c.origins.includes('analyst')) sources.push({ type: 'analyst' });
-      return { classification: c.value, sources };
-    })
-  };
-}
-
-const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
-
-/**
  * @param {import('pg').Pool|import('pg').PoolClient} pool
- * @param {Array<{ id: number|string, observable_type: string, threat_classification?: string|null }>} rows
- *   Rows that omit the `threat_classification` key get the legacy column read in
- *   the single batched ioc_items query.
+ * @param {Array<{ id: number|string, observable_type: string, threat_classification?: string|null,
+ *   ioc_source_id?: number|null, source_name?: string|null }>} rows
+ *   Rows that do not carry all three classification facts (threat_classification,
+ *   ioc_source_id, source_name) get them read in the single batched ioc_items query.
  * @returns {Promise<Map<string, { classifications: string[], tags: string[], tags_detail: object[] }>>}
  *   keyed by iocPairKey(id, observable_type)
  */
@@ -176,63 +128,28 @@ export async function hydrateIocApiMetadata(pool, rows) {
     const key = iocPairKey(id, type);
     if (seenSeed.has(key)) continue;
     seenSeed.add(key);
-    seeds.push({
-      id,
-      type,
-      key,
-      hasLegacy: hasOwn(r, 'threat_classification'),
-      legacy: r.threat_classification ?? null
-    });
+    seeds.push({ id, type, key, row: r });
   }
   if (!seeds.length) return out;
 
   // Artifact scope per seed (seed itself when not linked / reads disabled).
   const scopeById = await mapIocIdsToArtifactScopedIocIds(pool, seeds.map((s) => s.id));
 
-  const typeById = new Map(seeds.map((s) => [s.id, s.type]));
-  const legacyById = new Map(seeds.filter((s) => s.hasLegacy).map((s) => [s.id, s.legacy]));
-  const needRead = new Set();
-  for (const s of seeds) {
-    if (!s.hasLegacy) needRead.add(s.id);
-    for (const scopedId of scopeById.get(s.id) || [s.id]) {
-      if (!typeById.has(scopedId)) needRead.add(scopedId);
-    }
-  }
-  if (needRead.size) {
-    const { rows: typeRows } = await pool.query(
-      `SELECT id, observable_type, threat_classification FROM ioc_items WHERE id = ANY($1::bigint[])`,
-      [[...needRead]]
-    );
-    for (const tr of typeRows) {
-      const id = Number(tr.id);
-      if (!typeById.has(id)) typeById.set(id, String(tr.observable_type));
-      if (!legacyById.has(id)) legacyById.set(id, tr.threat_classification ?? null);
-    }
-  }
-
-  const scopedPairs = [];
   const tagSeedIds = [];
   const tagIocIds = [];
-  const seenPair = new Set();
   for (const s of seeds) {
     for (const scopedId of scopeById.get(s.id) || [s.id]) {
-      const scopedType = typeById.get(scopedId);
-      if (scopedType) {
-        const pk = iocPairKey(scopedId, scopedType);
-        if (!seenPair.has(pk)) {
-          seenPair.add(pk);
-          scopedPairs.push({ id: scopedId, observable_type: scopedType });
-        }
-      }
       tagSeedIds.push(s.id);
       tagIocIds.push(scopedId);
     }
   }
 
-  const [junctionMap, feedMap, suppressMap, tagRows, inheritedRows] = await Promise.all([
-    loadIocThreatClassificationSlugs(pool, scopedPairs),
-    batchLoadFeedClassifications(pool, scopedPairs),
-    batchLoadThreatClassificationSuppressions(pool, scopedPairs),
+  const [classificationMap, tagRows, inheritedRows] = await Promise.all([
+    loadCanonicalIocClassifications(
+      pool,
+      seeds.map((s) => ({ ...s.row, id: s.id, observable_type: s.type })),
+      { scopeBySeed: scopeById }
+    ),
     pool.query(
       `SELECT s.seed_id, t.name, t.type,
               array_agg(DISTINCT it.origin) AS origins,
@@ -262,30 +179,12 @@ export async function hydrateIocApiMetadata(pool, rows) {
   }
 
   for (const s of seeds) {
-    const union = new Set();
-    const feed = [];
-    const suppressions = [];
-    for (const scopedId of scopeById.get(s.id) || [s.id]) {
-      const scopedType = typeById.get(scopedId);
-      if (!scopedType) continue;
-      const pk = iocPairKey(scopedId, scopedType);
-      for (const slug of junctionMap.get(pk) || []) union.add(slug);
-      feed.push(...(feedMap.get(pk) || []));
-      suppressions.push(...(suppressMap.get(pk) || []));
-    }
-    const analystSlugs = union.size
-      ? [...union].sort()
-      : normalizeIocThreatClassificationSlugs(legacyById.get(s.id) ?? null);
-    const classified = effectiveClassificationsFromParts({
-      feed: mergeFeedProposals(feed),
-      analystSlugs,
-      suppressions
-    });
+    const classified = classificationMap.get(s.key);
     const reportTags = splitReportTags(inheritedBySeed.get(s.id) || []);
     const effective = mergeEffectiveTags(tagsBySeed.get(s.id) || [], reportTags.iocLevel);
     out.set(s.key, {
-      classifications: classified.classifications,
-      classification_context: classified.classification_context,
+      classifications: classified ? classified.classifications : [],
+      classification_context: classified ? classified.classification_context : [],
       tags: effective.tags,
       tags_detail: effective.tags_detail,
       tag_context: effective.tag_context,
@@ -293,22 +192,6 @@ export async function hydrateIocApiMetadata(pool, rows) {
     });
   }
   return out;
-}
-
-/** One proposal per slug across artifact aliases, asserting sources unioned. */
-function mergeFeedProposals(list) {
-  const bySlug = new Map();
-  for (const f of list) {
-    const key = String(f.value).toLowerCase();
-    const names = f.source_names || (f.source_name ? [f.source_name] : []);
-    const known = bySlug.get(key);
-    if (!known) {
-      bySlug.set(key, { ...f, source_names: [...names] });
-    } else {
-      for (const n of names) if (!known.source_names.includes(n)) known.source_names.push(n);
-    }
-  }
-  return [...bySlug.values()];
 }
 
 /** Empty metadata for a row the hydrator did not see (defensive default). */

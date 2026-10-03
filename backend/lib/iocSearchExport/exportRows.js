@@ -15,6 +15,8 @@ import {
 } from '../iocListTimestamps.js';
 import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 import { loadInheritedReportTagRows } from '../threatLibrary/reportTagInheritance.js';
+import { loadCanonicalIocClassifications } from '../iocCanonicalClassifications.js';
+import { iocPairKey } from '../iocThreatClassifications.js';
 
 // Build the full export query for the matched set — executed exactly ONCE by
 // streamExportToSink through a NO SCROLL server-side cursor, then streamed in FETCH-sized
@@ -148,15 +150,26 @@ export async function enrichExportBatch(db, baseRows) {
         GROUP BY it.ioc_id`,
       [ids]
     ),
-    db.query(
-      `SELECT itc.ioc_id,
-              ARRAY_AGG(DISTINCT COALESCE(tc.name, itc.classification_slug) ORDER BY COALESCE(tc.name, itc.classification_slug)) AS names
-         FROM ioc_threat_classifications itc
-         LEFT JOIN threat_classifications tc ON tc.slug = itc.classification_slug
-        WHERE itc.ioc_id = ANY($1::bigint[])
-        GROUP BY itc.ioc_id`,
-      [ids]
-    ),
+    // Canonical effective classification (same as IOC Details / REST / MCP / DSL).
+    loadCanonicalIocClassifications(
+      db,
+      baseRows.map((r) => ({ id: Number(r.id), observable_type: r.observable_type }))
+    ).then(async (canonicalMap) => {
+      const slugs = [...new Set([...canonicalMap.values()].flatMap((c) => c.classifications))];
+      const { rows: names } = slugs.length
+        ? await db.query('SELECT slug, name FROM threat_classifications WHERE slug = ANY($1::text[])', [slugs])
+        : { rows: [] };
+      const nameBySlug = new Map(names.map((n) => [n.slug, n.name]));
+      return {
+        rows: baseRows.map((r) => {
+          const c = canonicalMap.get(iocPairKey(r.id, r.observable_type));
+          return {
+            ioc_id: Number(r.id),
+            names: (c ? c.classifications : []).map((slug) => nameBySlug.get(slug) || slug).sort()
+          };
+        })
+      };
+    }),
     db.query(
       `SELECT ita.ioc_id,
               ARRAY_AGG(DISTINCT ta.name ORDER BY ta.name) AS names

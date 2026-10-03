@@ -2,17 +2,12 @@ import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import {
   buildMultiThreatClassificationResponseFields,
   diffThreatClassificationSlugs,
-  loadEffectiveIocClassificationSlugs,
   loadIocThreatClassificationDetails,
   mergeIocThreatMetadataItem,
   normalizeIocThreatClassificationSlugs,
   validateIocThreatClassificationSlugs
 } from '../lib/iocThreatClassifications.js';
 import {
-  batchLoadFeedClassifications,
-  buildThreatClassificationEffectiveFields,
-  computeEffectiveThreatClassifications,
-  listActiveThreatClassificationSuppressions,
   planThreatClassificationEffectiveSave,
   syncThreatClassificationOverrides
 } from '../lib/iocThreatClassificationOverrides.js';
@@ -21,6 +16,11 @@ export {
   batchLoadFeedClassifications,
   batchLoadThreatClassificationSuppressions
 } from '../lib/iocThreatClassificationOverrides.js';
+import {
+  canonicalClassificationResponseFields,
+  loadCanonicalIocClassification,
+  loadCanonicalIocClassifications
+} from '../lib/iocCanonicalClassifications.js';
 import { resolveThreatActorById } from './threatActors.js';
 import {
   buildMultiThreatActorResponseFields,
@@ -95,57 +95,19 @@ function isOverridesTableMissing(err) {
   return String(err?.message || '').includes('ioc_threat_classification_overrides');
 }
 
-async function loadFeedClassificationsForIoc(pool, iocId, observableType) {
-  const map = await batchLoadFeedClassifications(pool, [{ id: iocId, observable_type: observableType }]);
-  return map.get(`${Number(iocId)}|${String(observableType)}`) || [];
-}
-
 /**
- * Analyst additions come from the junction table. When junction is empty (pre-multi /
- * feed-import rows), fall back to ioc_items.threat_classification so details matches
- * the list path (`enrichItemsWithThreatMetadata` + `mergeFeedClassificationsIntoItem`).
+ * IOC Details classification bundle = the canonical effective classification
+ * (lib/iocCanonicalClassifications.js), same as list / REST / MCP / DSL / exports.
  */
-async function resolveAnalystAdditionSlugs(pool, iocId, observableType, {
-  analystSlugs = null,
-  legacyThreatClassification = null
-} = {}) {
-  if (analystSlugs != null) {
-    return normalizeIocThreatClassificationSlugs(analystSlugs);
-  }
-  return loadEffectiveIocClassificationSlugs(pool, iocId, observableType, legacyThreatClassification);
-}
-
-async function buildEffectiveClassificationBundle(pool, iocId, observableType, {
-  analystSlugs = null,
-  feedClassifications = null,
-  legacyThreatClassification = null
-} = {}) {
-  const feed = feedClassifications
-    || await loadFeedClassificationsForIoc(pool, iocId, observableType);
-  const additions = await resolveAnalystAdditionSlugs(pool, iocId, observableType, {
-    analystSlugs,
-    legacyThreatClassification
-  });
-  let suppressions = [];
-  try {
-    suppressions = await listActiveThreatClassificationSuppressions(pool, iocId, observableType);
-  } catch (err) {
-    if (!isOverridesTableMissing(err)) throw err;
-  }
-  const computed = computeEffectiveThreatClassifications({
-    feedClassifications: feed,
-    analystAdditionSlugs: additions,
-    activeSuppressions: suppressions
-  });
-  return buildThreatClassificationEffectiveFields(computed);
+async function buildEffectiveClassificationBundle(pool, iocId, observableType) {
+  const canonical = await loadCanonicalIocClassification(pool, { id: iocId, observable_type: observableType });
+  return canonicalClassificationResponseFields(canonical);
 }
 
 async function buildIocClassificationResponse(pool, iocId, observableType, baseRow = null) {
   const row = baseRow || await fetchIocRow(pool, iocId, observableType);
   if (!row) return null;
-  const fields = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
-    legacyThreatClassification: row.threat_classification
-  });
+  const fields = await buildEffectiveClassificationBundle(pool, iocId, observableType);
   const actorFields = await resolveThreatActorFields(pool, iocId, observableType, row);
   return {
     public_id: row.public_id,
@@ -179,21 +141,26 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       const prev = await fetchIocRow(pool, iocId, observableType);
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
-      const feedClassifications = await loadFeedClassificationsForIoc(pool, iocId, observableType);
+      // Plan against the canonical identity: feed classifications (evidence and
+      // importer-stored values, all aliases) are kept by leaving them checked and
+      // hidden by unchecking (suppression); everything else checked becomes an
+      // analyst assertion. Existing analyst assertions stay analyst even when a
+      // feed also proposes the same slug.
+      const canonicalBefore = await loadCanonicalIocClassification(pool, { id: iocId, observable_type: observableType });
+      const feedClassifications = canonicalBefore.feed;
       const planned = planThreatClassificationEffectiveSave({
         desiredEffectiveSlugs: parseClassificationBody(req.body),
         feedClassifications
       });
+      const keptAnalyst = canonicalBefore.analyst.filter((slug) => planned.desired.includes(slug));
+      planned.additions = [...new Set([...planned.additions, ...keptAnalyst])];
 
       const check = await validateIocThreatClassificationSlugs(pool, planned.additions, {
         requireActive: true
       });
       if (!check.ok) return res.status(400).json({ success: false, error: check.error });
 
-      const beforeBundle = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
-        feedClassifications,
-        legacyThreatClassification: prev.threat_classification
-      });
+      const beforeBundle = canonicalClassificationResponseFields(canonicalBefore);
       const beforeEffective = (beforeBundle.effective_threat_classifications || [])
         .map((x) => x.value)
         .filter((v) => v && v !== 'unknown');
@@ -225,9 +192,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
 
       invalidateDetailsCache(prev.public_id);
 
-      const afterBundle = await buildEffectiveClassificationBundle(pool, iocId, observableType, {
-        feedClassifications
-      });
+      const afterBundle = await buildEffectiveClassificationBundle(pool, iocId, observableType);
       const afterEffective = (afterBundle.effective_threat_classifications || [])
         .map((x) => x.value)
         .filter((v) => v && v !== 'unknown');
@@ -410,7 +375,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
   );
 }
 
-export async function buildThreatMetadataFields(pool, row, { feedClassifications = null } = {}) {
+export async function buildThreatMetadataFields(pool, row) {
   if (!row) {
     return {
       ...buildMultiThreatClassificationResponseFields([]),
@@ -429,10 +394,7 @@ export async function buildThreatMetadataFields(pool, row, { feedClassifications
 
   if (Number.isFinite(Number(row.id)) && row.observable_type) {
     try {
-      const fields = await buildEffectiveClassificationBundle(pool, row.id, row.observable_type, {
-        feedClassifications,
-        legacyThreatClassification: row.threat_classification
-      });
+      const fields = await buildEffectiveClassificationBundle(pool, row.id, row.observable_type);
       return { ...fields, ...actorFields };
     } catch (err) {
       if (!isOverridesTableMissing(err)) {
@@ -512,19 +474,18 @@ export function mergeThreatMetadataItem(item, metaMap) {
 }
 
 /**
- * Merge feed-derived classifications with analyst additions, applying suppressions.
+ * Canonical classifications for an IOC list page (one batched load; see
+ * lib/iocCanonicalClassifications.js). `scopeBySeed` reuses the page's artifact
+ * alias expansion.
  */
-export function mergeFeedClassificationsIntoItem(item, feedMap, suppressMap = null) {
+export function loadListCanonicalClassifications(pool, items, { scopeBySeed = null } = {}) {
+  return loadCanonicalIocClassifications(pool, items, scopeBySeed ? { scopeBySeed } : {});
+}
+
+/** Overlay the canonical classification fields on a list item. */
+export function mergeCanonicalClassificationsIntoItem(item, canonicalMap) {
   const key = `${Number(item?.id)}|${String(item?.observable_type || '')}`;
-  const feedClasses = feedMap?.get(key) || [];
-  const suppressions = suppressMap?.get(key) || [];
-  const analystSlugs = (item.threat_classifications || [])
-    .map((c) => c?.value)
-    .filter((v) => v && v !== 'unknown');
-  const computed = computeEffectiveThreatClassifications({
-    feedClassifications: feedClasses,
-    analystAdditionSlugs: analystSlugs,
-    activeSuppressions: suppressions
-  });
-  return { ...item, ...buildThreatClassificationEffectiveFields(computed) };
+  const canonical = canonicalMap?.get(key);
+  if (!canonical) return item;
+  return { ...item, ...canonicalClassificationResponseFields(canonical) };
 }

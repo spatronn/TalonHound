@@ -4,6 +4,7 @@ import { isFileArtifactsReadEnabled } from '../fileArtifacts/flags.js';
 import { inferExactHashType } from '../fileArtifacts/hashNormalize.js';
 import { artifactAliasIocMembershipSql } from '../fileArtifacts/hashIdentitySql.js';
 import { inheritedTagIocMembershipSql } from '../threatLibrary/reportTagInheritance.js';
+import { buildEffectiveClassificationPredicate } from './classificationPredicate.js';
 
 // Compiles a validated AST into a single boolean SQL expression plus a positional
 // parameter array. EVERY user-derived value is bound as a parameter — no DSL token is
@@ -75,6 +76,12 @@ class Builder {
       case 'or':
         return `(${node.children.map((c) => this.build(c)).join(' OR ')})`;
       case 'not':
+        // NOT classification … excludes the whole IOC identity (same as not_equals /
+        // not_in), not just the row that carries the classification.
+        if (node.child.type === 'condition' && node.child.field === 'classification') {
+          const flipped = { equals: 'not_equals', in: 'not_in', not_equals: 'equals', not_in: 'in' }[node.child.operator];
+          if (flipped) return `(${this.buildCondition({ ...node.child, operator: flipped })})`;
+        }
         return `(NOT ${this.build(node.child)})`;
       case 'condition':
         return this.buildCondition(node);
@@ -324,33 +331,18 @@ class Builder {
     }
   }
 
-  // ---- enum: classification (EXISTS over multi table, slug OR label) ----
+  // ---- enum: classification (canonical effective classification) --------
+  // Same rule as IOC Details / REST / MCP / exports:
+  //   (feed classifications − analyst suppressions) ∪ asserted classifications
+  // See classificationPredicate.js; input matches a slug or a catalog label.
   buildClassification(node) {
-    const base = (cond) =>
-      `EXISTS (SELECT 1 FROM ioc_threat_classifications itc ` +
-      `LEFT JOIN threat_classifications tc ON tc.slug = itc.classification_slug ` +
-      `WHERE itc.ioc_id = ${IOC_ALIAS}.id AND itc.ioc_observable_type = ${IOC_ALIAS}.observable_type ` +
-      `AND ${cond})`;
-    switch (node.operator) {
-      case 'equals': {
-        const ph = this.bind(node.values[0].toLowerCase());
-        return base(`(itc.classification_slug = ${ph} OR LOWER(tc.name) = ${ph})`);
-      }
-      case 'not_equals': {
-        const ph = this.bind(node.values[0].toLowerCase());
-        return `NOT ${base(`(itc.classification_slug = ${ph} OR LOWER(tc.name) = ${ph})`)}`;
-      }
-      case 'in': {
-        const ph = this.bind(node.values.map((v) => v.toLowerCase()));
-        return base(`(itc.classification_slug = ANY(${ph}::text[]) OR LOWER(tc.name) = ANY(${ph}::text[]))`);
-      }
-      case 'not_in': {
-        const ph = this.bind(node.values.map((v) => v.toLowerCase()));
-        return `NOT ${base(`(itc.classification_slug = ANY(${ph}::text[]) OR LOWER(tc.name) = ANY(${ph}::text[]))`)}`;
-      }
-      default:
-        throw new Error(`Unsupported operator for classification: ${node.operator}`);
-    }
+    return buildEffectiveClassificationPredicate({
+      bind: (value) => this.bind(value),
+      iocAlias: IOC_ALIAS,
+      operator: node.operator,
+      values: node.values,
+      fileArtifactsReadEnabled: this.fileArtifactsReadEnabled
+    });
   }
 
   // ---- enum: type/status/confidence (single column) ---------------------

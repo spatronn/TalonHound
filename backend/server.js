@@ -269,7 +269,7 @@ import { registerCustomThreatFeedRoutes } from './routes/customThreatFeeds.js';
 import { isValidTrustLevel } from './lib/trustLevel.js';
 import { registerThreatActorRoutes } from './routes/threatActors.js';
 import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
-import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem, batchLoadFeedClassifications, batchLoadThreatClassificationSuppressions, mergeFeedClassificationsIntoItem } from './routes/iocThreatMetadata.js';
+import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem, loadListCanonicalClassifications, mergeCanonicalClassificationsIntoItem } from './routes/iocThreatMetadata.js';
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
 import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
@@ -3735,22 +3735,22 @@ async function finalizeIocListPageItems(pool, pageItems, opts = {}) {
     ...opts,
     linkedBySeed
   });
-  const [confMap, threatMetaMap, analystMap, feedClassMap, suppressMap] = await Promise.all([
+  const [confMap, threatMetaMap, analystMap, classificationMap] = await Promise.all([
     buildDisplayConfidenceForItems(pool, enriched, {
       includeInactiveMemberships: Boolean(opts.includeInactiveMemberships),
       linkedBySeed
     }),
     enrichItemsWithThreatMetadata(pool, pageItems),
     enrichItemsWithAnalystIntelligenceCounts(pool, pageItems, { linkedBySeed }),
-    batchLoadFeedClassifications(pool, pageItems),
-    batchLoadThreatClassificationSuppressions(pool, pageItems)
+    // Canonical effective classification (same as details / REST / MCP / DSL / exports).
+    loadListCanonicalClassifications(pool, pageItems, { scopeBySeed: linkedBySeed })
   ]);
   return {
     items: enriched.map((it) => {
       const c = confMap.get(`${Number(it.id)}|${String(it.observable_type)}`) || {};
       const merged = mergeThreatMetadataItem({ ...it, ...c }, threatMetaMap);
-      const withFeed = mergeFeedClassificationsIntoItem(merged, feedClassMap, suppressMap);
-      return mergeAnalystIntelligenceItem(withFeed, analystMap);
+      const classified = mergeCanonicalClassificationsIntoItem(merged, classificationMap);
+      return mergeAnalystIntelligenceItem(classified, analystMap);
     }),
     linkedBySeed
   };
@@ -5738,9 +5738,7 @@ app.get('/api/ioc/details', async (req, res) => {
       console.warn('[ioc-details] disabled catalog tag filter skipped:', err.message);
     }
 
-    const threatMetadataFields = await buildThreatMetadataFields(pool, lifecycleRow, {
-      feedClassifications: rawFeedIntelligence?.classifications || []
-    });
+    const threatMetadataFields = await buildThreatMetadataFields(pool, lifecycleRow);
 
     const summary = {
       id: seedRow.id,

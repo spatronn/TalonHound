@@ -5,7 +5,6 @@ import {
   threatClassificationLabel,
   validateThreatClassificationSlug
 } from './threatClassification.js';
-import { resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
 
 export function parseThreatClassificationInput(raw) {
   if (raw == null) return [];
@@ -40,6 +39,49 @@ export function normalizeIocThreatClassificationSlugs(raw) {
     }
   }
   return slugs;
+}
+
+/**
+ * True when `row.threat_classification` is a feed importer's stored assertion:
+ * the row was created by a feed (ioc_source_id IS NULL) and the value is not
+ * mirrored by one of the row's own junction slugs. Only feed importers write the
+ * column of a feed-created row without a matching junction row, so the value is
+ * feed evidence of the creating source (ioc_items.source_name). Analyst saves
+ * must leave it in place — it is hidden by suppression, never overwritten.
+ * @param {{ threat_classification?: string|null, ioc_source_id?: number|string|null }|null|undefined} row
+ * @param {Iterable<string>} junctionSlugs the row's own junction slugs
+ */
+export function isImporterStoredClassification(row, junctionSlugs = []) {
+  if (!row || row.ioc_source_id != null) return false;
+  const slug = normalizeClassificationSlug(row.threat_classification, { defaultValue: null });
+  if (!slug || slug === UNKNOWN_THREAT_CLASSIFICATION) return false;
+  return !new Set([...junctionSlugs].map((s) => String(s).trim().toLowerCase())).has(slug);
+}
+
+/**
+ * Write the legacy single-value column as the analyst-classification mirror,
+ * unless it holds a feed importer's stored assertion (kept as feed evidence).
+ * Call BEFORE the junction rows are replaced.
+ */
+export async function writeLegacyClassificationMirror(client, { iocId, observableType, slugs }) {
+  const [{ rows: itemRows }, { rows: junctionRows }] = await Promise.all([
+    client.query(
+      `SELECT ioc_source_id, threat_classification FROM ioc_items WHERE id = $1 AND observable_type = $2`,
+      [iocId, observableType]
+    ),
+    client.query(
+      `SELECT classification_slug FROM ioc_threat_classifications WHERE ioc_id = $1 AND ioc_observable_type = $2`,
+      [iocId, observableType]
+    )
+  ]);
+  if (isImporterStoredClassification(itemRows[0], junctionRows.map((r) => r.classification_slug))) {
+    return { written: false, preserved: itemRows[0].threat_classification };
+  }
+  await client.query(
+    `UPDATE ioc_items SET threat_classification = $3 WHERE id = $1 AND observable_type = $2`,
+    [iocId, observableType, legacyThreatClassificationColumnValue(slugs)]
+  );
+  return { written: true, preserved: null };
 }
 
 export function legacyThreatClassificationColumnValue(slugs) {
@@ -158,88 +200,6 @@ export async function fetchIocThreatClassificationSlugs(pool, iocId, observableT
   return map.get(iocPairKey(iocId, observableType)) || [];
 }
 
-/**
- * Effective analyst classification slugs for one IOC: the multi-select junction
- * table when it has rows, otherwise the legacy single-value
- * `ioc_items.threat_classification` column (written by ingestion / pre-multi
- * flows). Mirrors the list + details fallback (`mergeIocThreatMetadataItem`,
- * `resolveAnalystAdditionSlugs`) so an IOC whose classification lives only in
- * the legacy column is not reported as unclassified. Pass
- * `legacyThreatClassification` (the row's column value) to avoid a second read
- * when the caller already holds the row; when it is null/undefined the column
- * is fetched on demand. Feed-only classifications and analyst suppressions are
- * NOT applied here — this is the analyst/native slug set, not the full
- * effective computation used when feed classifications are present.
- *
- * For file artifacts, junction rows on proven exact-hash aliases of the same
- * file are unioned so an MD5 analyst classification remains visible after
- * canonicalization to SHA256.
- */
-export async function loadEffectiveIocClassificationSlugs(pool, iocId, observableType, legacyThreatClassification) {
-  const scopedIds = await resolveArtifactScopedIocIds(pool, iocId);
-  if (scopedIds.length > 1) {
-    const { rows: typeRows } = await pool.query(
-      `SELECT id, observable_type FROM ioc_items WHERE id = ANY($1::bigint[])`,
-      [scopedIds]
-    );
-    const pairs = typeRows.map((r) => ({ id: Number(r.id), observable_type: String(r.observable_type) }));
-    const junctionMap = await loadIocThreatClassificationSlugs(pool, pairs);
-    const union = new Set();
-    for (const p of pairs) {
-      for (const slug of junctionMap.get(iocPairKey(p.id, p.observable_type)) || []) union.add(slug);
-    }
-    if (union.size) return [...union].sort();
-  } else {
-    const junction = await fetchIocThreatClassificationSlugs(pool, iocId, observableType);
-    if (junction.length) return junction;
-  }
-  let legacy = legacyThreatClassification;
-  if (legacy == null) {
-    const { rows } = await pool.query(
-      `SELECT threat_classification FROM ioc_items WHERE id = $1 AND observable_type = $2 LIMIT 1`,
-      [iocId, observableType]
-    );
-    legacy = rows[0]?.threat_classification ?? null;
-  }
-  return normalizeIocThreatClassificationSlugs(legacy);
-}
-
-/**
- * Batch form of loadEffectiveIocClassificationSlugs for callers that already
- * hold a set of IOC rows (e.g. bulk_lookup_iocs, max 100). Applies the SAME
- * junction-then-legacy semantics per IOC, but resolves the junction table with a
- * SINGLE query for the whole batch (via loadIocThreatClassificationSlugs) and
- * reuses each row's already-fetched `threat_classification` column for the
- * legacy fallback — so classification retrieval never scales with IOC count
- * (no N+1) and no per-IOC ioc_items read is issued.
- *
- * @param {import('pg').Pool} pool
- * @param {Array<{id:number, observable_type:string, threat_classification?:string|null}>} rows
- * @returns {Promise<Map<string, string[]>>} keyed by iocPairKey(id, observable_type)
- */
-export async function loadEffectiveIocClassificationSlugsBatch(pool, rows) {
-  const result = new Map();
-  const list = (Array.isArray(rows) ? rows : [])
-    .map((r) => ({
-      id: Number(r?.id ?? r?.ioc_id),
-      observable_type: String(r?.observable_type ?? r?.ioc_observable_type ?? '').trim(),
-      legacy: r?.threat_classification ?? r?.legacy_threat_classification ?? null
-    }))
-    .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.observable_type);
-  if (!list.length) return result;
-
-  // One batched junction read for every (id, observable_type) pair.
-  const junctionMap = await loadIocThreatClassificationSlugs(pool, list);
-  for (const r of list) {
-    const key = iocPairKey(r.id, r.observable_type);
-    const junction = junctionMap.get(key) || [];
-    // Junction wins when present; otherwise normalize the legacy column (drops
-    // 'unknown'/empty), identical to the single-IOC effective loader.
-    result.set(key, junction.length ? junction : normalizeIocThreatClassificationSlugs(r.legacy));
-  }
-  return result;
-}
-
 export async function replaceIocThreatClassifications(pool, {
   iocId,
   observableType,
@@ -252,6 +212,9 @@ export async function replaceIocThreatClassifications(pool, {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Mirror into the legacy column first: it decides importer-vs-mirror from the
+    // junction rows as they were before this write.
+    await writeLegacyClassificationMirror(client, { iocId, observableType, slugs: normalized });
     await client.query(
       `DELETE FROM ioc_threat_classifications WHERE ioc_id = $1 AND ioc_observable_type = $2`,
       [iocId, observableType]
@@ -266,11 +229,6 @@ export async function replaceIocThreatClassifications(pool, {
         [iocId, observableType, slug, sourceType, sourceName, actor]
       );
     }
-    const legacyValue = legacyThreatClassificationColumnValue(normalized);
-    await client.query(
-      `UPDATE ioc_items SET threat_classification = $3 WHERE id = $1 AND observable_type = $2`,
-      [iocId, observableType, legacyValue]
-    );
     await client.query('COMMIT');
     return normalized;
   } catch (err) {

@@ -18,7 +18,7 @@ import {
   isSlidingWindow,
   isSlidingWindowIncrementalEnabled
 } from './publishedFeedWindowEligibility.js';
-import { queryHasRelativeDate } from './iocSearchDsl/index.js';
+import { flattenConditions, parseSearchQuery, queryHasRelativeDate } from './iocSearchDsl/index.js';
 
 export const PROJECTION_STATUS = {
   ABSENT: 'absent',
@@ -85,7 +85,20 @@ export function feedSupportsIncrementalProjection(feed) {
   if (mode !== 'query') return true;
   const query = String(feed?.advanced_query || '').trim();
   if (!query) return true;
-  return !queryHasRelativeDate(query);
+  return !queryHasRelativeDate(query) && !queryUsesField(query, 'classification');
+}
+
+/**
+ * `classification` is the canonical effective classification, which also depends on
+ * per-feed source evidence and analyst suppressions — written without touching the
+ * IOC row, so they never mark it dirty. Such feeds must run the full evaluation path.
+ */
+function queryUsesField(query, field) {
+  try {
+    return flattenConditions(parseSearchQuery(query).ast).some((c) => c.field === field);
+  } catch {
+    return false;
+  }
 }
 
 /**

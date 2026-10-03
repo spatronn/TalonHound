@@ -223,3 +223,22 @@ export function buildFeedIntelligence(evidenceRows = []) {
 
   return { classifications: allClassifications, tags: allTags, source_metadata: sourceMetadata };
 }
+
+/**
+ * Every (kind, key) → classification slug pair of the feed classification
+ * vocabulary above, for consumers that must evaluate exactly the same mapping
+ * in SQL (IOC Search DSL `classification`). kind: 'category' (lowercased
+ * evidence category), 'tag' (canonical token of a note `tags=` entry) or
+ * 'signature' (lowercased, trimmed note `signature=` value).
+ * @returns {Array<{ kind: 'category'|'tag'|'signature', key: string, slug: string }>}
+ */
+export function feedClassificationVocabulary() {
+  const out = [];
+  for (const [key, slug] of CATEGORY_TO_CLASSIFICATION) out.push({ kind: 'category', key, slug });
+  for (const [key, slug] of TAG_TO_CLASSIFICATION) out.push({ kind: 'tag', key, slug });
+  for (const key of BOTNET_SIGNATURES) out.push({ kind: 'signature', key, slug: 'botnet' });
+  for (const key of RANSOMWARE_SIGNATURES) {
+    if (!BOTNET_SIGNATURES.has(key)) out.push({ kind: 'signature', key, slug: 'ransomware' });
+  }
+  return out;
+}

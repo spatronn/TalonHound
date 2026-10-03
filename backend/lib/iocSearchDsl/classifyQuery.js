@@ -61,12 +61,21 @@ function classifyCondition(node, cfg) {
     return { cost: 'cheap', selective: true };
   }
 
-  // Enum / small-dimension fields. Index-backed; equality/membership on identity-ish ones
-  // (classification via junction) is selective. Negated enum membership still evaluates
-  // against a bounded domain, so it stays interactive.
+  // `classification` is the canonical effective classification: an index-backed
+  // membership (junction, stored column, GIN-indexed feed evidence) that can match
+  // hundreds of thousands of IOCs, so it is never treated as selective. Its negation
+  // anti-joins the identity closure of that membership — a scan.
+  if (field === 'classification') {
+    if (operator === 'not_equals' || operator === 'not_in') {
+      return { cost: 'expensive', selective: false, reason: DEEP_SEARCH_REASONS.NEGATIVE_PREDICATE };
+    }
+    return { cost: 'cheap', selective: false };
+  }
+
+  // Enum / small-dimension fields. Index-backed. Negated enum membership still
+  // evaluates against a bounded domain, so it stays interactive.
   if (ENUM_FIELDS.has(field)) {
-    const selective = (operator === 'equals' || operator === 'in') && field === 'classification';
-    return { cost: 'cheap', selective };
+    return { cost: 'cheap', selective: false };
   }
 
   // Date filters compile to indexed range comparisons (created_at) or bounded membership
@@ -125,7 +134,8 @@ function classifyNode(node, cfg) {
     // Negation destroys the usability of an equality/prefix index. Only a negated enum
     // (bounded domain) stays interactive. A NOT never yields a selective predicate.
     if (child.cost === 'expensive') return { ...child, selective: false };
-    const isEnumOnly = node.child.type === 'condition' && ENUM_FIELDS.has(node.child.field);
+    const isEnumOnly = node.child.type === 'condition' && ENUM_FIELDS.has(node.child.field)
+      && node.child.field !== 'classification';
     if (isEnumOnly) return { cost: 'cheap', selective: false };
     return { cost: 'expensive', selective: false, reason: DEEP_SEARCH_REASONS.NEGATIVE_PREDICATE };
   }
