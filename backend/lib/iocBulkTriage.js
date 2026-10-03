@@ -12,8 +12,8 @@ import { recomputeIocGlobalStatus } from './iocExpiration.js';
 import { evaluateIocStatusOverrideRequest } from './iocStatusOverrideGuards.js';
 import { validateIocThreatClassificationSlugs } from './iocThreatClassifications.js';
 import {
-  listActiveThreatClassificationOverrides,
-  syncThreatClassificationOverrides
+  addThreatClassificationAssertion,
+  loadAssertedClassificationSlugSets
 } from './iocThreatClassificationOverrides.js';
 
 export { BULK_TRIAGE_MAX_ITEMS };
@@ -151,6 +151,11 @@ export async function bulkAddClassification(pool, { iocIds, slug, user, req, aud
   }
   const actor = String(user?.email || user?.username || '').trim() || null;
   const { byId } = await loadIocsByIds(pool, iocIds);
+  const found = iocIds.map((id) => byId.get(id)).filter(Boolean);
+  // One batched read of junction ∪ override-add so "add" is additive and
+  // idempotent even when the existing classification came from manual create
+  // (junction source_type=manual with no override-add row).
+  const assertedByKey = await loadAssertedClassificationSlugSets(pool, found);
   const results = [];
   for (const id of iocIds) {
     const ioc = byId.get(id);
@@ -159,25 +164,28 @@ export async function bulkAddClassification(pool, { iocIds, slug, user, req, aud
       continue;
     }
     try {
-      const existing = await listActiveThreatClassificationOverrides(pool, id, ioc.observable_type);
-      const activeAdds = existing.filter((r) => r.action === 'add').map((r) => r.classification_slug);
-      const activeSuppress = existing.filter((r) => r.action === 'suppress' && !r.source_name)
-        .map((r) => r.classification_slug);
-      if (activeAdds.some((s) => String(s).toLowerCase() === addSlug.toLowerCase())) {
+      const key = `${id}|${ioc.observable_type}`;
+      const already = assertedByKey.get(key) || new Set();
+      if (already.has(addSlug.toLowerCase())) {
         results.push(resultRow(id, 'skipped', 'Classification already added'));
         continue;
       }
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        await syncThreatClassificationOverrides(client, {
+        const outcome = await addThreatClassificationAssertion(client, {
           iocId: id,
           observableType: ioc.observable_type,
-          additions: [...activeAdds, addSlug],
-          suppressions: activeSuppress,
+          slug: addSlug,
           actor
         });
         await client.query('COMMIT');
+        if (outcome.skipped) {
+          results.push(resultRow(id, 'skipped', 'Classification already added'));
+          already.add(addSlug.toLowerCase());
+          continue;
+        }
+        already.add(addSlug.toLowerCase());
       } catch (err) {
         try { await client.query('ROLLBACK'); } catch { /* ignore */ }
         throw err;

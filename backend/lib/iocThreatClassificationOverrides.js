@@ -170,6 +170,117 @@ export async function syncThreatClassificationOverrides(client, {
 }
 
 /**
+ * Additive analyst classification for bulk triage "add".
+ *
+ * Unlike syncThreatClassificationOverrides (editor replace/set of the desired
+ * analyst addition set), this never DELETE-replaces the junction table and never
+ * clears suppressions. Existing manual/analyst junction rows keep their
+ * source_type; only the missing slug is inserted.
+ *
+ * @returns {Promise<{ added: boolean, skipped: boolean, slug: string|null }>}
+ */
+export async function addThreatClassificationAssertion(client, {
+  iocId,
+  observableType,
+  slug,
+  actor = null,
+  sourceType = 'analyst',
+  sourceName = 'ui'
+}) {
+  const [addSlug] = normalizeIocThreatClassificationSlugs([slug]);
+  if (!addSlug) return { added: false, skipped: true, slug: null };
+
+  const { rows: junctionRows } = await client.query(
+    `SELECT classification_slug, source_type
+     FROM ioc_threat_classifications
+     WHERE ioc_id = $1 AND ioc_observable_type = $2`,
+    [iocId, observableType]
+  );
+  const junctionSlugs = junctionRows.map((r) => String(r.classification_slug));
+  const inJunction = junctionSlugs.some((s) => s.toLowerCase() === addSlug.toLowerCase());
+
+  const existing = await listActiveThreatClassificationOverrides(client, iocId, observableType);
+  const inOverrideAdd = existing.some(
+    (r) => r.action === 'add' && String(r.classification_slug).toLowerCase() === addSlug.toLowerCase()
+  );
+
+  if (inJunction && inOverrideAdd) {
+    return { added: false, skipped: true, slug: addSlug };
+  }
+  // Already asserted via junction (e.g. manual-create source_type=manual) — treat as
+  // present even when no override-add row exists; do not rewrite provenance.
+  if (inJunction) {
+    return { added: false, skipped: true, slug: addSlug };
+  }
+
+  if (!inOverrideAdd) {
+    await client.query(
+      `INSERT INTO ioc_threat_classification_overrides
+         (ioc_id, ioc_observable_type, classification_slug, action, source_name, created_by)
+       VALUES ($1, $2, $3, 'add', NULL, $4)`,
+      [iocId, observableType, addSlug, actor]
+    );
+  }
+
+  const mirrorSlugs = [...junctionSlugs, addSlug];
+  await writeLegacyClassificationMirror(client, { iocId, observableType, slugs: mirrorSlugs });
+
+  await client.query(
+    `INSERT INTO ioc_threat_classifications
+       (ioc_id, ioc_observable_type, classification_slug, source_type, source_name, created_by, updated_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $6)
+     ON CONFLICT (ioc_id, ioc_observable_type, classification_slug) DO NOTHING`,
+    [iocId, observableType, addSlug, sourceType, sourceName, actor]
+  );
+
+  return { added: true, skipped: false, slug: addSlug };
+}
+
+/**
+ * Batch-load asserted classification slugs (junction ∪ active override-add) for
+ * bulk triage skip/idempotency checks — one junction query + one override query.
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {Array<{ id: number, observable_type: string }>} items
+ * @returns {Promise<Map<string, Set<string>>>} key `${id}|${observable_type}` → lowercased slugs
+ */
+export async function loadAssertedClassificationSlugSets(db, items) {
+  const out = new Map();
+  const pairs = (items || [])
+    .map((it) => ({ id: Number(it?.id), observable_type: String(it?.observable_type || '').trim() }))
+    .filter((p) => Number.isFinite(p.id) && p.id > 0 && p.observable_type);
+  for (const p of pairs) out.set(`${p.id}|${p.observable_type}`, new Set());
+  if (!pairs.length) return out;
+
+  const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
+  const params = pairs.flatMap((p) => [p.id, p.observable_type]);
+
+  const [{ rows: junctionRows }, { rows: overrideRows }] = await Promise.all([
+    db.query(
+      `SELECT ioc_id, ioc_observable_type, classification_slug
+       FROM ioc_threat_classifications
+       WHERE (ioc_id, ioc_observable_type) IN (VALUES ${values})`,
+      params
+    ),
+    db.query(
+      `SELECT ioc_id, ioc_observable_type, classification_slug
+       FROM ioc_threat_classification_overrides
+       WHERE action = 'add'
+         AND cleared_at IS NULL
+         AND (ioc_id, ioc_observable_type) IN (VALUES ${values})`,
+      params
+    )
+  ]);
+
+  for (const r of [...junctionRows, ...overrideRows]) {
+    const key = `${Number(r.ioc_id)}|${r.ioc_observable_type}`;
+    if (!out.has(key)) out.set(key, new Set());
+    const slug = String(r.classification_slug || '').trim().toLowerCase();
+    if (slug) out.get(key).add(slug);
+  }
+  return out;
+}
+
+/**
  * Build response bundle for details/API from parts.
  */
 export function buildThreatClassificationEffectiveFields(computed) {
