@@ -87,7 +87,7 @@ test('missing empty arrays default safely', () => {
   assert.deepEqual(n.value.candidate_updates, []);
   assert.deepEqual(n.value.relationships, []);
   assert.deepEqual(n.value.report_tags, []);
-  assert.deepEqual(n.value.mitre_attack, []);
+  assert.equal('mitre_attack' in n.value, false);
 });
 
 test('unknown enum is not silently invented', () => {

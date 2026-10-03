@@ -3,26 +3,14 @@ import assert from 'node:assert/strict';
 import {
   sanitizeAiTag,
   mergeReportTags,
-  mergeMitreProposals,
-  mergeReportIntelligence,
-  reconcilePhishingDeliveryTechnique,
-  validateMitreMappings,
   persistAiReportTags,
-  persistAiReportMitre,
-  persistReportIntelligence,
-  serializeMitreMappingRow,
-  MITRE_ACCEPT_MIN_CONFIDENCE
+  persistReportIntelligence
 } from './reportIntelligence.js';
-import { loadMitreReference, invalidateMitreReferenceCache } from '../threatClassifications/mitreReference.js';
 import { validateAiAnalysis, processAiResponseText } from './ai/schema.js';
 import { mergeAnalyses } from './ai/analyze.js';
 import { normalizeAiAnalysisInput } from './ai/normalize.js';
 
-const PHISH_EVIDENCE = 'The report states that victims received phishing emails with malicious links.';
-
-function mitreItem(id, extra = {}) {
-  return { technique_id: id, evidence: PHISH_EVIDENCE, confidence: 0.9, ...extra };
-}
+const LEGACY_EVIDENCE = 'The report states that victims received phishing emails with malicious links.';
 
 test('sanitizeAiTag reuses space form and rejects filler / IOC-like / empty', () => {
   assert.deepEqual(sanitizeAiTag('Credential-Theft'), { ok: true, name: 'credential theft' });
@@ -53,88 +41,6 @@ test('mergeReportTags rejects filler and empty without inventing replacements', 
   assert.ok(merged.rejected.some((r) => r.reason === 'filler'));
 });
 
-test('mergeMitreProposals keeps one row per technique and strongest evidence', () => {
-  const { byId } = mergeMitreProposals([
-    [mitreItem('T1566.002', { confidence: 0.8, evidence: 'short' })],
-    [mitreItem('T1566.002', { confidence: 0.96, evidence: 'The report states victims clicked credential-harvesting links.' })]
-  ]);
-  const one = byId.get('T1566.002');
-  assert.equal(one.confidence, 0.96);
-  assert.match(one.evidence, /credential-harvesting/);
-});
-
-test('validateMitreMappings accepts catalog techniques and rejects unknown / malformed / low confidence / no evidence', async () => {
-  invalidateMitreReferenceCache();
-  const reference = await loadMitreReference();
-  const merged = mergeMitreProposals([[
-    mitreItem('T1566'),
-    mitreItem('T1566.002'),
-    mitreItem('T9999'),
-    { technique_id: 'not-an-id', evidence: PHISH_EVIDENCE, confidence: 0.9 },
-    mitreItem('T1059.001', { confidence: 0.2 }),
-    { technique_id: 'T1105', evidence: '', confidence: 0.99 }
-  ]]);
-  const { accepted, rejected } = validateMitreMappings(merged, reference);
-  const ids = accepted.map((m) => m.technique_id);
-  assert.ok(ids.includes('T1566.002'));
-  assert.equal(ids.includes('T1566'), false, 'parent dropped when sub-technique is accepted');
-  assert.ok(rejected.some((r) => r.technique_id === 'T9999' && r.reason === 'unknown_id'));
-  assert.ok(merged.rejected.some((r) => r.reason === 'malformed_id'));
-  assert.ok(rejected.some((r) => r.technique_id === 'T1059.001' && r.reason === 'low_confidence'));
-  assert.ok(rejected.some((r) => r.technique_id === 'T1105' && r.reason === 'missing_evidence'));
-  const spear = accepted.find((m) => m.technique_id === 'T1566.002');
-  assert.equal(spear.technique_name, 'Spearphishing Link');
-  assert.ok(spear.tactics.some((t) => t.id === 'TA0001' && t.name === 'Initial Access'));
-});
-
-test('canonical name/tactic come from catalog, not the model', async () => {
-  invalidateMitreReferenceCache();
-  const reference = await loadMitreReference();
-  const { accepted } = validateMitreMappings(
-    mergeMitreProposals([[{
-      technique_id: 'T1566',
-      evidence: PHISH_EVIDENCE,
-      confidence: 0.9,
-      technique_name: 'Wrong Name',
-      tactic: 'Impact'
-    }]]),
-    reference
-  );
-  assert.equal(accepted[0].technique_name, 'Phishing');
-  assert.ok(accepted[0].tactics.some((t) => t.name === 'Initial Access'));
-  assert.equal(accepted[0].tactics.some((t) => t.name === 'Impact'), false);
-});
-
-test('phishing delivery channel is taken from evidence, not the model sub-technique', async () => {
-  assert.equal(
-    reconcilePhishingDeliveryTechnique('T1566.002', 'The report states victims opened an HTML attachment.').technique_id,
-    'T1566.001'
-  );
-  assert.equal(
-    reconcilePhishingDeliveryTechnique('T1566.001', 'The report states the message asked victims to open a link in the email.').technique_id,
-    'T1566.002'
-  );
-  assert.equal(
-    reconcilePhishingDeliveryTechnique('T1566', 'The victim received a phishing email.').technique_id,
-    'T1566'
-  );
-  invalidateMitreReferenceCache();
-  const reference = await loadMitreReference();
-  const { accepted, rejected } = validateMitreMappings(
-    mergeMitreProposals([[mitreItem('T1566.002', {
-      evidence: 'The email tells the victim to open the HTML attachment.'
-    })]]),
-    reference
-  );
-  assert.deepEqual(accepted.map((m) => m.technique_id), ['T1566.001']);
-  assert.equal(accepted[0].technique_name, 'Spearphishing Attachment');
-  assert.equal(rejected.some((r) => r.technique_id === 'T1566.002'), false);
-});
-
-test('confidence floor is the shared MITRE accept threshold', () => {
-  assert.equal(MITRE_ACCEPT_MIN_CONFIDENCE, 0.75);
-});
-
 test('old analysis JSON without enrichment still validates', () => {
   const r = validateAiAnalysis({
     summary: 'legacy',
@@ -144,7 +50,7 @@ test('old analysis JSON without enrichment still validates', () => {
   });
   assert.equal(r.ok, true);
   assert.deepEqual(r.value.report_tags, []);
-  assert.deepEqual(r.value.mitre_attack, []);
+  assert.equal('mitre_attack' in r.value, false);
 });
 
 test('malformed optional enrichment is stripped; IOC extraction still succeeds', () => {
@@ -159,47 +65,46 @@ test('malformed optional enrichment is stripped; IOC extraction still succeeds',
   assert.equal(r.ok, true);
   assert.equal(r.value.entities[0].name, 'Lynx');
   assert.deepEqual(r.value.report_tags, []);
-  assert.deepEqual(r.value.mitre_attack, []);
+  assert.equal('mitre_attack' in r.value, false);
 });
 
-test('valid tags + MITRE pass the AI schema', () => {
+test('valid tags pass the AI schema; a legacy v7 mitre_attack payload is ignored, not rejected', () => {
   const r = validateAiAnalysis({
     summary: 'ok',
     entities: [],
     candidate_updates: [],
     relationships: [],
     report_tags: ['phishing', 'finance'],
-    mitre_attack: [mitreItem('T1566.002')]
+    mitre_attack: [{ technique_id: 'T1566.002', evidence: LEGACY_EVIDENCE, confidence: 0.9 }]
   });
   assert.equal(r.ok, true);
   assert.deepEqual(r.value.report_tags, ['phishing', 'finance']);
-  assert.equal(r.value.mitre_attack[0].technique_id, 'T1566.002');
+  assert.equal('mitre_attack' in r.value, false);
+  assert.ok(r.normalization_notes.includes('ignored_legacy_mitre_attack'));
 });
 
-test('chunk merge collapses duplicate tags and MITRE ids', () => {
+test('chunk merge collapses duplicate tags and drops legacy MITRE proposals', () => {
+  const legacy = [{ technique_id: 'T1566.002', evidence: LEGACY_EVIDENCE, confidence: 0.95 }];
   const merged = mergeAnalyses([
-    { summary: 'a', entities: [], candidate_updates: [], relationships: [], report_tags: ['Phishing'], mitre_attack: [mitreItem('T1566.002', { confidence: 0.8 })] },
-    { summary: 'b', entities: [], candidate_updates: [], relationships: [], report_tags: ['phishing', 'finance'], mitre_attack: [mitreItem('T1566.002', { confidence: 0.95 })] }
+    { summary: 'a', entities: [], candidate_updates: [], relationships: [], report_tags: ['Phishing'], mitre_attack: legacy },
+    { summary: 'b', entities: [], candidate_updates: [], relationships: [], report_tags: ['phishing', 'finance'], mitre_attack: legacy }
   ]);
   assert.equal(merged.ok, true);
   assert.deepEqual(merged.value.report_tags, ['phishing', 'finance']);
-  assert.equal(merged.value.mitre_attack.length, 1);
-  assert.equal(merged.value.mitre_attack[0].confidence, 0.95);
+  assert.equal('mitre_attack' in merged.value, false);
 });
 
-test('empty tags and missing MITRE are valid', () => {
+test('empty tags are valid and no mitre_attack field is defaulted', () => {
   const n = normalizeAiAnalysisInput({ summary: 'only summary', confidence: 0.5 });
   assert.deepEqual(n.value.report_tags, []);
-  assert.deepEqual(n.value.mitre_attack, []);
-  const intel = mergeReportIntelligence([{ summary: 'x', report_tags: [], mitre_attack: [] }]);
-  assert.deepEqual(intel.report_tags, []);
-  assert.equal(intel.mitre_proposals.size, 0);
+  assert.equal('mitre_attack' in n.value, false);
 });
 
 function mockDb(state) {
   return {
     query: async (sql, params) => {
       const s = String(sql);
+      state.sql?.push(s);
       if (/FROM tags WHERE name = \$1 OR slug = \$2/.test(s)) {
         const hit = state.tags.find((t) => t.name === params[0] || t.slug === params[1]);
         return { rows: hit ? [hit] : [] };
@@ -232,23 +137,13 @@ function mockDb(state) {
         state.links.add(key);
         return { rowCount: 1 };
       }
-      if (/INSERT INTO threat_report_mitre_mappings/.test(s)) {
-        const key = `${params[0]}:${params[1]}`;
-        const prev = state.mitre.get(key);
-        state.mitre.set(key, { report_id: params[0], attack_id: params[1], confidence: params[2], evidence_text: params[3] });
-        return { rowCount: prev ? 1 : 1 };
-      }
-      if (/FROM threat_report_mitre_mappings/.test(s)) {
-        const rows = [...state.mitre.values()].filter((r) => Number(r.report_id) === Number(params[0]?.[0] || params[0]));
-        return { rows };
-      }
       return { rows: [], rowCount: 0 };
     }
   };
 }
 
 test('AI tags create and link three new catalog tags', async () => {
-  const state = { tags: [], links: new Set(), mitre: new Map(), nextId: 10 };
+  const state = { tags: [], links: new Set(), nextId: 10 };
   const stats = await persistAiReportTags(mockDb(state), 1, ['phishing', 'credential theft', 'finance']);
   assert.equal(stats.created, 3);
   assert.equal(stats.linked, 3);
@@ -259,7 +154,6 @@ test('existing tag with different casing is reused', async () => {
   const state = {
     tags: [{ id: 3, name: 'phishing', slug: 'phishing', type: 'context', enabled: true }],
     links: new Set(),
-    mitre: new Map(),
     nextId: 10
   };
   const stats = await persistAiReportTags(mockDb(state), 1, ['Phishing']);
@@ -269,14 +163,14 @@ test('existing tag with different casing is reused', async () => {
 });
 
 test('duplicate AI tags create one link', async () => {
-  const state = { tags: [], links: new Set(), mitre: new Map(), nextId: 10 };
+  const state = { tags: [], links: new Set(), nextId: 10 };
   const stats = await persistAiReportTags(mockDb(state), 1, ['phishing', 'Phishing', 'phishing']);
   assert.equal(stats.accepted, 3);
   assert.equal(state.links.size, 1);
 });
 
 test('re-analysis does not duplicate report-tag links', async () => {
-  const state = { tags: [], links: new Set(), mitre: new Map(), nextId: 10 };
+  const state = { tags: [], links: new Set(), nextId: 10 };
   const db = mockDb(state);
   await persistAiReportTags(db, 1, ['phishing']);
   const again = await persistAiReportTags(db, 1, ['phishing']);
@@ -291,7 +185,6 @@ test('manually existing report tag survives AI analysis', async () => {
       { id: 2, name: 'phishing', slug: 'phishing', type: 'context', enabled: true }
     ],
     links: new Set(['1:1']),
-    mitre: new Map(),
     nextId: 10
   };
   await persistAiReportTags(mockDb(state), 1, ['phishing']);
@@ -300,7 +193,7 @@ test('manually existing report tag survives AI analysis', async () => {
 });
 
 test('concurrent tag create race reuses the winner', async () => {
-  const state = { tags: [], links: new Set(), mitre: new Map(), nextId: 10 };
+  const state = { tags: [], links: new Set(), nextId: 10 };
   const db = mockDb(state);
   const first = db.query.bind(db);
   let inserts = 0;
@@ -324,44 +217,16 @@ test('concurrent tag create race reuses the winner', async () => {
   assert.equal(state.tags.filter((t) => t.name === 'phishing').length, 1);
 });
 
-test('valid MITRE rows persist; re-analysis upserts without a second identity', async () => {
-  const state = { tags: [], links: new Set(), mitre: new Map(), nextId: 10 };
-  const db = mockDb(state);
-  await persistAiReportMitre(db, 7, [
-    { technique_id: 'T1566', confidence: 0.8, evidence: PHISH_EVIDENCE }
-  ]);
-  await persistAiReportMitre(db, 7, [
-    { technique_id: 'T1566', confidence: 0.92, evidence: 'Updated short evidence from the report.' }
-  ]);
-  assert.equal(state.mitre.size, 1);
-  assert.equal(state.mitre.get('7:T1566').confidence, 0.92);
-});
-
-test('persistReportIntelligence keeps IOC-side success when MITRE catalog lookup is empty', async () => {
-  const state = { tags: [], links: new Set(), mitre: new Map(), nextId: 10 };
-  const logs = [];
+test('report intelligence persist never touches threat_report_mitre_mappings, even for a legacy payload', async () => {
+  const state = { tags: [], links: new Set(), nextId: 10, sql: [] };
   const diag = await persistReportIntelligence(
     mockDb(state),
     4,
-    { report_tags: ['phishing'], mitre_attack: [mitreItem('T1566')] },
-    { log: { info: () => {}, warn: (m) => logs.push(m) }, reference: new Map() }
+    { report_tags: ['phishing'], mitre_attack: [{ technique_id: 'T1566', evidence: LEGACY_EVIDENCE, confidence: 0.99 }] },
+    { log: { info: () => {}, warn: () => {} } }
   );
   assert.equal(diag.tags_accepted, 1);
-  assert.equal(diag.mitre_accepted, 0);
-  assert.ok(diag.mitre_rejected.some((r) => r.reason === 'unknown_id' || r.reason === 'catalog_unavailable' || r.technique_id === 'T1566'));
-});
-
-test('serializeMitreMappingRow uses catalog metadata', async () => {
-  invalidateMitreReferenceCache();
-  const reference = await loadMitreReference();
-  const row = serializeMitreMappingRow({
-    attack_id: 'T1566.002',
-    confidence: 0.91,
-    evidence_text: PHISH_EVIDENCE
-  }, reference);
-  assert.equal(row.technique_id, 'T1566.002');
-  assert.equal(row.technique_name, 'Spearphishing Link');
-  assert.ok(row.tactics.some((t) => t.id === 'TA0001'));
-  assert.equal(row.confidence, 0.91);
-  assert.equal(row.evidence, PHISH_EVIDENCE);
+  assert.equal(state.links.size, 1);
+  assert.equal(state.sql.some((q) => /mitre/i.test(q)), false);
+  assert.equal(Object.keys(diag).some((k) => /mitre/i.test(k)), false);
 });

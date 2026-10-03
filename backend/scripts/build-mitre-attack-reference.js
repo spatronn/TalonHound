@@ -113,7 +113,7 @@ async function main() {
     '19.2';
   const catalog = buildMitreAttackReference(stix, {
     version: `enterprise-attack-${version}`,
-    source: 'MITRE ATT&CK Enterprise matrix (bundled snapshot for TalonHound classification and Threat Library mappings)'
+    source: 'MITRE ATT&CK Enterprise matrix (bundled snapshot for TalonHound classification mappings)'
   });
   const tactics = catalog.records.filter((r) => r.type === 'tactic').length;
   const techniques = catalog.records.filter((r) => r.type === 'technique').length;

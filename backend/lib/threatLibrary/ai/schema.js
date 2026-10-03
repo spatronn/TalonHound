@@ -75,12 +75,6 @@ export const aiRelationshipSchema = z.object({
   evidence_text: z.string().max(B.evidenceTextMaxLength).optional().nullable()
 });
 
-export const aiMitreMappingSchema = z.object({
-  technique_id: z.string().min(1).max(B.mitreTechniqueIdMaxLength),
-  evidence: z.string().max(B.mitreEvidenceMaxLength).optional().nullable(),
-  confidence: conf
-});
-
 export const aiAnalysisSchema = z.object({
   summary: z.string().max(B.summaryMaxLengthMerged),
   report_type: z.string().max(B.reportTypeMaxLength).optional().nullable(),
@@ -90,8 +84,7 @@ export const aiAnalysisSchema = z.object({
   entities: z.array(aiEntitySchema).max(B.entityMaxItemsMerged).optional().default([]),
   candidate_updates: z.array(aiCandidateUpdateSchema).max(B.candidateUpdatesMaxItems).optional().default([]),
   relationships: z.array(aiRelationshipSchema).max(B.relationshipMaxItemsMerged).optional().default([]),
-  report_tags: z.array(z.string().max(B.reportTagMaxLength)).max(B.reportTagMaxItems).optional().default([]),
-  mitre_attack: z.array(aiMitreMappingSchema).max(B.mitreMaxItemsMerged).optional().default([])
+  report_tags: z.array(z.string().max(B.reportTagMaxLength)).max(B.reportTagMaxItems).optional().default([])
 });
 
 function zodIssues(error) {
@@ -111,7 +104,7 @@ function zodIssues(error) {
 export function validateAiStructure(raw) {
   const parsed = aiAnalysisSchema.safeParse(raw);
   if (parsed.success) return { ok: true, value: parsed.data };
-  const stripped = { ...(raw && typeof raw === 'object' ? raw : {}), report_tags: [], mitre_attack: [] };
+  const stripped = { ...(raw && typeof raw === 'object' ? raw : {}), report_tags: [] };
   const retry = aiAnalysisSchema.safeParse(stripped);
   if (retry.success) {
     return { ok: true, value: retry.data, enrichment_stripped: true };
@@ -251,8 +244,7 @@ export function validateAiReferences(data, ctx = {}) {
     entities,
     candidate_updates,
     relationships,
-    report_tags: Array.isArray(data.report_tags) ? data.report_tags : [],
-    mitre_attack: Array.isArray(data.mitre_attack) ? data.mitre_attack : []
+    report_tags: Array.isArray(data.report_tags) ? data.report_tags : []
   };
 
   const blob = JSON.stringify(value);
@@ -328,8 +320,7 @@ export function processAiResponseText(text, ctx = {}) {
       entities: count(extracted.value.entities),
       candidate_updates: count(extracted.value.candidate_updates),
       relationships: count(extracted.value.relationships),
-      report_tags: count(extracted.value.report_tags),
-      mitre_attack: count(extracted.value.mitre_attack)
+      report_tags: count(extracted.value.report_tags)
     },
     extract_method: extracted.method,
     raw_sample: result.ok ? undefined : capRawOutputSample(text),

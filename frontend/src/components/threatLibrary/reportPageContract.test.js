@@ -6,7 +6,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -64,14 +64,25 @@ test('enum cells go through display labels; canonical values feed only compariso
   assert.match(pageSrc, /c\.candidate_type === 'cidr'/, 'canonical comparison for the CIDR note');
 });
 
-test('Overview hosts Tags and MITRE; Source and Indicators stay free of that intelligence', () => {
+test('Overview hosts Tags; Source and Indicators stay free of that intelligence', () => {
   assert.match(pageSrc, /data-testid="overview-tags"/);
-  assert.match(pageSrc, /<ReportMitreSection/);
-  assert.match(pageSrc, /<ReportTagsEditor/);
+  assert.match(pageSrc, /<ReportTagsEditor[\s\S]*canWrite=\{canWrite\}/);
+  assert.match(pageSrc, /setReport\(\(prev\) => mergeReportPayload\(prev, applied\.report\)\)/);
   const source = pageSrc.slice(pageSrc.indexOf('view === REPORT_VIEWS.SOURCE'));
   const indicators = pageSrc.slice(pageSrc.indexOf('view === REPORT_VIEWS.INDICATORS'), pageSrc.indexOf('view === REPORT_VIEWS.ENTITIES'));
-  assert.doesNotMatch(source, /ReportMitreSection|overview-tags/);
-  assert.doesNotMatch(indicators, /ReportMitreSection|overview-tags/);
+  assert.doesNotMatch(source, /overview-tags/);
+  assert.doesNotMatch(indicators, /overview-tags/);
+});
+
+test('Threat Library report UI has no MITRE ATT&CK section, technique editing or MITRE request', () => {
+  const dir = here;
+  const files = readdirSync(dir).filter((f) => /\.(jsx?|css)$/.test(f) && !/\.test\.js$/.test(f));
+  assert.equal(files.some((f) => /mitre/i.test(f)), false, 'no MITRE component/helper files');
+  for (const f of files) {
+    const src = readFileSync(path.join(dir, f), 'utf8');
+    assert.doesNotMatch(src, /mitre|\+ Technique|technique_id|tl-mitre|groupMitreByTactic/i, `${f} still references MITRE`);
+  }
+  assert.doesNotMatch(pageSrc, /ATT&amp;CK|ATT&CK/);
 });
 
 test('overview metrics and report details come from the loaded rows, never hardcoded', () => {

@@ -42,7 +42,7 @@ import {
 import { capRawOutputSample } from './extract.js';
 import { chunkCanonicalDocument, flattenCanonicalText, collectBlockIds } from '../canonicalDocument.js';
 import { annotateDocumentZones } from '../documentZones.js';
-import { mergeReportIntelligence } from '../reportIntelligence.js';
+import { mergeReportTags } from '../reportIntelligence.js';
 
 export const SYNTHESIS_CHUNK_KEY = 'synthesis';
 
@@ -218,8 +218,7 @@ export function mergeAnalyses(parts, ctx) {
     entities: [],
     candidate_updates: [],
     relationships: [],
-    report_tags: [],
-    mitre_attack: []
+    report_tags: []
   };
 
   const entityMap = new Map();
@@ -255,13 +254,7 @@ export function mergeAnalyses(parts, ctx) {
   merged.entities = [...entityMap.values()];
   merged.candidate_updates = [...candidateMap.values()];
   merged.summary = summaries.filter(Boolean).join('\n\n').slice(0, 8000) || 'Analysis complete.';
-  const intel = mergeReportIntelligence(parts);
-  merged.report_tags = intel.report_tags;
-  merged.mitre_attack = [...intel.mitre_proposals.values()].map((m) => ({
-    technique_id: m.technique_id,
-    evidence: m.evidence || null,
-    confidence: m.confidence
-  }));
+  merged.report_tags = mergeReportTags(parts.map((p) => p?.report_tags)).tags;
 
   return validateAiAnalysis(merged, ctx);
 }
@@ -762,14 +755,12 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     });
   }
   const chunkIntel = {
-    report_tags: merged.value.report_tags || [],
-    mitre_attack: merged.value.mitre_attack || []
+    report_tags: merged.value.report_tags || []
   };
 
   function overlayChunkIntelligence(processed) {
     if (!processed?.ok || !processed.value) return processed;
     processed.value.report_tags = chunkIntel.report_tags;
-    processed.value.mitre_attack = chunkIntel.mitre_attack;
     return processed;
   }
 
@@ -801,11 +792,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
               entities: (p.entities || []).map((e) => ({ type: e.entity_type, name: e.name })),
               candidate_updates: (p.candidate_updates || []).slice(0, 80),
               relationships: (p.relationships || []).slice(0, 40),
-              report_tags: (p.report_tags || []).slice(0, 5),
-              mitre_attack: (p.mitre_attack || []).slice(0, 8).map((m) => ({
-                technique_id: m.technique_id,
-                confidence: m.confidence
-              }))
+              report_tags: (p.report_tags || []).slice(0, 5)
             }).slice(0, 3500)}`
           )
           .join('\n');

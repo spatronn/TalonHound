@@ -69,8 +69,6 @@ export const ANALYSIS_STAGES = Object.freeze([
 export const CONFIDENCE_POLICY = Object.freeze({
   /** AI confidence >= this and assessment malicious/suspicious → high_confidence bucket */
   HIGH: 0.85,
-  /** Report MITRE mapping accept floor (evidence is still required) */
-  MITRE_ACCEPT: 0.75,
   /** Below this with unknown assessment → needs_review */
   REVIEW_FLOOR: 0.4,
   /** Auto-suggest "approve all high-confidence malicious" threshold */

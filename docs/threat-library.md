@@ -138,7 +138,7 @@ Review actions (`POST …/review`) and `POST …/finalize` are refused server-si
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
 - Long reports are split into canonical-document chunks and processed sequentially
 - Body chunks exclude header/footer, navigation, source-provenance and reference rows; each chunk prompt carries the resolved indicator list (compact) plus only the `ai_needed` candidates whose occurrences fall in that chunk
-- Completed chunks are checkpointed with `threat-library-semantic-v7` and their block-id fingerprint; **Retry analysis** resumes unfinished, compatible chunks without re-fetching the URL/PDF. A contract bump (document extractor, candidate extraction or semantic schema) invalidates only the incompatible layer
+- Completed chunks are checkpointed with `threat-library-semantic-v8` and their block-id fingerprint; **Retry analysis** resumes unfinished, compatible chunks without re-fetching the URL/PDF. A contract bump (document extractor, candidate extraction or semantic schema) invalidates only the incompatible layer
 - The optional final synthesis runs over validated chunk results only, is skipped when the remaining budget is short, and never fails the run; repair calls are likewise budget-bounded (one per chunk)
 - Ollama requests set `think: false` — reasoning models otherwise spend minutes on hidden chain-of-thought before the schema-constrained JSON starts; structured output is the contract
 - Every provider call is timed (headers / first token / output chars) into `analysis_progress.timing` and the worker log; a total-deadline failure records completed/remaining chunks so the UI can explain what a Retry will resume
@@ -149,35 +149,26 @@ Review actions (`POST …/review`) and `POST …/finalize` are refused server-si
 - Failed AI validation stores capped model-output samples and issue paths on the analysis chunk for diagnosis (not full report prompts)
 - Provider API keys are never logged; progress is persisted server-side (browser navigation does not cancel the job)
 
-Prompt injection: report text is labeled UNTRUSTED DATA; the model cannot redefine tasks, request secrets, invoke tools, or invent tags / ATT&CK IDs from instructions inside the report.
+Prompt injection: report text is labeled UNTRUSTED DATA; the model cannot redefine tasks, request secrets, invoke tools, or invent tags from instructions inside the report.
 
-### Report tags and MITRE ATT&CK (AI Analyst)
+### Report tags (AI Analyst)
 
-URL/PDF analysis (`threat-library-semantic-v7`) may also emit compact **report-level** intelligence. It is not copied onto extracted IOCs.
-
-**Tags**
+URL/PDF analysis (`threat-library-semantic-v8`) may also emit compact **report-level** tags. They are not copied onto extracted IOCs.
 
 - The model returns 0–5 semantic names. The application normalizes them (`credential-theft` → `credential theft`) and resolves them against the existing `tags` catalog (name, then slug).
 - Existing tags are reused; new names are created in the same catalog (`ensureCatalogTag` + `ON CONFLICT` / unique name+slug).
 - Links are additive on `threat_report_tags`. Re-analysis never unlinks a tag an analyst added. Manual add/remove on the report remains the same API/UI.
 - Filler words (`security`, `cyber`, `malware`, `report`, …), IOC values, URLs, hashes and CVEs are rejected.
 
-**MITRE ATT&CK**
+Old reports without AI tags keep an empty `tags` array. Historical reports are not mass re-analyzed.
 
-- The model may propose `{ technique_id, evidence, confidence }`. The technique ID is the only identity.
-- Each ID is validated against the bundled Enterprise catalog. Unknown or malformed IDs are rejected and counted in job diagnostics — they never fail IOC extraction.
-- Acceptance requires catalog membership, non-empty short evidence, and confidence ≥ 0.75. Names and tactics are always resolved from the catalog.
-- Chunk duplicates collapse to one mapping; parent `T1566` is dropped when a child such as `T1566.002` is also accepted.
-- Persistence is `threat_report_mitre_mappings` `ON CONFLICT (report_id, attack_id)` upsert. Re-analysis updates confidence/evidence and never deletes other mappings. Analysts can add/remove a technique by ID on the report Overview.
-
-Old reports without these fields keep empty `tags` / `mitre_attack` arrays. Historical reports are not mass re-analyzed.
+Threat Library automatic MITRE ATT&CK mapping was removed after quality evaluation (`threat-library-semantic-v8`). Existing historical DB rows (`threat_report_mitre_mappings`, migration 034) are retained but no longer generated or exposed; a `semantic-v7` checkpoint is never reused and a legacy `mitre_attack` property is ignored.
 
 ### Confidence policy
 
 Central thresholds in `backend/lib/threatLibrary/constants.js` (`CONFIDENCE_POLICY`):
 
 - High: ≥ 0.85
-- MITRE mapping accept: ≥ 0.75 **and** short report evidence (confidence never replaces evidence)
 - Review floor: &lt; 0.4 (unknown/suspicious → needs_review)
 - Suggest approve-all malicious: ≥ 0.9
 

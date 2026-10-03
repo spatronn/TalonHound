@@ -71,7 +71,6 @@ function fakePool({ report = reportRow(), snap = snapshot() } = {}) {
       if (n.includes('FROM threat_report_artifacts')) return { rows: snap.artifacts };
       if (n.includes('FROM threat_library_jobs')) return { rows: snap.jobs };
       if (n.includes('FROM threat_report_tags')) return { rows: snap.tags || [] };
-      if (n.includes('FROM threat_report_mitre_mappings')) return { rows: snap.mitre_rows || [] };
       throw new Error(`Unexpected SQL: ${n.slice(0, 90)}`);
     }
   };
@@ -101,7 +100,7 @@ test('serializeThreatReport: allow-listed metadata + summary, no body/diagnostic
   assert.equal(out.finalized_at, '2026-09-17T23:39:16.000Z');
   assert.deepEqual(out.counts, { indicators: 2, entities: 2, relationships: 1 });
   assert.deepEqual(out.tags, []);
-  assert.deepEqual(out.mitre_attack, []);
+  assert.equal('mitre_attack' in out, false);
   for (const k of ['canonical_document', 'failure_reason', 'failure_details', 'analysis_progress', 'candidate_summary', 'artifacts', 'jobs', 'source_sha256']) {
     assert.equal(k in out, false, `${k} must not be exposed`);
   }
@@ -181,8 +180,9 @@ test('loadThreatReportForMcp: fixed query count (report + snapshot), no per-indi
   const out = await loadThreatReportForMcp(pool, { id: REPORT_ID, indicator_limit: 500 });
   assert.equal(out.status, 200);
   assert.equal(out.body.indicators.returned, 300);
-  // getReportByPublicId + snapshot (6) + tags + mitre (batched, not per-row)
-  assert.equal(pool.queries.length, 9);
+  // getReportByPublicId + snapshot (6) + tags; MITRE rows are never read
+  assert.equal(pool.queries.length, 8);
+  assert.equal(pool.queries.some((q) => /mitre/i.test(q.sql)), false);
   assert.equal(pool.queries.some((q) => /^(INSERT|UPDATE|DELETE)/i.test(q.sql)), false);
 });
 
@@ -207,4 +207,10 @@ test('loadThreatReportForMcp: invalid id, not found, not ready, deleted', async 
 test('loadThreatReportForMcp: store failure propagates (never an empty report)', async () => {
   const pool = { query: async () => { throw new Error('connection terminated'); } };
   await assert.rejects(() => loadThreatReportForMcp(pool, { id: REPORT_ID }), /connection terminated/);
+});
+
+test('serializeThreatReport ignores a stray mitre_attack on the snapshot (historical rows are never exposed)', () => {
+  const out = serializeThreatReport({ ...snapshot(), mitre_attack: [{ technique_id: 'T1566.001' }] });
+  assert.equal('mitre_attack' in out, false);
+  assert.doesNotMatch(JSON.stringify(out), /T1566/);
 });

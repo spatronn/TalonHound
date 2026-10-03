@@ -1,6 +1,6 @@
 {
   "version": "enterprise-attack-19.2",
-  "source": "MITRE ATT&CK Enterprise matrix (bundled snapshot for TalonHound classification and Threat Library mappings)",
+  "source": "MITRE ATT&CK Enterprise matrix (bundled snapshot for TalonHound classification mappings)",
   "license_note": "MITRE ATT&CK is available under MITRE's terms; see docs/threat-classifications.md",
   "records": [
     {

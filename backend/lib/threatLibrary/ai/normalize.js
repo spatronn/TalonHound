@@ -189,7 +189,12 @@ export function normalizeAiAnalysisInput(raw, ctx = {}) {
     notes.push('defaulted_missing_relationships');
   }
   out.report_tags = sanitizeReportTagsField(out.report_tags, notes);
-  out.mitre_attack = sanitizeMitreField(out.mitre_attack, notes);
+  // Removed from the contract in semantic-v8: a legacy (v7 cache / stray model)
+  // mitre_attack property is dropped, never validated or persisted.
+  if ('mitre_attack' in out) {
+    delete out.mitre_attack;
+    notes.push('ignored_legacy_mitre_attack');
+  }
 
   const conf = normalizeConfidence(out.confidence);
   if (!conf.ok) notes.push(`confidence:${conf.reason}`);
@@ -304,36 +309,6 @@ function sanitizeReportTagsField(raw, notes) {
     if (!s) continue;
     out.push(s.slice(0, 40));
     if (out.length >= 5) break;
-  }
-  return out;
-}
-
-function sanitizeMitreField(raw, notes) {
-  if (raw == null) return [];
-  if (!Array.isArray(raw)) {
-    notes.push('dropped_invalid_mitre_attack');
-    return [];
-  }
-  const out = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) {
-      notes.push('dropped_malformed_mitre_item');
-      continue;
-    }
-    const technique_id = String(item.technique_id || item.attack_id || item.id || '').trim().slice(0, 16);
-    if (!technique_id) {
-      notes.push('dropped_mitre_missing_id');
-      continue;
-    }
-    const evidenceRaw = item.evidence != null ? item.evidence : item.evidence_text;
-    const evidence = evidenceRaw == null ? '' : String(evidenceRaw).replace(/\s+/g, ' ').trim().slice(0, 240);
-    const c = normalizeConfidence(item.confidence);
-    out.push({
-      technique_id,
-      evidence: evidence || null,
-      confidence: c.ok ? c.value : null
-    });
-    if (out.length >= 16) break;
   }
   return out;
 }

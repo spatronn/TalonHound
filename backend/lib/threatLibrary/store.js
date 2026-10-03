@@ -827,11 +827,6 @@ export async function deleteThreatReport(pool, reportId) {
   await pool.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
   await pool.query(`DELETE FROM threat_report_artifacts WHERE report_id = $1`, [reportId]);
   await pool.query(`DELETE FROM threat_library_jobs WHERE report_id = $1`, [reportId]);
-  try {
-    await pool.query(`DELETE FROM threat_report_mitre_mappings WHERE report_id = $1`, [reportId]);
-  } catch (err) {
-    if (!(err && err.code === '42P01')) throw err;
-  }
   await deleteReportArtifacts(reportId);
 }
 

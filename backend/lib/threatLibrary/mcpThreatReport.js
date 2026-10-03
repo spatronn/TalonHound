@@ -16,7 +16,6 @@
 
 import { getReportByPublicId, loadReportSnapshot } from './store.js';
 import { loadReportTags } from './reportTags.js';
-import { loadReportMitreMappings } from './reportIntelligence.js';
 import { serializePublicationDate } from './publicationDate.js';
 import { TLP_DISPLAY } from './constants.js';
 import { resolveReportPhase } from './reportPhase.js';
@@ -146,8 +145,7 @@ export function serializeThreatReport(snapshot, page = {}) {
     entities: entities.slice(0, THREAT_REPORT_MAX_ENTITIES).map(serializeThreatContextEntity),
     // Explicit links only (same shape as threat_context.relationships).
     relationships: relationships.slice(0, THREAT_REPORT_MAX_RELATIONSHIPS).map(serializeThreatContextRelationship),
-    tags: Array.isArray(snapshot.tags) ? snapshot.tags : [],
-    mitre_attack: Array.isArray(snapshot.mitre_attack) ? snapshot.mitre_attack : []
+    tags: Array.isArray(snapshot.tags) ? snapshot.tags : []
   };
 }
 
@@ -169,11 +167,6 @@ export async function loadThreatReportForMcp(pool, { id, indicator_limit, indica
     return { status: 409, error: { code: codes.REPORT_NOT_READY || 'REPORT_NOT_READY', message: `Threat report is not readable yet (import_status=${report.import_status})` } };
   }
   const snapshot = await loadReportSnapshot(pool, report.id);
-  const [tags, mitre_attack] = await Promise.all([
-    loadReportTags(pool, report.id),
-    loadReportMitreMappings(pool, report.id)
-  ]);
-  snapshot.tags = tags;
-  snapshot.mitre_attack = mitre_attack;
+  snapshot.tags = await loadReportTags(pool, report.id);
   return { status: 200, body: serializeThreatReport(snapshot, { limit: indicator_limit, offset: indicator_offset }) };
 }

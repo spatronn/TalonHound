@@ -142,3 +142,46 @@ test('browser-independent analysis: analyzeThreatDocument does not require an op
   assert.equal(out.ok, true);
   assert.match(out.value.summary, /done|Cached|Live|Resume|Section/i);
 });
+
+test('an obsolete semantic-v7 checkpoint carrying mitre_attack is never reused and cannot revive MITRE', async () => {
+  const document = sampleDoc(8);
+  const chunks = buildAnalysisChunks(document, { maxInputChars: 12000, maxChunks: 24 });
+  const legacy = new Map(chunks.map((c) => [c.chunk_key, {
+    ok: true,
+    schema_version: 'threat-library-semantic-v7',
+    block_ids: c.block_ids,
+    value: {
+      summary: 'Cached v7',
+      confidence: 0.5,
+      entities: [],
+      candidate_updates: [],
+      relationships: [],
+      report_tags: ['phishing'],
+      mitre_attack: [{ technique_id: 'T1566.001', evidence: 'Victims opened an HTML attachment.', confidence: 0.95 }]
+    }
+  }]));
+  legacy.set('synthesis', { ...legacy.get(chunks[0].chunk_key) });
+  const calls = [];
+  const out = await analyzeThreatDocument(
+    settings,
+    { document, candidates: [] },
+    {
+      loadCompletedChunk: async (key) => legacy.get(key) || null,
+      callProvider: async (_s, messages, opts) => {
+        calls.push({ messages, schema: opts?.formatSchema });
+        return { text: okPayload(`Live ${calls.length}`) };
+      }
+    }
+  );
+  assert.equal(out.ok, true);
+  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v8');
+  // Every chunk was re-analyzed: no v7 checkpoint was trusted.
+  assert.ok(calls.length >= chunks.length);
+  assert.equal(out.meta.chunks_from_cache, 0);
+  assert.equal('mitre_attack' in out.value, false);
+  assert.equal(JSON.stringify(out.value).includes('T1566'), false);
+  for (const c of calls) {
+    assert.doesNotMatch(`${c.messages.system}\n${c.messages.user}`, /mitre|technique_id/i);
+    assert.equal(JSON.stringify(c.schema || {}).includes('mitre'), false);
+  }
+});

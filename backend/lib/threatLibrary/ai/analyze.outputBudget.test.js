@@ -167,9 +167,9 @@ test('provider schema carries the per-call item budget and never emits Ollama-un
       assert.equal(s.properties[key].items.properties.evidence_text.maxLength, B.evidenceTextMaxLengthGeneration);
     }
     assert.equal(s.properties.report_tags.maxItems, B.reportTagMaxItems);
-    assert.equal(s.properties.mitre_attack.maxItems, B.mitreMaxItemsChunk);
     assert.equal(s.required.includes('report_tags'), false);
-    assert.equal(s.required.includes('mitre_attack'), false);
+    assert.equal('mitre_attack' in s.properties, false);
+    assert.equal(/mitre|technique_id/i.test(text), false);
   }
 });
 
@@ -204,10 +204,9 @@ test('chunk prompt communicates relationship budget, priority, dedup, concise ev
   assert.equal(prompt.includes(COMPACT_RECOVERY_LINE), false);
   assert.ok(RELATIONSHIP_SELECTION_LINES.length > 0);
   assert.equal(/at most 80/.test(buildSystemPrompt()), false);
-  assert.match(prompt, /report_tags, mitre_attack/);
+  assert.match(prompt, /relationships, report_tags\./);
   assert.match(prompt, /3–5 high-signal report-level concepts/);
-  assert.match(prompt, /only techniques THIS REPORT evidences/);
-  assert.match(prompt, /No guessed names or tactics/);
+  assert.doesNotMatch(prompt, /mitre|technique_id|sub-technique/i);
 });
 
 test('compact recovery prompt keeps every TO CLASSIFY line and carries the smaller budget', () => {

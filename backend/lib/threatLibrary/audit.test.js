@@ -249,15 +249,8 @@ test('report tag add/remove audit events carry the tag and the inheriting IOC co
   assert.equal(auditActionLabel(removed.action), 'Threat Library › Report Tag Removed');
 });
 
-test('report MITRE add/remove audit events carry the technique id', async () => {
-  const { buildReportMitreAuditEvent } = await import('./audit.js');
-  const report = { id: 1, public_id: 'r-1', title: 'WinPot campaign', source_type: 'url', tlp: 'clear' };
-  const mapping = { technique_id: 'T1566.002', technique_name: 'Spearphishing Link' };
-  const added = buildReportMitreAuditEvent({ report, mapping, added: true, user: null });
-  assert.equal(added.action, AUDIT_ACTION.THREAT_LIBRARY_REPORT_MITRE_ADDED);
-  assert.deepEqual(added.after, { technique_id: 'T1566.002' });
-  assert.equal(added.metadata.technique_name, 'Spearphishing Link');
-  const removed = buildReportMitreAuditEvent({ report, mapping, added: false, user: null });
-  assert.equal(removed.action, AUDIT_ACTION.THREAT_LIBRARY_REPORT_MITRE_REMOVED);
-  assert.deepEqual(removed.before, { technique_id: 'T1566.002' });
+test('Threat Library no longer defines report MITRE audit actions or builders', async () => {
+  const auditModule = await import('./audit.js');
+  assert.equal('buildReportMitreAuditEvent' in auditModule, false);
+  assert.equal(Object.keys(AUDIT_ACTION).some((k) => /MITRE/.test(k)), false);
 });

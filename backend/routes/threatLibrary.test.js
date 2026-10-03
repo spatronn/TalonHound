@@ -60,13 +60,10 @@ test('retry recovers an orphaned active status instead of answering already_runn
   assert.match(routeSrc, /recovered_orphaned_status:\s*recoveredOrphanedStatus/);
 });
 
-test('report detail loads tags and MITRE together, never per-technique', () => {
-  assert.match(routeSrc, /const \[tags, mitre_attack\] = await Promise\.all\(\[/);
-  assert.match(routeSrc, /loadReportMitreMappings\(pool, row\.id\)/);
-  assert.match(routeSrc, /\.\.\.\(Array\.isArray\(row\.mitre_attack\) \? \{ mitre_attack: row\.mitre_attack \} : \{\}\)/);
-  assert.match(routeSrc, /app\.post\(\s*'\/api\/threat-library\/reports\/:publicId\/mitre'/);
-  assert.match(routeSrc, /app\.delete\(\s*'\/api\/threat-library\/reports\/:publicId\/mitre\/:attackId'/);
-  assert.doesNotMatch(routeSrc, /for \(.*technique/);
+test('report detail loads tags only; MITRE is neither read, exposed nor editable', () => {
+  assert.match(routeSrc, /return \{ \.\.\.counted, tags: await loadReportTags\(pool, row\.id\) \};/);
+  assert.doesNotMatch(routeSrc, /mitre|technique/i);
+  assert.match(routeSrc, /'\/api\/threat-library\/reports\/:publicId\/tags'/);
 });
 
 test('cancel analysis endpoint exists and is analyst-gated', () => {
