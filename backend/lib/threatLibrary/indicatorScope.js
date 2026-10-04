@@ -671,13 +671,37 @@ export function strongestSourceRelation(candidate) {
  * @param {object} candidate
  * @param {object} o occurrence
  */
+/**
+ * True when the occurrence carries the structural inputs the row reading is
+ * computed from. Fresh extraction always does; evidence records persisted
+ * before those inputs were stored (buildCandidateEvidenceRecord) do not.
+ * @param {object} o occurrence
+ */
+export function hasStructuralInputs(o) {
+  return typeof o?.row_shape === 'boolean'
+    || typeof o?.structural_row === 'boolean'
+    || Boolean(o?.block_type)
+    || Boolean(o?.layout);
+}
+
+/**
+ * A reloaded legacy record cannot recompute its row reading (the inputs were
+ * never persisted), so it keeps the reading the extractor recorded: an
+ * asserted row-kind occurrence. Narrative kinds never qualify, so a body
+ * mention is never promoted by this fallback.
+ * @param {object} o occurrence
+ */
+function legacyRecordedRow(o) {
+  return !hasStructuralInputs(o) && o?.asserted === true && ROW_KINDS.has(String(o?.occurrence_kind || ''));
+}
+
 function relationDetailForOccurrence(candidate, o) {
   return classifySourceRelationDetail(o.surrounding_text || '', {
     form: o.form,
     zone: o.zone || o.section_kind,
     value: candidate.normalized_value,
     original: o.original_value || candidate.original_value,
-    structuralRow: o.structural_row === true || o.row_shape === true,
+    structuralRow: o.structural_row === true || o.row_shape === true || legacyRecordedRow(o),
     blockType: o.block_type || null,
     layout: o.layout || null,
     zoneReason: o.zone_reason || null

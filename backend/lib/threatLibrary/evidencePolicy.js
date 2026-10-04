@@ -589,6 +589,14 @@ export function buildCandidateEvidenceRecord(c) {
     relation_marker: o.relation_marker || undefined,
     occurrence_kind: o.occurrence_kind || undefined,
     asserted: o.asserted === true ? true : undefined,
+    // Structural inputs of the row reading (indicatorScope.structuralRowOf).
+    // A Retry that reuses stored candidates re-annotates occurrences from
+    // these; without them an IOC-table row reloads as prose and its explicit
+    // assertion is lost.
+    row_shape: o.row_shape === true,
+    structural_row: o.structural_row === true,
+    block_type: o.block_type || undefined,
+    layout: o.layout || undefined,
     zone_reason: o.zone_reason || undefined,
     scope_opening_id: o.scope_opening_id || undefined,
     typing_reason: o.typing_reason || undefined
