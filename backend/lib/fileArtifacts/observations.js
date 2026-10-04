@@ -1,5 +1,5 @@
 /**
- * Source observation helpers — preserve observed-as attribution.
+ * Source observation helpers - preserve observed-as attribution.
  */
 
 import { normalizeExactHash } from './hashNormalize.js';
@@ -69,6 +69,7 @@ export async function upsertSourceObservation(db, input) {
     const prevRaw = JSON.stringify(row.raw_ref || {});
     const nextRaw = JSON.stringify(rawRef);
     const contentChanged = prevRaw !== nextRaw;
+    // Skip updated_at-only rewrites when the observation is not newer and nothing else changed.
     await db.query(
       `UPDATE file_artifact_source_observations
        SET last_seen_in_source = GREATEST(COALESCE(last_seen_in_source, $2::timestamptz), $2::timestamptz),
@@ -80,7 +81,14 @@ export async function upsertSourceObservation(db, input) {
            confidence = COALESCE($5, confidence),
            raw_ref = CASE WHEN $3::boolean THEN $6::jsonb ELSE raw_ref END,
            updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND (
+           $3::boolean
+           OR last_seen_in_source IS NULL
+           OR last_seen_in_source < $2::timestamptz
+           OR ($4::uuid IS NOT NULL AND observed_hash_id IS DISTINCT FROM $4::uuid)
+           OR ($5::text IS NOT NULL AND confidence IS DISTINCT FROM $5)
+         )`,
       [
         row.id,
         now,

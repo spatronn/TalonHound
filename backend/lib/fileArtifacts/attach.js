@@ -29,7 +29,9 @@ export async function recomputePrimaryHash(client, artifactId) {
   const primary = selectPrimaryHash(rows);
   if (!primary) {
     await client.query(
-      `UPDATE file_artifacts SET primary_hash_id = NULL, updated_at = NOW() WHERE id = $1`,
+      `UPDATE file_artifacts
+       SET primary_hash_id = NULL, updated_at = NOW()
+       WHERE id = $1 AND primary_hash_id IS NOT NULL`,
       [artifactId]
     );
     return { primary: null, promoted: false };
@@ -38,17 +40,42 @@ export async function recomputePrimaryHash(client, artifactId) {
   const prev = rows.find((r) => r.is_primary);
   const promoted = !prev || prev.id !== primary.id;
 
+  // Already-correct primary: do not clear/set is_primary or bump updated_at.
+  // Only repair a drifted file_artifacts.primary_hash_id pointer, then sync canonical.
+  if (!promoted) {
+    await client.query(
+      `UPDATE file_artifacts
+       SET primary_hash_id = $2, updated_at = NOW()
+       WHERE id = $1 AND primary_hash_id IS DISTINCT FROM $2`,
+      [artifactId, primary.id]
+    );
+    await syncCanonicalIocFlag(client, artifactId);
+    return {
+      primary: {
+        id: primary.id,
+        hash_type: primary.hash_type,
+        normalized_hash_value: primary.normalized_hash_value
+      },
+      promoted: false,
+      previous_primary_id: prev?.id || null
+    };
+  }
+
   await client.query(
     `UPDATE file_artifact_hashes SET is_primary = FALSE, updated_at = NOW()
-     WHERE artifact_id = $1 AND is_primary = TRUE`,
-    [artifactId]
+     WHERE artifact_id = $1 AND is_primary = TRUE AND id IS DISTINCT FROM $2`,
+    [artifactId, primary.id]
   );
   await client.query(
-    `UPDATE file_artifact_hashes SET is_primary = TRUE, updated_at = NOW() WHERE id = $1`,
+    `UPDATE file_artifact_hashes
+     SET is_primary = TRUE, updated_at = NOW()
+     WHERE id = $1 AND is_primary IS DISTINCT FROM TRUE`,
     [primary.id]
   );
   await client.query(
-    `UPDATE file_artifacts SET primary_hash_id = $2, updated_at = NOW() WHERE id = $1`,
+    `UPDATE file_artifacts
+     SET primary_hash_id = $2, updated_at = NOW()
+     WHERE id = $1 AND primary_hash_id IS DISTINCT FROM $2`,
     [artifactId, primary.id]
   );
 
@@ -73,7 +100,8 @@ export async function recomputePrimaryHash(client, artifactId) {
  */
 export async function syncCanonicalIocFlag(client, artifactId) {
   const { rows } = await client.query(
-    `SELECT l.id, l.ioc_observable_type, h.hash_type AS linked_hash_type, h.is_primary
+    `SELECT l.id, l.ioc_observable_type, l.is_canonical_ioc,
+            h.hash_type AS linked_hash_type, h.is_primary
      FROM file_artifact_ioc_links l
      LEFT JOIN file_artifact_hashes h ON h.id = l.linked_hash_id
      WHERE l.artifact_id = $1`,
@@ -97,13 +125,25 @@ export async function syncCanonicalIocFlag(client, artifactId) {
       - rank(b.linked_hash_type || b.ioc_observable_type);
   });
   const canonicalId = sorted[0].id;
+  const currentlyCanonical = rows.filter((r) => r.is_canonical_ioc);
+  // Common dual-write re-link path: flags already correct -> zero heap/WAL writes.
+  if (currentlyCanonical.length === 1 && currentlyCanonical[0].id === canonicalId) {
+    return canonicalId;
+  }
 
+  // Delta-only flips (avoid rewriting every link to FALSE then one back to TRUE).
   await client.query(
-    `UPDATE file_artifact_ioc_links SET is_canonical_ioc = FALSE WHERE artifact_id = $1`,
-    [artifactId]
+    `UPDATE file_artifact_ioc_links
+     SET is_canonical_ioc = FALSE
+     WHERE artifact_id = $1
+       AND is_canonical_ioc = TRUE
+       AND id IS DISTINCT FROM $2`,
+    [artifactId, canonicalId]
   );
   await client.query(
-    `UPDATE file_artifact_ioc_links SET is_canonical_ioc = TRUE WHERE id = $1`,
+    `UPDATE file_artifact_ioc_links
+     SET is_canonical_ioc = TRUE
+     WHERE id = $1 AND is_canonical_ioc IS DISTINCT FROM TRUE`,
     [canonicalId]
   );
   return canonicalId;
@@ -247,11 +287,14 @@ async function attachExactHashInTx(client, input) {
         hash_id: existing.hash_id
       };
     }
+    // Monotonic last_seen only - skip the row when the observation is not newer
+    // (avoids updated_at-only WAL on every duplicate feed sighting).
     await client.query(
       `UPDATE file_artifact_hashes
-       SET last_seen_at = GREATEST(COALESCE(last_seen_at, $2::timestamptz), COALESCE($2::timestamptz, last_seen_at)),
+       SET last_seen_at = $2::timestamptz,
            updated_at = NOW()
-       WHERE id = $1`,
+       WHERE id = $1
+         AND (last_seen_at IS NULL OR last_seen_at < $2::timestamptz)`,
       [existing.hash_id, input.last_seen_at || new Date().toISOString()]
     );
     return {
@@ -287,7 +330,7 @@ async function attachExactHashInTx(client, input) {
 
   let hashId;
   let createdHash = true;
-  // SAVEPOINT: unique_violation aborts the subxact only — recovery queries must not see 25P02.
+  // SAVEPOINT: unique_violation aborts the subxact only - recovery queries must not see 25P02.
   const hashInsSp = 'fa_hash_ins';
   try {
     await client.query(`SAVEPOINT ${hashInsSp}`);
@@ -463,7 +506,9 @@ export async function linkIocToArtifact(client, input) {
     }
     if (input.linked_hash_id) {
       await client.query(
-        `UPDATE file_artifact_ioc_links SET linked_hash_id = COALESCE(linked_hash_id, $2) WHERE id = $1`,
+        `UPDATE file_artifact_ioc_links
+         SET linked_hash_id = $2
+         WHERE id = $1 AND linked_hash_id IS NULL`,
         [row.id, input.linked_hash_id]
       );
     }
@@ -581,7 +626,7 @@ export async function ensureArtifactForFileHashIoc(client, input) {
     await upsertNonIdentityAttrs(client, attach.artifact_id, nonIdentity, input.source_name || null);
   }
 
-  // Sibling exact hashes from the same source record (MB note) — attach only, do not invent source attribution for siblings as "direct"
+  // Sibling exact hashes from the same source record (MB note) - attach only, do not invent source attribution for siblings as "direct"
   let siblingResults = [];
   if (input.attach_note_siblings || input.provider_mapping) {
     siblingResults = await attachProviderExactHashSet(client, {
@@ -635,7 +680,7 @@ export async function attachProviderExactHashSet(client, input) {
 
   // Sibling hashes already bound to other artifact(s): signal merge (caller / dual-write /
   // backfill choose canonical). Trusted provider exact-hash sets may span N artifacts
-  // (e.g. ThreatFox published md5/sha1/sha256 as separate IOCs) — that is merge evidence,
+  // (e.g. ThreatFox published md5/sha1/sha256 as separate IOCs) - that is merge evidence,
   // not a blocking conflict. True unsafe multi-mapping is recorded via
   // detectMultiArtifactConflict + attachExactHash unique binding conflicts.
   const otherArtifactIds = [...new Set(
