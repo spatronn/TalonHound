@@ -13,10 +13,15 @@ import {
   upsertIntegrationSourceState
 } from './lib/integrationSourceState.js';
 import {
+  resolveFeedIdByKey,
   syncMembershipAfterIocImport,
   syncSnapshotFeedFromEntries,
   withImportOptimizationContext
 } from './lib/iocExpiration.js';
+import {
+  loadFeedMembershipObservableSet,
+  selectEntriesMissingMembership
+} from './lib/feedMembershipObservables.js';
 import { upsertFeedSourceEvidenceForObservable } from './lib/iocFeedSourceEvidence.js';
 import { resolveClassificationFromFeed } from './lib/iocClassificationMapping.js';
 import {
@@ -97,9 +102,6 @@ import {
   CERTPL_SOURCE_NAME,
   CERTPL_DOMAINS_URL,
   buildCertPlNote,
-  buildCertPlCheckpoint,
-  buildCertPlPreviousKeySet,
-  certPlDomainKeyHash,
   fetchCertPlDomains,
   hashCertPlEntries
 } from './lib/certpl.js';
@@ -333,46 +335,6 @@ function hashEntries(entries) {
 function hashContent(text) {
   return createHash('sha256').update(String(text || '')).digest('hex');
 }
-
-/** Compact PhishTank checkpoint: sha256 of `type|observable` (full list not needed for mark-missing). */
-function phishTankKeyHash(observableType, observable) {
-  return createHash('sha256').update(`${observableType}|${observable}`).digest('hex');
-}
-
-/**
- * Build previous-key Set from items_json.
- * Supports legacy full `{observable,observableType}[]` and compact `{v,key_hashes}`.
- * Add-diff only (PhishTank does not mark missing memberships from this list).
- */
-function buildPhishTankPreviousKeySet(itemsJson) {
-  const set = new Set();
-  if (Array.isArray(itemsJson)) {
-    for (const x of itemsJson) {
-      if (x && typeof x === 'object' && x.observable != null && x.observableType != null) {
-        set.add(phishTankKeyHash(x.observableType, x.observable));
-      } else if (typeof x === 'string' && x) {
-        set.add(x);
-      }
-    }
-    return set;
-  }
-  if (itemsJson && typeof itemsJson === 'object' && Array.isArray(itemsJson.key_hashes)) {
-    for (const h of itemsJson.key_hashes) {
-      if (h) set.add(String(h));
-    }
-  }
-  return set;
-}
-
-function buildPhishTankCheckpoint(entries) {
-  const key_hashes = entries.map((e) => phishTankKeyHash(e.observableType, e.observable));
-  return { v: 1, key_hashes, count: key_hashes.length };
-}
-
-const PHISHTANK_CHECKPOINT_WARN_BYTES = Math.max(
-  Number(process.env.PHISHTANK_CHECKPOINT_WARN_BYTES || 2_000_000),
-  100_000
-);
 
 const BATCH_INSERT_CHUNK = Math.min(Math.max(Number(process.env.IOC_BATCH_INSERT_CHUNK || 150), 50), 500);
 
@@ -674,7 +636,7 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
         confidence: null
       });
     }
-    // Existing same-source no-op / observation-only refresh â€” not a reject.
+    // Existing same-source no-op / observation-only refresh Ã¢â‚¬â€ not a reject.
     metrics.noteUnchanged();
     return;
   }
@@ -733,7 +695,7 @@ export async function updateMalwareBazaarObservableBySource(client, entry, sourc
   });
 
   if (existing.status === 'unchanged') {
-    // Active membership: intentional no-op â€” skip all DB writes.
+    // Active membership: intentional no-op Ã¢â‚¬â€ skip all DB writes.
     // Inactive/expired membership: reactivate without updating ioc_items metadata,
     // because feed re-appearance is semantically meaningful regardless of metadata change.
     await importSideEffect('malwarebazaar_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
@@ -800,7 +762,7 @@ export async function upsertMalwareBazaarObservable(client, entry, sourceName, s
     return;
   }
   if (existing.status === 'unchanged') {
-    // Existing same-source content â€” not a reject/filter.
+    // Existing same-source content Ã¢â‚¬â€ not a reject/filter.
     metrics.noteUnchanged();
     return;
   }
@@ -1063,7 +1025,7 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
         confidence: entry.confidence
       });
     }
-    // Existing same-source no-op / observation-only refresh â€” not a reject.
+    // Existing same-source no-op / observation-only refresh Ã¢â‚¬â€ not a reject.
     metrics.noteUnchanged();
     return;
   }
@@ -1127,8 +1089,8 @@ function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {
 }
 
 /**
- * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satÄ±r, WHERE NOT EXISTS ile dedup.
- * idempotent ekleme: aynÄ± feed tekrar Ã§alÄ±ÅŸÄ±rsa INSERT no-op (WHERE NOT EXISTS).
+ * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satÃ„Â±r, WHERE NOT EXISTS ile dedup.
+ * idempotent ekleme: aynÃ„Â± feed tekrar ÃƒÂ§alÃ„Â±Ã…Å¸Ã„Â±rsa INSERT no-op (WHERE NOT EXISTS).
  */
 export async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null, options = {}) {
   const duplicateHandling = String(options.duplicateHandling || 'full').trim();
@@ -2238,11 +2200,10 @@ export async function runPhishtankImport(options = {}) {
     const currentHash = hashEntries(entries.map((e) => ({ o: e.observable, t: e.observableType })));
 
     const prevState = await client.query(
-      `SELECT content_hash, items_json FROM integration_source_state WHERE source_name = $1`,
+      `SELECT content_hash FROM integration_source_state WHERE source_name = $1`,
       [config.phishTankSourceName]
     );
     const previousHash = prevState.rows[0]?.content_hash || null;
-    const previousSet = buildPhishTankPreviousKeySet(prevState.rows[0]?.items_json);
 
     if (previousHash === currentHash) {
       metrics.noteSkipped(entries.length);
@@ -2253,9 +2214,13 @@ export async function runPhishtankImport(options = {}) {
       return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash' }, suppressionStats, metrics);
     }
 
-    const addedEntries = entries.filter(
-      (e) => !previousSet.has(phishTankKeyHash(e.observableType, e.observable))
-    );
+    // Add-diff against durable feed memberships (not a duplicated key_hashes blob).
+    const feedId = await resolveFeedIdByKey(client, 'phishtank-opendnsrr');
+    if (!feedId) {
+      throw new Error('PhishTank feed is not configured in integration_feeds');
+    }
+    const existingObservables = await loadFeedMembershipObservableSet(client, feedId, 'url');
+    const addedEntries = selectEntriesMissingMembership(entries, existingObservables);
     metrics.noteSkipped(entries.length - addedEntries.length);
 
     const batchSize = Math.max(Number(process.env.PHISHTANK_BATCH_SIZE || 2000), 100);
@@ -2293,18 +2258,12 @@ export async function runPhishtankImport(options = {}) {
     currentPhase = 'finalize';
     const tfinal = Date.now();
     throwIfAborted(signal);
-    const checkpoint = buildPhishTankCheckpoint(entries);
-    const checkpointJson = JSON.stringify(checkpoint);
-    if (checkpointJson.length >= PHISHTANK_CHECKPOINT_WARN_BYTES) {
-      console.warn(
-        `[integration-import][phishtank] large checkpoint bytes=${checkpointJson.length} count=${checkpoint.count} run_id=${runId || '-'}`
-      );
-    }
+    // Compact metadata only â€” memberships are the source of truth for add-diff.
     await upsertIntegrationSourceState(
       client,
       config.phishTankSourceName,
       currentHash,
-      checkpointJson
+      buildCompactCountPayload(entries.length)
     );
     await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
       await finalizeIntegrationRun(tx, runId, metrics);
@@ -2340,7 +2299,7 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
   const category = 'threat-intel';
   const sourceUrl = entry.referenceUrl || null;
 
-  // Derive classification from pulse tags â€” take first tag that maps to a known slug.
+  // Derive classification from pulse tags Ã¢â‚¬â€ take first tag that maps to a known slug.
   // No blanket default: OTX is heterogeneous; null is correct for unrecognized pulses.
   let threatClassification = null;
   for (const tag of (entry.pulseTags || [])) {
@@ -2358,8 +2317,8 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     category,
     note,
     threatClassification,
-    // Real OTX source date (indicator.created, else pulse.created) â†’ first_seen_in_feed.
-    // Never the platform import time. Null when OTX gives no valid date â†’ membership
+    // Real OTX source date (indicator.created, else pulse.created) Ã¢â€ â€™ first_seen_in_feed.
+    // Never the platform import time. Null when OTX gives no valid date Ã¢â€ â€™ membership
     // falls back to import time (existing behavior). last_seen_in_feed stays at import
     // time (feed-confirmation), so we do NOT pass entry.lastSeen here.
     firstSeenAt: entry.firstSeen || null
@@ -2374,11 +2333,11 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     return;
   }
   if (insertResult === 'unchanged') {
-    // Same-source content unchanged â€” not a reject.
+    // Same-source content unchanged Ã¢â‚¬â€ not a reject.
     metrics.noteUnchanged();
     return;
   }
-  // 'duplicate' â€” existing IOC from same/other source; membership + evidence already synced.
+  // 'duplicate' Ã¢â‚¬â€ existing IOC from same/other source; membership + evidence already synced.
   metrics.noteDuplicate();
 }
 
@@ -2537,13 +2496,13 @@ function buildCertPlBatchEntry(entry, sourceName, feedDefaultConfidence) {
     category: 'threat-intel',
     note: buildCertPlNote(entry),
     threatClassification: null,
-    // CERT.PL InsertDate â†’ membership first_seen_in_feed only.
+    // CERT.PL InsertDate Ã¢â€ â€™ membership first_seen_in_feed only.
     firstSeenAt: entry.firstSeen || null
   };
 }
 
 /**
- * CERT.PL Dangerous Websites Warning List â€” incremental, non-destructive import.
+ * CERT.PL Dangerous Websites Warning List Ã¢â‚¬â€ incremental, non-destructive import.
  *
  * - Ingests only DeleteDate == null records
  * - Never deletes / deactivates / detaches IOCs when CERT.PL marks DeleteDate or
@@ -2586,16 +2545,15 @@ export async function runCertPlImport(options = {}) {
       });
 
       const { entries, stats: parseStats } = fetched;
-      // Upstream-deleted and invalid rows are skip counts only â€” never TalonHound removals.
+      // Upstream-deleted and invalid rows are skip counts only Ã¢â‚¬â€ never TalonHound removals.
       metrics.noteSkipped(parseStats.upstream_deleted_skipped + parseStats.invalid_skipped);
 
       const currentHash = hashCertPlEntries(entries);
       const prevState = await client.query(
-        `SELECT content_hash, items_json FROM integration_source_state WHERE source_name = $1`,
+        `SELECT content_hash FROM integration_source_state WHERE source_name = $1`,
         [sourceName]
       );
       const previousHash = prevState.rows[0]?.content_hash || null;
-      const previousSet = buildCertPlPreviousKeySet(prevState.rows[0]?.items_json);
 
       if (previousHash && previousHash === currentHash) {
         const summary = {
@@ -2618,10 +2576,14 @@ export async function runCertPlImport(options = {}) {
         return withSuppressionStats({ ok: true, runId, skipped: true, reason: 'same_hash', summary }, suppressionStats, metrics);
       }
 
-      // Add-diff only: never treat absence from CERT.PL as deletion.
-      const addedEntries = previousHash
-        ? entries.filter((e) => !previousSet.has(certPlDomainKeyHash(e.observable)))
-        : entries;
+      // Add-diff only against durable CERT memberships. Absence from CERT.PL never
+      // deletes TalonHound IOCs; expiry remains TalonHound-owned.
+      const feedId = await resolveFeedIdByKey(client, CERTPL_FEED_KEY);
+      if (!feedId) {
+        throw new Error('CERT.PL feed is not configured in integration_feeds');
+      }
+      const existingObservables = await loadFeedMembershipObservableSet(client, feedId, 'domain');
+      const addedEntries = selectEntriesMissingMembership(entries, existingObservables);
 
       const feedDefaultConfidence = await fetchFeedDefaultConfidence(client, sourceName);
       const batchSize = Math.max(Number(process.env.CERTPL_BATCH_SIZE || 2000), 100);
@@ -2638,7 +2600,6 @@ export async function runCertPlImport(options = {}) {
         }, { ...txMeta, batch: Math.floor(i / batchSize) + 1 });
       }
 
-      const checkpoint = buildCertPlCheckpoint(entries);
       const summary = {
         fetched: parseStats.fetched,
         active: parseStats.active,
@@ -2652,15 +2613,17 @@ export async function runCertPlImport(options = {}) {
         duplicate_iocs: metrics.records_duplicate,
         unchanged_iocs: metrics.records_unchanged,
         byte_length: fetched.byteLength || null,
-        noop: false
+        noop: false,
+        membership_diff: true
       };
 
       throwIfAborted(signal);
+      // Compact metadata only â€” do not rewrite multi-MB key_hashes checkpoints.
       await upsertIntegrationSourceState(
         client,
         sourceName,
         currentHash,
-        checkpoint
+        buildCompactCountPayload(entries.length)
       );
 
       await finalizeIntegrationRun(client, runId, metrics, 'success', { summary });
