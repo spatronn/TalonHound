@@ -20,6 +20,7 @@ import {
   normalizeIocTypeForPolicy,
   resolveExpirationPolicy
 } from './feedExpirationPolicy.js';
+import { recordSourceImportAudit } from './iocSourceImportHistory.js';
 
 export const EXPIRATION_MODES = Object.freeze([
   'never',
@@ -741,6 +742,19 @@ export async function upsertMembershipOnImport(client, {
     membershipId = membershipRow.id;
     membershipTouched = true;
     outcome = 'created';
+    // Exactly one History event per newly created (IOC, feed) membership.
+    // Re-sights never reach this branch. Idempotent under concurrent races.
+    try {
+      await recordSourceImportAudit(client, {
+        iocItemId,
+        observableType,
+        feedId,
+        membershipId,
+        firstSeenAt: membershipRow.first_seen_in_feed || firstNow
+      });
+    } catch (err) {
+      console.warn('[source-import-audit] persist failed:', err?.message || err);
+    }
   } else {
     const row = existing.rows[0];
     membershipId = row.id;

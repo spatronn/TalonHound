@@ -8,6 +8,12 @@ import {
   decodeAuditCursor,
   AuditQueryError
 } from '../lib/auditLogQuery.js';
+import {
+  IOC_SOURCE_IMPORTED_ACTION,
+  loadDerivedSourceImportEvents,
+  mergeIocAuditHistory,
+  publicSourceImportActionLabel
+} from '../lib/iocSourceImportHistory.js';
 
 function toPublicAuditRow(row) {
   if (!row) return null;
@@ -19,7 +25,7 @@ function toPublicAuditRow(row) {
     actor_email: row.actor_email,
     actor_role: row.actor_role,
     action: row.action,
-    action_label: auditActionLabel(row.action),
+    action_label: publicSourceImportActionLabel(row.action, row.metadata) || auditActionLabel(row.action),
     entity_type: row.entity_type,
     entity_id: row.entity_id,
     entity_display: row.entity_display,
@@ -69,9 +75,13 @@ export function registerAuditLogRoutes(app, pool) {
       const itemRes = await pool.query(lookupSql, [lookupParam]);
       if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
 
-      const ctx = buildIocAuditMatchContext(itemRes.rows[0]);
+      const iocItem = itemRes.rows[0];
+      const ctx = buildIocAuditMatchContext(iocItem);
       const { whereSql, params } = buildIocAuditLogsWhere(ctx);
-      const listParams = [...params, limit];
+      // Fetch enough persisted rows to merge with derived source-import events
+      // without dropping newer analyst/enrichment history when memberships are many.
+      const persistedLimit = Math.min(100, Math.max(limit, limit + 20));
+      const listParams = [...params, persistedLimit];
 
       const listQ = await pool.query(
         `SELECT *
@@ -82,10 +92,19 @@ export function registerAuditLogRoutes(app, pool) {
         listParams
       );
 
-      return res.json({
-        items: listQ.rows.map(toPublicAuditRow),
-        total: listQ.rowCount,
+      const persisted = listQ.rows.map(toPublicAuditRow);
+      const derived = await loadDerivedSourceImportEvents(pool, iocItem);
+      const items = mergeIocAuditHistory({
+        persistedRows: persisted,
+        derivedRows: derived,
         limit
+      });
+
+      return res.json({
+        items,
+        total: items.length,
+        limit,
+        source_import_action: IOC_SOURCE_IMPORTED_ACTION
       });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to fetch IOC audit history', detail: err.message });

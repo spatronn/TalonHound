@@ -16,6 +16,8 @@ export const AUDIT_STATUS = Object.freeze({
 
 export const AUDIT_ACTION = Object.freeze({
   IOC_CREATED: 'ioc.created',
+  // One event per (IOC, feed) first import — not per re-sight.
+  IOC_SOURCE_IMPORTED: 'ioc.source_imported',
   IOC_UPDATED: 'ioc.updated',
   IOC_DELETED: 'ioc.deleted',
   IOC_TAG_ADDED: 'ioc.tag.added',
@@ -246,6 +248,8 @@ export const AUDIT_ENTITY = Object.freeze({
 /** Human-readable labels for UI */
 export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_CREATED]: 'IOC Created',
+  // Static fallback; IOC History API overrides with "Imported from {feed_name}".
+  [AUDIT_ACTION.IOC_SOURCE_IMPORTED]: 'Imported from Feed',
   [AUDIT_ACTION.IOC_UPDATED]: 'IOC Updated',
   [AUDIT_ACTION.IOC_DELETED]: 'IOC Deleted',
   [AUDIT_ACTION.IOC_TAG_ADDED]: 'IOC Tag Added',

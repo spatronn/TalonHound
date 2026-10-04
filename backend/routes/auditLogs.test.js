@@ -356,3 +356,142 @@ test('ingest-authenticated caller receives 403', async () => {
     assert.equal(res.status, 403);
   }, { authVia: 'ingest' });
 });
+
+// ---------------------------------------------------------------------------
+// IOC Audit / History — source first-import (derived + persisted merge)
+// ---------------------------------------------------------------------------
+
+test('IOC audit history derives one Imported-from event per feed membership', async () => {
+  await withServer(async ({ app, state }) => {
+    state.handler = (sql) => {
+      if (sql.includes('FROM ioc_items')) {
+        return {
+          rows: [{
+            id: 3002619,
+            public_id: '8a077cf3-ae43-4ff5-a0e7-484f09beb06e',
+            observable: 'upd-domain-goloro.com',
+            observable_type: 'domain'
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes('FROM audit_logs')) {
+        return { rows: [], rowCount: 0 };
+      }
+      if (sql.includes('FROM ioc_feed_memberships m')) {
+        return {
+          rows: [
+            {
+              id: 3075596,
+              feed_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              ioc_observable_type: 'domain',
+              first_seen_in_feed: '2026-07-01T23:40:22.999Z',
+              created_at: '2026-07-01T23:40:21.399Z',
+              status: 'active',
+              feed_key: 'alienvault-otx',
+              feed_name: 'AlienVault OTX'
+            },
+            {
+              id: 3634662,
+              feed_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              ioc_observable_type: 'domain',
+              first_seen_in_feed: '2026-07-18T15:17:32.726Z',
+              created_at: '2026-07-18T15:44:17.748Z',
+              status: 'active',
+              feed_key: 'usom-trcert',
+              feed_name: 'Siber Güvenlik Başkanlığı / USOM'
+            }
+          ],
+          rowCount: 2
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+
+    const res = await request(app, '/api/ioc/3002619/audit-logs?limit=50');
+    assert.equal(res.status, 200);
+    assert.equal(res.data.items.length, 2);
+    assert.equal(res.data.items[0].action_label, 'Imported from Siber Güvenlik Başkanlığı / USOM');
+    assert.equal(new Date(res.data.items[0].created_at).toISOString(), '2026-07-18T15:17:32.726Z');
+    assert.equal(res.data.items[1].action_label, 'Imported from AlienVault OTX');
+    assert.equal(new Date(res.data.items[1].created_at).toISOString(), '2026-07-01T23:40:22.999Z');
+    assert.equal(res.data.items[0].actor_username, 'System');
+    assert.equal(res.data.items[0].action, 'ioc.source_imported');
+  });
+});
+
+test('IOC audit history dedupes persisted source-import against derived membership event', async () => {
+  await withServer(async ({ app, state }) => {
+    const otxFeed = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    state.handler = (sql) => {
+      if (sql.includes('FROM ioc_items')) {
+        return {
+          rows: [{
+            id: 3002619,
+            public_id: '8a077cf3-ae43-4ff5-a0e7-484f09beb06e',
+            observable: 'upd-domain-goloro.com',
+            observable_type: 'domain'
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes('FROM audit_logs')) {
+        return {
+          rows: [{
+            id: 9001,
+            created_at: '2026-07-01T23:40:22.999Z',
+            actor_username: 'System',
+            action: 'ioc.source_imported',
+            entity_type: 'ioc',
+            entity_id: '8a077cf3-ae43-4ff5-a0e7-484f09beb06e',
+            subject_ioc_id: 3002619,
+            severity: 'info',
+            status: 'success',
+            source: 'integration',
+            metadata: {
+              event_kind: 'source_import',
+              feed_id: otxFeed,
+              feed_key: 'alienvault-otx',
+              feed_name: 'AlienVault OTX',
+              first_seen_in_feed: '2026-07-01T23:40:22.999Z'
+            }
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes('FROM ioc_feed_memberships m')) {
+        return {
+          rows: [
+            {
+              id: 1,
+              feed_id: otxFeed,
+              first_seen_in_feed: '2026-07-01T23:40:22.999Z',
+              created_at: '2026-07-01T23:40:21.399Z',
+              feed_key: 'alienvault-otx',
+              feed_name: 'AlienVault OTX'
+            },
+            {
+              id: 2,
+              feed_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              first_seen_in_feed: '2026-07-18T15:17:32.726Z',
+              created_at: '2026-07-18T15:44:17.748Z',
+              feed_key: 'usom-trcert',
+              feed_name: 'Siber Güvenlik Başkanlığı / USOM'
+            }
+          ],
+          rowCount: 2
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+
+    const res = await request(app, '/api/ioc/3002619/audit-logs');
+    assert.equal(res.status, 200);
+    const otx = res.data.items.filter((r) => r.metadata?.feed_key === 'alienvault-otx');
+    const usom = res.data.items.filter((r) => r.metadata?.feed_key === 'usom-trcert');
+    assert.equal(otx.length, 1);
+    assert.equal(usom.length, 1);
+    assert.equal(otx[0].id, 9001);
+    assert.equal(res.data.items.length, 2);
+  });
+});
