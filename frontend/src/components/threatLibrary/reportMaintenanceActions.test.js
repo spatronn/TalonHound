@@ -40,7 +40,7 @@ test('review_required report: Refresh extraction + Re-run AI analysis, no mislea
   assert.deepEqual(actions({ analysis_status: 'review_required', source_type: 'pdf' }), { retry: false, refresh: true, rerunAi: true });
 });
 
-test('finalized report: Refresh extraction only (stays finalized); AI re-run would reopen it, so it is not offered', () => {
+test('finalized report: Refresh extraction only; Re-run AI stays hidden until the report is in review', () => {
   assert.deepEqual(actions({ analysis_status: 'ready', import_status: 'ready', source_type: 'url' }), { retry: false, refresh: true, rerunAi: false });
 });
 
@@ -79,6 +79,22 @@ test('refresh outcome feedback from the finished job', () => {
   assert.deepEqual(
     describeMaintenanceOutcome({ job_type: 'refresh_extraction', status: 'completed', progress: { refresh: { added: 1, removed: 2, updated: 0 } } }),
     { message: 'Extraction refreshed: 1 indicator added, 2 indicators removed.' }
+  );
+  assert.deepEqual(
+    describeMaintenanceOutcome({
+      job_type: 'refresh_extraction',
+      status: 'completed',
+      progress: { refresh: { prior_status: 'ready', review_relevant: false, reopened_for_review: false, added: 0, removed: 0, updated: 1 } }
+    }),
+    { message: 'Extraction refreshed. No review-relevant changes were found.' }
+  );
+  assert.deepEqual(
+    describeMaintenanceOutcome({
+      job_type: 'refresh_extraction',
+      status: 'completed',
+      progress: { refresh: { prior_status: 'ready', review_relevant: true, reopened_for_review: true, added: 1, removed: 0, updated: 0 } }
+    }),
+    { message: 'Extraction refresh changed the report. Review is required again.' }
   );
   assert.match(describeMaintenanceOutcome({ job_type: 'refresh_extraction', status: 'failed', error_message: 'no retained source' }).error, /Refresh extraction failed: no retained source\. The report was not changed\./);
   assert.equal(describeMaintenanceOutcome({ job_type: 'rerun_ai', status: 'completed' }), null);

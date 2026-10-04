@@ -20,7 +20,6 @@ import {
   getAiSettings,
   updateReportStatus,
   insertArtifact,
-  replaceCandidates,
   upsertEntity,
   linkReportEntity,
   replaceRelationships,
@@ -30,8 +29,9 @@ import {
   loadCompletedChunkResult,
   saveAnalysisChunkResult,
   markAnalysisChunkFailed,
-  countReportCandidates,
+  loadReportCandidateRows,
   loadReportCandidatesForAnalysis,
+  reconcileReportCandidates,
   isAnalysisCancelRequested
 } from './store.js';
 import { resolveEffectiveTlp } from './tlpPolicy.js';
@@ -49,6 +49,7 @@ import {
   rebuildDocumentFromRetainedSource
 } from './extractionStages.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
+import { preserveAnalystCandidates } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
 
 // Deterministic stages live in extractionStages.js (shared with the
@@ -268,9 +269,13 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     const publicationDate = await applyPublicationDate(pool, report, { document, sourceHtml });
 
     // --- Deterministic candidates (refresh when extraction contract changes) ---
+    // Snapshot analyst state before any candidate write. Retry and Re-run AI
+    // reconcile by canonical identity (same path as Refresh extraction) so a
+    // surviving identity keeps its row id and analyst decisions.
+    const previousRows = await loadReportCandidateRows(pool, report.id);
     let candidates;
     let extractionDiagnostics = report.analysis_progress?.extraction_diagnostics || null;
-    const existingCount = await countReportCandidates(pool, report.id);
+    const existingCount = previousRows.length;
     const reuse = decideCandidateReuse({
       priorExtractionVersion: report.analysis_progress?.candidate_extraction_version || null,
       documentRebuilt,
@@ -294,9 +299,9 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       // Source provenance is stamped on the document for zone/source marking.
       const extracted = extractReportCandidates(report, document);
       document = extracted.document;
-      candidates = extracted.candidates;
+      candidates = preserveAnalystCandidates(extracted.candidates, previousRows, { carryStoredMatch: true });
       extractionDiagnostics = extracted.diagnostics;
-      await replaceCandidates(pool, report.id, candidates);
+      await reconcileReportCandidates(pool, report.id, candidates);
       progressCarry.candidate_extraction_version = THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
       progressCarry.extraction_diagnostics = compactExtractionDiagnostics(extractionDiagnostics);
       const tables = extracted.diagnostics?.explicit_tables || {};
@@ -520,7 +525,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     const matched = await matchCandidateSet(pool, candidates);
     const summary = matched.summary;
 
-    const savedCandidates = await replaceCandidates(pool, report.id, matched.candidates);
+    const resolved = preserveAnalystCandidates(matched.candidates, previousRows);
+    const savedCandidates = (await reconcileReportCandidates(pool, report.id, resolved)).rows;
 
     // Clear prior entity links/relationships for this report before re-applying (idempotent finalize)
     await pool.query(`DELETE FROM threat_report_entities WHERE report_id = $1`, [report.id]);

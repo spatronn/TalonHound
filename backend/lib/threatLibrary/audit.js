@@ -417,7 +417,11 @@ export function buildAnalysisAuditEvent({ report, job, ok, code, summary, initia
             extraction_contract: summary?.extraction_contract ?? null,
             candidates_added: summary?.added ?? null,
             candidates_updated: summary?.updated ?? null,
-            candidates_removed: summary?.removed ?? null
+            candidates_removed: summary?.removed ?? null,
+            review_relevant: summary?.review_relevant === true,
+            ...(summary?.reopened_for_review === true
+              ? { review_reopened: true, restored_status: 'review_required', prior_status: 'ready' }
+              : {})
           }
         : {})
     }

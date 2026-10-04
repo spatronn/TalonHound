@@ -46,16 +46,17 @@ import {
   updateJob,
   updateReportStatus
 } from './store.js';
-import { isContextOnlyCandidate } from './promotion.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
+import {
+  preserveAnalystCandidates,
+  requiresReviewAfterExtractionRefresh
+} from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
 
 const log = createServiceLogger('threat-library');
 
 const MODE = THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION;
 const RESTORABLE = new Set(['review_required', 'ready']);
-
-const candidateKey = (c) => `${c.candidate_type}\0${c.normalized_value}`;
 
 function evidenceOf(row) {
   return row?.evidence && typeof row.evidence === 'object' ? row.evidence : {};
@@ -71,6 +72,35 @@ export function resolveRefreshRestoreStatus(requested) {
   const status = String(requested?.analysis_status || '').toLowerCase();
   const analysisStatus = RESTORABLE.has(status) ? status : 'review_required';
   return { analysis_status: analysisStatus, import_status: analysisStatus };
+}
+
+/**
+ * Status a completed refresh actually leaves the report in.
+ * review_required stays review_required. A finalized report stays finalized
+ * only when the reconcile diff has no review-relevant change; otherwise it
+ * returns to review_required. A refresh never finalizes a report.
+ * @param {{ analysis_status?: string }|null|undefined} requested prior status
+ * @param {{ added?: object[], removed?: object[], updated?: object[] }|null|undefined} diff
+ */
+export function resolveRefreshOutcomeStatus(requested, diff) {
+  const restore = resolveRefreshRestoreStatus(requested);
+  const reviewRelevant = requiresReviewAfterExtractionRefresh(diff);
+  if (restore.analysis_status === 'ready' && reviewRelevant) {
+    return {
+      analysis_status: 'review_required',
+      import_status: 'review_required',
+      review_relevant: true,
+      reopened_for_review: true,
+      prior_status: 'ready'
+    };
+  }
+  return {
+    analysis_status: restore.analysis_status,
+    import_status: restore.import_status,
+    review_relevant: reviewRelevant,
+    reopened_for_review: false,
+    prior_status: restore.analysis_status
+  };
 }
 
 /**
@@ -122,42 +152,7 @@ export function aiReplayUpdatesFromRows(rows, opts = {}) {
   return updates;
 }
 
-/**
- * Re-apply analyst decisions recorded on the surviving row of the same
- * canonical identity (mutates and returns `candidate`). New identities start
- * pending.
- * @param {object} candidate resolved (matched) candidate
- * @param {object|null} prior persisted row with the same identity
- */
-export function applyAnalystState(candidate, prior) {
-  if (!prior) {
-    candidate.review_status = 'pending';
-    return candidate;
-  }
-  const review = prior.review_status || 'pending';
-  candidate.review_status = review;
-  if (review === 'context_only') {
-    // reviewService `context_only` action.
-    candidate.assessment = 'context_only';
-    candidate.match_state = 'context_only';
-  }
-  const promotedFrom = evidenceOf(prior).promoted_from;
-  if (promotedFrom && typeof promotedFrom === 'object') {
-    candidate.promoted_from = promotedFrom;
-    if (review === 'approved' && (isContextOnlyCandidate(candidate) || candidate.is_ioc === false)) {
-      // reviewService promote_to_ioc override, re-applied on the refreshed row.
-      candidate.assessment = 'suspicious';
-      if (['reference', 'legitimate_service', 'hosting_platform'].includes(String(candidate.role))) {
-        candidate.role = 'unknown';
-      }
-      candidate.is_ioc = true;
-      candidate.match_state = candidate.matched_ioc_id != null ? 'existing' : 'new';
-      candidate.decision_source = 'analyst';
-      candidate.policy_decision = 'analyst_promoted_from_context_only';
-    }
-  }
-  return candidate;
-}
+export { applyAnalystState } from './candidateAnalystState.js';
 
 /**
  * Pure-ish core (reads only: IOC matching): the refreshed candidate set for a
@@ -170,8 +165,7 @@ export async function computeExtractionRefresh(pool, { report, document, previou
   const replay = aiReplayUpdatesFromRows(previousRows, { documentRebuilt });
   const merged = mergeAiCandidateUpdates(extracted.candidates, { candidate_updates: replay }, { document: extracted.document });
   const matched = await matchCandidateSet(pool, merged);
-  const priorByKey = new Map((previousRows || []).map((r) => [candidateKey(r), r]));
-  const candidates = matched.candidates.map((c) => applyAnalystState(c, priorByKey.get(candidateKey(c)) || null));
+  const candidates = preserveAnalystCandidates(matched.candidates, previousRows);
   return {
     document: extracted.document,
     diagnostics: extracted.diagnostics,
@@ -244,6 +238,7 @@ export async function runExtractionRefresh(pool, ctx) {
     await setStage('matching');
     const refreshed = await computeExtractionRefresh(pool, { report, document, previousRows, documentRebuilt });
     const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates);
+    const outcome = resolveRefreshOutcomeStatus(restore, persisted);
 
     const result = {
       document_rebuilt: documentRebuilt,
@@ -253,7 +248,11 @@ export async function runExtractionRefresh(pool, ctx) {
       unchanged: persisted.unchanged,
       removed: persisted.removed.length,
       replayed_ai_decisions: refreshed.replayedAiDecisions,
-      ai_invoked: false
+      ai_invoked: false,
+      review_relevant: outcome.review_relevant,
+      reopened_for_review: outcome.reopened_for_review,
+      prior_status: outcome.prior_status,
+      restored_status: outcome.analysis_status
     };
     const lastRefresh = {
       job_id: ctx.jobId,
@@ -267,11 +266,11 @@ export async function runExtractionRefresh(pool, ctx) {
     await updateReportStatus(pool, report.id, {
       canonical_document: refreshed.document,
       candidate_summary: refreshed.summary,
-      analysis_status: restore.analysis_status,
-      import_status: restore.import_status,
+      analysis_status: outcome.analysis_status,
+      import_status: outcome.import_status,
       analysis_progress: {
         ...priorProgress,
-        stage: restore.analysis_status,
+        stage: outcome.analysis_status,
         completed: true,
         candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
         document_extractor: refreshed.document.meta?.extractor || null,
@@ -282,8 +281,8 @@ export async function runExtractionRefresh(pool, ctx) {
     });
     await updateJob(pool, ctx.jobId, {
       status: 'completed',
-      stage: restore.analysis_status,
-      progress: { stage: restore.analysis_status, mode: MODE, dispatch, summary: refreshed.summary, refresh: result }
+      stage: outcome.analysis_status,
+      progress: { stage: outcome.analysis_status, mode: MODE, dispatch, summary: refreshed.summary, refresh: result }
     });
 
     log.info('extraction refresh completed', {
@@ -293,9 +292,19 @@ export async function runExtractionRefresh(pool, ctx) {
       extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
       candidates_refreshed: true,
       ...result,
-      restored_status: restore.analysis_status,
       elapsed_ms: Date.now() - startedAt
     });
+    if (outcome.reopened_for_review) {
+      log.info('finalized report reopened for review after extraction refresh', {
+        reportId: report.id,
+        jobId: ctx.jobId,
+        prior_status: outcome.prior_status,
+        restored_status: outcome.analysis_status,
+        added: result.added,
+        removed: result.removed,
+        updated: result.updated
+      });
+    }
     return {
       ok: true,
       summary: {

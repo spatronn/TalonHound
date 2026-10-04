@@ -654,9 +654,9 @@ export function changedCandidateColumns(row, next) {
 }
 
 /**
- * Deterministic refresh persistence: reconcile a report's candidate rows with
- * a recomputed set by canonical identity (candidate_type, normalized_value) in
- * ONE transaction.
+ * Shared candidate persistence for Refresh extraction, Retry and Re-run AI:
+ * reconcile a report's candidate rows with a recomputed set by canonical
+ * identity (candidate_type, normalized_value) in ONE transaction.
  *
  *  - surviving identity → updated IN PLACE: id, public_id, portable_id,
  *    promotion_outcome / promotion_detail / promoted_at and created_at are

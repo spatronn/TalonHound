@@ -165,6 +165,18 @@ test('analysis event: a refresh_extraction job records the mode, the contract an
   assert.equal(ev.metadata.candidates_updated, 2);
   assert.equal(ev.metadata.candidates_removed, 0);
   assert.equal(ev.metadata.candidates_total, 144);
+  assert.equal(ev.metadata.review_relevant, false);
+  assert.equal('review_reopened' in ev.metadata, false);
+  const reopened = buildAnalysisAuditEvent({
+    report: REPORT,
+    job: { public_id: 'job-3', job_type: 'refresh_extraction' },
+    ok: true,
+    summary: { total: 10, added: 1, updated: 0, removed: 0, ai_invoked: false, review_relevant: true, reopened_for_review: true },
+    initiator: USER
+  });
+  assert.equal(reopened.metadata.review_reopened, true);
+  assert.equal(reopened.metadata.restored_status, 'review_required');
+  assert.equal(reopened.metadata.prior_status, 'ready');
 });
 
 test('worker boundary: initiating actor is resolved from threat_library_jobs.requested_by', async () => {

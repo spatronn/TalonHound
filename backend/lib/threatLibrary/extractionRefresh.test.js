@@ -22,7 +22,8 @@ import { extractReportCandidates, mergeAiCandidateUpdates, matchCandidateSet } f
 import { replaceCandidates } from './store.js';
 import { runThreatLibraryJob } from './jobRunner.js';
 import { runAnalysisPipeline } from './pipeline.js';
-import { aiReplayUpdatesFromRows, applyAnalystState, resolveRefreshRestoreStatus } from './extractionRefresh.js';
+import { aiReplayUpdatesFromRows, applyAnalystState, resolveRefreshOutcomeStatus, resolveRefreshRestoreStatus } from './extractionRefresh.js';
+import { requiresReviewAfterExtractionRefresh } from './candidateAnalystState.js';
 import { parseJobMode, jobModeInvokesAi, evaluateMaintenanceAction, UnknownJobModeError } from './jobModes.js';
 import { isActionableReviewIndicator } from './promotion.js';
 
@@ -164,6 +165,25 @@ function createFakeDb({ report, iocCatalog = [] }) {
       db.candidates = db.candidates.filter((c) => c.report_id !== params[0]);
       db.relationships = db.relationships.filter((r) => !gone.has(r.subject_candidate_id) && !gone.has(r.object_candidate_id));
       return { rows: [] };
+    }
+    if (/^DELETE FROM threat_report_entities WHERE report_id = \$1/.test(t)) {
+      db.entities = db.entities.filter((e) => e.report_id !== params[0]);
+      return { rows: [] };
+    }
+    if (/^DELETE FROM threat_relationships WHERE report_id = \$1/.test(t)) {
+      db.relationships = db.relationships.filter((r) => r.report_id !== params[0]);
+      return { rows: [] };
+    }
+    if (/^INSERT INTO threat_relationships /.test(t)) {
+      const row = {
+        id: 4000 + db.relationships.length,
+        report_id: params[1],
+        subject_candidate_id: params[4],
+        object_candidate_id: params[10],
+        relationship_type: params[7]
+      };
+      db.relationships.push(row);
+      return { rows: [clone(row)] };
     }
     if (/FROM ioc_items/.test(s) && /unnest/.test(s)) {
       const [types, values] = params;
@@ -488,6 +508,8 @@ test('4. new deterministic IOC: created by refresh, joins Indicators, no AI', as
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(result.summary.added, 1);
+  assert.equal(result.summary.reopened_for_review, false);
+  assert.equal(db.report.analysis_status, 'review_required');
   const added = db.candidates.find((c) => c.normalized_value === 'inbox-notice-hub.net');
   assert.ok(added, 'candidate created');
   assert.equal(added.source_assertion, 'explicit_ioc');
@@ -541,16 +563,20 @@ test('6. identity correction (technical_artifact → domain): corrected identity
   assert.equal(isActionableReviewIndicator(domain), true);
 });
 
-test('finalized report: refresh keeps it finalized (status, finalized_at), never reopens it', async (t) => {
+test('finalized + no semantic change stays finalized, and no model is called', async (t) => {
   const { calls, deps } = noAiSpies(t);
   const { db, pool } = await seedAnalyzedReport({ status: 'ready', previousContract: 'tl-candidates-v13' });
   const result = await refresh(pool, deps, resolveRefreshRestoreStatus({ analysis_status: 'ready' }));
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
+  assert.equal(result.summary.review_relevant, false);
+  assert.equal(result.summary.reopened_for_review, false);
+  assert.equal(result.summary.restored_status, 'ready');
   assert.equal(db.report.analysis_status, 'ready');
   assert.equal(db.report.import_status, 'ready');
   assert.equal(db.report.finalized_at, '2026-10-01T00:00:00.000Z');
   assert.equal(db.jobs[0].stage, 'ready');
+  assert.equal(db.jobs[0].progress.refresh.reopened_for_review, false);
 });
 
 test('restore status: only a committed review set or finalized report is restorable; nothing else is finalized implicitly', () => {
@@ -604,3 +630,267 @@ test('unknown job mode is rejected before any stage runs', async () => {
   await assert.rejects(runThreatLibraryJob(pool, { reportId: 77, jobId: 41, jobType: 'refresh_and_ai' }), UnknownJobModeError);
   assert.deepEqual(db.sql, []);
 });
+
+test('review-relevant refresh diff: identities and semantic columns, not occurrence metadata', () => {
+  assert.equal(requiresReviewAfterExtractionRefresh(null), false);
+  assert.equal(requiresReviewAfterExtractionRefresh({ added: [], removed: [], updated: [] }), false);
+  assert.equal(requiresReviewAfterExtractionRefresh({ added: [{ candidate_type: 'domain', normalized_value: 'a.example' }] }), true);
+  assert.equal(requiresReviewAfterExtractionRefresh({ removed: [{ candidate_type: 'domain', normalized_value: 'a.example' }] }), true);
+  for (const column of ['assessment', 'role', 'review_status', 'match_state', 'matched_ioc_id', 'matched_ioc_observable_type', 'is_ioc', 'source_assertion']) {
+    assert.equal(
+      requiresReviewAfterExtractionRefresh({ updated: [{ columns: [column] }] }),
+      true,
+      column
+    );
+  }
+  assert.equal(
+    requiresReviewAfterExtractionRefresh({
+      updated: [{ columns: ['evidence', 'evidence_text', 'section', 'block_id', 'page_number', 'original_value', 'confidence'] }]
+    }),
+    false
+  );
+  assert.deepEqual(resolveRefreshOutcomeStatus({ analysis_status: 'review_required' }, { added: [{}] }), {
+    analysis_status: 'review_required',
+    import_status: 'review_required',
+    review_relevant: true,
+    reopened_for_review: false,
+    prior_status: 'review_required'
+  });
+  assert.equal(resolveRefreshOutcomeStatus({ analysis_status: 'ready' }, { updated: [{ columns: ['evidence'] }] }).analysis_status, 'ready');
+  assert.equal(resolveRefreshOutcomeStatus({ analysis_status: 'ready' }, { added: [{}] }).reopened_for_review, true);
+});
+
+test('finalized + new Indicator returns to review_required', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({
+    status: 'ready',
+    mutate: (cands) => cands.filter((c) => c.normalized_value !== 'inbox-notice-hub.net')
+  });
+  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  assert.equal(result.ok, true);
+  assert.equal(calls.analyze, 0);
+  assert.equal(result.summary.reopened_for_review, true);
+  assert.equal(result.summary.restored_status, 'review_required');
+  assert.equal(db.report.analysis_status, 'review_required');
+  assert.equal(db.report.import_status, 'review_required');
+  assert.equal(db.report.finalized_at, '2026-10-01T00:00:00.000Z');
+  const added = db.candidates.find((c) => c.normalized_value === 'inbox-notice-hub.net');
+  assert.equal(added?.source_assertion, 'explicit_ioc');
+  assert.equal(added?.review_status, 'pending');
+  assert.equal(db.jobs[0].progress.refresh.reopened_for_review, true);
+});
+
+test('finalized + removed Indicator returns to review_required', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({
+    status: 'ready',
+    mutate: (cands) => [...cands, {
+      ...cands.find((c) => c.normalized_value === 'relay-voxmail.com'),
+      candidate_type: 'domain', normalized_value: 'removed-indicator.example', original_value: 'removed-indicator.example', matched_ioc_id: null, portable_id: null
+    }]
+  });
+  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  assert.equal(result.ok, true);
+  assert.equal(calls.analyze, 0);
+  assert.equal(result.summary.removed, 1);
+  assert.equal(db.report.analysis_status, 'review_required');
+  assert.equal(db.candidates.some((c) => c.normalized_value === 'removed-indicator.example'), false);
+});
+
+test('finalized + identity correction returns to review_required and does not move analyst state', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({
+    status: 'ready',
+    mutate: (cands) => cands.map((c) => (c.normalized_value === 'relay-voxmail.com'
+      ? { ...c, candidate_type: 'technical_artifact', normalized_value: 'rElay-voxMail.COM', original_value: 'rElay-voxMail.COM', assessment: 'context_only', match_state: 'context_only', is_ioc: false, matched_ioc_id: null }
+      : c))
+  });
+  const artifact = db.candidates.find((c) => c.candidate_type === 'technical_artifact');
+  artifact.review_status = 'ignored';
+  artifact.promotion_outcome = 'created';
+  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  assert.equal(result.ok, true);
+  assert.equal(calls.analyze, 0);
+  assert.equal(db.report.analysis_status, 'review_required');
+  assert.equal(db.candidates.some((c) => c.candidate_type === 'technical_artifact'), false);
+  const domain = db.candidates.find((c) => key(c) === 'domain|relay-voxmail.com');
+  assert.equal(domain.review_status, 'pending');
+  assert.equal(domain.promotion_outcome, null);
+});
+
+test('finalized + occurrence-only metadata stays finalized', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({ status: 'ready' });
+  const row = db.candidates.find((c) => Array.isArray(c.evidence?.occurrences) && c.evidence.occurrences.length);
+  assert.ok(row, 'fixture has an occurrence to refresh');
+  row.evidence = {
+    ...row.evidence,
+    occurrences: row.evidence.occurrences.map((o, i) => (i === 0 ? { ...o, surrounding_text: 'metadata-only refresh marker' } : o))
+  };
+  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  assert.equal(result.ok, true);
+  assert.equal(calls.analyze, 0);
+  assert.equal(result.summary.review_relevant, false, JSON.stringify(result.summary));
+  assert.equal(result.summary.reopened_for_review, false);
+  assert.ok(result.summary.updated >= 1, 'occurrence metadata was rewritten');
+  assert.equal(result.summary.added, 0);
+  assert.equal(result.summary.removed, 0);
+  assert.equal(db.report.analysis_status, 'ready');
+  assert.equal(db.report.import_status, 'ready');
+  assert.equal(db.report.finalized_at, '2026-10-01T00:00:00.000Z');
+});
+
+test('delete-all candidate rebuild drops row identity (the path Retry and Re-run AI must not use)', async () => {
+  const { db, pool } = await seedAnalyzedReport();
+  const before = db.candidates.map((c) => c.id);
+  db.sql.length = 0;
+  await replaceCandidates(pool, 77, db.candidates);
+  assert.ok(db.sql.some((q) => /^DELETE FROM threat_report_candidates WHERE report_id = \$1$/.test(q.trim())));
+  assert.notDeepEqual(db.candidates.map((c) => c.id), before);
+});
+
+function stampAnalystWork(db) {
+  const by = (k) => db.candidates.find((c) => key(c) === k);
+  const sha = by(`sha256|${SHA_A}`);
+  const shaId = sha.id;
+  // Absent from the stored set, so a rebuild must insert it with no analyst state.
+  db.candidates = db.candidates.filter((c) => c.id !== shaId);
+  const relay = by('domain|relay-voxmail.com');
+  Object.assign(relay, {
+    review_status: 'approved',
+    promotion_outcome: 'created',
+    promotion_detail: 'IOC created',
+    promoted_at: '2026-10-02T10:00:00.000Z'
+  });
+  const inbox = by('domain|inbox-notice-hub.net');
+  Object.assign(inbox, { review_status: 'context_only', assessment: 'context_only', match_state: 'context_only' });
+  const body = by(`domain|${BODY_DOMAIN}`);
+  Object.assign(body, {
+    review_status: 'approved',
+    assessment: 'suspicious',
+    role: 'unknown',
+    is_ioc: true,
+    match_state: 'new',
+    evidence: {
+      ...body.evidence,
+      decision_source: 'analyst',
+      policy_decision: 'analyst_promoted_from_context_only',
+      promoted_from: {
+        assessment: 'context_only', role: 'reference', match_state: 'context_only', review_status: 'pending',
+        is_ioc: true, policy_decision: 'pass', decision_source: 'deterministic', promoted_by: 'analyst@example'
+      }
+    }
+  });
+  const legacy = {
+    ...relay,
+    id: 4242,
+    public_id: 'legacy-row',
+    portable_id: 'indicator--legacy',
+    candidate_type: 'domain',
+    normalized_value: 'legacy-only.example',
+    original_value: 'legacy-only.example',
+    review_status: 'approved',
+    promotion_outcome: 'created',
+    promotion_detail: 'must not move',
+    promoted_at: '2026-10-02T10:00:00.000Z',
+    matched_ioc_id: 900
+  };
+  db.candidates.push(legacy);
+  db.relationships.push({
+    id: 3002, report_id: 77, subject_kind: 'entity', subject_entity_id: 9002,
+    relationship_type: 'uses', object_kind: 'candidate', object_candidate_id: relay.id
+  });
+  return { shaId, relayId: relay.id, inboxId: inbox.id, bodyId: body.id, legacyId: legacy.id };
+}
+
+function aiRerunValue() {
+  return {
+    candidate_updates: [
+      { candidate_type: 'domain', normalized_value: 'relay-voxmail.com', assessment: 'malicious', role: 'command_and_control', confidence: 0.99 },
+      { candidate_type: 'domain', normalized_value: 'inbox-notice-hub.net', assessment: 'malicious', role: 'command_and_control', confidence: 0.91 },
+      { candidate_type: 'domain', normalized_value: BODY_DOMAIN, assessment: 'context_only', role: 'reference', confidence: 0.2 },
+      { candidate_type: 'sha256', normalized_value: SHA_A, assessment: 'context_only', role: 'reference', confidence: 0.2 }
+    ],
+    entities: [],
+    relationships: [],
+    report_tags: [],
+    summary: 'Rerun summary',
+    report_type: 'campaign',
+    confidence: 0.4,
+    language: 'en',
+    tlp: null
+  };
+}
+
+async function runAiJob(pool, jobType) {
+  let calls = 0;
+  const analyzeThreatDocument = async () => {
+    calls += 1;
+    return { ok: true, value: aiRerunValue(), meta: { ai_calls: 1, chunks_total: 1, chunks_from_cache: 0, elapsed_ms: 4, timing: [] } };
+  };
+  const result = await runThreatLibraryJob(pool, {
+    reportId: 77,
+    jobId: 41,
+    jobType,
+    resumeAnalysis: true,
+    newAnalysisRun: jobType === 'rerun_ai'
+  }, { analyzeThreatDocument });
+  return { result, calls };
+}
+
+for (const jobType of ['retry', 'rerun_ai']) {
+  test(`${jobType}: surviving identities keep analyst state, Create-IOC linkage and row ids; removed state does not move`, async () => {
+    const { db, pool } = await seedAnalyzedReport({ previousContract: 'tl-candidates-v13' });
+    const ids = stampAnalystWork(db);
+    db.jobs[0].job_type = jobType;
+    db.sql.length = 0;
+    const { result, calls } = await runAiJob(pool, jobType);
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(calls, 1, 'the model path ran');
+    assert.equal(db.sql.some((q) => /^DELETE FROM threat_report_candidates WHERE report_id = \$1$/.test(q.trim())), false, 'no delete-all rebuild');
+    assert.equal(db.sql.some((q) => /INSERT INTO ioc_items/i.test(q)), false, 'no duplicate IOC');
+
+    const after = (k) => db.candidates.find((c) => key(c) === k);
+    const sha = after(`sha256|${SHA_A}`);
+    assert.ok(sha, 'new identity is extracted');
+    assert.notEqual(sha.id, ids.shaId);
+    assert.equal(sha.review_status, 'pending');
+    assert.equal(sha.promotion_outcome, null);
+    assert.equal(sha.evidence?.promoted_from, undefined);
+
+    const relay = after('domain|relay-voxmail.com');
+    assert.equal(relay.id, ids.relayId);
+    assert.equal(relay.review_status, 'approved');
+    assert.equal(relay.promotion_outcome, 'created');
+    assert.equal(relay.promoted_at, '2026-10-02T10:00:00.000Z');
+    assert.equal(relay.matched_ioc_id, 501);
+    assert.equal(relay.role, 'command_and_control', 'AI-owned role can change');
+
+    const inbox = after('domain|inbox-notice-hub.net');
+    assert.equal(inbox.id, ids.inboxId);
+    assert.equal(inbox.review_status, 'context_only');
+    assert.equal(inbox.assessment, 'context_only');
+    assert.equal(inbox.match_state, 'context_only');
+
+    const body = after(`domain|${BODY_DOMAIN}`);
+    assert.equal(body.id, ids.bodyId);
+    assert.equal(body.review_status, 'approved');
+    assert.equal(body.assessment, 'suspicious');
+    assert.equal(body.is_ioc, true);
+    assert.equal(body.evidence.promoted_from.promoted_by, 'analyst@example');
+    assert.equal(body.evidence.decision_source, 'analyst');
+
+    assert.equal(db.candidates.some((c) => c.normalized_value === 'legacy-only.example'), false);
+    assert.equal(db.candidates.some((c) => c.promotion_detail === 'must not move'), false);
+    assert.equal(db.candidates.some((c) => c.id === ids.legacyId), false);
+    assert.equal(db.candidates.filter((c) => c.promotion_detail === 'IOC created').length, 1);
+    assert.equal(db.candidates.find((c) => c.promotion_detail === 'IOC created').id, ids.relayId);
+
+    const liveIds = new Set(db.candidates.map((c) => c.id));
+    for (const rel of db.relationships) {
+      if (rel.subject_candidate_id != null) assert.ok(liveIds.has(rel.subject_candidate_id));
+      if (rel.object_candidate_id != null) assert.ok(liveIds.has(rel.object_candidate_id));
+    }
+    assert.equal(db.report.analysis_status, 'review_required');
+  });
+}

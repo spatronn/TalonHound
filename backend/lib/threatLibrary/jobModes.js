@@ -55,9 +55,11 @@ export function jobModeInvokesAi(mode) {
  *  - retry: a failed / cancelled pipeline execution (active states answer
  *    "already running"; orphaned active states are recovered by the route)
  *  - refresh_extraction: a committed review set (review_required) or a
- *    finalized report (ready) — a finalized report stays finalized
+ *    finalized report (ready). A finalized report stays finalized when the
+ *    refresh has no review-relevant change; a semantic change returns it to
+ *    review_required (resolveRefreshOutcomeStatus)
  *  - rerun_ai: review_required only; rerunning AI on a finalized report would
- *    silently reopen it for review, so it must be reopened deliberately
+ *    reopen it without a deterministic reason, so it must be reopened deliberately
  */
 export const MAINTENANCE_ALLOWED_STATUSES = Object.freeze({
   [THREAT_LIBRARY_JOB_MODES.RETRY]: Object.freeze(['failed', 'cancelled']),

@@ -114,7 +114,7 @@ function maintenanceBase(report, { busy = false, canWrite = true } = {}) {
   return !isProcessingStatus(report);
 }
 
-/** Refresh extraction: a committed review set or a finalized report (stays finalized). */
+/** Refresh extraction: a committed review set or a finalized report. */
 export function canShowRefreshExtraction(report, opts = {}) {
   if (!maintenanceBase(report, opts)) return false;
   return REFRESH_STATUSES.has(String(report.analysis_status || '').toLowerCase());
@@ -169,9 +169,15 @@ export function describeMaintenanceOutcome(job) {
   }
   if (status !== 'completed') return null;
   const r = job.progress?.refresh || {};
+  if (r.reopened_for_review === true) {
+    return { message: 'Extraction refresh changed the report. Review is required again.' };
+  }
   const added = Number(r.added) || 0;
   const removed = Number(r.removed) || 0;
   const updated = Number(r.updated) || 0;
+  if (r.prior_status === 'ready' && r.review_relevant !== true) {
+    return { message: 'Extraction refreshed. No review-relevant changes were found.' };
+  }
   if (!added && !removed && !updated) return { message: 'Extraction refreshed. No indicator changes.' };
   const parts = [];
   if (added) parts.push(`${plural(added, 'indicator')} added`);
