@@ -3,6 +3,8 @@
  * Only clear aliases — never invent ambiguous semantics.
  */
 
+import { AI_OUTPUT_BOUNDS } from './contract.js';
+
 const ENTITY_TYPE_ALIASES = Object.freeze({
   threat_actor: 'threat_actor',
   'threat-actor': 'threat_actor',
@@ -307,8 +309,10 @@ function sanitizeReportTagsField(raw, notes) {
     }
     const s = item.trim();
     if (!s) continue;
-    out.push(s.slice(0, 40));
-    if (out.length >= 5) break;
+    out.push(s.slice(0, AI_OUTPUT_BOUNDS.reportTagMaxLength));
+    // A provider response carries at most reportTagMaxItems (grammar); the
+    // chunk merge carries a longer ranked list into persistence.
+    if (out.length >= AI_OUTPUT_BOUNDS.reportTagMaxItemsMerged) break;
   }
   return out;
 }

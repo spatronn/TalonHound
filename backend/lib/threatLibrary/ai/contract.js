@@ -19,8 +19,13 @@
  * v8: mitre_attack removed (automatic ATT&CK mapping failed quality
  * evaluation). report_tags stays optional. A v7 cached result is never
  * reused, and a legacy mitre_attack property is ignored.
+ * v9: salience-first report_tags. The v8 tag instruction listed example tag
+ * words that qwen3.5:9b copied verbatim into most reports (same five tags on
+ * unrelated reports); v9 defines a tag as what the whole report is about and
+ * gives no example vocabulary. A v8 checkpoint is never reused, so a Retry
+ * re-asks for tags.
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v8';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v9';
 
 export const CANDIDATE_ROLE_VALUES = Object.freeze([
   'command_and_control',
@@ -132,6 +137,8 @@ export const AI_OUTPUT_BOUNDS = Object.freeze({
   relationshipTypeMaxLength: 64,
   roleMaxLength: 64,
   reportTagMaxItems: 5,
+  // Ranked chunk-merge suggestions (REPORT_TAG_CANDIDATE_MAX); at most 5 are linked.
+  reportTagMaxItemsMerged: 10,
   reportTagMaxLength: 40,
   numPredict: 10240
 });

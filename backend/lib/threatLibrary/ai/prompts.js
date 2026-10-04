@@ -1,5 +1,5 @@
 /**
- * Prompt construction for Threat Library AI analysis (semantic-v6).
+ * Prompt construction for Threat Library AI analysis (semantic-v9).
  * Report content is always untrusted DATA — never instructions.
  *
  * The model receives the evidence model, not raw guesses:
@@ -66,11 +66,23 @@ export const CANDIDATE_UPDATE_LINE =
   'Do NOT return entries for RESOLVED indicators unless the text gives a more specific malicious role for that exact ' +
   'value (same candidate_id, keep its status).';
 
+/**
+ * Salience-first report tags (semantic-v9). Deliberately names no example tag:
+ * v8 listed nine, and qwen3.5:9b copied them into unrelated reports (the same
+ * "credential theft, powershell, banking" on a ransomware and an AI-C2 report).
+ * reportIntelligence.js enforces the deterministic parts (filler, IOC-like,
+ * unsupported by the report text, named-entity names, catalog state, cap).
+ */
 export const REPORT_TAG_LINE =
-  'report_tags: 3–5 high-signal report-level concepts when the chunk supports them (fewer is fine; empty is valid). ' +
-  'Reusable taxonomy words (phishing, credential theft, ransomware, PowerShell, banking, Windows, cloud, C2, infostealer). ' +
-  'No filler (security, cyber, malicious, threat, attack, report, research, malware), no titles, no sentences, no IOC values, ' +
-  'no URLs, no hashes, no CVEs, no actor names already modeled as entities.';
+  'report_tags: up to 5 short reusable labels (1-3 words) that tell an analyst what the WHOLE REPORT is primarily about, ' +
+  'most representative first. Choose themes the title, section headings or key findings emphasise or the text discusses ' +
+  'repeatedly: the kind of threat or operation, the sectors or regions hit (name the sector or region itself), the exploited ' +
+  'technology or vulnerability class, and the techniques that define the operation. One concept per tag, in the report\'s own ' +
+  'wording, without words like targeting, campaign or attacks added to it. Never tag a detail that appears only in passing ' +
+  '(one command line, one utility, one file, one IOC note). Every tag must be a concept this report itself discusses: never ' +
+  'add one from general knowledge or copy words from these instructions. Not tags: names of threat actors, malware families, ' +
+  'campaigns or tools (those are entities), IOC values, URLs, hashes, CVE ids, sentences, and generic words (security, cyber, ' +
+  'threat, attack, malware, report). Fewer tags, or none, is valid.';
 
 /**
  * Numeric per-response budget. candidate_updates are generated before
@@ -236,7 +248,7 @@ export function buildChunkPrompt(input) {
     ...(input.compactRecovery ? [COMPACT_RECOVERY_LINE] : []),
     `Analyze chunk ${input.chunkIndex + 1} of ${input.chunkTotal} from a threat report.`,
     'Return JSON with keys: summary, report_type, language, tlp, confidence, entities, candidate_updates, relationships, report_tags.',
-    'Focus on THIS chunk only. Tags are report-level; emit only what THIS chunk evidences (the pipeline merges).',
+    'Focus on THIS chunk only, except report_tags: they describe the whole report (use the title and this chunk; the pipeline merges chunks).',
     CANDIDATE_UPDATE_LINE,
     REPORT_TAG_LINE,
     'RESOLVED indicators are already decided by report evidence: do not reclassify them.',

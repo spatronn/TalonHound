@@ -15,10 +15,10 @@ test('internal contract versions for this change', () => {
   assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v3');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v13');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v3');
-  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v8');
+  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v9');
 });
 
-test('semantic-v8 never asks the model for MITRE ATT&CK (system, chunk, synthesis, schema, bounds)', () => {
+test('semantic-v8+ never asks the model for MITRE ATT&CK (system, chunk, synthesis, schema, bounds)', () => {
   const input = {
     documentTitle: 't', language: 'en', chunkIndex: 0, chunkTotal: 2,
     blocksText: 'body', blockIds: ['b0'], toClassify: [], resolved: []

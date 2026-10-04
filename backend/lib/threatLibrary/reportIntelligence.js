@@ -1,6 +1,12 @@
 /**
  * Report-level AI intelligence: report tags.
  *
+ * A report tag is a short, reusable label for what the report is primarily
+ * about (kind of operation, targeted sector/region, exploited technology,
+ * defining technique). Named actors / malware / campaigns / tools are
+ * entities, threat categories retired from the catalog live in Threat
+ * Classifications, and a concept the report text never discusses is dropped.
+ *
  * Tags reuse the global `tags` catalog and `threat_report_tags` links.
  * Persistence is additive and idempotent: re-analysis never removes analyst
  * (or prior AI) tags.
@@ -18,7 +24,14 @@ import {
 import { ensureCatalogTag } from '../tagCatalogService.js';
 import { addReportTag } from './reportTags.js';
 
+/** Report tags linked by one analysis (accepted = enabled catalog tags). */
 export const REPORT_TAG_MAX = 5;
+/**
+ * Ranked suggestions carried from the chunk merge to persistence. A suggestion
+ * that resolves to a disabled catalog tag (e.g. a category retired into Threat
+ * Classifications) must not cost one of the REPORT_TAG_MAX slots.
+ */
+export const REPORT_TAG_CANDIDATE_MAX = 10;
 export const REPORT_TAG_NAME_MAX = 40;
 
 /** Generic words that add no report-level discrimination. */
@@ -93,12 +106,108 @@ export function sanitizeAiTag(raw) {
   return { ok: true, name: parsed.name };
 }
 
+/** Function words ignored when checking that a tag is grounded in the report. */
+const TAG_GROUNDING_STOPWORDS = new Set(['a', 'an', 'and', 'as', 'at', 'by', 'for', 'from', 'in', 'of', 'off', 'on', 'or', 'the', 'to', 'via', 'with']);
+
+function lexicalTokens(text) {
+  return String(text || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+}
+
+function commonPrefixLength(a, b) {
+  const n = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < n && a[i] === b[i]) i += 1;
+  return i;
+}
+
 /**
- * Merge chunk tag arrays: normalize, drop junk, unique, cap at REPORT_TAG_MAX.
- * Frequency then first-seen order when more than the cap survive.
- * @param {Array<string[]|undefined>} tagLists
+ * Lexical support index over a canonical document (title + every block).
+ * Grounding only applies to English / Latin-script text: a model may name a
+ * concept of a non-English report in English, which a lexical check cannot
+ * verify, so those reports skip the gate (`applies: false`).
+ * @param {{ title?: string, language?: string|null, blocks?: Array<{ text?: string }> }|null|undefined} document
  */
-export function mergeReportTags(tagLists) {
+export function buildReportTagSupport(document) {
+  const parts = [document?.title, ...(document?.blocks || []).map((b) => b?.text)];
+  const text = parts.filter(Boolean).join('\n');
+  const tokens = lexicalTokens(text);
+  if (!tokens.length) return { applies: false, words: new Set(), compact: '' };
+  const lang = String(document?.language || '').trim().toLowerCase();
+  let applies;
+  if (lang) {
+    applies = lang === 'en' || lang.startsWith('en-');
+  } else {
+    const letters = text.match(/\p{L}/gu) || [];
+    const latin = letters.filter((ch) => /[a-z]/i.test(ch)).length;
+    applies = letters.length > 0 && latin / letters.length >= 0.95;
+  }
+  return { applies, words: new Set(tokens), compact: tokens.join('') };
+}
+
+function tokenSupported(token, words) {
+  if (words.has(token)) return true;
+  if (token.length < 4) return false;
+  // Inflection tolerance only (exploit/exploitation, telecom/telecommunications):
+  // a shared prefix of min(6, both lengths) characters, never a synonym.
+  for (const w of words) {
+    if (w.length < 4) continue;
+    if (commonPrefixLength(token, w) >= Math.min(6, token.length, w.length)) return true;
+  }
+  return false;
+}
+
+/**
+ * True when every content word of the tag occurs in the report text (or the
+ * tag, without separators, occurs as written, e.g. "office365"/"Office 365").
+ * A tag the report never discusses (copied from instructions or from general
+ * knowledge) is not report context.
+ * @param {string} name normalized tag name
+ * @param {ReturnType<typeof buildReportTagSupport>|null|undefined} support
+ */
+export function isReportTagSupported(name, support) {
+  if (!support?.applies) return true;
+  const tokens = lexicalTokens(name);
+  const content = tokens.filter((t) => !TAG_GROUNDING_STOPWORDS.has(t));
+  if (!content.length) return false;
+  if (content.every((t) => tokenSupported(t, support.words))) return true;
+  const joined = tokens.join('');
+  return joined.length >= 5 && support.compact.includes(joined);
+}
+
+/** Entity types whose names are entities, never report tags. */
+export const NAMED_ENTITY_TYPES_NOT_TAGS = Object.freeze(new Set(['threat_actor', 'malware', 'campaign', 'tool']));
+
+/**
+ * Tag-normalized names + aliases of named entities (actor / malware /
+ * campaign / tool) from the analysis. Products, organizations, sectors and
+ * vulnerabilities are not in this set.
+ * @param {Array<{ entity_type?: string, name?: string, aliases?: string[] }>} entities
+ * @returns {Set<string>}
+ */
+export function namedEntityTagKeys(entities) {
+  const keys = new Set();
+  for (const e of entities || []) {
+    if (!NAMED_ENTITY_TYPES_NOT_TAGS.has(String(e?.entity_type || ''))) continue;
+    for (const n of [e.name, ...(Array.isArray(e.aliases) ? e.aliases : [])]) {
+      const parsed = canonicalizeAiTagName(n);
+      if (parsed.ok) keys.add(parsed.name);
+    }
+  }
+  return keys;
+}
+
+/**
+ * Merge chunk tag arrays: normalize, drop junk and tags the report text does
+ * not support, unique, rank. Frequency across chunks (a theme several parts of
+ * the report carry) then first-seen order (the model lists the most
+ * representative first, and chunk 1 holds the title / lead / key findings).
+ * Returns up to REPORT_TAG_CANDIDATE_MAX ranked names; persistence links at
+ * most REPORT_TAG_MAX of them.
+ * @param {Array<string[]|undefined>} tagLists
+ * @param {{ support?: ReturnType<typeof buildReportTagSupport>|null, entityNames?: Set<string>|null }} [opts]
+ *   entityNames: namedEntityTagKeys() of the same analysis (exact-name match only)
+ */
+export function mergeReportTags(tagLists, opts = {}) {
   const counts = new Map();
   const first = [];
   const rejected = [];
@@ -108,6 +217,14 @@ export function mergeReportTags(tagLists) {
       const s = sanitizeAiTag(raw);
       if (!s.ok) {
         rejected.push({ value: raw, reason: s.reason });
+        continue;
+      }
+      if (opts.entityNames?.has(s.name)) {
+        rejected.push({ value: raw, reason: 'entity_name' });
+        continue;
+      }
+      if (!isReportTagSupported(s.name, opts.support)) {
+        rejected.push({ value: raw, reason: 'unsupported' });
         continue;
       }
       if (!counts.has(s.name)) {
@@ -122,7 +239,7 @@ export function mergeReportTags(tagLists) {
     return d !== 0 ? d : first.indexOf(a) - first.indexOf(b);
   });
   return {
-    tags: ranked.slice(0, REPORT_TAG_MAX),
+    tags: ranked.slice(0, REPORT_TAG_CANDIDATE_MAX),
     rejected,
     proposed: first.length
   };
@@ -142,8 +259,10 @@ export async function findCatalogTagByNameOrSlug(db, name) {
 }
 
 /**
- * Additive tag apply: reuse catalog rows, create when missing, link once.
- * Never unlinks existing report tags.
+ * Additive tag apply over a ranked suggestion list: reuse catalog rows, create
+ * when missing, link once, stop after REPORT_TAG_MAX accepted tags. A disabled
+ * catalog tag is skipped without using a slot. Never unlinks existing report
+ * tags (analyst-added tags are never touched).
  */
 export async function persistAiReportTags(db, reportId, tagNames) {
   const stats = {
@@ -155,7 +274,12 @@ export async function persistAiReportTags(db, reportId, tagNames) {
     already_linked: 0,
     rejected: []
   };
+  const acceptedIds = new Set();
   for (const raw of tagNames || []) {
+    if (acceptedIds.size >= REPORT_TAG_MAX) {
+      stats.rejected.push({ value: raw, reason: 'over_limit' });
+      continue;
+    }
     const s = sanitizeAiTag(raw);
     if (!s.ok) {
       stats.rejected.push({ value: raw, reason: s.reason });
@@ -185,6 +309,7 @@ export async function persistAiReportTags(db, reportId, tagNames) {
       stats.rejected.push({ value: s.name, reason: 'tag_disabled' });
       continue;
     }
+    acceptedIds.add(Number(existing.id));
     if (created) stats.created += 1;
     else stats.reused += 1;
     const linked = await addReportTag(db, reportId, existing.id);

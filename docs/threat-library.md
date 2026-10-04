@@ -138,7 +138,7 @@ Review actions (`POST …/review`) and `POST …/finalize` are refused server-si
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
 - Long reports are split into canonical-document chunks and processed sequentially
 - Body chunks exclude header/footer, navigation, source-provenance and reference rows; each chunk prompt carries the resolved indicator list (compact) plus only the `ai_needed` candidates whose occurrences fall in that chunk
-- Completed chunks are checkpointed with `threat-library-semantic-v8` and their block-id fingerprint; **Retry analysis** resumes unfinished, compatible chunks without re-fetching the URL/PDF. A contract bump (document extractor, candidate extraction or semantic schema) invalidates only the incompatible layer
+- Completed chunks are checkpointed with `threat-library-semantic-v9` and their block-id fingerprint; **Retry analysis** resumes unfinished, compatible chunks without re-fetching the URL/PDF. A contract bump (document extractor, candidate extraction or semantic schema) invalidates only the incompatible layer
 - The optional final synthesis runs over validated chunk results only, is skipped when the remaining budget is short, and never fails the run; repair calls are likewise budget-bounded (one per chunk)
 - Ollama requests set `think: false` — reasoning models otherwise spend minutes on hidden chain-of-thought before the schema-constrained JSON starts; structured output is the contract
 - Every provider call is timed (headers / first token / output chars) into `analysis_progress.timing` and the worker log; a total-deadline failure records completed/remaining chunks so the UI can explain what a Retry will resume
@@ -153,12 +153,20 @@ Prompt injection: report text is labeled UNTRUSTED DATA; the model cannot redefi
 
 ### Report tags (AI Analyst)
 
-URL/PDF analysis (`threat-library-semantic-v8`) may also emit compact **report-level** tags. They are not copied onto extracted IOCs.
+URL/PDF analysis (`threat-library-semantic-v9`) may also emit compact **report-level** tags. They are not copied onto extracted IOCs.
 
-- The model returns 0–5 semantic names. The application normalizes them (`credential-theft` → `credential theft`) and resolves them against the existing `tags` catalog (name, then slug).
-- Existing tags are reused; new names are created in the same catalog (`ensureCatalogTag` + `ON CONFLICT` / unique name+slug).
-- Links are additive on `threat_report_tags`. Re-analysis never unlinks a tag an analyst added. Manual add/remove on the report remains the same API/UI.
-- Filler words (`security`, `cyber`, `malware`, `report`, …), IOC values, URLs, hashes and CVEs are rejected.
+**What a report tag is.** A short, reusable label that tells an analyst what the report is *primarily* about: the kind of operation, targeted sectors or regions, exploited technology or vulnerability class, and the techniques that define the operation. Tags optimise retrieval and situational awareness; they do not enumerate everything the report mentions. Boundaries:
+
+- Named threat actors, malware families, campaigns and tools are **entities**, not tags.
+- Threat categories that the tag catalog retired into **Threat Classifications** (`ransomware`, `phishing`, `c2` are disabled catalog tags) are not linked even when the model proposes them.
+- A detail that appears only in passing (one command line, one utility, one IOC note) is not a tag.
+
+**Pipeline.**
+
+- Each chunk call returns up to 5 tags, most representative first (provider grammar `maxItems: 5`). The instruction gives no example tag vocabulary: v8 listed example words that the local model copied verbatim into unrelated reports.
+- The chunk merge normalizes names (`credential-theft` → `credential theft`), drops filler words (`security`, `cyber`, `malware`, `report`, …), IOC values, URLs, hashes and CVEs, and drops a tag the report text does not support (every content word must occur in the title/body, inflections tolerated, never synonyms; non-English reports skip this lexical check). Ranking: number of chunks proposing the tag, then first-seen order. Up to 10 ranked suggestions reach persistence.
+- Persistence resolves suggestions in rank order against the `tags` catalog (name, then slug), reuses existing tags, creates new ones (`ensureCatalogTag` + `ON CONFLICT` / unique name+slug), skips disabled catalog tags without using a slot, and links at most 5 per analysis.
+- Links are additive on `threat_report_tags`. Re-analysis never unlinks a tag (analyst-added or from an earlier analysis). Manual add/remove on the report remains the same API/UI. A `semantic-v8` checkpoint is never reused, so Retry re-asks for tags; existing links are not rewritten.
 
 Old reports without AI tags keep an empty `tags` array. Historical reports are not mass re-analyzed.
 

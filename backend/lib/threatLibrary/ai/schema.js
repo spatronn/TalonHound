@@ -84,7 +84,7 @@ export const aiAnalysisSchema = z.object({
   entities: z.array(aiEntitySchema).max(B.entityMaxItemsMerged).optional().default([]),
   candidate_updates: z.array(aiCandidateUpdateSchema).max(B.candidateUpdatesMaxItems).optional().default([]),
   relationships: z.array(aiRelationshipSchema).max(B.relationshipMaxItemsMerged).optional().default([]),
-  report_tags: z.array(z.string().max(B.reportTagMaxLength)).max(B.reportTagMaxItems).optional().default([])
+  report_tags: z.array(z.string().max(B.reportTagMaxLength)).max(B.reportTagMaxItemsMerged).optional().default([])
 });
 
 function zodIssues(error) {

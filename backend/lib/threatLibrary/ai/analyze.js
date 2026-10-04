@@ -42,7 +42,7 @@ import {
 import { capRawOutputSample } from './extract.js';
 import { chunkCanonicalDocument, flattenCanonicalText, collectBlockIds } from '../canonicalDocument.js';
 import { annotateDocumentZones } from '../documentZones.js';
-import { mergeReportTags } from '../reportIntelligence.js';
+import { buildReportTagSupport, mergeReportTags, namedEntityTagKeys } from '../reportIntelligence.js';
 
 export const SYNTHESIS_CHUNK_KEY = 'synthesis';
 
@@ -208,7 +208,13 @@ export function buildChunkRequest({ document, chunk, chunkIndex, chunkTotal, par
   return { user, toClassify, resolved, refinableResolved, promptChars: user.length };
 }
 
-export function mergeAnalyses(parts, ctx) {
+/**
+ * @param {object[]} parts validated chunk results
+ * @param {object} [ctx] reference context; `tagSupport` (buildReportTagSupport)
+ *   drops report tags the report text does not support. Tags naming a merged
+ *   actor / malware / campaign / tool entity are dropped too (they are entities).
+ */
+export function mergeAnalyses(parts, ctx = {}) {
   const merged = {
     summary: '',
     report_type: null,
@@ -254,7 +260,10 @@ export function mergeAnalyses(parts, ctx) {
   merged.entities = [...entityMap.values()];
   merged.candidate_updates = [...candidateMap.values()];
   merged.summary = summaries.filter(Boolean).join('\n\n').slice(0, 8000) || 'Analysis complete.';
-  merged.report_tags = mergeReportTags(parts.map((p) => p?.report_tags)).tags;
+  merged.report_tags = mergeReportTags(parts.map((p) => p?.report_tags), {
+    support: ctx.tagSupport,
+    entityNames: namedEntityTagKeys(merged.entities)
+  }).tags;
 
   return validateAiAnalysis(merged, ctx);
 }
@@ -383,7 +392,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     allCandidates.map((c) => `${c.candidate_type}\0${c.normalized_value}`)
   );
   const candidateIdMap = buildCandidateIdMap(allCandidates);
-  const ctx = { knownBlockIds, knownCandidateKeys, candidateIdMap };
+  const ctx = { knownBlockIds, knownCandidateKeys, candidateIdMap, tagSupport: buildReportTagSupport(input.document) };
   const partition = partitionCandidatesForAi(allCandidates);
   const sourceHost = input.document.meta?.source_host || input.sourceHost || null;
 

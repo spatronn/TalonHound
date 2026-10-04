@@ -205,7 +205,7 @@ test('chunk prompt communicates relationship budget, priority, dedup, concise ev
   assert.ok(RELATIONSHIP_SELECTION_LINES.length > 0);
   assert.equal(/at most 80/.test(buildSystemPrompt()), false);
   assert.match(prompt, /relationships, report_tags\./);
-  assert.match(prompt, /3–5 high-signal report-level concepts/);
+  assert.match(prompt, /up to 5 short reusable labels .* WHOLE REPORT is primarily about/);
   assert.doesNotMatch(prompt, /mitre|technique_id|sub-technique/i);
 });
 
