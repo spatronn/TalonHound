@@ -15,12 +15,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
-import { extractCandidatesWithDiagnostics } from './candidateExtraction.js';
+import { extractCandidatesWithDiagnostics, extractCandidatesFromDocument } from './candidateExtraction.js';
 import { mergeAiCandidateUpdates } from './pipeline.js';
 import { replaceCandidates, loadReportCandidatesForAnalysis } from './store.js';
 import { isActionableReviewIndicator } from './promotion.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { hasStructuralInputs } from './indicatorScope.js';
+import { createCanonicalDocument } from './canonicalDocument.js';
 
 const SOURCE = 'https://research.example/blog/retry-reuse/';
 const SHA_A = crypto.createHash('sha256').update('retry-reuse-sample-a').digest('hex');
@@ -152,6 +153,12 @@ test('legacy evidence records (no structural inputs) keep the recorded row readi
   const after = await retryReuse(table, document);
   assert.deepEqual(snapshot(after), before);
   assert.equal(snapshot(after)[`domain:${BODY_DOMAIN}`].member, false);
+  // The record the first Retry wrote back must still read as legacy (no
+  // fabricated structural inputs), so a second Retry keeps it too.
+  for (const o of table.rows().flatMap((r) => r.evidence.occurrences || [])) {
+    assert.equal(hasStructuralInputs(o), false, 'rewritten legacy occurrence gained no structural inputs');
+  }
+  assert.deepEqual(snapshot(await retryReuse(table, document)), before);
 });
 
 test('legacy fallback never promotes a narrative occurrence', async () => {
@@ -173,3 +180,93 @@ test('legacy fallback never promotes a narrative occurrence', async () => {
   assert.notEqual(c.source_assertion, 'explicit_ioc');
   assert.equal(after.find((x) => x.normalized_value === 'relay-voxmail.com').source_assertion, 'explicit_ioc');
 });
+
+// ---------------------------------------------------------------------------
+// The other structural assertion types share the same occurrence machinery:
+// explicit_c2 (C2 appendix) and explicit_operational_infrastructure
+// (operational node / infrastructure annex), as list rows and value-only lines.
+// ---------------------------------------------------------------------------
+
+function canonicalDoc(blocks) {
+  return createCanonicalDocument({
+    title: 'Retry reuse structural fixture',
+    language: 'en',
+    blocks: blocks.map((b, i) => ({
+      id: b.id || `b${i + 1}`,
+      type: b.type || 'paragraph',
+      page: 1,
+      text: b.text,
+      ...(b.layout ? { layout: b.layout } : {})
+    }))
+  });
+}
+
+const PROSE = Array.from({ length: 3 }, (_, i) => ({
+  text: `Background paragraph ${i + 1} describes the intrusion timeline, tooling and operator tradecraft.`
+}));
+
+const STRUCTURAL_FIXTURES = [
+  {
+    assertion: 'explicit_c2',
+    rows: ['203.0.113.10', '198.51.100.20', '192.0.2.30'],
+    prose: '192.0.2.200',
+    blocks: [
+      ...PROSE,
+      { text: 'During triage the analysts compared the traffic with a public sinkhole at 192.0.2.200 run by researchers.' },
+      { type: 'heading', text: 'C2 Servers' },
+      { type: 'list_item', layout: 'observable_row', text: '203.0.113.10' },
+      { type: 'list_item', layout: 'observable_row', text: '198.51.100.20' },
+      { text: '192.0.2.30' }
+    ]
+  },
+  {
+    assertion: 'explicit_operational_infrastructure',
+    rows: ['203.0.113.50', '198.51.100.50', '192.0.2.50'],
+    prose: 'astrill-example.com',
+    blocks: [
+      ...PROSE,
+      { type: 'heading', text: 'Annex: VPN Nodes' },
+      { type: 'list_item', layout: 'observable_row', text: '203.0.113.50' },
+      { type: 'list_item', layout: 'observable_row', text: '198.51.100.50' },
+      { text: '192.0.2.50' },
+      { type: 'heading', text: 'Analysis' },
+      { text: 'The operator used the commercial VPN at astrill-example.com to administer nodes.' }
+    ]
+  }
+];
+
+for (const fx of STRUCTURAL_FIXTURES) {
+  for (const legacy of [false, true]) {
+    test(`${fx.assertion}: Retry reuse ${legacy ? '(legacy evidence record) ' : ''}keeps the assertion and does not promote prose`, async () => {
+      const document = canonicalDoc(fx.blocks);
+      const candidates = extractCandidatesFromDocument(document, { sourceUrl: SOURCE });
+      let ioc = 700;
+      for (const c of candidates) {
+        if (fx.rows.includes(c.normalized_value)) {
+          c.review_status = REVIEWED;
+          c.matched_ioc_id = ioc++;
+          c.matched_ioc_observable_type = c.candidate_type;
+          c.match_state = 'existing';
+        }
+      }
+      const before = snapshot(candidates);
+      for (const v of fx.rows) {
+        const k = Object.keys(before).find((x) => x.endsWith(`:${v}`));
+        assert.ok(k, `row ${v} extracted`);
+        assert.equal(before[k].source_assertion, fx.assertion, `fresh ${v}`);
+        assert.equal(before[k].member, true, `fresh member ${v}`);
+      }
+      const proseKey = Object.keys(before).find((x) => x.endsWith(`:${fx.prose}`));
+      assert.ok(proseKey, 'prose mention extracted');
+      assert.ok(!String(before[proseKey].source_assertion).startsWith('explicit_'), 'prose mention is not an explicit assertion');
+
+      const table = fakeCandidateTable();
+      await replaceCandidates(table.pool, 7, candidates);
+      if (legacy) table.stripStructuralInputs();
+      const first = await retryReuse(table, document);
+      const second = await retryReuse(table, document);
+      assert.deepEqual(snapshot(first), before);
+      assert.deepEqual(snapshot(second), before);
+    });
+  }
+}

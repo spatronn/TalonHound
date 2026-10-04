@@ -592,9 +592,11 @@ export function buildCandidateEvidenceRecord(c) {
     // Structural inputs of the row reading (indicatorScope.structuralRowOf).
     // A Retry that reuses stored candidates re-annotates occurrences from
     // these; without them an IOC-table row reloads as prose and its explicit
-    // assertion is lost.
-    row_shape: o.row_shape === true,
-    structural_row: o.structural_row === true,
+    // assertion is lost. Only inputs the extractor actually computed are
+    // written: a legacy record (none stored) must stay recognisable as legacy
+    // after a Retry rewrites it, never gain a fabricated `false`.
+    row_shape: typeof o.row_shape === 'boolean' ? o.row_shape : undefined,
+    structural_row: typeof o.structural_row === 'boolean' ? o.structural_row : undefined,
     block_type: o.block_type || undefined,
     layout: o.layout || undefined,
     zone_reason: o.zone_reason || undefined,
