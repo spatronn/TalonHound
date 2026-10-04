@@ -249,12 +249,12 @@ export function buildActiveBrowseWindowCtesSql() {
  * Candidate window bounds index walk (perf); pagination correctness does not use JS dedupe.
  *
  * READ on (two-stage): page order only needs (identity_key, MIN(created_at)), so
- * stage 1 ranks identities with that single aggregate, applies browseCap and the
- * page LIMIT/OFFSET, and only the page's identities go through the full winner-row
- * aggregate grouping. Same window, identity, winner and ordering as grouping every
- * candidate identity first (prod: ~16k identity groups → page size).
+ * stage 1 ranks identities with that single aggregate, applies rankLimit ($2 =
+ * min(browseCap, offset+limit)) and the page LIMIT/OFFSET, and only the page's
+ * identities go through the full winner-row aggregate grouping. Same window,
+ * identity, winner and ordering as grouping every candidate identity first.
  *
- * Params: $1 candidateLimit, $2 browseCap, $3 pageLimit, $4 pageOffset
+ * Params: $1 candidateLimit, $2 rankLimit (≤ browseCap, covers offset+limit), $3 pageLimit, $4 pageOffset
  */
 export function buildCanonicalActiveBrowsePageSql() {
   if (!isFileArtifactsReadEnabled()) return buildSingleStageActiveBrowsePageSql();
@@ -299,7 +299,7 @@ export function buildCanonicalActiveBrowsePageSql() {
 /**
  * Single-stage shape: full identity grouping of every candidate row, then cap and
  * page. Used when the file-artifact READ flag is off (legacy type+value grouping).
- * Params: $1 candidateLimit, $2 browseCap, $3 pageLimit, $4 pageOffset
+ * Params: $1 candidateLimit, $2 rankLimit (≤ browseCap), $3 pageLimit, $4 pageOffset
  */
 export function buildSingleStageActiveBrowsePageSql() {
   return `${buildActiveBrowseWindowCtesSql()}

@@ -243,9 +243,11 @@ import {
   formatIocListStatsApiResponse,
   getIocListStatsSnapshot,
   queueIocListStatsRefresh,
+  queueIocListStatsRefreshIfMissing,
+  runIocListStatsNightlyTick,
   readIocListBrowseGlobalTotal,
   resolveIocListStatsRefreshInProgress,
-  IOC_LIST_STATS_CACHE_TTL_MS,
+  IOC_LIST_STATS_SCHEDULER_TICK_MS,
   IOC_STATS_RECALCULATION_IN_PROGRESS
 } from './lib/iocListStatsSnapshot.js';
 import {
@@ -6084,9 +6086,11 @@ async function handleIocListStatsGet(_req, res) {
   try {
     const snapshot = await getIocListStatsSnapshot(pool);
     let refreshInProgress = await resolveIocListStatsRefreshInProgress(pool);
+    // Serve the last successful snapshot immediately. Only a missing snapshot
+    // boots a background recompute — never restart- or stale-driven refresh.
     if (!snapshot) {
       if (!refreshInProgress) {
-        queueIocListStatsRefresh(pool).catch((err) => {
+        queueIocListStatsRefreshIfMissing(pool).catch((err) => {
           console.error('[ioc/stats] background refresh failed', err?.message || err);
         });
         refreshInProgress = true;
@@ -6094,12 +6098,6 @@ async function handleIocListStatsGet(_req, res) {
       return res.json(formatIocListStatsApiResponse(null, {
         refresh_in_progress: refreshInProgress
       }));
-    }
-    if (snapshot.stale && !refreshInProgress) {
-      queueIocListStatsRefresh(pool).catch((err) => {
-        console.error('[ioc/stats] stale refresh failed', err?.message || err);
-      });
-      refreshInProgress = true;
     }
     return res.json(formatIocListStatsApiResponse(snapshot, {
       refresh_in_progress: refreshInProgress
@@ -6197,21 +6195,17 @@ async function ensureDefaultAdmin() {
 // Poll resolution for Published Feed due checks (default 60s). Due filtering is cheap;
 // expensive generation only runs for feeds that pass isPublishedFeedDue.
 const PUBLISHED_FEED_TICK_MS = resolvePublishedFeedTickMs();
-const IOC_LIST_STATS_REFRESH_MS = Math.max(Number(process.env.IOC_LIST_STATS_REFRESH_MS || IOC_LIST_STATS_CACHE_TTL_MS), 60 * 60 * 1000);
-let iocListStatsRefreshScheduled = false;
+let iocListStatsNightlyTickRunning = false;
 
-async function runIocListStatsRefreshTick() {
-  if (iocListStatsRefreshScheduled) return;
-  iocListStatsRefreshScheduled = true;
+async function tickIocListStatsNightly() {
+  if (iocListStatsNightlyTickRunning) return;
+  iocListStatsNightlyTickRunning = true;
   try {
-    if (await resolveIocListStatsRefreshInProgress(pool)) return;
-    const snap = await getIocListStatsSnapshot(pool);
-    if (snap && !snap.stale) return;
-    await queueIocListStatsRefresh(pool);
+    await runIocListStatsNightlyTick(pool);
   } catch (err) {
-    console.error('[ioc-list-stats] scheduled refresh failed', err?.message || err);
+    console.error('[ioc-list-stats] nightly tick failed', err?.message || err);
   } finally {
-    iocListStatsRefreshScheduled = false;
+    iocListStatsNightlyTickRunning = false;
   }
 }
 
@@ -7017,10 +7011,13 @@ app.listen(port, async () => {
     console.log('[ioc/list] IOC_LIST_TIMING=1: timing logs enabled (searchStringParse, dbQuery, responseSent, etc.). Use ?timing=1 per request if env not set.');
   }
   await ensureDefaultAdmin();
-  runIocListStatsRefreshTick().catch(() => {});
+  // Bootstrap only when no snapshot exists — never full-recompute on every recreate.
+  queueIocListStatsRefreshIfMissing(pool).catch((err) => {
+    console.error('[ioc-list-stats] startup missing-snapshot bootstrap failed', err?.message || err);
+  });
   setInterval(() => {
-    runIocListStatsRefreshTick().catch(() => {});
-  }, IOC_LIST_STATS_REFRESH_MS);
+    tickIocListStatsNightly().catch(() => {});
+  }, IOC_LIST_STATS_SCHEDULER_TICK_MS);
   // Startup reconciliation: reclaim abandoned Published Feed ".part" temp files left by a
   // crash/restart mid-generation (only touches stale temps, never published artifacts).
   import('./lib/publishedFeedArtifact/store.js')

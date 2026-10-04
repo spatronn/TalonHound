@@ -844,13 +844,31 @@ export async function fetchActiveIocListPage(pool, { limit, offset, browseCap = 
 }
 
 /**
+ * Ranked-identity window needed for this page inside the browse cap.
+ * Page 1 (limit 25) ranks 25 identities; page 80 ranks the full 2000-cap window.
+ * Pagination metadata still uses the 2000 browse-cap semantics separately.
+ *
+ * @param {{ limit: number, offset: number, browseCap: number }} opts
+ */
+export function canonicalBrowseRankLimit({ limit, offset, browseCap }) {
+  const cap = Math.max(Number(browseCap) || 2000, 1);
+  const need = Math.min(
+    Math.max(Number(offset) || 0, 0) + Math.max(Number(limit) || 0, 0),
+    cap
+  );
+  return Math.max(need, 1);
+}
+
+/**
  * Candidate row window ($1) for the canonical browse SQL.
- * Candidate must cover browseCap identities after collapse; inflate for sibling hashes.
+ * Candidate must cover rankLimit identities after collapse; inflate for sibling hashes.
+ * Scales with the page's rank need — not always the full 2000-cap × 8.
  * @param {{ limit: number, offset: number, browseCap: number }} opts
  */
 export function canonicalBrowseCandidateLimit({ limit, offset, browseCap }) {
+  const rankLimit = canonicalBrowseRankLimit({ limit, offset, browseCap });
   return Math.min(
-    Math.max(browseCap * 8, (offset + limit) * 16, 2000),
+    Math.max(rankLimit * 8, rankLimit * 16, 200),
     50000
   );
 }
@@ -866,12 +884,13 @@ export function canonicalBrowseCandidateLimit({ limit, offset, browseCap }) {
 export async function queryActiveIocCanonicalBrowsePage(pool, { limit, offset, browseCap }) {
   const { buildCanonicalActiveBrowsePageSql } = await import('./fileArtifacts/canonicalListSql.js');
   const sql = buildCanonicalActiveBrowsePageSql();
+  const rankLimit = canonicalBrowseRankLimit({ limit, offset, browseCap });
   const candidateLimit = canonicalBrowseCandidateLimit({ limit, offset, browseCap });
   // JIT compile (~25-30 ms on prod) costs more than it saves on this bounded window query.
   const { rows } = await queryWithLocalSettings(
     pool,
     sql,
-    [candidateLimit, browseCap, limit, offset],
+    [candidateLimit, rankLimit, limit, offset],
     ['SET LOCAL jit = off']
   );
   return rows;

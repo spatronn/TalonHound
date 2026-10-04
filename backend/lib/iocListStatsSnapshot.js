@@ -1,7 +1,30 @@
 import { fetchIocListStats } from './iocActiveSources.js';
+import {
+  cronMatchesInTimezone,
+  minuteKeyUtc
+} from './backup/scheduler.js';
+import {
+  getSystemScheduleTimezone,
+  normalizeScheduleTimezone
+} from './integrationSchedule.js';
 
 export const IOC_LIST_STATS_SNAPSHOT_KEY = 'global_active_ioc_stats';
-export const IOC_LIST_STATS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Nightly cron in Europe/Istanbul (override via IOC_LIST_STATS_CRON / IOC_LIST_STATS_TIMEZONE). */
+export const IOC_LIST_STATS_DEFAULT_CRON = '0 3 * * *';
+export const IOC_LIST_STATS_DEFAULT_TIMEZONE = 'Europe/Istanbul';
+
+/**
+ * UI "stale" threshold only — does NOT trigger auto-recompute.
+ * Nightly schedule is the sole automatic refresh path (plus manual + missing-snapshot bootstrap).
+ */
+export const IOC_LIST_STATS_STALE_AFTER_MS = 26 * 60 * 60 * 1000;
+
+/** @deprecated Use IOC_LIST_STATS_STALE_AFTER_MS — kept for older imports. */
+export const IOC_LIST_STATS_CACHE_TTL_MS = IOC_LIST_STATS_STALE_AFTER_MS;
+
+/** Minute poll interval for nightly cron matching (same pattern as backup-worker). */
+export const IOC_LIST_STATS_SCHEDULER_TICK_MS = 60 * 1000;
 
 /** hashtext()-namespaced session advisory lock (see advisoryLocks.js inventory). */
 export const IOC_LIST_STATS_REFRESH_LOCK_NAME = 'talonhound:ioc-list-stats-refresh';
@@ -13,6 +36,58 @@ const FILE_HASH_TYPES = new Set(['md5', 'sha1', 'sha256', 'ssdeep', 'imphash', '
 let refreshInProgress = false;
 /** @type {Promise<object|null>|null} */
 let refreshPromise = null;
+/** @type {string|null} */
+let lastNightlyMinuteKey = null;
+
+/**
+ * Resolve cron + timezone for IOC list stats nightly schedule.
+ * @param {NodeJS.ProcessEnv} [env]
+ */
+export function resolveIocListStatsSchedule(env = process.env) {
+  const cron = String(env.IOC_LIST_STATS_CRON || IOC_LIST_STATS_DEFAULT_CRON).trim()
+    || IOC_LIST_STATS_DEFAULT_CRON;
+  const tzRaw = String(
+    env.IOC_LIST_STATS_TIMEZONE
+    || env.IOC_LIST_STATS_CRON_TIMEZONE
+    || ''
+  ).trim();
+  const timezone = normalizeScheduleTimezone(
+    tzRaw || IOC_LIST_STATS_DEFAULT_TIMEZONE || getSystemScheduleTimezone()
+  );
+  return { cron, timezone };
+}
+
+/**
+ * Whether the nightly schedule matches `now` and has not already fired this UTC minute.
+ * @param {Date} [now]
+ * @param {{ cron?: string, timezone?: string, lastMinuteKey?: string|null }} [opts]
+ */
+export function shouldRunIocListStatsNightly(now = new Date(), opts = {}) {
+  const schedule = resolveIocListStatsSchedule();
+  const cron = opts.cron || schedule.cron;
+  const timezone = opts.timezone || schedule.timezone;
+  if (!cronMatchesInTimezone(cron, now, timezone)) return false;
+  const key = minuteKeyUtc(now);
+  const lastKey = opts.lastMinuteKey !== undefined ? opts.lastMinuteKey : lastNightlyMinuteKey;
+  if (lastKey === key) return false;
+  return true;
+}
+
+/**
+ * Test-only: clear nightly minute dedupe so suites can isolate cases.
+ */
+export function resetIocListStatsNightlyStateForTests() {
+  lastNightlyMinuteKey = null;
+}
+
+/**
+ * Mark the current UTC minute as consumed for nightly scheduling.
+ * @param {Date} [now]
+ */
+export function markIocListStatsNightlyFired(now = new Date()) {
+  lastNightlyMinuteKey = minuteKeyUtc(now);
+  return lastNightlyMinuteKey;
+}
 
 export function isIocListStatsRefreshInProgress() {
   return refreshInProgress;
@@ -24,6 +99,7 @@ export function isIocListStatsRefreshInProgress() {
 export function resetIocListStatsRefreshStateForTests() {
   refreshInProgress = false;
   refreshPromise = null;
+  resetIocListStatsNightlyStateForTests();
 }
 
 /**
@@ -160,7 +236,8 @@ export async function getIocListStatsSnapshot(pool, snapshotKey = IOC_LIST_STATS
     ? row.calculated_at.toISOString()
     : String(row.calculated_at);
   const ageMs = Date.now() - new Date(calculatedAt).getTime();
-  const stale = ageMs > IOC_LIST_STATS_CACHE_TTL_MS;
+  // Stale is display-only; automatic recompute is nightly / manual / missing-only.
+  const stale = ageMs > IOC_LIST_STATS_STALE_AFTER_MS;
 
   return {
     snapshot_key: row.snapshot_key,
@@ -169,7 +246,7 @@ export async function getIocListStatsSnapshot(pool, snapshotKey = IOC_LIST_STATS
     updated_at: row.updated_at,
     stale,
     missing: false,
-    cache_ttl_seconds: Math.floor(IOC_LIST_STATS_CACHE_TTL_MS / 1000),
+    cache_ttl_seconds: Math.floor(IOC_LIST_STATS_STALE_AFTER_MS / 1000),
     refresh_in_progress: refreshInProgress
   };
 }
@@ -231,9 +308,50 @@ export async function refreshIocListStatsSnapshot(
 }
 
 /**
+ * Queue a background recompute only when no successful snapshot exists.
+ * Used on startup and GET /stats — never blocks the request/startup path on the
+ * heavy aggregation, and never refreshes merely because a snapshot is "stale".
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ snapshotKey?: string, fetchStats?: typeof fetchIocListStats }} [opts]
+ */
+export async function queueIocListStatsRefreshIfMissing(pool, opts = {}) {
+  const snap = await getIocListStatsSnapshot(
+    pool,
+    opts.snapshotKey || IOC_LIST_STATS_SNAPSHOT_KEY
+  );
+  if (snap) {
+    return { queued: false, in_progress: false, missing: false };
+  }
+  const result = await queueIocListStatsRefresh(pool, opts);
+  return { ...result, missing: true };
+}
+
+/**
+ * Nightly schedule tick: fire canonical recompute at most once per matching minute.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {{ now?: Date, fetchStats?: typeof fetchIocListStats }} [opts]
+ */
+export async function runIocListStatsNightlyTick(pool, opts = {}) {
+  const now = opts.now || new Date();
+  if (!shouldRunIocListStatsNightly(now)) {
+    return { queued: false, matched: false };
+  }
+  if (await resolveIocListStatsRefreshInProgress(pool)) {
+    // Consume the minute so we do not spam while another process holds the lock.
+    markIocListStatsNightlyFired(now);
+    return { queued: false, matched: true, in_progress: true };
+  }
+  const result = await queueIocListStatsRefresh(pool, { fetchStats: opts.fetchStats });
+  markIocListStatsNightlyFired(now);
+  return { ...result, matched: true };
+}
+
+/**
  * Single-flight queue for IOC list stats recalculation.
  * Guarded by both an in-process mutex and a Postgres session advisory lock so
- * manual UI triggers and the scheduled 6-hour tick cannot run concurrently
+ * manual UI triggers and the nightly schedule cannot run concurrently
  * across backend processes.
  *
  * @param {import('pg').Pool} pool
@@ -304,7 +422,7 @@ export function formatIocListStatsApiResponse(snapshot, overrides = {}) {
       calculated_at: null,
       stale: true,
       missing: true,
-      cache_ttl_seconds: Math.floor(IOC_LIST_STATS_CACHE_TTL_MS / 1000),
+      cache_ttl_seconds: Math.floor(IOC_LIST_STATS_STALE_AFTER_MS / 1000),
       refresh_in_progress: refreshInProgressFlag
     };
   }
@@ -320,7 +438,7 @@ export function formatIocListStatsApiResponse(snapshot, overrides = {}) {
     calculated_at: snapshot.calculated_at,
     stale: Boolean(snapshot.stale),
     missing: false,
-    cache_ttl_seconds: snapshot.cache_ttl_seconds ?? Math.floor(IOC_LIST_STATS_CACHE_TTL_MS / 1000),
+    cache_ttl_seconds: snapshot.cache_ttl_seconds ?? Math.floor(IOC_LIST_STATS_STALE_AFTER_MS / 1000),
     refresh_in_progress: refreshInProgressFlag
   };
 }

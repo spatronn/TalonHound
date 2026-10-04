@@ -14,6 +14,8 @@ import {
   fetchIocListStats,
   fetchActiveIocListPage,
   queryActiveIocBrowseWindow,
+  canonicalBrowseCandidateLimit,
+  canonicalBrowseRankLimit,
   activeScopedObservablesSql,
   IOC_LIST_BROWSE_SQL_CONTRACT
 } from './iocActiveSources.js';
@@ -224,6 +226,9 @@ test('fetchActiveIocListPage READ on: SQL canonicalize before LIMIT/OFFSET', asy
   assert.match(browse.sql, /GROUP BY/);
   assert.match(browse.sql, /identity_key/);
   assert.equal(browse.sql.includes('NULLS LAST'), false);
+  // $2 is the page-scoped rank window (offset+limit), not the full browse cap.
+  assert.equal(browse.params[1], 5);
+  assert.equal(browse.params[0], 200); // candidate floor for small pages
   // JIT is disabled for this query only, inside its own transaction.
   const browseAt = queries.indexOf(browse);
   assert.deepEqual(
@@ -287,6 +292,17 @@ test('queryActiveIocBrowseWindow preserves imported_at semantics fields', async 
 test('IOC_LIST_BROWSE_SQL_CONTRACT documents anti-patterns', () => {
   assert.equal(IOC_LIST_BROWSE_SQL_CONTRACT.forbidsNullsLast, 'NULLS LAST');
   assert.match(IOC_LIST_BROWSE_SQL_CONTRACT.requiresOrderByCreatedAtDesc, /created_at DESC/);
+});
+
+test('canonical browse rank/candidate limits scale with page need, not always full 2000 window', () => {
+  assert.equal(canonicalBrowseRankLimit({ limit: 25, offset: 0, browseCap: 2000 }), 25);
+  assert.equal(canonicalBrowseRankLimit({ limit: 25, offset: 25, browseCap: 2000 }), 50);
+  assert.equal(canonicalBrowseRankLimit({ limit: 25, offset: 1975, browseCap: 2000 }), 2000);
+  assert.equal(canonicalBrowseRankLimit({ limit: 25, offset: 2000, browseCap: 2000 }), 2000);
+
+  assert.equal(canonicalBrowseCandidateLimit({ limit: 25, offset: 0, browseCap: 2000 }), 400);
+  assert.ok(canonicalBrowseCandidateLimit({ limit: 25, offset: 0, browseCap: 2000 }) < 16000);
+  assert.equal(canonicalBrowseCandidateLimit({ limit: 25, offset: 1975, browseCap: 2000 }), 32000);
 });
 
 test('enrichItemsWithActiveSourceCounts byItemIds path counts manual IOC as active source', async () => {

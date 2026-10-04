@@ -27,6 +27,7 @@ import {
 } from './fileArtifacts/canonicalListSql.js';
 import {
   canonicalBrowseCandidateLimit,
+  canonicalBrowseRankLimit,
   queryActiveIocCanonicalBrowsePage,
   fetchActiveIocListPage
 } from './iocActiveSources.js';
@@ -188,7 +189,7 @@ async function cleanupFixture(db) {
 
 const params = (limit, offset) => [
   canonicalBrowseCandidateLimit({ limit, offset, browseCap: BROWSE_CAP }),
-  BROWSE_CAP,
+  canonicalBrowseRankLimit({ limit, offset, browseCap: BROWSE_CAP }),
   Math.min(limit, BROWSE_CAP - offset),
   offset
 ];

@@ -151,7 +151,7 @@ describe('canonicalListSql', () => {
     assert.ok(ranking, 'identities must be ranked by a lightweight GROUP BY identity_key');
     assert.match(ranking.body, /MIN\(created_at\)/);
     assert.match(ranking.body, /ORDER BY platform_imported_at DESC, identity_key ASC/);
-    assert.match(ranking.body, /LIMIT \$2\b/, 'browseCap must apply to ranked identities');
+    assert.match(ranking.body, /LIMIT \$2\b/, 'rankLimit must apply to ranked identities');
 
     // The full grouping reads only rows restricted to the page's identities.
     const fromMatch = ctes[fullIdx].body.match(/\bFROM\s+(\w+)/i);

@@ -13648,10 +13648,10 @@ function IOCListPage() {
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: '#e2e8f0' }}>IOC Stats</div>
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, lineHeight: 1.45 }}>
-              Stats are calculated every 6 hours
+              Stats are calculated nightly
               {statsCalculatedLabel ? ` · Last calculated: ${statsCalculatedLabel}` : ''}
               {statsMeta.refresh_in_progress ? ' · Stats recalculation is running…' : ''}
-              {statsMeta.missing || statsMeta.stale ? ' · Stats are being prepared' : ''}
+              {statsMeta.missing ? ' · Stats are being prepared' : ''}
             </div>
           </div>
           {canWrite ? (
