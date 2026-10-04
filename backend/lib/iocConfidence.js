@@ -778,7 +778,7 @@ export async function applyIocImportConfidence(client, {
   let existing;
   try {
     const { rows } = await client.query(
-      `SELECT analyst_confidence_override
+      `SELECT analyst_confidence_override, source_confidence, confidence
        FROM ioc_items
        WHERE observable = $1 AND observable_type = $2 AND source_name = $3
        ORDER BY created_at DESC
@@ -792,12 +792,23 @@ export async function applyIocImportConfidence(client, {
   }
   if (!existing) return null;
 
+  const storedSource = normalizeConfidence(existing.source_confidence);
+  const storedConfidence = normalizeConfidence(existing.confidence);
+  if (existing.analyst_confidence_override) {
+    if (storedSource === explicit) {
+      return { source_confidence: explicit, skipped: true };
+    }
+  } else if (storedSource === explicit && storedConfidence === explicit) {
+    return { source_confidence: explicit, skipped: true };
+  }
+
   try {
     if (existing.analyst_confidence_override) {
       await client.query(
         `UPDATE ioc_items
          SET source_confidence = $4
-         WHERE observable = $1 AND observable_type = $2 AND source_name = $3`,
+         WHERE observable = $1 AND observable_type = $2 AND source_name = $3
+           AND source_confidence IS DISTINCT FROM $4`,
         [observable, observableType, sourceName, explicit]
       );
     } else {
@@ -805,7 +816,11 @@ export async function applyIocImportConfidence(client, {
         `UPDATE ioc_items
          SET source_confidence = $4,
              confidence = $4
-         WHERE observable = $1 AND observable_type = $2 AND source_name = $3`,
+         WHERE observable = $1 AND observable_type = $2 AND source_name = $3
+           AND (
+             source_confidence IS DISTINCT FROM $4
+             OR confidence IS DISTINCT FROM $4
+           )`,
         [observable, observableType, sourceName, explicit]
       );
     }

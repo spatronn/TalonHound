@@ -55,6 +55,15 @@ export async function upsertFeedSourceEvidence(client, {
        confidence = EXCLUDED.confidence,
        provider_metadata = COALESCE(EXCLUDED.provider_metadata, ioc_feed_source_evidence.provider_metadata),
        updated_at = NOW()
+     WHERE ioc_feed_source_evidence.source_name IS DISTINCT FROM EXCLUDED.source_name
+        OR ioc_feed_source_evidence.source_url IS DISTINCT FROM EXCLUDED.source_url
+        OR ioc_feed_source_evidence.category IS DISTINCT FROM EXCLUDED.category
+        OR ioc_feed_source_evidence.note IS DISTINCT FROM EXCLUDED.note
+        OR ioc_feed_source_evidence.confidence IS DISTINCT FROM EXCLUDED.confidence
+        OR (
+          EXCLUDED.provider_metadata IS NOT NULL
+          AND ioc_feed_source_evidence.provider_metadata IS DISTINCT FROM EXCLUDED.provider_metadata
+        )
      RETURNING id`,
     [
       iocItemId,
@@ -69,18 +78,22 @@ export async function upsertFeedSourceEvidence(client, {
     ]
   );
 
-  try {
-    await syncIntegrationTagsFromNote(client, {
-      iocId: iocItemId,
-      observableType,
-      sourceName,
-      note
-    });
-  } catch (err) {
-    console.warn('[feed-source-evidence] tag catalog sync skipped:', err.message);
+  const evidenceId = rows[0]?.id || null;
+  // Conflict no-ops return no RETURNING row — skip tag touch (avoids ioc_items updated_at churn).
+  if (evidenceId) {
+    try {
+      await syncIntegrationTagsFromNote(client, {
+        iocId: iocItemId,
+        observableType,
+        sourceName,
+        note
+      });
+    } catch (err) {
+      console.warn('[feed-source-evidence] tag catalog sync skipped:', err.message);
+    }
   }
 
-  return rows[0]?.id || null;
+  return evidenceId;
 }
 
 /**

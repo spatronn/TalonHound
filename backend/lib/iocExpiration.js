@@ -74,6 +74,15 @@ function asTimestamp(value) {
   return Number.isFinite(d.getTime()) ? d : null;
 }
 
+/** Compare timestamptz-ish values by epoch ms (avoids String(Date) false diffs). */
+function iocTimestampsEqual(a, b) {
+  const ta = asTimestamp(a);
+  const tb = asTimestamp(b);
+  if (ta == null && tb == null) return true;
+  if (ta == null || tb == null) return false;
+  return ta.getTime() === tb.getTime();
+}
+
 /**
  * Monotonic MAX for source last-seen. No-ops when the incoming observation is
  * missing or not strictly later — safe under concurrent ingest.
@@ -470,14 +479,25 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
       expired_at: nextStatus === 'expired' ? (ioc.expired_at || new Date()) : null,
       expiration_reason: ioc.manual_override_reason || 'manual_override'
     };
-    if (ioc.status !== patch.status || String(ioc.expires_at || '') !== String(patch.expires_at || '')) {
-      await client.query(
+    if (
+      ioc.status !== patch.status
+      || !iocTimestampsEqual(ioc.expires_at, patch.expires_at)
+      || !iocTimestampsEqual(ioc.expired_at, patch.expired_at)
+      || String(ioc.expiration_reason || '') !== String(patch.expiration_reason || '')
+    ) {
+      const upd = await client.query(
         `UPDATE ioc_items
          SET status = $3, expires_at = $4, expired_at = $5, expiration_reason = $6
-         WHERE id = $1 AND observable_type = $2`,
+         WHERE id = $1 AND observable_type = $2
+           AND (
+             status IS DISTINCT FROM $3
+             OR expires_at IS DISTINCT FROM $4
+             OR expired_at IS DISTINCT FROM $5
+             OR expiration_reason IS DISTINCT FROM $6
+           )`,
         [iocItemId, observableType, patch.status, patch.expires_at, patch.expired_at, patch.expiration_reason]
       );
-      return { changed: true, status: patch.status };
+      return { changed: Number(upd.rowCount || 0) > 0, status: patch.status };
     }
     return { changed: false, status: patch.status };
   }
@@ -512,17 +532,28 @@ export async function recomputeIocGlobalStatus(client, iocItemId, observableType
   const expirationReason = nextStatus === 'expired' ? 'all_feed_memberships_expired' : null;
 
   if (ioc.status === nextStatus
-    && String(ioc.expires_at || '') === String(minExpires || '')
-    && (nextStatus !== 'expired' || ioc.expired_at)) {
+    && iocTimestampsEqual(ioc.expires_at, minExpires)
+    && (nextStatus !== 'expired' || ioc.expired_at)
+    && String(ioc.expiration_reason || '') === String(expirationReason || '')
+    && (nextStatus !== 'expired' || iocTimestampsEqual(ioc.expired_at, expiredAt))) {
     return { changed: false, status: nextStatus };
   }
 
-  await client.query(
+  const upd = await client.query(
     `UPDATE ioc_items
      SET status = $3, expires_at = $4, expired_at = $5, expiration_reason = $6
-     WHERE observable = $1 AND observable_type = $2`,
+     WHERE observable = $1 AND observable_type = $2
+       AND (
+         status IS DISTINCT FROM $3
+         OR expires_at IS DISTINCT FROM $4
+         OR expired_at IS DISTINCT FROM $5
+         OR expiration_reason IS DISTINCT FROM $6
+       )`,
     [ioc.observable, observableType, nextStatus, minExpires, expiredAt, expirationReason]
   );
+  if (!Number(upd.rowCount || 0)) {
+    return { changed: false, status: nextStatus };
+  }
 
   if (audit?.auditLog) {
     const expiredMemberships = Array.isArray(opts.expiredMemberships) ? opts.expiredMemberships : [];

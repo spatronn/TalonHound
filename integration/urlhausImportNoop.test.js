@@ -224,6 +224,51 @@ describe('upsertUrlhausObservable unchanged metadata handling', () => {
     assert.equal(result.status, 'observation_updated');
   });
 
+  it('skips ioc_items rewrite when only volatile note last_online differs and timestamps already match', async () => {
+    const lastOnline = new Date('2026-06-28T17:40:00.000Z');
+    const entry = sampleEntry({ urlStatus: 'online', lastOnline });
+    const note = buildUrlhausNote(entry);
+    const staleNote = buildUrlhausNote(sampleEntry({
+      urlStatus: 'online',
+      lastOnline: new Date('2026-06-27T11:52:06.000Z')
+    }));
+    const updates = [];
+    const result = await updateUrlhausExistingIocBySource({
+      async query(sql) {
+        const text = String(sql);
+        if (text.includes('FROM ioc_items') && text.includes('source_name = $3')) {
+          return {
+            rowCount: 1,
+            rows: [{
+              public_id: '00000000-0000-0000-0000-000000000015',
+              note: staleNote,
+              category: entry.threat || 'malware-url',
+              first_seen_at: entry.dateAdded,
+              last_seen_at: lastOnline,
+              provider_fingerprint: null
+            }]
+          };
+        }
+        if (text.startsWith('UPDATE ioc_items')) {
+          updates.push(text);
+          return { rowCount: 1, rows: [{ public_id: '00000000-0000-0000-0000-000000000015' }] };
+        }
+        throw new Error(`unexpected query: ${text.slice(0, 120)}`);
+      }
+    }, {
+      observable: entry.observable,
+      observableType: entry.observableType,
+      sourceName: 'URLhaus:abuse.ch',
+      fullNote: note,
+      category: entry.threat || 'malware-url',
+      dateAddedAt: entry.dateAdded,
+      lastOnlineAt: lastOnline
+    });
+
+    assert.equal(result.status, 'unchanged');
+    assert.equal(updates.length, 0, 'volatile note-only drift must not rewrite ioc_items');
+  });
+
   it('inserts a URLhaus row that is not already present', async () => {
     const entry = sampleEntry();
     const note = buildUrlhausNote(entry);

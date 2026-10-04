@@ -490,6 +490,7 @@ export async function updateUrlhausExistingIocBySource(client, {
       `UPDATE ioc_items
        SET provider_fingerprint = $2
        WHERE public_id = $1
+         AND provider_fingerprint IS DISTINCT FROM $2
        RETURNING public_id`,
       [row.public_id, incomingFingerprint]
     );
@@ -505,10 +506,20 @@ export async function updateUrlhausExistingIocBySource(client, {
            last_seen_at = $5,
            provider_fingerprint = $6
        WHERE public_id = $1
+         AND (
+           category IS DISTINCT FROM $2
+           OR note IS DISTINCT FROM $3
+           OR first_seen_at IS DISTINCT FROM $4
+           OR last_seen_at IS DISTINCT FROM $5
+           OR provider_fingerprint IS DISTINCT FROM $6
+         )
        RETURNING public_id`,
       [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
     );
-    return { status: 'updated', publicId: upd.rows[0]?.public_id || row.public_id };
+    return {
+      status: Number(upd.rowCount || 0) > 0 ? 'updated' : 'unchanged',
+      publicId: upd.rows[0]?.public_id || row.public_id
+    };
   }
 
   const upd = await client.query(
@@ -518,10 +529,19 @@ export async function updateUrlhausExistingIocBySource(client, {
          last_seen_at = $4,
          provider_fingerprint = $5
      WHERE public_id = $1
+       AND (
+         note IS DISTINCT FROM $2
+         OR first_seen_at IS DISTINCT FROM $3
+         OR last_seen_at IS DISTINCT FROM $4
+         OR provider_fingerprint IS DISTINCT FROM $5
+       )
      RETURNING public_id`,
     [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
   );
-  return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
+  return {
+    status: Number(upd.rowCount || 0) > 0 ? 'observation_updated' : 'unchanged',
+    publicId: upd.rows[0]?.public_id || row.public_id
+  };
 }
 
 async function maybeReactivateUrlhausMembership(client, entry, sourceName, category) {
@@ -590,14 +610,14 @@ function mergeUrlhausLastSeenAt(stored, incoming) {
   return new Date(incoming) > new Date(stored) ? incoming : stored;
 }
 
-function urlhausObservationChanged(row, { fullNote, nextFirstSeenAt, nextLastSeenAt }) {
+function urlhausObservationChanged(row, { nextFirstSeenAt, nextLastSeenAt }) {
+  // Timestamps only — volatile note parts (last_online) are excluded from semantic
+  // equality and must not force ioc_items rewrites on every poll.
   const storedFirst = row.first_seen_at ? new Date(row.first_seen_at).toISOString() : null;
   const storedLast = row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null;
   const nextFirst = nextFirstSeenAt ? new Date(nextFirstSeenAt).toISOString() : null;
   const nextLast = nextLastSeenAt ? new Date(nextLastSeenAt).toISOString() : null;
-  return storedFirst !== nextFirst
-    || storedLast !== nextLast
-    || String(row.note || '') !== String(fullNote || '');
+  return storedFirst !== nextFirst || storedLast !== nextLast;
 }
 
 export async function upsertUrlhausObservable(client, entry, sourceName, suppressionStats, metrics, feedDefaultConfidence = null) {
@@ -819,14 +839,14 @@ function mergeThreatFoxLastSeenAt(stored, incoming) {
   return new Date(incoming) > new Date(stored) ? incoming : stored;
 }
 
-function threatFoxObservationChanged(row, { fullNote, nextFirstSeenAt, nextLastSeenAt }) {
+function threatFoxObservationChanged(row, { nextFirstSeenAt, nextLastSeenAt }) {
+  // Timestamps only — volatile note parts (last_seen) are excluded from semantic
+  // equality and must not force ioc_items rewrites on every poll.
   const storedFirst = row.first_seen_at ? new Date(row.first_seen_at).toISOString() : null;
   const storedLast = row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null;
   const nextFirst = nextFirstSeenAt ? new Date(nextFirstSeenAt).toISOString() : null;
   const nextLast = nextLastSeenAt ? new Date(nextLastSeenAt).toISOString() : null;
-  return storedFirst !== nextFirst
-    || storedLast !== nextLast
-    || String(row.note || '') !== String(fullNote || '');
+  return storedFirst !== nextFirst || storedLast !== nextLast;
 }
 
 /**
@@ -901,6 +921,7 @@ export async function updateThreatFoxExistingIocBySource(client, {
       `UPDATE ioc_items
        SET provider_fingerprint = $2
        WHERE public_id = $1
+         AND provider_fingerprint IS DISTINCT FROM $2
        RETURNING public_id`,
       [row.public_id, incomingFingerprint]
     );
@@ -916,10 +937,20 @@ export async function updateThreatFoxExistingIocBySource(client, {
            last_seen_at = CASE WHEN $5::timestamptz IS NULL THEN last_seen_at ELSE GREATEST(last_seen_at, $5) END,
            provider_fingerprint = $6
        WHERE public_id = $1
+         AND (
+           category IS DISTINCT FROM $2
+           OR note IS DISTINCT FROM $3
+           OR ($4::timestamptz IS NOT NULL AND first_seen_at > $4)
+           OR ($5::timestamptz IS NOT NULL AND last_seen_at < $5)
+           OR provider_fingerprint IS DISTINCT FROM $6
+         )
        RETURNING public_id`,
       [row.public_id, category, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
     );
-    return { status: 'updated', publicId: upd.rows[0]?.public_id || row.public_id };
+    return {
+      status: Number(upd.rowCount || 0) > 0 ? 'updated' : 'unchanged',
+      publicId: upd.rows[0]?.public_id || row.public_id
+    };
   }
 
   const upd = await client.query(
@@ -929,10 +960,19 @@ export async function updateThreatFoxExistingIocBySource(client, {
          last_seen_at = CASE WHEN $4::timestamptz IS NULL THEN last_seen_at ELSE GREATEST(last_seen_at, $4) END,
          provider_fingerprint = $5
      WHERE public_id = $1
+       AND (
+         note IS DISTINCT FROM $2
+         OR ($3::timestamptz IS NOT NULL AND first_seen_at > $3)
+         OR ($4::timestamptz IS NOT NULL AND last_seen_at < $4)
+         OR provider_fingerprint IS DISTINCT FROM $5
+       )
      RETURNING public_id`,
     [row.public_id, fullNote, nextFirstSeenAt, nextLastSeenAt, incomingFingerprint]
   );
-  return { status: 'observation_updated', publicId: upd.rows[0]?.public_id || row.public_id };
+  return {
+    status: Number(upd.rowCount || 0) > 0 ? 'observation_updated' : 'unchanged',
+    publicId: upd.rows[0]?.public_id || row.public_id
+  };
 }
 
 async function syncThreatFoxMembership(client, entry, sourceName, category, { reactivateOnly = false } = {}) {
