@@ -11,6 +11,7 @@
 import { createServiceLogger } from '../appLogger.js';
 import { getThreatLibraryJobOptions } from './queueConfig.js';
 import { getAiSettings, updateJob, updateReportStatus } from './store.js';
+import { PIPELINE_JOB_MODES, THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 
 const log = createServiceLogger('threat-library-scheduler');
 
@@ -20,7 +21,9 @@ export const MAX_CONCURRENT_REPORT_ANALYSES_MAX = 4;
 export const MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT = 2;
 export const ANALYSIS_SLOT_LOCK_KEY = 'threat-library.analysis_slots';
 
-const ANALYSIS_JOB_TYPES = Object.freeze(['analyze', 'retry']);
+// Every URL/PDF pipeline mode (jobModes.js) shares the slot budget, crash
+// recovery and unclaimed-cancel handling — including the AI-free refresh.
+const ANALYSIS_JOB_TYPES = PIPELINE_JOB_MODES;
 const OCCUPIED_JOB_STATUSES = Object.freeze(['queued', 'running']);
 const LIVE_BULLMQ_STATES = new Set(['active', 'waiting', 'delayed', 'paused', 'waiting-children']);
 
@@ -98,12 +101,20 @@ export function dispatchExtraFromJob(job) {
   const progress = job?.progress && typeof job.progress === 'object' ? job.progress : {};
   const dispatch = progress.dispatch && typeof progress.dispatch === 'object' ? progress.dispatch : {};
   const jobType = dispatch.jobType || job?.job_type || 'analyze';
-  return {
+  const extra = {
     sourceUrl: dispatch.sourceUrl || job?.source_url || undefined,
-    resumeAnalysis: dispatch.resumeAnalysis === true || jobType === 'retry',
-    newAnalysisRun: dispatch.newAnalysisRun === true,
+    resumeAnalysis:
+      dispatch.resumeAnalysis === true ||
+      jobType === THREAT_LIBRARY_JOB_MODES.RETRY ||
+      jobType === THREAT_LIBRARY_JOB_MODES.RERUN_AI,
+    newAnalysisRun: dispatch.newAnalysisRun === true || jobType === THREAT_LIBRARY_JOB_MODES.RERUN_AI,
     jobType
   };
+  // Maintenance jobs return the report to the status it had when requested.
+  if (dispatch.restoreStatus && typeof dispatch.restoreStatus === 'object') {
+    extra.restoreStatus = dispatch.restoreStatus;
+  }
+  return extra;
 }
 
 /**
@@ -244,7 +255,8 @@ export async function enqueueClaimedThreatLibraryJob(queue, job) {
       sourceUrl: extra.sourceUrl,
       resumeAnalysis: extra.resumeAnalysis === true,
       jobType: extra.jobType,
-      newAnalysisRun: extra.newAnalysisRun === true
+      newAnalysisRun: extra.newAnalysisRun === true,
+      ...(extra.restoreStatus ? { restoreStatus: extra.restoreStatus } : {})
     },
     getThreatLibraryJobOptions()
   );
@@ -363,11 +375,25 @@ export async function cancelUnclaimedAnalysisJobs(pool, reportId) {
        AND status = 'queued'
        AND bullmq_job_id IS NULL
        AND job_type = ANY($2::text[])
-     RETURNING id`,
+     RETURNING id, job_type, progress`,
     [reportId, ANALYSIS_JOB_TYPES]
   );
   if (rows.length) {
     log.info('unclaimed analysis cancelled', { reportId, jobIds: rows.map((r) => r.id) });
   }
   return rows;
+}
+
+/**
+ * Status a cancelled-before-claim maintenance job (refresh_extraction /
+ * rerun_ai) must hand back: the report was moved to `pending` only to queue
+ * it, its committed state never changed. Null for analyze / retry jobs.
+ * @param {object[]} cancelledJobs rows returned by cancelUnclaimedAnalysisJobs
+ */
+export function restoreStatusForCancelledJobs(cancelledJobs) {
+  for (const job of cancelledJobs || []) {
+    const restore = job?.progress?.dispatch?.restoreStatus;
+    if (restore && typeof restore === 'object' && restore.analysis_status) return restore;
+  }
+  return null;
 }

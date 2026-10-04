@@ -33,7 +33,8 @@ import {
   AnalysisConcurrencySettingError,
   cancelUnclaimedAnalysisJobs,
   dispatchQueuedThreatLibraryAnalyses,
-  enqueueClaimedThreatLibraryJob
+  enqueueClaimedThreatLibraryJob,
+  restoreStatusForCancelledJobs
 } from '../lib/threatLibrary/analysisConcurrency.js';
 import {
   getAiSettings,
@@ -53,8 +54,15 @@ import {
   countReportCandidates,
   attachReportCounts,
   updateReportSourceUrl,
-  updateReportTlp
+  updateReportTlp,
+  claimReportForMaintenance,
+  restoreReportStatus
 } from '../lib/threatLibrary/store.js';
+import {
+  THREAT_LIBRARY_JOB_MODES,
+  MAINTENANCE_ALLOWED_STATUSES,
+  evaluateMaintenanceAction
+} from '../lib/threatLibrary/jobModes.js';
 import { loadIocThreatContext } from '../lib/threatLibrary/iocThreatContext.js';
 import {
   loadReportTags,
@@ -460,7 +468,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       const report = await getReportByPublicId(pool, req.params.publicId);
       if (!report) return res.status(404).json({ message: 'Report not found' });
       const { rows: jobs } = await pool.query(
-        `SELECT public_id, status, stage, progress, error_message, created_at, finished_at
+        `SELECT public_id, job_type, status, stage, progress, error_message, created_at, finished_at
          FROM threat_library_jobs WHERE report_id = $1 ORDER BY id DESC LIMIT 1`,
         [report.id]
       );
@@ -929,6 +937,18 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           }
         }
 
+        // Retry is failure recovery: a completed report (review required /
+        // finalized) is refreshed with Refresh extraction or re-analysed with
+        // Re-run AI analysis, never silently re-run through Retry.
+        const retryGate = evaluateMaintenanceAction(report, THREAT_LIBRARY_JOB_MODES.RETRY);
+        if (!recoveredOrphanedStatus && !retryGate.ok) {
+          return res.status(retryGate.status).json({
+            message: retryGate.message,
+            code: retryGate.code,
+            analysis_status: report.analysis_status || null
+          });
+        }
+
         const { rows: activeJobs } = await pool.query(
           `SELECT public_id, status, bullmq_job_id FROM threat_library_jobs
            WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
@@ -1017,6 +1037,115 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     }
   );
 
+  /**
+   * Queue a maintenance job (refresh_extraction / rerun_ai) for a completed
+   * report. The report is claimed atomically (status predicate + no active
+   * job, in one UPDATE) so concurrent requests cannot create competing jobs;
+   * the status it had is carried in the job dispatch and restored by the
+   * refresh (or by a cancel before a worker claims the job).
+   */
+  async function acceptMaintenanceJob(req, res, mode) {
+    const report = await getReportByPublicId(pool, req.params.publicId);
+    if (!report) return res.status(404).json({ message: 'Report not found' });
+
+    const alreadyRunning = async (row) => {
+      const { rows: activeJobs } = await pool.query(
+        `SELECT public_id, job_type, status, stage FROM threat_library_jobs
+         WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
+         ORDER BY id DESC LIMIT 1`,
+        [report.id]
+      );
+      return res.status(409).json({
+        message: 'An analysis job is already queued or running for this report.',
+        code: 'analysis_already_running',
+        job: activeJobs[0] || null,
+        report: publicReport(await reportWithDetail(row || report))
+      });
+    };
+    if (report.source_type !== 'thib' && isActiveAnalysisStatus(report.analysis_status)) {
+      return alreadyRunning(report);
+    }
+    const gate = evaluateMaintenanceAction(report, mode);
+    if (!gate.ok) {
+      return res.status(gate.status).json({
+        message: gate.message,
+        code: gate.code,
+        analysis_status: report.analysis_status || null
+      });
+    }
+
+    const restoreStatus = { analysis_status: report.analysis_status, import_status: report.import_status };
+    const progress = { stage: 'pending', mode, requested_at: new Date().toISOString() };
+    const claimed = await claimReportForMaintenance(pool, report.id, {
+      allowedStatuses: MAINTENANCE_ALLOWED_STATUSES[mode],
+      analysisProgress: progress
+    });
+    if (!claimed) {
+      // Lost the race to a concurrent request / job (or the status moved).
+      return alreadyRunning(await getReportByPublicId(pool, req.params.publicId));
+    }
+
+    const dispatch = mode === THREAT_LIBRARY_JOB_MODES.RERUN_AI
+      ? { jobType: mode, restoreStatus, sourceUrl: report.source_url || undefined, resumeAnalysis: true, newAnalysisRun: true }
+      : { jobType: mode, restoreStatus };
+    let jobRow = null;
+    try {
+      jobRow = await createJob(pool, {
+        reportId: report.id,
+        jobType: mode,
+        requestedBy: (await actorOf(req))?.publicId
+      });
+      await scheduleAnalysis(report.id, jobRow, dispatch, progress);
+    } catch (err) {
+      // Nothing ran: the committed report state is untouched, hand it back.
+      if (jobRow) {
+        await updateJob(pool, jobRow.id, { status: 'failed', stage: 'queued', error_message: safeErrorCategory(err) }).catch(() => {});
+      }
+      await restoreReportStatus(pool, report.id, restoreStatus, report.analysis_progress || {}).catch(() => {});
+      throw err;
+    }
+    return res.status(202).json({
+      report: publicReport(await reportWithDetail(claimed)),
+      job_id: jobRow.public_id,
+      job: {
+        public_id: jobRow.public_id,
+        job_type: mode,
+        status: 'queued',
+        stage: 'queued',
+        progress: { ...progress, dispatch }
+      },
+      mode,
+      ai_analysis: mode === THREAT_LIBRARY_JOB_MODES.RERUN_AI,
+      already_running: false
+    });
+  }
+
+  // --- Refresh extraction: deterministic re-extraction + IOC matching, no AI ---
+  app.post(
+    '/api/threat-library/reports/:publicId/refresh-extraction',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        return await acceptMaintenanceJob(req, res, THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION);
+      } catch (err) {
+        return res.status(500).json({ message: 'Refresh extraction failed to start', detail: err.message });
+      }
+    }
+  );
+
+  // --- Re-run AI analysis: explicit model re-analysis of a report in review ---
+  app.post(
+    '/api/threat-library/reports/:publicId/rerun-ai',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        return await acceptMaintenanceJob(req, res, THREAT_LIBRARY_JOB_MODES.RERUN_AI);
+      } catch (err) {
+        return res.status(500).json({ message: 'Re-run AI analysis failed to start', detail: err.message });
+      }
+    }
+  );
+
   app.post(
     '/api/threat-library/reports/:publicId/cancel',
     requireRole(ROLES.ADMIN, ROLES.ANALYST),
@@ -1025,7 +1154,14 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
         const cancelledQueued = await cancelUnclaimedAnalysisJobs(pool, report.id);
-        const updated = await requestAnalysisCancel(pool, report.id);
+        let updated = await requestAnalysisCancel(pool, report.id);
+        // A maintenance job cancelled before any worker claimed it never
+        // touched the report: return it to the status it was requested from.
+        const restore = restoreStatusForCancelledJobs(cancelledQueued);
+        if (restore) {
+          const { mode: _mode, ...progress } = report.analysis_progress || {};
+          updated = await restoreReportStatus(pool, report.id, restore, { ...progress, stage: restore.analysis_status });
+        }
         if (cancelledQueued.length) {
           await dispatchQueuedAnalyses().catch(() => {});
         }

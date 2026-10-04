@@ -4,23 +4,18 @@
  */
 
 import crypto from 'node:crypto';
-import { ingestUrlToCanonicalDocument, reextractStoredHtmlDocument } from './urlIngest.js';
+import { ingestUrlToCanonicalDocument } from './urlIngest.js';
 import { pdfToCanonicalDocument, THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
-import { CURRENT_HTML_EXTRACTOR_VERSIONS, THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } from './extract/extractHtml.js';
+import { THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } from './extract/extractHtml.js';
 import {
-  extractCandidatesWithDiagnostics,
   summarizeCandidateSet,
   THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
 } from './candidateExtraction.js';
-import { applyEvidencePolicy } from './evidencePolicy.js';
-import { hostnameFromUrl } from './candidateTyping.js';
-import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOccurrence.js';
-import { bulkMatchCandidates } from './iocMatch.js';
 import { analyzeThreatDocument } from './ai/providers.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
-import { deriveMatchState, normalizeEntityName } from './constants.js';
-import { storeArtifactBuffer, readArtifactBuffer } from './artifactStore.js';
+import { normalizeEntityName } from './constants.js';
+import { storeArtifactBuffer } from './artifactStore.js';
 import {
   getAiSettings,
   updateReportStatus,
@@ -37,120 +32,46 @@ import {
   markAnalysisChunkFailed,
   countReportCandidates,
   loadReportCandidatesForAnalysis,
-  isAnalysisCancelRequested,
-  updateReportPublicationDate
+  isAnalysisCancelRequested
 } from './store.js';
 import { resolveEffectiveTlp } from './tlpPolicy.js';
 import { buildEvidenceIndex, publisherTokens, validateRelationship } from './relationshipPolicy.js';
-import { detectReportPublicationDate, resolvePublicationDateUpdate } from './publicationDate.js';
 import { persistReportIntelligence } from './reportIntelligence.js';
+import {
+  applyPublicationDate,
+  compactExtractionDiagnostics,
+  extractReportCandidates,
+  hasUsableDocument,
+  isDocumentContractCurrent,
+  loadStoredPdfArtifact,
+  matchCandidateSet,
+  mergeAiCandidateUpdates,
+  rebuildDocumentFromRetainedSource
+} from './extractionStages.js';
+import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { createServiceLogger } from '../appLogger.js';
+
+// Deterministic stages live in extractionStages.js (shared with the
+// AI-free extraction refresh); re-exported for existing callers.
+export { isDocumentContractCurrent, compactExtractionDiagnostics, mergeAiCandidateUpdates };
 
 const log = createServiceLogger('threat-library');
 
-function hasUsableDocument(doc) {
-  return Boolean(doc && Array.isArray(doc.blocks) && doc.blocks.length > 0);
-}
-
 /**
- * A stored canonical document is reusable only when its extractor contract is
- * current. PDF block segmentation changed in v2 (line/heading/footer-aware) and
- * v3 (table reconstruction); HTML extraction changed in v2 (DOM walk, structured
- * tables). Outdated documents are re-extracted from the stored artifact (PDF
- * upload / retained HTML) — the upload itself is always reused, and a URL is
- * only re-fetched when no HTML was retained.
- * @param {object} report
- * @param {object} doc
- */
-export function isDocumentContractCurrent(report, doc) {
-  if (!hasUsableDocument(doc)) return false;
-  if (report?.source_type === 'pdf') {
-    return doc.meta?.extractor === THREAT_LIBRARY_PDF_EXTRACTOR_VERSION;
-  }
-  if (report?.source_type === 'url') {
-    return CURRENT_HTML_EXTRACTOR_VERSIONS.includes(String(doc.meta?.extractor || ''));
-  }
-  return true;
-}
-
-/**
- * Latest retained source HTML for a URL report (null when never retained).
+ * Full URL/PDF analysis: fetch / extract → deterministic candidates → AI
+ * semantics → merge → match → review_required. Runs for `analyze`, `retry`
+ * and `rerun_ai` jobs; `refresh_extraction` never reaches this function
+ * (jobRunner.js routes it to the AI-free extractionRefresh.js).
  * @param {import('pg').Pool} pool
- * @param {number} reportId
+ * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean, jobType?: string, newAnalysisRun?: boolean }} ctx
+ * @param {{ analyzeThreatDocument?: Function }} [deps] provider seam (tests)
  */
-async function loadRetainedHtmlArtifact(pool, reportId) {
-  const { rows } = await pool.query(
-    `SELECT id, storage_key, source_metadata FROM threat_report_artifacts
-     WHERE report_id = $1 AND artifact_type = 'url_fetch' AND storage_key IS NOT NULL
-     ORDER BY id DESC LIMIT 1`,
-    [reportId]
-  );
-  return rows[0] || null;
-}
-
-/**
- * Detect the source's publication date and persist it under the write policy
- * (existing manual / THIB / stronger values are kept; a retry never nulls a
- * good value). A URL report without HTML in this run reads its retained
- * source HTML; a PDF reads the canonical document only (PDF CreationDate is
- * never used). Non-fatal: the analysis never fails because of a date.
- * @param {import('pg').Pool} pool
- * @param {object} report
- * @param {{ document: object|null, sourceHtml?: string|null }} input
- */
-async function applyPublicationDate(pool, report, input) {
-  try {
-    let html = input.sourceHtml || null;
-    if (!html && report.source_type === 'url') {
-      const retained = await loadRetainedHtmlArtifact(pool, report.id);
-      if (retained?.storage_key) {
-        try {
-          html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
-        } catch {
-          html = null;
-        }
-      }
-    }
-    const detection = detectReportPublicationDate({
-      sourceType: report.source_type,
-      sourceUrl: report.source_url,
-      html,
-      document: input.document
-    });
-    const current = (await getReportById(pool, report.id)) || report;
-    const decision = resolvePublicationDateUpdate(current, detection);
-    if (decision.action === 'write') {
-      await updateReportPublicationDate(pool, report.id, decision.fields);
-    }
-    const outcome = {
-      action: decision.action,
-      reason: decision.reason,
-      detected: detection.published_at
-        ? {
-            published_at: detection.published_at,
-            published_date: detection.published_date,
-            precision: detection.precision,
-            source: detection.source,
-            raw_value: detection.raw_value,
-            evidence: detection.evidence,
-            modified_at: detection.modified_at
-          }
-        : null,
-      extractor: detection.extractor
-    };
-    log.info('publication date resolved', { reportId: report.id, ...outcome });
-    return outcome;
-  } catch (err) {
-    log.warn('publication date detection failed (non-fatal)', { reportId: report.id, error: err.message });
-    return { action: 'keep', reason: `error:${err.message}`, detected: null, extractor: null };
+export async function runAnalysisPipeline(pool, ctx, deps = {}) {
+  if (ctx?.jobType === THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION) {
+    // Defence in depth: the deterministic refresh must never enter the AI pipeline.
+    throw Object.assign(new Error('refresh_extraction jobs never run the AI pipeline'), { code: 'invalid_job_mode' });
   }
-}
-
-/**
- * @param {import('pg').Pool} pool
- * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean }} ctx
- */
-export async function runAnalysisPipeline(pool, ctx) {
+  const analyze = deps.analyzeThreatDocument || analyzeThreatDocument;
   const report = await getReportById(pool, ctx.reportId);
   if (!report) throw Object.assign(new Error('Report not found'), { code: 'not_found' });
 
@@ -183,7 +104,11 @@ export async function runAnalysisPipeline(pool, ctx) {
     let document = report.canonical_document;
     /** Raw source HTML for this run (fetched or retained) — the publication-date extractor reads it. */
     let sourceHtml = null;
-    const resumePreferred = ctx.resumeAnalysis === true || ctx.jobType === 'retry' || hasUsableDocument(document);
+    const resumePreferred =
+      ctx.resumeAnalysis === true ||
+      ctx.jobType === THREAT_LIBRARY_JOB_MODES.RETRY ||
+      ctx.jobType === THREAT_LIBRARY_JOB_MODES.RERUN_AI ||
+      hasUsableDocument(document);
     const documentContractCurrent = isDocumentContractCurrent(report, document);
     let documentRebuilt = false;
     if (hasUsableDocument(document) && !documentContractCurrent) {
@@ -200,23 +125,17 @@ export async function runAnalysisPipeline(pool, ctx) {
     if (!hasUsableDocument(document) || !documentContractCurrent) {
       if (report.source_type === 'url') {
         // Retained source HTML lets a contract change re-extract without touching the network.
-        const retained = documentRebuilt ? await loadRetainedHtmlArtifact(pool, report.id) : null;
         let reextracted = null;
-        if (retained?.storage_key) {
+        if (documentRebuilt) {
           try {
-            const html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
-            sourceHtml = html;
-            reextracted = reextractStoredHtmlDocument(html, {
-              url: report.source_url,
-              finalUrl: retained.source_metadata?.final_url || report.source_url,
-              httpStatus: retained.source_metadata?.http_status ?? 200
-            });
+            reextracted = await rebuildDocumentFromRetainedSource(pool, report);
           } catch (err) {
             log.warn('retained HTML unusable; falling back to fetch', { reportId: report.id, error: err.message });
             reextracted = null;
           }
         }
         if (reextracted) {
+          sourceHtml = reextracted.sourceHtml;
           await setStage('extracting');
           document = reextracted.document;
           log.info('document re-extracted from retained HTML', {
@@ -266,13 +185,7 @@ export async function runAnalysisPipeline(pool, ctx) {
         let pdfBuffer = ctx.pdfBuffer || null;
         let existingArtifact = null;
         if (!pdfBuffer) {
-          const { rows: arts } = await pool.query(
-            `SELECT * FROM threat_report_artifacts
-             WHERE report_id = $1 AND artifact_type = 'pdf_upload' AND storage_key IS NOT NULL
-             ORDER BY id DESC LIMIT 1`,
-            [report.id]
-          );
-          existingArtifact = arts[0] || null;
+          existingArtifact = await loadStoredPdfArtifact(pool, report.id);
           if (!existingArtifact?.storage_key) {
             throw Object.assign(new Error('PDF buffer missing for analysis'), { code: 'missing_pdf' });
           }
@@ -378,26 +291,9 @@ export async function runAnalysisPipeline(pool, ctx) {
       });
     } else {
       await setStage('candidates');
-      // Ensure source provenance is on the document for zone/source marking
-      let sourceUrl = report.source_url || document.meta?.source_url || null;
-      let sourceHost = document.meta?.source_host || null;
-      if (!sourceHost && sourceUrl) {
-        try {
-          sourceHost = hostnameFromUrl(sourceUrl);
-        } catch {
-          sourceHost = null;
-        }
-      }
-      document = {
-        ...document,
-        meta: {
-          ...(document.meta || {}),
-          source_url: sourceUrl,
-          source_host: sourceHost,
-          candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
-        }
-      };
-      const extracted = extractCandidatesWithDiagnostics(document, { sourceUrl });
+      // Source provenance is stamped on the document for zone/source marking.
+      const extracted = extractReportCandidates(report, document);
+      document = extracted.document;
       candidates = extracted.candidates;
       extractionDiagnostics = extracted.diagnostics;
       await replaceCandidates(pool, report.id, candidates);
@@ -502,7 +398,7 @@ export async function runAnalysisPipeline(pool, ctx) {
       });
     });
     try {
-      const ai = await analyzeThreatDocument(
+      const ai = await analyze(
         aiSettings,
         { document, candidates },
         {
@@ -621,32 +517,8 @@ export async function runAnalysisPipeline(pool, ctx) {
 
     // --- Match local IOCs ---
     await setStage('matching');
-    const matched = await bulkMatchCandidates(pool, candidates);
-    matched.candidates = matched.candidates.map((c) => ({
-      ...c,
-      match_state: deriveMatchState({
-        assessment: c.assessment,
-        confidence: c.confidence,
-        matchedIocId: c.matched_ioc_id,
-        valid: c.assessment !== 'invalid'
-      })
-    }));
-    const summary = {
-      total: matched.candidates.length,
-      existing: 0,
-      new: 0,
-      context_only: 0,
-      needs_review: 0,
-      invalid: 0
-    };
-    for (const c of matched.candidates) {
-      if (summary[c.match_state] != null) summary[c.match_state] += 1;
-    }
-    const finalSet = summarizeCandidateSet(matched.candidates);
-    summary.explicit_assertions = finalSet.explicit_assertions;
-    summary.ai_classified = matched.candidates.filter((c) => c.decision_source === 'ai').length;
-    summary.raw_occurrences = finalSet.raw_occurrences;
-    summary.non_ioc = finalSet.non_ioc;
+    const matched = await matchCandidateSet(pool, candidates);
+    const summary = matched.summary;
 
     const savedCandidates = await replaceCandidates(pool, report.id, matched.candidates);
 
@@ -839,22 +711,6 @@ export function decideCandidateReuse(input) {
 }
 
 /**
- * Final candidate set = deterministic candidates ∪ AI classification of the
- * `ai_needed` subset. The model output is never the list of indicators: an
- * update only refines a candidate that already exists, explicit assertions can
- * only gain a malicious role, and every candidate passes the evidence policy
- * again. A missing / empty AI result leaves the deterministic set intact.
- *
- * IPv4 / IPv6 proposals are source-grounded when `opts.sourceText` or
- * `opts.document` is provided: a value that occurs only as a prefix/subspan
- * of a larger DNS hostname is dropped, whether it came from a stale
- * deterministic set or from the model. The model is not authoritative about
- * token boundaries. New AI identities are never inserted.
- * @param {object[]} candidates
- * @param {{ candidate_updates?: object[] }|null} aiValue
- * @param {{ sourceText?: string, document?: object }} [opts]
- */
-/**
  * Serializes AI progress writes and closes them once analysis settles. The
  * stream client fires activity callbacks without awaiting them, so without
  * this an in-flight "analyzing" progress write could land after the terminal
@@ -875,121 +731,6 @@ export function createProgressGate(write) {
     async close() {
       closed = true;
       await tail;
-    }
-  };
-}
-
-export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
-  const sourceText = opts.sourceText || (opts.document ? sourceTextFromDocument(opts.document) : '');
-  const keep = (c) => {
-    if (!sourceText) return true;
-    if (c.candidate_type !== 'ip' && c.candidate_type !== 'ipv6') return true;
-    return !isOnlyEmbeddedInDnsHostname(sourceText, c.candidate_type, c.normalized_value);
-  };
-  const byKey = new Map(
-    (candidates || []).filter(keep).map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c])
-  );
-  for (const u of aiValue?.candidate_updates || []) {
-    const key = `${u.candidate_type}\0${u.normalized_value}`;
-    const existing = byKey.get(key);
-    if (!existing) continue;
-    if (sourceText && (u.candidate_type === 'ip' || u.candidate_type === 'ipv6')) {
-      if (isOnlyEmbeddedInDnsHostname(sourceText, u.candidate_type, u.normalized_value)) continue;
-    }
-    applyEvidencePolicy(existing, {
-      assessment: u.assessment,
-      role: u.role || existing.role,
-      confidence: u.confidence ?? existing.confidence
-    });
-    if (u.evidence_text) existing.evidence_text = u.evidence_text;
-    if (u.section) existing.section = u.section;
-    if (u.evidence_block_ids?.[0]) existing.block_id = u.evidence_block_ids[0];
-  }
-  return [...byKey.values()].map((c) => applyEvidencePolicy(c));
-}
-
-/**
- * Admin-facing extraction diagnostics persisted with the report (bounded).
- * @param {object|null} diagnostics
- */
-export function compactExtractionDiagnostics(diagnostics) {
-  const t = diagnostics?.explicit_tables;
-  if (!t) return diagnostics && typeof diagnostics === 'object' && diagnostics.explicit_tables === undefined ? diagnostics : null;
-  const tr = diagnostics.type_resolution;
-  return {
-    extraction_version: diagnostics.extraction_version || null,
-    type_resolution: tr
-      ? {
-          syntactic_occurrences: tr.syntactic_occurrences ?? 0,
-          network_ioc_candidates: tr.network_ioc_candidates ?? 0,
-          artifact_candidates: tr.artifact_candidates ?? 0,
-          artifact_occurrences_dropped: tr.artifact_occurrences_dropped ?? 0,
-          relative_paths: tr.relative_paths ?? 0,
-          canonical_rejections: tr.canonical_rejections ?? 0,
-          rejected_values: tr.rejected_values || {},
-          excluded_reasons: tr.excluded_reasons || {},
-          examples: (tr.examples || []).slice(0, 24),
-          scheme_less_resources: tr.scheme_less_resources
-            ? {
-                count: tr.scheme_less_resources.count ?? 0,
-                rejected: tr.scheme_less_resources.rejected || {},
-                examples: (tr.scheme_less_resources.examples || []).slice(0, 12)
-              }
-            : undefined
-        }
-      : null,
-    // Scope decisions (which headings opened / continued / closed authoritative
-    // sections, how occurrences were read) — developer diagnostics, bounded.
-    scope: diagnostics.scope
-      ? {
-          zones_version: diagnostics.scope.zones_version || null,
-          trace: (diagnostics.scope.trace || []).slice(0, 60),
-          occurrence_kinds: diagnostics.scope.occurrence_kinds || {},
-          relation_markers: diagnostics.scope.relation_markers || {},
-          policy_decisions: diagnostics.scope.policy_decisions || {},
-          candidates: (diagnostics.scope.candidates || []).slice(0, 80)
-        }
-      : undefined,
-    structural_completeness: diagnostics.structural_completeness
-      ? {
-          warning: diagnostics.structural_completeness.warning === true,
-          degraded_candidates: diagnostics.structural_completeness.degraded_candidates ?? 0,
-          tables_not_interpreted: (diagnostics.structural_completeness.tables_not_interpreted || []).slice(0, 20),
-          degraded_blocks: (diagnostics.structural_completeness.degraded_blocks || []).slice(0, 20)
-        }
-      : undefined,
-    explicit_tables: {
-      tables_seen: t.tables_seen ?? 0,
-      ioc_tables: t.ioc_tables ?? 0,
-      explicit_tables: t.explicit_tables ?? 0,
-      rows_seen: t.rows_seen ?? 0,
-      rows_valid: t.rows_valid ?? 0,
-      rows_rejected: t.rows_rejected ?? 0,
-      values_asserted: t.values_asserted ?? 0,
-      candidates_created: t.candidates_created ?? 0,
-      explicit_identities: t.explicit_identities ?? 0,
-      rejection_reasons: t.rejection_reasons || {},
-      inconsistent: t.inconsistent === true,
-      missing_identities: (t.missing_identities || []).slice(0, 40),
-      dropped_asserted_identities: (t.dropped_asserted_identities || []).slice(0, 40),
-      tables: (t.tables || [])
-        .filter((x) => x.kind === 'ioc_table' || x.kind === 'identifier_table')
-        .slice(0, 60)
-        .map((x) => ({
-          table_id: x.table_id,
-          page: x.page ?? null,
-          zone: x.zone || null,
-          section_heading: x.section_heading || null,
-          kind: x.kind,
-          explicit: x.explicit === true,
-          reason: x.reason || null,
-          columns: x.columns || [],
-          rows_seen: x.rows_seen ?? 0,
-          rows_valid: x.rows_valid ?? 0,
-          rows_rejected: x.rows_rejected ?? 0,
-          rejection_reasons: x.rejection_reasons || {},
-          rejected_rows: (x.rejected_rows || []).slice(0, 12)
-        }))
     }
   };
 }

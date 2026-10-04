@@ -11,7 +11,15 @@ import {
 import {
   applyRetryAcceptedState,
   canShowRetryButton,
+  canShowRefreshExtraction,
+  canShowRerunAi,
+  describeMaintenanceAccepted,
+  describeMaintenanceOutcome,
+  isRefreshExtractionInProgress,
+  MAINTENANCE_MODES,
   processingSectionTitle,
+  REFRESH_EXTRACTION_CONFIRM,
+  RERUN_AI_CONFIRM,
   shouldIgnoreStaleFailedPoll,
   shouldShowFailedPanel,
   shouldShowProcessingPanel
@@ -460,6 +468,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [busy, setBusy] = useState('');
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
   const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
+  // Maintenance job (refresh_extraction / rerun_ai) whose outcome is still to be reported.
+  const [pendingMaintenance, setPendingMaintenance] = useState('');
   const [stickyOffset, setStickyOffset] = useState(0);
   const bulkBarRef = useRef(null);
   // Overlapping detail fetches: only the most recently issued response may land.
@@ -534,6 +544,15 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }, 2000);
     return () => window.clearInterval(timer);
   }, [processing, reportId, loadStatus, loadDetail]);
+
+  useEffect(() => {
+    if (!pendingMaintenance || processing || !job) return;
+    if (job.job_type && job.job_type !== pendingMaintenance) return;
+    const outcome = describeMaintenanceOutcome(job);
+    if (outcome?.error) setError(outcome.error);
+    else if (outcome?.message) setFeedback(outcome.message);
+    if (['completed', 'failed', 'cancelled'].includes(String(job.status || ''))) setPendingMaintenance('');
+  }, [pendingMaintenance, processing, job]);
 
   const filtered = useMemo(
     () => filterReviewCandidates(candidates, { tab: filter, q: search, type: typeFilter, result: resultFilter }),
@@ -916,6 +935,42 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }
   }
 
+  /**
+   * Refresh extraction (deterministic, no AI) / Re-run AI analysis. Each asks
+   * for confirmation with text that states whether AI runs.
+   */
+  async function runMaintenance(mode) {
+    if (!canWrite || busy || isProcessingStatus(report)) return;
+    const refresh = mode === MAINTENANCE_MODES.REFRESH_EXTRACTION;
+    const ok = await requestConfirm(refresh ? REFRESH_EXTRACTION_CONFIRM : RERUN_AI_CONFIRM);
+    if (!ok) return;
+    setBusy(mode);
+    setError('');
+    try {
+      const path = refresh ? 'refresh-extraction' : 'rerun-ai';
+      const { data } = await api.post(`/threat-library/reports/${reportId}/${path}`);
+      if (data?.report) setReport((prev) => mergeReportPayload(prev, data.report));
+      if (data?.job) setJob(data.job);
+      // The candidate set is being rebuilt: previous rows are no longer current.
+      setCandidates([]);
+      setSelected(new Set());
+      setOpenCandidateId(null);
+      setPendingMaintenance(mode);
+      setFeedback(describeMaintenanceAccepted(mode));
+      await loadStatus().catch(() => {});
+    } catch (err) {
+      const data = err?.response?.data;
+      if (data?.code === 'analysis_already_running' && data?.report) {
+        setReport((prev) => mergeReportPayload(prev, data.report));
+        setFeedback('Analysis is already running. Showing live progress.');
+      } else {
+        setError(data?.message || (refresh ? 'Refresh extraction failed' : 'Re-run AI analysis failed'));
+      }
+    } finally {
+      setBusy('');
+    }
+  }
+
   async function cancelAnalysis() {
     if (!canWrite) return;
     setBusy('cancel');
@@ -1037,6 +1092,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     [filter, selectedRows, busy]
   );
   const overflowItems = [
+    canShowRefreshExtraction(report, { busy: Boolean(busy), canWrite })
+      ? { id: 'refresh-extraction', label: 'Refresh extraction', disabled: Boolean(busy), onSelect: () => runMaintenance(MAINTENANCE_MODES.REFRESH_EXTRACTION).catch(() => {}) }
+      : null,
+    canShowRerunAi(report, { busy: Boolean(busy), canWrite })
+      ? { id: 'rerun-ai', label: 'Re-run AI analysis', disabled: Boolean(busy), onSelect: () => runMaintenance(MAINTENANCE_MODES.RERUN_AI).catch(() => {}) }
+      : null,
     isAdmin ? { id: 'delete', label: 'Delete report', danger: true, disabled: Boolean(busy), onSelect: () => removeReport().catch(() => {}) } : null
   ];
   const canCancel = canWrite && processing && ['analyzing', 'matching', 'fetching', 'extracting', 'candidates', 'pending'].includes(String(report?.analysis_status || ''));
@@ -1153,7 +1214,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         {report && shouldShowProcessingPanel(report) ? (
           <SectionCard title={processingSectionTitle(report)}>
             <p style={{ margin: '0 0 12px', fontSize: 13, color: '#94a3b8' }}>
-              Analysis is running. Progress updates every few seconds from the worker — not a fake timer.
+              {isRefreshExtractionInProgress(report, job)
+                ? 'Re-running deterministic extraction and IOC matching. AI analysis does not run.'
+                : 'Analysis is running. Progress updates every few seconds from the worker — not a fake timer.'}
             </p>
             <ProgressChecklist report={report} job={job} />
           </SectionCard>

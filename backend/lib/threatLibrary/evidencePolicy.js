@@ -638,6 +638,9 @@ export function buildCandidateEvidenceRecord(c) {
     document_has_authoritative_scope: c.document_has_authoritative_scope === true,
     parsed: c.parsed && typeof c.parsed === 'object' ? c.parsed : {},
     ai_role_suggestion: c.ai_role_suggestion || null,
+    // Analyst Context Only → IOC override (reviewService.promoteContextOnlyCandidate);
+    // only present on promoted rows, carried by the extraction refresh.
+    ...(c.promoted_from && typeof c.promoted_from === 'object' ? { promoted_from: c.promoted_from } : {}),
     table_rows: tableRows,
     occurrences
   };

@@ -147,6 +147,24 @@ test('analysis event: initiating user is the actor, worker is executor, source=w
   assert.equal(failed.status, 'failed');
   assert.equal(failed.metadata.result, 'cancelled');
   assert.equal(failed.actor, null);
+  assert.equal('ai_invoked' in ev.metadata, false, 'analyze events carry no refresh fields');
+});
+
+test('analysis event: a refresh_extraction job records the mode, the contract and that no model was called', () => {
+  const ev = buildAnalysisAuditEvent({
+    report: REPORT,
+    job: { public_id: 'job-2', job_type: 'refresh_extraction' },
+    ok: true,
+    summary: { total: 144, new: 5, existing: 120, context_only: 18, extraction_contract: 'tl-candidates-v14', added: 1, updated: 2, removed: 0, ai_invoked: false },
+    initiator: USER
+  });
+  assert.equal(ev.metadata.job_type, 'refresh_extraction');
+  assert.equal(ev.metadata.ai_invoked, false);
+  assert.equal(ev.metadata.extraction_contract, 'tl-candidates-v14');
+  assert.equal(ev.metadata.candidates_added, 1);
+  assert.equal(ev.metadata.candidates_updated, 2);
+  assert.equal(ev.metadata.candidates_removed, 0);
+  assert.equal(ev.metadata.candidates_total, 144);
 });
 
 test('worker boundary: initiating actor is resolved from threat_library_jobs.requested_by', async () => {

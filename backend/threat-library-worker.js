@@ -9,7 +9,8 @@ import { Queue, Worker } from 'bullmq';
 import { getRedisUrl } from './lib/redis-url.js';
 import { createServiceLogger } from './lib/appLogger.js';
 import { getThreatLibraryQueueName, getThreatLibraryWorkerOptions } from './lib/threatLibrary/queueConfig.js';
-import { runAnalysisPipeline } from './lib/threatLibrary/pipeline.js';
+import { runThreatLibraryJob } from './lib/threatLibrary/jobRunner.js';
+import { parseJobMode, jobModeInvokesAi, UnknownJobModeError } from './lib/threatLibrary/jobModes.js';
 import { updateJob, getReportById, updateReportStatus } from './lib/threatLibrary/store.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { auditAnalysisOutcome } from './lib/threatLibrary/audit.js';
@@ -83,24 +84,45 @@ const worker = new Worker(
     if (!reportId || !jobId) {
       throw new Error('Invalid threat library job payload');
     }
+    // Explicit mode contract: an unknown mode never reaches a pipeline stage.
+    let mode;
+    try {
+      mode = parseJobMode(job.data?.jobType || job.name);
+    } catch (err) {
+      if (!(err instanceof UnknownJobModeError)) throw err;
+      log.warn('job rejected', { bullmqJobId: job.id, reportId, jobId, code: err.code });
+      await updateJob(pool, jobId, { status: 'failed', stage: 'starting', error_message: err.code, bullmq_job_id: String(job.id) });
+      await updateReportStatus(pool, reportId, {
+        analysis_status: 'failed',
+        import_status: 'failed',
+        failure_stage: 'starting',
+        failure_code: err.code,
+        failure_reason: err.message
+      });
+      await releaseSlotAndDispatch('unknown_job_mode', { bullmqJobId: job.id, reportId, jobId });
+      return { ok: false, code: err.code };
+    }
     log.info('job started', {
       bullmqJobId: job.id,
       reportId,
       jobId,
+      mode,
+      aiInvocationAllowed: jobModeInvokesAi(mode),
       resumeAnalysis: job.data?.resumeAnalysis === true,
       aiClient: 'streaming-v3'
     });
     await updateJob(pool, jobId, { status: 'running', stage: 'starting', bullmq_job_id: String(job.id) });
     try {
-      const result = await runAnalysisPipeline(pool, {
+      const result = await runThreatLibraryJob(pool, {
         reportId,
         jobId,
         sourceUrl: job.data?.sourceUrl,
         resumeAnalysis: job.data?.resumeAnalysis === true,
-        jobType: job.data?.jobType || job.name,
-        newAnalysisRun: job.data?.newAnalysisRun === true
+        jobType: mode,
+        newAnalysisRun: job.data?.newAnalysisRun === true,
+        restoreStatus: job.data?.restoreStatus
       });
-      log.info('job finished', { bullmqJobId: job.id, reportId, ok: result?.ok === true, code: result?.code });
+      log.info('job finished', { bullmqJobId: job.id, reportId, mode, ok: result?.ok === true, code: result?.code });
       await auditAnalysisOutcome(pool, auditService, {
         reportId,
         jobId,
@@ -110,7 +132,7 @@ const worker = new Worker(
       });
       return result;
     } finally {
-      await releaseSlotAndDispatch(job.data?.jobType || job.name, { bullmqJobId: job.id, reportId, jobId });
+      await releaseSlotAndDispatch(mode, { bullmqJobId: job.id, reportId, jobId });
     }
   },
   {

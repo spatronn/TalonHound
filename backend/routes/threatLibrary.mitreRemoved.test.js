@@ -10,7 +10,7 @@ import { registerThreatLibraryRoutes } from './threatLibrary.js';
 
 const PUBLIC_ID = '11111111-2222-4333-8444-555555555555';
 
-function harness() {
+function harness({ analysisStatus = 'review_required' } = {}) {
   const sql = [];
   const report = {
     id: 18631,
@@ -18,7 +18,7 @@ function harness() {
     title: 'Talos report',
     source_type: 'url',
     import_status: 'completed',
-    analysis_status: 'review_required',
+    analysis_status: analysisStatus,
     canonical_document: { blocks: [{ id: 'b0' }] }
   };
   // Dormant historical data: present in the table, must stay invisible.
@@ -40,6 +40,7 @@ function harness() {
         return { rows: [{ report_id: 18631, id: 1, name: 'backdoor', type: null }, { report_id: 18631, id: 2, name: 'cloud', type: null }] };
       }
       if (/^\s*UPDATE threat_reports SET/.test(s)) return { rows: [report] };
+      if (/UPDATE threat_reports\s+SET analysis_status = 'pending'/.test(s)) return { rows: [report] };
       if (/INSERT INTO threat_library_jobs/.test(s)) {
         const job = { id: 100 + jobs.length, public_id: `job-${jobs.length}`, report_id: report.id, job_type: 'retry', status: 'queued', progress: {}, created_at: new Date() };
         jobs.push(job);
@@ -89,10 +90,20 @@ test('report detail with historical MITRE rows in the DB exposes no MITRE and ne
 });
 
 test('Retry performs no MITRE read or write', async () => {
-  const h = harness();
+  // Retry is failure recovery (a review_required report answers 409).
+  const h = harness({ analysisStatus: 'failed' });
   const res = await h.call('POST /api/threat-library/reports/:publicId/retry');
   assert.ok([200, 202].includes(res.statusCode), `status ${res.statusCode}`);
   assert.equal(h.sql.some((q) => /mitre/i.test(q)), false);
+});
+
+test('Refresh extraction and Re-run AI requests perform no MITRE read or write', async () => {
+  for (const route of ['refresh-extraction', 'rerun-ai']) {
+    const h = harness();
+    const res = await h.call(`POST /api/threat-library/reports/:publicId/${route}`);
+    assert.equal(res.statusCode, 202, `${route} status ${res.statusCode}`);
+    assert.equal(h.sql.some((q) => /mitre/i.test(q)), false);
+  }
 });
 
 test('manual ATT&CK technique endpoints are not registered', () => {

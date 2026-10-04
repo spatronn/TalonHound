@@ -502,25 +502,7 @@ export async function insertArtifact(pool, reportId, artifact) {
   return rows[0];
 }
 
-/**
- * Replace candidates for a report (idempotent retry).
- * Runs as one transaction so a failed rebuild never leaves the report with a
- * half-swapped (or empty) pending review set.
- */
-export async function replaceCandidates(pool, reportId, candidates) {
-  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
-  const owned = client !== pool;
-  try {
-    if (owned) await client.query('BEGIN');
-    await client.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
-    const inserted = [];
-    for (const input of candidates) {
-      // Last gate before persistence: every path (pipeline, THIB import) gets
-      // the same IOC type ↔ role invariant.
-      const c = enforceRoleTypeCompatibility({ ...input });
-      const evidence = buildCandidateEvidenceRecord(c);
-      const { rows } = await client.query(
-        `INSERT INTO threat_report_candidates (
+const INSERT_CANDIDATE_SQL = `INSERT INTO threat_report_candidates (
            report_id, portable_id, candidate_type, original_value, normalized_value,
            assessment, role, confidence, evidence_text, section, block_id, page_number,
            review_status, match_state, matched_ioc_id, matched_ioc_observable_type,
@@ -540,29 +522,76 @@ export async function replaceCandidates(pool, reportId, candidates) {
            source_assertion = EXCLUDED.source_assertion,
            evidence = EXCLUDED.evidence,
            updated_at = NOW()
-         RETURNING *`,
-        [
-          reportId,
-          c.portable_id || `indicator--${crypto.randomUUID()}`,
-          c.candidate_type,
-          c.original_value,
-          c.normalized_value,
-          c.assessment || 'unknown',
-          c.role || 'unknown',
-          c.confidence ?? null,
-          c.evidence_text || null,
-          c.section || null,
-          c.block_id || null,
-          c.page_number ?? null,
-          c.review_status || 'pending',
-          c.match_state || 'new',
-          c.matched_ioc_id ?? null,
-          c.matched_ioc_observable_type || null,
-          c.is_ioc !== false,
-          c.source_assertion || null,
-          JSON.stringify(evidence)
-        ]
-      );
+         RETURNING *`;
+
+/**
+ * Persistable column values of one candidate. Last gate before persistence:
+ * every path (pipeline, refresh, THIB import) gets the same IOC type ↔ role
+ * invariant and the same compact evidence record.
+ * @param {object} input
+ */
+export function candidateColumns(input) {
+  const c = enforceRoleTypeCompatibility({ ...input });
+  return {
+    portable_id: c.portable_id || null,
+    candidate_type: c.candidate_type,
+    original_value: c.original_value,
+    normalized_value: c.normalized_value,
+    assessment: c.assessment || 'unknown',
+    role: c.role || 'unknown',
+    confidence: c.confidence ?? null,
+    evidence_text: c.evidence_text || null,
+    section: c.section || null,
+    block_id: c.block_id || null,
+    page_number: c.page_number ?? null,
+    review_status: c.review_status || 'pending',
+    match_state: c.match_state || 'new',
+    matched_ioc_id: c.matched_ioc_id ?? null,
+    matched_ioc_observable_type: c.matched_ioc_observable_type || null,
+    is_ioc: c.is_ioc !== false,
+    source_assertion: c.source_assertion || null,
+    evidence: buildCandidateEvidenceRecord(c)
+  };
+}
+
+function insertCandidateParams(reportId, col) {
+  return [
+    reportId,
+    col.portable_id || `indicator--${crypto.randomUUID()}`,
+    col.candidate_type,
+    col.original_value,
+    col.normalized_value,
+    col.assessment,
+    col.role,
+    col.confidence,
+    col.evidence_text,
+    col.section,
+    col.block_id,
+    col.page_number,
+    col.review_status,
+    col.match_state,
+    col.matched_ioc_id,
+    col.matched_ioc_observable_type,
+    col.is_ioc,
+    col.source_assertion,
+    JSON.stringify(col.evidence)
+  ];
+}
+
+/**
+ * Replace candidates for a report (idempotent retry).
+ * Runs as one transaction so a failed rebuild never leaves the report with a
+ * half-swapped (or empty) pending review set.
+ */
+export async function replaceCandidates(pool, reportId, candidates) {
+  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
+  const owned = client !== pool;
+  try {
+    if (owned) await client.query('BEGIN');
+    await client.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
+    const inserted = [];
+    for (const input of candidates) {
+      const { rows } = await client.query(INSERT_CANDIDATE_SQL, insertCandidateParams(reportId, candidateColumns(input)));
       inserted.push(rows[0]);
     }
     if (owned) await client.query('COMMIT');
@@ -579,6 +608,249 @@ export async function replaceCandidates(pool, reportId, candidates) {
   } finally {
     if (owned) client.release();
   }
+}
+
+/** Key order-independent JSON (jsonb does not preserve key order). */
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .filter((k) => value[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(value[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value ?? null);
+}
+
+const RECONCILED_COLUMNS = Object.freeze([
+  'original_value', 'assessment', 'role', 'confidence', 'evidence_text', 'section', 'block_id', 'page_number',
+  'review_status', 'match_state', 'matched_ioc_id', 'matched_ioc_observable_type', 'is_ioc', 'source_assertion',
+  'evidence'
+]);
+
+function comparableColumn(name, value) {
+  if (name === 'evidence') return stableJson(value && typeof value === 'object' ? value : {});
+  if (name === 'confidence') {
+    // numeric(4,3): compare at the stored precision.
+    return value == null || value === '' ? null : Math.round(Number(value) * 1000) / 1000;
+  }
+  if (name === 'matched_ioc_id' || name === 'page_number') {
+    return value == null || value === '' ? null : Number(value);
+  }
+  if (name === 'is_ioc') return value !== false;
+  return value == null ? null : String(value);
+}
+
+/**
+ * Columns of a persisted row the recomputed values would change.
+ * @param {object} row persisted threat_report_candidates row
+ * @param {object} next candidateColumns() output
+ */
+export function changedCandidateColumns(row, next) {
+  return RECONCILED_COLUMNS.filter(
+    (name) => comparableColumn(name, row[name]) !== comparableColumn(name, JSON.parse(JSON.stringify(next[name] ?? null)))
+  );
+}
+
+/**
+ * Deterministic refresh persistence: reconcile a report's candidate rows with
+ * a recomputed set by canonical identity (candidate_type, normalized_value) in
+ * ONE transaction.
+ *
+ *  - surviving identity → updated IN PLACE: id, public_id, portable_id,
+ *    promotion_outcome / promotion_detail / promoted_at and created_at are
+ *    kept, so relationships, IOC links and analyst history stay attached;
+ *    rows whose values do not change are not written at all
+ *  - new identity → inserted
+ *  - identity the current contract no longer produces → deleted (relationship
+ *    rows that point at it cascade, exactly as on every candidate rebuild)
+ *
+ * Unlike replaceCandidates there is no delete-all: an unchanged report keeps
+ * every row byte-identical.
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ * @param {object[]} candidates resolved (matched) candidates carrying review_status
+ * @returns {Promise<{ rows: object[], added: object[], updated: object[], unchanged: number, removed: object[] }>}
+ */
+export async function reconcileReportCandidates(pool, reportId, candidates) {
+  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
+  const owned = client !== pool;
+  try {
+    if (owned) await client.query('BEGIN');
+    const { rows: existing } = await client.query(
+      `SELECT * FROM threat_report_candidates WHERE report_id = $1 ORDER BY id FOR UPDATE`,
+      [reportId]
+    );
+    const byKey = new Map(existing.map((r) => [`${r.candidate_type}\0${r.normalized_value}`, r]));
+    const nextByKey = new Map();
+    for (const input of candidates || []) {
+      const col = candidateColumns(input);
+      nextByKey.set(`${col.candidate_type}\0${col.normalized_value}`, col);
+    }
+
+    const rows = [];
+    const added = [];
+    const updated = [];
+    let unchanged = 0;
+    for (const [key, col] of nextByKey) {
+      const prior = byKey.get(key);
+      if (!prior) {
+        const { rows: ins } = await client.query(INSERT_CANDIDATE_SQL, insertCandidateParams(reportId, col));
+        rows.push(ins[0]);
+        added.push({ candidate_type: col.candidate_type, normalized_value: col.normalized_value });
+        continue;
+      }
+      const changed = changedCandidateColumns(prior, col);
+      if (!changed.length) {
+        rows.push(prior);
+        unchanged += 1;
+        continue;
+      }
+      const { rows: upd } = await client.query(
+        `UPDATE threat_report_candidates SET
+           original_value = $2,
+           assessment = $3,
+           role = $4,
+           confidence = $5,
+           evidence_text = $6,
+           section = $7,
+           block_id = $8,
+           page_number = $9,
+           review_status = $10,
+           match_state = $11,
+           matched_ioc_id = $12,
+           matched_ioc_observable_type = $13,
+           is_ioc = $14,
+           source_assertion = $15,
+           evidence = $16::jsonb,
+           updated_at = NOW()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          prior.id,
+          col.original_value,
+          col.assessment,
+          col.role,
+          col.confidence,
+          col.evidence_text,
+          col.section,
+          col.block_id,
+          col.page_number,
+          col.review_status,
+          col.match_state,
+          col.matched_ioc_id,
+          col.matched_ioc_observable_type,
+          col.is_ioc,
+          col.source_assertion,
+          JSON.stringify(col.evidence)
+        ]
+      );
+      rows.push(upd[0]);
+      updated.push({ candidate_type: col.candidate_type, normalized_value: col.normalized_value, columns: changed });
+    }
+
+    const removedRows = existing.filter((r) => !nextByKey.has(`${r.candidate_type}\0${r.normalized_value}`));
+    if (removedRows.length) {
+      await client.query(
+        `DELETE FROM threat_report_candidates WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+        [reportId, removedRows.map((r) => r.id)]
+      );
+    }
+    if (owned) await client.query('COMMIT');
+    return {
+      rows,
+      added,
+      updated,
+      unchanged,
+      removed: removedRows.map((r) => ({
+        candidate_type: r.candidate_type,
+        normalized_value: r.normalized_value,
+        review_status: r.review_status,
+        promotion_outcome: r.promotion_outcome || null
+      }))
+    };
+  } catch (err) {
+    if (owned) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore */
+      }
+    }
+    throw err;
+  } finally {
+    if (owned) client.release();
+  }
+}
+
+/**
+ * Persisted candidate rows of a report (refresh baseline: analyst + AI state).
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ */
+export async function loadReportCandidateRows(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM threat_report_candidates WHERE report_id = $1 ORDER BY id`,
+    [reportId]
+  );
+  return rows;
+}
+
+/**
+ * Atomically move a report from an allowed terminal status into the queued
+ * state for a maintenance job. The status predicate and the "no queued /
+ * running job" predicate are evaluated in the same UPDATE, so two concurrent
+ * requests cannot both claim the report — the loser gets null.
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ * @param {{ allowedStatuses: string[], analysisProgress: object }} opts
+ * @returns {Promise<object|null>} the claimed report row, or null when not claimable
+ */
+export async function claimReportForMaintenance(pool, reportId, { allowedStatuses, analysisProgress }) {
+  const { rows } = await pool.query(
+    `UPDATE threat_reports
+     SET analysis_status = 'pending',
+         import_status = 'processing',
+         -- merge: completed-analysis provenance (contract, AI call stats) is kept
+         analysis_progress = COALESCE(analysis_progress, '{}'::jsonb) || $3::jsonb,
+         cancel_requested_at = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+       AND deleted_at IS NULL
+       AND analysis_status = ANY($2::text[])
+       AND NOT EXISTS (
+         SELECT 1 FROM threat_library_jobs j
+         WHERE j.report_id = $1 AND j.status = ANY(ARRAY['queued','running'])
+       )
+     RETURNING *`,
+    [reportId, allowedStatuses, JSON.stringify(analysisProgress || {})]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Put a report back into the terminal status it had before a maintenance job
+ * (deterministic refresh completion / failure, or a job that could not be
+ * queued). Never touches AI-derived columns.
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ * @param {{ analysis_status: string, import_status: string }} restore
+ * @param {object} analysisProgress
+ */
+export async function restoreReportStatus(pool, reportId, restore, analysisProgress) {
+  const { rows } = await pool.query(
+    `UPDATE threat_reports
+     SET analysis_status = $2,
+         import_status = $3,
+         analysis_progress = $4::jsonb,
+         cancel_requested_at = NULL,
+         updated_at = NOW()
+     WHERE id = $1
+     RETURNING *`,
+    [reportId, restore.analysis_status, restore.import_status, JSON.stringify(analysisProgress || {})]
+  );
+  return rows[0] || null;
 }
 
 /**

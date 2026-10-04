@@ -133,6 +133,26 @@ Deterministic candidates are persisted before the AI stage and rewritten by the 
 
 Review actions (`POST …/review`) and `POST …/finalize` are refused server-side with `409 { code: "report_not_ready_for_review", phase, report }` while the phase is `preparing` or `failed`; the page adopts the returned report state and keeps polling. Polling ignores responses older than the report on screen (`updated_at`), overlapping detail fetches apply latest-only, and Retry clears the previous rows immediately.
 
+### Retry, Refresh extraction, Re-run AI analysis
+
+Three separate operations, one explicit job mode each (`backend/lib/threatLibrary/jobModes.js`, persisted as `threat_library_jobs.job_type`, migration 036). The worker validates the mode and rejects unknown values.
+
+| Action | Endpoint | Allowed `analysis_status` | Job type | Runs AI |
+|---|---|---|---|---|
+| **Retry analysis** (failed-state button) | `POST …/reports/:id/retry` | `failed` (plus orphaned active-status recovery; an active job answers `already_running`) | `retry` | yes — resumes the failed pipeline, reusing document, candidates and completed chunks |
+| **Refresh extraction** (overflow menu) | `POST …/reports/:id/refresh-extraction` | `review_required`, `ready` (finalized stays finalized) | `refresh_extraction` | **never** |
+| **Re-run AI analysis** (overflow menu) | `POST …/reports/:id/rerun-ai` | `review_required` | `rerun_ai` | yes — new analysis run, cached model output is not replayed |
+
+Retry on a `review_required` / finalized report is refused with `409 retry_not_applicable`; a refresh / AI re-run on a failed report is refused (`409`, use Retry); a finalized report is never reopened implicitly by an AI re-run. All three are analyst/admin only, CSRF-protected, return `202` for accepted work, and share the analysis slot budget. Refresh and AI re-run claim the report atomically (`UPDATE … WHERE analysis_status = ANY(allowed) AND NOT EXISTS (queued/running job)`), so concurrent requests produce exactly one job; the loser gets `409 analysis_already_running`. Cancelling a maintenance job before a worker claims it returns the report to the status it was requested from.
+
+**Refresh extraction** (`extractionRefresh.js`) is what to run after a deterministic extractor contract change (`tl-candidates-vN → vN+1`). It reuses the stored canonical document (re-extracted from the retained HTML / stored PDF when the document contract is outdated — it never re-fetches; without a retained source it fails with `refresh_source_unavailable`), then reruns candidate extraction, canonicalization, occurrence / assertion construction, publisher IOC membership, IOC matching and the candidate counts. Its static import graph contains no `./ai/*` module (enforced by `extractionRefresh.test.js`); it writes no entities, relationships, report tags, summary, confidence, report type, TLP, `ai_result`, analysis chunks or run id. Per canonical identity `(candidate_type, normalized_value)`:
+
+- **surviving identity** — extraction-owned fields (occurrences, assertion, evidence, typing, policy) are recomputed; a stored model decision (`evidence.decision_source = 'ai'` / `ai_role_suggestion`) is replayed through the same `mergeAiCandidateUpdates` step the pipeline uses, so the current evidence policy still gates it; matching is recomputed; analyst state is kept (`review_status`, the Context only decision, the Context Only → IOC promotion override and `promoted_from`, `promotion_outcome`, row id / public id). Unchanged rows are not written.
+- **new identity** — inserted as extraction produces it; an `ai_needed` candidate stays `ai_needed` (no classification is fabricated; use Re-run AI analysis to classify it).
+- **removed identity** — deleted (relationship rows pointing at it cascade, as on every candidate rebuild). State never moves to a different identity (e.g. `technical_artifact|X` → `domain|x`).
+
+On completion the report returns to its prior status (`review_required` or `ready`); a failed refresh also returns it to that status (it never strands a report in `failed`) and records the error on the job and in `analysis_progress.last_refresh`. The worker log and the `threat_library.report.analysis.completed` audit event carry `job_type`, the extraction contract, added / updated / removed counts and `ai_invoked: false`.
+
 ### Chunking / limits
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
@@ -323,7 +343,7 @@ AI Settings field: `max_concurrent_report_analyses` (UI: **Concurrent report ana
 |---|---|
 | Default | **2** — matches the historical `THREAT_LIBRARY_WORKER_CONCURRENCY` default so existing installations keep the same throughput until an administrator changes the setting |
 | Range | integer **1–4** (backend + frontend validated; DB CHECK) |
-| Applies to | the common URL/PDF AI-analysis job (`analyze` / `retry`), not a batch size |
+| Applies to | the common URL/PDF pipeline jobs (`analyze` / `retry` / `refresh_extraction` / `rerun_ai`), not a batch size |
 | Persistence | `threat_library_ai_settings` (same singleton row as provider settings). Takes effect without restart |
 
 **Queue.** Import HTTP creates the report + a `threat_library_jobs` row (`status=queued`, `bullmq_job_id` null) and returns 202. A job occupies a slot only after it is claimed (`bullmq_job_id` set) and while `status` is `queued` or `running`. Unclaimed jobs stay **Queued** (`analysis_status=pending`) — they do not look like Analyzing.

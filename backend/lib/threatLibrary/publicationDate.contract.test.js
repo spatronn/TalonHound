@@ -18,8 +18,12 @@ const src = (rel) => readFileSync(path.join(here, rel), 'utf8').replace(/\/\*[\s
 
 test('pipeline: detection runs after the document is final and before candidates, under the write policy, non-fatally', () => {
   const pipeline = src('pipeline.js');
-  assert.match(pipeline, /import \{ detectReportPublicationDate, resolvePublicationDateUpdate \} from '\.\/publicationDate\.js'/);
-  const helper = pipeline.slice(pipeline.indexOf('async function applyPublicationDate('), pipeline.indexOf('export async function runAnalysisPipeline('));
+  // The helper is a shared deterministic stage (also used by Refresh extraction).
+  const stages = src('extractionStages.js');
+  assert.match(stages, /import \{ detectReportPublicationDate, resolvePublicationDateUpdate \} from '\.\/publicationDate\.js'/);
+  assert.match(pipeline, /applyPublicationDate,[\s\S]*?\} from '\.\/extractionStages\.js'/);
+  const helper = stages.slice(stages.indexOf('export async function applyPublicationDate('), stages.indexOf('export function extractReportCandidates('));
+  assert.ok(helper.length > 0);
   assert.match(helper, /detectReportPublicationDate\(\{/);
   assert.match(helper, /resolvePublicationDateUpdate\(current, detection\)/);
   assert.match(helper, /if \(decision\.action === 'write'\)\s*\{\s*await updateReportPublicationDate\(pool, report\.id, decision\.fields\);/);
@@ -35,7 +39,8 @@ test('pipeline: detection runs after the document is final and before candidates
   assert.ok(fetchAt < detectAt && detectAt < candidatesAt, 'detection sits between fetch/extract and candidate extraction');
   // Raw HTML from this run (fetched or retained) feeds the extractor; PDFs only pass the document.
   assert.match(run, /sourceHtml = fetched\.bodyText \|\| null;/);
-  assert.match(run, /sourceHtml = html;/);
+  assert.match(run, /sourceHtml = reextracted\.sourceHtml;/);
+  assert.match(stages, /return reextracted\?\.document \? \{ document: reextracted\.document, sourceHtml: html \} : null;/);
   // Pipeline status writes never carry published_at (COALESCE would keep it anyway, but the field must not be in the patch).
   const statusPatches = run.match(/updateReportStatus\(pool, [^;]*?\{[\s\S]*?\}\);/g) || [];
   assert.ok(statusPatches.length >= 5);

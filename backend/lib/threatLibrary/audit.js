@@ -408,7 +408,18 @@ export function buildAnalysisAuditEvent({ report, job, ok, code, summary, initia
       candidates_new: summary?.new ?? null,
       candidates_existing: summary?.existing ?? null,
       candidates_context_only: summary?.context_only ?? null,
-      entities: summary?.entities ?? null
+      entities: summary?.entities ?? null,
+      // Refresh extraction (job_type refresh_extraction) reports what changed
+      // and records that no model was called.
+      ...(job?.job_type === 'refresh_extraction'
+        ? {
+            ai_invoked: false,
+            extraction_contract: summary?.extraction_contract ?? null,
+            candidates_added: summary?.added ?? null,
+            candidates_updated: summary?.updated ?? null,
+            candidates_removed: summary?.removed ?? null
+          }
+        : {})
     }
   };
 }

@@ -26,6 +26,15 @@ const STAGE_RANK = Object.freeze({
   failed: -1
 });
 
+// Refresh extraction re-uses the stored document and never runs AI: the
+// checklist must not show fetch / AI steps as done.
+const REFRESH_SKIPPED_STEPS = new Set(['fetching', 'analyzing']);
+
+function isRefreshMode(report, job) {
+  const mode = report?.analysis_progress?.mode || job?.job_type || job?.progress?.mode || null;
+  return mode === 'refresh_extraction';
+}
+
 export function resolveActiveStage(report, job) {
   const fromJob = String(job?.stage || '').trim().toLowerCase();
   const fromReport = String(report?.analysis_status || '').trim().toLowerCase();
@@ -38,13 +47,16 @@ export function resolveActiveStage(report, job) {
  * @returns {{ key: string, label: string, state: 'done'|'active'|'pending'|'failed' }[]}
  */
 export function buildProgressChecklist(report, job) {
+  const steps = isRefreshMode(report, job)
+    ? PROGRESS_CHECKLIST.filter((item) => !REFRESH_SKIPPED_STEPS.has(item.key))
+    : PROGRESS_CHECKLIST;
   const stage = resolveActiveStage(report, job);
   const failed = stage === 'failed' || report?.analysis_status === 'failed' || job?.status === 'failed';
   const failureStage = String(report?.failure_stage || job?.stage || '').toLowerCase();
   const rank = STAGE_RANK[stage] ?? 0;
   const doneThreshold = stage === 'ready' || stage === 'skipped' ? 99 : rank;
 
-  return PROGRESS_CHECKLIST.map((item, idx) => {
+  return steps.map((item, idx) => {
     const itemRank = STAGE_RANK[item.key] ?? idx + 1;
     if (failed && failureStage === item.key) {
       return { ...item, state: 'failed' };
