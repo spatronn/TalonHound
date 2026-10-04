@@ -9,6 +9,10 @@ import {
   failIntegrationRun
 } from './lib/import-metrics.js';
 import {
+  buildCompactCountPayload,
+  upsertIntegrationSourceState
+} from './lib/integrationSourceState.js';
+import {
   syncMembershipAfterIocImport,
   syncSnapshotFeedFromEntries,
   withImportOptimizationContext
@@ -670,7 +674,7 @@ export async function upsertUrlhausObservable(client, entry, sourceName, suppres
         confidence: null
       });
     }
-    // Existing same-source no-op / observation-only refresh — not a reject.
+    // Existing same-source no-op / observation-only refresh â€” not a reject.
     metrics.noteUnchanged();
     return;
   }
@@ -729,7 +733,7 @@ export async function updateMalwareBazaarObservableBySource(client, entry, sourc
   });
 
   if (existing.status === 'unchanged') {
-    // Active membership: intentional no-op — skip all DB writes.
+    // Active membership: intentional no-op â€” skip all DB writes.
     // Inactive/expired membership: reactivate without updating ioc_items metadata,
     // because feed re-appearance is semantically meaningful regardless of metadata change.
     await importSideEffect('malwarebazaar_membership_reactivate', null, () => syncMembershipAfterIocImport(client, {
@@ -796,7 +800,7 @@ export async function upsertMalwareBazaarObservable(client, entry, sourceName, s
     return;
   }
   if (existing.status === 'unchanged') {
-    // Existing same-source content — not a reject/filter.
+    // Existing same-source content â€” not a reject/filter.
     metrics.noteUnchanged();
     return;
   }
@@ -1059,7 +1063,7 @@ async function upsertThreatFoxObservable(client, entry, sourceName, suppressionS
         confidence: entry.confidence
       });
     }
-    // Existing same-source no-op / observation-only refresh — not a reject.
+    // Existing same-source no-op / observation-only refresh â€” not a reject.
     metrics.noteUnchanged();
     return;
   }
@@ -1123,8 +1127,8 @@ function logImportSuppressionSummary(jobType, runId, suppressionStats, extra = {
 }
 
 /**
- * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satır, WHERE NOT EXISTS ile dedup.
- * idempotent ekleme: aynı feed tekrar çalışırsa INSERT no-op (WHERE NOT EXISTS).
+ * ET feed gibi tek tip (ip) toplu ekleme: tek sorguda chunk kadar satÄ±r, WHERE NOT EXISTS ile dedup.
+ * idempotent ekleme: aynÄ± feed tekrar Ã§alÄ±ÅŸÄ±rsa INSERT no-op (WHERE NOT EXISTS).
  */
 export async function batchInsertIocs(client, entries, observableType = 'ip', suppressionStats = null, signal = null, options = {}) {
   const duplicateHandling = String(options.duplicateHandling || 'full').trim();
@@ -1569,12 +1573,11 @@ export async function runHourlyImport(options = {}) {
           metrics,
           await batchInsertIocs(tx, entries, 'ip', suppressionStats, signal, { duplicateHandling: 'count_only' })
         );
-        await tx.query(
-          `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-           VALUES ($1, $2, $3::jsonb, NOW())
-           ON CONFLICT (source_name)
-           DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-          [sourceName, contentHash, JSON.stringify({ ip_count: ips.length, file })]
+        await upsertIntegrationSourceState(
+          tx,
+          sourceName,
+          contentHash,
+          { ip_count: ips.length, file }
         );
       }, { ...txMeta, file });
     }
@@ -1949,16 +1952,12 @@ export async function runThreatfoxImport(options = {}) {
     }
 
     throwIfAborted(signal);
-    await client.query(
-      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [
-        config.threatfoxSourceName,
-        currentHash,
-        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
-      ]
+    // items_json is not read back for ThreatFox sync; keep a compact count payload.
+    await upsertIntegrationSourceState(
+      client,
+      config.threatfoxSourceName,
+      currentHash,
+      buildCompactCountPayload(entries.length)
     );
 
     await client.query(
@@ -2076,16 +2075,12 @@ export async function runMalwareBazaarImport(options = {}) {
     }
 
     throwIfAborted(signal);
-    await client.query(
-      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [
-        config.malwareBazaarSourceName,
-        currentHash,
-        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
-      ]
+    // items_json is not read back for MalwareBazaar sync; keep a compact count payload.
+    await upsertIntegrationSourceState(
+      client,
+      config.malwareBazaarSourceName,
+      currentHash,
+      buildCompactCountPayload(entries.length)
     );
 
     await client.query(
@@ -2305,12 +2300,11 @@ export async function runPhishtankImport(options = {}) {
         `[integration-import][phishtank] large checkpoint bytes=${checkpointJson.length} count=${checkpoint.count} run_id=${runId || '-'}`
       );
     }
-    await client.query(
-      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-      [config.phishTankSourceName, currentHash, checkpointJson]
+    await upsertIntegrationSourceState(
+      client,
+      config.phishTankSourceName,
+      currentHash,
+      checkpointJson
     );
     await withPgTransaction(client, 'phishtank_import_finalize', async (tx) => {
       await finalizeIntegrationRun(tx, runId, metrics);
@@ -2346,7 +2340,7 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
   const category = 'threat-intel';
   const sourceUrl = entry.referenceUrl || null;
 
-  // Derive classification from pulse tags — take first tag that maps to a known slug.
+  // Derive classification from pulse tags â€” take first tag that maps to a known slug.
   // No blanket default: OTX is heterogeneous; null is correct for unrecognized pulses.
   let threatClassification = null;
   for (const tag of (entry.pulseTags || [])) {
@@ -2364,8 +2358,8 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     category,
     note,
     threatClassification,
-    // Real OTX source date (indicator.created, else pulse.created) → first_seen_in_feed.
-    // Never the platform import time. Null when OTX gives no valid date → membership
+    // Real OTX source date (indicator.created, else pulse.created) â†’ first_seen_in_feed.
+    // Never the platform import time. Null when OTX gives no valid date â†’ membership
     // falls back to import time (existing behavior). last_seen_in_feed stays at import
     // time (feed-confirmation), so we do NOT pass entry.lastSeen here.
     firstSeenAt: entry.firstSeen || null
@@ -2380,11 +2374,11 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     return;
   }
   if (insertResult === 'unchanged') {
-    // Same-source content unchanged — not a reject.
+    // Same-source content unchanged â€” not a reject.
     metrics.noteUnchanged();
     return;
   }
-  // 'duplicate' — existing IOC from same/other source; membership + evidence already synced.
+  // 'duplicate' â€” existing IOC from same/other source; membership + evidence already synced.
   metrics.noteDuplicate();
 }
 
@@ -2490,12 +2484,11 @@ export async function runAlienvaultOtxImport(options = {}) {
       };
 
       throwIfAborted(signal);
-      await client.query(
-        `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-         VALUES ($1, $2, $3::jsonb, NOW())
-         ON CONFLICT (source_name)
-         DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-        [OTX_CHECKPOINT_SOURCE, cursorAfter, JSON.stringify(summary)]
+      await upsertIntegrationSourceState(
+        client,
+        OTX_CHECKPOINT_SOURCE,
+        cursorAfter,
+        summary
       );
       await client.query(
         `INSERT INTO integration_checkpoints (source_name, last_cursor, updated_at)
@@ -2544,13 +2537,13 @@ function buildCertPlBatchEntry(entry, sourceName, feedDefaultConfidence) {
     category: 'threat-intel',
     note: buildCertPlNote(entry),
     threatClassification: null,
-    // CERT.PL InsertDate → membership first_seen_in_feed only.
+    // CERT.PL InsertDate â†’ membership first_seen_in_feed only.
     firstSeenAt: entry.firstSeen || null
   };
 }
 
 /**
- * CERT.PL Dangerous Websites Warning List — incremental, non-destructive import.
+ * CERT.PL Dangerous Websites Warning List â€” incremental, non-destructive import.
  *
  * - Ingests only DeleteDate == null records
  * - Never deletes / deactivates / detaches IOCs when CERT.PL marks DeleteDate or
@@ -2593,7 +2586,7 @@ export async function runCertPlImport(options = {}) {
       });
 
       const { entries, stats: parseStats } = fetched;
-      // Upstream-deleted and invalid rows are skip counts only — never TalonHound removals.
+      // Upstream-deleted and invalid rows are skip counts only â€” never TalonHound removals.
       metrics.noteSkipped(parseStats.upstream_deleted_skipped + parseStats.invalid_skipped);
 
       const currentHash = hashCertPlEntries(entries);
@@ -2663,12 +2656,11 @@ export async function runCertPlImport(options = {}) {
       };
 
       throwIfAborted(signal);
-      await client.query(
-        `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-         VALUES ($1, $2, $3::jsonb, NOW())
-         ON CONFLICT (source_name)
-         DO UPDATE SET content_hash = EXCLUDED.content_hash, items_json = EXCLUDED.items_json, updated_at = NOW()`,
-        [sourceName, currentHash, JSON.stringify(checkpoint)]
+      await upsertIntegrationSourceState(
+        client,
+        sourceName,
+        currentHash,
+        checkpoint
       );
 
       await finalizeIntegrationRun(client, runId, metrics, 'success', { summary });

@@ -1,8 +1,12 @@
 /**
- * URLhaus recent CSV export (abuse.ch) — auth, parsing, and safe logging.
+ * URLhaus recent CSV export (abuse.ch) â€” auth, parsing, and safe logging.
  */
 
 import { createHash } from 'node:crypto';
+import {
+  buildCompactCountPayload,
+  upsertIntegrationSourceState
+} from './integrationSourceState.js';
 
 export const URLHAUS_FEED_KEY = 'urlhaus-abusech';
 export const URLHAUS_EXPORT_BASE = 'https://urlhaus-api.abuse.ch/v2/files/exports';
@@ -151,7 +155,7 @@ export function buildUrlhausNote(entry) {
   return parts.join(' | ');
 }
 
-/** Note key for semantic metadata comparison — excludes volatile provider last_online. */
+/** Note key for semantic metadata comparison â€” excludes volatile provider last_online. */
 export function stripUrlhausVolatileNoteParts(note) {
   return String(note || '')
     .split(' | ')
@@ -441,20 +445,17 @@ export async function saveUrlhausCheckpoint(client, sourceName, checkpoint, opts
   );
 
   if (entries) {
-    await client.query(
-      `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
-       VALUES ($1, $2, $3::jsonb, NOW())
-       ON CONFLICT (source_name)
-       DO UPDATE SET content_hash = EXCLUDED.content_hash,
-                     items_json = EXCLUDED.items_json,
-                     updated_at = NOW()`,
-      [
-        sourceName,
-        canonical,
-        JSON.stringify(entries.map((e) => ({ observable: e.observable, observableType: e.observableType })))
-      ]
+    // items_json is not read back for URLHaus sync (checkpoint lives in
+    // integration_checkpoints). Keep a compact count payload to avoid TOAST churn.
+    await upsertIntegrationSourceState(
+      client,
+      sourceName,
+      canonical,
+      buildCompactCountPayload(entries.length)
     );
   } else {
+    // Heartbeat-only path: advance updated_at (min-fetch interval) without
+    // rewriting a large items_json snapshot.
     await client.query(
       `INSERT INTO integration_source_state (source_name, content_hash, items_json, updated_at)
        VALUES ($1, $2, '[]'::jsonb, NOW())
