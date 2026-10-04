@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import {
   IOC_SOURCE_IMPORTED_ACTION,
   buildDerivedSourceImportEvent,
-  canonicalSourceFirstImportAt,
+  canonicalSourceImportedAt,
   decoratePersistedSourceImportRow,
   extractSourceImportFeedId,
   mergeIocAuditHistory,
+  persistedSourceImportDisplayAt,
   recordSourceImportAudit,
   sourceImportActionLabel,
   sourceImportDedupeKey
@@ -16,6 +17,7 @@ import { upsertMembershipOnImport, withImportOptimizationContext } from './iocEx
 const OTX_FEED = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const USOM_FEED = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const TF_FEED = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const URLHAUS_FEED = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
 
 const IOC = {
   id: 3002619,
@@ -24,7 +26,7 @@ const IOC = {
   observable_type: 'domain'
 };
 
-function membership({ id, feedId, feedKey, feedName, firstSeen, createdAt = null }) {
+function membership({ id, feedId, feedKey, feedName, firstSeen, createdAt }) {
   return {
     id,
     feed_id: feedId,
@@ -32,7 +34,7 @@ function membership({ id, feedId, feedKey, feedName, firstSeen, createdAt = null
     feed_name: feedName,
     ioc_observable_type: 'domain',
     first_seen_in_feed: firstSeen,
-    created_at: createdAt || firstSeen,
+    created_at: createdAt,
     status: 'active'
   };
 }
@@ -43,173 +45,209 @@ describe('source import identity helpers', () => {
       sourceImportDedupeKey({ iocId: 1, feedId: OTX_FEED }),
       `ioc.source_imported:1:${OTX_FEED}`
     );
-    assert.notEqual(
-      sourceImportDedupeKey({ iocId: 1, feedId: OTX_FEED }),
-      sourceImportDedupeKey({ iocId: 1, feedId: USOM_FEED })
-    );
   });
 
   it('action label names the feed', () => {
-    assert.equal(sourceImportActionLabel('AlienVault OTX'), 'Imported from AlienVault OTX');
-    assert.equal(
-      sourceImportActionLabel('Siber Güvenlik Başkanlığı / USOM'),
-      'Imported from Siber Güvenlik Başkanlığı / USOM'
-    );
+    assert.equal(sourceImportActionLabel('URLhaus abuse.ch'), 'Imported from URLhaus abuse.ch');
   });
 
-  it('canonical timestamp prefers first_seen_in_feed over created_at', () => {
+  it('canonical Audit timestamp uses membership.created_at, never first_seen_in_feed', () => {
     assert.equal(
-      canonicalSourceFirstImportAt({
-        first_seen_in_feed: '2026-07-18T15:17:32.726Z',
-        created_at: '2026-07-18T15:44:17.748Z'
+      canonicalSourceImportedAt({
+        first_seen_in_feed: '2026-10-04T20:02:13.000Z',
+        created_at: '2026-10-04T20:40:04.695Z'
       }),
-      '2026-07-18T15:17:32.726Z'
+      '2026-10-04T20:40:04.695Z'
     );
   });
 });
 
-describe('derived + merge semantics', () => {
-  it('TEST 1/4/6/9: one derived event per feed with that feed\'s own first-import timestamp', () => {
-    const otx = buildDerivedSourceImportEvent({
+describe('Audit Date vs Overview First seen in source', () => {
+  it('TEST 1 — exact production URLhaus bug: Audit uses import time not provider first_seen', () => {
+    const event = buildDerivedSourceImportEvent({
+      membership: membership({
+        id: 12700803,
+        feedId: URLHAUS_FEED,
+        feedKey: 'urlhaus-abusech',
+        feedName: 'URLhaus abuse.ch',
+        firstSeen: '2026-10-04T20:02:13.000Z',
+        createdAt: '2026-10-04T20:40:04.695Z'
+      }),
+      iocItem: {
+        id: 3533649,
+        public_id: 'fcd71507-42f1-41d5-b687-1bb8b612bbab',
+        observable: 'http://92.243.113.232:16844/bin.sh',
+        observable_type: 'url'
+      }
+    });
+
+    assert.equal(new Date(event.created_at).toISOString(), '2026-10-04T20:40:04.695Z');
+    assert.notEqual(new Date(event.created_at).toISOString(), '2026-10-04T20:02:13.000Z');
+    assert.equal(event.action_label, 'Imported from URLhaus abuse.ch');
+    assert.equal(event.metadata.first_seen_in_feed, '2026-10-04T20:02:13.000Z');
+    assert.equal(event.metadata.source_imported_at, '2026-10-04T20:40:04.695Z');
+  });
+
+  it('TEST 2 — provider first_seen much older than TalonHound import', () => {
+    const event = buildDerivedSourceImportEvent({
       membership: membership({
         id: 1,
         feedId: OTX_FEED,
         feedKey: 'alienvault-otx',
         feedName: 'AlienVault OTX',
-        firstSeen: '2026-07-01T23:40:22.999Z'
+        firstSeen: '2025-01-01T00:00:00.000Z',
+        createdAt: '2026-10-04T12:00:00.000Z'
       }),
       iocItem: IOC
     });
-    const usom = buildDerivedSourceImportEvent({
-      membership: membership({
-        id: 2,
-        feedId: USOM_FEED,
-        feedKey: 'usom-trcert',
-        feedName: 'Siber Güvenlik Başkanlığı / USOM',
-        firstSeen: '2026-07-18T15:17:32.726Z'
-      }),
-      iocItem: IOC
-    });
-    const threatfox = buildDerivedSourceImportEvent({
-      membership: membership({
-        id: 3,
-        feedId: TF_FEED,
-        feedKey: 'threatfox',
-        feedName: 'ThreatFox',
-        firstSeen: '2026-08-01T10:00:00.000Z'
-      }),
-      iocItem: IOC
-    });
-
-    const items = mergeIocAuditHistory({
-      persistedRows: [],
-      derivedRows: [otx, usom, threatfox],
-      limit: 50
-    });
-
-    assert.equal(items.length, 3);
-    assert.equal(items[0].action_label, 'Imported from ThreatFox');
-    assert.equal(new Date(items[0].created_at).toISOString(), '2026-08-01T10:00:00.000Z');
-    assert.equal(items[1].action_label, 'Imported from Siber Güvenlik Başkanlığı / USOM');
-    assert.equal(new Date(items[1].created_at).toISOString(), '2026-07-18T15:17:32.726Z');
-    assert.equal(items[2].action_label, 'Imported from AlienVault OTX');
-    assert.equal(new Date(items[2].created_at).toISOString(), '2026-07-01T23:40:22.999Z');
-    for (const row of items) {
-      assert.equal(row.action, IOC_SOURCE_IMPORTED_ACTION);
-      assert.equal(row.actor_username, 'System');
-      assert.equal(row.metadata.derived, true);
-    }
+    assert.equal(new Date(event.created_at).toISOString(), '2026-10-04T12:00:00.000Z');
   });
 
-  it('TEST 7: historical IOC with 2 memberships and no persisted audits exposes 2 derived events', () => {
-    const items = mergeIocAuditHistory({
-      persistedRows: [],
-      derivedRows: [
-        buildDerivedSourceImportEvent({
-          membership: membership({
-            id: 3075596,
-            feedId: OTX_FEED,
-            feedKey: 'alienvault-otx',
-            feedName: 'AlienVault OTX',
-            firstSeen: '2026-07-01T23:40:22.999Z'
-          }),
-          iocItem: IOC
-        }),
-        buildDerivedSourceImportEvent({
-          membership: membership({
-            id: 3634662,
-            feedId: USOM_FEED,
-            feedKey: 'usom-trcert',
-            feedName: 'Siber Güvenlik Başkanlığı / USOM',
-            firstSeen: '2026-07-18T15:17:32.726Z'
-          }),
-          iocItem: IOC
-        })
-      ],
-      limit: 50
+  it('TEST 3 — first source/new IOC: Audit = membership created_at (T1), Overview first_seen stays T0', () => {
+    const T0 = '2026-10-04T20:02:13.000Z';
+    const T1 = '2026-10-04T20:40:04.695Z';
+    const event = buildDerivedSourceImportEvent({
+      membership: membership({
+        id: 9,
+        feedId: URLHAUS_FEED,
+        feedKey: 'urlhaus-abusech',
+        feedName: 'URLhaus abuse.ch',
+        firstSeen: T0,
+        createdAt: T1
+      }),
+      iocItem: { id: 1, observable: 'http://x/', observable_type: 'url' }
     });
+    assert.equal(event.created_at, T1);
+    assert.equal(event.metadata.first_seen_in_feed, T0);
+  });
+
+  it('TEST 4 — second source on existing IOC uses Feed B membership created_at, not provider first_seen or IOC T1', () => {
+    const T1 = '2026-07-02T14:00:00.000Z';
+    const T2 = '2026-06-10T08:00:00.000Z'; // provider first_seen — earlier than import
+    const T3 = '2026-08-15T17:30:00.000Z';
+    const feedA = buildDerivedSourceImportEvent({
+      membership: membership({
+        id: 1, feedId: OTX_FEED, feedKey: 'alienvault-otx', feedName: 'AlienVault OTX',
+        firstSeen: '2026-05-01T10:00:00.000Z', createdAt: T1
+      }),
+      iocItem: IOC
+    });
+    const feedB = buildDerivedSourceImportEvent({
+      membership: membership({
+        id: 2, feedId: USOM_FEED, feedKey: 'usom-trcert',
+        feedName: 'Siber Güvenlik Başkanlığı / USOM',
+        firstSeen: T2, createdAt: T3
+      }),
+      iocItem: IOC
+    });
+    const items = mergeIocAuditHistory({ persistedRows: [], derivedRows: [feedA, feedB], limit: 50 });
     assert.equal(items.length, 2);
+    assert.equal(new Date(items[0].created_at).toISOString(), T3);
+    assert.equal(items[0].action_label, 'Imported from Siber Güvenlik Başkanlığı / USOM');
+    assert.equal(new Date(items[1].created_at).toISOString(), T1);
+    assert.notEqual(items[0].created_at, T2);
+    assert.notEqual(items[0].created_at, T1);
+  });
+
+  it('TEST 5 — 3 feeds each use own membership created_at', () => {
+    const rows = [
+      membership({
+        id: 1, feedId: OTX_FEED, feedKey: 'alienvault-otx', feedName: 'AlienVault OTX',
+        firstSeen: '2026-01-01T00:00:00.000Z', createdAt: '2026-07-02T14:00:00.000Z'
+      }),
+      membership({
+        id: 2, feedId: TF_FEED, feedKey: 'threatfox', feedName: 'ThreatFox',
+        firstSeen: '2026-02-01T00:00:00.000Z', createdAt: '2026-08-01T10:00:00.000Z'
+      }),
+      membership({
+        id: 3, feedId: USOM_FEED, feedKey: 'usom-trcert', feedName: 'USOM',
+        firstSeen: '2026-03-01T00:00:00.000Z', createdAt: '2026-09-20T12:00:00.000Z'
+      })
+    ].map((m) => buildDerivedSourceImportEvent({ membership: m, iocItem: IOC }));
+
+    const items = mergeIocAuditHistory({ persistedRows: [], derivedRows: rows, limit: 50 });
     assert.deepEqual(
-      items.map((r) => r.metadata.feed_key).sort(),
-      ['alienvault-otx', 'usom-trcert']
+      items.map((r) => new Date(r.created_at).toISOString()),
+      ['2026-09-20T12:00:00.000Z', '2026-08-01T10:00:00.000Z', '2026-07-02T14:00:00.000Z']
     );
   });
 
-  it('TEST 8: persisted OTX + historical-only USOM → no duplicate OTX', () => {
+  it('TEST 6 — persisted + synthetic dedupe keeps one Feed A event with import timestamp', () => {
+    const importedAt = '2026-07-02T14:00:00.000Z';
+    const providerFirst = '2026-05-01T10:00:00.000Z';
     const persisted = decoratePersistedSourceImportRow({
       id: 9001,
-      created_at: '2026-07-01T23:40:22.999Z',
+      created_at: importedAt,
       actor_username: 'System',
       action: IOC_SOURCE_IMPORTED_ACTION,
       entity_type: 'ioc',
-      entity_id: IOC.public_id,
       subject_ioc_id: IOC.id,
       metadata: {
         event_kind: 'source_import',
         feed_id: OTX_FEED,
         feed_key: 'alienvault-otx',
         feed_name: 'AlienVault OTX',
-        first_seen_in_feed: '2026-07-01T23:40:22.999Z'
+        source_imported_at: importedAt,
+        membership_created_at: importedAt,
+        first_seen_in_feed: providerFirst
       }
     });
-    const derivedOtx = buildDerivedSourceImportEvent({
+    const derived = buildDerivedSourceImportEvent({
       membership: membership({
-        id: 1,
-        feedId: OTX_FEED,
-        feedKey: 'alienvault-otx',
-        feedName: 'AlienVault OTX',
-        firstSeen: '2026-07-01T23:40:22.999Z'
+        id: 1, feedId: OTX_FEED, feedKey: 'alienvault-otx', feedName: 'AlienVault OTX',
+        firstSeen: providerFirst, createdAt: importedAt
       }),
       iocItem: IOC
     });
-    const derivedUsom = buildDerivedSourceImportEvent({
+    const items = mergeIocAuditHistory({
+      persistedRows: [persisted],
+      derivedRows: [derived],
+      limit: 50
+    });
+    assert.equal(items.length, 1);
+    assert.equal(items[0].id, 9001);
+    assert.equal(new Date(items[0].created_at).toISOString(), importedAt);
+  });
+
+  it('TEST 7 — historical derived event uses membership created_at (T2), not provider first_seen (T1)', () => {
+    const T1 = '2026-07-18T15:17:32.726Z';
+    const T2 = '2026-07-18T15:44:17.748Z';
+    const event = buildDerivedSourceImportEvent({
       membership: membership({
-        id: 2,
+        id: 3634662,
         feedId: USOM_FEED,
         feedKey: 'usom-trcert',
         feedName: 'Siber Güvenlik Başkanlığı / USOM',
-        firstSeen: '2026-07-18T15:17:32.726Z'
+        firstSeen: T1,
+        createdAt: T2
       }),
       iocItem: IOC
     });
-
-    const items = mergeIocAuditHistory({
-      persistedRows: [persisted],
-      derivedRows: [derivedOtx, derivedUsom],
-      limit: 50
-    });
-
-    const otx = items.filter((r) => extractSourceImportFeedId(r) === OTX_FEED);
-    const usom = items.filter((r) => extractSourceImportFeedId(r) === USOM_FEED);
-    assert.equal(otx.length, 1, 'exactly one OTX event');
-    assert.equal(usom.length, 1, 'exactly one USOM event');
-    assert.equal(otx[0].id, 9001, 'persisted OTX wins');
-    assert.equal(otx[0].metadata.derived, undefined);
-    assert.equal(usom[0].metadata.derived, true);
+    assert.equal(new Date(event.created_at).toISOString(), T2);
   });
 
-  it('TEST 10: manual IOC history is not fabricated as feed import', () => {
-    // No feed memberships → no derived source-import events.
+  it('TEST 9 — decorate never falls back to first_seen_in_feed for Date', () => {
+    const row = {
+      id: 1,
+      created_at: '2026-10-04T20:40:04.695Z',
+      action: IOC_SOURCE_IMPORTED_ACTION,
+      subject_ioc_id: 1,
+      metadata: {
+        feed_id: URLHAUS_FEED,
+        feed_name: 'URLhaus abuse.ch',
+        source_imported_at: '2026-10-04T20:40:04.695Z',
+        first_seen_in_feed: '2026-10-04T20:02:13.000Z'
+      }
+    };
+    assert.equal(
+      new Date(persistedSourceImportDisplayAt(row)).toISOString(),
+      '2026-10-04T20:40:04.695Z'
+    );
+    const decorated = decoratePersistedSourceImportRow(row);
+    assert.equal(new Date(decorated.created_at).toISOString(), '2026-10-04T20:40:04.695Z');
+  });
+
+  it('TEST 10 — manual / Threat Library rows are not fabricated as feed imports', () => {
     const items = mergeIocAuditHistory({
       persistedRows: [{
         id: 1,
@@ -224,68 +262,56 @@ describe('derived + merge semantics', () => {
       derivedRows: [],
       limit: 50
     });
-    assert.equal(items.length, 1);
-    assert.equal(items[0].action, 'ioc.created');
-    assert.equal(items.some((r) => r.action === IOC_SOURCE_IMPORTED_ACTION), false);
-  });
-
-  it('TEST 11: Threat Library create is not a feed import unless memberships exist', () => {
-    const items = mergeIocAuditHistory({
-      persistedRows: [{
-        id: 2,
-        created_at: '2026-08-02T00:00:00.000Z',
-        action: 'ioc.created',
-        action_label: 'IOC Created',
-        actor_username: 'analyst',
-        entity_type: 'ioc',
-        subject_ioc_id: 77,
-        metadata: { origin: 'threat_library' }
-      }],
-      derivedRows: [],
-      limit: 50
-    });
     assert.equal(items.some((r) => r.action === IOC_SOURCE_IMPORTED_ACTION), false);
   });
 });
 
-describe('recordSourceImportAudit idempotency', () => {
-  it('TEST 13: concurrent-style second insert is a no-op (WHERE NOT EXISTS)', async () => {
+describe('recordSourceImportAudit idempotency + importedAt', () => {
+  it('TEST 9 retry: second insert is a no-op; first uses importedAt not provider first_seen', async () => {
+    let insertParams = null;
     let insertCount = 0;
     const client = {
-      async query(sql) {
+      async query(sql, params = []) {
         const s = String(sql);
         if (s.includes('FROM integration_feeds')) {
-          return { rows: [{ key: 'alienvault-otx', name: 'AlienVault OTX' }], rowCount: 1 };
+          return { rows: [{ key: 'urlhaus-abusech', name: 'URLhaus abuse.ch' }], rowCount: 1 };
         }
         if (s.includes('INSERT INTO audit_logs')) {
           insertCount += 1;
+          insertParams = params;
           if (insertCount === 1) return { rows: [{ id: 42 }], rowCount: 1 };
-          // Second call: NOT EXISTS fails → zero rows.
           return { rows: [], rowCount: 0 };
         }
         return { rows: [], rowCount: 0 };
       }
     };
 
+    const importedAt = '2026-10-04T20:40:04.695Z';
+    const providerFirst = '2026-10-04T20:02:13.000Z';
     const first = await recordSourceImportAudit(client, {
       iocItemId: 99,
-      observableType: 'domain',
-      feedId: OTX_FEED,
+      observableType: 'url',
+      feedId: URLHAUS_FEED,
       membershipId: 10,
-      firstSeenAt: '2026-07-01T23:40:22.999Z'
+      importedAt,
+      firstSeenInFeed: providerFirst
     });
     const second = await recordSourceImportAudit(client, {
       iocItemId: 99,
-      observableType: 'domain',
-      feedId: OTX_FEED,
+      observableType: 'url',
+      feedId: URLHAUS_FEED,
       membershipId: 10,
-      firstSeenAt: '2026-07-01T23:40:22.999Z'
+      importedAt,
+      firstSeenInFeed: providerFirst
     });
 
     assert.equal(first.written, true);
     assert.equal(second.written, false);
     assert.equal(insertCount, 2);
-    assert.match(String(first.action_label), /AlienVault OTX/);
+    assert.equal(new Date(insertParams[0]).toISOString(), importedAt);
+    const meta = JSON.parse(insertParams[9]);
+    assert.equal(meta.source_imported_at, importedAt);
+    assert.equal(meta.first_seen_in_feed, providerFirst);
   });
 });
 
@@ -337,7 +363,8 @@ describe('upsertMembershipOnImport source-import audit write amplification', () 
             purged_at: null,
             policy_expires_at: null,
             expires_at: null,
-            explicit_confidence: null
+            explicit_confidence: null,
+            created_at: '2026-10-04T20:40:04.695Z'
           };
           return { rows: [current], rowCount: 1 };
         }
@@ -386,23 +413,26 @@ describe('upsertMembershipOnImport source-import audit write amplification', () 
     return client;
   }
 
-  it('TEST 1: new IOC/membership from OTX writes exactly one source-import audit', async () => {
+  it('TEST 1 create: writes one source-import audit using membership.created_at', async () => {
     const client = makeClient({ existing: null });
     const result = await withImportOptimizationContext(client, async () => upsertMembershipOnImport(client, {
       iocItemId: 99,
       observableType: 'domain',
       feedId: FEED_ID,
       seenAt: T1,
-      firstSeenAt: T1,
+      firstSeenAt: new Date('2026-10-04T20:02:13.000Z'),
       contentFingerprint: FP
     }));
     assert.equal(result.outcome, 'created');
     const audits = client.calls.filter((c) => c.sql.includes('INSERT INTO audit_logs'));
     assert.equal(audits.length, 1);
-    assert.equal(audits[0].params[1], IOC_SOURCE_IMPORTED_ACTION);
+    assert.equal(new Date(audits[0].params[0]).toISOString(), '2026-10-04T20:40:04.695Z');
+    const meta = JSON.parse(audits[0].params[9]);
+    assert.equal(meta.source_imported_at, '2026-10-04T20:40:04.695Z');
+    assert.equal(meta.first_seen_in_feed, '2026-10-04T20:02:13.000Z');
   });
 
-  it('TEST 2/3/12: re-sight of existing membership writes zero source-import audits', async () => {
+  it('TEST 8 re-sight: existing membership writes zero source-import audits', async () => {
     const existing = {
       id: 10,
       ioc_item_id: 99,
@@ -420,7 +450,8 @@ describe('upsertMembershipOnImport source-import audit write amplification', () 
       purged_at: null,
       policy_expires_at: new Date('2026-07-31T23:40:22.999Z'),
       expires_at: new Date('2026-07-31T23:40:22.999Z'),
-      explicit_confidence: null
+      explicit_confidence: null,
+      created_at: '2026-07-01T23:40:21.000Z'
     };
     const client = makeClient({ existing });
     for (let i = 0; i < 10; i += 1) {
@@ -435,114 +466,6 @@ describe('upsertMembershipOnImport source-import audit write amplification', () 
       }));
       assert.equal(result.outcome, 'unchanged');
     }
-    const audits = client.calls.filter((c) => c.sql.includes('INSERT INTO audit_logs'));
-    assert.equal(audits.length, 0, 'bulk re-sight must not amplify source-import audits');
-  });
-
-  it('TEST 4/5: later first import by a second feed writes one new audit; re-sight writes zero', async () => {
-    // First feed already exists — simulate USOM create then re-sight.
-    let existingUsom = null;
-    const calls = [];
-    const client = {
-      calls,
-      async query(sql, params = []) {
-        const s = String(sql);
-        calls.push({ sql: s, params });
-        if (s.includes('FROM threat_feed_expiration_policies')) {
-          return {
-            rows: [{
-              enabled: true,
-              expiration_mode: 'fixed_ttl',
-              ttl_days: 365,
-              feed_id: USOM_FEED,
-              observable_type: 'all'
-            }]
-          };
-        }
-        if (s.includes('FROM ioc_suppressions')) return { rows: [] };
-        if (s.includes('FROM ioc_feed_memberships') && s.includes('ioc_item_id') && s.includes('SELECT *')) {
-          return existingUsom
-            ? { rows: [existingUsom], rowCount: 1 }
-            : { rows: [], rowCount: 0 };
-        }
-        if (s.startsWith('INSERT INTO ioc_feed_memberships')) {
-          existingUsom = {
-            id: 20,
-            ioc_item_id: 99,
-            ioc_observable_type: 'domain',
-            feed_id: USOM_FEED,
-            first_seen_in_feed: params[3],
-            last_seen_in_feed: params[4],
-            last_changed_in_source: params[4],
-            content_fingerprint: null,
-            missing_since: null,
-            override_enabled: false,
-            status: 'active',
-            expired_at: null,
-            expiration_reason: null,
-            purged_at: null,
-            policy_expires_at: null,
-            expires_at: null,
-            explicit_confidence: null
-          };
-          return { rows: [existingUsom], rowCount: 1 };
-        }
-        if (s.includes('FROM integration_feeds')) {
-          return { rows: [{ key: 'usom-trcert', name: 'Siber Güvenlik Başkanlığı / USOM' }], rowCount: 1 };
-        }
-        if (s.includes('INSERT INTO audit_logs')) {
-          return { rows: [{ id: 501 }], rowCount: 1 };
-        }
-        if (s.startsWith('UPDATE ioc_feed_memberships') && s.includes('policy_expires_at')) {
-          existingUsom = {
-            ...existingUsom,
-            policy_expires_at: params[1],
-            expires_at: params[2],
-            status: params[3]
-          };
-          return { rows: [existingUsom], rowCount: 1 };
-        }
-        if (s.includes('FROM ioc_items') && s.includes('manual_status_override')) {
-          return {
-            rows: [{
-              id: 99, observable: 'x', observable_type: 'domain', status: 'active',
-              manual_status_override: false, expires_at: null, expired_at: null, expiration_reason: null
-            }]
-          };
-        }
-        if (s.includes('FROM ioc_feed_memberships m') && s.includes('INNER JOIN ioc_items')) {
-          return { rows: [{ status: 'active', purged_at: null }] };
-        }
-        if (s.includes('MIN(m.expires_at)')) return { rows: [{ min_exp: null }] };
-        if (s.startsWith('UPDATE ioc_items')) return { rows: [], rowCount: 0 };
-        return { rows: [], rowCount: 0 };
-      }
-    };
-
-    const created = await upsertMembershipOnImport(client, {
-      iocItemId: 99,
-      observableType: 'domain',
-      feedId: USOM_FEED,
-      seenAt: new Date('2026-07-18T15:17:32.726Z'),
-      firstSeenAt: new Date('2026-07-18T15:17:32.726Z')
-    });
-    assert.equal(created.outcome, 'created');
-    assert.equal(calls.filter((c) => c.sql.includes('INSERT INTO audit_logs')).length, 1);
-
-    const beforeResight = calls.filter((c) => c.sql.includes('INSERT INTO audit_logs')).length;
-    const resight = await withImportOptimizationContext(client, async () => upsertMembershipOnImport(client, {
-      iocItemId: 99,
-      observableType: 'domain',
-      feedId: USOM_FEED,
-      seenAt: new Date('2026-07-19T00:00:00Z'),
-      firstSeenAt: new Date('2026-07-18T15:17:32.726Z'),
-      reactivateOnly: true
-    }));
-    assert.equal(resight.outcome, 'unchanged');
-    assert.equal(
-      calls.filter((c) => c.sql.includes('INSERT INTO audit_logs')).length,
-      beforeResight,
-      'USOM re-sight must not write a second source-import audit'
-    );
+    assert.equal(client.calls.filter((c) => c.sql.includes('INSERT INTO audit_logs')).length, 0);
   });
 });

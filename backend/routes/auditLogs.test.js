@@ -411,10 +411,11 @@ test('IOC audit history derives one Imported-from event per feed membership', as
     const res = await request(app, '/api/ioc/3002619/audit-logs?limit=50');
     assert.equal(res.status, 200);
     assert.equal(res.data.items.length, 2);
+    // Audit Date = membership.created_at (TalonHound import), NOT first_seen_in_feed.
     assert.equal(res.data.items[0].action_label, 'Imported from Siber Güvenlik Başkanlığı / USOM');
-    assert.equal(new Date(res.data.items[0].created_at).toISOString(), '2026-07-18T15:17:32.726Z');
+    assert.equal(new Date(res.data.items[0].created_at).toISOString(), '2026-07-18T15:44:17.748Z');
     assert.equal(res.data.items[1].action_label, 'Imported from AlienVault OTX');
-    assert.equal(new Date(res.data.items[1].created_at).toISOString(), '2026-07-01T23:40:22.999Z');
+    assert.equal(new Date(res.data.items[1].created_at).toISOString(), '2026-07-01T23:40:21.399Z');
     assert.equal(res.data.items[0].actor_username, 'System');
     assert.equal(res.data.items[0].action, 'ioc.source_imported');
   });
@@ -439,7 +440,7 @@ test('IOC audit history dedupes persisted source-import against derived membersh
         return {
           rows: [{
             id: 9001,
-            created_at: '2026-07-01T23:40:22.999Z',
+            created_at: '2026-07-01T23:40:21.399Z',
             actor_username: 'System',
             action: 'ioc.source_imported',
             entity_type: 'ioc',
@@ -453,6 +454,8 @@ test('IOC audit history dedupes persisted source-import against derived membersh
               feed_id: otxFeed,
               feed_key: 'alienvault-otx',
               feed_name: 'AlienVault OTX',
+              source_imported_at: '2026-07-01T23:40:21.399Z',
+              membership_created_at: '2026-07-01T23:40:21.399Z',
               first_seen_in_feed: '2026-07-01T23:40:22.999Z'
             }
           }],
@@ -492,6 +495,48 @@ test('IOC audit history dedupes persisted source-import against derived membersh
     assert.equal(otx.length, 1);
     assert.equal(usom.length, 1);
     assert.equal(otx[0].id, 9001);
+    assert.equal(new Date(otx[0].created_at).toISOString(), '2026-07-01T23:40:21.399Z');
+    assert.equal(new Date(usom[0].created_at).toISOString(), '2026-07-18T15:44:17.748Z');
     assert.equal(res.data.items.length, 2);
+  });
+});
+
+test('IOC audit history URLhaus Date is membership created_at not provider first_seen', async () => {
+  await withServer(async ({ app, state }) => {
+    state.handler = (sql) => {
+      if (sql.includes('FROM ioc_items')) {
+        return {
+          rows: [{
+            id: 3533649,
+            public_id: 'fcd71507-42f1-41d5-b687-1bb8b612bbab',
+            observable: 'http://92.243.113.232:16844/bin.sh',
+            observable_type: 'url'
+          }],
+          rowCount: 1
+        };
+      }
+      if (sql.includes('FROM audit_logs')) return { rows: [], rowCount: 0 };
+      if (sql.includes('FROM ioc_feed_memberships m')) {
+        return {
+          rows: [{
+            id: 12700803,
+            feed_id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+            first_seen_in_feed: '2026-10-04T20:02:13.000Z',
+            created_at: '2026-10-04T20:40:04.695Z',
+            feed_key: 'urlhaus-abusech',
+            feed_name: 'URLhaus abuse.ch'
+          }],
+          rowCount: 1
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+
+    const res = await request(app, '/api/ioc/3533649/audit-logs');
+    assert.equal(res.status, 200);
+    assert.equal(res.data.items.length, 1);
+    assert.equal(res.data.items[0].action_label, 'Imported from URLhaus abuse.ch');
+    assert.equal(new Date(res.data.items[0].created_at).toISOString(), '2026-10-04T20:40:04.695Z');
+    assert.equal(res.data.items[0].metadata.first_seen_in_feed, '2026-10-04T20:02:13.000Z');
   });
 });

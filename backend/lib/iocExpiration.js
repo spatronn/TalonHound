@@ -750,7 +750,9 @@ export async function upsertMembershipOnImport(client, {
         observableType,
         feedId,
         membershipId,
-        firstSeenAt: membershipRow.first_seen_in_feed || firstNow
+        // Audit Date = TalonHound membership creation, NOT provider first_seen.
+        importedAt: membershipRow.created_at || new Date(),
+        firstSeenInFeed: membershipRow.first_seen_in_feed || firstNow
       });
     } catch (err) {
       console.warn('[source-import-audit] persist failed:', err?.message || err);

@@ -2,9 +2,15 @@
  * IOC source first-import provenance for Audit / History.
  *
  * Semantic: exactly one source-import event per (ioc, feed/source).
- * - Historical: derived from ioc_feed_memberships.first_seen_in_feed (no mass backfill).
+ * - Historical: derived from ioc_feed_memberships (no mass backfill).
  * - New memberships created via upsertMembershipOnImport: persisted once.
  * - Read path merges persisted + derived and dedupes by action + ioc_id + feed_id.
+ *
+ * Timestamp semantic (critical):
+ * - Audit "Imported from <Feed>" Date = TalonHound membership creation time
+ *   (`ioc_feed_memberships.created_at`) — when THIS feed first brought the IOC in.
+ * - Overview "First seen in source" = `first_seen_in_feed` (upstream observation).
+ *   Those are different clocks; never use first_seen_in_feed as the Audit Date.
  */
 
 import { AUDIT_ACTION, AUDIT_ENTITY, auditActionLabel } from './auditConstants.js';
@@ -28,11 +34,18 @@ export function extractSourceImportFeedId(row) {
 }
 
 /**
- * Canonical History timestamp for a feed membership: first_seen_in_feed.
- * Falls back to membership created_at only when first_seen is missing.
+ * Canonical Audit timestamp for a feed membership: when TalonHound created
+ * the (IOC, feed) relationship — membership.created_at.
+ *
+ * Never uses first_seen_in_feed (upstream provider observation time).
  */
+export function canonicalSourceImportedAt(membership) {
+  return membership?.created_at || null;
+}
+
+/** @deprecated Use canonicalSourceImportedAt — name kept briefly for test migration. */
 export function canonicalSourceFirstImportAt(membership) {
-  return membership?.first_seen_in_feed || membership?.created_at || null;
+  return canonicalSourceImportedAt(membership);
 }
 
 /**
@@ -47,7 +60,8 @@ export function buildDerivedSourceImportEvent({ membership, iocItem }) {
   const feedId = membership?.feed_id != null ? String(membership.feed_id) : null;
   const feedKey = membership?.feed_key || null;
   const feedName = membership?.feed_name || membership?.feed_key || 'Unknown feed';
-  const createdAt = canonicalSourceFirstImportAt(membership);
+  const importedAt = canonicalSourceImportedAt(membership);
+  const firstSeenInFeed = membership?.first_seen_in_feed || null;
   const observable = iocItem?.observable || null;
   const observableType = iocItem?.observable_type || membership?.ioc_observable_type || null;
 
@@ -55,7 +69,7 @@ export function buildDerivedSourceImportEvent({ membership, iocItem }) {
     // Negative synthetic id keeps the existing numeric frontend key stable and
     // never collides with persisted audit_logs.id (BIGSERIAL starts at 1).
     id: Number.isFinite(membershipId) ? -membershipId : null,
-    created_at: createdAt,
+    created_at: importedAt,
     actor_user_id: null,
     actor_username: 'System',
     actor_email: null,
@@ -85,11 +99,28 @@ export function buildDerivedSourceImportEvent({ membership, iocItem }) {
       feed_key: feedKey,
       feed_name: feedName,
       membership_id: Number.isFinite(membershipId) ? membershipId : null,
-      first_seen_in_feed: createdAt,
+      // Audit Date clock — TalonHound ingest of this (IOC, feed) relationship.
+      source_imported_at: importedAt,
+      membership_created_at: importedAt,
+      // Upstream observation clock — Overview "First seen in source" only.
+      first_seen_in_feed: firstSeenInFeed,
       actor_type: 'feed_import'
     },
     _dedupe_key: sourceImportDedupeKey({ iocId, feedId })
   };
+}
+
+/**
+ * Resolve the display timestamp for a persisted source-import audit row.
+ * Prefer explicit source_imported_at / membership_created_at metadata; fall
+ * back to audit_logs.created_at. Never use first_seen_in_feed.
+ */
+export function persistedSourceImportDisplayAt(row) {
+  const meta = row?.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  return meta.source_imported_at
+    || meta.membership_created_at
+    || row?.created_at
+    || null;
 }
 
 /**
@@ -99,10 +130,10 @@ export function decoratePersistedSourceImportRow(row) {
   if (!row || row.action !== IOC_SOURCE_IMPORTED_ACTION) return row;
   const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
   const feedName = meta.feed_name || meta.feed_key || row.target_value || 'Unknown feed';
-  const firstSeen = meta.first_seen_in_feed || row.created_at;
+  const importedAt = persistedSourceImportDisplayAt(row);
   return {
     ...row,
-    created_at: firstSeen,
+    created_at: importedAt,
     actor_username: row.actor_username || 'System',
     actor_role: row.actor_role || 'system',
     action_label: sourceImportActionLabel(feedName),
@@ -174,7 +205,7 @@ export async function loadDerivedSourceImportEvents(pool, iocItem) {
      FROM ioc_feed_memberships m
      JOIN integration_feeds f ON f.integration_id = m.feed_id
      WHERE m.ioc_item_id = $1
-     ORDER BY m.first_seen_in_feed ASC NULLS LAST, m.id ASC`,
+     ORDER BY m.created_at ASC NULLS LAST, m.id ASC`,
     [iocId]
   );
 
@@ -185,6 +216,10 @@ export async function loadDerivedSourceImportEvents(pool, iocItem) {
  * Persist exactly one source-import audit for a newly created feed membership.
  * Idempotent on (action, subject_ioc_id, feed_id). Safe under concurrency.
  *
+ * `importedAt` must be the membership creation / TalonHound ingest time — not
+ * the upstream provider first_seen. Retry uses the same importedAt so the
+ * History Date does not drift.
+ *
  * @param {import('pg').PoolClient|import('pg').Pool} client
  */
 export async function recordSourceImportAudit(client, {
@@ -194,6 +229,10 @@ export async function recordSourceImportAudit(client, {
   publicId = null,
   feedId,
   membershipId = null,
+  importedAt = null,
+  firstSeenInFeed = null,
+  // Legacy alias — treated as importedAt only when importedAt is omitted.
+  // Callers must not pass provider first_seen here.
   firstSeenAt = null,
   feedName = null,
   feedKey = null
@@ -214,11 +253,15 @@ export async function recordSourceImportAudit(client, {
     resolvedName = resolvedName || feedRes.rows[0]?.name || resolvedKey || 'Unknown feed';
   }
 
-  const firstSeen = firstSeenAt instanceof Date
-    ? firstSeenAt
-    : (firstSeenAt ? new Date(firstSeenAt) : new Date());
-  const createdAt = Number.isFinite(firstSeen.getTime()) ? firstSeen : new Date();
+  const rawImported = importedAt != null ? importedAt : firstSeenAt;
+  const imported = rawImported instanceof Date
+    ? rawImported
+    : (rawImported ? new Date(rawImported) : new Date());
+  const createdAt = Number.isFinite(imported.getTime()) ? imported : new Date();
   const entityId = publicId ? String(publicId) : String(iocId);
+  const upstreamFirstSeen = firstSeenInFeed instanceof Date
+    ? firstSeenInFeed.toISOString()
+    : (firstSeenInFeed ? String(firstSeenInFeed) : null);
   const metadata = {
     event_kind: 'source_import',
     derived: false,
@@ -226,7 +269,9 @@ export async function recordSourceImportAudit(client, {
     feed_key: resolvedKey,
     feed_name: resolvedName,
     membership_id: membershipId != null ? Number(membershipId) : null,
-    first_seen_in_feed: createdAt.toISOString(),
+    source_imported_at: createdAt.toISOString(),
+    membership_created_at: createdAt.toISOString(),
+    first_seen_in_feed: upstreamFirstSeen,
     actor_type: 'feed_import'
   };
 
