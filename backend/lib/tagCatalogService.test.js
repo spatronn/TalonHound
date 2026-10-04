@@ -215,6 +215,10 @@ test('syncIntegrationTagsFromNote creates catalog links without reactivating', a
   const assignments = [];
   const client = makeClient([
     {
+      match: (sql) => sql.includes('FROM ioc_tags it') && sql.includes('source_key'),
+      respond: () => ({ rows: [] })
+    },
+    {
       match: (sql) => sql.includes('FROM tags WHERE name'),
       respond: (_sql, params) => ({ rows: tagsByName.has(params[0]) ? [tagsByName.get(params[0])] : [] })
     },
@@ -258,12 +262,128 @@ test('syncIntegrationTagsFromNote creates catalog links without reactivating', a
     note: 'Auto-imported | tags=Mirai,C2,mirai | url_status=online'
   });
 
-  // Raw list is Mirai,C2,mirai — each row is processed; catalog reuses mirai.
-  assert.equal(res.synced, 3);
-  assert.equal(assignments.length, 3);
+  // Mirai/mirai dedupe to one name; C2 reuses inactive catalog row without re-enable.
+  assert.equal(res.synced, 2);
+  assert.equal(assignments.length, 2);
   assert.equal(tagsByName.get('c2').enabled, false);
   assert.ok(tagsByName.get('mirai'));
   assert.equal(tagsByName.get('mirai').created_origin, 'integration');
+});
+
+test('syncIntegrationTagsFromNote skips writes when integration tag set already matches', async () => {
+  const inserts = [];
+  const client = makeClient([
+    {
+      match: (sql) => sql.includes('FROM ioc_tags it') && sql.includes('source_key'),
+      respond: () => ({ rows: [{ name: 'mirai' }, { name: 'elf' }] })
+    },
+    {
+      match: (sql) => sql.includes('INSERT INTO ioc_tags') || sql.startsWith('INSERT INTO tags') || sql.includes('FROM tags WHERE name'),
+      respond: (sql, params) => {
+        inserts.push({ sql, params });
+        return { rows: [], rowCount: 0 };
+      }
+    }
+  ]);
+
+  const res = await syncIntegrationTagsFromNote(client, {
+    iocId: 7,
+    observableType: 'url',
+    sourceName: 'URLhaus:abuse.ch',
+    note: 'Auto | tags=ELF, mirai, ELF | last_online=2026-01-01T00:00:00.000Z'
+  });
+
+  assert.equal(res.skipped, true);
+  assert.equal(res.synced, 0);
+  assert.equal(inserts.length, 0, 'identical desired set must not touch catalog or junction');
+});
+
+test('syncIntegrationTagsFromNote inserts only missing tags and leaves extras/manual alone', async () => {
+  const assignments = [];
+  const tagsByName = new Map([
+    ['mirai', { id: 1, name: 'mirai', slug: 'mirai', category: 'custom', type: 'context', enabled: true, created_origin: 'integration' }],
+    ['elf', { id: 2, name: 'elf', slug: 'elf', category: 'custom', type: 'context', enabled: true, created_origin: 'integration' }],
+    ['c2', { id: 3, name: 'c2', slug: 'c2', category: 'custom', type: 'context', enabled: true, created_origin: 'integration' }]
+  ]);
+  const client = makeClient([
+    {
+      match: (sql) => sql.includes('FROM ioc_tags it') && sql.includes('source_key'),
+      // Existing integration tags for this source; manual tags are not in this query.
+      respond: () => ({ rows: [{ name: 'mirai' }, { name: 'elf' }] })
+    },
+    {
+      match: (sql) => sql.includes('FROM tags WHERE name'),
+      respond: (_sql, params) => ({ rows: tagsByName.has(params[0]) ? [tagsByName.get(params[0])] : [] })
+    },
+    {
+      match: (sql) => sql.includes('INSERT INTO ioc_tags'),
+      respond: (_sql, params) => {
+        assignments.push(params);
+        return { rows: [{ tag_id: params[2] }], rowCount: 1 };
+      }
+    }
+  ]);
+
+  const res = await syncIntegrationTagsFromNote(client, {
+    iocId: 9,
+    observableType: 'file_hash',
+    sourceName: 'MalwareBazaar:abuse.ch',
+    note: 'Auto | tags=mirai,c2,elf'
+  });
+
+  assert.equal(res.skipped, false);
+  assert.equal(res.synced, 1);
+  assert.equal(assignments.length, 1);
+  assert.equal(assignments[0][2], 3, 'only missing tag id c2 is assigned');
+  assert.equal(assignments[0][3], 'MalwareBazaar:abuse.ch');
+});
+
+test('syncIntegrationTagsFromNote second identical run is a no-op', async () => {
+  const existing = new Set();
+  let assignCalls = 0;
+  const client = makeClient([
+    {
+      match: (sql) => sql.includes('FROM ioc_tags it') && sql.includes('source_key'),
+      respond: () => ({ rows: [...existing].map((name) => ({ name })) })
+    },
+    {
+      match: (sql) => sql.includes('FROM tags WHERE name'),
+      respond: (_sql, params) => ({
+        rows: [{
+          id: params[0] === 'a' ? 1 : 2,
+          name: params[0],
+          slug: params[0],
+          category: 'custom',
+          type: 'context',
+          enabled: true,
+          created_origin: 'integration'
+        }]
+      })
+    },
+    {
+      match: (sql) => sql.includes('INSERT INTO ioc_tags'),
+      respond: (_sql, params) => {
+        assignCalls += 1;
+        // params: ioc, type, tagId, sourceName, sourceKey
+        existing.add(params[2] === 1 ? 'a' : 'b');
+        return { rows: [{ tag_id: params[2] }], rowCount: 1 };
+      }
+    }
+  ]);
+
+  const args = {
+    iocId: 1,
+    observableType: 'ip',
+    sourceName: 'ThreatFox:abuse.ch',
+    note: 'Auto | tags=a,b'
+  };
+  const first = await syncIntegrationTagsFromNote(client, args);
+  const second = await syncIntegrationTagsFromNote(client, args);
+  assert.equal(first.synced, 2);
+  assert.equal(assignCalls, 2);
+  assert.equal(second.skipped, true);
+  assert.equal(second.synced, 0);
+  assert.equal(assignCalls, 2, 'second identical sync must not assign again');
 });
 
 test('filterFeedIntelligenceByDisabledTags drops disabled catalog names', async () => {

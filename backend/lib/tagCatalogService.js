@@ -163,7 +163,11 @@ export async function ensureIocTagAssignment(client, {
 
 /**
  * Sync catalog + integration assignments from a feed evidence note's tags= field.
+ * Additive only for this source (never removes integration or manual tags).
  * Does not re-enable inactive catalog tags.
+ *
+ * Identical desired sets skip junction writes so AFTER INSERT tag triggers do not
+ * rewrite ioc_items.updated_at (published-feed dirty watermark).
  */
 export async function syncIntegrationTagsFromNote(client, {
   iocId,
@@ -172,30 +176,55 @@ export async function syncIntegrationTagsFromNote(client, {
   note
 } = {}) {
   const source = String(sourceName || '').trim();
-  if (!iocId || !observableType || !source) return { synced: 0, tags: [] };
+  if (!iocId || !observableType || !source) return { synced: 0, tags: [], skipped: true };
 
   const rawTags = parseRawTagsFromNote(note);
-  if (!rawTags.length) return { synced: 0, tags: [] };
+  if (!rawTags.length) return { synced: 0, tags: [], skipped: true };
 
-  const synced = [];
+  const desiredNames = [];
+  const seen = new Set();
   for (const raw of rawTags) {
     const parsed = parseNormalizedTagName(raw);
-    if (!parsed.ok) continue;
+    if (!parsed.ok || seen.has(parsed.name)) continue;
+    seen.add(parsed.name);
+    desiredNames.push(parsed.name);
+  }
+  if (!desiredNames.length) return { synced: 0, tags: [], skipped: true };
+
+  const sourceKey = source.toLowerCase();
+  const existingQ = await client.query(
+    `SELECT t.name
+     FROM ioc_tags it
+     INNER JOIN tags t ON t.id = it.tag_id
+     WHERE it.ioc_id = $1
+       AND it.ioc_observable_type = $2
+       AND it.origin = 'integration'
+       AND it.source_key = $3`,
+    [iocId, observableType, sourceKey]
+  );
+  const existingNames = new Set((existingQ.rows || []).map((r) => r.name));
+  const missingNames = desiredNames.filter((name) => !existingNames.has(name));
+  if (!missingNames.length) {
+    return { synced: 0, tags: [], skipped: true };
+  }
+
+  const synced = [];
+  for (const name of missingNames) {
     const { tag } = await ensureCatalogTag(client, {
-      name: parsed.name,
+      name,
       createdOrigin: 'integration',
       category: 'custom'
     });
-    await ensureIocTagAssignment(client, {
+    const assign = await ensureIocTagAssignment(client, {
       iocId,
       observableType,
       tagId: tag.id,
       origin: 'integration',
       sourceName: source
     });
-    synced.push(tag);
+    if (assign.inserted) synced.push(tag);
   }
-  return { synced: synced.length, tags: synced };
+  return { synced: synced.length, tags: synced, skipped: false };
 }
 
 /**
