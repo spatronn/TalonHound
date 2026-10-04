@@ -92,8 +92,12 @@ export {
  * (tl-type-resolver-v4); a scheme-less "host/path" joins the one absolute URL
  * the report lists for it; prose-only C2 topics and vendor sidebars no longer
  * open / resume a curated section (tl-zones-v4).
+ * v14: dotted-token typing reads the focused indicator row the same way the
+ * occurrence layer does (row_shape), so a <br>-split IOC line is an explicit
+ * indicator row (tl-type-resolver-v5); a domain reading of the publisher's own
+ * row for a token is never outvoted by narrative code-shaped mentions of it.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v13';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v14';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -539,13 +543,20 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // Dotted tokens: resolve per occurrence, decide per document (see pendingDotted).
     if (n.candidateType === 'domain') {
       const token = String(extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
+      const form = extra.form || OCCURRENCE_FORMS.STANDALONE;
+      const lineText = extra.rowText || block?.text || '';
       const typed = resolveDottedTokenType(token, {
-        surroundingText: surroundingWindow(extra.rowText || block?.text || '', token, 160),
+        surroundingText: surroundingWindow(lineText, token, 160),
         typeLabel: extra.typeLabel || block?.type_label || null,
         declaredType: extra.declaredType || block?.declared_type_label || null,
         zone,
         blockType: block?.type || null,
-        form: extra.form || OCCURRENCE_FORMS.STANDALONE,
+        form,
+        // Same focus-aware row reading occurrenceFor records as row_shape: a
+        // <br>-split HTML line ("evil-host[.]com") is an indicator row for this
+        // token even though its block is a paragraph, while a file name in a
+        // hash row's description ("<sha256> - loader.node") is not.
+        indicatorRow: strongZone && form !== OCCURRENCE_FORMS.EMAIL_DOMAIN && isIndicatorRowShape(lineText, token),
         strongZone,
         urlPathBasenames,
         knownUrlHosts
@@ -639,7 +650,15 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // A source-declared network type (typed Domain row / column) is never outvoted:
       // explicit indicator tables stay complete.
       const declaredNetwork = pending.occurrences.some((o) => o.typed.reason === 'declared_network_type');
-      const isDomain = declaredNetwork || domainScore > artifactScore;
+      // Nor is a domain reading of the publisher's own indicator row for this
+      // exact token: narrative code-shaped spellings of the same value elsewhere
+      // (`iRM eViLhOsT[.]COM` in an obfuscated command) cannot demote a curated
+      // IOC entry. Only the focused row's own domain reading counts — an
+      // artifact reading of a row (file extension, code shape) never does.
+      const assertedRowNetwork = pending.occurrences.some(
+        (o) => o.typed.kind === 'domain' && o.typed.signals?.explicit_indicator_row === true
+      );
+      const isDomain = declaredNetwork || assertedRowNetwork || domainScore > artifactScore;
       const winning = pending.occurrences
         .filter((o) => (o.typed.kind === 'domain') === isDomain)
         .sort((a, b) => (READING_WEIGHT[b.typed.reason] ?? 5) - (READING_WEIGHT[a.typed.reason] ?? 5))[0] || best.occ;

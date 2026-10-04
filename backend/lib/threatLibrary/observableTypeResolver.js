@@ -40,8 +40,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * internal DNS", a curated indicator row) is still a domain.
  * v4: a publisher elision ("…", "[...]", "(…)") makes a URL invalid
  * (`elided_value`); typographic quotes / guillemets are trailing punctuation.
+ * v5: an explicit indicator row is also a focused row-shaped line in a curated
+ * zone (`indicatorRow`), not only a list / table row form.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v4';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v5';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -568,6 +570,7 @@ function stripTrailingPunct(s) {
  *   zone?: string|null,
  *   blockType?: string|null,
  *   form?: string|null,               // standalone | url | ip_port | list_row | table_row
+ *   indicatorRow?: boolean,           // the line is an indicator row for THIS token (focus-aware row shape)
  *   strongZone?: boolean,
  *   urlPathBasenames?: Set<string>,
  *   knownUrlHosts?: Set<string>
@@ -607,7 +610,8 @@ export function resolveDottedToken(raw, ctx = {}) {
   const clauseArtifact = ARTIFACT_CLAUSE_RE.test(clause);
   const clauseNetwork = NETWORK_CLAUSE_RE.test(clause);
   const codeContext = CODE_CONTEXT_RE.test(clause) || ctx.blockType === 'code' || ctx.zone === 'code';
-  const explicitRow = ctx.strongZone === true && (ctx.form === 'table_row' || ctx.form === 'list_row');
+  const explicitRow =
+    ctx.strongZone === true && (ctx.form === 'table_row' || ctx.form === 'list_row' || ctx.indicatorRow === true);
   // Key position: `token = value` / `"token": value` (never `token://`).
   const assignmentKey = /^["'`]?\s*(?:=(?!=)|:(?!\/\/)\s*(?:["'`\d[{]|true|false|null))/.test(after) && !declaredNetwork;
   const pathSegment = isPathSegmentPosition(before, after);
