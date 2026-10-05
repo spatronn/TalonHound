@@ -134,7 +134,7 @@ test('internal contracts bumped for structured table extraction (product VERSION
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v3');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v14');
   const version = fs.readFileSync(path.join(here, '..', '..', '..', 'VERSION'), 'utf8').trim();
-  assert.equal(version, '0.1.1-beta.11');
+  assert.equal(version, '0.2.0-beta.12');
 });
 
 // ---------------------------------------------------------------------------
