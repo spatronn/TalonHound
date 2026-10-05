@@ -31,6 +31,7 @@ COPY VERSION /VERSION
 COPY backend/lib/ioc-suppression.js ./lib/ioc-suppression.js
 COPY backend/lib/importOptimizationContext.js ./lib/importOptimizationContext.js
 COPY backend/lib/iocExpiration.js ./lib/iocExpiration.js
+COPY backend/lib/iocSourceImportHistory.js ./lib/iocSourceImportHistory.js
 COPY backend/lib/feedExpirationPolicy.js ./lib/feedExpirationPolicy.js
 COPY backend/lib/iocFeedSourceEvidence.js ./lib/iocFeedSourceEvidence.js
 COPY backend/lib/feedLifecycle.js ./lib/feedLifecycle.js
