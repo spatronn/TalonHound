@@ -6,7 +6,7 @@ TalonHound uses a single canonical product version stored in the repository root
 
 | Channel | Example tag | Example VERSION | GitHub Release |
 |--------|---------------|-----------------|----------------|
-| Beta prerelease | `v0.2.0-beta.13` | `0.2.0-beta.13` | Prerelease |
+| Beta prerelease | `v0.2.0-beta.14` | `0.2.0-beta.14` | Prerelease |
 | Release candidate | `v0.2.0-rc.1` | `0.2.0-rc.1` | Prerelease |
 | Stable | `v1.0.0` | `1.0.0` | Normal release |
 

@@ -273,13 +273,13 @@ test('N2. Docker placeholder TALONHOUND_VERSION=dev compares using VERSION file 
   }, async () => {
     const service = createUpdateCheckService({
       fetchImpl: async () => jsonResponse(betaManifest({
-        latest: '0.2.0-beta.13',
-        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.2.0-beta.13'
+        latest: '0.2.0-beta.14',
+        release_url: 'https://github.com/spatronn/TalonHound/releases/tag/v0.2.0-beta.14'
       }))
     });
     const status = await service.check({ force: true });
-    assert.equal(status.currentVersion, '0.2.0-beta.13');
-    assert.equal(status.latestVersion, '0.2.0-beta.13');
+    assert.equal(status.currentVersion, '0.2.0-beta.14');
+    assert.equal(status.latestVersion, '0.2.0-beta.14');
     assert.equal(status.status, 'up_to_date');
   });
 });
