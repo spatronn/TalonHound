@@ -19,6 +19,11 @@ import { formatIocEntityDisplay } from './auditIocContext.js';
 import { ensureIocTagAssignment } from './tagCatalogService.js';
 import { parseExcludeTagIds } from './tagHelpers.js';
 import { inferExactHashType, normalizeHashValue } from './fileArtifacts/hashNormalize.js';
+import { createServiceLogger } from './appLogger.js';
+import { runBestEffortFileArtifactDualWrite } from './fileArtifactDualWriteDiagnostics.js';
+
+const manualIocLog = createServiceLogger('backend');
+const loadFileArtifactDualWrite = () => import('./fileArtifacts/dualWrite.js');
 
 export function inferObservableType(value) {
   const v = String(value || '').trim();
@@ -392,22 +397,33 @@ export async function createManualIoc(pool, body, opts = {}) {
     [row.public_id, row.observable_type, String(row.observable || '').toLowerCase()]
   ).catch(() => {});
 
-  try {
-    const { dualWriteFileArtifactForObservable } = await import('./fileArtifacts/dualWrite.js');
-    await dualWriteFileArtifactForObservable(pool, {
-      observable: row.observable,
-      observableType: row.observable_type,
-      sourceName,
-      note: row.note,
-      confidence: row.confidence,
-      firstSeenAt: row.created_at,
-      lastSeenAt: row.created_at,
-      attachNoteSiblings: false,
-      providerMapping: false
-    });
-  } catch {
-    // dual-write must never fail manual IOC create
-  }
+  // dual-write must never fail manual IOC create, and must never be silent
+  await runBestEffortFileArtifactDualWrite({
+    run: async () => {
+      const { dualWriteFileArtifactForObservable } = await (opts.loadDualWrite || loadFileArtifactDualWrite)();
+      return dualWriteFileArtifactForObservable(pool, {
+        observable: row.observable,
+        observableType: row.observable_type,
+        sourceName,
+        note: row.note,
+        confidence: row.confidence,
+        firstSeenAt: row.created_at,
+        lastSeenAt: row.created_at,
+        attachNoteSiblings: false,
+        providerMapping: false
+      });
+    },
+    logger: opts.logger || manualIocLog,
+    fields: {
+      component: 'manual_ioc_create',
+      source: createdOrigin,
+      ioc_id: String(row.id),
+      ioc_public_id: row.public_id || null,
+      observable_type: row.observable_type,
+      ioc_source_id: sourceId
+    },
+    redactValues: [row.observable, value]
+  });
 
   await recomputeIocGlobalStatus(pool, row.id, row.observable_type, {
     audit: opts.audit,

@@ -11,16 +11,20 @@ import {
 import { normalizeConfidence, resolveImportConfidenceFields } from './iocConfidence.js';
 import { QUEUE_HARDENING } from './integrationQueueConfig.js';
 import { createServiceLogger } from './appLogger.js';
+import {
+  FILE_ARTIFACT_DUAL_WRITE_OPERATION,
+  describeFileArtifactDualWriteFailure,
+  isFileArtifactDualWriteFailureResult
+} from './fileArtifactDualWriteDiagnostics.js';
 
 const OBSERVABLE_INDEX_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash', 'ip', 'ipv6', 'domain', 'url']);
 
 const feedSyncLog = createServiceLogger('custom-threat-feeds');
 const DUAL_WRITE_LOG_FIELDS = Object.freeze({
   component: 'custom_threat_feed',
-  operation: 'file_artifact_dual_write',
+  operation: FILE_ARTIFACT_DUAL_WRITE_OPERATION,
   result: 'failed'
 });
-const DUAL_WRITE_MESSAGE_MAX = 300;
 const DUAL_WRITE_MAX_ERROR_CODES = 5;
 
 const loadFileArtifactDualWrite = () => import('./fileArtifacts/dualWrite.js');
@@ -51,13 +55,6 @@ export function createFileArtifactDualWriteFailureTracker({
   const byCode = new Map();
   const ids = { feed_id: feedId, integration_key: integrationKey, run_id: runId };
 
-  const safeMessage = (message, observable) => {
-    let msg = String(message || '');
-    if (observable) msg = msg.split(String(observable)).join('<observable>');
-    msg = redactCustomFeedSecrets(msg, credentials) || '';
-    return msg.replace(/\s+/g, ' ').trim().slice(0, DUAL_WRITE_MESSAGE_MAX);
-  };
-
   return {
     noteAttempt() {
       attempted += 1;
@@ -70,15 +67,19 @@ export function createFileArtifactDualWriteFailureTracker({
       failed += 1;
       const type = String(observableType || 'unknown').toLowerCase();
       byType.set(type, (byType.get(type) || 0) + 1);
-      const code = String(err?.code || err?.name || 'unknown');
+      const described = describeFileArtifactDualWriteFailure(err, {
+        redactValues: [observable],
+        redact: (msg) => redactCustomFeedSecrets(msg, credentials)
+      });
+      const code = described.error_code;
       if (byCode.has(code) || byCode.size < DUAL_WRITE_MAX_ERROR_CODES) {
         byCode.set(code, (byCode.get(code) || 0) + 1);
       }
       if (firstError) return;
       firstError = {
         code,
-        error_class: err instanceof Error ? err.constructor.name : 'DualWriteResult',
-        message: safeMessage(err instanceof Error ? err.message : (err?.error ?? err), observable)
+        error_class: described.error_class,
+        message: described.error_message
       };
       logger.warn('custom feed file-artifact dual-write failed; further failures this run are aggregated', {
         ...DUAL_WRITE_LOG_FIELDS,
@@ -149,7 +150,7 @@ async function dualWriteRowFileArtifact(client, {
       attachNoteSiblings: false,
       providerMapping: false
     });
-    if (result?.ok === false) tracker?.record(result, { observableType, observable });
+    if (isFileArtifactDualWriteFailureResult(result)) tracker?.record(result, { observableType, observable });
   } catch (err) {
     // dual-write must never fail custom feed sync, and must never be silent
     tracker?.record(err, { observableType, observable });

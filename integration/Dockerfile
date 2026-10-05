@@ -47,6 +47,7 @@ COPY backend/lib/customThreatFeedAuth.js ./lib/customThreatFeedAuth.js
 COPY backend/lib/customThreatFeedSsrf.js ./lib/customThreatFeedSsrf.js
 COPY backend/lib/customThreatFeedFetch.js ./lib/customThreatFeedFetch.js
 COPY backend/lib/customThreatFeedSync.js ./lib/customThreatFeedSync.js
+COPY backend/lib/fileArtifactDualWriteDiagnostics.js ./lib/fileArtifactDualWriteDiagnostics.js
 COPY backend/lib/customThreatFeedFingerprint.js ./lib/customThreatFeedFingerprint.js
 COPY backend/lib/customThreatFeedWorkerAudit.js ./lib/customThreatFeedWorkerAudit.js
 COPY backend/lib/observable-normalization.js ./lib/observable-normalization.js

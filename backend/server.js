@@ -161,6 +161,7 @@ import { registerSystemUpdatesRoutes } from './routes/systemUpdates.js';
 import { registerSystemTlsCertificateRoutes } from './routes/systemTlsCertificate.js';
 import { updateCheckService } from './lib/updateCheckService.js';
 import { createServiceLogger } from './lib/appLogger.js';
+import { dualWriteVirusTotalFileArtifact } from './lib/virustotalFileArtifactDualWrite.js';
 import { setSystemScheduleTimezoneOverride } from './lib/integrationSchedule.js';
 import {
   loadIntegrationQueueHealthSnapshot,
@@ -6528,31 +6529,9 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       for (const pid of invalidate) invalidateIocDetailsCache(pid);
     } catch { /* cache invalidation is best-effort */ }
 
-    // Dual-write: attach VT exact hash set to file artifact when enabled
-    try {
-      const { dualWriteFileArtifactForObservable, extractExactHashesFromVtRaw, isFileArtifactsDualWriteEnabled } = await import('./lib/fileArtifacts/index.js');
-      if (isFileArtifactsDualWriteEnabled() && extractExactHashesFromVtRaw(raw).length >= 1) {
-        const noteParts = [];
-        const attr = raw?.data?.attributes || {};
-        if (attr.md5) noteParts.push(`md5=${String(attr.md5).toLowerCase()}`);
-        if (attr.sha1) noteParts.push(`sha1=${String(attr.sha1).toLowerCase()}`);
-        if (attr.sha256) noteParts.push(`sha256=${String(attr.sha256).toLowerCase()}`);
-        await dualWriteFileArtifactForObservable(pool, {
-          observable: item.ioc_value,
-          observableType: iocType === 'hash'
-            ? (attr.sha256 ? 'sha256' : (attr.sha1 ? 'sha1' : 'md5'))
-            : iocType,
-          sourceName: 'VirusTotal',
-          note: noteParts.join(' | '),
-          attachNoteSiblings: true,
-          providerMapping: true,
-          observationType: 'enrichment_derived',
-          relationMethod: 'enrichment_result'
-        });
-      }
-    } catch {
-      // never fail VT enrichment on artifact dual-write
-    }
+    // Dual-write: attach VT exact hash set to file artifact when enabled.
+    // Best-effort and never rejects; failures are logged (never silent).
+    await dualWriteVirusTotalFileArtifact(pool, { iocId, iocType, observable: item.ioc_value, raw });
 
     await auditLogService.auditSuccess({
       req,
