@@ -97,7 +97,7 @@ Public-beta update checks and the safe CLI upgrade workflow are documented in [`
 ### Release invariants (enforced by `npm run test:release`)
 
 - Every static and lazy (`import('./…')`) relative import of a module baked into the integration image must resolve inside the built image layout (COPYs + `RUN ln -s` symlinks). Guard: `backend/lib/integrationImageImports.test.js`.
-- Custom-feed file-artifact dual-write is best-effort: a failure must not abort the primary feed import, and must never be silent. It is logged once per run (`[custom-threat-feed] file_artifact_dual_write_failed`) plus one per-run summary (`file_artifact_dual_write_failures … failed=N`), without raw IOC values or feed credentials, and is counted in the sync audit metadata. Guard: `backend/lib/customThreatFeedDualWrite.test.js`.
+- Custom-feed file-artifact dual-write is best-effort: a failure must not abort the primary feed import, and must never be silent. The first failure of a run and one per-run summary (`failed`, `attempted`, `by_type`, `error_codes`) are logged as structured warnings (`service=custom-threat-feeds`, `operation=file_artifact_dual_write`, `result=failed`), without raw IOC values or feed credentials, and the count is added to the sync audit metadata. Guard: `backend/lib/customThreatFeedDualWrite.test.js`.
 
 ## Configuration compatibility
 

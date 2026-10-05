@@ -78,12 +78,16 @@ function makeClient() {
   return client;
 }
 
+/** Captures appLogger-style calls: logger.<level>(message, fields). */
 function makeLogger() {
-  const lines = [];
+  const entries = [];
+  const capture = (level) => (message, fields = {}) => entries.push({ level, message, fields });
   return {
-    lines,
-    warn: (...args) => lines.push(args.map(String).join(' ')),
-    log: (...args) => lines.push(args.map(String).join(' '))
+    entries,
+    debug: capture('debug'),
+    info: capture('info'),
+    warn: capture('warn'),
+    error: capture('error')
   };
 }
 
@@ -107,7 +111,7 @@ async function runSync({ rows = 3, loadDualWrite }) {
   return { result, client, logger, hashes };
 }
 
-const dualWriteLines = (logger) => logger.lines.filter((l) => l.includes('file_artifact_dual_write'));
+const dualWriteEntries = (logger) => logger.entries.filter((e) => e.fields.operation === 'file_artifact_dual_write');
 
 function assertPrimaryImportSucceeded({ result, client, hashes }) {
   assert.equal(result.status, 'success');
@@ -144,7 +148,7 @@ describe('custom feed file-artifact dual-write is best-effort but observable', (
     assert.equal(calls[0].providerMapping, false);
     assert.equal(run.result.file_artifact_dual_write_failures, 0);
     assert.equal(run.result.file_artifact_dual_write_first_error, null);
-    assert.deepEqual(dualWriteLines(run.logger), []);
+    assert.deepEqual(run.logger.entries, []);
   });
 
   it('missing lazy module (ERR_MODULE_NOT_FOUND): feed import succeeds, failure is visible', async () => {
@@ -155,13 +159,39 @@ describe('custom feed file-artifact dual-write is best-effort but observable', (
     assertPrimaryImportSucceeded(run);
     assert.equal(run.result.file_artifact_dual_write_failures, run.hashes.length);
     assert.equal(run.result.file_artifact_dual_write_first_error, 'ERR_MODULE_NOT_FOUND');
-    const lines = dualWriteLines(run.logger);
-    assert.equal(lines.length, 2);
-    assert.match(lines[0], /file_artifact_dual_write_failed feed=22222222-2222-2222-2222-222222222222 /);
-    assert.match(lines[0], /integration_key=custom_feed_dualwrite_test run=44444444-/);
-    assert.match(lines[0], /observable_type=sha256 error_code=ERR_MODULE_NOT_FOUND error_class=Error/);
-    assert.match(lines[1], /file_artifact_dual_write_failures .* failed=3 /);
-    assert.match(lines[1], /by_type=sha256:3 error_codes=ERR_MODULE_NOT_FOUND:3 first_error=ERR_MODULE_NOT_FOUND/);
+    const [first, summary, ...rest] = dualWriteEntries(run.logger);
+    assert.deepEqual(rest, []);
+    assert.equal(first.level, 'warn');
+    assert.deepEqual(
+      { ...first.fields, error_message: undefined },
+      {
+        component: 'custom_threat_feed',
+        operation: 'file_artifact_dual_write',
+        result: 'failed',
+        feed_id: FEED_ID,
+        integration_key: 'custom_feed_dualwrite_test',
+        run_id: RUN_ID,
+        observable_type: 'sha256',
+        error_code: 'ERR_MODULE_NOT_FOUND',
+        error_class: 'Error',
+        error_message: undefined
+      }
+    );
+    assert.match(first.fields.error_message, /__missing_for_test__/);
+    assert.equal(summary.level, 'warn');
+    assert.deepEqual(summary.fields, {
+      component: 'custom_threat_feed',
+      operation: 'file_artifact_dual_write',
+      result: 'failed',
+      feed_id: FEED_ID,
+      integration_key: 'custom_feed_dualwrite_test',
+      run_id: RUN_ID,
+      failed: 3,
+      attempted: 3,
+      by_type: { sha256: 3 },
+      error_codes: { ERR_MODULE_NOT_FOUND: 3 },
+      first_error: 'ERR_MODULE_NOT_FOUND'
+    });
   });
 
   it('thrown dual-write error: feed import succeeds, failure is visible, no secrets / raw IOC values', async () => {
@@ -179,8 +209,10 @@ describe('custom feed file-artifact dual-write is best-effort but observable', (
     assertPrimaryImportSucceeded(run);
     assert.equal(run.result.file_artifact_dual_write_failures, run.hashes.length);
     assert.equal(run.result.file_artifact_dual_write_first_error, '42P01');
-    const text = dualWriteLines(run.logger).join('\n');
-    assert.match(text, /error_code=42P01/);
+    const entries = dualWriteEntries(run.logger);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].fields.error_code, '42P01');
+    const text = JSON.stringify(run.logger.entries);
     assert.match(text, /<observable>/);
     assert.match(text, /\[REDACTED\]/);
     assertNoSensitiveData(text, run.hashes);
@@ -200,9 +232,11 @@ describe('custom feed file-artifact dual-write is best-effort but observable', (
     assertPrimaryImportSucceeded(run);
     assert.equal(run.result.file_artifact_dual_write_failures, 2);
     assert.equal(run.result.file_artifact_dual_write_first_error, '23505');
-    const lines = dualWriteLines(run.logger);
-    assert.equal(lines.length, 2);
-    assert.match(lines[0], /error_code=23505 error_class=DualWriteResult/);
+    const entries = dualWriteEntries(run.logger);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0].fields.error_code, '23505');
+    assert.equal(entries[0].fields.error_class, 'DualWriteResult');
+    assert.equal(entries[1].fields.attempted, 2);
   });
 
   it('log storm: 2,000 failing rows emit exactly one first-failure line and one summary', async () => {
@@ -216,8 +250,12 @@ describe('custom feed file-artifact dual-write is best-effort but observable', (
     });
     assertPrimaryImportSucceeded(run);
     assert.equal(run.result.file_artifact_dual_write_failures, 2000);
-    assert.equal(run.logger.lines.length, 2);
-    assert.match(run.logger.lines[1], /failed=2000 attempted=2000 by_type=sha256:2000 error_codes=ECONNRESET:2000/);
+    assert.equal(run.logger.entries.length, 2);
+    const summary = run.logger.entries[1].fields;
+    assert.equal(summary.failed, 2000);
+    assert.equal(summary.attempted, 2000);
+    assert.deepEqual(summary.by_type, { sha256: 2000 });
+    assert.deepEqual(summary.error_codes, { ECONNRESET: 2000 });
   });
 
   it('sync audit metadata carries the failure count only when there were failures', async () => {
@@ -242,7 +280,7 @@ describe('createFileArtifactDualWriteFailureTracker', () => {
     const logger = makeLogger();
     const t = createFileArtifactDualWriteFailureTracker({ feedId: 'f', logger });
     t.flush();
-    assert.deepEqual(logger.lines, []);
+    assert.deepEqual(logger.entries, []);
     for (let i = 0; i < 50; i += 1) {
       t.noteAttempt();
       t.record(Object.assign(new Error('x'), { code: `E${i}` }), { observableType: 'md5' });
@@ -251,7 +289,7 @@ describe('createFileArtifactDualWriteFailureTracker', () => {
     const s = t.summary();
     assert.equal(s.failed, 50);
     assert.ok(Object.keys(s.error_codes).length <= 5);
-    assert.equal(logger.lines.length, 2);
+    assert.equal(logger.entries.length, 2);
   });
 });
 

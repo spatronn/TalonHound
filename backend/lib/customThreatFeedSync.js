@@ -10,10 +10,16 @@ import {
 } from './iocExpiration.js';
 import { normalizeConfidence, resolveImportConfidenceFields } from './iocConfidence.js';
 import { QUEUE_HARDENING } from './integrationQueueConfig.js';
+import { createServiceLogger } from './appLogger.js';
 
 const OBSERVABLE_INDEX_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash', 'ip', 'ipv6', 'domain', 'url']);
 
-const DUAL_WRITE_LOG = '[custom-threat-feed]';
+const feedSyncLog = createServiceLogger('custom-threat-feeds');
+const DUAL_WRITE_LOG_FIELDS = Object.freeze({
+  component: 'custom_threat_feed',
+  operation: 'file_artifact_dual_write',
+  result: 'failed'
+});
 const DUAL_WRITE_MESSAGE_MAX = 300;
 const DUAL_WRITE_MAX_ERROR_CODES = 5;
 
@@ -29,21 +35,21 @@ const loadFileArtifactDualWrite = () => import('./fileArtifacts/dualWrite.js');
  * or feed credentials.
  *
  * @param {{ feedId?: string|null, integrationKey?: string|null, runId?: string|null,
- *   credentials?: object|null, logger?: { warn: Function } }} ctx
+ *   credentials?: object|null, logger?: { warn: (message: string, fields: object) => void } }} ctx
  */
 export function createFileArtifactDualWriteFailureTracker({
   feedId = null,
   integrationKey = null,
   runId = null,
   credentials = null,
-  logger = console
+  logger = feedSyncLog
 } = {}) {
   let attempted = 0;
   let failed = 0;
   let firstError = null;
   const byType = new Map();
   const byCode = new Map();
-  const ids = `feed=${feedId || '-'} integration_key=${integrationKey || '-'} run=${runId || '-'}`;
+  const ids = { feed_id: feedId, integration_key: integrationKey, run_id: runId };
 
   const safeMessage = (message, observable) => {
     let msg = String(message || '');
@@ -74,11 +80,14 @@ export function createFileArtifactDualWriteFailureTracker({
         error_class: err instanceof Error ? err.constructor.name : 'DualWriteResult',
         message: safeMessage(err instanceof Error ? err.message : (err?.error ?? err), observable)
       };
-      logger.warn(
-        `${DUAL_WRITE_LOG} file_artifact_dual_write_failed ${ids} observable_type=${type}`
-        + ` error_code=${firstError.code} error_class=${firstError.error_class}`
-        + ` message=${JSON.stringify(firstError.message)} (further failures this run are aggregated)`
-      );
+      logger.warn('custom feed file-artifact dual-write failed; further failures this run are aggregated', {
+        ...DUAL_WRITE_LOG_FIELDS,
+        ...ids,
+        observable_type: type,
+        error_code: firstError.code,
+        error_class: firstError.error_class,
+        error_message: firstError.message
+      });
     },
     summary() {
       return {
@@ -91,11 +100,15 @@ export function createFileArtifactDualWriteFailureTracker({
     },
     flush() {
       if (!failed) return;
-      const fmt = (m) => [...m].map(([k, v]) => `${k}:${v}`).join(',');
-      logger.warn(
-        `${DUAL_WRITE_LOG} file_artifact_dual_write_failures ${ids} failed=${failed} attempted=${attempted}`
-        + ` by_type=${fmt(byType)} error_codes=${fmt(byCode)} first_error=${firstError?.code || 'unknown'}`
-      );
+      logger.warn('custom feed file-artifact dual-write failures', {
+        ...DUAL_WRITE_LOG_FIELDS,
+        ...ids,
+        failed,
+        attempted,
+        by_type: Object.fromEntries(byType),
+        error_codes: Object.fromEntries(byCode),
+        first_error: firstError?.code || 'unknown'
+      });
     }
   };
 }
@@ -115,6 +128,7 @@ async function dualWriteRowFileArtifact(client, {
   confidence,
   seenAt
 }, { tracker = null, loadDualWrite = loadFileArtifactDualWrite } = {}) {
+  tracker?.noteAttempt();
   try {
     const { dualWriteFileArtifactForObservable } = await loadDualWrite();
     const publicId = existingPublicId
@@ -123,7 +137,6 @@ async function dualWriteRowFileArtifact(client, {
         [iocItemId, observableType]
       )).rows[0]?.public_id;
     if (!publicId) return;
-    tracker?.noteAttempt();
     const result = await dualWriteFileArtifactForObservable(client, {
       observable,
       observableType,
@@ -348,7 +361,7 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     queueJobId = null,
     fetchFeed = fetchFeedUrl,
     loadDualWrite = loadFileArtifactDualWrite,
-    logger = console
+    logger = feedSyncLog
   } = options;
 
   const sourceName = feedRow.feed_name;
