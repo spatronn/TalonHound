@@ -29,18 +29,22 @@ function makePool() {
         watchlist.push({ user_id, observable_type, ioc_id, created_at: `t${clock++}` });
         return { rowCount: 1 };
       }
+      // Remove/status match the viewed IOC plus its proven hash aliases
+      // (ioc_id = ANY($2)); with FILE_ARTIFACTS_READ off that is just [ioc_id].
       if (s.startsWith('DELETE FROM user_ioc_watchlist')) {
-        const [user_id, observable_type, ioc_id] = params;
+        const [user_id, ids] = params;
+        const idSet = new Set((ids || []).map(Number));
         const before = watchlist.length;
         for (let i = watchlist.length - 1; i >= 0; i -= 1) {
           const r = watchlist[i];
-          if (r.user_id === user_id && r.observable_type === observable_type && r.ioc_id === ioc_id) watchlist.splice(i, 1);
+          if (r.user_id === user_id && idSet.has(r.ioc_id)) watchlist.splice(i, 1);
         }
         return { rowCount: before - watchlist.length };
       }
       if (s.includes('SELECT 1 FROM user_ioc_watchlist')) {
-        const [user_id, observable_type, ioc_id] = params;
-        const hit = watchlist.some((r) => r.user_id === user_id && r.observable_type === observable_type && r.ioc_id === ioc_id);
+        const [user_id, ids] = params;
+        const idSet = new Set((ids || []).map(Number));
+        const hit = watchlist.some((r) => r.user_id === user_id && idSet.has(r.ioc_id));
         return { rowCount: hit ? 1 : 0, rows: hit ? [{ '?column?': 1 }] : [] };
       }
       if (s.includes('count(*)') && s.includes('FROM user_ioc_watchlist')) {
@@ -130,6 +134,7 @@ test('DELETE removes and is idempotent', async () => {
   await call(app, 'PUT', `/api/ioc/${IOC_A.public_id}/watchlist`);
   let res = await call(app, 'DELETE', `/api/ioc/${IOC_A.public_id}/watchlist`);
   assert.deepEqual(res.body, { watchlisted: false });
+  assert.equal(pool.watchlist.length, 0, 'star row removed');
   res = await call(app, 'DELETE', `/api/ioc/${IOC_A.public_id}/watchlist`);
   assert.equal(res.status, 200);
   assert.deepEqual(res.body, { watchlisted: false });
