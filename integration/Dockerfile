@@ -76,5 +76,9 @@ COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 COPY backend/lib/tagHelpers.js ./lib/tagHelpers.js
 COPY backend/lib/tagCatalogService.js ./lib/tagCatalogService.js
 COPY backend/lib/fileArtifacts /backend/lib/fileArtifacts
+# Backend modules copied into ./lib lazily import './fileArtifacts/…' (e.g. custom feed
+# dual-write). Point that at the single copy above so they resolve to the same module
+# instances as lib/fileArtifacts.js (ESM resolves symlinks to the real path).
+RUN ln -s /backend/lib/fileArtifacts /app/lib/fileArtifacts
 
 CMD ["npm", "run", "worker"]
