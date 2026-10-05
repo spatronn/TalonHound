@@ -3,8 +3,9 @@
  * backend/lib modules into /app/lib. Every relative import of a module in that
  * image must resolve to a file the image actually contains, or the integration
  * worker/scheduler crash-loop with ERR_MODULE_NOT_FOUND on start (static
- * imports) or silently skip work behind a best-effort try/catch (lazy
- * `await import('./…')`, e.g. custom feed file-artifact dual-write).
+ * imports) or skip work behind a best-effort try/catch (lazy
+ * `await import('./…')`, e.g. custom feed file-artifact dual-write, whose
+ * failure must stay observable: customThreatFeedDualWrite.test.js).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,7 +83,7 @@ test('integration image: every lazy relative import() resolves inside the image'
     return;
   }
   assert.deepEqual(unresolvedImports(LAZY_RELATIVE_IMPORT), [],
-    'lazy imports run inside best-effort try/catch; a missing module silently skips work');
+    'lazy imports run inside best-effort try/catch; a missing module skips that work at runtime');
 });
 
 test('integration image ships the source-import history module iocExpiration depends on', (t) => {

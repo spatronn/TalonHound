@@ -21,6 +21,11 @@ export async function insertCustomFeedSyncAudit(pool, result, triggeredBy = 'sch
     status: result.status,
     error: result.error_message ? String(result.error_message).slice(0, 500) : null
   };
+  // Best-effort secondary write; surfaced only when it failed (never changes status).
+  if (Number(result.file_artifact_dual_write_failures) > 0) {
+    metadata.file_artifact_dual_write_failures = Number(result.file_artifact_dual_write_failures);
+    metadata.file_artifact_dual_write_first_error = result.file_artifact_dual_write_first_error || null;
+  }
 
   await pool.query(
     `INSERT INTO audit_logs (

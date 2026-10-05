@@ -13,6 +13,136 @@ import { QUEUE_HARDENING } from './integrationQueueConfig.js';
 
 const OBSERVABLE_INDEX_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash', 'ip', 'ipv6', 'domain', 'url']);
 
+const DUAL_WRITE_LOG = '[custom-threat-feed]';
+const DUAL_WRITE_MESSAGE_MAX = 300;
+const DUAL_WRITE_MAX_ERROR_CODES = 5;
+
+const loadFileArtifactDualWrite = () => import('./fileArtifacts/dualWrite.js');
+
+/**
+ * Per-run aggregation of best-effort file-artifact dual-write failures.
+ *
+ * Dual-write never fails the feed import, but must never be silent either: the
+ * first failure of a run is logged immediately and flush() logs one summary, so a
+ * broken module/DB path yields 2 lines per run, not one per feed row. Lines carry
+ * feed ids, observable type and error code/class, never the observable itself
+ * or feed credentials.
+ *
+ * @param {{ feedId?: string|null, integrationKey?: string|null, runId?: string|null,
+ *   credentials?: object|null, logger?: { warn: Function } }} ctx
+ */
+export function createFileArtifactDualWriteFailureTracker({
+  feedId = null,
+  integrationKey = null,
+  runId = null,
+  credentials = null,
+  logger = console
+} = {}) {
+  let attempted = 0;
+  let failed = 0;
+  let firstError = null;
+  const byType = new Map();
+  const byCode = new Map();
+  const ids = `feed=${feedId || '-'} integration_key=${integrationKey || '-'} run=${runId || '-'}`;
+
+  const safeMessage = (message, observable) => {
+    let msg = String(message || '');
+    if (observable) msg = msg.split(String(observable)).join('<observable>');
+    msg = redactCustomFeedSecrets(msg, credentials) || '';
+    return msg.replace(/\s+/g, ' ').trim().slice(0, DUAL_WRITE_MESSAGE_MAX);
+  };
+
+  return {
+    noteAttempt() {
+      attempted += 1;
+    },
+    /**
+     * @param {any} err - thrown error, or a dual-write `{ ok: false }` result
+     * @param {{ observableType?: string|null, observable?: string|null }} row
+     */
+    record(err, { observableType = null, observable = null } = {}) {
+      failed += 1;
+      const type = String(observableType || 'unknown').toLowerCase();
+      byType.set(type, (byType.get(type) || 0) + 1);
+      const code = String(err?.code || err?.name || 'unknown');
+      if (byCode.has(code) || byCode.size < DUAL_WRITE_MAX_ERROR_CODES) {
+        byCode.set(code, (byCode.get(code) || 0) + 1);
+      }
+      if (firstError) return;
+      firstError = {
+        code,
+        error_class: err instanceof Error ? err.constructor.name : 'DualWriteResult',
+        message: safeMessage(err instanceof Error ? err.message : (err?.error ?? err), observable)
+      };
+      logger.warn(
+        `${DUAL_WRITE_LOG} file_artifact_dual_write_failed ${ids} observable_type=${type}`
+        + ` error_code=${firstError.code} error_class=${firstError.error_class}`
+        + ` message=${JSON.stringify(firstError.message)} (further failures this run are aggregated)`
+      );
+    },
+    summary() {
+      return {
+        attempted,
+        failed,
+        by_type: Object.fromEntries(byType),
+        error_codes: Object.fromEntries(byCode),
+        first_error: firstError
+      };
+    },
+    flush() {
+      if (!failed) return;
+      const fmt = (m) => [...m].map(([k, v]) => `${k}:${v}`).join(',');
+      logger.warn(
+        `${DUAL_WRITE_LOG} file_artifact_dual_write_failures ${ids} failed=${failed} attempted=${attempted}`
+        + ` by_type=${fmt(byType)} error_codes=${fmt(byCode)} first_error=${firstError?.code || 'unknown'}`
+      );
+    }
+  };
+}
+
+/**
+ * Best-effort file-artifact dual-write for one imported feed row. Never throws;
+ * failures (module load, thrown errors, `{ ok: false }` results) go to the tracker.
+ */
+async function dualWriteRowFileArtifact(client, {
+  iocItemId,
+  existingPublicId,
+  observable,
+  observableType,
+  sourceName,
+  feedId,
+  note,
+  confidence,
+  seenAt
+}, { tracker = null, loadDualWrite = loadFileArtifactDualWrite } = {}) {
+  try {
+    const { dualWriteFileArtifactForObservable } = await loadDualWrite();
+    const publicId = existingPublicId
+      || (await client.query(
+        `SELECT public_id FROM ioc_items WHERE id = $1 AND observable_type = $2`,
+        [iocItemId, observableType]
+      )).rows[0]?.public_id;
+    if (!publicId) return;
+    tracker?.noteAttempt();
+    const result = await dualWriteFileArtifactForObservable(client, {
+      observable,
+      observableType,
+      sourceName,
+      feedId,
+      note,
+      confidence,
+      firstSeenAt: seenAt,
+      lastSeenAt: seenAt,
+      attachNoteSiblings: false,
+      providerMapping: false
+    });
+    if (result?.ok === false) tracker?.record(result, { observableType, observable });
+  } catch (err) {
+    // dual-write must never fail custom feed sync, and must never be silent
+    tracker?.record(err, { observableType, observable });
+  }
+}
+
 /** Error stamped onto custom_threat_feed_runs left `running` past the stale window. */
 export const STALE_CUSTOM_THREAT_FEED_RUN_MESSAGE = 'interrupted: stale running run reconciled';
 
@@ -91,7 +221,7 @@ async function upsertIocRow(client, {
   rowConfidence,
   feedId,
   seenAt
-}) {
+}, dualWrite = {}) {
   const explicitConfidence = resolveRowConfidence(rowConfidence, defaultConfidence);
   const confFields = resolveImportConfidenceFields({ parsedSourceConfidence: explicitConfidence });
   const contentFingerprint = computeCustomThreatFeedContentFingerprint({
@@ -174,31 +304,17 @@ async function upsertIocRow(client, {
   }
 
   // File artifact dual-write: Custom Feed observed-as = the hash type it actually sent.
-  try {
-    const { dualWriteFileArtifactForObservable } = await import('./fileArtifacts/dualWrite.js');
-    const publicId = existing.rowCount
-      ? existing.rows[0].public_id
-      : (await client.query(
-          `SELECT public_id FROM ioc_items WHERE id = $1 AND observable_type = $2`,
-          [iocItemId, observableType]
-        )).rows[0]?.public_id;
-    if (publicId) {
-      await dualWriteFileArtifactForObservable(client, {
-        observable,
-        observableType,
-        sourceName,
-        feedId,
-        note,
-        confidence: confFields.confidence,
-        firstSeenAt: seenAt,
-        lastSeenAt: seenAt,
-        attachNoteSiblings: false,
-        providerMapping: false
-      });
-    }
-  } catch {
-    // dual-write must never fail custom feed sync
-  }
+  await dualWriteRowFileArtifact(client, {
+    iocItemId,
+    existingPublicId: existing.rowCount ? existing.rows[0].public_id : null,
+    observable,
+    observableType,
+    sourceName,
+    feedId,
+    note,
+    confidence: confFields.confidence,
+    seenAt
+  }, dualWrite);
 
   return {
     iocItemId,
@@ -225,7 +341,15 @@ async function expireMissingFromSnapshot(client, integrationFeedId, seenKeys, au
 export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
   const startedAt = Date.now();
   const seenAt = new Date();
-  const { signal, triggeredBy = 'scheduler', runId = null, queueJobId = null } = options;
+  const {
+    signal,
+    triggeredBy = 'scheduler',
+    runId = null,
+    queueJobId = null,
+    fetchFeed = fetchFeedUrl,
+    loadDualWrite = loadFileArtifactDualWrite,
+    logger = console
+  } = options;
 
   const sourceName = feedRow.feed_name;
   const sourceUrl = sanitizeUrlForDisplay(feedRow.url);
@@ -243,6 +367,14 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     );
     customRunId = ins.rows[0].id;
   }
+
+  const dualWriteTracker = createFileArtifactDualWriteFailureTracker({
+    feedId,
+    integrationKey: feedRow.integration_key || null,
+    runId: customRunId,
+    credentials: feedRow.credentials || null,
+    logger
+  });
 
   const counters = {
     total_rows: 0,
@@ -265,7 +397,7 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
   try {
     if (signal?.aborted) throw new Error('Sync aborted');
 
-    const fetchResult = await fetchFeedUrl(feedRow.url, {
+    const fetchResult = await fetchFeed(feedRow.url, {
       timeoutMs: feedRow.timeout_ms,
       credentials: feedRow.credentials || null
     });
@@ -310,7 +442,7 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
           rowConfidence: row.confidence,
           feedId: integrationFeedId,
           seenAt
-        });
+        }, { tracker: dualWriteTracker, loadDualWrite });
         if (result.inserted) counters.inserted += 1;
         else if (result.updated) counters.updated += 1;
         else if (result.refreshed) counters.refreshed += 1;
@@ -336,6 +468,9 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     const rawMessage = String(err?.message || err).slice(0, 4000);
     errorMessage = redactCustomFeedSecrets(rawMessage, feedRow.credentials || null);
   }
+
+  dualWriteTracker.flush();
+  const fileArtifactDualWrite = dualWriteTracker.summary();
 
   const durationMs = Date.now() - startedAt;
   await client.query(
@@ -409,6 +544,8 @@ export async function runCustomThreatFeedSync(client, feedRow, options = {}) {
     ...counters,
     error_message: errorMessage,
     invalid_samples: invalidSamples.slice(0, 20),
+    file_artifact_dual_write_failures: fileArtifactDualWrite.failed,
+    file_artifact_dual_write_first_error: fileArtifactDualWrite.first_error?.code || null,
     feed_id: feedId,
     feed_name: sourceName
   };

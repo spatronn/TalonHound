@@ -94,6 +94,11 @@ Public-beta update checks and the safe CLI upgrade workflow are documented in [`
 - Publishing to GHCR and GitHub Releases happens only from [`.github/workflows/release.yml`](../.github/workflows/release.yml) on trusted version tags (`v*`).
 - Release images receive GitHub Artifact Attestations tied to their immutable digests.
 
+### Release invariants (enforced by `npm run test:release`)
+
+- Every static and lazy (`import('./…')`) relative import of a module baked into the integration image must resolve inside the built image layout (COPYs + `RUN ln -s` symlinks). Guard: `backend/lib/integrationImageImports.test.js`.
+- Custom-feed file-artifact dual-write is best-effort: a failure must not abort the primary feed import, and must never be silent. It is logged once per run (`[custom-threat-feed] file_artifact_dual_write_failed`) plus one per-run summary (`file_artifact_dual_write_failures … failed=N`), without raw IOC values or feed credentials, and is counted in the sync audit metadata. Guard: `backend/lib/customThreatFeedDualWrite.test.js`.
+
 ## Configuration compatibility
 
 Upgrades must preserve operator-managed `.env` and persistent Docker volumes. Release automation does not overwrite local configuration.
