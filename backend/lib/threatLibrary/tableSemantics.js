@@ -23,12 +23,12 @@ import { resolveDottedTokenType } from './candidateTyping.js';
 import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
 
 /**
- * v2: row type labels feed the observable-type resolver (a "Mutex" / "Path"
- * row never yields a domain / URL), relative paths and technical artifacts
- * are retained as non-IOC row values, tables made only of such artifacts are
- * `artifact_table` (row provenance kept, never explicit).
+ * v3: dense headerless observable grids (e.g. a narrative table of public
+ * third-party endpoints) are no longer self-proving IOC tables. Explicitness
+ * requires a type column or a header-labelled indicator column; publisher IOC
+ * headings still assert rows by section inheritance without that structure.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v2';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v3';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -547,8 +547,12 @@ export function interpretIocTable(block, opts = {}) {
     return result;
   }
 
-  // Explicitness: the table itself proves IOC semantics when it declares types,
-  // labels its indicator column, or is essentially a list of IOC observables.
+  // Explicitness: the table itself proves IOC semantics when it declares types
+  // or labels its indicator column. A dense headerless grid of IPs/domains is
+  // not enough — publishers often render narrative infrastructure (public
+  // STUN pools, scanned hosts, example ranges) as multi-column IP tables that
+  // must not open an authoritative IOC section by density alone. Rows under a
+  // real IOC / C2 / Files heading still inherit assertion from the section.
   const iocValuesByColumn = new Map();
   for (const r of result.rows) {
     if (r.status !== 'valid') continue;
@@ -559,12 +563,19 @@ export function interpretIocTable(block, opts = {}) {
   );
   const headerLabelled = iocCols.some((c) => c.method === 'header' || c.method === 'content_override' || c.declared_type);
   const denseObservables = iocCols.some((c) => c.observable_fraction >= 0.8) && result.stats.rows_valid >= 2;
-  const structural = iocCols.length > 0 && (Boolean(typeCol) || headerLabelled || denseObservables);
+  const structural = iocCols.length > 0 && (Boolean(typeCol) || headerLabelled);
   const headingText = String(block?.section_heading || block?.table?.caption || '');
   const negativeContext = NEGATIVE_TABLE_CONTEXT_RE.test(headingText) || opts.negativeZone === true;
   result.kind = 'ioc_table';
   result.explicit = structural && !negativeContext;
-  result.reason = !structural ? 'weak_structure' : negativeContext ? 'negative_context' : 'structural_ioc_table';
+  result.dense_observables = denseObservables;
+  result.reason = !structural
+    ? denseObservables
+      ? 'dense_without_type_or_header'
+      : 'weak_structure'
+    : negativeContext
+      ? 'negative_context'
+      : 'structural_ioc_table';
   result.declared_type_column = typeCol ? typeCol.index : null;
   result.indicator_columns = indicatorCols.map((c) => c.index);
   result.description_columns = descCols.map((c) => c.index);

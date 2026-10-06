@@ -606,9 +606,11 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   }
 
   const form = String(opts.form || '');
-  // Endpoint / typed-table forms assert an observable in any zone; other row
-  // forms assert only where the publisher curates the list.
-  if (form === 'ip_port' || form === 'table_row' || (authoritative && structuralRow)) {
+  // Endpoint forms (ip:port) assert by shape. Table rows assert only inside a
+  // publisher-curated section (or after an explicit typed/header-labelled
+  // table upgraded the block zone). A narrative dense IP grid must not become
+  // operational-malicious merely because cells were extracted as table_row.
+  if (form === 'ip_port' || (authoritative && structuralRow)) {
     return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'structural_row', authoritative, structural_row: true };
   }
 
