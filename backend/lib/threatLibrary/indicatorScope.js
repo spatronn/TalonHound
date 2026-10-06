@@ -17,6 +17,27 @@ import { collapseLetterSpacing, isObservableOnlyLine } from './pdfLayout.js';
 import { refangTextForExtraction } from './defang.js';
 import { FILE_EXT_HINT, suffixStrength, validateUrlCandidate } from './observableTypeResolver.js';
 
+/**
+ * True when a dotted token is a filename-shaped annotation (loader.exe,
+ * wg-ca.crt), not a network observable suitable for a pure IOC list line.
+ * @param {string} token
+ */
+function isFilenameShapedToken(token) {
+  const t = String(token || '').replace(/[.,;)\]。，；]+$/, '').toLowerCase();
+  if (!t) return false;
+  // CIDR / IP:port are network tokens, never filesystem paths.
+  if (/^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?$/.test(t)) return false;
+  if (/^[0-9a-f:]+\/\d{1,3}$/i.test(t)) return false;
+  if (t.includes('/') || t.includes('\\')) return true;
+  const labels = t.split('.').filter(Boolean);
+  if (labels.length < 2) return false;
+  const last = labels[labels.length - 1];
+  if (FILE_EXT_HINT.has(last)) return true;
+  // Compound archives: name.tar.gz
+  if (labels.length >= 3 && FILE_EXT_HINT.has(labels[labels.length - 2]) && FILE_EXT_HINT.has(last)) return true;
+  return suffixStrength(labels) === 'weak';
+}
+
 export const INDICATOR_SCOPES = Object.freeze({
   AUTHORITATIVE: 'authoritative',
   CONTEXTUAL: 'contextual',
@@ -389,18 +410,48 @@ export function isObservableListLine(text) {
   if (!t || t.length > 2000) return false;
   const tokens = t.split(/[\s,;|，；]+/).filter(Boolean);
   if (!tokens.length) return false;
-  return tokens.every((tok) => OBSERVABLE_TOKEN_RE.test(tok.replace(/[.,;)\]。，；]+$/, '')) || isSchemeLessUrlToken(tok));
+  // "filename HASH" rows are one hash indicator with a file annotation, not a
+  // two-token observable list (otherwise loader.exe / wg-ca.crt become domains).
+  return tokens.every((tok) => {
+    const clean = tok.replace(/[.,;)\]。，；]+$/, '');
+    if (isSchemeLessUrlToken(clean)) return true;
+    if (isFilenameShapedToken(clean)) return false;
+    return OBSERVABLE_TOKEN_RE.test(clean);
+  });
+}
+
+/**
+ * The visual line that carries `value` inside a multi-line block. Publisher
+ * IOC appendices often keep several "filename HASH" / endpoint rows in one
+ * `<pre>` (or one retained block); row-shape must read the line the value sits
+ * on, not the whole block (which would look like prose because other hashes
+ * sit on both sides).
+ * @param {string} text
+ * @param {string} value
+ */
+export function lineContainingObservable(text, value) {
+  const hay = String(text || '');
+  const v = refangTextForExtraction(String(value || '').trim());
+  if (!hay || !v) return hay;
+  if (!hay.includes('\n') && !hay.includes('\r')) return hay;
+  const low = v.toLowerCase();
+  for (const line of hay.split(/\r?\n/)) {
+    if (line.toLowerCase().includes(low)) return line.trim();
+  }
+  return hay;
 }
 
 /**
  * True when a short line is one indicator value plus at most a short label or
  * annotation on one side ("vip311[.]cc – Decoy domain", "C2 203.0.113.44",
- * "Domain: evil.example"). A value embedded in prose on both sides is not a row.
+ * "Domain: evil.example", "_grab.py &lt;sha256&gt;"). A value embedded in prose
+ * on both sides is not a row.
  * @param {string} text
  * @param {string} value normalized or original observable spelling
  */
 export function isIndicatorRowShape(text, value) {
-  const t = refangTextForExtraction(String(text || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
+  const focused = lineContainingObservable(text, value);
+  const t = refangTextForExtraction(String(focused || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
   if (!t) return false;
   if (isObservableListLine(t)) return true;
   if (t.length > 160) return false;

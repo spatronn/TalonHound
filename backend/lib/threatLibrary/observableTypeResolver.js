@@ -298,6 +298,8 @@ const FILE_EXT_HINT = new Set([
   // Java / .NET / server-page deployables and handlers (none is a DNS suffix).
   'war', 'ear', 'jspx', 'jspf', 'ashx', 'asmx', 'ascx', 'axd', 'cshtml', 'phtml', 'shtml', 'cfm',
   'txt', 'log', 'dat', 'bin', 'cfg', 'ini', 'xml', 'json', 'csv',
+  // Certificates / desktop launchers commonly listed beside sample hashes.
+  'crt', 'pem', 'cer', 'der', 'p12', 'pfx', 'desktop',
   'enc', 'locked', 'crypt', 'payload', 'tmp', 'temp',
   'png', 'jpg', 'jpeg', 'gif', 'bmp', 'ico', 'svg',
   'apk', 'ipa', 'dmg', 'pkg', 'msi', 'jar', 'class'

@@ -73,6 +73,27 @@ const bodyIp = {
   evidence: { decision_source: 'deterministic', occurrence_count: 2, parsed: { ports: [443] }, occurrences: [{ page: 11, zone: 'report_body' }, { page: 17, zone: 'c2_section', section_heading: 'C&C:' }] }
 };
 
+test('loopback / reserved evidence never enters the Indicators review set', () => {
+  const loopback = {
+    candidate_type: 'ip',
+    normalized_value: '127.0.0.1',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    source_assertion: 'explicit_c2',
+    reserved_address: true,
+    non_actionable_local: true,
+    evidence: {
+      reserved_address: true,
+      non_actionable_local: true,
+      document_has_authoritative_scope: true,
+      occurrences: [{ zone: 'c2_section', asserted: true }]
+    }
+  };
+  assert.equal(isReviewIndicator(loopback), false);
+  assert.equal(matchReviewFilter(loopback, 'indicators'), false);
+});
+
 test('default review filter shows real IOC candidates only', () => {
   assert.equal(DEFAULT_REVIEW_FILTER, 'indicators');
   assert.equal(REVIEW_FILTERS[0].id, 'indicators');

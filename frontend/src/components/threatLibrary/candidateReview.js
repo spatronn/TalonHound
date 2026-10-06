@@ -100,6 +100,16 @@ export function isReviewIndicator(candidate) {
   const ev = candidate.evidence || {};
   if (ev.is_parser_derived_metadata === true) return false;
   if (ev.is_direct_source_observable === false) return false;
+  // Loopback / reserved identities are never Create-IOC rows, even when a
+  // publisher IOC section asserted them.
+  if (
+    candidate.reserved_address === true
+    || candidate.non_actionable_local === true
+    || ev.reserved_address === true
+    || ev.non_actionable_local === true
+  ) {
+    return false;
+  }
   const state = String(candidate.match_state || '').toLowerCase();
   const review = String(candidate.review_status || '').toLowerCase();
   if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;

@@ -16,8 +16,12 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v3: `<br>` is a line boundary — a paragraph / container run / list item
  * with several visual lines becomes one block per line (shared `line_group`),
  * so row and list detection read each line as the publisher laid it out.
+ * v4: `<pre>` / standalone `<code>` keep author newlines (and `<br>`) as line
+ * boundaries. Flattening them to one whitespace-collapsed line destroyed
+ * publisher IOC appendices written as "filename HASH" rows inside fenced
+ * code blocks.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v3';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v4';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -137,6 +141,16 @@ export function textLinesOf(node) {
   return splitRenderedLines(renderedText(node, true));
 }
 
+/**
+ * Visual lines of a `<pre>` / `<code>` node. Author newlines are line
+ * boundaries (fenced markdown IOC lists), and `<br>` is too. Intra-line
+ * whitespace is collapsed so "file\\t\\thash" stays one row.
+ * @param {object} node
+ */
+export function preTextLinesOf(node) {
+  return splitRenderedLines(renderedPreText(node));
+}
+
 function renderedText(node, lineBreaks) {
   const parts = [];
   const walk = (n) => {
@@ -158,6 +172,34 @@ function renderedText(node, lineBreaks) {
     if (block) parts.push(' ');
     for (const c of n.children || []) walk(c);
     if (block || tag === 'td' || tag === 'th') parts.push(' ');
+  };
+  walk(node);
+  return parts.join('');
+}
+
+/**
+ * `<pre>` / fenced-code rendering: keep author newlines (and `<br>`) so
+ * publisher IOC rows written one-per-line survive HTML extraction.
+ * @param {object} node
+ */
+function renderedPreText(node) {
+  const parts = [];
+  const walk = (n) => {
+    if (!n) return;
+    if (n.type === 'text') {
+      // Keep newlines; collapse other whitespace runs to a single space.
+      parts.push(String(n.data || '').replace(/[^\S\n]+/g, ' '));
+      return;
+    }
+    if (!isElement(n)) return;
+    const tag = tagOf(n);
+    if (NOISE_TAGS.has(tag)) return;
+    if (tag === 'br') {
+      parts.push(LINE_BREAK);
+      return;
+    }
+    if (tag === 'img') return;
+    for (const c of n.children || []) walk(c);
   };
   walk(node);
   return parts.join('');
@@ -309,7 +351,10 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
     }
     if (tag === 'pre' || (tag === 'code' && !pending.join('').trim())) {
       flushPending();
-      push('code', textOf(node));
+      // One block per visual line (shared line_group), matching <br>-split
+      // paragraphs: "filename HASH" and host/URL lists in fenced code keep
+      // their publisher row structure instead of collapsing into one line.
+      pushLines('code', preTextLinesOf(node));
       return;
     }
     if (CAPTION_TAGS.has(tag)) {

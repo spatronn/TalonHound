@@ -203,6 +203,8 @@ const REVIEW_CANDIDATE_WHERE = `
   AND c.candidate_type NOT IN ('cve', 'attack_technique')
   AND COALESCE(c.evidence->>'is_parser_derived_metadata', 'false') <> 'true'
   AND COALESCE(c.evidence->>'is_direct_source_observable', 'true') <> 'false'
+  AND COALESCE(c.evidence->>'reserved_address', 'false') <> 'true'
+  AND COALESCE(c.evidence->>'non_actionable_local', 'false') <> 'true'
   AND COALESCE(c.assessment, '') NOT IN ('context_only', 'invalid')
   AND COALESCE(c.match_state, '') NOT IN ('context_only', 'invalid')
   AND COALESCE(c.review_status, '') <> 'context_only'

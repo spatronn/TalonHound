@@ -25,6 +25,32 @@ const IPV4_CIDR_RE =
   /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\/(?:3[0-2]|[12]?\d)$/;
 const IPV6_CIDR_RE = /^[0-9a-f:]+\/(?:1[0-2]\d|[1-9]?\d)$/i;
 
+/**
+ * Loopback / localhost identities are never actionable external threat
+ * infrastructure. Distinct from broader private/reserved ranges (RFC1918
+ * etc.), which the product already treats as reserved/context-only but which
+ * can still be meaningful internal evidence in some reports.
+ * @param {string} normalizedIpOrHost
+ */
+export function isLoopbackOrLocalhostAddress(normalizedIpOrHost) {
+  const raw = String(normalizedIpOrHost || '').trim().toLowerCase();
+  if (!raw) return false;
+  if (raw === 'localhost' || raw.endsWith('.localhost')) return true;
+  const addr = raw.split('/')[0].split('%')[0];
+  if (addr === '::1' || addr === '0:0:0:0:0:0:0:1') return true;
+  const v4 = normalizeIpAddress(addr);
+  if (!v4) return false;
+  if (v4.includes(':')) {
+    try {
+      return new URL(`http://[${v4}]/`).hostname.slice(1, -1) === '::1';
+    } catch {
+      return false;
+    }
+  }
+  const first = Number(v4.split('.')[0]);
+  return first === 127;
+}
+
 function ipv4ToInt(ip) {
   return String(ip)
     .split('.')
@@ -180,14 +206,16 @@ export function normalizeCandidateValue(raw, hintType = null) {
     const norm = normalizeIpAddress(refanged.split('/')[0]);
     const isV6 = norm.includes(':');
     const reserved = isPrivateOrReservedAddress(norm);
+    const local = isLoopbackOrLocalhostAddress(norm);
     return {
       ok: true,
       candidateType: isV6 ? 'ipv6' : 'ip',
       originalValue: String(raw).trim(),
       normalizedValue: norm,
       isIoc: true,
-      likelyContextOnly: reserved,
-      reservedAddress: reserved
+      likelyContextOnly: reserved || local,
+      reservedAddress: reserved || local,
+      nonActionableLocal: local
     };
   }
 
@@ -224,12 +252,15 @@ export function normalizeCandidateValue(raw, hintType = null) {
   if (!domain || !domain.includes('.')) return { ok: false, error: 'invalid_domain' };
   // Hostname-compatible syntax is necessary (not sufficient) for a domain candidate.
   if (!isHostnameSyntax(domain)) return { ok: false, error: 'not_hostname_compatible' };
+  const rfcExample = isRfcExampleDomain(domain);
+  const localHost = isLoopbackOrLocalhostAddress(domain);
   return {
     ok: true,
     candidateType: 'domain',
     originalValue: String(raw).trim(),
     normalizedValue: domain,
     isIoc: true,
-    likelyContextOnly: isRfcExampleDomain(domain)
+    likelyContextOnly: rfcExample || localHost,
+    nonActionableLocal: localHost
   };
 }

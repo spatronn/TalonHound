@@ -76,6 +76,16 @@ export function isActionableReviewIndicator(candidate) {
   const ev = evidenceOf(candidate);
   if (ev.is_parser_derived_metadata === true) return false;
   if (ev.is_direct_source_observable === false) return false;
+  // Loopback / reserved identities are never Create-IOC / Approve review
+  // rows, even when a publisher IOC section asserted them.
+  if (
+    candidate.reserved_address === true
+    || candidate.non_actionable_local === true
+    || ev.reserved_address === true
+    || ev.non_actionable_local === true
+  ) {
+    return false;
+  }
   const state = String(candidate.match_state || '').toLowerCase();
   const review = reviewOf(candidate);
   if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;

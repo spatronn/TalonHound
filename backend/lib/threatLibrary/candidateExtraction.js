@@ -96,8 +96,11 @@ export {
  * occurrence layer does (row_shape), so a <br>-split IOC line is an explicit
  * indicator row (tl-type-resolver-v5); a domain reading of the publisher's own
  * row for a token is never outvoted by narrative code-shaped mentions of it.
+ * v15: `<pre>` / fenced-code publisher IOC lines keep their per-line row
+ * structure (threat_library_html_v4); reserved / loopback identities never
+ * become actionable report Indicators even when publisher-asserted.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v14';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v15';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -165,6 +168,8 @@ const IPV4_PORT_RE =
   /(?<![A-Za-z0-9_-]\.)\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
 const IPV6_RE =
   /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b(?!\.[A-Za-z0-9_-])/g;
+/** Bare IPv6 loopback — leading `\b` fails because `:` is a non-word character. */
+const IPV6_LOOPBACK_RE = /(?<![0-9a-fA-F:])::1(?![0-9a-fA-F:])/g;
 // Typographic quotes / guillemets never occur raw inside a URL (they are
 // percent-encoded); in prose they close a quoted URL ("“https://x/y.exe”").
 const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]‘’“”«»]+/gi;
@@ -466,8 +471,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         is_parser_derived_metadata: false,
         extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
       };
-      if (n.likelyContextOnly && !n.reservedAddress) entry.rfc_example = true;
+      if (n.likelyContextOnly && !n.reservedAddress && !n.nonActionableLocal) entry.rfc_example = true;
       if (n.reservedAddress) entry.reserved_address = true;
+      if (n.nonActionableLocal) entry.non_actionable_local = true;
       // Report's own source URL / host is provenance, never a finding.
       if (
         (candidateType === 'domain' && sourceHost && normalizedValue === sourceHost) ||
@@ -1001,6 +1007,12 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
       if (!ipv4MatchIsStandalone(text, start, end)) continue;
+      add(m[0], 'ipv6', block, { form: standaloneForm });
+    }
+    for (const m of text.matchAll(IPV6_LOOPBACK_RE)) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
       add(m[0], 'ipv6', block, { form: standaloneForm });
     }
     // A hex run inside a URL / scheme-less resource span is that URL's path,

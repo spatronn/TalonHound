@@ -18,6 +18,11 @@ import {
   strongestSourceRelation
 } from './indicatorScope.js';
 import { NON_NETWORK_RESOLVED_TYPES, NETWORK_IOC_TYPES, validateCanonicalIocValue } from './observableTypeResolver.js';
+import {
+  isLoopbackOrLocalhostAddress,
+  isPrivateOrReservedAddress,
+  isRfcExampleDomain
+} from './candidateValue.js';
 
 export const EVIDENCE_TIERS = Object.freeze({
   A: 'explicit_ioc_assertion',
@@ -300,6 +305,40 @@ function deterministicRole(candidate, summary) {
 const EXPLICIT_ROLES = new Set([...MALICIOUS_ROLES, 'hosting_platform']);
 
 /**
+ * Restore / recompute reserved + loopback / localhost flags from the
+ * normalized identity. Extractor flags can be missing on reload / AI-merge
+ * paths; publisher assertion must never turn loopback into actionable C2.
+ * @param {object} candidate
+ */
+export function annotateNonActionableNetworkIdentity(candidate) {
+  if (!candidate) return candidate;
+  const ev = evidenceRecord(candidate);
+  if (candidate.reserved_address !== true && ev.reserved_address === true) candidate.reserved_address = true;
+  if (candidate.rfc_example !== true && ev.rfc_example === true) candidate.rfc_example = true;
+  if (candidate.non_actionable_local !== true && ev.non_actionable_local === true) {
+    candidate.non_actionable_local = true;
+  }
+  const type = String(candidate.candidate_type || '').toLowerCase();
+  const value = String(candidate.normalized_value || '').trim();
+  if (!value) return candidate;
+  if (type === 'ip' || type === 'ipv6' || type === 'cidr') {
+    const addr = value.split('/')[0];
+    if (isPrivateOrReservedAddress(addr)) candidate.reserved_address = true;
+    if (isLoopbackOrLocalhostAddress(addr)) {
+      candidate.non_actionable_local = true;
+      candidate.reserved_address = true;
+    }
+  } else if (type === 'domain') {
+    if (isRfcExampleDomain(value)) candidate.rfc_example = true;
+    if (isLoopbackOrLocalhostAddress(value)) {
+      candidate.non_actionable_local = true;
+      candidate.rfc_example = true;
+    }
+  }
+  return candidate;
+}
+
+/**
  * Apply structural evidence constraints (optionally merging an AI update).
  * @param {object} candidate — mutable candidate record
  * @param {object} [aiUpdate]
@@ -308,6 +347,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   // Occurrence structure + relation first: every later decision (assertion,
   // tier, narrative demotion) reads the annotated occurrences, never raw zones.
   attachOccurrenceRelations(candidate);
+  annotateNonActionableNetworkIdentity(candidate);
   const summary = summarizeOccurrenceEvidence(candidate);
   const resolvedType = candidate.resolved_type || candidate.candidate_type;
   candidate.occurrence_count = Array.isArray(candidate.occurrences)
@@ -384,7 +424,29 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     }
   }
 
-  if (explicit && !reportSource) {
+  // Loopback / reserved addresses stay Context Only even when the publisher
+  // listed them inside an IOC / C2 section. Publisher declaration does not
+  // override fundamental network semantics (a loopback listener is not
+  // attacker-controlled remote infrastructure). RFC documentation domains
+  // (example.com, …) still lose to an explicit publisher row — fixtures and
+  // some reports use those suffixes as stand-ins for real C2 names.
+  const nonActionableLocalOrReserved =
+    candidate.non_actionable_local === true || candidate.reserved_address === true;
+  if (!reportSource && nonActionableLocalOrReserved) {
+    candidate.assessment = 'context_only';
+    if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
+      candidate.role = 'reference';
+    }
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = candidate.non_actionable_local === true
+      ? 'context_only_non_actionable_local'
+      : 'context_only_reserved_address';
+    candidate.source_assertion = SOURCE_ASSERTIONS.REFERENCE_ONLY;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.75;
+  } else if (explicit && !reportSource) {
     candidate.assessment = 'malicious';
     if (!candidate.role || candidate.role === 'unknown' || !EXPLICIT_ROLES.has(String(candidate.role))) {
       candidate.role = deterministicRole(candidate, summary);
@@ -402,7 +464,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = candidate.decision_source === 'ai' ? 'deterministic' : (candidate.decision_source || 'deterministic');
     candidate.match_state = undefined;
-  } else if (reportSource || summary.onlyNegative || candidate.rfc_example === true || candidate.reserved_address === true) {
+  } else if (reportSource || summary.onlyNegative || candidate.rfc_example === true) {
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
       const onlyVendorNav = summary.zones.length > 0 && summary.zones.every((z) => z === 'vendor_about' || z === 'navigation');
@@ -411,11 +473,9 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.match_state = 'context_only';
     candidate.policy_decision = reportSource
       ? 'context_only_report_source'
-      : candidate.reserved_address === true
-        ? 'context_only_reserved_address'
-        : candidate.rfc_example === true
-          ? 'context_only_rfc_example'
-          : 'context_only_negative_zone';
+      : candidate.rfc_example === true
+        ? 'context_only_rfc_example'
+        : 'context_only_negative_zone';
     candidate.source_assertion = reportSource || summary.zones.every((z) => z === 'source_metadata' || z === 'header_footer')
       ? SOURCE_ASSERTIONS.SOURCE_METADATA
       : SOURCE_ASSERTIONS.REFERENCE_ONLY;
@@ -636,6 +696,9 @@ export function buildCandidateEvidenceRecord(c) {
     zones: [...new Set(occurrences.map((o) => o.zone).filter(Boolean))],
     source_relation: c.source_relation || null,
     document_has_authoritative_scope: c.document_has_authoritative_scope === true,
+    reserved_address: c.reserved_address === true || undefined,
+    rfc_example: c.rfc_example === true || undefined,
+    non_actionable_local: c.non_actionable_local === true || undefined,
     parsed: c.parsed && typeof c.parsed === 'object' ? c.parsed : {},
     ai_role_suggestion: c.ai_role_suggestion || null,
     // Analyst Context Only → IOC override (reviewService.promoteContextOnlyCandidate);
