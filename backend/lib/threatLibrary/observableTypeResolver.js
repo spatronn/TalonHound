@@ -42,8 +42,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * (`elided_value`); typographic quotes / guillemets are trailing punctuation.
  * v5: an explicit indicator row is also a focused row-shaped line in a curated
  * zone (`indicatorRow`), not only a list / table row form.
+ * v6: common config file suffixes (`conf`, alongside existing `cfg` / `ini`)
+ * are filename shapes, never DNS TLDs — even on a curated indicator row.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v5';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v6';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -297,7 +299,7 @@ const FILE_EXT_HINT = new Set([
   'php', 'asp', 'aspx', 'jsp', 'cgi',
   // Java / .NET / server-page deployables and handlers (none is a DNS suffix).
   'war', 'ear', 'jspx', 'jspf', 'ashx', 'asmx', 'ascx', 'axd', 'cshtml', 'phtml', 'shtml', 'cfm',
-  'txt', 'log', 'dat', 'bin', 'cfg', 'ini', 'xml', 'json', 'csv',
+  'txt', 'log', 'dat', 'bin', 'cfg', 'conf', 'ini', 'xml', 'json', 'csv',
   // Certificates / desktop launchers commonly listed beside sample hashes.
   'crt', 'pem', 'cer', 'der', 'p12', 'pfx', 'desktop',
   'enc', 'locked', 'crypt', 'payload', 'tmp', 'temp',

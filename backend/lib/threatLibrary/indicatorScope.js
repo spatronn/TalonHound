@@ -472,6 +472,33 @@ export function isIndicatorRowShape(text, value) {
 }
 
 /**
+ * Hex runs labelled as credentials / tokens / passwords are not file hashes.
+ * Shape alone (`[0-9a-f]{32|40|64}`) never overrides an explicit credential
+ * label. A concurrent hash keyword (md5 / sha / hash / sample / checksum) keeps
+ * the hash reading — including mislabeled lengths ("SHA-256: <32 hex>"), which
+ * are typed by value elsewhere.
+ *
+ * @param {string} text line or surrounding window
+ * @param {string} value hex hash spelling
+ * @returns {boolean} true when the occurrence must NOT become md5/sha1/sha256
+ */
+export function isCredentialLabeledHex(text, value) {
+  const focused = lineContainingObservable(text, value) || text;
+  const t = refangTextForExtraction(String(focused || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
+  const v = String(value || '').trim();
+  if (!t || !v) return false;
+  const idx = t.toLowerCase().indexOf(v.toLowerCase());
+  if (idx < 0) return false;
+  const before = t.slice(0, idx);
+  if (!before.trim()) return false;
+  // Hash / sample vocabulary on the label wins over credential wording.
+  if (/\b(?:md5|sha-?1|sha-?256|sha-?384|sha-?512|hash(?:es)?|checksum|digest|sample)\b/i.test(before)) {
+    return false;
+  }
+  return /\b(?:auth(?:entication)?\s+token|access\s+token|refresh\s+token|api[\s_-]?key|bearer(?:\s+token)?|password|passwd|passphrase|username|user\s*name|credential(?:s)?|secret|token)\b/i.test(before);
+}
+
+/**
  * A second network observable in a row annotation ("H1 – also 1.2.3.4") makes
  * the line prose, not a row. A file name ("H1 (loader.exe)", "H2 – map.aspx")
  * is the usual annotation of a sample hash and does not count: a dotted token

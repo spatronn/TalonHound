@@ -28,7 +28,13 @@ import {
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
-import { discoverDocumentIndicatorScope, isIndicatorRowShape, isIndicatorValueLine } from './indicatorScope.js';
+import {
+  discoverDocumentIndicatorScope,
+  isCredentialLabeledHex,
+  isIndicatorRowShape,
+  isIndicatorValueLine,
+  lineContainingObservable
+} from './indicatorScope.js';
 import {
   NON_NETWORK_RESOLVED_TYPES,
   RESOLVED_TYPES,
@@ -99,8 +105,10 @@ export {
  * v15: `<pre>` / fenced-code publisher IOC lines keep their per-line row
  * structure (threat_library_html_v4); reserved / loopback identities never
  * become actionable report Indicators even when publisher-asserted.
+ * v16: credential / token / password labels demote hex runs (not file hashes);
+ * config-file suffixes such as `.conf` stay technical artifacts (resolver v6).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v15';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v16';
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -530,6 +538,18 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       lastAddRejection = n.error || 'unrecognized';
       countReason(typeDiag.rejected_values, lastAddRejection);
       return null;
+    }
+    // Credential / token labels: a hex run is not a malware hash just because
+    // it matches md5/sha length. Hash vocabulary on the same label ("SHA-256:",
+    // "Hardcoded Hash:") keeps the hash reading; length/type still follow value.
+    if (n.candidateType === 'md5' || n.candidateType === 'sha1' || n.candidateType === 'sha256') {
+      const hay = extra.rowText || block?.text || '';
+      const line = lineContainingObservable(hay, n.normalizedValue) || hay;
+      if (isCredentialLabeledHex(line, n.normalizedValue)) {
+        lastAddRejection = 'credential_labeled_hex';
+        countReason(typeDiag.rejected_values, lastAddRejection);
+        return null;
+      }
     }
     // IP/IPv6: reject when this block's only evidence is a numeric prefix of a
     // larger DNS token. Do not consult originalValue/raw — those may already be

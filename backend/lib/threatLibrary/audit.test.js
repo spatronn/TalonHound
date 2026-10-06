@@ -155,12 +155,12 @@ test('analysis event: a refresh_extraction job records the mode, the contract an
     report: REPORT,
     job: { public_id: 'job-2', job_type: 'refresh_extraction' },
     ok: true,
-    summary: { total: 144, new: 5, existing: 120, context_only: 18, extraction_contract: 'tl-candidates-v15', added: 1, updated: 2, removed: 0, ai_invoked: false },
+    summary: { total: 144, new: 5, existing: 120, context_only: 18, extraction_contract: 'tl-candidates-v16', added: 1, updated: 2, removed: 0, ai_invoked: false },
     initiator: USER
   });
   assert.equal(ev.metadata.job_type, 'refresh_extraction');
   assert.equal(ev.metadata.ai_invoked, false);
-  assert.equal(ev.metadata.extraction_contract, 'tl-candidates-v15');
+  assert.equal(ev.metadata.extraction_contract, 'tl-candidates-v16');
   assert.equal(ev.metadata.candidates_added, 1);
   assert.equal(ev.metadata.candidates_updated, 2);
   assert.equal(ev.metadata.candidates_removed, 0);

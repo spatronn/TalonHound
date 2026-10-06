@@ -1,6 +1,6 @@
 /**
- * Dotted-token typing of a publisher IOC row (tl-candidates-v15 /
- * tl-type-resolver-v5).
+ * Dotted-token typing of a publisher IOC row (tl-candidates-v16 /
+ * tl-type-resolver-v6).
  *
  * An HTML IOC list written as one paragraph of <br>-split lines becomes
  * paragraph blocks sharing a `line_group`, so every value line arrives with

@@ -21,11 +21,11 @@ function extract(html) {
 const resolve = (value, surroundingText, ctx = {}) => resolveDottedToken(value, { surroundingText, ...ctx });
 
 test('contract version bumped for the typing change', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v15');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v16');
 });
 
 test('deployable / server-page extensions are filename shapes, never DNS suffixes', () => {
-  for (const ext of ['war', 'ear', 'jspx', 'jspf', 'ashx', 'asmx', 'ascx', 'axd', 'cshtml', 'phtml', 'shtml', 'cfm', 'jar', 'jsp', 'dll', 'exe']) {
+  for (const ext of ['war', 'ear', 'jspx', 'jspf', 'ashx', 'asmx', 'ascx', 'axd', 'cshtml', 'phtml', 'shtml', 'cfm', 'jar', 'jsp', 'dll', 'exe', 'conf', 'cfg', 'ini']) {
     assert.ok(FILE_EXT_HINT.has(ext), ext);
     const r = resolve(`webhook.${ext}`, `the operator deployed webhook.${ext} and sent requests from external IP addresses`);
     assert.equal(r.kind, 'technical_artifact', ext);

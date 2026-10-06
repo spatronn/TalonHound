@@ -1,8 +1,8 @@
-﻿/**
+/**
  * Publisher IOC appendices in fenced <pre>/<code> blocks, filename+HASH rows,
  * and non-actionable loopback / localhost semantics.
  *
- * Generic fixtures only â€” no hardcoded production report URLs or IOC values
+ * Generic fixtures only — no hardcoded production report URLs or IOC values
  * from a single campaign.
  */
 import test from 'node:test';
@@ -56,7 +56,7 @@ const membersOf = (cands) => cands.filter((c) => isMember(c));
 
 test('contract: html v4 + candidates v15', () => {
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v4');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v15');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v16');
 });
 
 test('preTextLinesOf keeps author newlines inside fenced code', () => {
@@ -109,7 +109,7 @@ ${H1}
   assert.ok(isMember(find(candidates, 'sha256', H1)));
 });
 
-test('3. narrative + explicit-section duplicate hash â†’ one candidate, publisher membership kept', () => {
+test('3. narrative + explicit-section duplicate hash → one candidate, publisher membership kept', () => {
   const { candidates } = extract(`
 <p>The dropper sample ${H1} was first seen in the loader stage.</p>
 <h2>Indicators of Compromise (IOCs)</h2>
@@ -188,7 +188,7 @@ ${PUBLIC_IP}
   assert.ok(isMember(find(candidates, 'ip', PUBLIC_IP)));
 });
 
-test('8â€“9. public malicious IP and distinct public-IP URLs remain Indicators', () => {
+test('8–9. public malicious IP and distinct public-IP URLs remain Indicators', () => {
   const { candidates } = extract(`
 <h2>Indicators of Compromise (IOCs)</h2>
 <pre><code>${PUBLIC_IP}
