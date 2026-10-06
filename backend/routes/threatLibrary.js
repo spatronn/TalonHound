@@ -181,9 +181,10 @@ function publicReport(row) {
     review_phase: resolveReportPhase(row),
     candidate_state: resolveCandidateState(row),
     indicator_count: row.indicator_count,
-    // Raw persisted rows vs. rows that belong in the analyst review set.
+    // Raw persisted rows (All) vs. Indicators membership vs. Context Only.
     raw_candidate_count: row.indicator_count ?? null,
     review_candidate_count: row.review_candidate_count ?? null,
+    context_only_count: row.context_only_count ?? null,
     matched_count: row.matched_count,
     entity_count: row.entity_count,
     created_at: row.created_at,

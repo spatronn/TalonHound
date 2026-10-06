@@ -9,15 +9,22 @@
 
 import {
   isPublisherAuthoritativeReportIocMember,
-  publisherAuthoritativeIocMembershipSql
-} from './evidencePolicy.js';
+  publisherAuthoritativeIocMembershipSql,
+  isReportIndicatorMember,
+  isPendingReviewActionableIndicator,
+  isContextOnlyCandidate as isContextOnlyFromContract,
+  notContextOnlySql,
+  NON_IOC_CANDIDATE_TYPES
+} from './indicatorMembership.js';
 
 export {
   hasAuthoritativePublisherIocScope,
   isPublisherAssertedReportIoc,
   isPublisherAuthoritativeReportIocMember,
-  publisherAuthoritativeIocMembershipSql
-} from './evidencePolicy.js';
+  publisherAuthoritativeIocMembershipSql,
+  isReportIndicatorMember,
+  isPendingReviewActionableIndicator
+} from './indicatorMembership.js';
 
 export const PUBLISHER_AUTHORITATIVE_IOC_MEMBERSHIP_SQL = publisherAuthoritativeIocMembershipSql('c');
 
@@ -32,7 +39,7 @@ export const CREATABLE_IOC_TYPES = Object.freeze([
 ]);
 
 const CREATABLE = new Set(CREATABLE_IOC_TYPES);
-const NON_IOC_TYPES = new Set(['cve', 'attack_technique']);
+const NON_IOC_TYPES = new Set(NON_IOC_CANDIDATE_TYPES);
 
 export const CIDR_UNSUPPORTED_DETAIL =
   'CIDR indicators are preserved in Threat Library but cannot yet be created as IOC records.';
@@ -65,59 +72,26 @@ export function isAnalystApproved(candidate) {
 }
 
 /**
- * Rows that belong in the analyst review set (mirrors frontend isReviewIndicator).
- * When the publisher curated an authoritative IOC section, only explicitly
- * asserted identities are report Indicators — a malicious narrative observable
- * is not membership.
+ * Rows that belong in the analyst review set / Indicators tab.
+ * Canonical implementation: indicatorMembership.isReportIndicatorMember.
  */
 export function isActionableReviewIndicator(candidate) {
-  if (!candidate || candidate.is_ioc === false) return false;
-  if (NON_IOC_TYPES.has(typeOf(candidate))) return false;
-  const ev = evidenceOf(candidate);
-  if (ev.is_parser_derived_metadata === true) return false;
-  if (ev.is_direct_source_observable === false) return false;
-  // Loopback / reserved identities are never Create-IOC / Approve review
-  // rows, even when a publisher IOC section asserted them.
-  if (
-    candidate.reserved_address === true
-    || candidate.non_actionable_local === true
-    || ev.reserved_address === true
-    || ev.non_actionable_local === true
-  ) {
-    return false;
-  }
-  const state = String(candidate.match_state || '').toLowerCase();
-  const review = reviewOf(candidate);
-  if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;
-  if (state === 'invalid' || candidate.assessment === 'invalid') return false;
-  if (!isPublisherAuthoritativeReportIocMember(candidate)) return false;
-  return true;
+  return isReportIndicatorMember(candidate);
 }
 
 export function isPendingActionableCandidate(candidate) {
-  return isActionableReviewIndicator(candidate) && reviewOf(candidate) === 'pending';
+  return isPendingReviewActionableIndicator(candidate);
 }
 
 /**
- * Context Only != IOC candidate. A row is context-only when any of the three
- * review fields says so (the pipeline sets assessment + match_state, the
- * analyst action sets all three). Such rows never enter Approve, Create IOCs
- * or the high-confidence malicious set; the only way out is the explicit
- * row-level `promote_to_ioc` override.
+ * Context Only != IOC candidate. Canonical: indicatorMembership.isContextOnlyCandidate.
  */
 export function isContextOnlyCandidate(candidate) {
-  if (!candidate) return false;
-  const review = reviewOf(candidate);
-  const assessment = String(candidate.assessment || '').toLowerCase();
-  const state = String(candidate.match_state || '').toLowerCase();
-  return review === 'context_only' || assessment === 'context_only' || state === 'context_only';
+  return isContextOnlyFromContract(candidate);
 }
 
 /** SQL predicate equivalent of isContextOnlyCandidate (negated) for `threat_report_candidates` rows. */
-export const NOT_CONTEXT_ONLY_SQL = `
-  COALESCE(assessment, '') <> 'context_only'
-  AND COALESCE(match_state, '') <> 'context_only'
-  AND COALESCE(review_status, '') <> 'context_only'`;
+export const NOT_CONTEXT_ONLY_SQL = notContextOnlySql();
 
 /**
  * Row-level Context Only -> IOC override eligibility. Only a context-only row

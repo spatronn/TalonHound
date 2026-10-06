@@ -23,6 +23,23 @@ import {
   isPrivateOrReservedAddress,
   isRfcExampleDomain
 } from './candidateValue.js';
+import {
+  EXPLICIT_PUBLISHER_IOC_ASSERTIONS,
+  hasAuthoritativePublisherIocScope,
+  hasPublisherIocSectionOccurrence,
+  isPublisherAssertedReportIoc,
+  isPublisherAuthoritativeReportIocMember,
+  publisherAuthoritativeIocMembershipSql
+} from './indicatorMembership.js';
+
+export {
+  EXPLICIT_PUBLISHER_IOC_ASSERTIONS,
+  hasAuthoritativePublisherIocScope,
+  hasPublisherIocSectionOccurrence,
+  isPublisherAssertedReportIoc,
+  isPublisherAuthoritativeReportIocMember,
+  publisherAuthoritativeIocMembershipSql
+};
 
 export const EVIDENCE_TIERS = Object.freeze({
   A: 'explicit_ioc_assertion',
@@ -42,98 +59,8 @@ export const SOURCE_ASSERTIONS = Object.freeze({
   NON_IOC: 'non_ioc'
 });
 
-/** Publisher-curated IOC assertions that grant report Indicators membership. */
-export const EXPLICIT_PUBLISHER_IOC_ASSERTIONS = Object.freeze([
-  SOURCE_ASSERTIONS.EXPLICIT_IOC,
-  SOURCE_ASSERTIONS.EXPLICIT_C2,
-  SOURCE_ASSERTIONS.EXPLICIT_OPERATIONAL
-]);
-
-const EXPLICIT_PUBLISHER_IOC_ASSERTION_SET = new Set(EXPLICIT_PUBLISHER_IOC_ASSERTIONS);
-
 function evidenceRecord(candidate) {
   return candidate?.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
-}
-
-/** True when the document has a confidently identified publisher IOC section/list/table. */
-export function hasAuthoritativePublisherIocScope(candidate) {
-  const ev = evidenceRecord(candidate);
-  return candidate?.document_has_authoritative_scope === true
-    || ev.document_has_authoritative_scope === true;
-}
-
-const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = Object.freeze([
-  'explicit_ioc_section',
-  'c2_section',
-  'sample_table',
-  'operational_infrastructure'
-]);
-
-function candidateOccurrences(candidate) {
-  const ev = evidenceRecord(candidate);
-  if (Array.isArray(candidate?.occurrences) && candidate.occurrences.length) return candidate.occurrences;
-  return Array.isArray(ev.occurrences) ? ev.occurrences : [];
-}
-
-/**
- * True when a stored occurrence is a publisher assertion inside a curated IOC
- * structure. Zone alone is never membership: a prose mention inside an IOC /
- * C2 section (a vendor link, a provider domain, a hex run of a hostname) was
- * read by attachOccurrenceRelations and left unasserted. Occurrences stored
- * before relation annotations existed (no occurrence_kind) keep the zone
- * reading — they carry nothing better.
- */
-export function hasPublisherIocSectionOccurrence(candidate) {
-  return candidateOccurrences(candidate).some((occ) => {
-    if (!AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.includes(String(occ?.zone || ''))) return false;
-    if (occ?.asserted === true) return true;
-    return !occ?.occurrence_kind;
-  });
-}
-
-/** True when this identity was explicitly asserted in a curated publisher IOC structure. */
-export function isPublisherAssertedReportIoc(candidate) {
-  const ev = evidenceRecord(candidate);
-  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
-  if (EXPLICIT_PUBLISHER_IOC_ASSERTION_SET.has(assertion)) return true;
-  // Older extracts may still say body_mention for value lines under an IOC heading.
-  return hasPublisherIocSectionOccurrence(candidate);
-}
-
-/**
- * Report Indicators membership eligibility from existing provenance.
- * MODE A (authoritative publisher IOC scope): only explicit publisher assertions.
- * MODE B (no such scope): do not restrict membership here — existing review
- * predicates still apply.
- */
-export function isPublisherAuthoritativeReportIocMember(candidate) {
-  if (!hasAuthoritativePublisherIocScope(candidate)) return true;
-  return isPublisherAssertedReportIoc(candidate);
-}
-
-/**
- * SQL equivalent of isPublisherAuthoritativeReportIocMember for
- * `threat_report_candidates` rows. Pass a table alias (`c`) or empty string.
- */
-export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
-  const p = alias ? `${alias}.` : '';
-  return `(
-    COALESCE(${p}evidence->>'document_has_authoritative_scope', 'false') <> 'true'
-    OR COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') IN (
-      'explicit_ioc', 'explicit_c2', 'explicit_operational_infrastructure'
-    )
-    OR EXISTS (
-      SELECT 1
-      FROM jsonb_array_elements(COALESCE(${p}evidence->'occurrences', '[]'::jsonb)) AS occ
-      WHERE occ->>'zone' IN (
-        'explicit_ioc_section',
-        'c2_section',
-        'sample_table',
-        'operational_infrastructure'
-      )
-        AND (occ->>'asserted' = 'true' OR COALESCE(occ->>'occurrence_kind', '') = '')
-    )
-  )`;
 }
 
 /** Confidence assigned to an explicit report assertion (report says it is an IOC). */

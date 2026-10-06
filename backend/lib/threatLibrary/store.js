@@ -7,7 +7,8 @@ import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.
 import { isValidTlpSource } from './tlpPolicy.js';
 import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
-import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility, publisherAuthoritativeIocMembershipSql } from './evidencePolicy.js';
+import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility } from './evidencePolicy.js';
+import { reportIndicatorMembershipSql, isContextOnlySql } from './indicatorMembership.js';
 import { buildReportListOrderBy, buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
 
@@ -193,26 +194,17 @@ export async function getReportById(pool, id) {
 }
 
 /**
- * A candidate row that belongs in the analyst review set: a network / file
- * observable with a direct source occurrence that was not resolved as context
- * or invalid (mirrors the frontend `isReviewIndicator`). Raw row count and
- * review count are therefore two different numbers and are labelled as such.
+ * Analyst review / Indicators membership SQL — generated from the canonical
+ * indicatorMembership contract (same semantics as isReportIndicatorMember /
+ * frontend isReviewIndicator). Raw row count and review count are different
+ * numbers and are labelled as such on the API.
  */
-const REVIEW_CANDIDATE_WHERE = `
-  c.is_ioc <> false
-  AND c.candidate_type NOT IN ('cve', 'attack_technique')
-  AND COALESCE(c.evidence->>'is_parser_derived_metadata', 'false') <> 'true'
-  AND COALESCE(c.evidence->>'is_direct_source_observable', 'true') <> 'false'
-  AND COALESCE(c.evidence->>'reserved_address', 'false') <> 'true'
-  AND COALESCE(c.evidence->>'non_actionable_local', 'false') <> 'true'
-  AND COALESCE(c.assessment, '') NOT IN ('context_only', 'invalid')
-  AND COALESCE(c.match_state, '') NOT IN ('context_only', 'invalid')
-  AND COALESCE(c.review_status, '') <> 'context_only'
-  AND ${publisherAuthoritativeIocMembershipSql('c')}`;
+const REVIEW_CANDIDATE_WHERE = reportIndicatorMembershipSql('c');
 
 const REPORT_COUNT_COLUMNS = `
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id) AS indicator_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${REVIEW_CANDIDATE_WHERE}) AS review_candidate_count,
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${isContextOnlySql('c')}) AS context_only_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND c.matched_ioc_id IS NOT NULL) AS matched_count,
   (SELECT COUNT(*)::int FROM threat_report_entities e WHERE e.report_id = r.id) AS entity_count`;
 

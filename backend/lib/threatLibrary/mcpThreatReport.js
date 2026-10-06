@@ -19,6 +19,7 @@ import { loadReportTags } from './reportTags.js';
 import { serializePublicationDate } from './publicationDate.js';
 import { TLP_DISPLAY } from './constants.js';
 import { resolveReportPhase } from './reportPhase.js';
+import { countCandidateBuckets } from './indicatorMembership.js';
 import {
   serializeThreatContextEntity,
   serializeThreatContextRelationship,
@@ -110,6 +111,7 @@ export function serializeThreatReport(snapshot, page = {}) {
   const entities = Array.isArray(snapshot.entities) ? snapshot.entities : [];
   const relationships = relationshipRowsWithNames(snapshot);
   const pageRows = candidates.slice(offset, offset + limit);
+  const buckets = countCandidateBuckets(candidates);
 
   return {
     id: r.public_id,
@@ -128,11 +130,18 @@ export function serializeThreatReport(snapshot, page = {}) {
     created_at: r.created_at,
     updated_at: r.updated_at ?? null,
     finalized_at: r.finalized_at ?? null,
+    // Product counts: indicators = report Indicator membership (UI Indicators tab).
+    // all = full candidate roster size (same as indicators.total for paging).
+    // Legacy: some early MCP clients treated counts.indicators as the roster;
+    // use counts.all / indicators.total for that. counts.indicators is membership.
     counts: {
-      indicators: candidates.length,
+      all: buckets.all,
+      indicators: buckets.indicators,
+      context_only: buckets.context_only,
       entities: entities.length,
       relationships: relationships.length
     },
+    // Paged candidate roster (All), not the Indicators membership filter.
     indicators: {
       total: candidates.length,
       offset,

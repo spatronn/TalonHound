@@ -98,7 +98,12 @@ test('serializeThreatReport: allow-listed metadata + summary, no body/diagnostic
   // Lifecycle timestamps stay part of the MCP contract (the UI Overview no longer shows finalized_at).
   assert.equal(out.created_at, '2026-09-16T00:30:21.000Z');
   assert.equal(out.finalized_at, '2026-09-17T23:39:16.000Z');
-  assert.deepEqual(out.counts, { indicators: 2, entities: 2, relationships: 1 });
+  // counts.indicators = membership (not the raw roster). Roster size is counts.all / indicators.total.
+  assert.deepEqual(
+    { all: out.counts.all, indicators: out.counts.indicators, context_only: out.counts.context_only, entities: out.counts.entities, relationships: out.counts.relationships },
+    { all: 2, indicators: 1, context_only: 1, entities: 2, relationships: 1 }
+  );
+  assert.equal(out.counts.all, out.indicators.total);
   assert.deepEqual(out.tags, []);
   assert.equal('mitre_attack' in out, false);
   for (const k of ['canonical_document', 'failure_reason', 'failure_details', 'analysis_progress', 'candidate_summary', 'artifacts', 'jobs', 'source_sha256']) {
@@ -171,7 +176,12 @@ test('serializeThreatReport: entity and relationship bounds', () => {
   assert.equal(out.entities.length, THREAT_REPORT_MAX_ENTITIES);
   assert.equal(out.entities[0].name, 'E0');
   assert.equal(out.relationships.length, THREAT_REPORT_MAX_RELATIONSHIPS);
-  assert.deepEqual(out.counts, { indicators: 2, entities: 80, relationships: 150 });
+  assert.equal(out.counts.all, 2);
+  assert.equal(out.counts.indicators, 1);
+  assert.equal(out.counts.context_only, 1);
+  assert.equal(out.counts.entities, 80);
+  assert.equal(out.counts.relationships, 150);
+  assert.equal(out.counts.all, out.indicators.total);
 });
 
 test('loadThreatReportForMcp: fixed query count (report + snapshot), no per-indicator or per-entity reads', async () => {

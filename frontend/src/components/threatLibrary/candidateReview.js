@@ -1,6 +1,11 @@
 /**
  * Pure helpers for the Threat Library review table: evidence-filtered review
  * set, provenance labels, and checkpoint-aware failure detail.
+ *
+ * Membership / Context Only predicates MUST stay behaviourally identical to
+ * `backend/lib/threatLibrary/indicatorMembership.js`. Parity is enforced by
+ * `backend/lib/threatLibrary/indicatorMembership.parity.test.js` (imports this
+ * module and the backend contract against the same fixture matrix).
  */
 
 export const REVIEW_FILTERS = Object.freeze([
@@ -14,14 +19,17 @@ export const REVIEW_FILTERS = Object.freeze([
 
 export const DEFAULT_REVIEW_FILTER = 'indicators';
 
+/** Keep in lockstep with backend indicatorMembership.NON_IOC_CANDIDATE_TYPES */
 const NON_IOC_TYPES = new Set(['cve', 'attack_technique']);
 
+/** Keep in lockstep with backend indicatorMembership.EXPLICIT_PUBLISHER_IOC_ASSERTIONS */
 const EXPLICIT_PUBLISHER_IOC_ASSERTIONS = new Set([
   'explicit_ioc',
   'explicit_c2',
   'explicit_operational_infrastructure'
 ]);
 
+/** Keep in lockstep with backend indicatorMembership.AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES */
 const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = new Set([
   'explicit_ioc_section',
   'c2_section',
@@ -61,6 +69,7 @@ function isPublisherAssertedReportIoc(candidate) {
 /**
  * MODE A: publisher-curated IOC section is authoritative for Indicators.
  * MODE B: no such section — existing review predicates still apply.
+ * Canonical: backend indicatorMembership.isPublisherAuthoritativeReportIocMember.
  */
 export function isPublisherAuthoritativeReportIocMember(candidate) {
   if (!hasAuthoritativePublisherIocScope(candidate)) return true;
@@ -88,10 +97,9 @@ export function withInferredPublisherIocScope(candidates) {
 }
 
 /**
- * A row belongs in the IOC review set when it is a network/file observable with
- * a real source occurrence that was not resolved as pure context (reference,
- * source URL, footer) or a non-IOC artifact. When the publisher curated an
- * authoritative IOC section, only explicitly asserted identities belong here.
+ * Report Indicator membership (Indicators tab).
+ * Canonical name on the backend: indicatorMembership.isReportIndicatorMember
+ * (also exported as isActionableReviewIndicator for historical callers).
  */
 export function isReviewIndicator(candidate) {
   if (!candidate) return false;
@@ -118,11 +126,14 @@ export function isReviewIndicator(candidate) {
   return true;
 }
 
+/** Alias matching the backend canonical name. */
+export function isReportIndicatorMember(candidate) {
+  return isReviewIndicator(candidate);
+}
+
 /**
- * Context Only != IOC candidate. Mirrors backend `isContextOnlyCandidate`:
- * any of the three review fields marks the row as context, and such a row is
- * never part of Approve / Create IOCs / high-confidence approval no matter
- * which filter is active. The only exit is the explicit row-level promotion.
+ * Context Only != IOC candidate. Canonical: backend isContextOnlyCandidate.
+ * Any of the three review fields marks the row as context.
  */
 export function isContextOnlyCandidate(candidate) {
   if (!candidate) return false;

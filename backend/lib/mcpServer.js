@@ -38,7 +38,7 @@ export function createTalonHoundMcpServer(deps) {
         + 'with per-claim IOC occurrences and report summary/entities; report-level entities are co-mentions, not IOC relationships. '
         + 'IOC `sources` are per-provider memberships with their own lifecycle; `evidence_sources` is the deduplicated provider list (incl. Threat Library). '
         + '`report_context_tags` are report-level context, not assertions about the IOC. '
-        + 'get_threat_report drills into one report (paged indicator roster with per-indicator role/assessment, entities, explicit relationships) by threat_context.claims[].report.id. '
+        + 'get_threat_report drills into one report by threat_context.claims[].report.id: counts.all / counts.indicators / counts.context_only (Indicators = publisher-membership set, not the raw roster), paged indicators roster (All / document order) with per-row role/assessment, entities, explicit relationships. '
         + 'Use list_ioc_sources then import_iocs to add missing IOCs into an existing IOC Source. '
         + 'Never invent a special MCP/AI source — always use a real IOC Source. '
         + 'import_iocs supports dry_run. There are no delete or admin tools.'
