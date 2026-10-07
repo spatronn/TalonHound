@@ -24,11 +24,11 @@ test('page description is generic (not Published Feed-only)', () => {
   assert.doesNotMatch(API_KEYS_PAGE_DESCRIPTION, /Published Feed keys let/i);
 });
 
-test('five fixed access profiles are exposed including MCP', () => {
-  assert.equal(ACCESS_PROFILE_OPTIONS.length, 5);
+test('six fixed access profiles are exposed including MCP', () => {
+  assert.equal(ACCESS_PROFILE_OPTIONS.length, 6);
   assert.deepEqual(
     ACCESS_PROFILE_OPTIONS.map((o) => o.id).sort(),
-    ['ioc_management', 'ioc_read', 'mcp_analyst', 'mcp_read', 'published_feed']
+    ['ioc_management', 'ioc_read', 'mcp_analyst', 'mcp_enrichment', 'mcp_read', 'published_feed']
   );
   const mcpRead = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_read');
   assert.match(mcpRead.description, /owner/i);
@@ -36,6 +36,10 @@ test('five fixed access profiles are exposed including MCP', () => {
   const mcpAnalyst = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_analyst');
   assert.match(mcpAnalyst.description, /import/i);
   assert.match(mcpAnalyst.description, /owner/i);
+  const mcpEnrichment = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_enrichment');
+  assert.match(mcpEnrichment.description, /quota/i);
+  assert.match(mcpEnrichment.description, /mcp:enrichment:write/);
+  assert.match(mcpEnrichment.description, /owner/i);
 });
 
 test('owner dropdown uses users API public UUID (id), never label/email', () => {

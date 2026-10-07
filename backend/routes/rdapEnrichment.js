@@ -8,6 +8,8 @@ import {
   rowToApiPayload
 } from '../services/rdapEnrichmentService.js';
 import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
+import { registerEnrichmentExecutor } from '../lib/enrichmentProviderRegistry.js';
+import { noteProviderRateLimited } from '../lib/enrichmentProviderGuard.js';
 
 const RDAP_PROVIDER = 'rdap';
 
@@ -230,12 +232,84 @@ async function handleRdapRefresh(pool, audit, req, parsed, force) {
   };
 }
 
+function validationOutcome(parsed) {
+  return {
+    status: validationStatus(parsed.code),
+    body: { error: parsed.message, message: parsed.message, code: parsed.code }
+  };
+}
+
+/**
+ * Canonical RDAP refresh — shared by the IOC Details refresh route and automated
+ * triggers (MCP via the enrichment executor registry). Returns the route's
+ * `{ status, body }` without touching an Express response.
+ * @param {import('pg').Pool} pool
+ * @param {{ auditSuccess: Function, auditFailure: Function }} audit
+ * @param {import('express').Request|object} req  principal + subject IOC (body.ioc_id)
+ * @param {{ value: string, hintType?: string|null, force?: boolean }} input
+ */
+export async function runRdapRefresh(pool, audit, req, { value, hintType = null, force = false }) {
+  if (!value) {
+    return { status: 400, body: { error: 'value is required in request body', message: 'value is required in request body' } };
+  }
+
+  const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
+  if (force && role !== ROLES.ADMIN) {
+    return { status: 403, body: { error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' } };
+  }
+
+  const parsed = normalizeRdapTarget(value, hintType);
+  if (!parsed.ok) return validationOutcome(parsed);
+  if (hintType && !isRdapSupportedIocType(hintType)) {
+    return {
+      status: 422,
+      body: {
+        error: 'RDAP enrichment supports domain and URL observables only',
+        message: 'RDAP enrichment supports domain and URL observables only',
+        code: 'unsupported'
+      }
+    };
+  }
+
+  try {
+    return await handleRdapRefresh(pool, audit, req, parsed, force);
+  } catch (err) {
+    console.error('[rdap-enrichment] POST refresh failed', err?.message || err);
+    if (err?.code === 'rate_limit') {
+      recordEnrichmentUsage(pool, { provider: RDAP_PROVIDER, iocType: parsed?.ioc_type, outcome: 'failure', external: true, rateLimited: true });
+      noteProviderRateLimited(RDAP_PROVIDER, err.retryAfter);
+      return {
+        status: 429,
+        body: {
+          error: err.message || 'RDAP rate limit reached',
+          message: err.message || 'RDAP rate limit reached',
+          retry_after: err.retryAfter || null
+        }
+      };
+    }
+    await audit.auditFailure({
+      req,
+      action: AUDIT_ACTION.RDAP_ENRICHMENT_FAILED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: parsed.rdap_domain,
+      entityDisplay: parsed.rdap_domain,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: { error_message: String(err?.message || err) }
+    }).catch(() => {});
+    return { status: 500, body: { error: 'RDAP enrichment failed', message: 'RDAP enrichment failed' } };
+  }
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
  * @param {ReturnType<import('../lib/auditLogService.js').createAuditLogService>} audit
  */
 export function registerRdapEnrichmentRoutes(app, pool, audit) {
+  registerEnrichmentExecutor(RDAP_PROVIDER, (ctx) => runRdapRefresh(
+    ctx.pool || pool, ctx.audit || audit, ctx.req,
+    { value: ctx.ioc.observable, hintType: ctx.ioc.observable_type, force: ctx.force === true }
+  ));
   /** Safe: query param — no path encoding issues for full URLs */
   app.get('/api/enrichment/rdap', async (req, res) => {
     try {
@@ -263,52 +337,11 @@ export function registerRdapEnrichmentRoutes(app, pool, audit) {
   /** Safe: JSON body */
   app.post('/api/enrichment/rdap/refresh', async (req, res) => {
     const value = resolveRequestValue(req);
-    if (!value) {
-      return res.status(400).json({ error: 'value is required in request body', message: 'value is required in request body' });
-    }
     const hintType = String(req.query?.ioc_type || req.query?.type || req.body?.ioc_type || '').trim() || null;
     const force = req.body?.force === true
       || String(req.query?.force || '').toLowerCase() === 'true';
-
-    const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
-    if (force && role !== ROLES.ADMIN) {
-      return res.status(403).json({ error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' });
-    }
-
-    const parsed = normalizeRdapTarget(value, hintType);
-    if (!parsed.ok) return sendValidationError(res, parsed);
-    if (hintType && !isRdapSupportedIocType(hintType)) {
-      return res.status(422).json({
-        error: 'RDAP enrichment supports domain and URL observables only',
-        message: 'RDAP enrichment supports domain and URL observables only',
-        code: 'unsupported'
-      });
-    }
-
-    try {
-      const out = await handleRdapRefresh(pool, audit, req, parsed, force);
-      return res.status(out.status).json(out.body);
-    } catch (err) {
-      console.error('[rdap-enrichment] POST refresh failed', err?.message || err);
-      if (err?.code === 'rate_limit') {
-        recordEnrichmentUsage(pool, { provider: RDAP_PROVIDER, iocType: parsed?.ioc_type, outcome: 'failure', external: true, rateLimited: true });
-        return res.status(429).json({
-          error: err.message || 'RDAP rate limit reached',
-          message: err.message || 'RDAP rate limit reached',
-          retry_after: err.retryAfter || null
-        });
-      }
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.RDAP_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: parsed.rdap_domain,
-        entityDisplay: parsed.rdap_domain,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: { error_message: String(err?.message || err) }
-      }).catch(() => {});
-      return res.status(500).json({ error: 'RDAP enrichment failed', message: 'RDAP enrichment failed' });
-    }
+    const out = await runRdapRefresh(pool, audit, req, { value, hintType, force });
+    return res.status(out.status).json(out.body);
   });
 
   /** Legacy path param */

@@ -11,6 +11,8 @@ export const API_SCOPE = Object.freeze({
   MCP_IOC_READ: 'mcp:ioc:read',
   MCP_IOC_CREATE: 'mcp:ioc:create',
   MCP_ENRICHMENT_READ: 'mcp:enrichment:read',
+  /** Trigger external (possibly paid) enrichment providers through MCP. Never implied by read or import scopes. */
+  MCP_ENRICHMENT_WRITE: 'mcp:enrichment:write',
   MCP_SOURCES_READ: 'mcp:sources:read'
 });
 
@@ -23,6 +25,7 @@ export const ALL_API_SCOPES = Object.freeze([
   API_SCOPE.MCP_IOC_READ,
   API_SCOPE.MCP_IOC_CREATE,
   API_SCOPE.MCP_ENRICHMENT_READ,
+  API_SCOPE.MCP_ENRICHMENT_WRITE,
   API_SCOPE.MCP_SOURCES_READ
 ]);
 
@@ -32,6 +35,7 @@ export const ACCESS_PROFILE = Object.freeze({
   IOC_READ: 'ioc_read',
   MCP_READ: 'mcp_read',
   MCP_ANALYST: 'mcp_analyst',
+  MCP_ENRICHMENT: 'mcp_enrichment',
   /** Legacy hash-only per-feed keys — still mapped to feed-read scope. */
   FEED_ACCESS: 'feed_access'
 });
@@ -98,6 +102,21 @@ const PROFILE_DEFS = Object.freeze({
     creatable: true,
     requiresOwner: true
   }),
+  [ACCESS_PROFILE.MCP_ENRICHMENT]: Object.freeze({
+    id: ACCESS_PROFILE.MCP_ENRICHMENT,
+    label: 'MCP Enrichment',
+    description: 'MCP access for AI clients that may trigger the enabled TalonHound enrichment providers on existing IOCs. May consume provider API quota. Bound to an owner user; triggering requires an analyst/admin owner. Cannot import IOCs.',
+    permission_summary: 'MCP read + trigger enrichment',
+    key_prefix: 'th_mcp_',
+    scopes: Object.freeze([
+      API_SCOPE.MCP_IOC_READ,
+      API_SCOPE.MCP_SOURCES_READ,
+      API_SCOPE.MCP_ENRICHMENT_READ,
+      API_SCOPE.MCP_ENRICHMENT_WRITE
+    ]),
+    creatable: true,
+    requiresOwner: true
+  }),
   [ACCESS_PROFILE.FEED_ACCESS]: Object.freeze({
     id: ACCESS_PROFILE.FEED_ACCESS,
     label: 'Feed Access (legacy)',
@@ -152,7 +171,7 @@ export function profileRequiresOwner(profileId) {
 
 export function isMcpAccessProfile(profileId) {
   const id = String(profileId || '').trim().toLowerCase();
-  return id === ACCESS_PROFILE.MCP_READ || id === ACCESS_PROFILE.MCP_ANALYST;
+  return id === ACCESS_PROFILE.MCP_READ || id === ACCESS_PROFILE.MCP_ANALYST || id === ACCESS_PROFILE.MCP_ENRICHMENT;
 }
 
 export function profileLabel(profileId) {

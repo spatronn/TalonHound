@@ -28,7 +28,14 @@ export const MCP_DEFAULTS = Object.freeze({
   RATE_LIMIT_PER_MIN: 120,
   RATE_LIMIT_IMPORT_PER_MIN: 30,
   RATE_LIMIT_SEARCH_PER_MIN: 60,
-  RATE_LIMIT_BULK_PER_MIN: 60
+  RATE_LIMIT_BULK_PER_MIN: 60,
+  // Enrichment action tools (external, possibly paid provider calls).
+  ENRICH_BULK_MAX: 25,
+  ENRICH_MAX_OPERATIONS: 100,
+  ENRICH_MAX_ACTIVE_JOBS: 5,
+  ENRICH_WAIT_MAX_SECONDS: 20,
+  RATE_LIMIT_ENRICH_PER_MIN: 10,
+  RATE_LIMIT_BULK_ENRICH_PER_MIN: 2
 });
 
 export function isMcpEnabled(env = process.env) {
@@ -60,6 +67,13 @@ export function getMcpConfig(env = process.env) {
       'MCP_RATE_LIMIT_BULK_PER_MIN',
       MCP_DEFAULTS.RATE_LIMIT_BULK_PER_MIN,
       { min: 1, max: 1000 }
-    )
+    ),
+    // Hard ceilings: env can lower these but never lift them past the max.
+    enrichBulkMax: intEnv(env, 'MCP_ENRICH_BULK_MAX', MCP_DEFAULTS.ENRICH_BULK_MAX, { min: 1, max: 50 }),
+    enrichMaxOperations: intEnv(env, 'MCP_ENRICH_MAX_OPERATIONS', MCP_DEFAULTS.ENRICH_MAX_OPERATIONS, { min: 1, max: 250 }),
+    enrichMaxActiveJobs: intEnv(env, 'MCP_ENRICH_MAX_ACTIVE_JOBS', MCP_DEFAULTS.ENRICH_MAX_ACTIVE_JOBS, { min: 1, max: 20 }),
+    enrichWaitMaxSeconds: intEnv(env, 'MCP_ENRICH_WAIT_MAX_SECONDS', MCP_DEFAULTS.ENRICH_WAIT_MAX_SECONDS, { min: 1, max: 25 }),
+    rateLimitEnrichPerMin: intEnv(env, 'MCP_RATE_LIMIT_ENRICH_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_ENRICH_PER_MIN, { min: 1, max: 120 }),
+    rateLimitBulkEnrichPerMin: intEnv(env, 'MCP_RATE_LIMIT_BULK_ENRICH_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_BULK_ENRICH_PER_MIN, { min: 1, max: 30 })
   });
 }

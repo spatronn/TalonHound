@@ -37,10 +37,22 @@ export const ACCESS_PROFILE_OPTIONS = Object.freeze([
     description:
       'MCP (/mcp) access for AI clients with controlled IOC import into existing IOC Sources. Bound to an owner user; import requires both mcp:ioc:create on the token and an analyst/admin owner role.',
     permission_summary: 'MCP read + import into IOC Sources'
+  }),
+  Object.freeze({
+    id: 'mcp_enrichment',
+    label: 'MCP Enrichment',
+    description:
+      'MCP (/mcp) access for AI clients that may trigger the enabled TalonHound enrichment providers on existing IOCs (may consume provider API quota). Bound to an owner user; triggering requires both mcp:enrichment:write on the token and an analyst/admin owner role. Cannot import IOCs.',
+    permission_summary: 'MCP read + trigger enrichment'
   })
 ]);
 
-const MCP_OWNER_PROFILES = new Set(['mcp_read', 'mcp_analyst']);
+const MCP_OWNER_PROFILES = new Set(['mcp_read', 'mcp_analyst', 'mcp_enrichment']);
+
+/** MCP access profiles (owner-bound keys for /mcp). */
+export function isMcpAccessProfile(accessProfile) {
+  return MCP_OWNER_PROFILES.has(String(accessProfile || '').trim().toLowerCase());
+}
 
 const OWNER_PUBLIC_ID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

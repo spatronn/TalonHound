@@ -13,7 +13,8 @@ import {
   ABUSEIPDB_PROVIDER,
   TEST_IP
 } from '../services/abuseipdbService.js';
-import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { providerDisabledOutcome, registerEnrichmentExecutor } from '../lib/enrichmentProviderRegistry.js';
+import { noteProviderRateLimited } from '../lib/enrichmentProviderGuard.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
 import { recordHealthProbeResult, classifyProbeError } from '../lib/enrichmentProviderHealthCheck.js';
@@ -31,7 +32,167 @@ function decodeRouteIp(raw) {
  * @param {import('pg').Pool} pool
  * @param {ReturnType<import('../lib/auditLogService.js').createAuditLogService>} audit
  */
+/**
+ * Canonical AbuseIPDB refresh — shared by the IOC Details refresh route and
+ * automated triggers (MCP enrich_ioc via the enrichment executor registry).
+ * Returns the route's `{ status, body }` without touching an Express response.
+ * @param {import('pg').Pool} pool
+ * @param {{ auditSuccess: Function, auditFailure: Function }} audit
+ * @param {import('express').Request|object} req  principal + subject IOC (body.ioc_id/value/ioc_type)
+ * @param {{ ip: string, force?: boolean }} input
+ */
+export async function runAbuseIpdbRefresh(pool, audit, req, { ip, force = false }) {
+  const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
+
+  if (force && role !== ROLES.ADMIN) {
+    return { status: 403, body: { error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' } };
+  }
+
+  if (!isValidIpAddress(ip)) {
+    return { status: 400, body: {
+      error: 'Invalid IP address',
+      message: 'Invalid IP address',
+      enriched: false,
+      ip,
+      provider_status: 'invalid_ip'
+    } };
+  }
+
+  const publicIp = validatePublicIp(ip);
+  if (!publicIp) {
+    return { status: 422, body: {
+      error: 'Private or reserved IP — external lookup not supported',
+      message: 'AbuseIPDB only supports public IP reputation checks',
+      enriched: false,
+      ip: ip.split('/')[0].trim(),
+      provider_status: 'unsupported_private_ip'
+    } };
+  }
+
+  try {
+    // Central disable guard: no external call for a disabled provider.
+    const disabled = await providerDisabledOutcome(pool, ABUSEIPDB_PROVIDER);
+    if (disabled) return disabled;
+
+    const abuseStartedAt = Date.now();
+    const result = await enrichIpWithAbuseIpdb(pool, publicIp, { force });
+    const abuseExternal = result.cached !== true && !result.skipped;
+
+    if (result.skipped && result.provider_status === 'not_configured') {
+      return { status: 409, body: {
+        error: 'AbuseIPDB API key is not configured',
+        message: 'AbuseIPDB API key is not configured',
+        provider_status: 'not_configured'
+      } };
+    }
+    if (result.skipped && result.provider_status === 'disabled') {
+      return { status: 409, body: {
+        error: 'AbuseIPDB provider is disabled',
+        message: 'AbuseIPDB provider is disabled',
+        provider_status: 'disabled'
+      } };
+    }
+
+    if (!result.cached || force) {
+      const subject = await resolveSubjectIocFromRequest(pool, req);
+      const scope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || req.body?.value || publicIp,
+        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+        targetType: 'ip',
+        targetValue: publicIp,
+        provider: ABUSEIPDB_PROVIDER,
+        extraMetadata: {
+          ip: publicIp,
+          original_value: subject?.observable || req.body?.value || publicIp,
+          observable_value: subject?.observable || req.body?.value || publicIp,
+          cache_bypass: force || !result.cached,
+          cached: result.cached,
+          force,
+          provider_status: result.provider_status,
+          abuse_confidence_score: result.row?.normalized_summary?.abuseConfidenceScore ?? null
+        }
+      });
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.ABUSEIPDB_ENRICHMENT_REFRESH,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: scope.entityId,
+        entityDisplay: scope.entityDisplay,
+        subjectIocId: scope.subjectIocId,
+        subjectIocType: scope.subjectIocType,
+        subjectIocValue: scope.subjectIocValue,
+        targetType: scope.targetType,
+        targetValue: scope.targetValue,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: scope.metadata
+      }).catch(() => {});
+    }
+
+    const payload = rowToApiPayload(result.row, {
+      enriched: result.provider_status === 'success',
+      cached: result.cached,
+      ip: publicIp
+    });
+
+    if (result.provider_status === 'success') {
+      recordEnrichmentUsage(pool, {
+        provider: ABUSEIPDB_PROVIDER,
+        iocType: 'ip',
+        outcome: 'success',
+        external: abuseExternal,
+        cacheHit: !abuseExternal,
+        responseTimeMs: abuseExternal ? Date.now() - abuseStartedAt : null
+      });
+      return { status: 200, body: payload };
+    }
+
+    recordEnrichmentUsage(pool, {
+      provider: ABUSEIPDB_PROVIDER,
+      iocType: 'ip',
+      outcome: 'failure',
+      external: abuseExternal,
+      rateLimited: result.provider_status === 'rate_limited',
+      responseTimeMs: abuseExternal ? Date.now() - abuseStartedAt : null
+    });
+
+    if (result.provider_status === 'rate_limited') noteProviderRateLimited(ABUSEIPDB_PROVIDER);
+    const httpStatus = result.provider_status === 'rate_limited' ? 429
+      : (result.provider_status === 'auth_error' ? 401 : 502);
+
+    return { status: httpStatus, body: {
+      ...payload,
+      error: result.row?.error_message || 'AbuseIPDB enrichment failed',
+      message: result.row?.error_message || 'AbuseIPDB enrichment failed'
+    } };
+  } catch (err) {
+    console.error('[abuseipdb-enrichment] POST refresh failed', err?.message || err);
+    if (err?.code === 'invalid_ip') {
+      return { status: 400, body: { error: err.message, message: err.message, provider_status: 'invalid_ip' } };
+    }
+    if (err?.code === 'auth') {
+      recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
+      return { status: 401, body: { error: err.message, message: err.message, provider_status: 'auth_error' } };
+    }
+    if (err?.code === 'rate_limit') {
+      recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true, rateLimited: true });
+      noteProviderRateLimited(ABUSEIPDB_PROVIDER, err.retryAfter);
+      return { status: 429, body: {
+        error: err.message,
+        message: err.message,
+        provider_status: 'rate_limited',
+        retry_after: err.retryAfter || null
+      } };
+    }
+    recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
+    return { status: 500, body: { error: 'AbuseIPDB enrichment failed', message: 'AbuseIPDB enrichment failed' } };
+  }
+}
+
 export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
+  registerEnrichmentExecutor(ABUSEIPDB_PROVIDER, (ctx) => runAbuseIpdbRefresh(
+    ctx.pool || pool, ctx.audit || audit, ctx.req, { ip: ctx.target.target_value, force: ctx.force === true }
+  ));
   app.get('/api/enrichment/abuseipdb/ip/:ip', async (req, res) => {
     try {
       const ip = decodeRouteIp(req.params.ip);
@@ -89,148 +250,8 @@ export function registerAbuseIpdbEnrichmentRoutes(app, pool, audit) {
     const ip = decodeRouteIp(req.params.ip);
     const force = String(req.query?.force || '').toLowerCase() === 'true'
       || req.body?.force === true;
-    const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
-
-    if (force && role !== ROLES.ADMIN) {
-      return res.status(403).json({ error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' });
-    }
-
-    if (!isValidIpAddress(ip)) {
-      return res.status(400).json({
-        error: 'Invalid IP address',
-        message: 'Invalid IP address',
-        enriched: false,
-        ip,
-        provider_status: 'invalid_ip'
-      });
-    }
-
-    const publicIp = validatePublicIp(ip);
-    if (!publicIp) {
-      return res.status(422).json({
-        error: 'Private or reserved IP — external lookup not supported',
-        message: 'AbuseIPDB only supports public IP reputation checks',
-        enriched: false,
-        ip: ip.split('/')[0].trim(),
-        provider_status: 'unsupported_private_ip'
-      });
-    }
-
-    try {
-      // Central disable guard: no external call for a disabled provider.
-      if (!(await guardProviderEnabled(pool, ABUSEIPDB_PROVIDER, res))) return;
-
-      const abuseStartedAt = Date.now();
-      const result = await enrichIpWithAbuseIpdb(pool, publicIp, { force });
-      const abuseExternal = result.cached !== true && !result.skipped;
-
-      if (result.skipped && result.provider_status === 'not_configured') {
-        return res.status(409).json({
-          error: 'AbuseIPDB API key is not configured',
-          message: 'AbuseIPDB API key is not configured',
-          provider_status: 'not_configured'
-        });
-      }
-      if (result.skipped && result.provider_status === 'disabled') {
-        return res.status(409).json({
-          error: 'AbuseIPDB provider is disabled',
-          message: 'AbuseIPDB provider is disabled',
-          provider_status: 'disabled'
-        });
-      }
-
-      if (!result.cached || force) {
-        const subject = await resolveSubjectIocFromRequest(pool, req);
-        const scope = buildEnrichmentAuditScope({
-          subject,
-          subjectIocValue: subject?.observable || req.body?.value || publicIp,
-          subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
-          targetType: 'ip',
-          targetValue: publicIp,
-          provider: ABUSEIPDB_PROVIDER,
-          extraMetadata: {
-            ip: publicIp,
-            original_value: subject?.observable || req.body?.value || publicIp,
-            observable_value: subject?.observable || req.body?.value || publicIp,
-            cache_bypass: force || !result.cached,
-            cached: result.cached,
-            force,
-            provider_status: result.provider_status,
-            abuse_confidence_score: result.row?.normalized_summary?.abuseConfidenceScore ?? null
-          }
-        });
-        await audit.auditSuccess({
-          req,
-          action: AUDIT_ACTION.ABUSEIPDB_ENRICHMENT_REFRESH,
-          entityType: AUDIT_ENTITY.ENRICHMENT,
-          entityId: scope.entityId,
-          entityDisplay: scope.entityDisplay,
-          subjectIocId: scope.subjectIocId,
-          subjectIocType: scope.subjectIocType,
-          subjectIocValue: scope.subjectIocValue,
-          targetType: scope.targetType,
-          targetValue: scope.targetValue,
-          severity: AUDIT_SEVERITY.INFO,
-          metadata: scope.metadata
-        }).catch(() => {});
-      }
-
-      const payload = rowToApiPayload(result.row, {
-        enriched: result.provider_status === 'success',
-        cached: result.cached,
-        ip: publicIp
-      });
-
-      if (result.provider_status === 'success') {
-        recordEnrichmentUsage(pool, {
-          provider: ABUSEIPDB_PROVIDER,
-          iocType: 'ip',
-          outcome: 'success',
-          external: abuseExternal,
-          cacheHit: !abuseExternal,
-          responseTimeMs: abuseExternal ? Date.now() - abuseStartedAt : null
-        });
-        return res.json(payload);
-      }
-
-      recordEnrichmentUsage(pool, {
-        provider: ABUSEIPDB_PROVIDER,
-        iocType: 'ip',
-        outcome: 'failure',
-        external: abuseExternal,
-        rateLimited: result.provider_status === 'rate_limited',
-        responseTimeMs: abuseExternal ? Date.now() - abuseStartedAt : null
-      });
-
-      const httpStatus = result.provider_status === 'rate_limited' ? 429
-        : (result.provider_status === 'auth_error' ? 401 : 502);
-
-      return res.status(httpStatus).json({
-        ...payload,
-        error: result.row?.error_message || 'AbuseIPDB enrichment failed',
-        message: result.row?.error_message || 'AbuseIPDB enrichment failed'
-      });
-    } catch (err) {
-      console.error('[abuseipdb-enrichment] POST refresh failed', err?.message || err);
-      if (err?.code === 'invalid_ip') {
-        return res.status(400).json({ error: err.message, message: err.message, provider_status: 'invalid_ip' });
-      }
-      if (err?.code === 'auth') {
-        recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
-        return res.status(401).json({ error: err.message, message: err.message, provider_status: 'auth_error' });
-      }
-      if (err?.code === 'rate_limit') {
-        recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true, rateLimited: true });
-        return res.status(429).json({
-          error: err.message,
-          message: err.message,
-          provider_status: 'rate_limited',
-          retry_after: err.retryAfter || null
-        });
-      }
-      recordEnrichmentUsage(pool, { provider: ABUSEIPDB_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
-      return res.status(500).json({ error: 'AbuseIPDB enrichment failed', message: 'AbuseIPDB enrichment failed' });
-    }
+    const out = await runAbuseIpdbRefresh(pool, audit, req, { ip, force });
+    return res.status(out.status).json(out.body);
   });
 
   app.get('/api/admin/enrichment-providers/abuseipdb', requireRole(ROLES.ADMIN), async (req, res) => {

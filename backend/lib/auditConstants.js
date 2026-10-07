@@ -120,6 +120,10 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_SOURCE_REMOVED: 'ioc.source_removed',
   MCP_TOOL_CALL: 'mcp.tool_call',
   MCP_IOC_IMPORT: 'mcp.ioc_import',
+  // Explicit enrichment job (MCP enrich_ioc / bulk_enrich_iocs): one parent
+  // request + one completion event; per-provider events keep their own actions.
+  ENRICHMENT_JOB_REQUESTED: 'enrichment.job.requested',
+  ENRICHMENT_JOB_COMPLETED: 'enrichment.job.completed',
   IOC_SEARCH_EXPORT_CREATED: 'ioc.search_export.created',
   IOC_SEARCH_EXPORT_STARTED: 'ioc.search_export.started',
   IOC_SEARCH_EXPORT_COMPLETED: 'ioc.search_export.completed',
@@ -345,6 +349,8 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_SOURCE_REMOVED]: 'IOC Removed From Source',
   [AUDIT_ACTION.MCP_TOOL_CALL]: 'MCP Tool Call',
   [AUDIT_ACTION.MCP_IOC_IMPORT]: 'MCP IOC Import',
+  [AUDIT_ACTION.ENRICHMENT_JOB_REQUESTED]: 'Enrichment Job Requested',
+  [AUDIT_ACTION.ENRICHMENT_JOB_COMPLETED]: 'Enrichment Job Completed',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_CREATED]: 'IOC Saved Search Created',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_UPDATED]: 'IOC Saved Search Updated',
   [AUDIT_ACTION.IOC_SAVED_SEARCH_DELETED]: 'IOC Saved Search Deleted',

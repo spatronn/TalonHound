@@ -33,12 +33,14 @@ test('creatable profiles include REST + MCP presets', () => {
     'ioc_management',
     'ioc_read',
     'mcp_analyst',
+    'mcp_enrichment',
     'mcp_read',
     'published_feed'
   ]);
   assert.equal(getAccessProfile('ioc_management').creatable, true);
   assert.equal(getAccessProfile('mcp_read').creatable, true);
   assert.equal(getAccessProfile('mcp_analyst').creatable, true);
+  assert.equal(getAccessProfile('mcp_enrichment').creatable, true);
   assert.equal(getAccessProfile('feed_access').creatable, false);
 });
 

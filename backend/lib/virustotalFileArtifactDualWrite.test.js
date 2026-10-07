@@ -150,9 +150,11 @@ describe('VirusTotal enrichment dual-write source guard (server.js)', () => {
     assert.deepEqual(src.match(/\bdualWriteFileArtifact(?:ForObservable)?\(/g) || [], []);
   });
 
-  it('VT refresh route awaits the best-effort helper before reporting success', () => {
-    const route = src.indexOf("app.post('/api/ioc/:id/enrichments/virustotal/refresh'");
+  it('VT refresh (shared by the route and MCP enrichment) awaits the best-effort helper before reporting success', () => {
+    // The refresh logic lives in runVirusTotalRefresh; the route is a thin wrapper over it.
+    const route = src.indexOf('async function runVirusTotalRefresh(');
     assert.ok(route !== -1);
+    assert.ok(src.indexOf("app.post('/api/ioc/:id/enrichments/virustotal/refresh'") > route);
     const call = src.indexOf('await dualWriteVirusTotalFileArtifact(pool, {', route);
     const completed = src.indexOf('AUDIT_ACTION.VT_ENRICHMENT_COMPLETED', route);
     const success = src.indexOf("status: 'success', provider: VT_PROVIDER", route);

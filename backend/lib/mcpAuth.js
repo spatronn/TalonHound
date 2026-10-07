@@ -31,6 +31,7 @@ function hasAnyMcpScope(scopes) {
     API_SCOPE.MCP_IOC_READ,
     API_SCOPE.MCP_IOC_CREATE,
     API_SCOPE.MCP_ENRICHMENT_READ,
+    API_SCOPE.MCP_ENRICHMENT_WRITE,
     API_SCOPE.MCP_SOURCES_READ
   ].some((s) => hasApiScope(scopes, s));
 }

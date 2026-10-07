@@ -72,8 +72,9 @@ MCP credentials are API keys stored in `published_feed_access_keys`, using dedic
 |------------|--------|------------|-------------|
 | `mcp_read` | MCP Read | `th_mcp_` | Lookup / search / context / bulk / list sources |
 | `mcp_analyst` | MCP Analyst | `th_mcp_` | Same reads **plus** `import_iocs` |
+| `mcp_enrichment` | MCP Enrichment | `th_mcp_` | Same reads **plus** `enrich_ioc` / `bulk_enrich_iocs` (no import) |
 
-Both profiles **require an owner user**. The owner’s TalonHound role is loaded on every request.
+All MCP profiles **require an owner user**. The owner’s TalonHound role is loaded on every request.
 
 **Effective permission = token scopes ∩ owner RBAC ∩ tool policy.**
 
@@ -81,9 +82,10 @@ Examples:
 
 - An `mcp_analyst` key owned by a **readonly** user can read (if the role allows MCP read) but **cannot** import — create is denied by RBAC even when `mcp:ioc:create` is on the token.
 - An `mcp_read` key never gets import, regardless of owner role.
+- Only a key carrying `mcp:enrichment:write` (the `mcp_enrichment` profile) owned by an **analyst/admin** can trigger enrichment. `mcp:ioc:create` and `mcp:enrichment:read` never imply it.
 - A non-MCP API key without MCP scopes is rejected at `/mcp`.
 
-Create keys in the TalonHound UI under API key management (same place as published-feed / IOC API keys), choosing **MCP Read** or **MCP Analyst** and selecting the owner user. The plaintext key is shown **once** at creation.
+Create keys in the TalonHound UI under API key management (same place as published-feed / IOC API keys), choosing **MCP Read**, **MCP Analyst** or **MCP Enrichment** and selecting the owner user. The plaintext key is shown **once** at creation.
 
 ## Scopes
 
@@ -91,13 +93,17 @@ Create keys in the TalonHound UI under API key management (same place as publish
 |-------|--------|
 | `mcp:ioc:read` | `lookup_ioc`, `search_iocs`, `get_ioc_context`, `bulk_lookup_iocs`, `get_threat_report` |
 | `mcp:ioc:create` | `import_iocs` (also needs owner analyst/admin) |
-| `mcp:enrichment:read` | Include stored enrichment rows in `get_ioc_context` |
+| `mcp:enrichment:read` | Include stored enrichment rows in `get_ioc_context`; `list_enrichment_providers`, `get_enrichment_job` |
+| `mcp:enrichment:write` | `enrich_ioc`, `bulk_enrich_iocs` — triggers external, possibly paid providers (also needs `mcp:ioc:read` and an analyst/admin owner) |
 | `mcp:sources:read` | `list_ioc_sources` |
 
 Profile presets:
 
 - **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_analyst:** all four MCP scopes above
+- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`
+- **mcp_enrichment:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`
+
+**Backward compatibility:** scopes are stored on each key at creation. Existing `mcp_read` / `mcp_analyst` keys were **not** granted `mcp:enrichment:write`; create a new **MCP Enrichment** key to use the enrichment action tools.
 
 ## Tools
 
@@ -105,11 +111,15 @@ Profile presets:
 |------|-------------------|-----------|-------------|
 | `lookup_ioc` | `mcp:ioc:read` | Yes | Exact lookup of one observable. Type optional (auto-detect + normalize). |
 | `search_iocs` | `mcp:ioc:read` | Yes | Search inventory by DSL or plain-text `query` and/or `type` / `classification` / `source` filters (AND-combined); cursor pagination; bounded page size. See [search semantics](#search_iocs-query-semantics). |
-| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment. For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. Always returns `threat_context` — Threat Library claims for this IOC (role / assessment / confidence, up to 5 IOC-specific `occurrences`, `report.summary`, bounded `report.entities`) and explicit `relationships`; see [Threat Context semantics](#threat-context-semantics). |
+| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment (use `enrich_ioc`). For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. Always returns `threat_context` — Threat Library claims for this IOC (role / assessment / confidence, up to 5 IOC-specific `occurrences`, `report.summary`, bounded `report.entities`) and explicit `relationships`; see [Threat Context semantics](#threat-context-semantics). |
 | `get_threat_report` | `mcp:ioc:read` | Yes | One persisted Threat Library report by `id` (from `threat_context.claims[].report.id`): metadata + `summary`, `counts` (`all` = full candidate roster, `indicators` = report Indicator membership matching the UI Indicators tab, `context_only`, plus entities/relationships), paged `indicators` roster of **all** candidates in document order (`indicator_limit` default 100, max 500; `indicator_offset`; use `indicators.total` for roster paging), `entities` (≤50), explicit `relationships` (≤100), and report `tags`. Never the report body, artifacts or parser internals; never re-fetches or re-analyzes. |
 | `bulk_lookup_iocs` | `mcp:ioc:read` | Yes | Batch existence check → `existing` / `missing` / `invalid` (max batch size configurable). |
 | `list_ioc_sources` | `mcp:sources:read` | Yes | Active, selectable IOC Sources usable as `import_iocs` targets. |
 | `import_iocs` | `mcp:ioc:create` | No | Import into an existing source via the same manual ingestion path as the GUI. Supports `dry_run`. |
+| `list_enrichment_providers` | `mcp:enrichment:read` | Yes | Providers from TalonHound's provider registry: id, name, supported observable types, external, enabled / configured / triggerable / available, automation rate. Never exposes keys or config. |
+| `enrich_ioc` | `mcp:ioc:read` + `mcp:enrichment:write` | **No — action** | Trigger enrichment for one IOC (`ioc_id` = public UUID or numeric id; `providers` = `"all"` or ids; `force_refresh`; optional `wait_seconds` ≤ 20). Background job; may consume provider quota. See [Explicit enrichment](#explicit-enrichment-action-tools). |
+| `bulk_enrich_iocs` | `mcp:ioc:read` + `mcp:enrichment:write` | **No — action** | Same for up to 25 IOCs / 100 provider operations per call. |
+| `get_enrichment_job` | `mcp:enrichment:read` | Yes | Job + per-IOC, per-provider status for jobs created by the same owner. |
 
 There are no delete, update-admin, feed, or user-management tools.
 
@@ -203,6 +213,32 @@ When `import_iocs` is called with `dry_run: true`:
 
 Use dry-run before committing large or untrusted extracts from LLM output.
 
+## Explicit enrichment (action tools)
+
+`enrich_ioc` / `bulk_enrich_iocs` are the **only** MCP path that can cause an outbound provider call. They expose the enrichment TalonHound already has — they do not add providers.
+
+```
+MCP enrich_ioc
+  → authorization (mcp:ioc:read + mcp:enrichment:write ∩ analyst/admin owner)
+  → backend/lib/enrichmentOrchestrator.js
+      resolve the IOC from TalonHound (type is never taken from the caller)
+      → provider registry (backend/lib/enrichmentProviderRegistry.js):
+        applicability + lookup target (direct, or URL host = Derived Infrastructure),
+        enabled/configured state, freshness
+      → enrichment_jobs / enrichment_job_items (migration 037), dedupe
+      → in-process runner: cooldown + automation budget → the provider's
+        registered executor = the SAME refresh function its IOC Details button calls
+  → provider stores (ioc_enrichments, ioc_ip_enrichment, …) + audit
+  → get_ioc_context returns the new enrichment
+```
+
+- **Providers:** whatever `list_enrichment_providers` returns. `providers: "all"` runs every enabled provider applicable to the IOC (inapplicable ones are listed in `not_applicable`; applicable-but-disabled ones are `provider_unavailable`).
+- **Freshness:** without `force_refresh`, a provider whose stored result is still fresh by that provider's own rule is `skipped_fresh` (no external call). `force_refresh: true` refreshes anyway but never bypasses provider cooldowns, the automation budget, batch limits or the provider's own role rules (IPinfo / AbuseIPDB / RDAP force refresh is admin-only, as in the GUI → `forbidden`).
+- **Statuses:** item = `queued`, `running`, `completed`, `skipped_fresh`, `deduplicated` (joined an identical in-flight request), `unsupported`, `unknown_provider`, `provider_unavailable`, `rate_limited`, `forbidden`, `failed`, `interrupted`; job = `queued`, `running`, `completed`, `partially_completed`, `failed`. One provider failing never undoes another provider's stored result.
+- **Rate protection:** a provider 429 (from the UI or MCP) sets a shared cooldown; automated triggers also draw from a per-provider budget (`automationRatePerMin` in the registry — VirusTotal 4/min — overridable with `ENRICHMENT_AUTOMATION_RATE_PER_MIN_<PROVIDER>`). Jobs wait for budget up to 2 minutes per item, then report `rate_limited`.
+- **Dedupe:** identical active operations (provider + lookup target) coalesce across concurrent requests (advisory lock) and within one request. A forced request only joins a forced in-flight one.
+- **Adding a provider:** add a registry entry with `resolveTarget` / `readFreshness` / `supportedObservableTypes` and register its refresh function with `registerEnrichmentExecutor` where its route lives — no MCP change.
+
 ## Rate limits and batch sizes
 
 Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
@@ -216,6 +252,12 @@ Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
 | Bulk lookup / import batch max | **100** | `MCP_BULK_LOOKUP_MAX` / `MCP_IMPORT_MAX` |
 | Search page max | **50** | `MCP_SEARCH_PAGE_MAX` |
 | Max value length (chars) | **2048** | `MCP_VALUE_MAX_CHARS` |
+| `enrich_ioc` + `bulk_enrich_iocs` / minute | **10** | `MCP_RATE_LIMIT_ENRICH_PER_MIN` (max 120) |
+| `bulk_enrich_iocs` / minute | **2** | `MCP_RATE_LIMIT_BULK_ENRICH_PER_MIN` (max 30) |
+| IOCs per `bulk_enrich_iocs` | **25** | `MCP_ENRICH_BULK_MAX` (hard max 50) |
+| Provider operations per enrichment request | **100** | `MCP_ENRICH_MAX_OPERATIONS` (hard max 250) |
+| Active enrichment jobs per key | **5** | `MCP_ENRICH_MAX_ACTIVE_JOBS` (max 20) |
+| `wait_seconds` max | **20** | `MCP_ENRICH_WAIT_MAX_SECONDS` (max 25) |
 
 Exceeding limits returns HTTP **429**. Disable MCP entirely with `MCP_ENABLED=false`.
 
@@ -229,6 +271,9 @@ Successful (and many failed) MCP operations are written through the shared audit
 | Metadata `channel` | `mcp` |
 | Tool calls (non-import) | action `mcp.tool_call` |
 | Imports (including dry-run) | action `mcp.ioc_import` |
+| Enrichment request (one per `enrich_ioc` / `bulk_enrich_iocs`) | action `enrichment.job.requested` (job id, providers, `force_refresh`, planned per-provider status) |
+| Per-provider work | the provider's existing actions (`enrichment.virustotal.*`, `enrichment.ip.*`, `enrichment.abuseipdb.refresh`, `enrichment.rdap.*`, `enrichment.spamhaus_drop.refresh`) with `source = mcp`, API key id/name and the job id |
+| Enrichment job finished | action `enrichment.job.completed` (`job_status`, status summary) |
 
 Audit metadata typically includes API key id/name, access profile, owner user id, tool name, and import counters (`submitted`, `created` / `would_create`, `invalid`, etc.).
 
@@ -340,7 +385,8 @@ Also disable or remove the owner user if the entire identity should lose access.
 
 - No delete / suppress / bulk-admin tools
 - No feed administration or published-feed operations via MCP
-- No automatic enrichment trigger (reads stored enrichment only)
+- No *implicit* enrichment: read tools only return stored enrichment; external providers run only through the explicit `enrich_ioc` / `bulk_enrich_iocs` action tools
+- Enrichment jobs run in the backend process; a backend restart marks in-flight jobs `interrupted` (request them again)
 - No threat-report file storage or long-running “report jobs”
 - Stateless Streamable HTTP only (no durable MCP sessions)
 - Batch sizes capped (default 100)

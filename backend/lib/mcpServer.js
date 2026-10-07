@@ -41,7 +41,11 @@ export function createTalonHoundMcpServer(deps) {
         + 'get_threat_report drills into one report by threat_context.claims[].report.id: counts.all / counts.indicators / counts.context_only (Indicators = publisher-membership set, not the raw roster), paged indicators roster (All / document order) with per-row role/assessment, entities, explicit relationships. '
         + 'Use list_ioc_sources then import_iocs to add missing IOCs into an existing IOC Source. '
         + 'Never invent a special MCP/AI source — always use a real IOC Source. '
-        + 'import_iocs supports dry_run. There are no delete or admin tools.'
+        + 'import_iocs supports dry_run. There are no delete or admin tools. '
+        + 'Side effects: every read tool (lookup/search/context/bulk lookup/report/sources/list_enrichment_providers/get_enrichment_job) returns persisted data only and never triggers external enrichment. '
+        + 'enrich_ioc / bulk_enrich_iocs are explicit ACTION tools (require mcp:enrichment:write): they run TalonHound enrichment providers on existing IOCs, may consume provider API quota, '
+        + 'skip providers whose stored result is fresh unless force_refresh=true, and return a job_id — poll get_enrichment_job, then read results with get_ioc_context. '
+        + 'Use list_enrichment_providers to discover provider ids; never enrich unbounded IOC sets (chunk deliberately).'
     }
   );
 

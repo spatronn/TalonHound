@@ -13,8 +13,17 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   get_threat_report: [API_SCOPE.MCP_IOC_READ],
   bulk_lookup_iocs: [API_SCOPE.MCP_IOC_READ],
   list_ioc_sources: [API_SCOPE.MCP_SOURCES_READ],
-  import_iocs: [API_SCOPE.MCP_IOC_CREATE]
+  import_iocs: [API_SCOPE.MCP_IOC_CREATE],
+  list_enrichment_providers: [API_SCOPE.MCP_ENRICHMENT_READ],
+  get_enrichment_job: [API_SCOPE.MCP_ENRICHMENT_READ],
+  // Action tools: trigger external (possibly paid) providers. Separate scope —
+  // never implied by mcp:ioc:read, mcp:enrichment:read or mcp:ioc:create.
+  enrich_ioc: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE],
+  bulk_enrich_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE]
 });
+
+/** Tools that trigger external enrichment (side effects + provider quota). */
+export const MCP_ENRICHMENT_ACTION_TOOLS = Object.freeze(['enrich_ioc', 'bulk_enrich_iocs']);
 
 export function mcpHasScope(scopes, required) {
   return hasApiScope(scopes, required);
@@ -23,6 +32,17 @@ export function mcpHasScope(scopes, required) {
 /** Owner may read IOC inventory through MCP when they have any app role. */
 export function ownerCanMcpRead(role) {
   return Boolean(normalizeAppRole(role));
+}
+
+/**
+ * Owner may trigger enrichment through MCP only when they could press the
+ * IOC Details refresh buttons in the GUI (analyst/admin; readonly is blocked by
+ * rbacHttpPolicy). Force refresh additionally follows each provider's own rule
+ * (admin-only where the GUI requires it), enforced inside the shared refresh code.
+ */
+export function ownerCanMcpEnrich(role) {
+  const r = normalizeAppRole(role);
+  return r === ROLES.ADMIN || r === ROLES.ANALYST;
 }
 
 /**
@@ -43,6 +63,7 @@ export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
     ioc_create: canCreateOwner && mcpHasScope(scopeList, API_SCOPE.MCP_IOC_CREATE),
     sources_read: canReadOwner && mcpHasScope(scopeList, API_SCOPE.MCP_SOURCES_READ),
     enrichment_read: canReadOwner && mcpHasScope(scopeList, API_SCOPE.MCP_ENRICHMENT_READ),
+    enrichment_write: ownerCanMcpEnrich(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_ENRICHMENT_WRITE),
     owner_role: normalizeAppRole(ownerRole),
     owner_readonly: isReadOnlyRole(ownerRole)
   });
@@ -75,6 +96,22 @@ export function authorizeMcpTool(toolName, auth = {}) {
         ok: false,
         code: 'RBAC_DENIED',
         message: 'Owner user is not permitted to create IOCs'
+      };
+    }
+  } else if (MCP_ENRICHMENT_ACTION_TOOLS.includes(name)) {
+    if (!caps.enrichment_write || !caps.ioc_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to trigger enrichment'
+      };
+    }
+  } else if (name === 'list_enrichment_providers' || name === 'get_enrichment_job') {
+    if (!caps.enrichment_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to read enrichment'
       };
     }
   } else if (name === 'list_ioc_sources') {

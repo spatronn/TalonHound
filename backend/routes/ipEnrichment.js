@@ -14,7 +14,8 @@ import {
   IPINFO_LITE_TRUSTED_BASE_URL
 } from '../services/ipinfoLiteService.js';
 import { parseActionReason } from '../lib/reasonValidation.js';
-import { guardProviderEnabled } from '../lib/enrichmentProviderRegistry.js';
+import { guardProviderEnabled, providerDisabledOutcome, registerEnrichmentExecutor } from '../lib/enrichmentProviderRegistry.js';
+import { noteProviderRateLimited } from '../lib/enrichmentProviderGuard.js';
 import { runProviderHealthProbe } from '../lib/enrichmentProviderHealthCheck.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 import {
@@ -58,7 +59,241 @@ function bulkSummary(results) {
  * @param {import('pg').Pool} pool
  * @param {ReturnType<import('../lib/auditLogService.js').createAuditLogService>} audit
  */
+/**
+ * Canonical IPinfo Lite single-IP refresh — shared by the IOC Details refresh
+ * route and automated triggers (MCP via the enrichment executor registry).
+ * Returns the route's `{ status, body }` without touching an Express response.
+ * @param {import('pg').Pool} pool
+ * @param {{ auditSuccess: Function, auditFailure: Function }} audit
+ * @param {import('express').Request|object} req  principal + subject IOC (body.ioc_id/value/ioc_type)
+ * @param {{ ip: string, force?: boolean }} input
+ */
+export async function runIpinfoRefresh(pool, audit, req, { ip, force = false }) {
+  const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
+
+  if (force && role !== ROLES.ADMIN) {
+    return { status: 403, body: { error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' } };
+  }
+
+  const publicIp = validatePublicIp(ip);
+  if (!publicIp) {
+    return { status: 422, body: {
+      error: 'Private or reserved IP — external lookup not supported',
+      message: 'Private or reserved IP — external lookup not supported',
+      enriched: false,
+      ip,
+      provider_status: 'skipped'
+    } };
+  }
+
+  try {
+    // Central disable guard first: a disabled provider blocks refresh entirely,
+    // even when a cached row exists, without any external call.
+    const disabled = await providerDisabledOutcome(pool, IPINFO_PROVIDER);
+    if (disabled) return disabled;
+
+    if (!force) {
+      const existing = await getEnrichmentByIp(pool, publicIp);
+      if (existing?.provider_status === 'success') {
+        // Served from cache — a logical request with no external provider call.
+        recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'success', cacheHit: true });
+        return { status: 200, body: rowToApiPayload(existing, { enriched: true, cached: true }) };
+      }
+    }
+
+    const cfg = await getIpinfoLiteConfig(pool);
+    if (!cfg.configured) {
+      return { status: 409, body: {
+        error: 'IPinfo Lite provider is not configured',
+        message: 'IPinfo Lite provider is not configured'
+      } };
+    }
+
+    const subject = await resolveSubjectIocFromRequest(pool, req);
+    const requestedScope = buildEnrichmentAuditScope({
+      subject,
+      subjectIocValue: subject?.observable || req.body?.value || publicIp,
+      subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+      targetType: 'ip',
+      targetValue: publicIp,
+      provider: IPINFO_PROVIDER,
+      extraMetadata: {
+        ip: publicIp,
+        original_value: subject?.observable || req.body?.value || publicIp,
+        observable_value: subject?.observable || req.body?.value || publicIp,
+        force,
+        cached: false
+      }
+    });
+
+    await audit.auditSuccess({
+      req,
+      action: AUDIT_ACTION.IP_ENRICHMENT_REQUESTED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: requestedScope.entityId,
+      entityDisplay: requestedScope.entityDisplay,
+      subjectIocId: requestedScope.subjectIocId,
+      subjectIocType: requestedScope.subjectIocType,
+      subjectIocValue: requestedScope.subjectIocValue,
+      targetType: requestedScope.targetType,
+      targetValue: requestedScope.targetValue,
+      severity: AUDIT_SEVERITY.INFO,
+      metadata: requestedScope.metadata
+    }).catch(() => {});
+
+    const ipStartedAt = Date.now();
+    const result = await enrichIpWithIpinfoLite(pool, publicIp, { force });
+    const ipExternal = result.cached !== true;
+    const payload = rowToApiPayload(result.row, {
+      enriched: result.row?.provider_status === 'success',
+      cached: result.cached
+    });
+
+    if (result.row?.provider_status === 'success' && !result.error) {
+      // success — external call unless the service short-circuited to cache.
+      recordEnrichmentUsage(pool, {
+        provider: IPINFO_PROVIDER,
+        iocType: 'ip',
+        outcome: 'success',
+        external: ipExternal,
+        cacheHit: !ipExternal,
+        responseTimeMs: ipExternal ? Date.now() - ipStartedAt : null
+      });
+      const completedScope = buildEnrichmentAuditScope({
+        subject,
+        subjectIocValue: subject?.observable || req.body?.value || publicIp,
+        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+        targetType: 'ip',
+        targetValue: publicIp,
+        provider: IPINFO_PROVIDER,
+        extraMetadata: {
+          ip: publicIp,
+          original_value: subject?.observable || req.body?.value || publicIp,
+          observable_value: subject?.observable || req.body?.value || publicIp,
+          cached: result.cached,
+          force,
+          status: result.row.provider_status
+        }
+      });
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IP_ENRICHMENT_COMPLETED,
+        entityType: AUDIT_ENTITY.ENRICHMENT,
+        entityId: completedScope.entityId,
+        entityDisplay: completedScope.entityDisplay,
+        subjectIocId: completedScope.subjectIocId,
+        subjectIocType: completedScope.subjectIocType,
+        subjectIocValue: completedScope.subjectIocValue,
+        targetType: completedScope.targetType,
+        targetValue: completedScope.targetValue,
+        severity: AUDIT_SEVERITY.INFO,
+        metadata: completedScope.metadata
+      }).catch(() => {});
+      return { status: 200, body: payload };
+    }
+
+    const failedScope = buildEnrichmentAuditScope({
+      subject,
+      subjectIocValue: subject?.observable || req.body?.value || publicIp,
+      subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+      targetType: 'ip',
+      targetValue: publicIp,
+      provider: IPINFO_PROVIDER,
+      extraMetadata: {
+        ip: publicIp,
+        original_value: subject?.observable || req.body?.value || publicIp,
+        observable_value: subject?.observable || req.body?.value || publicIp,
+        cached: result.cached,
+        force,
+        status: result.row?.provider_status,
+        error_message: result.error_message || result.row?.error_message
+      }
+    });
+    await audit.auditFailure({
+      req,
+      action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: failedScope.entityId,
+      entityDisplay: failedScope.entityDisplay,
+      subjectIocId: failedScope.subjectIocId,
+      subjectIocType: failedScope.subjectIocType,
+      subjectIocValue: failedScope.subjectIocValue,
+      targetType: failedScope.targetType,
+      targetValue: failedScope.targetValue,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: failedScope.metadata
+    }).catch(() => {});
+
+    // 'unavailable' is a completed lookup with no dataset match (not an error);
+    // anything else here is a failed external attempt.
+    const ipUnavailable = result.row?.provider_status === 'unavailable';
+    recordEnrichmentUsage(pool, {
+      provider: IPINFO_PROVIDER,
+      iocType: 'ip',
+      outcome: ipUnavailable ? 'success' : 'failure',
+      external: ipExternal,
+      cacheHit: !ipExternal,
+      responseTimeMs: ipExternal ? Date.now() - ipStartedAt : null
+    });
+
+    return { status: result.row?.provider_status === 'unavailable' ? 404 : 502, body: {
+      ...payload,
+      state: result.state || 'provider_error',
+      refresh_error: Boolean(result.error),
+      error: result.error_message || result.row?.error_message || 'IP enrichment failed',
+      message: result.error_message || result.row?.error_message || 'IP enrichment failed'
+    } };
+  } catch (err) {
+    console.error('[ip-enrichment] POST refresh failed', err?.message || err);
+    if (err?.code === 'not_configured') {
+      return { status: 409, body: { error: err.message, message: err.message } };
+    }
+    if (err?.code === 'auth') {
+      recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
+      return { status: 401, body: { error: err.message, message: err.message } };
+    }
+    if (err?.code === 'rate_limit') {
+      recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true, rateLimited: true });
+      noteProviderRateLimited(IPINFO_PROVIDER, err.retryAfter);
+      return { status: 429, body: {
+        error: err.message,
+        message: err.message,
+        retry_after: err.retryAfter || null
+      } };
+    }
+    recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
+    const subject = await resolveSubjectIocFromRequest(pool, req).catch(() => null);
+    const failedScope = buildEnrichmentAuditScope({
+      subject,
+      subjectIocValue: subject?.observable || req.body?.value || publicIp,
+      subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
+      targetType: 'ip',
+      targetValue: publicIp,
+      provider: IPINFO_PROVIDER,
+      extraMetadata: { error_message: String(err?.message || err), ip: publicIp, force }
+    });
+    await audit.auditFailure({
+      req,
+      action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
+      entityType: AUDIT_ENTITY.ENRICHMENT,
+      entityId: failedScope.entityId,
+      entityDisplay: failedScope.entityDisplay,
+      subjectIocId: failedScope.subjectIocId,
+      subjectIocType: failedScope.subjectIocType,
+      subjectIocValue: failedScope.subjectIocValue,
+      targetType: failedScope.targetType,
+      targetValue: failedScope.targetValue,
+      severity: AUDIT_SEVERITY.WARNING,
+      metadata: failedScope.metadata
+    }).catch(() => {});
+    return { status: 500, body: { error: 'IP enrichment failed', message: 'IP enrichment failed' } };
+  }
+}
+
 export function registerIpEnrichmentRoutes(app, pool, audit) {
+  registerEnrichmentExecutor(IPINFO_PROVIDER, (ctx) => runIpinfoRefresh(
+    ctx.pool || pool, ctx.audit || audit, ctx.req, { ip: ctx.target.target_value, force: ctx.force === true }
+  ));
   app.get('/api/enrichment/ips', async (req, res) => {
     const requestedIps = parseBulkIps(req.query?.ips);
     if (!requestedIps.length) {
@@ -260,223 +495,8 @@ export function registerIpEnrichmentRoutes(app, pool, audit) {
     const ip = decodeRouteIp(req.params.ip);
     const force = String(req.query?.force || '').toLowerCase() === 'true'
       || req.body?.force === true;
-    const role = normalizeAppRole(req.user?.role) || ROLES.ADMIN;
-
-    if (force && role !== ROLES.ADMIN) {
-      return res.status(403).json({ error: 'Force refresh requires admin role', message: 'Force refresh requires admin role' });
-    }
-
-    const publicIp = validatePublicIp(ip);
-    if (!publicIp) {
-      return res.status(422).json({
-        error: 'Private or reserved IP — external lookup not supported',
-        message: 'Private or reserved IP — external lookup not supported',
-        enriched: false,
-        ip,
-        provider_status: 'skipped'
-      });
-    }
-
-    try {
-      // Central disable guard first: a disabled provider blocks refresh entirely,
-      // even when a cached row exists, without any external call.
-      if (!(await guardProviderEnabled(pool, IPINFO_PROVIDER, res))) return;
-
-      if (!force) {
-        const existing = await getEnrichmentByIp(pool, publicIp);
-        if (existing?.provider_status === 'success') {
-          // Served from cache — a logical request with no external provider call.
-          recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'success', cacheHit: true });
-          return res.json(rowToApiPayload(existing, { enriched: true, cached: true }));
-        }
-      }
-
-      const cfg = await getIpinfoLiteConfig(pool);
-      if (!cfg.configured) {
-        return res.status(409).json({
-          error: 'IPinfo Lite provider is not configured',
-          message: 'IPinfo Lite provider is not configured'
-        });
-      }
-
-      const subject = await resolveSubjectIocFromRequest(pool, req);
-      const requestedScope = buildEnrichmentAuditScope({
-        subject,
-        subjectIocValue: subject?.observable || req.body?.value || publicIp,
-        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
-        targetType: 'ip',
-        targetValue: publicIp,
-        provider: IPINFO_PROVIDER,
-        extraMetadata: {
-          ip: publicIp,
-          original_value: subject?.observable || req.body?.value || publicIp,
-          observable_value: subject?.observable || req.body?.value || publicIp,
-          force,
-          cached: false
-        }
-      });
-
-      await audit.auditSuccess({
-        req,
-        action: AUDIT_ACTION.IP_ENRICHMENT_REQUESTED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: requestedScope.entityId,
-        entityDisplay: requestedScope.entityDisplay,
-        subjectIocId: requestedScope.subjectIocId,
-        subjectIocType: requestedScope.subjectIocType,
-        subjectIocValue: requestedScope.subjectIocValue,
-        targetType: requestedScope.targetType,
-        targetValue: requestedScope.targetValue,
-        severity: AUDIT_SEVERITY.INFO,
-        metadata: requestedScope.metadata
-      }).catch(() => {});
-
-      const ipStartedAt = Date.now();
-      const result = await enrichIpWithIpinfoLite(pool, publicIp, { force });
-      const ipExternal = result.cached !== true;
-      const payload = rowToApiPayload(result.row, {
-        enriched: result.row?.provider_status === 'success',
-        cached: result.cached
-      });
-
-      if (result.row?.provider_status === 'success' && !result.error) {
-        // success — external call unless the service short-circuited to cache.
-        recordEnrichmentUsage(pool, {
-          provider: IPINFO_PROVIDER,
-          iocType: 'ip',
-          outcome: 'success',
-          external: ipExternal,
-          cacheHit: !ipExternal,
-          responseTimeMs: ipExternal ? Date.now() - ipStartedAt : null
-        });
-        const completedScope = buildEnrichmentAuditScope({
-          subject,
-          subjectIocValue: subject?.observable || req.body?.value || publicIp,
-          subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
-          targetType: 'ip',
-          targetValue: publicIp,
-          provider: IPINFO_PROVIDER,
-          extraMetadata: {
-            ip: publicIp,
-            original_value: subject?.observable || req.body?.value || publicIp,
-            observable_value: subject?.observable || req.body?.value || publicIp,
-            cached: result.cached,
-            force,
-            status: result.row.provider_status
-          }
-        });
-        await audit.auditSuccess({
-          req,
-          action: AUDIT_ACTION.IP_ENRICHMENT_COMPLETED,
-          entityType: AUDIT_ENTITY.ENRICHMENT,
-          entityId: completedScope.entityId,
-          entityDisplay: completedScope.entityDisplay,
-          subjectIocId: completedScope.subjectIocId,
-          subjectIocType: completedScope.subjectIocType,
-          subjectIocValue: completedScope.subjectIocValue,
-          targetType: completedScope.targetType,
-          targetValue: completedScope.targetValue,
-          severity: AUDIT_SEVERITY.INFO,
-          metadata: completedScope.metadata
-        }).catch(() => {});
-        return res.json(payload);
-      }
-
-      const failedScope = buildEnrichmentAuditScope({
-        subject,
-        subjectIocValue: subject?.observable || req.body?.value || publicIp,
-        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
-        targetType: 'ip',
-        targetValue: publicIp,
-        provider: IPINFO_PROVIDER,
-        extraMetadata: {
-          ip: publicIp,
-          original_value: subject?.observable || req.body?.value || publicIp,
-          observable_value: subject?.observable || req.body?.value || publicIp,
-          cached: result.cached,
-          force,
-          status: result.row?.provider_status,
-          error_message: result.error_message || result.row?.error_message
-        }
-      });
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: failedScope.entityId,
-        entityDisplay: failedScope.entityDisplay,
-        subjectIocId: failedScope.subjectIocId,
-        subjectIocType: failedScope.subjectIocType,
-        subjectIocValue: failedScope.subjectIocValue,
-        targetType: failedScope.targetType,
-        targetValue: failedScope.targetValue,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: failedScope.metadata
-      }).catch(() => {});
-
-      // 'unavailable' is a completed lookup with no dataset match (not an error);
-      // anything else here is a failed external attempt.
-      const ipUnavailable = result.row?.provider_status === 'unavailable';
-      recordEnrichmentUsage(pool, {
-        provider: IPINFO_PROVIDER,
-        iocType: 'ip',
-        outcome: ipUnavailable ? 'success' : 'failure',
-        external: ipExternal,
-        cacheHit: !ipExternal,
-        responseTimeMs: ipExternal ? Date.now() - ipStartedAt : null
-      });
-
-      return res.status(result.row?.provider_status === 'unavailable' ? 404 : 502).json({
-        ...payload,
-        state: result.state || 'provider_error',
-        refresh_error: Boolean(result.error),
-        error: result.error_message || result.row?.error_message || 'IP enrichment failed',
-        message: result.error_message || result.row?.error_message || 'IP enrichment failed'
-      });
-    } catch (err) {
-      console.error('[ip-enrichment] POST refresh failed', err?.message || err);
-      if (err?.code === 'not_configured') {
-        return res.status(409).json({ error: err.message, message: err.message });
-      }
-      if (err?.code === 'auth') {
-        recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
-        return res.status(401).json({ error: err.message, message: err.message });
-      }
-      if (err?.code === 'rate_limit') {
-        recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true, rateLimited: true });
-        return res.status(429).json({
-          error: err.message,
-          message: err.message,
-          retry_after: err.retryAfter || null
-        });
-      }
-      recordEnrichmentUsage(pool, { provider: IPINFO_PROVIDER, iocType: 'ip', outcome: 'failure', external: true });
-      const subject = await resolveSubjectIocFromRequest(pool, req).catch(() => null);
-      const failedScope = buildEnrichmentAuditScope({
-        subject,
-        subjectIocValue: subject?.observable || req.body?.value || publicIp,
-        subjectIocType: subject?.observable_type || req.body?.ioc_type || null,
-        targetType: 'ip',
-        targetValue: publicIp,
-        provider: IPINFO_PROVIDER,
-        extraMetadata: { error_message: String(err?.message || err), ip: publicIp, force }
-      });
-      await audit.auditFailure({
-        req,
-        action: AUDIT_ACTION.IP_ENRICHMENT_FAILED,
-        entityType: AUDIT_ENTITY.ENRICHMENT,
-        entityId: failedScope.entityId,
-        entityDisplay: failedScope.entityDisplay,
-        subjectIocId: failedScope.subjectIocId,
-        subjectIocType: failedScope.subjectIocType,
-        subjectIocValue: failedScope.subjectIocValue,
-        targetType: failedScope.targetType,
-        targetValue: failedScope.targetValue,
-        severity: AUDIT_SEVERITY.WARNING,
-        metadata: failedScope.metadata
-      }).catch(() => {});
-      return res.status(500).json({ error: 'IP enrichment failed', message: 'IP enrichment failed' });
-    }
+    const out = await runIpinfoRefresh(pool, audit, req, { ip, force });
+    return res.status(out.status).json(out.body);
   });
 
   app.get('/api/admin/enrichment-providers/ipinfo-lite', requireRole(ROLES.ADMIN), async (req, res) => {

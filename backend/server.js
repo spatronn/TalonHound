@@ -195,7 +195,8 @@ import { normalizeRdapTarget } from './lib/domainRoot.js';
 import { getIpinfoLiteConfig } from './services/ipinfoLiteService.js';
 import { getAbuseIpdbConfig } from './services/abuseipdbService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './lib/spamhausDropSync.js';
-import { guardProviderEnabled } from './lib/enrichmentProviderRegistry.js';
+import { providerDisabledOutcome, registerEnrichmentExecutor } from './lib/enrichmentProviderRegistry.js';
+import { noteProviderRateLimited } from './lib/enrichmentProviderGuard.js';
 import { attachProviderHealth } from './lib/enrichmentProviderHealth.js';
 import { runProviderHealthProbe } from './lib/enrichmentProviderHealthCheck.js';
 import { auditProviderConfigUpdate } from './lib/enrichmentProviderConfigAudit.js';
@@ -6359,9 +6360,18 @@ app.get('/api/ioc/:id/enrichments/virustotal', async (req, res) => {
   }
 });
 
-app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
-  const iocId = Number(req.params.id);
-  if (!Number.isFinite(iocId) || iocId <= 0) return res.status(400).json({ message: 'Invalid IOC id' });
+/**
+ * Canonical VirusTotal refresh — shared by the IOC Details refresh route and
+ * automated triggers (MCP via the enrichment executor registry). Always performs
+ * the outbound VirusTotal request (no cache short-circuit — callers that want
+ * freshness reuse check it first). Returns `{ status, body }`.
+ * @param {import('express').Request|object} req  principal used for audit attribution
+ * @param {number|string} rawIocId
+ * @param {{ auditSuccess: Function, auditFailure: Function }} [audit]
+ */
+async function runVirusTotalRefresh(req, rawIocId, audit = auditLogService) {
+  const iocId = Number(rawIocId);
+  if (!Number.isFinite(iocId) || iocId <= 0) return { status: 400, body: { message: 'Invalid IOC id' } };
 
   let item = null;
   let iocType = null;
@@ -6371,18 +6381,19 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
 
   try {
     // Central disable guard: no external call for a disabled provider.
-    if (!(await guardProviderEnabled(pool, VT_PROVIDER, res))) return;
+    const disabled = await providerDisabledOutcome(pool, VT_PROVIDER);
+    if (disabled) return disabled;
 
     const providerCfg = await getThreatIntelProviderConfig(VT_PROVIDER);
     const vtKey = providerCfg.apiKey;
-    if (!vtKey) return res.status(400).json({ status: 'api_key_missing', message: 'VirusTotal API key is not configured' });
+    if (!vtKey) return { status: 400, body: { status: 'api_key_missing', message: 'VirusTotal API key is not configured' } };
 
     const itemRes = await pool.query(`SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type FROM ioc_items WHERE id=$1 LIMIT 1`, [iocId]);
-    if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
+    if (!itemRes.rowCount) return { status: 404, body: { message: 'IOC not found' } };
     item = itemRes.rows[0];
     iocType = item.ioc_type === 'file_hash' ? 'hash' : item.ioc_type;
 
-    await auditLogService.auditSuccess({
+    await audit.auditSuccess({
       req,
       action: AUDIT_ACTION.VT_ENRICHMENT_REQUESTED,
       entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6403,7 +6414,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     else if (iocType === 'domain') endpoint = `/domains/${encodeURIComponent(item.ioc_value)}`;
     else if (iocType === 'url') endpoint = `/urls/${toVtUrlId(item.ioc_value)}`;
     else if (iocType === 'hash' || iocType === 'sha256' || iocType === 'sha1' || iocType === 'md5') endpoint = `/files/${encodeURIComponent(item.ioc_value)}`;
-    else return res.status(400).json({ message: 'IOC type not supported for VirusTotal enrichment' });
+    else return { status: 400, body: { message: 'IOC type not supported for VirusTotal enrichment' } };
 
     // Usage telemetry: VT refresh always performs a real outbound provider call
     // (there is no cache short-circuit here). Time it for provider-latency metrics.
@@ -6418,9 +6429,10 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     } finally { clearTimeout(t); }
 
     if (vtRes.status === 429) {
+      noteProviderRateLimited(VT_PROVIDER, vtRes.headers?.get?.('retry-after'));
       recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, rateLimited: true, responseTimeMs: Date.now() - vtStartedAt });
       const msg = vtHttpErrorMessage(429);
-      await auditLogService.auditFailure({
+      await audit.auditFailure({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6429,7 +6441,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
         severity: AUDIT_SEVERITY.WARNING,
         metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg }
       }).catch(() => {});
-      return res.status(429).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
+      return { status: 429, body: { status: 'error', provider: VT_PROVIDER, message: msg, is_error: true } };
     }
     if (isVtResourceNotFound(vtRes.status)) {
       // A 404 is a completed lookup ("no report yet"), not a failure.
@@ -6456,7 +6468,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
            updated_at=NOW()`,
         [iocId, item.ioc_value, iocType, VT_PROVIDER, notFoundMessage, fetchedAt.toISOString(), expiresAt.toISOString()]
       );
-      await auditLogService.auditSuccess({
+      await audit.auditSuccess({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_NOT_INDEXED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6472,12 +6484,12 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
           message: notFoundMessage
         }
       }).catch(() => {});
-      return res.json(payload);
+      return { status: 200, body: payload };
     }
     if (vtRes.status === 401 || vtRes.status === 403) {
       recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, responseTimeMs: Date.now() - vtStartedAt });
       const msg = vtHttpErrorMessage(vtRes.status);
-      await auditLogService.auditFailure({
+      await audit.auditFailure({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6486,12 +6498,12 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
         severity: AUDIT_SEVERITY.WARNING,
         metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg, http_status: vtRes.status }
       }).catch(() => {});
-      return res.status(502).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
+      return { status: 502, body: { status: 'error', provider: VT_PROVIDER, message: msg, is_error: true } };
     }
     if (!vtRes.ok) {
       recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'failure', external: true, responseTimeMs: Date.now() - vtStartedAt });
       const msg = vtHttpErrorMessage(vtRes.status);
-      await auditLogService.auditFailure({
+      await audit.auditFailure({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6500,7 +6512,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
         severity: AUDIT_SEVERITY.WARNING,
         metadata: { provider: VT_PROVIDER, observable_type: iocType, observable_value: item.ioc_value, ioc_id: iocId, error_message: msg, http_status: vtRes.status }
       }).catch(() => {});
-      return res.status(502).json({ status: 'error', provider: VT_PROVIDER, message: msg, is_error: true });
+      return { status: 502, body: { status: 'error', provider: VT_PROVIDER, message: msg, is_error: true } };
     }
 
     const raw = await vtRes.json();
@@ -6533,7 +6545,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     // Best-effort and never rejects; failures are logged (never silent).
     await dualWriteVirusTotalFileArtifact(pool, { iocId, iocType, observable: item.ioc_value, raw });
 
-    await auditLogService.auditSuccess({
+    await audit.auditSuccess({
       req,
       action: AUDIT_ACTION.VT_ENRICHMENT_COMPLETED,
       entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6555,7 +6567,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     }).catch(() => {});
 
     recordEnrichmentUsage(pool, { provider: VT_PROVIDER, iocType, outcome: 'success', external: true, responseTimeMs: Date.now() - vtStartedAt });
-    return res.json({ status: 'success', provider: VT_PROVIDER, is_error: false, summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() });
+    return { status: 200, body: { status: 'success', provider: VT_PROVIDER, is_error: false, summary, fetched_at: fetchedAt.toISOString(), expires_at: expiresAt.toISOString() } };
   } catch (err) {
     // Telemetry: only count a provider consumption when the outbound call was actually
     // attempted (timeouts/network errors); pre-fetch failures are not provider calls.
@@ -6564,7 +6576,7 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
     }
     const msg = String(err?.name) === 'AbortError' ? 'VirusTotal enrichment timed out' : 'VirusTotal enrichment failed';
     if (item?.ioc_value) {
-      await auditLogService.auditFailure({
+      await audit.auditFailure({
         req,
         action: AUDIT_ACTION.VT_ENRICHMENT_FAILED,
         entityType: AUDIT_ENTITY.ENRICHMENT,
@@ -6581,11 +6593,18 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
       }).catch(() => {});
     }
     if (String(err?.name) === 'AbortError') {
-      return res.status(504).json({ status: 'error', provider: VT_PROVIDER, message: 'VirusTotal enrichment timed out', is_error: true });
+      return { status: 504, body: { status: 'error', provider: VT_PROVIDER, message: 'VirusTotal enrichment timed out', is_error: true } };
     }
-    return res.status(500).json({ status: 'error', provider: VT_PROVIDER, message: 'VirusTotal enrichment failed', is_error: true });
+    return { status: 500, body: { status: 'error', provider: VT_PROVIDER, message: 'VirusTotal enrichment failed', is_error: true } };
   }
+}
+
+app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
+  const out = await runVirusTotalRefresh(req, req.params.id);
+  return res.status(out.status).json(out.body);
 });
+
+registerEnrichmentExecutor(VT_PROVIDER, (ctx) => runVirusTotalRefresh(ctx.req, ctx.ioc.id, ctx.audit || auditLogService));
 
 async function loadEnrichmentProviderSummaries() {
   const [cfg, ipinfo, abuseipdb, sdCfg, sdState] = await Promise.all([

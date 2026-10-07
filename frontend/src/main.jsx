@@ -217,6 +217,7 @@ import {
 import {
   API_KEYS_PAGE_DESCRIPTION,
   ACCESS_PROFILE_OPTIONS,
+  isMcpAccessProfile,
   apiKeyCreatePayload,
   accessProfilePermissionSummary,
   accessProfileLabel,
@@ -7266,7 +7267,7 @@ function ApiKeysPage() {
               ) : keys.length ? keys.map((k) => {
                 const perm = k.permission_summary || accessProfilePermissionSummary(k.key_type || k.access_profile);
                 const typeLabel = k.key_type_label || accessProfileLabel(k.key_type, 'Published Feed');
-                const isMcpKey = k.key_type === 'mcp_read' || k.key_type === 'mcp_analyst';
+                const isMcpKey = isMcpAccessProfile(k.key_type);
                 const typeColors = k.key_type === 'ioc_management'
                   ? { background: 'rgba(16,185,129,0.15)', color: '#6ee7b7', border: '1px solid #065f46' }
                   : k.key_type === 'ioc_read'
@@ -7460,7 +7461,7 @@ function ApiKeysPage() {
             <code style={ui.code}>{createdKey.token}</code>
             <button type="button" style={{ ...ui.btnPrimary, marginTop: 10 }} onClick={() => copyText(createdKey.token)}>Copy key</button>
             <p style={{ ...ui.helper, marginTop: 12 }}>
-              {createdKey.access_profile === 'mcp_read' || createdKey.access_profile === 'mcp_analyst' ? (
+              {isMcpAccessProfile(createdKey.access_profile) ? (
                 <>
                   Connect MCP clients to <code style={{ color: '#cbd5e1' }}>{MCP_ENDPOINT_PATH}</code> with{' '}
                   <code style={{ color: '#cbd5e1' }}>Authorization: Bearer YOUR_KEY</code>. See docs/MCP.md.
