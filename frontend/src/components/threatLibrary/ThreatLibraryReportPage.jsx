@@ -1418,12 +1418,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                       {canWrite ? <col style={{ width: '3%' }} /> : null}
                       <col style={{ width: '6%' }} />
                       <col style={{ width: '17%' }} />
+                      <col style={{ width: '10%' }} />
+                      <col style={{ width: '10%' }} />
                       <col style={{ width: '9%' }} />
+                      <col style={{ width: '15%' }} />
                       <col style={{ width: '11%' }} />
                       <col style={{ width: '9%' }} />
-                      <col style={{ width: '16%' }} />
-                      <col style={{ width: '11%' }} />
-                      <col style={{ width: '8%' }} />
                       <col style={{ width: '10%' }} />
                       <col style={{ width: 34 }} />
                     </colgroup>

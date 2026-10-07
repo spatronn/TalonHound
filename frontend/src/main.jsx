@@ -2255,13 +2255,24 @@ function AppShell({ children }) {
   return (
     <div className="app-shell" style={{ width: '100%', fontFamily: 'sans-serif', display: 'flex', gap: 'var(--th-shell-gap)', alignItems: 'stretch', padding: 'var(--th-shell-pad)', boxSizing: 'border-box' }}>
       <div className="mobile-topbar">
-        <button className="mobile-menu-btn" onClick={() => setIsMobileNavOpen((v) => !v)} aria-label="Toggle navigation menu">?</button>
+        <button
+          type="button"
+          className="mobile-menu-btn"
+          onClick={() => setIsMobileNavOpen((v) => !v)}
+          aria-label={isMobileNavOpen ? 'Close navigation' : 'Open navigation'}
+          aria-expanded={isMobileNavOpen}
+          aria-controls="app-sidebar"
+        >
+          {NavIcons.menu}
+        </button>
         <span className="mobile-topbar-title">TalonHound</span>
         <span className="mobile-topbar-user">{userEmail ? userEmail.split('@')[0] : 'user'}</span>
       </div>
       {isMobileNavOpen && <div className="mobile-backdrop" onClick={() => setIsMobileNavOpen(false)} />}
-      <aside className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 var(--th-sidebar-width)', border: '1px solid #334155', borderRadius: 10, padding: 0, background: '#0f172a', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div className="mobile-sidebar-close"><button onClick={() => setIsMobileNavOpen(false)} aria-label="Close menu">?</button></div>
+      <aside id="app-sidebar" className={`sidebar${isMobileNavOpen ? ' sidebar--open' : ''}`} style={{ flex: '0 0 var(--th-sidebar-width)', border: '1px solid #334155', borderRadius: 10, padding: 0, background: '#0f172a', overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div className="mobile-sidebar-close">
+          <button type="button" onClick={() => setIsMobileNavOpen(false)} aria-label="Close navigation">{NavIcons.close}</button>
+        </div>
 
         <div className="sidebar-brand">
           <img
@@ -17170,7 +17181,7 @@ function IOCDetailsPage() {
 
                     <div style={{ position: 'relative' }} ref={tagDropdownRef}>
                       <button type="button" onClick={() => setTagDropdownOpen((v) => !v)} disabled={tagsSaving}>
-                        + Add Tag {tagsLoading || tagsSaving ? '?' : ''}
+                        + Add Tag {tagsLoading || tagsSaving ? '…' : ''}
                       </button>
 
                       {tagDropdownOpen ? (
@@ -18931,11 +18942,16 @@ function App() {
           border: none !important;
           box-shadow: none !important;
           color: #e2e8f0 !important;
-          font-size: 22px;
           padding: 4px 8px !important;
           cursor: pointer;
           line-height: 1;
           flex-shrink: 0;
+        }
+        button.mobile-menu-btn .sidebar-nav-icon,
+        button.mobile-menu-btn .sidebar-nav-icon svg {
+          width: 22px;
+          height: 22px;
+          flex-basis: 22px;
         }
         .mobile-topbar-title {
           flex: 1;
@@ -18971,7 +18987,6 @@ function App() {
           background: transparent !important;
           border: none !important;
           color: #94a3b8 !important;
-          font-size: 18px;
           padding: 4px 8px !important;
           cursor: pointer;
           line-height: 1;

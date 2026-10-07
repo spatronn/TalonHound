@@ -188,5 +188,19 @@ export const NavIcons = {
     <Icon>
       <path d="M12 3.5l2.6 5.27 5.82.85-4.21 4.1.99 5.79L12 16.77l-5.2 2.74.99-5.79-4.21-4.1 5.82-.85L12 3.5Z" />
     </Icon>
+  ),
+  // Shell controls (mobile/narrow topbar): open and close the navigation drawer.
+  menu: (
+    <Icon>
+      <path d="M4 6h16" />
+      <path d="M4 12h16" />
+      <path d="M4 18h16" />
+    </Icon>
+  ),
+  close: (
+    <Icon>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </Icon>
   )
 };

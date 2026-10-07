@@ -378,6 +378,19 @@
   user-select: text;
 }
 
+/* Status pill (ToneBadge). */
+.tl-badge {
+  white-space: nowrap;
+}
+
+/* In a table cell a pill never paints over the neighbouring column: it wraps instead. */
+.tl-table .tl-badge {
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .tl-value-cell {
   display: flex;
   align-items: flex-start;
@@ -456,7 +469,17 @@
 /*
  * The table shares the page scroll so the header can stick to the content
  * scroller. Only when the content column is narrower than the table's
- * natural width does the wrapper become a horizontal scroller.
+ * readable minimum does the wrapper become a horizontal scroller; the page
+ * itself never widens.
+ *
+ * A horizontal scroller is also the sticky containing block of its header,
+ * and it never scrolls vertically, so the page-scroller offset
+ * (--tl-sticky-offset, the bulk-bar height) would only push the header down
+ * over the first rows. In that mode the header stays in normal flow.
+ *
+ * Keep the container threshold 40px above the table minimum (wrapper border
+ * + breathing room) and below a 1440px desktop content column (~1080px) so
+ * full-width desktop keeps the page-sticky header.
  */
 .tl-table-container {
   container-type: inline-size;
@@ -471,6 +494,10 @@
   .tl-table {
     min-width: 1000px;
   }
+
+  .tl-table thead th {
+    position: static;
+  }
 }
 
 @supports not (container-type: inline-size) {
@@ -481,6 +508,10 @@
 
     .tl-table {
       min-width: 1000px;
+    }
+
+    .tl-table thead th {
+      position: static;
     }
   }
 }

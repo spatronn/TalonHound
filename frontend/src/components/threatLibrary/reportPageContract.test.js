@@ -15,6 +15,7 @@ const pageSrc = readFileSync(path.join(here, 'ThreatLibraryReportPage.jsx'), 'ut
 const drawerSrc = readFileSync(path.join(here, 'IndicatorDetailDrawer.jsx'), 'utf8');
 const partsSrc = readFileSync(path.join(here, 'reportPageParts.jsx'), 'utf8');
 const mainSrc = readFileSync(path.join(here, '..', '..', 'main.jsx'), 'utf8');
+const pageCss = readFileSync(path.join(here, 'reportPage.css'), 'utf8');
 
 test('page is split into Overview / Indicators / Entities / Source with the Overview default', () => {
   assert.match(pageSrc, /<ReportTabBar tabs=\{tabs\} active=\{view\} onChange=\{setView\} \/>/);
@@ -121,6 +122,40 @@ test('one scroll model: no nested max-height table scroller, sticky header offse
   assert.doesNotMatch(pageSrc, /maxHeight: 'min\(70vh, 720px\)'/);
   assert.match(pageSrc, /'--tl-sticky-offset': `\$\{stickyOffset\}px`/);
   assert.match(pageSrc, /ref=\{bulkBarRef\}/);
+});
+
+test('narrow viewport: the table scrolls inside its own wrapper and the header never drops over the rows', () => {
+  // The wrapper is the only horizontal scroller; its flex/grid parent may shrink below the table.
+  assert.match(pageSrc, /<div className="tl-table-container">\s*<div className="tl-table-wrap"/);
+  assert.match(pageCss, /\.tl-table-container \{\s*container-type: inline-size;\s*min-width: 0;\s*\}/);
+  const blocks = [
+    pageCss.match(/@container \(max-width: (\d+)px\) \{(\s*\.tl-table-wrap \{[\s\S]*?)\n\}/),
+    pageCss.match(/@supports not \(container-type: inline-size\) \{([\s\S]*?)\n\}/)
+  ];
+  for (const block of blocks) {
+    assert.ok(block, 'horizontal-scroll mode is declared');
+    const body = block[block.length - 1];
+    assert.match(body, /\.tl-table-wrap \{\s*overflow-x: auto;\s*\}/);
+    assert.match(body, /\.tl-table \{\s*min-width: \d+px;\s*\}/);
+    // A horizontal scroller is the header's sticky containing block and never scrolls
+    // vertically: a page-scroller offset there would push the header over the first rows.
+    assert.match(body, /\.tl-table thead th \{\s*position: static;\s*\}/);
+  }
+  const threshold = Number(blocks[0][1]);
+  const tableMin = Number(blocks[0][2].match(/\.tl-table \{\s*min-width: (\d+)px;/)[1]);
+  assert.ok(threshold > tableMin, 'scroll mode starts before the table is squeezed below its minimum');
+  assert.ok(threshold < 1080, 'a 1440px desktop content column keeps the non-scrolling, page-sticky table');
+});
+
+test('indicator status pills stay inside their column', () => {
+  assert.match(partsSrc, /<span className="tl-badge" style=\{\{ \.\.\.badgeStyle\(colors\), whiteSpace: undefined,/);
+  assert.match(pageCss, /\.tl-badge \{\s*white-space: nowrap;\s*\}/);
+  assert.match(pageCss, /\.tl-table \.tl-badge \{\s*max-width: 100%;\s*box-sizing: border-box;\s*white-space: normal;\s*overflow-wrap: anywhere;\s*\}/);
+  // Column budget unchanged in shape: same columns, proportions still sum to 100%.
+  const cols = pageSrc.match(/<colgroup>([\s\S]*?)<\/colgroup>/)[1];
+  const pct = [...cols.matchAll(/width: '(\d+)%'/g)].map((m) => Number(m[1]));
+  assert.equal(pct.length, 10);
+  assert.equal(pct.reduce((a, b) => a + b, 0), 100);
 });
 
 test('entities are grouped by canonical type and only detailed when data exists', () => {

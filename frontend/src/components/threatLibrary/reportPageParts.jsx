@@ -20,7 +20,8 @@ export function ToneBadge({ tone = 'neutral', children, title }) {
     return <span style={{ color: '#64748b' }} title={title}>{children == null || children === '' ? '—' : children}</span>;
   }
   const colors = TONE_COLORS[tone] || TONE_COLORS.neutral;
-  return <span style={{ ...badgeStyle(colors), fontWeight: 600, padding: '2px 7px' }} title={title}>{children}</span>;
+  // white-space comes from .tl-badge so a table cell can let a long label wrap inside its column.
+  return <span className="tl-badge" style={{ ...badgeStyle(colors), whiteSpace: undefined, fontWeight: 600, padding: '2px 7px' }} title={title}>{children}</span>;
 }
 
 /**
