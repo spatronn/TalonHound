@@ -523,6 +523,16 @@ function buildExecutionRequest(ctx, item) {
   };
 }
 
+/** Stamp the job id onto the provider's own audit events (correlates them with the job). */
+function withJobProvenance(audit, item) {
+  if (!audit?.auditSuccess) return audit;
+  const stamp = (fn) => (event) => fn({
+    ...event,
+    metadata: { ...(event?.metadata || {}), enrichment_job_id: String(item.job_id), force_refresh: Boolean(item.force_refresh) }
+  });
+  return { auditSuccess: stamp(audit.auditSuccess), auditFailure: stamp(audit.auditFailure || audit.auditSuccess) };
+}
+
 async function updateItem(pool, id, fields) {
   await pool.query(
     `UPDATE enrichment_job_items SET
@@ -588,7 +598,7 @@ async function executeItem(ctx, item) {
   try {
     out = await executor({
       pool,
-      audit: ctx.providerAudit || ctx.audit,
+      audit: withJobProvenance(ctx.providerAudit || ctx.audit, item),
       req: buildExecutionRequest(ctx, item),
       ioc,
       target,

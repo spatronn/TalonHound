@@ -294,7 +294,11 @@ test('audit: one parent request event + one completion event with origin, job id
   assert.equal(requested[0].entityId, IOC_IP.public_id);
   assert.equal(completed[0].metadata.job_status, 'completed');
   // Provider executors receive the provenance-stamping audit + an MCP principal request.
-  assert.equal(calls[0].audit, audit);
+  // Provider-level events carry the job id too.
+  await calls[0].audit.auditSuccess({ action: 'provider.event', metadata: { x: 1 } });
+  const stamped = events.find((e) => e.action === 'provider.event');
+  assert.equal(stamped.metadata.enrichment_job_id, out.view.job_id);
+  assert.equal(stamped.metadata.x, 1);
   assert.equal(calls[0].req.authVia, 'mcp');
   assert.equal(calls[0].req.body.ioc_id, IOC_IP.public_id);
 });
