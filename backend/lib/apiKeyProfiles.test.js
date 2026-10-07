@@ -81,3 +81,26 @@ test('profileRequiresOwner and isMcpAccessProfile', () => {
   assert.equal(isMcpAccessProfile('mcp_analyst'), true);
   assert.equal(isMcpAccessProfile('ioc_read'), false);
 });
+
+test('DB constraints admit every access profile and scope (latest migration defining them)', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const { ALL_API_SCOPES, ACCESS_PROFILE } = await import('./apiKeyProfiles.js');
+  const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+  const latest = (needle) => {
+    let body = null;
+    for (const f of files) {
+      const sql = readFileSync(path.join(dir, f), 'utf8');
+      const idx = sql.lastIndexOf(`ADD CONSTRAINT ${needle}`);
+      if (idx !== -1) body = sql.slice(idx, sql.indexOf(';', idx));
+    }
+    return body;
+  };
+  const keyTypes = latest('chk_pf_access_keys_key_type');
+  const scopes = latest('chk_pf_access_keys_scopes');
+  assert.ok(keyTypes && scopes);
+  for (const id of Object.values(ACCESS_PROFILE)) assert.ok(keyTypes.includes(`'${id}'`), `key_type ${id} missing from DB constraint`);
+  for (const scope of ALL_API_SCOPES) assert.ok(scopes.includes(`"${scope}"`), `scope ${scope} missing from DB constraint`);
+});
