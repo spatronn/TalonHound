@@ -18277,10 +18277,17 @@ function App() {
           --th-shell-gap: 16px;
           --th-sidebar-width: 260px;
           --th-mobile-topbar-height: 52px;
+          /* Top inset for position: sticky page content (the narrow layout's topbar). */
+          --th-sticky-top: 0px;
         }
-        html.modal-scroll-lock,
+        html.modal-scroll-lock {
+          overflow: hidden !important;
+        }
+        /* The viewport lock above is enough; hidden on <body> would also make it a
+           scroll container and drop the sticky topbar back to the document top. */
         body.modal-scroll-lock {
           overflow: hidden !important;
+          overflow: clip !important;
         }
         html.modal-scroll-lock .app-shell,
         body.modal-scroll-lock .app-shell {
@@ -18993,8 +19000,18 @@ function App() {
         }
 
         @media (max-width: 1023px) {
+          :root {
+            --th-sticky-top: var(--th-mobile-topbar-height);
+          }
+          /* The document scrolls in this layout. clip, not hidden: overflow-x: hidden
+             turns <body> into a scroll container that never scrolls, which silently
+             disables every position: sticky below it (topbar, toolbars). */
           html, body {
             overflow-x: hidden;
+            overflow-x: clip;
+          }
+          html {
+            scroll-padding-top: var(--th-sticky-top);
           }
           .app-shell {
             flex-direction: column !important;

@@ -305,7 +305,7 @@
 
 .tl-bulkbar {
   position: sticky;
-  top: 0;
+  top: var(--th-sticky-top, 0px);
   z-index: 3;
   display: flex;
   gap: 8px;
@@ -332,7 +332,7 @@
 
 .tl-table thead th {
   position: sticky;
-  top: var(--tl-sticky-offset, 0px);
+  top: calc(var(--th-sticky-top, 0px) + var(--tl-sticky-offset, 0px));
   z-index: 2;
   background: #0f172a;
   text-align: left;
