@@ -33,14 +33,13 @@ test('creatable profiles include REST + MCP presets', () => {
     'ioc_management',
     'ioc_read',
     'mcp_analyst',
-    'mcp_enrichment',
     'mcp_read',
     'published_feed'
   ]);
   assert.equal(getAccessProfile('ioc_management').creatable, true);
   assert.equal(getAccessProfile('mcp_read').creatable, true);
   assert.equal(getAccessProfile('mcp_analyst').creatable, true);
-  assert.equal(getAccessProfile('mcp_enrichment').creatable, true);
+  assert.equal(getAccessProfile('mcp_enrichment'), null, 'MCP Enrichment is no longer a profile');
   assert.equal(getAccessProfile('feed_access').creatable, false);
 });
 
@@ -61,13 +60,14 @@ test('mcp_read scopes are read-only MCP', () => {
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), false);
 });
 
-test('mcp_analyst scopes include create', () => {
+test('mcp_analyst scopes include create and enrichment', () => {
   const scopes = scopesForAccessProfile(ACCESS_PROFILE.MCP_ANALYST);
   assert.deepEqual(scopes, [
     API_SCOPE.MCP_IOC_READ,
     API_SCOPE.MCP_IOC_CREATE,
     API_SCOPE.MCP_SOURCES_READ,
-    API_SCOPE.MCP_ENRICHMENT_READ
+    API_SCOPE.MCP_ENRICHMENT_READ,
+    API_SCOPE.MCP_ENRICHMENT_WRITE
   ]);
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), true);
 });
@@ -103,4 +103,25 @@ test('DB constraints admit every access profile and scope (latest migration defi
   assert.ok(keyTypes && scopes);
   for (const id of Object.values(ACCESS_PROFILE)) assert.ok(keyTypes.includes(`'${id}'`), `key_type ${id} missing from DB constraint`);
   for (const scope of ALL_API_SCOPES) assert.ok(scopes.includes(`"${scope}"`), `scope ${scope} missing from DB constraint`);
+});
+
+test('migration 039 backfills the enrichment scopes onto existing MCP Analyst keys only', async () => {
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const sql = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '039_mcp_analyst_enrichment_scope.sql'), 'utf8');
+  const statements = sql.replace(/--[^\n]*/g, '').split(';').map((x) => x.trim()).filter(Boolean);
+  assert.equal(statements.length, 2);
+  for (const stmt of statements) {
+    assert.match(stmt, /^UPDATE public\.published_feed_access_keys/);
+    assert.match(stmt, /WHERE key_type = 'mcp_analyst'/);
+    assert.match(stmt, /AND deleted_at IS NULL/);
+    assert.match(stmt, /AND NOT \(scopes \? 'mcp:enrichment:(read|write)'\)/, 'idempotent');
+    assert.doesNotMatch(stmt, /mcp_read|ioc_read|published_feed'|ioc_management/);
+  }
+  // Every scope the profile carries beyond the pre-039 MCP Analyst set is backfilled.
+  const preBackfill = ['mcp:ioc:read', 'mcp:ioc:create', 'mcp:sources:read', 'mcp:enrichment:read'];
+  const added = scopesForAccessProfile('mcp_analyst').filter((x) => !preBackfill.includes(x));
+  assert.deepEqual(added, ['mcp:enrichment:write']);
+  for (const scope of added) assert.ok(sql.includes(`'["${scope}"]'`), `migration must backfill ${scope}`);
 });

@@ -82,6 +82,20 @@ test('refresh routes are thin wrappers over the shared functions (same status/bo
   assert.equal(res.statusCode, 403);
 });
 
+test('admin-only force refresh: analyst owner refused, admin owner passes the role gate', async () => {
+  const body = { ioc_id: '11111111-1111-4111-8111-111111111111' };
+  for (const run of [
+    (req) => runIpinfoRefresh(noDbPool, noAudit, req, { ip: '8.8.8.8', force: true }),
+    (req) => runAbuseIpdbRefresh(noDbPool, noAudit, req, { ip: '8.8.8.8', force: true }),
+    (req) => runRdapRefresh(noDbPool, noAudit, req, { value: 'example.org', hintType: 'domain', force: true })
+  ]) {
+    assert.equal((await run({ user: { role: 'analyst' }, authVia: 'mcp', body })).status, 403);
+    // Admin passes the role gate and proceeds to the provider path (which this
+    // DB-less pool then fails) — anything but the 403 role refusal.
+    assert.notEqual((await run({ user: { role: 'admin' }, authVia: 'mcp', body })).status, 403);
+  }
+});
+
 test('shared refresh functions refuse private / invalid / unsupported targets before any external call', async () => {
   const admin = { user: { role: 'admin' }, body: {} };
   assert.equal((await runAbuseIpdbRefresh(noDbPool, noAudit, admin, { ip: '10.1.2.3' })).status, 422);

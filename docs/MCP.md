@@ -71,8 +71,7 @@ MCP credentials are API keys stored in `published_feed_access_keys`, using dedic
 | Profile id | Label | Key prefix | Typical use |
 |------------|--------|------------|-------------|
 | `mcp_read` | MCP Read | `th_mcp_` | Lookup / search / context / bulk / list sources |
-| `mcp_analyst` | MCP Analyst | `th_mcp_` | Same reads **plus** `import_iocs` |
-| `mcp_enrichment` | MCP Enrichment | `th_mcp_` | Same reads **plus** `enrich_ioc` / `bulk_enrich_iocs` (no import) |
+| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs` and the enrichment action tools (`enrich_ioc` / `bulk_enrich_iocs`) |
 
 All MCP profiles **require an owner user**. The owner’s TalonHound role is loaded on every request.
 
@@ -82,10 +81,11 @@ Examples:
 
 - An `mcp_analyst` key owned by a **readonly** user can read (if the role allows MCP read) but **cannot** import — create is denied by RBAC even when `mcp:ioc:create` is on the token.
 - An `mcp_read` key never gets import, regardless of owner role.
-- Only a key carrying `mcp:enrichment:write` (the `mcp_enrichment` profile) owned by an **analyst/admin** can trigger enrichment. `mcp:ioc:create` and `mcp:enrichment:read` never imply it.
+- An `mcp_analyst` key owned by an **analyst/admin** can trigger enrichment (it carries `mcp:enrichment:write`). The tools check that granular scope — never the profile name — so `mcp:ioc:create` or `mcp:enrichment:read` alone never imply it, and a readonly owner is denied by RBAC.
+- "MCP Analyst" means everything a TalonHound **analyst** may do through MCP — never admin: admin-only provider rules (e.g. forced IPinfo / AbuseIPDB / RDAP refresh) stay admin-only, and there are no user, API-key, provider-credential or settings tools.
 - A non-MCP API key without MCP scopes is rejected at `/mcp`.
 
-Create keys in the TalonHound UI under API key management (same place as published-feed / IOC API keys), choosing **MCP Read**, **MCP Analyst** or **MCP Enrichment** and selecting the owner user. The plaintext key is shown **once** at creation.
+Create keys in the TalonHound UI under API key management (same place as published-feed / IOC API keys), choosing **MCP Read** or **MCP Analyst** and selecting the owner user. The plaintext key is shown **once** at creation.
 
 ## Scopes
 
@@ -100,10 +100,9 @@ Create keys in the TalonHound UI under API key management (same place as publish
 Profile presets:
 
 - **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_enrichment:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`
+- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`
 
-**Backward compatibility:** scopes are stored on each key at creation. Existing `mcp_read` / `mcp_analyst` keys were **not** granted `mcp:enrichment:write`; create a new **MCP Enrichment** key to use the enrichment action tools.
+**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
 
 ## Tools
 

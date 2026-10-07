@@ -28,26 +28,19 @@ export const ACCESS_PROFILE_OPTIONS = Object.freeze([
     id: 'mcp_read',
     label: 'MCP Read',
     description:
-      'Read-only MCP (/mcp) access for AI clients. Bound to an owner user; effective rights are the intersection of token scopes and the owner role. Cannot import IOCs.',
-    permission_summary: 'MCP read + sources + enrichment'
+      'Read-only MCP (/mcp) access for AI clients: IOC lookup, search, context, threat reports and stored enrichment. Bound to an owner user; effective rights are the intersection of token scopes and the owner role. Cannot import IOCs or trigger enrichment.',
+    permission_summary: 'MCP read + sources + stored enrichment'
   }),
   Object.freeze({
     id: 'mcp_analyst',
     label: 'MCP Analyst',
     description:
-      'MCP (/mcp) access for AI clients with controlled IOC import into existing IOC Sources. Bound to an owner user; import requires both mcp:ioc:create on the token and an analyst/admin owner role.',
-    permission_summary: 'MCP read + import into IOC Sources'
-  }),
-  Object.freeze({
-    id: 'mcp_enrichment',
-    label: 'MCP Enrichment',
-    description:
-      'MCP (/mcp) access for AI clients that may trigger the enabled TalonHound enrichment providers on existing IOCs (may consume provider API quota). Bound to an owner user; triggering requires both mcp:enrichment:write on the token and an analyst/admin owner role. Cannot import IOCs.',
-    permission_summary: 'MCP read + trigger enrichment'
+      'MCP (/mcp) access for trusted AI analyst agents. Can read IOC context, import IOCs into existing IOC Sources, and trigger the enabled TalonHound enrichment providers (may consume provider API quota). Bound to an owner user; effective permissions remain limited by the owner user\'s role — admin-only actions stay admin-only.',
+    permission_summary: 'MCP read + import + enrichment'
   })
 ]);
 
-const MCP_OWNER_PROFILES = new Set(['mcp_read', 'mcp_analyst', 'mcp_enrichment']);
+const MCP_OWNER_PROFILES = new Set(['mcp_read', 'mcp_analyst']);
 
 /** MCP access profiles (owner-bound keys for /mcp). */
 export function isMcpAccessProfile(accessProfile) {

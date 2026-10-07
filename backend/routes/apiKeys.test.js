@@ -440,8 +440,14 @@ test('MCP Read + MCP Analyst create succeed with valid owner UUID', async () => 
     'mcp:ioc:read',
     'mcp:ioc:create',
     'mcp:sources:read',
-    'mcp:enrichment:read'
+    'mcp:enrichment:read',
+    'mcp:enrichment:write'
   ]);
+});
+
+test('MCP Enrichment is no longer creatable (folded into MCP Analyst)', async () => {
+  const { listCreatableAccessProfiles } = await import('../lib/apiKeyProfiles.js');
+  assert.ok(!listCreatableAccessProfiles().some((p) => p.id === 'mcp_enrichment'));
 });
 
 test('non-MCP profiles ignore owner fields and still create', async () => {

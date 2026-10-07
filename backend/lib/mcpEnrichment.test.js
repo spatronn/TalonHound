@@ -23,7 +23,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 // Authorization: mcp:enrichment:write is its own capability
 // ---------------------------------------------------------------------------
 
-test('mcp_read credential cannot trigger enrichment', () => {
+test('MCP Read credential cannot trigger enrichment or import', () => {
   const scopes = scopesForAccessProfile('mcp_read');
   for (const tool of ['enrich_ioc', 'bulk_enrich_iocs']) {
     const gate = authorizeMcpTool(tool, { scopes, ownerRole: 'admin' });
@@ -31,47 +31,61 @@ test('mcp_read credential cannot trigger enrichment', () => {
     assert.equal(gate.code, 'MISSING_SCOPE');
     assert.match(gate.message, /mcp:enrichment:write/);
   }
+  assert.equal(authorizeMcpTool('import_iocs', { scopes, ownerRole: 'admin' }).code, 'MISSING_SCOPE');
   // Read-side enrichment tools stay available to read credentials.
   assert.equal(authorizeMcpTool('list_enrichment_providers', { scopes, ownerRole: 'readonly' }).ok, true);
   assert.equal(authorizeMcpTool('get_enrichment_job', { scopes, ownerRole: 'readonly' }).ok, true);
 });
 
-test('import scope (mcp_analyst) does not imply enrichment', () => {
+test('MCP Analyst profile bundles import + enrichment on top of read (granular scopes kept)', () => {
   const scopes = scopesForAccessProfile('mcp_analyst');
-  assert.ok(!scopes.includes(API_SCOPE.MCP_ENRICHMENT_WRITE));
-  assert.equal(authorizeMcpTool('enrich_ioc', { scopes, ownerRole: 'admin' }).code, 'MISSING_SCOPE');
-});
-
-test('mcp:read + mcp:enrichment:write with analyst/admin owner may trigger enrichment', () => {
-  const scopes = [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE];
-  for (const ownerRole of ['analyst', 'admin']) {
-    assert.equal(authorizeMcpTool('enrich_ioc', { scopes, ownerRole }).ok, true, ownerRole);
-    assert.equal(authorizeMcpTool('bulk_enrich_iocs', { scopes, ownerRole }).ok, true, ownerRole);
+  assert.deepEqual([...scopes].sort(), [
+    API_SCOPE.MCP_ENRICHMENT_READ,
+    API_SCOPE.MCP_ENRICHMENT_WRITE,
+    API_SCOPE.MCP_IOC_CREATE,
+    API_SCOPE.MCP_IOC_READ,
+    API_SCOPE.MCP_SOURCES_READ
+  ].sort());
+  // Every MCP tool is available to an analyst-owned MCP Analyst key — through
+  // each tool's own scope check, not a profile-name check.
+  for (const tool of Object.keys(MCP_TOOL_SCOPES)) {
+    assert.equal(authorizeMcpTool(tool, { scopes, ownerRole: 'analyst' }).ok, true, tool);
   }
-  const profile = scopesForAccessProfile('mcp_enrichment');
-  assert.equal(authorizeMcpTool('enrich_ioc', { scopes: profile, ownerRole: 'analyst' }).ok, true);
-  // The enrichment profile cannot import.
-  assert.equal(authorizeMcpTool('import_iocs', { scopes: profile, ownerRole: 'admin' }).ok, false);
 });
 
-test('a token never elevates a readonly owner into triggering enrichment', () => {
-  const scopes = scopesForAccessProfile('mcp_enrichment');
-  const gate = authorizeMcpTool('enrich_ioc', { scopes, ownerRole: 'readonly' });
-  assert.equal(gate.ok, false);
-  assert.equal(gate.code, 'RBAC_DENIED');
-  assert.equal(effectiveMcpCapabilities({ scopes, ownerRole: 'readonly' }).enrichment_write, false);
-});
-
-test('enrichment write scope requires the IOC read scope too', () => {
-  const gate = authorizeMcpTool('enrich_ioc', { scopes: [API_SCOPE.MCP_ENRICHMENT_WRITE], ownerRole: 'admin' });
-  assert.equal(gate.ok, false);
+test('the enrichment scopes still gate the action tools on their own (no profile coupling)', () => {
+  const withoutWrite = scopesForAccessProfile('mcp_analyst').filter((s) => s !== API_SCOPE.MCP_ENRICHMENT_WRITE);
+  const gate = authorizeMcpTool('enrich_ioc', { scopes: withoutWrite, ownerRole: 'admin' });
   assert.equal(gate.code, 'MISSING_SCOPE');
+  assert.match(gate.message, /mcp:enrichment:write/);
+  // Import keeps working for such a (pre-backfill) key.
+  assert.equal(authorizeMcpTool('import_iocs', { scopes: withoutWrite, ownerRole: 'analyst' }).ok, true);
+  // Granular grant still works without any profile.
+  assert.equal(authorizeMcpTool('enrich_ioc', { scopes: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE], ownerRole: 'analyst' }).ok, true);
+  assert.equal(authorizeMcpTool('enrich_ioc', { scopes: [API_SCOPE.MCP_ENRICHMENT_WRITE], ownerRole: 'admin' }).code, 'MISSING_SCOPE');
 });
 
-test('existing profiles were not silently granted the new scope', () => {
-  for (const profile of ['mcp_read', 'mcp_analyst', 'ioc_management', 'ioc_read', 'published_feed']) {
+test('a token never elevates a readonly owner: MCP Analyst key owned by readonly cannot enrich or import', () => {
+  const scopes = scopesForAccessProfile('mcp_analyst');
+  for (const tool of ['enrich_ioc', 'bulk_enrich_iocs', 'import_iocs']) {
+    const gate = authorizeMcpTool(tool, { scopes, ownerRole: 'readonly' });
+    assert.equal(gate.ok, false, tool);
+    assert.equal(gate.code, 'RBAC_DENIED', tool);
+  }
+  assert.equal(effectiveMcpCapabilities({ scopes, ownerRole: 'readonly' }).enrichment_write, false);
+  // Reads stay available.
+  assert.equal(authorizeMcpTool('get_ioc_context', { scopes, ownerRole: 'readonly' }).ok, true);
+});
+
+test('only MCP Analyst carries the enrichment write scope', () => {
+  assert.ok(scopesForAccessProfile('mcp_analyst').includes(API_SCOPE.MCP_ENRICHMENT_WRITE));
+  for (const profile of ['mcp_read', 'ioc_management', 'ioc_read', 'published_feed', 'feed_access']) {
     assert.ok(!scopesForAccessProfile(profile).includes(API_SCOPE.MCP_ENRICHMENT_WRITE), profile);
   }
+});
+
+test('MCP Enrichment is not a profile any more', () => {
+  assert.equal(scopesForAccessProfile('mcp_' + 'enrichment').length, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -140,7 +154,7 @@ test('read tools never invoke an enrichment executor', async () => {
   };
   const req = {
     user: { id: 1, role: 'admin', username: 'a' },
-    mcpAuth: { scopes: scopesForAccessProfile('mcp_enrichment'), ownerRole: 'admin', apiKeyId: 1 }
+    mcpAuth: { scopes: scopesForAccessProfile('mcp_analyst'), ownerRole: 'admin', apiKeyId: 1 }
   };
   const tools = new Map();
   registerMcpTools({ registerTool(name, def, handler) { tools.set(name, handler); } }, { pool, getRequestContext: () => ({ req }) });
@@ -247,7 +261,7 @@ test('MCP-triggered enrichment is audited with MCP provenance and no credentials
   const secret = 'th_mcp_SUPERSECRETTOKENVALUE';
   const req = {
     user: { id: 3, publicId: '03030303-0303-4303-8303-030303030303', username: 'analyst1', role: 'analyst' },
-    mcpAuth: { scopes: scopesForAccessProfile('mcp_enrichment'), ownerRole: 'analyst', apiKeyId: 42, apiKeyName: 'agent-key', keyType: 'mcp_enrichment' },
+    mcpAuth: { scopes: scopesForAccessProfile('mcp_analyst'), ownerRole: 'analyst', apiKeyId: 42, apiKeyName: 'agent-key', keyType: 'mcp_analyst' },
     requestId: 'req-123',
     headers: { authorization: `Bearer ${secret}`, 'user-agent': 'claude-code' }
   };

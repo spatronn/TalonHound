@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   API_KEYS_PAGE_DESCRIPTION,
   ACCESS_PROFILE_OPTIONS,
+  isMcpAccessProfile,
   apiKeyCreatePayload,
   accessProfilePermissionSummary,
   accessProfileLabel,
@@ -24,22 +25,23 @@ test('page description is generic (not Published Feed-only)', () => {
   assert.doesNotMatch(API_KEYS_PAGE_DESCRIPTION, /Published Feed keys let/i);
 });
 
-test('six fixed access profiles are exposed including MCP', () => {
-  assert.equal(ACCESS_PROFILE_OPTIONS.length, 6);
+test('five fixed access profiles are exposed including MCP Read and MCP Analyst (no MCP Enrichment)', () => {
+  assert.equal(ACCESS_PROFILE_OPTIONS.length, 5);
   assert.deepEqual(
     ACCESS_PROFILE_OPTIONS.map((o) => o.id).sort(),
-    ['ioc_management', 'ioc_read', 'mcp_analyst', 'mcp_enrichment', 'mcp_read', 'published_feed']
+    ['ioc_management', 'ioc_read', 'mcp_analyst', 'mcp_read', 'published_feed']
   );
   const mcpRead = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_read');
   assert.match(mcpRead.description, /owner/i);
   assert.match(mcpRead.description, /MCP/i);
+  assert.match(mcpRead.description, /Cannot import IOCs or trigger enrichment/);
   const mcpAnalyst = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_analyst');
   assert.match(mcpAnalyst.description, /import/i);
-  assert.match(mcpAnalyst.description, /owner/i);
-  const mcpEnrichment = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_enrichment');
-  assert.match(mcpEnrichment.description, /quota/i);
-  assert.match(mcpEnrichment.description, /mcp:enrichment:write/);
-  assert.match(mcpEnrichment.description, /owner/i);
+  assert.match(mcpAnalyst.description, /enrichment/i);
+  assert.match(mcpAnalyst.description, /quota/i);
+  assert.match(mcpAnalyst.description, /owner user's role/i);
+  assert.equal(isMcpAccessProfile('mcp_enrichment'), false);
+  assert.equal(isMcpAccessProfile('mcp_analyst'), true);
 });
 
 test('owner dropdown uses users API public UUID (id), never label/email', () => {
