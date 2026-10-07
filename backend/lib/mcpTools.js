@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { authorizeMcpTool, MCP_ENRICHMENT_ACTION_TOOLS } from './mcpPermissions.js';
+import { authorizeMcpTool, MCP_ENRICHMENT_ACTION_TOOLS, MCP_TAG_ACTION_TOOLS } from './mcpPermissions.js';
 import {
   mcpLookupIoc,
   mcpSearchIocs,
@@ -16,6 +16,7 @@ import {
 } from './mcpIocService.js';
 import { getMcpConfig } from './mcpConfig.js';
 import { mcpListEnrichmentProviders, mcpEnrichIocs, mcpGetEnrichmentJob } from './mcpEnrichmentService.js';
+import { mcpListTags, mcpAddIocTags, mcpRemoveIocTags } from './mcpTagService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from './auditConstants.js';
 
 function toolText(obj) {
@@ -47,8 +48,9 @@ async function withAuth(toolName, ctx, handler) {
     if (outcome?.error) {
       return toolError(outcome.error.message, outcome.error.code || 'ERROR');
     }
-    // import_iocs and the enrichment action tools write their own dedicated audit events.
-    if (ctx.audit?.auditSuccess && ctx.req && toolName !== 'import_iocs' && !MCP_ENRICHMENT_ACTION_TOOLS.includes(toolName)) {
+    // import_iocs, the enrichment action tools and the tag tools write their own dedicated audit events.
+    if (ctx.audit?.auditSuccess && ctx.req && toolName !== 'import_iocs'
+      && !MCP_ENRICHMENT_ACTION_TOOLS.includes(toolName) && !MCP_TAG_ACTION_TOOLS.includes(toolName)) {
       const actor = mcpActorAuditFields(ctx.mcpAuth || ctx.req.mcpAuth, ctx.req.user);
       await ctx.audit.auditSuccess({
         req: ctx.req,
@@ -389,6 +391,76 @@ export function registerMcpTools(server, deps) {
     async (args) => {
       const ctx = ctxFrom();
       return withAuth('get_enrichment_job', ctx, () => mcpGetEnrichmentJob(deps.pool, args, ctx));
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Tags: catalog (read) and analyst tag assignments (action).
+  // ---------------------------------------------------------------------------
+
+  const tagNamesSchema = z.array(z.string().min(1).max(100)).min(1).max(config.tagWriteMax);
+
+  server.registerTool(
+    'list_tags',
+    {
+      title: 'List tags',
+      description:
+        'List the enabled TalonHound tag catalog — the tags an analyst can assign on IOC Details (name, category, description). '
+        + 'add_ioc_tags only accepts names from this catalog. Optional `query` = case-insensitive name contains filter. '
+        + `Bounded (max ${config.tagListMax}); \`truncated\` = more tags match, narrow the query. Requires an analyst/admin owner. `
+        + 'Read-only: never changes tags and never triggers external/paid enrichment.',
+      inputSchema: {
+        query: z.string().max(100).optional().describe('Tag name contains filter (case-insensitive)'),
+        limit: z.number().int().min(1).max(config.tagListMax).optional()
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('list_tags', ctx, () => mcpListTags(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'add_ioc_tags',
+    {
+      title: 'Add IOC tags',
+      description:
+        'ACTION: add analyst tags to ONE existing IOC — the same write as adding a tag on IOC Details (origin `manual`). '
+        + 'Requires mcp:tags:write and an analyst/admin owner. `ioc_id` = IOC public_id (UUID) from lookup_ioc / search_iocs / get_ioc_context (numeric id also accepted). '
+        + `\`tags\` = 1-${config.tagWriteMax} existing, enabled tag names from list_tags (matched case-insensitively). All-or-nothing: if any name is unknown or disabled, `
+        + 'nothing is changed (error TAG_NOT_ALLOWED) — MCP never creates catalog tags or re-enables disabled ones. Idempotent: tags already assigned by an analyst are reported in `already_present`. '
+        + 'Returns `added`, `already_present` and the resulting effective IOC `tags` / `tags_detail`. Each added tag is audited (ioc.tag.added) with MCP provenance.',
+      inputSchema: {
+        ioc_id: z.union([z.string().min(1).max(64), z.number().int().positive()]).describe('IOC public_id (UUID) or numeric id'),
+        tags: tagNamesSchema.describe('Tag names from list_tags')
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('add_ioc_tags', ctx, () => mcpAddIocTags(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'remove_ioc_tags',
+    {
+      title: 'Remove IOC tags',
+      description:
+        'ACTION: remove analyst tags (origin `manual`) from ONE existing IOC — the same rule as removing a tag on IOC Details. '
+        + 'Requires mcp:tags:write and an analyst/admin owner. Source/feed (integration) tags and Threat Library report tags are never removed: they are reported in '
+        + '`not_removable` with their origins; names the IOC does not carry are in `not_assigned`. Returns `removed` and the resulting effective IOC `tags` / `tags_detail`. '
+        + 'Each removed tag is audited (ioc.tag.removed) with MCP provenance.',
+      inputSchema: {
+        ioc_id: z.union([z.string().min(1).max(64), z.number().int().positive()]).describe('IOC public_id (UUID) or numeric id'),
+        tags: tagNamesSchema.describe('Tag names to remove')
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('remove_ioc_tags', ctx, () => mcpRemoveIocTags(deps.pool, args, ctx));
     }
   );
 }

@@ -37,14 +37,15 @@ test('MCP Read credential cannot trigger enrichment or import', () => {
   assert.equal(authorizeMcpTool('get_enrichment_job', { scopes, ownerRole: 'readonly' }).ok, true);
 });
 
-test('MCP Analyst profile bundles import + enrichment on top of read (granular scopes kept)', () => {
+test('MCP Analyst profile bundles import + enrichment + tags on top of read (granular scopes kept)', () => {
   const scopes = scopesForAccessProfile('mcp_analyst');
   assert.deepEqual([...scopes].sort(), [
     API_SCOPE.MCP_ENRICHMENT_READ,
     API_SCOPE.MCP_ENRICHMENT_WRITE,
     API_SCOPE.MCP_IOC_CREATE,
     API_SCOPE.MCP_IOC_READ,
-    API_SCOPE.MCP_SOURCES_READ
+    API_SCOPE.MCP_SOURCES_READ,
+    API_SCOPE.MCP_TAGS_WRITE
   ].sort());
   // Every MCP tool is available to an analyst-owned MCP Analyst key — through
   // each tool's own scope check, not a profile-name check.

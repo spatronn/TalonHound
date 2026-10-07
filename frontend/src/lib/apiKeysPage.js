@@ -28,15 +28,15 @@ export const ACCESS_PROFILE_OPTIONS = Object.freeze([
     id: 'mcp_read',
     label: 'MCP Read',
     description:
-      'Read-only MCP (/mcp) access for AI clients: IOC lookup, search, context, threat reports and stored enrichment. Bound to an owner user; effective rights are the intersection of token scopes and the owner role. Cannot import IOCs or trigger enrichment.',
+      'Read-only MCP (/mcp) access for AI clients: IOC lookup, search, context, threat reports and stored enrichment. Bound to an owner user; effective rights are the intersection of token scopes and the owner role. Cannot import IOCs, trigger enrichment or change tags.',
     permission_summary: 'MCP read + sources + stored enrichment'
   }),
   Object.freeze({
     id: 'mcp_analyst',
     label: 'MCP Analyst',
     description:
-      'MCP (/mcp) access for trusted AI analyst agents. Can read IOC context, import IOCs into existing IOC Sources, and trigger the enabled TalonHound enrichment providers (may consume provider API quota). Bound to an owner user; effective permissions remain limited by the owner user\'s role — admin-only actions stay admin-only.',
-    permission_summary: 'MCP read + import + enrichment'
+      'MCP (/mcp) access for trusted AI analyst agents. Can read IOC context, import IOCs into existing IOC Sources, trigger the enabled TalonHound enrichment providers (may consume provider API quota), and add/remove analyst tags from the tag catalog. Bound to an owner user; effective permissions remain limited by the owner user\'s role — admin-only actions stay admin-only.',
+    permission_summary: 'MCP read + import + enrichment + tags'
   })
 ]);
 

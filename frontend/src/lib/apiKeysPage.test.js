@@ -34,11 +34,13 @@ test('five fixed access profiles are exposed including MCP Read and MCP Analyst 
   const mcpRead = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_read');
   assert.match(mcpRead.description, /owner/i);
   assert.match(mcpRead.description, /MCP/i);
-  assert.match(mcpRead.description, /Cannot import IOCs or trigger enrichment/);
+  assert.match(mcpRead.description, /Cannot import IOCs, trigger enrichment or change tags/);
   const mcpAnalyst = ACCESS_PROFILE_OPTIONS.find((o) => o.id === 'mcp_analyst');
   assert.match(mcpAnalyst.description, /import/i);
   assert.match(mcpAnalyst.description, /enrichment/i);
   assert.match(mcpAnalyst.description, /quota/i);
+  assert.match(mcpAnalyst.description, /analyst tags from the tag catalog/);
+  assert.equal(mcpAnalyst.permission_summary, 'MCP read + import + enrichment + tags');
   assert.match(mcpAnalyst.description, /owner user's role/i);
   assert.equal(isMcpAccessProfile('mcp_enrichment'), false);
   assert.equal(isMcpAccessProfile('mcp_analyst'), true);

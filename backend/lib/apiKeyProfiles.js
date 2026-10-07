@@ -13,7 +13,9 @@ export const API_SCOPE = Object.freeze({
   MCP_ENRICHMENT_READ: 'mcp:enrichment:read',
   /** Trigger external (possibly paid) enrichment providers through MCP. Never implied by read or import scopes. */
   MCP_ENRICHMENT_WRITE: 'mcp:enrichment:write',
-  MCP_SOURCES_READ: 'mcp:sources:read'
+  MCP_SOURCES_READ: 'mcp:sources:read',
+  /** Add/remove analyst (manual) IOC tags through MCP. Never implied by read, import or enrichment scopes. */
+  MCP_TAGS_WRITE: 'mcp:tags:write'
 });
 
 export const ALL_API_SCOPES = Object.freeze([
@@ -26,7 +28,8 @@ export const ALL_API_SCOPES = Object.freeze([
   API_SCOPE.MCP_IOC_CREATE,
   API_SCOPE.MCP_ENRICHMENT_READ,
   API_SCOPE.MCP_ENRICHMENT_WRITE,
-  API_SCOPE.MCP_SOURCES_READ
+  API_SCOPE.MCP_SOURCES_READ,
+  API_SCOPE.MCP_TAGS_WRITE
 ]);
 
 export const ACCESS_PROFILE = Object.freeze({
@@ -75,7 +78,7 @@ const PROFILE_DEFS = Object.freeze({
   [ACCESS_PROFILE.MCP_READ]: Object.freeze({
     id: ACCESS_PROFILE.MCP_READ,
     label: 'MCP Read',
-    description: 'Read-only MCP access for AI clients: lookup, search, context, bulk lookup, threat reports, IOC Sources and stored enrichment. Bound to an owner user; cannot import IOCs or trigger enrichment.',
+    description: 'Read-only MCP access for AI clients: lookup, search, context, bulk lookup, threat reports, IOC Sources and stored enrichment. Bound to an owner user; cannot import IOCs, trigger enrichment or change tags.',
     permission_summary: 'MCP read + sources + stored enrichment',
     key_prefix: 'th_mcp_',
     scopes: Object.freeze([
@@ -89,17 +92,18 @@ const PROFILE_DEFS = Object.freeze({
   [ACCESS_PROFILE.MCP_ANALYST]: Object.freeze({
     id: ACCESS_PROFILE.MCP_ANALYST,
     label: 'MCP Analyst',
-    description: 'MCP (/mcp) access for trusted AI analyst agents: read IOC context, import IOCs into existing IOC Sources, and trigger the enabled TalonHound enrichment providers (may consume provider API quota). Bound to an owner user; effective rights are the intersection of token scopes and the owner role — never more than that user can do in the GUI.',
-    permission_summary: 'MCP read + import + enrichment',
+    description: 'MCP (/mcp) access for trusted AI analyst agents: read IOC context, import IOCs into existing IOC Sources, trigger the enabled TalonHound enrichment providers (may consume provider API quota), and add/remove analyst tags from the tag catalog. Bound to an owner user; effective rights are the intersection of token scopes and the owner role — never more than that user can do in the GUI.',
+    permission_summary: 'MCP read + import + enrichment + tags',
     key_prefix: 'th_mcp_',
     scopes: Object.freeze([
       API_SCOPE.MCP_IOC_READ,
       API_SCOPE.MCP_IOC_CREATE,
       API_SCOPE.MCP_SOURCES_READ,
       API_SCOPE.MCP_ENRICHMENT_READ,
-      // Stored per key at creation; keys created before 039 were backfilled
-      // by migration 039_mcp_analyst_enrichment_scope.sql.
-      API_SCOPE.MCP_ENRICHMENT_WRITE
+      // Stored per key at creation; keys created before 039/040 were backfilled
+      // by migrations 039_mcp_analyst_enrichment_scope.sql / 040_mcp_tags_write_scope.sql.
+      API_SCOPE.MCP_ENRICHMENT_WRITE,
+      API_SCOPE.MCP_TAGS_WRITE
     ]),
     creatable: true,
     requiresOwner: true

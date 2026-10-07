@@ -60,14 +60,15 @@ test('mcp_read scopes are read-only MCP', () => {
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), false);
 });
 
-test('mcp_analyst scopes include create and enrichment', () => {
+test('mcp_analyst scopes include create, enrichment and tags', () => {
   const scopes = scopesForAccessProfile(ACCESS_PROFILE.MCP_ANALYST);
   assert.deepEqual(scopes, [
     API_SCOPE.MCP_IOC_READ,
     API_SCOPE.MCP_IOC_CREATE,
     API_SCOPE.MCP_SOURCES_READ,
     API_SCOPE.MCP_ENRICHMENT_READ,
-    API_SCOPE.MCP_ENRICHMENT_WRITE
+    API_SCOPE.MCP_ENRICHMENT_WRITE,
+    API_SCOPE.MCP_TAGS_WRITE
   ]);
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), true);
 });
@@ -119,9 +120,25 @@ test('migration 039 backfills the enrichment scopes onto existing MCP Analyst ke
     assert.match(stmt, /AND NOT \(scopes \? 'mcp:enrichment:(read|write)'\)/, 'idempotent');
     assert.doesNotMatch(stmt, /mcp_read|ioc_read|published_feed'|ioc_management/);
   }
-  // Every scope the profile carries beyond the pre-039 MCP Analyst set is backfilled.
-  const preBackfill = ['mcp:ioc:read', 'mcp:ioc:create', 'mcp:sources:read', 'mcp:enrichment:read'];
-  const added = scopesForAccessProfile('mcp_analyst').filter((x) => !preBackfill.includes(x));
-  assert.deepEqual(added, ['mcp:enrichment:write']);
-  for (const scope of added) assert.ok(sql.includes(`'["${scope}"]'`), `migration must backfill ${scope}`);
+  assert.ok(sql.includes(`'["mcp:enrichment:write"]'`), 'migration must backfill mcp:enrichment:write');
+});
+
+test('migration 040 admits mcp:tags:write and backfills it onto live MCP Analyst keys only', async () => {
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const sql = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '040_mcp_tags_write_scope.sql'), 'utf8');
+  const updates = sql.replace(/--[^\n]*/g, '').split(';').map((x) => x.trim()).filter((x) => x.startsWith('UPDATE'));
+  assert.equal(updates.length, 1);
+  const [stmt] = updates;
+  assert.match(stmt, /^UPDATE public\.published_feed_access_keys/);
+  assert.match(stmt, /WHERE key_type = 'mcp_analyst'/);
+  assert.match(stmt, /AND deleted_at IS NULL/);
+  assert.match(stmt, /AND NOT \(scopes \? 'mcp:tags:write'\)/, 'idempotent');
+  assert.doesNotMatch(stmt, /mcp_read|ioc_read|published_feed'|ioc_management/);
+  // Every scope the profile carries beyond the pre-040 MCP Analyst set is backfilled (039 + 040).
+  const pre039 = ['mcp:ioc:read', 'mcp:ioc:create', 'mcp:sources:read', 'mcp:enrichment:read'];
+  const added = scopesForAccessProfile('mcp_analyst').filter((x) => !pre039.includes(x));
+  assert.deepEqual(added, ['mcp:enrichment:write', 'mcp:tags:write']);
+  assert.ok(sql.includes(`'["mcp:tags:write"]'`), 'migration must backfill mcp:tags:write');
 });

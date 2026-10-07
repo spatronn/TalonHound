@@ -19,11 +19,20 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   // Action tools: trigger external (possibly paid) providers. Separate scope —
   // never implied by mcp:ioc:read, mcp:enrichment:read or mcp:ioc:create.
   enrich_ioc: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE],
-  bulk_enrich_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE]
+  bulk_enrich_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE],
+  // Tag catalog = the IOC Details tag picker (GET /api/tags, analyst/admin).
+  list_tags: [API_SCOPE.MCP_IOC_READ],
+  // Analyst (manual) IOC tag writes. Separate scope — never implied by read,
+  // import or enrichment scopes.
+  add_ioc_tags: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_TAGS_WRITE],
+  remove_ioc_tags: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_TAGS_WRITE]
 });
 
 /** Tools that trigger external enrichment (side effects + provider quota). */
 export const MCP_ENRICHMENT_ACTION_TOOLS = Object.freeze(['enrich_ioc', 'bulk_enrich_iocs']);
+
+/** Tools that change an IOC's analyst tags (write their own ioc.tag.* audit events). */
+export const MCP_TAG_ACTION_TOOLS = Object.freeze(['add_ioc_tags', 'remove_ioc_tags']);
 
 export function mcpHasScope(scopes, required) {
   return hasApiScope(scopes, required);
@@ -41,6 +50,16 @@ export function ownerCanMcpRead(role) {
  * (admin-only where the GUI requires it), enforced inside the shared refresh code.
  */
 export function ownerCanMcpEnrich(role) {
+  const r = normalizeAppRole(role);
+  return r === ROLES.ADMIN || r === ROLES.ANALYST;
+}
+
+/**
+ * Owner may use the tag catalog and add/remove analyst tags through MCP only
+ * when they could in the GUI: GET /api/tags and POST/DELETE /api/ioc/:id/tags
+ * are analyst/admin (readonly is blocked by rbacHttpPolicy).
+ */
+export function ownerCanMcpTag(role) {
   const r = normalizeAppRole(role);
   return r === ROLES.ADMIN || r === ROLES.ANALYST;
 }
@@ -64,6 +83,8 @@ export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
     sources_read: canReadOwner && mcpHasScope(scopeList, API_SCOPE.MCP_SOURCES_READ),
     enrichment_read: canReadOwner && mcpHasScope(scopeList, API_SCOPE.MCP_ENRICHMENT_READ),
     enrichment_write: ownerCanMcpEnrich(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_ENRICHMENT_WRITE),
+    tags_read: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_IOC_READ),
+    tags_write: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_TAGS_WRITE),
     owner_role: normalizeAppRole(ownerRole),
     owner_readonly: isReadOnlyRole(ownerRole)
   });
@@ -104,6 +125,22 @@ export function authorizeMcpTool(toolName, auth = {}) {
         ok: false,
         code: 'RBAC_DENIED',
         message: 'Owner user is not permitted to trigger enrichment'
+      };
+    }
+  } else if (MCP_TAG_ACTION_TOOLS.includes(name)) {
+    if (!caps.tags_write || !caps.ioc_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to change IOC tags'
+      };
+    }
+  } else if (name === 'list_tags') {
+    if (!caps.tags_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to read the tag catalog'
       };
     }
   } else if (name === 'list_enrichment_providers' || name === 'get_enrichment_job') {

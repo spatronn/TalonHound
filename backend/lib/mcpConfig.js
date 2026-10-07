@@ -35,7 +35,11 @@ export const MCP_DEFAULTS = Object.freeze({
   ENRICH_MAX_ACTIVE_JOBS: 5,
   ENRICH_WAIT_MAX_SECONDS: 20,
   RATE_LIMIT_ENRICH_PER_MIN: 10,
-  RATE_LIMIT_BULK_ENRICH_PER_MIN: 2
+  RATE_LIMIT_BULK_ENRICH_PER_MIN: 2,
+  // Analyst tag tools (add_ioc_tags / remove_ioc_tags / list_tags).
+  TAG_WRITE_MAX: 10,
+  TAG_LIST_MAX: 100,
+  RATE_LIMIT_TAG_WRITE_PER_MIN: 30
 });
 
 export function isMcpEnabled(env = process.env) {
@@ -74,6 +78,9 @@ export function getMcpConfig(env = process.env) {
     enrichMaxActiveJobs: intEnv(env, 'MCP_ENRICH_MAX_ACTIVE_JOBS', MCP_DEFAULTS.ENRICH_MAX_ACTIVE_JOBS, { min: 1, max: 20 }),
     enrichWaitMaxSeconds: intEnv(env, 'MCP_ENRICH_WAIT_MAX_SECONDS', MCP_DEFAULTS.ENRICH_WAIT_MAX_SECONDS, { min: 1, max: 25 }),
     rateLimitEnrichPerMin: intEnv(env, 'MCP_RATE_LIMIT_ENRICH_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_ENRICH_PER_MIN, { min: 1, max: 120 }),
-    rateLimitBulkEnrichPerMin: intEnv(env, 'MCP_RATE_LIMIT_BULK_ENRICH_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_BULK_ENRICH_PER_MIN, { min: 1, max: 30 })
+    rateLimitBulkEnrichPerMin: intEnv(env, 'MCP_RATE_LIMIT_BULK_ENRICH_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_BULK_ENRICH_PER_MIN, { min: 1, max: 30 }),
+    tagWriteMax: intEnv(env, 'MCP_TAG_WRITE_MAX', MCP_DEFAULTS.TAG_WRITE_MAX, { min: 1, max: 25 }),
+    tagListMax: intEnv(env, 'MCP_TAG_LIST_MAX', MCP_DEFAULTS.TAG_LIST_MAX, { min: 1, max: 200 }),
+    rateLimitTagWritePerMin: intEnv(env, 'MCP_RATE_LIMIT_TAG_WRITE_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_TAG_WRITE_PER_MIN, { min: 1, max: 300 })
   });
 }

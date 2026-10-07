@@ -71,7 +71,7 @@ MCP credentials are API keys stored in `published_feed_access_keys`, using dedic
 | Profile id | Label | Key prefix | Typical use |
 |------------|--------|------------|-------------|
 | `mcp_read` | MCP Read | `th_mcp_` | Lookup / search / context / bulk / list sources |
-| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs` and the enrichment action tools (`enrich_ioc` / `bulk_enrich_iocs`) |
+| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs`, the enrichment action tools (`enrich_ioc` / `bulk_enrich_iocs`) and the tag tools (`add_ioc_tags` / `remove_ioc_tags`) |
 
 All MCP profiles **require an owner user**. The owner’s TalonHound role is loaded on every request.
 
@@ -82,6 +82,7 @@ Examples:
 - An `mcp_analyst` key owned by a **readonly** user can read (if the role allows MCP read) but **cannot** import — create is denied by RBAC even when `mcp:ioc:create` is on the token.
 - An `mcp_read` key never gets import, regardless of owner role.
 - An `mcp_analyst` key owned by an **analyst/admin** can trigger enrichment (it carries `mcp:enrichment:write`). The tools check that granular scope — never the profile name — so `mcp:ioc:create` or `mcp:enrichment:read` alone never imply it, and a readonly owner is denied by RBAC.
+- An `mcp_analyst` key owned by an **analyst/admin** can add/remove analyst tags (it carries `mcp:tags:write`); a readonly owner is denied by RBAC, exactly as the IOC Details tag controls are.
 - "MCP Analyst" means everything a TalonHound **analyst** may do through MCP — never admin: admin-only provider rules (e.g. forced IPinfo / AbuseIPDB / RDAP refresh) stay admin-only, and there are no user, API-key, provider-credential or settings tools.
 - A non-MCP API key without MCP scopes is rejected at `/mcp`.
 
@@ -96,13 +97,14 @@ Create keys in the TalonHound UI under API key management (same place as publish
 | `mcp:enrichment:read` | Include stored enrichment rows in `get_ioc_context`; `list_enrichment_providers`, `get_enrichment_job` |
 | `mcp:enrichment:write` | `enrich_ioc`, `bulk_enrich_iocs` — triggers external, possibly paid providers (also needs `mcp:ioc:read` and an analyst/admin owner) |
 | `mcp:sources:read` | `list_ioc_sources` |
+| `mcp:tags:write` | `add_ioc_tags`, `remove_ioc_tags` — analyst (`manual`) tags only (also needs `mcp:ioc:read` and an analyst/admin owner) |
 
 Profile presets:
 
 - **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`
+- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`
 
-**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
+**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
 
 ## Tools
 
@@ -119,8 +121,11 @@ Profile presets:
 | `enrich_ioc` | `mcp:ioc:read` + `mcp:enrichment:write` | **No — action** | Trigger enrichment for one IOC (`ioc_id` = public UUID or numeric id; `providers` = `"all"` or ids; `force_refresh`; optional `wait_seconds` ≤ 20). Background job; may consume provider quota. See [Explicit enrichment](#explicit-enrichment-action-tools). |
 | `bulk_enrich_iocs` | `mcp:ioc:read` + `mcp:enrichment:write` | **No — action** | Same for up to 25 IOCs / 100 provider operations per call. |
 | `get_enrichment_job` | `mcp:enrichment:read` | Yes | Job + per-IOC, per-provider status for jobs created by the same owner. |
+| `list_tags` | `mcp:ioc:read` (analyst/admin owner) | Yes | Enabled tag catalog — what the IOC Details tag picker offers (`name`, `category`, `description`); optional `query` contains-filter; bounded, `truncated` when more match. |
+| `add_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Add 1–10 existing, enabled catalog tags to one IOC as analyst (`manual`) tags. All-or-nothing; never creates or re-enables catalog tags. See [Tags](#tags-action-tools). |
+| `remove_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Remove analyst tags from one IOC. Source/feed and Threat Library tags are never removed (`not_removable`). |
 
-There are no delete, update-admin, feed, or user-management tools.
+There are no IOC/source delete, update-admin, feed, or user-management tools.
 
 ### Threat Context semantics
 
@@ -238,6 +243,15 @@ MCP enrich_ioc
 - **Dedupe:** identical active operations (provider + lookup target) coalesce across concurrent requests (advisory lock) and within one request. A forced request only joins a forced in-flight one.
 - **Adding a provider:** add a registry entry with `resolveTarget` / `readFreshness` / `supportedObservableTypes` and register its refresh function with `registerEnrichmentExecutor` where its route lives — no MCP change.
 
+## Tags (action tools)
+
+`add_ioc_tags` / `remove_ioc_tags` are the IOC Details **Tags** panel over MCP — same rules, same audit events:
+
+- **Catalog only:** tag names must exist and be enabled in the TalonHound tag catalog (find them with `list_tags`). Names are matched with the catalog rule (trim, lowercase, collapsed whitespace; `-` / `_` / space stay distinct). If any requested name is unknown or disabled, **nothing** is changed (`TAG_NOT_ALLOWED`). MCP never creates catalog tags and never re-enables disabled ones — tag administration stays in the UI (admin).
+- **Analyst tags only:** writes are `ioc_tags` rows with `origin = 'manual'` (`created_by` = owner user), via the same `ensureIocTagAssignment` as `POST /api/ioc/:id/tags`. `remove_ioc_tags` deletes only those rows (same predicate as the GUI delete). Source/feed (`integration`) tags and Threat Library report tags are reported in `not_removable` with their origins; names the IOC does not carry are in `not_assigned`.
+- **Idempotent:** an analyst tag that is already assigned is reported in `already_present`. The response includes the resulting effective `tags` / `tags_detail` (same shape as `get_ioc_context`).
+- **Identity:** `ioc_id` is the IOC public UUID (or numeric id) — never a raw value.
+
 ## Rate limits and batch sizes
 
 Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
@@ -257,6 +271,9 @@ Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
 | Provider operations per enrichment request | **100** | `MCP_ENRICH_MAX_OPERATIONS` (hard max 250) |
 | Active enrichment jobs per key | **5** | `MCP_ENRICH_MAX_ACTIVE_JOBS` (max 20) |
 | `wait_seconds` max | **20** | `MCP_ENRICH_WAIT_MAX_SECONDS` (max 25) |
+| `add_ioc_tags` + `remove_ioc_tags` / minute | **30** | `MCP_RATE_LIMIT_TAG_WRITE_PER_MIN` (max 300) |
+| Tags per `add_ioc_tags` / `remove_ioc_tags` call | **10** | `MCP_TAG_WRITE_MAX` (hard max 25) |
+| `list_tags` max | **100** | `MCP_TAG_LIST_MAX` (max 200) |
 
 Exceeding limits returns HTTP **429**. Disable MCP entirely with `MCP_ENABLED=false`.
 
@@ -273,6 +290,7 @@ Successful (and many failed) MCP operations are written through the shared audit
 | Enrichment request (one per `enrich_ioc` / `bulk_enrich_iocs`) | action `enrichment.job.requested` (job id, providers, `force_refresh`, planned per-provider status) |
 | Per-provider work | the provider's existing actions (`enrichment.virustotal.*`, `enrichment.ip.*`, `enrichment.abuseipdb.refresh`, `enrichment.rdap.*`, `enrichment.spamhaus_drop.refresh`) with `source = mcp`, API key id/name and the job id |
 | Enrichment job finished | action `enrichment.job.completed` (`job_status`, status summary) |
+| Tag added / removed (one per tag that actually changed) | the GUI's `ioc.tag.added` / `ioc.tag.removed`, with `source = mcp`, API key id/name and `tool` |
 
 Audit metadata typically includes API key id/name, access profile, owner user id, tool name, and import counters (`submitted`, `created` / `would_create`, `invalid`, etc.).
 
@@ -382,7 +400,7 @@ Also disable or remove the owner user if the entire identity should lose access.
 
 ## Limitations (v0.1)
 
-- No delete / suppress / bulk-admin tools
+- No IOC delete / suppress / bulk-admin tools (tag removal covers analyst tags only)
 - No feed administration or published-feed operations via MCP
 - No *implicit* enrichment: read tools only return stored enrichment; external providers run only through the explicit `enrich_ioc` / `bulk_enrich_iocs` action tools
 - Enrichment jobs run in the backend process; a backend restart marks in-flight jobs `interrupted` (request them again)

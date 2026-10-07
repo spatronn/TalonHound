@@ -441,7 +441,8 @@ test('MCP Read + MCP Analyst create succeed with valid owner UUID', async () => 
     'mcp:ioc:create',
     'mcp:sources:read',
     'mcp:enrichment:read',
-    'mcp:enrichment:write'
+    'mcp:enrichment:write',
+    'mcp:tags:write'
   ]);
 });
 

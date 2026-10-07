@@ -72,6 +72,11 @@ export function registerMcpRoutes(app, pool, audit) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP bulk enrichment rate limit exceeded', req);
       }
     }
+    if (method === 'tools/call' && (toolName === 'add_ioc_tags' || toolName === 'remove_ioc_tags')) {
+      if (!limiter.check(`mcp:tags:${key}`, cfg.rateLimitTagWritePerMin)) {
+        return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP tag write rate limit exceeded', req);
+      }
+    }
     if (method === 'tools/call' && toolName === 'bulk_lookup_iocs') {
       if (!limiter.check(`mcp:bulk:${key}`, cfg.rateLimitBulkPerMin)) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP bulk lookup rate limit exceeded', req);
@@ -131,6 +136,7 @@ export function registerMcpRoutes(app, pool, audit) {
         search_page_max: config.searchPageMax,
         enrich_bulk_max: config.enrichBulkMax,
         enrich_max_operations: config.enrichMaxOperations,
+        tag_write_max: config.tagWriteMax,
         rate_limit_per_min: config.rateLimitPerMin
       },
       request_id: req.requestId || randomUUID()
