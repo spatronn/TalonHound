@@ -249,3 +249,12 @@ test('IOC Result cell renders the effective outcome and links only via the backe
   assert.match(pageSrc, /const resultHref = iocResultLink\(c\);/);
   assert.match(pageSrc, /\{resultHref \? \(\s*<Link to=\{resultHref\}[^>]*>View IOC<\/Link>/);
 });
+
+test('metadata label tracks grow to the widest label instead of a fixed width labels overflow', () => {
+  // dt is nowrap, so a fixed px label track lets "Review candidates" run into its value.
+  assert.match(pageCss, /\.tl-dl--info \{\s*grid-template-columns: minmax\(96px, max-content\) minmax\(0, 1fr\);/);
+  assert.match(pageCss, /\.tl-dl--grid \{\s*grid-template-columns: minmax\(84px, max-content\) minmax\(0, 1fr\) minmax\(84px, max-content\) minmax\(0, 1fr\);/);
+  assert.doesNotMatch(pageCss, /\.tl-dl--(?:info|grid) \{\s*grid-template-columns: \d+px /, 'no fixed-width label track');
+  assert.match(pageCss, /\.tl-dl dt \{\s*color: #94a3b8;\s*white-space: nowrap;\s*\}/);
+  assert.match(pageCss, /\.tl-dl dd \{\s*margin: 0;\s*color: #e2e8f0;\s*min-width: 0;\s*overflow-wrap: anywhere;\s*\}/, 'long values wrap inside their track');
+});

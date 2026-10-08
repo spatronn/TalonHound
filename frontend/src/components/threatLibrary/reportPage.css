@@ -188,9 +188,12 @@
   font-size: 13px;
 }
 
-/* Report information: striped compact rows, labels at a fixed width. */
+/* Report information: striped compact rows. The label track keeps its old
+   width as a floor but grows to the widest label, so a long label
+   ("Review candidates") never runs into its value and every value shares
+   one start line. */
 .tl-dl--info {
-  grid-template-columns: 96px minmax(0, 1fr);
+  grid-template-columns: minmax(96px, max-content) minmax(0, 1fr);
   column-gap: 12px;
   row-gap: 0;
 }
@@ -212,7 +215,7 @@
 
 /* Source metadata: two label/value pairs per row on wide cards. */
 .tl-dl--grid {
-  grid-template-columns: 84px minmax(0, 1fr) 84px minmax(0, 1fr);
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr) minmax(84px, max-content) minmax(0, 1fr);
   column-gap: 12px;
   row-gap: 5px;
 }
@@ -223,7 +226,7 @@
 
 @media (max-width: 720px) {
   .tl-dl--grid {
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
   }
 }
 
