@@ -93,7 +93,7 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/foorat/')
 }
 
 test('internal contracts bumped for the type gate', () => {
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v4');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v5');
 });
 
 test('vendor HTML: mutex row and path row are not domain / URL IOCs; every real IOC is kept and source-asserted', () => {

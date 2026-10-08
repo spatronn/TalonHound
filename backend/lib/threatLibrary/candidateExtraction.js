@@ -110,8 +110,39 @@ export {
  * v17: PDF layout v4 (true glyph height, table row pitch, gutter splits) and
  * table v4 (labelled hash cells, file-name columns) rebuild curated PDF
  * appendices as tables; RFC 8552 `_service` DNS labels stay domains (resolver v7).
+ * v18: an IPv4-shaped release number found only in a table's software-version
+ * column ("Versions Affected": 2.3.20.2) is version metadata, never an IP (tl-table-v5).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v17';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v18';
+
+const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
+
+/**
+ * IPv4-shaped tokens of a table block split by column role: those found in its
+ * software-version columns (`block.version_columns`, header row excluded) and
+ * those found anywhere else in the table. Null for non-table blocks or tables
+ * without a version column.
+ * @param {object} block
+ */
+function versionColumnTokens(block) {
+  const cols = Array.isArray(block?.version_columns) ? new Set(block.version_columns) : null;
+  if (block?.type !== 'table' || !cols?.size || !block.table) return null;
+  const rows = Array.isArray(block.table.rows) ? block.table.rows : [];
+  const inVersion = new Set();
+  const elsewhere = new Set();
+  const collect = (cell, into) => {
+    for (const tok of refangTextForExtraction(String(cell ?? '')).split(VERSION_CELL_TOKEN_SPLIT_RE)) {
+      const t = tok.replace(/\.+$/, '');
+      if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(t)) into.add(t);
+    }
+  };
+  rows.forEach((row, r) => {
+    if (r === 0 && block.version_header_row) return;
+    (Array.isArray(row) ? row : []).forEach((cell, c) => collect(cell, cols.has(c) ? inVersion : elsewhere));
+  });
+  for (const h of Array.isArray(block.table.headers) ? block.table.headers : []) collect(h, elsewhere);
+  return { inVersion, elsewhere };
+}
 
 /**
  * Relation classification must see the clause around THIS observable, not the
@@ -897,6 +928,17 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         }
       }
     }
+    // Version-column release numbers of an indicator table are never row
+    // values (tl-table-v5); keep them as version metadata, as the text pass does.
+    const versionTokens = versionColumnTokens(block);
+    for (const value of versionTokens?.inVersion || []) {
+      if (versionTokens.elsewhere.has(value)) continue;
+      add(value, RESOLVED_TYPES.TECHNICAL_ARTIFACT, block, {
+        form: OCCURRENCE_FORMS.STANDALONE,
+        originalValue: value,
+        typing: { typing_reason: 'version_column', artifact_kind: 'metadata' }
+      });
+    }
   }
 
   // Pass 1: URLs — one candidate per URL; host/port/basename are parsed metadata only.
@@ -994,6 +1036,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     const standaloneForm = isRow ? OCCURRENCE_FORMS.LIST_ROW : OCCURRENCE_FORMS.STANDALONE;
     /** @type {Array<[number, number]>} */
     const consumed = [];
+    const versionTokens = versionColumnTokens(block);
 
     // IP:port endpoints (direct C2 endpoint assertions)
     for (const m of text.matchAll(IPV4_PORT_RE)) {
@@ -1023,7 +1066,16 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
       if (!ipv4MatchIsStandalone(text, start, ipEnd)) continue;
       if (slash >= 0) add(raw, 'cidr', block, { form: standaloneForm });
-      else add(raw, 'ip', block, { form: standaloneForm });
+      else if (versionTokens?.inVersion.has(raw) && !versionTokens.elsewhere.has(raw)) {
+        // A release number in a software-version column ("Versions Affected":
+        // 2.3.20.2) is version metadata, not an address. The same string in any
+        // other cell of the table keeps the IPv4 reading.
+        add(raw, RESOLVED_TYPES.TECHNICAL_ARTIFACT, block, {
+          form: standaloneForm,
+          originalValue: raw,
+          typing: { typing_reason: 'version_column', artifact_kind: 'metadata' }
+        });
+      } else add(raw, 'ip', block, { form: standaloneForm });
     }
     for (const m of text.matchAll(IPV6_RE)) {
       const start = m.index;

@@ -30,8 +30,10 @@ import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
  * v4: inline type labels in a multi-value cell ("MD5: … SHA-256: …") are
  * labels, not rejected values, so a labelled Hashes column is the indicator
  * column; a dotted value in a file-name column is a file name.
+ * v5: a column labelled as a software version ("Versions Affected", "Build
+ * Number") is never an indicator column, whatever its values look like.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v4';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v5';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -295,6 +297,57 @@ export function isInlineTypeLabelToken(token) {
   return Boolean(parseDeclaredType(t.replace(/[:：]+$/, '')));
 }
 
+/**
+ * Software-version column labels ("Version", "Versions Affected", "Affected
+ * Versions", "Software / Product / Firmware Version", "Build Number"). Anchored:
+ * a label must name a version and nothing else, so "IP Address", "Value" or
+ * "Details" never qualify — an ambiguous heading suppresses nothing.
+ */
+const VERSION_COLUMN_PREFIX =
+  /(?:affected|vulnerable|impacted|fixed|patched|first\s+fixed|minimum|maximum|min|max|current|latest|installed|running|software|product|firmware|os|kernel|agent|client|server|app|application|package|plugin|component|library|engine)/;
+const VERSION_COLUMN_NOUN =
+  /(?:version|versions|ver|build|builds|build\s+number|build\s+numbers|build\s+no|release|releases|revision|revisions|sürüm|sürümler|surum|versiyon|versión|versiones|versão|versões|versionen|версия|версии|版本|受影响版本)/;
+const VERSION_COLUMN_SUFFIX = /(?:affected|vulnerable|impacted|fixed|patched|range|ranges|number|numbers|no|s)/;
+const VERSION_COLUMN_RE = new RegExp(
+  `^(?:${VERSION_COLUMN_PREFIX.source}\\s+)*${VERSION_COLUMN_NOUN.source}(?:\\s+${VERSION_COLUMN_SUFFIX.source})*$`
+);
+
+/**
+ * True when a table header / header-like cell names a software-version column.
+ * @param {string} label
+ */
+export function isVersionColumnLabel(label) {
+  const norm = normalizeHeaderLabel(label);
+  return Boolean(norm) && norm.length <= 48 && VERSION_COLUMN_RE.test(norm);
+}
+
+/**
+ * Version columns of one table: from its header row (DOM `<th>` / typography),
+ * or from a header-like first row (a version label, no observable). A table
+ * with no header of its own inherits `carried` — the previous table's version
+ * columns across a page break — when its width matches.
+ * @param {{ headers?: string[]|null, rows?: string[][] }|null} table
+ * @param {{ width: number, columns: number[] }|null} [carried]
+ * @returns {{ columns: number[], width: number, header_row: boolean, own_header: boolean, inherited: boolean }}
+ */
+export function tableVersionColumns(table, carried = null) {
+  const rows = Array.isArray(table?.rows) ? table.rows : [];
+  const headers = Array.isArray(table?.headers) && table.headers.length ? table.headers : null;
+  const width = Math.max(headers ? headers.length : 0, ...rows.map((r) => (Array.isArray(r) ? r.length : 0)), 0);
+  const pick = (cells) =>
+    cells.map((c, i) => (isVersionColumnLabel(c) ? i : -1)).filter((i) => i >= 0);
+  if (headers) return { columns: pick(headers), width, header_row: false, own_header: true, inherited: false };
+  const first = Array.isArray(rows[0]) ? rows[0].map((c) => String(c ?? '')) : [];
+  const firstVersion = pick(first);
+  if (firstVersion.length && !first.some((c) => cellIsObservable(c))) {
+    return { columns: firstVersion, width, header_row: true, own_header: true, inherited: false };
+  }
+  if (carried && carried.columns?.length && carried.width === width) {
+    return { columns: carried.columns.slice(), width, header_row: false, own_header: false, inherited: true };
+  }
+  return { columns: [], width, header_row: false, own_header: false, inherited: false };
+}
+
 /** Upper bound for a multi-value indicator cell (dozens of hashes in one <td>). */
 const MULTI_VALUE_CELL_MAX_CHARS = 20000;
 const MULTI_VALUE_CELL_MAX_TOKENS = 500;
@@ -424,7 +477,8 @@ function applyFileNameColumnConsistency(rows, indicatorCols) {
 /**
  * Interpret a canonical table block.
  * @param {{ id?: string, table?: { headers?: string[]|null, rows?: string[][], caption?: string|null }, section_heading?: string|null, section?: string|null, zone?: string }} block
- * @param {{ negativeZone?: boolean }} [opts]
+ * @param {{ negativeZone?: boolean, versionColumns?: number[] }} [opts] versionColumns:
+ *   software-version columns (see tableVersionColumns) — never indicator columns
  */
 export function interpretIocTable(block, opts = {}) {
   const table = block?.table || {};
@@ -469,7 +523,7 @@ export function interpretIocTable(block, opts = {}) {
   // Header promotion: first row made of recognisable labels and no observables.
   if (!headers) {
     const first = rows[0];
-    const intents = first.map((c) => headerIntent(c));
+    const intents = first.map((c) => headerIntent(c) || (isVersionColumnLabel(c) ? 'version' : null));
     const labelled = intents.filter(Boolean).length;
     const hasObservable = first.some((c) => cellIsObservable(c));
     if (!hasObservable && labelled >= 1 && (labelled >= 2 || rows.length >= 2)) {
@@ -483,11 +537,18 @@ export function interpretIocTable(block, opts = {}) {
     return result;
   }
 
-  // Column intents: header hints first, then cell syntax.
+  // Column intents: header hints first, then cell syntax. A software-version
+  // column is never an indicator column: "2.3.20.2" under "Versions Affected"
+  // is a release number however IPv4-shaped it is.
+  const versionCols = new Set(Array.isArray(opts.versionColumns) ? opts.versionColumns : []);
   const columns = [];
   for (let c = 0; c < width; c += 1) {
     const header = headers ? String(headers[c] ?? '').trim() : '';
     const stats = columnStats(rows, c);
+    if (versionCols.has(c) || (header && isVersionColumnLabel(header))) {
+      columns.push({ index: c, header: header || null, intent: 'other', method: 'version_column', declared_type: null, ...stats });
+      continue;
+    }
     let intent = header ? headerIntent(header) : null;
     let method = intent ? 'header' : null;
     const declaredFromHeader = header ? parseDeclaredType(header) : null;
@@ -513,7 +574,7 @@ export function interpretIocTable(block, opts = {}) {
   }
   // Description: the widest non-indicator, non-type text column when unlabelled.
   if (!columns.some((c) => c.intent === 'description')) {
-    const others = columns.filter((c) => c.intent === 'other' && c.non_empty > 0);
+    const others = columns.filter((c) => c.intent === 'other' && c.method !== 'version_column' && c.non_empty > 0);
     others.sort((a, b) => b.avg_chars - a.avg_chars);
     if (others[0]) {
       others[0].intent = 'description';

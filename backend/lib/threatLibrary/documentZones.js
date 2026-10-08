@@ -7,7 +7,7 @@ import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from '
 import { refangTextForExtraction } from './defang.js';
 import { isPrivateOrReservedAddress } from './candidateValue.js';
 import { classifyTypeLabel } from './observableTypeResolver.js';
-import { interpretIocTable, looksLikeIocTableHeader, parseDeclaredType } from './tableSemantics.js';
+import { interpretIocTable, looksLikeIocTableHeader, parseDeclaredType, tableVersionColumns } from './tableSemantics.js';
 import {
   INDICATOR_HEADING_FORMS,
   classifyIndicatorHeading,
@@ -458,6 +458,8 @@ export function annotateDocumentZones(doc, opts = {}) {
   let opening = { id: null, text: null, level: null, form: null };
   /** Authoritative section closed by a deeper prose sub-heading (may resume). */
   let suspended = null;
+  /** Software-version columns of the last table, carried across page-break chrome only. */
+  let versionCarry = null;
   /** Developer trace of scope decisions (bounded, not analyst UI). */
   const scopeTrace = [];
   const trace = (entry) => {
@@ -667,14 +669,22 @@ export function annotateDocumentZones(doc, opts = {}) {
     }
 
     if (b.type === 'table' && b.table) {
+      const versions = tableVersionColumns(b.table, versionCarry);
+      versionCarry = { width: versions.width, columns: versions.columns };
+      if (versions.columns.length) {
+        b.version_columns = versions.columns;
+        if (versions.header_row) b.version_header_row = true;
+      }
       const negative = NEGATIVE_ZONES.has(zone);
-      const interpretation = interpretIocTable(b, { negativeZone: negative });
+      const interpretation = interpretIocTable(b, { negativeZone: negative, versionColumns: versions.columns });
       b.ioc_table = interpretation;
       if (interpretation.kind === 'ioc_table' && interpretation.explicit && !negative) {
         b.zone = 'explicit_ioc_section';
         b.section = b.section === zone ? 'explicit_ioc_section' : b.section;
         b.zone_reason = 'ioc_table';
       }
+    } else if (zone !== 'header_footer') {
+      versionCarry = null;
     }
   }
 
