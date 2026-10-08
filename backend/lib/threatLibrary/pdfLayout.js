@@ -14,8 +14,13 @@ import { createTableBlock } from './canonicalDocument.js';
  * v3: multi-column regions are reconstructed as canonical `table` blocks
  * (cells by span overlap, rows by column conflict + vertical gap, wrapped cell
  * fragments re-joined) instead of being flattened into paragraphs/headings.
+ * v4: line height is capped at the transform's glyph scale (pdf.js 1.x reports
+ * `1 Tf` + Tm-sized text ~10× too tall, merging every table row on a page),
+ * table rows are told from wrapped lines by prose pitch and bimodal row gaps,
+ * a cell straddling two columns splits at its gutter, pdf.js phantom spaces
+ * are not overlays, and a digest wrapped inside a labelled cell re-joins.
  */
-export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v3';
+export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v4';
 
 /** Fraction of page height (top/bottom) treated as printed header/footer band. */
 const PAGE_EDGE_FRACTION = 0.055;
@@ -36,7 +41,8 @@ const MAX_TABLE_CELL_CHARS = 2000;
 
 /**
  * @typedef {{ str: string, width?: number, height?: number, transform?: number[], fontName?: string }} PdfTextItem
- * @typedef {{ x0: number, x1: number, text: string, fontName: string|null }} PdfCell
+ * @typedef {{ x0: number, x1: number, text: string, sp: string }} PdfCellPart
+ * @typedef {{ x0: number, x1: number, text: string, fontName: string|null, parts?: PdfCellPart[] }} PdfCell
  * @typedef {{
  *   text: string, x: number, y: number, height: number, fontName: string|null,
  *   pageEdge: boolean, itemCount: number, cells?: PdfCell[]
@@ -56,6 +62,44 @@ export function collapseLetterSpacing(text) {
 }
 
 /**
+ * Line-height proxy of one text item. The transform already carries
+ * font size × text matrix × CTM, so its vertical scale bounds the glyph height.
+ * pdf.js 1.x (bundled by pdf-parse) multiplies `item.height` by the text-matrix
+ * and CTM scale a second time: a PDF that sets the size in Tm with `1 Tf`
+ * reports 11 pt text as ~120 pt, and line grouping then merges ~10 visual rows
+ * (every table row on a page) into one line. A height above the transform
+ * scale is always that artifact, so it is capped there; a smaller reported
+ * height is kept as-is (the row / wrap thresholds were tuned against it).
+ * @param {PdfTextItem} it
+ */
+export function glyphHeight(it) {
+  const t = it?.transform || [];
+  const scale = Math.hypot(Number(t[2]) || 0, Number(t[3]) || 0);
+  const reported = Math.abs(Number(it?.height)) || 0;
+  if (!(Number.isFinite(scale) && scale > 0)) return reported;
+  return reported > 0 ? Math.min(reported, scale) : scale;
+}
+
+/**
+ * True when the next run's overlap with the previous item is accounted for by
+ * whitespace pdf.js inserted inside that item: an internal run of 2+ spaces
+ * (never typeset inside one show string) whose nominal width covers the
+ * overlap. Ordinary kerning stays under the overlay tolerance; a real overlay
+ * (banner over body text) overlaps by far more than a few spaces.
+ * @param {string} prevPiece
+ * @param {number} overlap  previous item end − next item start (points)
+ * @param {number} height   line height
+ */
+export function isPhantomSpaceOverlap(prevPiece, overlap, height) {
+  const h = Math.max(Number(height) || 0, 1);
+  if (!(overlap > Math.max(2, 0.3 * h))) return false;
+  const runs = String(prevPiece || '').match(/\S(\s{2,})(?=\S)/g);
+  if (!runs) return false;
+  const spaces = runs.reduce((n, r) => n + r.length - 1, 0);
+  return overlap <= spaces * 0.6 * h;
+}
+
+/**
  * Group pdf.js text items into visual lines using y proximity, then order by x.
  * @param {PdfTextItem[]} items
  * @param {{ pageHeight?: number }} [opts]
@@ -70,7 +114,7 @@ export function itemsToLines(items, opts = {}) {
     const x = Number(t[4]);
     const y = Number(t[5]);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
-    const height = Math.max(Number(it.height) || Math.abs(Number(t[3])) || 0, 1);
+    const height = Math.max(glyphHeight(it), 1);
     usable.push({
       str: it.str,
       x,
@@ -108,29 +152,53 @@ export function itemsToLines(items, opts = {}) {
     /** @type {PdfCell[]} */
     const cells = [];
     let cell = null;
+    let prevPiece = null;
     const cellGap = Math.max(MIN_CELL_GAP, CELL_GAP_FACTOR * g.height);
     for (const it of g.items) {
       const piece = it.str;
       if (!piece) continue;
-      if (prevEnd != null && text) {
+      // pdf.js 1.x turns a large TJ kern into spaces inside one item ("2-  12")
+      // and counts them in its width, so the next run seems to overlap it. When
+      // that overlap is explained by the inserted whitespace, the spaces are not
+      // text and the next run continues the same word.
+      const phantom =
+        prevPiece != null && prevEnd != null && piece.trim() &&
+        isPhantomSpaceOverlap(prevPiece, prevEnd - it.x, g.height);
+      if (phantom) {
+        const squeezed = prevPiece.replace(/(\S)\s{2,}(?=\S)/g, '$1');
+        text = text.slice(0, text.length - prevPiece.length) + squeezed;
+        if (cell?.text.endsWith(prevPiece)) {
+          cell.text = cell.text.slice(0, cell.text.length - prevPiece.length) + squeezed;
+          const lastPart = cell.parts[cell.parts.length - 1];
+          if (lastPart?.text === prevPiece) lastPart.text = squeezed;
+        }
+      } else if (prevEnd != null && text) {
         const gap = it.x - prevEnd;
         const needsSpace =
           gap > 0.25 * Math.max(it.height, 4) && !text.endsWith(' ') && !piece.startsWith(' ');
         if (needsSpace) text += ' ';
       }
       text += piece;
+      prevPiece = piece;
       // Cell segmentation: a horizontal gap clearly wider than a word space starts
       // a new cell; so does a run that overlaps the previous one (an overlay such as
       // a floating banner printed over body text is never sequential text).
       if (piece.trim()) {
-        const overlaps = cell && it.x < cell.x1 - Math.max(2, 0.3 * g.height);
+        const overlaps = !phantom && cell && it.x < cell.x1 - Math.max(2, 0.3 * g.height);
         if (cell && !overlaps && it.x - cell.x1 <= cellGap) {
           const sp =
             it.x - cell.x1 > 0.25 * Math.max(it.height, 4) && !cell.text.endsWith(' ') && !piece.startsWith(' ') ? ' ' : '';
           cell.text += sp + piece;
           cell.x1 = Math.max(cell.x1, it.x + it.width);
+          cell.parts.push({ x0: it.x, x1: it.x + it.width, text: piece, sp });
         } else {
-          cell = { x0: it.x, x1: it.x + it.width, text: piece, fontName: it.fontName || null };
+          cell = {
+            x0: it.x,
+            x1: it.x + it.width,
+            text: piece,
+            fontName: it.fontName || null,
+            parts: [{ x0: it.x, x1: it.x + it.width, text: piece, sp: '' }]
+          };
           cells.push(cell);
         }
       }
@@ -172,6 +240,19 @@ function looksObservableLike(text) {
   return /https?:\/\//i.test(t) || /\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(t) || /\b[a-f0-9]{32,64}\b/i.test(t);
 }
 
+const DIGEST_LENGTHS = new Set([32, 40, 64, 128]);
+
+/**
+ * True when `head` + `tail` re-form one hex digest that a line wrap split:
+ * both halves hex, the head not already a complete digest, the join exactly one.
+ * @param {string} head
+ * @param {string} tail
+ */
+function isSplitDigest(head, tail) {
+  if (!/^[a-f0-9]+$/i.test(head) || !/^[a-f0-9]+$/i.test(tail)) return false;
+  return !DIGEST_LENGTHS.has(head.length) && DIGEST_LENGTHS.has(head.length + tail.length);
+}
+
 /**
  * Join fragments of one table cell that wrapped across visual lines. A hex run
  * split in two (hash cells), or a URL/path cut at a separator, re-joins without
@@ -189,7 +270,11 @@ export function joinWrappedCellFragments(fragments) {
     }
     const outSingle = !/\s/.test(out);
     const fSingle = !/\s/.test(f);
+    const lastToken = out.slice(out.search(/\S+$/));
     if (outSingle && fSingle && /^[a-f0-9]+$/i.test(out + f)) out += f;
+    // A hash that wrapped inside a labelled multi-value cell ("MD5: … SHA-256:
+    // <63 hex>" + "5"): the two halves form exactly one digest length.
+    else if (fSingle && isSplitDigest(lastToken, f)) out += f;
     else if (outSingle && fSingle && /[/=&?_%.\-]$/.test(out)) out += f;
     else if (outSingle && fSingle && /^[/?&=.]/.test(f)) out += f;
     else out += ` ${f}`;
@@ -215,6 +300,42 @@ function columnForCell(columns, cell) {
 }
 
 /**
+ * A cell that straddles two or more established columns is often two cells
+ * set closer than the cell gap (a long name beside a narrow category column).
+ * Split it at its item boundaries when every item lands in exactly one column
+ * (or a gutter, joining its left neighbour) and the pieces fill distinct
+ * columns left to right; otherwise it is genuinely spanning (null).
+ * @param {PdfCell} cell
+ * @param {{ x0: number, x1: number }[]} columns
+ * @returns {PdfCell[]|null}
+ */
+function splitCellAtGutters(cell, columns) {
+  const parts = cell.parts || [];
+  if (parts.length < 2) return null;
+  const groups = [];
+  for (const part of parts) {
+    const col = columnForCell(columns, part);
+    if (col === -1) return null;
+    const cur = groups[groups.length - 1];
+    if (col == null || (cur && cur.col === col)) {
+      if (!cur) return null;
+      cur.parts.push(part);
+      continue;
+    }
+    if (cur && columns[col].x0 <= columns[cur.col].x0) return null;
+    groups.push({ col, parts: [part] });
+  }
+  if (groups.length < 2) return null;
+  return groups.map((g) => ({
+    x0: g.parts[0].x0,
+    x1: Math.max(...g.parts.map((p) => p.x1)),
+    text: collapseLetterSpacing(g.parts.map((p, i) => (i ? p.sp : '') + p.text).join('').replace(/\s+/g, ' ').trim()),
+    fontName: cell.fontName,
+    parts: g.parts
+  }));
+}
+
+/**
  * Grow a multi-column region from line index `start`. A line joins while every
  * cell maps to exactly one column (existing or new) and no two cells share a
  * column; a heading, a page-edge line or a line spanning several columns ends it.
@@ -227,10 +348,17 @@ function growTableRegion(src, start, ctx) {
   const columns = [];
   const members = [];
   for (let i = start; i < src.length; i += 1) {
-    const line = src[i];
+    let line = src[i];
     if (line.pageEdge || line.repeated) break;
-    const cells = line.cells || [];
+    let cells = line.cells || [];
     if (!cells.length) break;
+    if (columns.length >= 2 && cells.some((c) => columnForCell(columns, c) === -1)) {
+      const split = cells.flatMap((c) => (columnForCell(columns, c) === -1 ? splitCellAtGutters(c, columns) || [c] : [c]));
+      if (split.length !== cells.length) {
+        cells = split;
+        line = { ...line, cells };
+      }
+    }
     if (cells.length === 1 && isStructuralHeading(line, ctx)) {
       const prev = members.length ? members[members.length - 1].line : null;
       const gap = prev ? prev.y - line.y : Infinity;
@@ -279,6 +407,7 @@ function growTableRegion(src, start, ctx) {
  * @returns {{ colPos: Map<number, number>, spans: number[] }}
  */
 function groupRegionRows(region, pitch) {
+  const rowBreak = rowBreakGap(region.members);
   const order = region.columns
     .map((c, i) => ({ i, x0: c.x0 }))
     .sort((a, b) => a.x0 - b.x0)
@@ -299,16 +428,23 @@ function groupRegionRows(region, pitch) {
     const tight = Math.max(ROW_GAP_FACTOR * h, pitch > 0 ? pitch * 1.2 : 0);
     const cols = m.assignment.map((a) => colPos.get(a));
     let conflict = false;
+    let conflicts = 0;
     let wrapped = Boolean(filled);
     if (filled) {
       cols.forEach((c, k) => {
         const existing = filled.get(c);
         if (!existing) return;
         conflict = true;
+        conflicts += 1;
         if (!aligned(existing, line.cells[k])) wrapped = false;
       });
     }
-    const newRow = !filled || (conflict && (gap > tight || !wrapped)) || gap > ROW_HARD_GAP_FACTOR * h;
+    // A partial line inside a row whose cells are vertically centred against a
+    // taller neighbour sits below the wrap pitch but above the row break; a
+    // line repeating every filled column is a full row and keeps the tight rule.
+    const fullRepeat = filled && conflicts >= filled.size && cols.length >= 2;
+    const limit = fullRepeat ? tight : Math.max(tight, rowBreak);
+    const newRow = !filled || (conflict && (gap > limit || !wrapped)) || gap > ROW_HARD_GAP_FACTOR * h;
     if (newRow) {
       filled = new Map();
       spans.push(0);
@@ -318,6 +454,34 @@ function groupRegionRows(region, pitch) {
     prev = line;
   }
   return { colPos, spans };
+}
+
+/**
+ * Row-break gap of a region whose line gaps are clearly bimodal: rows set apart
+ * by a larger, regular gap than any gap inside a (multi-line) row. Returns the
+ * midpoint between the two clusters, or 0 when the gaps form one cluster.
+ * @param {{ line: PdfLine }[]} members
+ */
+export function rowBreakGap(members) {
+  const gaps = [];
+  for (let i = 1; i < (members || []).length; i += 1) {
+    const d = members[i - 1].line.y - members[i].line.y;
+    if (d > 0) gaps.push(d);
+  }
+  if (gaps.length < 4) return 0;
+  gaps.sort((a, b) => a - b);
+  let best = 0;
+  let at = -1;
+  for (let i = 1; i < gaps.length; i += 1) {
+    const ratio = gaps[i] / gaps[i - 1];
+    if (ratio > best) {
+      best = ratio;
+      at = i;
+    }
+  }
+  // Both clusters recur (at least two gaps each) and are clearly apart.
+  if (best < 1.25 || at < 2 || gaps.length - at < 2) return 0;
+  return (gaps[at - 1] + gaps[at]) / 2;
 }
 
 /**
@@ -645,8 +809,12 @@ export function linesToBlocks(lines, ctx) {
   }
   deltas.sort((a, b) => a - b);
   const pitch = deltas.length ? deltas[Math.floor(deltas.length / 2)] : 0;
+  // On a page that is mostly table, the median gap is the table's own row
+  // pitch; used as the wrapped-line pitch it makes every row a "continuation"
+  // of the one above. Wrapped cell text is set like prose, so prose pitch caps it.
+  const wrapPitch = ctx.prosePitch > 0 && pitch > 0 ? Math.min(pitch, ctx.prosePitch) : pitch;
 
-  const regions = ctx.tables === false ? [] : detectTableRegions(src, { ...ctx, pitch });
+  const regions = ctx.tables === false ? [] : detectTableRegions(src, { ...ctx, pitch: wrapPitch });
   const regionByStart = new Map(regions.map((r) => [r.start, r]));
 
   for (let li = 0; li < src.length; li += 1) {
@@ -700,6 +868,32 @@ export function linesToBlocks(lines, ctx) {
 }
 
 /**
+ * Document prose line pitch: median vertical step between consecutive
+ * single-cell body lines (no table row has one cell per line on both sides).
+ * Steps beyond 2.5 line heights are paragraph / section gaps, not line pitch.
+ * @param {{ lines: PdfLine[] }[]} perPageLines
+ * @param {number} bodyHeight
+ */
+export function prosePitch(perPageLines, bodyHeight) {
+  const steps = [];
+  for (const p of perPageLines || []) {
+    const lines = p.lines || [];
+    for (let i = 1; i < lines.length; i += 1) {
+      const a = lines[i - 1];
+      const b = lines[i];
+      if (a.pageEdge || b.pageEdge || a.repeated || b.repeated) continue;
+      if ((a.cells || []).length !== 1 || (b.cells || []).length !== 1) continue;
+      const d = a.y - b.y;
+      const h = Math.max(a.height, b.height, bodyHeight || 0, 1);
+      if (d > 0 && d <= 2.5 * h) steps.push(d);
+    }
+  }
+  if (steps.length < 3) return 0;
+  steps.sort((x, y) => x - y);
+  return steps[Math.floor(steps.length / 2)];
+}
+
+/**
  * Printed chrome that repeats on many pages (banners, running titles) is layout,
  * not content: it must never seed or join a table region. Mirrors the
  * repeated-block header/footer detection in documentZones, at line level.
@@ -740,10 +934,11 @@ export function pagesToBlocks(pages) {
   const allLines = perPageLines.flatMap((p) => p.lines);
   const fonts = bodyFonts(allLines);
   const bodyHeight = medianLineHeight(allLines);
+  const pitch = prosePitch(perPageLines, bodyHeight);
   let blocks = [];
   let idx = 1;
   for (const p of perPageLines) {
-    const r = linesToBlocks(p.lines, { pageNum: p.page, startIdx: idx, bodyFonts: fonts, bodyHeight });
+    const r = linesToBlocks(p.lines, { pageNum: p.page, startIdx: idx, bodyFonts: fonts, bodyHeight, prosePitch: pitch });
     blocks = blocks.concat(r.blocks);
     idx = r.nextIdx;
   }

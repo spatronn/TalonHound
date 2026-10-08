@@ -107,8 +107,11 @@ export {
  * become actionable report Indicators even when publisher-asserted.
  * v16: credential / token / password labels demote hex runs (not file hashes);
  * config-file suffixes such as `.conf` stay technical artifacts (resolver v6).
+ * v17: PDF layout v4 (true glyph height, table row pitch, gutter splits) and
+ * table v4 (labelled hash cells, file-name columns) rebuild curated PDF
+ * appendices as tables; RFC 8552 `_service` DNS labels stay domains (resolver v7).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v16';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v17';
 
 /**
  * Relation classification must see the clause around THIS observable, not the

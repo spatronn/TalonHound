@@ -23,7 +23,7 @@ import {
 import { normalizeCandidateValue } from './candidateValue.js';
 
 test('resolver has its own internal contract version', () => {
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v6');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v7');
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('technical_artifact'));
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('relative_path'));
 });

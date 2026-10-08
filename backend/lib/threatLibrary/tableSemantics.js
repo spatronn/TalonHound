@@ -27,8 +27,11 @@ import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
  * third-party endpoints) are no longer self-proving IOC tables. Explicitness
  * requires a type column or a header-labelled indicator column; publisher IOC
  * headings still assert rows by section inheritance without that structure.
+ * v4: inline type labels in a multi-value cell ("MD5: … SHA-256: …") are
+ * labels, not rejected values, so a labelled Hashes column is the indicator
+ * column; a dotted value in a file-name column is a file name.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v3';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v4';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -264,7 +267,7 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   const aligned = sourceTokens.length === refangedTokens.length;
   for (let i = 0; i < refangedTokens.length; i += 1) {
     const tok = refangedTokens[i];
-    if (!tok) continue;
+    if (!tok || isInlineTypeLabelToken(tok)) continue;
     let parsed = parseToken(tok, declared, ctx);
     if (!parsed) continue;
     if (parsed.ok && aligned) parsed = { ...parsed, raw: sourceTokens[i] };
@@ -278,6 +281,18 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
     }
   }
   return { values, rejected, reason: values.length ? null : 'no_observable' };
+}
+
+/**
+ * Inline observable-type label inside a labelled multi-value cell
+ * ("MD5: <md5> SHA-256: <sha256>", "SHA1: …"): a colon-terminated type label
+ * names the value after it — it is neither a value nor prose.
+ * @param {string} token
+ */
+export function isInlineTypeLabelToken(token) {
+  const t = String(token || '').trim();
+  if (!/[:：]$/.test(t)) return false;
+  return Boolean(parseDeclaredType(t.replace(/[:：]+$/, '')));
 }
 
 /** Upper bound for a multi-value indicator cell (dozens of hashes in one <td>). */
@@ -301,8 +316,10 @@ function cellIsObservable(cellText) {
     return parsed?.ok ? parsed : null;
   }
   if (refanged.length > MULTI_VALUE_CELL_MAX_CHARS) return null;
-  const tokens = refanged.split(CELL_TOKEN_SPLIT_RE).filter(Boolean);
-  if (tokens.length < 2 || tokens.length > MULTI_VALUE_CELL_MAX_TOKENS) return null;
+  const all = refanged.split(CELL_TOKEN_SPLIT_RE).filter(Boolean);
+  if (all.length < 2 || all.length > MULTI_VALUE_CELL_MAX_TOKENS) return null;
+  const tokens = all.filter((tok) => !isInlineTypeLabelToken(tok));
+  if (!tokens.length) return null;
   const parsed = [];
   for (const tok of tokens) {
     const p = parseToken(tok, null);
@@ -366,6 +383,42 @@ function columnStats(rows, col) {
     type_label_fraction: nonEmpty ? typeLabel / nonEmpty : 0,
     avg_chars: nonEmpty ? chars / nonEmpty : 0
   };
+}
+
+const NETWORK_DECLARED_TYPES = new Set(['domain', 'url', 'ip', 'ipv6', 'email']);
+
+/**
+ * One table column holds one kind of value. In a column whose values are file
+ * names (`b374.php`, `error.jsp`, `x.exe`), a name whose extension also happens
+ * to be a ccTLD (`back.pl`, `tool.py`) is a file name too — never a domain
+ * because its suffix is delegated. Applies only to columns without a declared
+ * network type, with at least two unambiguous file names that outnumber the
+ * domain readings two to one. Mutates the parsed row values in place.
+ * @param {{ status: string, values: object[] }[]} rows
+ * @param {{ index: number, declared_type?: { type: string }|null }[]} indicatorCols
+ */
+function applyFileNameColumnConsistency(rows, indicatorCols) {
+  for (const col of indicatorCols) {
+    if (col.declared_type && NETWORK_DECLARED_TYPES.has(col.declared_type.type)) continue;
+    const values = rows
+      .filter((r) => r.status === 'valid')
+      .flatMap((r) => r.values.filter((v) => v.column_index === col.index));
+    const files = values.filter((v) => v.candidate_type === 'technical_artifact' && v.artifact_kind === 'file');
+    const domains = values.filter(
+      (v) => v.candidate_type === 'domain' && v.typing_reason !== 'declared_network_type' && !v.declared_type
+    );
+    if (!domains.length || files.length < 2 || files.length < 2 * domains.length) continue;
+    for (const v of domains) {
+      Object.assign(v, {
+        candidate_type: 'technical_artifact',
+        normalized_value: v.refanged,
+        is_ioc: false,
+        resolved_type: 'technical_artifact',
+        typing_reason: 'file_name_column',
+        artifact_kind: 'file'
+      });
+    }
+  }
 }
 
 /**
@@ -527,6 +580,7 @@ export function interpretIocTable(block, opts = {}) {
   }
   result.stats.rows_rejected = result.stats.rows_seen - result.stats.rows_valid;
   result.stats.rejection_reasons = rejectionReasons;
+  applyFileNameColumnConsistency(result.rows, indicatorCols);
 
   if (!result.stats.rows_valid) {
     result.reason = 'no_valid_rows';

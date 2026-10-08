@@ -56,7 +56,7 @@ const membersOf = (cands) => cands.filter((c) => isMember(c));
 
 test('contract: html v4 + candidates v15', () => {
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v4');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v16');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v17');
 });
 
 test('preTextLinesOf keeps author newlines inside fenced code', () => {

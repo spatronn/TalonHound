@@ -21,7 +21,7 @@ function extract(html) {
 const resolve = (value, surroundingText, ctx = {}) => resolveDottedToken(value, { surroundingText, ...ctx });
 
 test('contract version bumped for the typing change', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v16');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v17');
 });
 
 test('deployable / server-page extensions are filename shapes, never DNS suffixes', () => {

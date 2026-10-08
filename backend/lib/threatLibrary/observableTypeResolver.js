@@ -44,8 +44,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * zone (`indicatorRow`), not only a list / table row form.
  * v6: common config file suffixes (`conf`, alongside existing `cfg` / `ini`)
  * are filename shapes, never DNS TLDs — even on a curated indicator row.
+ * v7: an RFC 8552 underscored label (`_msdcs`, `_dmarc`) under a delegated
+ * suffix is a DNS service label, not a code-identifier underscore.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v6';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v7';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -339,7 +341,11 @@ export function suffixStrength(labels) {
 export function hasCodeIdentifierShape(raw, opts = {}) {
   const segments = String(raw || '').split('.').filter(Boolean);
   if (segments.length < 2) return false;
-  if (segments.some((s) => s.includes('_'))) return true;
+  // RFC 8552 underscored node names (`_msdcs`, `_dmarc`, `_tcp`) are DNS
+  // labels: a leading underscore on an otherwise lowercase label under a
+  // delegated (strong) suffix is a service label, not a code identifier.
+  const dnsUnderscore = (s) => opts.suffixStrength === 'strong' && /^_[a-z0-9][a-z0-9-]*$/.test(s);
+  if (segments.some((s) => s.includes('_') && !dnsUnderscore(s))) return true;
   if (segments.some((s) => /[a-z][A-Z]/.test(s) || /^[A-Z][a-z0-9]+[A-Z]/.test(s))) return true; // camelCase / PascalCase segment
   if (segments.every((s) => /^[A-Z0-9]+$/.test(s))) return false; // EVIL.COM
   const firstUpper = /^[A-Z]/.test(segments[0]);
