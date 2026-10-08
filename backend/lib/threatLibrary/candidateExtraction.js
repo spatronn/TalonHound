@@ -28,6 +28,7 @@ import {
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
+import { ipv4VersionContext } from './ipv4VersionContext.js';
 import {
   discoverDocumentIndicatorScope,
   isCredentialLabeledHex,
@@ -112,8 +113,11 @@ export {
  * appendices as tables; RFC 8552 `_service` DNS labels stay domains (resolver v7).
  * v18: an IPv4-shaped release number found only in a table's software-version
  * column ("Versions Affected": 2.3.20.2) is version metadata, never an IP (tl-table-v5).
+ * v19: the same in prose when the clause marks a release ("Apache Struts
+ * 2.3.24.1", "versions prior to 2.3.20.2", "Version=4.0.0.0"); a network cue at
+ * the token ("C2 IP 2.3.24.1") keeps the address (ipv4VersionContext.js).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v18';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v19';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -1037,6 +1041,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     /** @type {Array<[number, number]>} */
     const consumed = [];
     const versionTokens = versionColumnTokens(block);
+    // Prose version reading applies outside publisher IOC sections and rows,
+    // where a bare value is the publisher's assertion and stays authoritative.
+    const proseVersions = !isRow && !STRONG_IOC_ZONES.has(block.zone || '');
 
     // IP:port endpoints (direct C2 endpoint assertions)
     for (const m of text.matchAll(IPV4_PORT_RE)) {
@@ -1075,7 +1082,19 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           originalValue: raw,
           typing: { typing_reason: 'version_column', artifact_kind: 'metadata' }
         });
-      } else add(raw, 'ip', block, { form: standaloneForm });
+      } else {
+        const version = proseVersions ? ipv4VersionContext(text, start, end, { code: block.type === 'code' }) : null;
+        if (version) {
+          // A release number in prose ("Apache Struts 2.3.24.1 is vulnerable") is
+          // version metadata; the same value under a network cue elsewhere keeps
+          // its own IPv4 occurrence and identity.
+          add(raw, RESOLVED_TYPES.TECHNICAL_ARTIFACT, block, {
+            form: standaloneForm,
+            originalValue: raw,
+            typing: { typing_reason: 'version_context', artifact_kind: 'metadata' }
+          });
+        } else add(raw, 'ip', block, { form: standaloneForm });
+      }
     }
     for (const m of text.matchAll(IPV6_RE)) {
       const start = m.index;
