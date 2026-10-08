@@ -41,6 +41,13 @@ import {
   PROMOTION_OUTCOMES,
   summarizePromotionResults
 } from './promotion.js';
+import {
+  confirmSelectionSnapshot,
+  eligibleCandidateIds,
+  loadSelectionScope,
+  parseReviewSelection,
+  selectionConflictResult
+} from './candidateSelection.js';
 
 async function findIocByTypeAndValue(pool, observableType, observable) {
   const type = String(observableType || '').toLowerCase();
@@ -118,6 +125,201 @@ async function emitAudit(opts, event) {
  *   findExistingIoc?: Function
  * }} opts
  */
+async function selectHighConfidenceIds(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT * FROM threat_report_candidates
+     WHERE report_id = $1
+       AND assessment = 'malicious'
+       AND confidence IS NOT NULL AND confidence >= $2
+       AND review_status = 'pending'
+       AND is_ioc = true
+       AND ${NOT_CONTEXT_ONLY_SQL}
+       AND ${publisherAuthoritativeIocMembershipSql('')}`,
+    [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
+  );
+  return rows
+    .filter((r) => {
+      const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {};
+      if (!isActionableReviewIndicator(r)) return false;
+      if (ev.is_parser_derived_metadata === true || r.is_ioc === false) return false;
+      const occurrences = Array.isArray(ev.occurrences) && ev.occurrences.length
+        ? ev.occurrences
+        : r.section
+          ? [{ zone: r.section, section_kind: r.section }]
+          : [];
+      return isEligibleForHighConfidenceMalicious({
+        ...r,
+        is_ioc: true,
+        zone: r.section,
+        policy_decision: ev.policy_decision || undefined,
+        occurrences
+      });
+    })
+    .map((r) => Number(r.id));
+}
+
+function selectionCounts(scope, eligibleCount, excluded) {
+  const matching = scope?.rows?.length || 0;
+  const eligible = Number(eligibleCount) || 0;
+  return {
+    matching,
+    eligible,
+    ineligible: Math.max(0, matching - eligible),
+    excluded: excluded || 0,
+    scope_token: scope?.token
+  };
+}
+
+async function conflictFromScope(pool, report, parsed, action) {
+  const fresh = await loadSelectionScope(pool, report.id, parsed);
+  let eligible = eligibleCandidateIds(action, fresh.rows).length;
+  if (action === 'approve_high_confidence_malicious') {
+    const allow = new Set(fresh.rows.map((r) => Number(r.id)));
+    const hc = await selectHighConfidenceIds(pool, report.id);
+    eligible = hc.filter((id) => allow.has(id)).length;
+  } else if (action === 'create_iocs') {
+    eligible = previewCreateIocPromotion(fresh.rows).summary.eligible;
+  }
+  return selectionConflictResult({
+    matching: fresh.rows.length,
+    eligible,
+    excluded: parsed.excludedIds.length,
+    scopeToken: fresh.token
+  });
+}
+
+/**
+ * All-matching review. The id list is resolved here from the report, the
+ * filters, and the exclusions. Explicit candidate_ids never enter this path.
+ */
+async function applyAllMatchingSelection(pool, report, parsed, opts) {
+  const action = opts.action;
+  if (action === 'promote_to_ioc') {
+    return {
+      ok: false,
+      status: 400,
+      code: 'promote_single_row_only',
+      error: 'Promote to IOC is a single-row action: select exactly one Context Only indicator.'
+    };
+  }
+  const scope = await loadSelectionScope(pool, report.id, parsed);
+  const committing = action === 'create_iocs' ? opts.confirm === true : opts.preview !== true;
+  if (committing && parsed.scopeToken && parsed.scopeToken !== scope.token) {
+    return conflictFromScope(pool, report, parsed, action);
+  }
+  if (committing && !parsed.scopeToken) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'selection_token_required',
+      error: 'Confirm this selection again before applying it.',
+      ...selectionCounts(scope, 0, parsed.excludedIds.length),
+      scope_token: scope.token
+    };
+  }
+
+  if (action === 'create_iocs') {
+    const ids = scope.rows.map((r) => Number(r.id));
+    if (!ids.length) {
+      return {
+        ok: false,
+        status: 400,
+        error: 'No candidates selected',
+        ...selectionCounts(scope, 0, parsed.excludedIds.length)
+      };
+    }
+    if (opts.confirm === true) {
+      const locked = await confirmSelectionSnapshot(pool, report.id, scope.rows, scope.token, async () => ({ ok: true }));
+      if (!locked.ok) return conflictFromScope(pool, report, parsed, action);
+    }
+    const result = await createIocsFromCandidates(pool, report, ids, opts);
+    const eligible = result.summary?.eligible ?? 0;
+    return {
+      ...result,
+      ...selectionCounts(scope, eligible, parsed.excludedIds.length)
+    };
+  }
+
+  let ids = eligibleCandidateIds(action, scope.rows);
+  if (action === 'approve_high_confidence_malicious') {
+    const allow = new Set(scope.rows.map((r) => Number(r.id)));
+    ids = (await selectHighConfidenceIds(pool, report.id)).filter((id) => allow.has(id));
+  }
+
+  if (!committing) {
+    return {
+      ok: true,
+      preview: true,
+      ...selectionCounts(scope, ids.length, parsed.excludedIds.length)
+    };
+  }
+  if (!ids.length) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'No candidates selected',
+      ...selectionCounts(scope, 0, parsed.excludedIds.length)
+    };
+  }
+
+  const locked = await confirmSelectionSnapshot(pool, report.id, scope.rows, scope.token, async (db) => {
+    const applied = await applyStatusChange(db, report, ids, action);
+    return { ok: true, ...applied };
+  });
+  if (!locked.ok) return conflictFromScope(pool, report, parsed, action);
+  const applied = locked.result || {};
+  await emitAudit(opts, buildReviewAuditEvent({
+    report,
+    action,
+    requestedIds: ids,
+    candidates: applied.selectedBefore || [],
+    skippedIds: applied.skippedIds || [],
+    user: opts.user
+  }));
+  return {
+    ok: true,
+    updated: applied.updated,
+    skipped_context_only: (applied.skippedIds || []).length,
+    ...selectionCounts(scope, ids.length, parsed.excludedIds.length)
+  };
+}
+
+async function applyStatusChange(db, report, ids, action) {
+  const { rows: selectedBefore } = await db.query(
+    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc, source_assertion, evidence
+     FROM threat_report_candidates
+     WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+    [report.id, ids]
+  );
+  let updated = ids.length;
+  let skippedIds = [];
+  if (action === 'approve' || action === 'approve_high_confidence_malicious') {
+    skippedIds = selectedBefore.filter((c) => !isActionableReviewIndicator(c)).map((c) => Number(c.id));
+    const res = await db.query(
+      `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
+       WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true
+         AND ${NOT_CONTEXT_ONLY_SQL}
+         AND ${publisherAuthoritativeIocMembershipSql('')}`,
+      [report.id, ids]
+    );
+    updated = Number.isInteger(res?.rowCount) ? res.rowCount : Math.max(0, selectedBefore.length - skippedIds.length);
+  } else if (action === 'context_only') {
+    await db.query(
+      `UPDATE threat_report_candidates
+       SET review_status = 'context_only', assessment = 'context_only', match_state = 'context_only', updated_at = NOW()
+       WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+      [report.id, ids]
+    );
+  } else if (action === 'ignore') {
+    await db.query(
+      `UPDATE threat_report_candidates SET review_status = 'ignored', updated_at = NOW()
+       WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+      [report.id, ids]
+    );
+  }
+  return { updated, skippedIds, selectedBefore };
+}
+
 export async function applyCandidateReviewActions(pool, reportId, opts) {
   const action = opts.action;
   const report = await getReportById(pool, reportId);
@@ -126,45 +328,23 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   // decision applied to a moving set would be lost or land on the wrong row.
   if (!isReviewMutationAllowed(report)) return reviewNotReadyError(report);
 
-  let ids = Array.isArray(opts.candidateIds) ? opts.candidateIds.map(Number).filter((n) => n > 0) : [];
+  const parsed = parseReviewSelection(opts);
+  if (!parsed.ok) return { ok: false, status: parsed.status || 400, code: parsed.code, error: parsed.error };
+  if (parsed.mode === 'all_matching') {
+    return applyAllMatchingSelection(pool, report, parsed, opts);
+  }
+
+  let ids = parsed.ids;
 
   if (action === 'promote_to_ioc') {
     return promoteContextOnlyCandidate(pool, report, ids, opts);
   }
 
   if (action === 'approve_high_confidence_malicious') {
+    // Report-wide when the analyst did not pin an across-pages selection.
     // Candidate set = reviewable IOC candidates only: malicious, above the
     // suggest threshold, pending, and never context-only / non-IOC rows.
-    const { rows } = await pool.query(
-      `SELECT * FROM threat_report_candidates
-       WHERE report_id = $1
-         AND assessment = 'malicious'
-         AND confidence IS NOT NULL AND confidence >= $2
-         AND review_status = 'pending'
-         AND is_ioc = true
-         AND ${NOT_CONTEXT_ONLY_SQL}
-         AND ${publisherAuthoritativeIocMembershipSql('')}`,
-      [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
-    );
-    ids = rows
-      .filter((r) => {
-        const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {};
-        if (!isActionableReviewIndicator(r)) return false;
-        if (ev.is_parser_derived_metadata === true || r.is_ioc === false) return false;
-        const occurrences = Array.isArray(ev.occurrences) && ev.occurrences.length
-          ? ev.occurrences
-          : r.section
-            ? [{ zone: r.section, section_kind: r.section }]
-            : [];
-        return isEligibleForHighConfidenceMalicious({
-          ...r,
-          is_ioc: true,
-          zone: r.section,
-          policy_decision: ev.policy_decision || undefined,
-          occurrences
-        });
-      })
-      .map((r) => Number(r.id));
+    ids = await selectHighConfidenceIds(pool, reportId);
   }
 
   if (!ids.length && action !== 'finalize') {

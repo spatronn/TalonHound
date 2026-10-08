@@ -28,7 +28,18 @@ import {
   describePromoteFeedback,
   describeReviewToolbar,
   isContextOnlyCandidate,
-  selectionForAction
+  selectionForAction,
+  toggleExplicitSelection,
+  togglePageExplicit,
+  toggleExcludedId,
+  togglePageExcluded,
+  headerCheckState,
+  describeSelectionBanner,
+  buildAllMatchingReviewBody,
+  describeBulkActionConfirm,
+  describeAcrossPagesOutcome,
+  reviewFiltersEqual,
+  selectionScopeLabel
 } from './candidateReview.js';
 
 const explicitUrl = {
@@ -604,6 +615,123 @@ test('feedback reports rows that were left out and the promotion outcome', () =>
   assert.equal(describePromoteFeedback({ summary: { created: 1 } }, 'amazon.com'), 'amazon.com promoted to IOC. IOC created.');
   assert.equal(describePromoteFeedback({ summary: { already_existing: 1 } }, 'amazon.com'), 'amazon.com promoted to IOC. An IOC record already existed and was linked.');
   assert.match(describePromoteFeedback({ summary: { failed: 1 } }, 'amazon.com'), /creation failed; the row is now an approved IOC candidate/);
+});
+
+test('select current page, keep it across pages, then promote to all matching', () => {
+  const page1 = [1, 2, 3];
+  const page2 = [4, 5, 6];
+  let selected = togglePageExplicit(new Set(), page1);
+  assert.equal(headerCheckState({ mode: 'explicit', selectedIds: selected, pageIds: page1 }), 'checked');
+  assert.equal(headerCheckState({ mode: 'explicit', selectedIds: selected, pageIds: page2 }), 'unchecked');
+  selected = togglePageExplicit(selected, page2);
+  assert.equal(selected.size, 6, 'pagination does not drop the previous page');
+  selected = togglePageExplicit(selected, page1);
+  assert.deepEqual([...selected].sort(), [4, 5, 6], 'header clears only the current page');
+  const banner = describeSelectionBanner({
+    mode: 'explicit',
+    selectedCount: 3,
+    pageIds: page2,
+    pageSelectedCount: 3,
+    matchingCount: 796,
+    scopeLabel: 'Needs Review'
+  });
+  assert.equal(banner.message, '3 indicators on this page selected.');
+  assert.equal(banner.action.label, 'Select all 796 indicators in Needs Review');
+  assert.equal(banner.action.id, 'all_matching');
+});
+
+test('all-matching selection excludes and reincludes by candidate id, not page index', () => {
+  let excluded = new Set();
+  excluded = toggleExcludedId(excluded, 41);
+  excluded = toggleExcludedId(excluded, 42);
+  assert.equal(headerCheckState({ mode: 'all_matching', excludedIds: excluded, pageIds: [41, 42, 43] }), 'indeterminate');
+  const banner = describeSelectionBanner({
+    mode: 'all_matching',
+    matchingCount: 796,
+    excludedCount: excluded.size,
+    scopeLabel: 'Needs Review'
+  });
+  assert.equal(banner.message, '794 indicators in Needs Review are selected across all pages.');
+  assert.equal(banner.action.label, 'Clear selection');
+  excluded = toggleExcludedId(excluded, 41);
+  assert.equal(excluded.has(41), false);
+  assert.equal(excluded.has(42), true);
+  excluded = togglePageExcluded(excluded, [42, 43]);
+  assert.equal(excluded.has(42), false, 'rechecking the page restores those rows');
+  assert.equal(headerCheckState({ mode: 'all_matching', excludedIds: excluded, pageIds: [42, 43] }), 'checked');
+});
+
+test('filter identity changes are detectable; page size is not part of the selection scope', () => {
+  const base = { tab: 'needs_review', type: 'all', result: 'all', search: '' };
+  assert.equal(reviewFiltersEqual(base, { ...base }), true);
+  assert.equal(reviewFiltersEqual(base, { ...base, tab: 'all' }), false);
+  assert.equal(reviewFiltersEqual(base, { ...base, search: 'evil' }), false);
+  assert.equal(reviewFiltersEqual(base, { ...base, type: 'ip' }), false);
+  assert.equal(reviewFiltersEqual(base, { ...base, result: 'created' }), false);
+  assert.equal(selectionScopeLabel(base), 'Needs Review');
+  assert.match(selectionScopeLabel({ ...base, type: 'ip', search: '203.0' }), /Needs Review/);
+  assert.match(selectionScopeLabel({ ...base, type: 'ip', search: '203.0' }), /IP/);
+});
+
+test('all-matching request carries filters and exclusions, not the matching id list', () => {
+  const ids = Array.from({ length: 1200 }, (_, i) => i + 1);
+  const body = buildAllMatchingReviewBody({
+    action: 'approve',
+    filters: { tab: 'needs_review', type: 'all', result: 'all', search: '' },
+    excludedIds: [ids[0], ids[1]],
+    preview: true
+  });
+  assert.equal(body.selection.mode, 'all_matching');
+  assert.equal(body.preview, true);
+  assert.equal(body.candidate_ids, undefined);
+  assert.deepEqual(body.selection.excluded_candidate_ids, [1, 2]);
+  assert.equal(JSON.stringify(body).includes('"candidate_ids"'), false);
+  assert.ok(JSON.stringify(body).length < 1000, 'payload stays small for 1200 matches');
+  const commit = buildAllMatchingReviewBody({
+    action: 'approve',
+    filters: body.selection.filters,
+    excludedIds: body.selection.excluded_candidate_ids,
+    scopeToken: 'a'.repeat(64)
+  });
+  assert.equal(commit.selection.scope_token, 'a'.repeat(64));
+  assert.equal(commit.preview, undefined);
+});
+
+test('confirmation names eligible and matching counts, including a partial set', () => {
+  const full = describeBulkActionConfirm({
+    action: 'approve',
+    eligible: 796,
+    matching: 796,
+    tabLabel: 'Needs Review',
+    acrossPages: true
+  });
+  assert.equal(full.title, 'Approve 796 indicators?');
+  assert.match(full.description, /approve 796 eligible indicators matching the current Needs Review filters across all pages/);
+  assert.equal(full.confirmLabel, 'Approve 796');
+  assert.equal(full.cancelLabel, 'Cancel');
+  const partial = describeBulkActionConfirm({
+    action: 'approve',
+    eligible: 780,
+    matching: 796,
+    tabLabel: 'Needs Review',
+    acrossPages: true,
+    excluded: 2
+  });
+  assert.equal(partial.title, 'Approve 780 indicators?');
+  assert.match(partial.description, /16 selected indicators are not eligible/);
+  assert.match(partial.description, /2 unchecked indicators were excluded/);
+});
+
+test('across-pages feedback reports partial failure instead of a clean success', () => {
+  assert.equal(
+    describeAcrossPagesOutcome('approve', { updated: 4, ineligible: 2 }),
+    '4 indicators approved. 2 not eligible and left unchanged.'
+  );
+  assert.equal(
+    describeAcrossPagesOutcome('create_iocs', { summary: { created: 2, already_existing: 1, failed: 1 }, errors: [{ candidate_id: 3 }] }),
+    '2 IOCs created. 1 already existed. 1 error.'
+  );
+  assert.equal(describeAcrossPagesOutcome('ignore', { updated: 0, errors: [{ candidate_id: 1 }] }), 'Completed with 1 error.');
 });
 
 test('report filter counts are unchanged by the toolbar rules', () => {

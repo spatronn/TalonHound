@@ -211,6 +211,21 @@ test('source card: identity first, explicit open / copy, low-emphasis edit, no f
   assert.match(pageSrc, /<details className="tl-artifacts"/);
 });
 
+test('indicator selection survives pagination and page size, and clears when the filter or report changes', () => {
+  const go = pageSrc.slice(pageSrc.indexOf('function goToPage'), pageSrc.indexOf('function currentFilters'));
+  const size = pageSrc.slice(pageSrc.indexOf('function changePageSize'), pageSrc.indexOf('function goToPage'));
+  assert.doesNotMatch(go, /clearIndicatorSelection|setSelected|setAcrossPages/);
+  assert.doesNotMatch(size, /clearIndicatorSelection|setSelected|setAcrossPages/);
+  assert.match(pageSrc, /function changeFilter\(next\) \{\s*setFilter\(next\);\s*setPage\(1\);\s*clearIndicatorSelection\(\);/);
+  assert.match(pageSrc, /function changeSearch\(next\) \{\s*setSearch\(next\);\s*setPage\(1\);\s*clearIndicatorSelection\(\);/);
+  assert.match(pageSrc, /useEffect\(\(\) => \{\s*setSelected\(\(\) => new Set\(\)\);\s*setAcrossPages\(null\);\s*\}, \[reportId\]\);/);
+  assert.match(pageSrc, /data-testid="selection-banner"/);
+  assert.match(pageSrc, /describeSelectionBanner\(/);
+  assert.match(pageSrc, /buildAllMatchingReviewBody\(/);
+  assert.match(pageSrc, /across all pages/);
+  assert.match(pageSrc, /aria-checked=\{state === 'indeterminate' \? 'mixed'/);
+});
+
 test('finalize "Show Needs Review" lands on the Indicators section', () => {
   assert.match(pageSrc, /if \(ok\) \{\s*setView\(REPORT_VIEWS\.INDICATORS\);\s*changeFilter\('needs_review'\);/);
 });

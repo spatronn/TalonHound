@@ -140,7 +140,7 @@ test('retry accepted: page returns to the preparing state immediately, review co
   assert.equal(canShowRetryButton(applied.report, { canWrite: true }), false);
   assert.equal(applied.report.failure_reason, null);
   // The page clears previous rows on retry so a rebuilt set is never confused with the old one
-  assert.match(pageSrc, /const applied = applyRetryAcceptedState\(data\);[\s\S]*?setCandidates\(\[\]\);\s*setSelected\(new Set\(\)\);/);
+  assert.match(pageSrc, /const applied = applyRetryAcceptedState\(data\);[\s\S]*?setCandidates\(\[\]\);\s*clearIndicatorSelection\(\);/);
 });
 
 test('stale response race: an older poll or detail response never overwrites the newer report', () => {

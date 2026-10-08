@@ -691,6 +691,218 @@ export function describePromoteFeedback(data, value) {
   return label;
 }
 
+/**
+ * Indicator-table selection. Explicit mode is a set of candidate ids (page
+ * checks accumulate across pagination). All-matching mode is the active
+ * filter set minus excluded ids — the client does not materialize that set.
+ */
+export function toggleExplicitSelection(selectedIds, id) {
+  const next = new Set(selectedIds);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+export function togglePageExplicit(selectedIds, pageIds) {
+  const next = new Set(selectedIds);
+  const ids = Array.isArray(pageIds) ? pageIds : [];
+  const allOn = ids.length > 0 && ids.every((id) => next.has(id));
+  if (allOn) ids.forEach((id) => next.delete(id));
+  else ids.forEach((id) => next.add(id));
+  return next;
+}
+
+export function toggleExcludedId(excludedIds, id) {
+  const next = new Set(excludedIds);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  return next;
+}
+
+export function togglePageExcluded(excludedIds, pageIds) {
+  const next = new Set(excludedIds);
+  const ids = Array.isArray(pageIds) ? pageIds : [];
+  const allSelected = ids.length > 0 && ids.every((id) => !next.has(id));
+  if (allSelected) ids.forEach((id) => next.add(id));
+  else ids.forEach((id) => next.delete(id));
+  return next;
+}
+
+export function headerCheckState({ mode, selectedIds, excludedIds, pageIds } = {}) {
+  const ids = Array.isArray(pageIds) ? pageIds : [];
+  if (!ids.length) return 'unchecked';
+  const selected = new Set(mode === 'all_matching' ? [] : selectedIds);
+  const excluded = new Set(mode === 'all_matching' ? excludedIds : []);
+  const count = ids.filter((id) => (mode === 'all_matching' ? !excluded.has(id) : selected.has(id))).length;
+  if (count === 0) return 'unchecked';
+  if (count === ids.length) return 'checked';
+  return 'indeterminate';
+}
+
+export function reviewFiltersEqual(a, b) {
+  const norm = (f) => ({
+    tab: f?.tab || DEFAULT_REVIEW_FILTER,
+    type: f?.type || 'all',
+    result: f?.result || 'all',
+    search: f?.search || ''
+  });
+  const x = norm(a);
+  const y = norm(b);
+  return x.tab === y.tab && x.type === y.type && x.result === y.result && x.search === y.search;
+}
+
+export function selectionScopeLabel({ tab, type, result, search } = {}) {
+  const tabLabel = REVIEW_FILTERS.find((f) => f.id === tab)?.label || 'Indicators';
+  const extras = [];
+  if (type && type !== 'all') extras.push(TYPE_FILTERS.find((t) => t.id === type)?.label || type);
+  if (result && result !== 'all') extras.push(RESULT_FILTERS.find((t) => t.id === result)?.label || result);
+  const q = String(search || '').trim();
+  if (q) extras.push(`search “${q}”`);
+  return extras.length ? `${tabLabel} (${extras.join(', ')})` : tabLabel;
+}
+
+/**
+ * Gmail-style banner. Page selection offers promotion only when the filter
+ * contains rows beyond the explicit set. All-matching copy uses the filtered
+ * count minus exclusions.
+ */
+export function describeSelectionBanner({
+  mode,
+  selectedCount = 0,
+  pageIds = [],
+  pageSelectedCount = 0,
+  matchingCount = 0,
+  excludedCount = 0,
+  scopeLabel = 'Indicators'
+} = {}) {
+  if (mode === 'all_matching') {
+    const count = Math.max(0, Number(matchingCount) - Number(excludedCount));
+    const message = count <= 0
+      ? `No indicators in ${scopeLabel} are selected.`
+      : excludedCount > 0
+        ? `${count} indicators in ${scopeLabel} are selected across all pages.`
+        : `All ${matchingCount} indicators in ${scopeLabel} are selected across all pages.`;
+    return { message, action: { id: 'clear', label: 'Clear selection' } };
+  }
+  if (!pageIds.length || pageSelectedCount !== pageIds.length) return null;
+  const message = `${pageSelectedCount} indicator${pageSelectedCount === 1 ? '' : 's'} on this page selected.`;
+  if (Number(matchingCount) > Number(selectedCount)) {
+    return {
+      message,
+      action: { id: 'all_matching', label: `Select all ${matchingCount} indicators in ${scopeLabel}` }
+    };
+  }
+  return { message, action: null };
+}
+
+export function buildAllMatchingReviewBody({
+  action,
+  filters,
+  excludedIds = [],
+  scopeToken = null,
+  confirm = null,
+  preview = false
+} = {}) {
+  const selection = {
+    mode: 'all_matching',
+    filters: {
+      tab: filters?.tab || DEFAULT_REVIEW_FILTER,
+      type: filters?.type || 'all',
+      result: filters?.result || 'all',
+      search: filters?.search || ''
+    },
+    excluded_candidate_ids: [...excludedIds]
+  };
+  if (scopeToken) selection.scope_token = scopeToken;
+  const body = { action, selection };
+  if (confirm != null) body.confirm = confirm === true;
+  if (preview) body.preview = true;
+  return body;
+}
+
+function bulkActionPhrase(action, n) {
+  const indicators = `${n} eligible indicator${n === 1 ? '' : 's'}`;
+  if (action === 'approve') return `approve ${indicators}`;
+  if (action === 'context_only') return `mark ${indicators} as Context Only`;
+  if (action === 'ignore') return `ignore ${indicators}`;
+  if (action === 'approve_high_confidence_malicious') {
+    return `approve ${n} eligible high-confidence malicious indicator${n === 1 ? '' : 's'}`;
+  }
+  if (action === 'create_iocs') return `create ${n} IOC record${n === 1 ? '' : 's'} from eligible indicators`;
+  return `update ${indicators}`;
+}
+
+export function describeBulkActionConfirm({
+  action,
+  eligible = 0,
+  matching = 0,
+  tabLabel = 'Indicators',
+  acrossPages = false,
+  excluded = 0
+} = {}) {
+  const n = Number(eligible) || 0;
+  const match = Number(matching) || 0;
+  const skipped = Math.max(0, match - n);
+  const titles = {
+    approve: `Approve ${n} indicators?`,
+    context_only: `Mark ${n} indicators as Context Only?`,
+    ignore: `Ignore ${n} indicators?`,
+    create_iocs: `Create ${n} IOC${n === 1 ? '' : 's'}?`,
+    approve_high_confidence_malicious: `Approve ${n} high-confidence malicious indicators?`
+  };
+  const labels = {
+    approve: `Approve ${n}`,
+    context_only: `Mark ${n}`,
+    ignore: `Ignore ${n}`,
+    create_iocs: `Create ${n} IOC${n === 1 ? '' : 's'}`,
+    approve_high_confidence_malicious: `Approve ${n}`
+  };
+  const where = acrossPages
+    ? `matching the current ${tabLabel} filters across all pages`
+    : 'in the current selection';
+  let description = `This will ${bulkActionPhrase(action, n)} ${where}.`;
+  if (skipped > 0) {
+    description += ` ${skipped} selected indicator${skipped === 1 ? ' is' : 's are'} not eligible for this action and will be left unchanged.`;
+  }
+  const leftOut = Number(excluded) || 0;
+  if (leftOut > 0) {
+    description += ` ${leftOut} unchecked indicator${leftOut === 1 ? ' was' : 's were'} excluded.`;
+  }
+  return {
+    title: titles[action] || `Update ${n} indicators?`,
+    description,
+    confirmLabel: labels[action] || `Update ${n}`,
+    cancelLabel: 'Cancel',
+    eligible: n,
+    matching: match
+  };
+}
+
+/**
+ * Outcome copy for an across-pages action. Uses the server's counts and does
+ * not describe a failure as a clean success.
+ */
+export function describeAcrossPagesOutcome(action, data) {
+  if (action === 'create_iocs') {
+    const errors = Array.isArray(data?.errors) ? data.errors.length : Number(data?.summary?.failed || 0);
+    return describeCreateIocFeedback({
+      created: data?.summary?.created ?? 0,
+      existing: data?.summary?.already_existing ?? 0,
+      errors
+    });
+  }
+  const updated = Number(data?.updated);
+  const errors = Array.isArray(data?.errors) ? data.errors.length : 0;
+  const ineligible = Number(data?.ineligible || 0);
+  const base = describeReviewFeedback(action, {
+    count: Number.isFinite(updated) ? updated : null,
+    errors
+  });
+  if (errors > 0) return base;
+  if (ineligible > 0) return `${base} ${ineligible} not eligible and left unchanged.`;
+  return base;
+}
+
 /** Success banner after Create IOCs (confirmed run). */
 export function describeCreateIocFeedback({ created = 0, existing = 0, errors = 0 } = {}) {
   const c = Number(created) || 0;

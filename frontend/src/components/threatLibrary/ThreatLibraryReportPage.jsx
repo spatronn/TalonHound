@@ -50,7 +50,18 @@ import {
   describePromoteFeedback,
   describeReviewToolbar,
   isContextOnlyCandidate,
-  selectionForAction
+  selectionForAction,
+  describeSelectionBanner,
+  describeBulkActionConfirm,
+  describeAcrossPagesOutcome,
+  buildAllMatchingReviewBody,
+  headerCheckState,
+  toggleExplicitSelection,
+  togglePageExplicit,
+  toggleExcludedId,
+  togglePageExcluded,
+  reviewFiltersEqual,
+  selectionScopeLabel
 } from './candidateReview.js';
 import {
   REPORT_PHASES,
@@ -438,6 +449,24 @@ function isInteractiveTarget(target) {
   return Boolean(target.closest('button, a, input, select, textarea, label, [role="menu"]'));
 }
 
+function PageSelectCheckbox({ state, label, onChange }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === 'indeterminate';
+  }, [state]);
+  return (
+    <input
+      ref={ref}
+      type="checkbox"
+      checked={state === 'checked'}
+      onChange={onChange}
+      aria-label={label}
+      aria-checked={state === 'indeterminate' ? 'mixed' : state === 'checked'}
+      data-testid="page-select-checkbox"
+    />
+  );
+}
+
 export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const { reportId } = useParams();
   const navigate = useNavigate();
@@ -463,6 +492,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [page, setPage] = useState(urlState.page || 1);
   const [pageSize, setPageSize] = useState(urlState.pageSize || DEFAULT_PAGE_SIZE);
   const [selected, setSelected] = useState(() => new Set());
+  const [acrossPages, setAcrossPages] = useState(null);
+  const busyRef = useRef('');
   const [openCandidateId, setOpenCandidateId] = useState(null);
   const [tlpEditOpen, setTlpEditOpen] = useState(false);
   const [busy, setBusy] = useState('');
@@ -601,57 +632,75 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     return () => ro.disconnect();
   }, [canWrite, view, report?.review_phase]);
 
+  function clearIndicatorSelection() {
+    setSelected(() => new Set());
+    setAcrossPages(null);
+  }
+
+  useEffect(() => {
+    setSelected(() => new Set());
+    setAcrossPages(null);
+  }, [reportId]);
+
   function changeFilter(next) {
     setFilter(next);
     setPage(1);
-    setSelected(new Set());
+    clearIndicatorSelection();
   }
 
   function changeSearch(next) {
     setSearch(next);
     setPage(1);
-    setSelected(new Set());
+    clearIndicatorSelection();
   }
 
   function changeType(next) {
     setTypeFilter(next);
     setPage(1);
-    setSelected(new Set());
+    clearIndicatorSelection();
   }
 
   function changeResult(next) {
     setResultFilter(next);
     setPage(1);
-    setSelected(new Set());
+    clearIndicatorSelection();
   }
 
   function changePageSize(next) {
     setPageSize(Number(next) || DEFAULT_PAGE_SIZE);
     setPage(1);
-    setSelected(new Set());
   }
 
   function goToPage(next) {
     setPage(next);
-    setSelected(new Set());
+  }
+
+  function currentFilters() {
+    return { tab: filter, type: typeFilter, result: resultFilter, search };
   }
 
   function toggleOne(id) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    if (acrossPages && reviewFiltersEqual(acrossPages.filters, currentFilters())) {
+      setAcrossPages((prev) => (prev ? { ...prev, excluded: toggleExcludedId(prev.excluded, id) } : prev));
+      return;
+    }
+    setSelected((prev) => toggleExplicitSelection(prev, id));
   }
 
   function toggleAllOnPage() {
-    setSelected((prev) => {
-      const ids = pageRows.map((c) => c.id);
-      const allOn = ids.length > 0 && ids.every((id) => prev.has(id));
-      const next = new Set();
-      if (!allOn) ids.forEach((id) => next.add(id));
-      return next;
+    const ids = pageRows.map((c) => c.id);
+    if (acrossPages && reviewFiltersEqual(acrossPages.filters, currentFilters())) {
+      setAcrossPages((prev) => (prev ? { ...prev, excluded: togglePageExcluded(prev.excluded, ids) } : prev));
+      return;
+    }
+    setSelected((prev) => togglePageExplicit(prev, ids));
+  }
+
+  function selectAllMatching() {
+    setSelected(() => new Set());
+    setAcrossPages({
+      filters: currentFilters(),
+      excluded: new Set()
     });
   }
 
@@ -663,34 +712,185 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
    */
   async function runReview(action) {
     if (!canWrite) return;
-    if (action === 'create_iocs') {
-      await createIocs();
+    if (busyRef.current) return;
+    busyRef.current = action;
+    try {
+      const acrossActive = acrossPages && reviewFiltersEqual(acrossPages.filters, currentFilters());
+      if (acrossActive) {
+        if (action === 'promote_to_ioc') {
+          await promoteToIoc();
+          return;
+        }
+        await reviewAcrossPages(action);
+        return;
+      }
+      if (action === 'create_iocs') {
+        await createIocs();
+        return;
+      }
+      if (action === 'promote_to_ioc') {
+        await promoteToIoc();
+        return;
+      }
+      const { ids, excluded } = selectionForAction(action, selectedRows);
+      if (action !== 'approve_high_confidence_malicious' && !ids.length) return;
+      setBusy(action);
+      setFeedback('');
+      setError('');
+      try {
+        if (ids.length > 1 && action !== 'approve_high_confidence_malicious') {
+          const dialog = describeBulkActionConfirm({
+            action,
+            eligible: ids.length,
+            matching: selectedRows.length,
+            tabLabel: selectionScopeLabel(currentFilters()),
+            acrossPages: false,
+            excluded
+          });
+          const ok = await requestConfirm(dialog);
+          if (!ok) return;
+        }
+        const body = { action };
+        if (action !== 'approve_high_confidence_malicious') {
+          body.candidate_ids = ids;
+        }
+        const { data } = await api.post(`/threat-library/reports/${reportId}/review`, body);
+        const updated = Number.isFinite(Number(data?.updated)) ? Number(data.updated) : null;
+        setFeedback(describeReviewFeedback(action, {
+          count: updated ?? (action === 'approve_high_confidence_malicious' ? null : ids.length),
+          errors: Array.isArray(data?.errors) ? data.errors.length : 0,
+          excluded: excluded + (Number(data?.skipped_context_only) || 0)
+        }));
+        clearIndicatorSelection();
+        await loadDetail();
+      } catch (err) {
+        if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Review action failed');
+      } finally {
+        setBusy('');
+      }
+    } finally {
+      busyRef.current = '';
+    }
+  }
+
+  async function reviewAcrossPages(action) {
+    if (!acrossPages) return;
+    const filters = acrossPages.filters;
+    if (!reviewFiltersEqual(filters, currentFilters())) {
+      clearIndicatorSelection();
+      setError('Selection was cleared because the filters changed.');
       return;
     }
-    if (action === 'promote_to_ioc') {
-      await promoteToIoc();
-      return;
-    }
-    const { ids, excluded } = selectionForAction(action, selectedRows);
-    if (action !== 'approve_high_confidence_malicious' && !ids.length) return;
+    const excludedIds = [...acrossPages.excluded];
+    const label = selectionScopeLabel(filters);
     setBusy(action);
     setFeedback('');
     setError('');
     try {
-      const body = { action };
-      if (action !== 'approve_high_confidence_malicious') {
-        body.candidate_ids = ids;
-      }
-      const { data } = await api.post(`/threat-library/reports/${reportId}/review`, body);
-      const updated = Number.isFinite(Number(data?.updated)) ? Number(data.updated) : null;
-      setFeedback(describeReviewFeedback(action, {
-        count: updated ?? (action === 'approve_high_confidence_malicious' ? null : ids.length),
-        errors: Array.isArray(data?.errors) ? data.errors.length : 0,
-        excluded: excluded + (Number(data?.skipped_context_only) || 0)
+      const { data: preview } = await api.post(`/threat-library/reports/${reportId}/review`, buildAllMatchingReviewBody({
+        action,
+        filters,
+        excludedIds,
+        preview: action !== 'create_iocs',
+        confirm: action === 'create_iocs' ? false : null
       }));
-      setSelected(new Set());
+      let scopeToken = preview?.scope_token;
+      if (action === 'create_iocs') {
+        const summary = preview?.summary || {};
+        const noop = describeNoCreatableIocs(summary);
+        if (noop) {
+          await requestConfirm({
+            ...noop,
+            detail: formatCreateIocSummary(summary),
+            informational: true,
+            cancelLabel: 'Close'
+          });
+          return;
+        }
+        const eligible = Number(summary.eligible || 0);
+        const ok = await requestConfirm({
+          title: `Create ${eligible} IOC${eligible === 1 ? '' : 's'}?`,
+          description: `This will create ${eligible} IOC record${eligible === 1 ? '' : 's'} from eligible indicators matching the current ${label} filters across all pages.`,
+          detail: formatCreateIocSummary(summary),
+          confirmLabel: `Create ${eligible} IOC${eligible === 1 ? '' : 's'}`,
+          cancelLabel: 'Cancel'
+        });
+        if (!ok) return;
+      } else {
+        const eligible = Number(preview?.eligible || 0);
+        const matching = Number(preview?.matching || 0);
+        if (eligible <= 0) {
+          await requestConfirm({
+            title: 'Nothing to update',
+            description: matching > 0
+              ? `${matching} indicators match this selection, but none are eligible for this action.`
+              : 'No indicators match this selection.',
+            informational: true,
+            cancelLabel: 'Close'
+          });
+          return;
+        }
+        const ok = await requestConfirm(describeBulkActionConfirm({
+          action,
+          eligible,
+          matching,
+          tabLabel: label,
+          acrossPages: true,
+          excluded: excludedIds.length
+        }));
+        if (!ok) return;
+      }
+      const postCommit = async (token) => {
+        const { data } = await api.post(`/threat-library/reports/${reportId}/review`, buildAllMatchingReviewBody({
+          action,
+          filters,
+          excludedIds,
+          scopeToken: token,
+          confirm: action === 'create_iocs' ? true : null
+        }));
+        return data;
+      };
+      let data;
+      try {
+        data = await postCommit(scopeToken);
+      } catch (err) {
+        const conflict = err?.response?.data;
+        if (conflict?.code !== 'selection_conflict') throw err;
+        const again = await requestConfirm({
+          title: 'Selection changed',
+          description: conflict.message || 'The selected indicators changed before this action ran.',
+          detail: `${Number(conflict.eligible) || 0} eligible indicators match the current filters now (${Number(conflict.matching) || 0} matching). Confirm again to continue with that set only.`,
+          confirmLabel: `Continue with ${Number(conflict.eligible) || 0}`,
+          cancelLabel: 'Cancel'
+        });
+        if (!again) return;
+        try {
+          data = await postCommit(conflict.scope_token);
+        } catch (err2) {
+          if (err2?.response?.data?.code === 'selection_conflict') {
+            setError(err2.response.data.message || 'The selection changed again. Refresh the indicators and select them again.');
+            clearIndicatorSelection();
+            return;
+          }
+          throw err2;
+        }
+      }
+      if (action === 'create_iocs' && data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
+      setFeedback(describeAcrossPagesOutcome(action, data));
+      clearIndicatorSelection();
       await loadDetail();
     } catch (err) {
+      if (action === 'create_iocs' && err?.response?.data?.code === 'create_iocs_none_eligible') {
+        await requestConfirm({
+          title: 'Approve indicators first',
+          description: err.response.data.message
+            || 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
+          detail: err.response.data.summary ? formatCreateIocSummary(err.response.data.summary) : '',
+          informational: true,
+          cancelLabel: 'Close'
+        });
+        return;
+      }
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Review action failed');
     } finally {
       setBusy('');
@@ -750,7 +950,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         existing,
         errors: Array.isArray(data?.errors) ? data.errors.length : 0
       }));
-      setSelected(new Set());
+      clearIndicatorSelection();
       await loadDetail();
     } catch (err) {
       if (err?.response?.data?.code === 'create_iocs_none_eligible') {
@@ -804,7 +1004,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       });
       if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
       setFeedback(describePromoteFeedback(data, value));
-      setSelected(new Set());
+      clearIndicatorSelection();
       await loadDetail();
     } catch (err) {
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Promote to IOC failed');
@@ -824,7 +1024,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       setReport((prev) => (shouldIgnoreStalePoll(prev, data.report) ? prev : data.report));
       setCandidates([]);
     }
-    setSelected(new Set());
+    clearIndicatorSelection();
     setOpenCandidateId(null);
     setError(data.message || 'The indicator set is still being refined. Review actions are available once analysis completes.');
     return true;
@@ -904,7 +1104,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       if (applied.job) setJob(applied.job);
       // The review set is being rebuilt: previous rows are no longer current.
       setCandidates([]);
-      setSelected(new Set());
+      clearIndicatorSelection();
       setOpenCandidateId(null);
       setRetryAcceptedAt(Date.now());
       setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
@@ -922,7 +1122,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         if (applied.report) setReport((prev) => mergeReportPayload(prev, applied.report));
         if (applied.job) setJob(applied.job);
         setCandidates([]);
-        setSelected(new Set());
+        clearIndicatorSelection();
         setOpenCandidateId(null);
         setRetryAcceptedAt(Date.now());
         setRetryAcceptedUpdatedAt(applied.report?.updated_at || null);
@@ -953,7 +1153,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       if (data?.job) setJob(data.job);
       // The candidate set is being rebuilt: previous rows are no longer current.
       setCandidates([]);
-      setSelected(new Set());
+      clearIndicatorSelection();
       setOpenCandidateId(null);
       setPendingMaintenance(mode);
       setFeedback(describeMaintenanceAccepted(mode));
@@ -1084,8 +1284,29 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     () => describeDrawerPosition(filtered, openCandidateId, paged.pageSize),
     [filtered, openCandidateId, paged.pageSize]
   );
-  const selectedOnPage = useMemo(() => pageRows.filter((c) => selected.has(c.id)).length, [pageRows, selected]);
-  const selectedRows = useMemo(() => candidates.filter((c) => selected.has(c.id)), [candidates, selected]);
+  const acrossActive = Boolean(acrossPages && reviewFiltersEqual(acrossPages.filters, { tab: filter, type: typeFilter, result: resultFilter, search }));
+  const selectedRows = useMemo(() => {
+    if (acrossActive) return filtered.filter((c) => !acrossPages.excluded.has(c.id));
+    return candidates.filter((c) => selected.has(c.id));
+  }, [acrossActive, acrossPages, filtered, candidates, selected]);
+  const selectedOnPage = useMemo(() => pageRows.filter((c) => (
+    acrossActive ? !acrossPages.excluded.has(c.id) : selected.has(c.id)
+  )).length, [pageRows, acrossActive, acrossPages, selected]);
+  const pageCheck = headerCheckState({
+    mode: acrossActive ? 'all_matching' : 'explicit',
+    selectedIds: selected,
+    excludedIds: acrossPages?.excluded,
+    pageIds: pageRows.map((c) => c.id)
+  });
+  const selectionBanner = describeSelectionBanner({
+    mode: acrossActive ? 'all_matching' : 'explicit',
+    selectedCount: acrossActive ? selectedRows.length : selected.size,
+    pageIds: pageRows.map((c) => c.id),
+    pageSelectedCount: selectedOnPage,
+    matchingCount: filtered.length,
+    excludedCount: acrossActive ? Math.max(0, filtered.length - selectedRows.length) : 0,
+    scopeLabel: selectionScopeLabel({ tab: filter, type: typeFilter, result: resultFilter, search })
+  });
   // Which review actions exist for this filter and whether the selection can drive them.
   const toolbar = useMemo(
     () => describeReviewToolbar({ filter, selectedRows, busy: Boolean(busy) }),
@@ -1404,10 +1625,31 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                       </button>
                     ))}
                     <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }} aria-live="polite">
-                      {selectedOnPage === selected.size
-                        ? `${selected.size} selected on this page`
-                        : `${selected.size} selected (${selectedOnPage} on this page)`}
+                      {acrossActive
+                        ? `${selectedRows.length} selected across all pages`
+                        : selectedOnPage === selected.size
+                          ? `${selected.size} selected on this page`
+                          : `${selected.size} selected (${selectedOnPage} on this page)`}
                     </span>
+                  </div>
+                ) : null}
+
+                {canWrite && selectionBanner ? (
+                  <div className="tl-select-banner" role="status" data-testid="selection-banner">
+                    <span>{selectionBanner.message}</span>
+                    {selectionBanner.action ? (
+                      <button
+                        type="button"
+                        className="tl-select-banner__action"
+                        data-testid={selectionBanner.action.id === 'clear' ? 'clear-selection' : 'select-all-matching'}
+                        onClick={() => {
+                          if (selectionBanner.action.id === 'clear') clearIndicatorSelection();
+                          else selectAllMatching();
+                        }}
+                      >
+                        {selectionBanner.action.label}
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -1431,11 +1673,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                       <tr>
                         {canWrite ? (
                           <th>
-                            <input
-                              type="checkbox"
-                              checked={pageRows.length > 0 && pageRows.every((c) => selected.has(c.id))}
+                            <PageSelectCheckbox
+                              state={pageCheck}
+                              label={pageCheck === 'checked' ? 'Deselect all on this page' : 'Select all on this page'}
                               onChange={toggleAllOnPage}
-                              aria-label="Select all on this page"
                             />
                           </th>
                         ) : null}
@@ -1470,7 +1711,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                               <td>
                                 <input
                                   type="checkbox"
-                                  checked={selected.has(c.id)}
+                                  checked={acrossActive ? !acrossPages.excluded.has(c.id) : selected.has(c.id)}
                                   onChange={() => toggleOne(c.id)}
                                   aria-label={`Select ${candidateTypeLabel(c.candidate_type) || c.candidate_type} ${value || c.id}`}
                                 />

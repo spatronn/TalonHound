@@ -773,7 +773,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const result = await applyCandidateReviewActions(pool, report.id, {
           action: req.body?.action,
           candidateIds: req.body?.candidate_ids,
+          selection: req.body?.selection,
           confirm: req.body?.confirm === true,
+          preview: req.body?.preview === true,
           user: await actorOf(req),
           audit,
           req
@@ -786,6 +788,11 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             summary: result.summary || undefined,
             results: result.results || undefined,
             pending_count: result.pending_count,
+            matching: result.matching,
+            eligible: result.eligible,
+            ineligible: result.ineligible,
+            excluded: result.excluded,
+            scope_token: result.scope_token,
             report: result.code ? publicReport(await reportWithDetail(report)) : undefined
           });
         }
@@ -804,6 +811,10 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
               ...reportAuditSnapshot(report),
               initiated_by: initiatedBy(req.user),
               selected: Array.isArray(req.body?.candidate_ids) ? req.body.candidate_ids.length : 0,
+              selection_mode: req.body?.selection?.mode === 'all_matching' ? 'all_matching' : 'explicit',
+              excluded: Array.isArray(req.body?.selection?.excluded_candidate_ids)
+                ? req.body.selection.excluded_candidate_ids.length
+                : 0,
               created: 0,
               already_existing: 0,
               failed: 0,
