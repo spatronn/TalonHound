@@ -136,3 +136,98 @@ export function resolveSourceObservationTimestamps({ membershipRows = [], itemRo
     last_seen_provenance: lastProv
   };
 }
+
+/**
+ * Batched source observation timestamps for API / MCP records, with the same
+ * meaning as IOC Details "First / Last seen in source" and "Inserted into
+ * Platform": the identity is every ioc_items row of the same observable +
+ * type (all sources), feed memberships give provider dates, Threat_Library
+ * rows give the report-side date. Three queries for any number of records.
+ * @param {import('pg').Pool} pool
+ * @param {Array<{ id: number|string, observable?: string, value?: string, observable_type?: string, type?: string }>} records
+ * @returns {Promise<Map<string, { first_seen: any, last_seen: any, imported_at: any,
+ *   first_seen_provenance: object|null, last_seen_provenance: object|null }>>} keyed `${id}|${type}`
+ */
+export async function loadIocSourceObservationTimestamps(pool, records) {
+  const out = new Map();
+  const wanted = (records || [])
+    .map((r) => ({
+      id: Number(r?.id),
+      observable: String(r?.observable ?? r?.value ?? ''),
+      type: String(r?.observable_type ?? r?.type ?? '')
+    }))
+    .filter((r) => Number.isFinite(r.id) && r.id > 0 && r.observable && r.type);
+  if (!wanted.length) return out;
+  const identityKey = (observable, type) => `${type}\u0000${observable}`;
+  const identities = [...new Map(wanted.map((r) => [identityKey(r.observable, r.type), r])).values()];
+
+  const { rows: items } = await pool.query(
+    `SELECT i.id, i.observable, i.observable_type, i.source_name, i.created_at,
+            i.first_seen_at AS item_first_seen_at, i.last_seen_at AS item_last_seen_at
+     FROM ioc_items i
+     JOIN unnest($1::text[], $2::text[]) AS q(observable, observable_type)
+       ON i.observable = q.observable AND i.observable_type = q.observable_type`,
+    [identities.map((r) => r.observable), identities.map((r) => r.type)]
+  );
+  const itemIds = [...new Set(items.map((i) => Number(i.id)))];
+  const [membershipRes, claims] = await Promise.all([
+    itemIds.length
+      ? pool.query(
+        `SELECT m.ioc_item_id, m.ioc_observable_type, m.first_seen_in_feed, m.last_seen_in_feed
+         FROM ioc_feed_memberships m
+         WHERE m.ioc_item_id = ANY($1::bigint[])`,
+        [itemIds]
+      )
+      : { rows: [] },
+    loadThreatLibraryObservationClaims(pool, itemIds)
+  ]);
+
+  const itemsByIdentity = new Map();
+  const identityByItem = new Map();
+  for (const it of items) {
+    const k = identityKey(it.observable, it.observable_type);
+    if (!itemsByIdentity.has(k)) itemsByIdentity.set(k, []);
+    itemsByIdentity.get(k).push(it);
+    identityByItem.set(`${it.id}|${it.observable_type}`, k);
+    if (!identityByItem.has(String(it.id))) identityByItem.set(String(it.id), k);
+  }
+  const membershipsByIdentity = new Map();
+  for (const m of membershipRes.rows || []) {
+    const k = identityByItem.get(`${m.ioc_item_id}|${m.ioc_observable_type}`);
+    if (!k) continue;
+    if (!membershipsByIdentity.has(k)) membershipsByIdentity.set(k, []);
+    membershipsByIdentity.get(k).push(m);
+  }
+  const claimsByIdentity = new Map();
+  for (const c of claims || []) {
+    const k = identityByItem.get(String(c.matched_ioc_id));
+    if (!k) continue;
+    if (!claimsByIdentity.has(k)) claimsByIdentity.set(k, []);
+    claimsByIdentity.get(k).push(c);
+  }
+
+  for (const r of wanted) {
+    const k = identityKey(r.observable, r.type);
+    const rowsOfIdentity = itemsByIdentity.get(k) || [];
+    // No stored row for the identity (not expected for a found IOC): leave the
+    // caller's own row timestamps in place rather than inventing nulls.
+    if (!rowsOfIdentity.length) continue;
+    const resolved = resolveSourceObservationTimestamps({
+      membershipRows: membershipsByIdentity.get(k) || [],
+      itemRows: rowsOfIdentity,
+      window: resolveThreatLibraryObservationWindow(claimsByIdentity.get(k) || [])
+    });
+    const imported = rowsOfIdentity
+      .map((i) => i.created_at)
+      .filter(Boolean)
+      .reduce((min, d) => (min == null || ms(d) < ms(min) ? d : min), null);
+    out.set(`${r.id}|${r.type}`, {
+      first_seen: resolved.first_seen_at,
+      last_seen: resolved.last_seen_in_source,
+      imported_at: imported,
+      first_seen_provenance: resolved.first_seen_provenance,
+      last_seen_provenance: resolved.last_seen_provenance
+    });
+  }
+  return out;
+}

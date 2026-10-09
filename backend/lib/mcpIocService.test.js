@@ -187,7 +187,7 @@ function membershipRowsFor(normalized, sources) {
   return null;
 }
 
-function makeLookupPool({ existing = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [] } = {}) {
+function makeLookupPool({ existing = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [], timestampRows = [], timestampMemberships = [], timestampClaims = [] } = {}) {
   const queries = [];
   return {
     queries,
@@ -196,6 +196,9 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
       queries.push({ sql: normalized, params: [...params] });
       // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
       if (normalized.includes('threat_report_tags rt')) return { rows: [] };
+      // Source observation timestamps (loadIocSourceObservationTimestamps).
+      if (normalized.includes('FROM ioc_feed_memberships m WHERE m.ioc_item_id = ANY')) return { rows: timestampMemberships };
+      if (normalized.includes("c.evidence->'source_observation'")) return { rows: timestampClaims };
       if (normalized.includes('FROM ioc_items')
         && normalized.includes('observable_type = $1 AND observable = $2')
         && normalized.includes('ORDER BY created_at ASC')) {
@@ -245,6 +248,8 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
       if (normalized.includes('FROM file_artifact_ioc_links') || normalized.includes('FROM file_artifacts')) {
         return { rows: [] };
       }
+      // Source observation timestamps (loadIocSourceObservationTimestamps): no identity rows by default.
+      if (normalized.includes('AS item_first_seen_at')) return { rows: timestampRows || [] };
       throw new Error(`Unexpected SQL in lookup pool: ${normalized.slice(0, 120)}`);
     }
   };
@@ -252,7 +257,7 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
 // effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null } = {}) {
+function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null, timestampRows = [], timestampMemberships = [], timestampClaims = [] } = {}) {
   const queries = [];
   return {
     queries,
@@ -262,6 +267,9 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
       queries.push({ sql: normalized, params: [...params] });
       // Threat Library report-tag inheritance (hydrator): none unless a test seeds it.
       if (normalized.includes('threat_report_tags rt')) return { rows: [] };
+      // Source observation timestamps (loadIocSourceObservationTimestamps).
+      if (normalized.includes('FROM ioc_feed_memberships m WHERE m.ioc_item_id = ANY')) return { rows: timestampMemberships };
+      if (normalized.includes("c.evidence->'source_observation'")) return { rows: timestampClaims };
       // getApiIoc row load (by public_id or id) and mcpLookupIoc exact match.
       if (normalized.includes('FROM ioc_items') && normalized.includes('WHERE public_id = $1::uuid')) {
         return { rows: row ? [row] : [] };
@@ -351,6 +359,8 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
         const wanted = new Set((params[0] || []).map(String));
         return { rows: threatEntities.filter((e) => wanted.has(String(e.report_id))) };
       }
+      // Source observation timestamps (loadIocSourceObservationTimestamps): no identity rows by default.
+      if (normalized.includes('AS item_first_seen_at')) return { rows: timestampRows || [] };
       throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
   };
@@ -403,7 +413,7 @@ test('mcpLookupIoc returns found hit', async () => {
 
 // junctionRows: rows of { ioc_id, ioc_observable_type, classification_slug } for
 // the batched ioc_threat_classifications read (parity with the single-IOC loader).
-function makeBulkPool(foundRows, junctionRows = []) {
+function makeBulkPool(foundRows, junctionRows = [], timestamps = { items: [], memberships: [], claims: [] }) {
   const queries = [];
   return {
     queries,
@@ -421,6 +431,10 @@ function makeBulkPool(foundRows, junctionRows = []) {
       if (isCanonicalClassificationFactsQuery(normalized)) {
         return { rows: foundRows.map((r) => classificationFactRow(r)) };
       }
+      // Source observation timestamps: identity rows / memberships / Threat Library claim dates.
+      if (normalized.includes('AS item_first_seen_at')) return { rows: timestamps.items };
+      if (normalized.includes('FROM ioc_feed_memberships m WHERE m.ioc_item_id = ANY')) return { rows: timestamps.memberships };
+      if (normalized.includes("c.evidence->'source_observation'")) return { rows: timestamps.claims };
       assert.match(normalized, /unnest/i);
       return { rows: foundRows };
     }
@@ -1967,6 +1981,7 @@ function makeAliasSourcePool({ evidenceReports = [] } = {}) {
         };
       }
       if (q.includes('ioc_tags it')) return { rows: [] };
+      if (q.includes('AS item_first_seen_at')) return { rows: [] };
       throw new Error(`Unexpected SQL in alias source pool: ${q.slice(0, 120)}`);
     }
   };
@@ -2047,4 +2062,91 @@ test('get_ioc_context sources: OTX-created row with MalwareBazaar + ThreatFox me
   assert.deepEqual(out.body.evidence_sources.map((e) => e.name), [
     'AlienVault OTX', 'MalwareBazaar abuse.ch', 'ThreatFox abuse.ch', 'Threat Library'
   ]);
+});
+
+// --- Top-level first_seen / last_seen = source observation (IOC Details parity) ---
+// Regression: IOC 120.36.250.48 (only source Threat_Library, created 2026-10-09)
+// reported first_seen / last_seen = the import time; the report row says the
+// publisher observed it on 2023-05-25.
+
+const TL_IMPORT = '2026-10-09T16:51:33.814Z';
+const TL_OBS = { source: 'publisher_table_row', earliest: '2023-05-25', latest: '2023-05-25', first_seen: '2023-05-25', last_seen: '2023-05-25', precision: 'date', basis: 'labelled_columns' };
+
+function tlRow() {
+  return {
+    id: 3603887,
+    public_id: 'cfc983c7-9ad5-4b83-a3b1-52200d8ee73a',
+    observable: '120.36.250.48',
+    observable_type: 'ip',
+    status: 'active',
+    confidence: 'high',
+    threat_classification: null,
+    note: 'Threat Library report bc112cbf-8931-4564-bc24-ab46d316fcf5: malicious_infrastructure (malicious)',
+    source_name: 'Threat_Library',
+    created_at: TL_IMPORT,
+    first_seen_at: TL_IMPORT,
+    last_seen_at: TL_IMPORT
+  };
+}
+const tlIdentityRows = (row) => [{
+  id: row.id, observable: row.observable, observable_type: row.observable_type, source_name: 'Threat_Library',
+  created_at: TL_IMPORT, item_first_seen_at: TL_IMPORT, item_last_seen_at: TL_IMPORT
+}];
+const tlClaims = (obs = TL_OBS) => [{
+  matched_ioc_id: 3603887, source_observation: obs, report_public_id: 'bc112cbf-8931-4564-bc24-ab46d316fcf5',
+  report_title: 'Advisory', published_at: '2026-10-08T00:00:00.000Z'
+}];
+
+test('lookup_ioc: first_seen / last_seen are the publisher observation, imported_at is the import time', async () => {
+  const existing = tlRow();
+  const pool = makeLookupPool({ existing, timestampRows: tlIdentityRows(existing), timestampClaims: tlClaims() });
+  const out = await mcpLookupIoc(pool, { value: '120.36.250.48' }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.first_seen, '2023-05-25T00:00:00.000Z');
+  assert.equal(out.body.last_seen, '2023-05-25T00:00:00.000Z');
+  assert.equal(out.body.imported_at, TL_IMPORT);
+  assert.deepEqual(out.body.first_seen_provenance, {
+    date: '2023-05-25', basis: 'publisher_observation', report_id: 'bc112cbf-8931-4564-bc24-ab46d316fcf5',
+    report_title: 'Advisory', precision: 'date', source: 'threat_library'
+  });
+});
+
+test('get_ioc_context: same top-level timestamps as lookup_ioc; report publication day when the row has no date', async () => {
+  const row = tlRow();
+  const pool = makeContextPool({ row, timestampRows: tlIdentityRows(row), timestampClaims: tlClaims(null) });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  assert.equal(out.body.first_seen, '2026-10-08T00:00:00.000Z');
+  assert.equal(out.body.first_seen_provenance.basis, 'report_publication');
+  assert.equal(out.body.imported_at, TL_IMPORT);
+});
+
+test('lookup_ioc: feed IOC keeps provider dates (first_seen_in_feed / last_seen_in_feed), no provenance', async () => {
+  const existing = { ...tlRow(), source_name: 'URLhaus abuse.ch', note: null };
+  const pool = makeLookupPool({
+    existing,
+    timestampRows: [{ ...tlIdentityRows(existing)[0], source_name: 'URLhaus abuse.ch' }],
+    timestampMemberships: [{ ioc_item_id: existing.id, ioc_observable_type: 'ip', first_seen_in_feed: '2025-03-01T10:00:00.000Z', last_seen_in_feed: '2026-09-30T10:00:00.000Z' }]
+  });
+  const out = await mcpLookupIoc(pool, { value: '120.36.250.48' }, { config: TEST_CONFIG });
+  assert.equal(out.body.first_seen, '2025-03-01T10:00:00.000Z');
+  assert.equal(out.body.last_seen, '2026-09-30T10:00:00.000Z');
+  assert.equal(out.body.first_seen_provenance, null);
+});
+
+test('bulk_lookup_iocs: source observation timestamps in one batched read, still no threat_context', async () => {
+  const row = { ...bulkRow(3603887, '120.36.250.48', 'ip'), created_at: TL_IMPORT };
+  const pool = makeBulkPool([row], [], { items: tlIdentityRows(row), memberships: [], claims: tlClaims() });
+  const out = await mcpBulkLookupIocs(pool, { iocs: [{ value: '120.36.250.48', type: 'ip' }] }, { config: TEST_CONFIG });
+  assert.equal(out.status, 200);
+  const hit = out.body.existing[0];
+  assert.equal(hit.first_seen, '2023-05-25T00:00:00.000Z');
+  assert.equal(hit.last_seen, '2023-05-25T00:00:00.000Z');
+  assert.equal(hit.imported_at, TL_IMPORT);
+  assert.equal('threat_context' in hit, false);
+  const claimReads = pool.queries.filter((q) => q.sql.includes("c.evidence->'source_observation'"));
+  assert.equal(claimReads.length, 1, 'one batched claim-date read for the whole batch');
+  // Besides tag inheritance and that date read, bulk never touches Threat Library tables.
+  assert.equal(pool.queries.some((q) => !isInheritedTagQuery(q) && !q.sql.includes("c.evidence->'source_observation'")
+    && /threat_report_candidates|threat_relationships|threat_report_entities|threat_entities|threat_reports/.test(q.sql)), false);
 });

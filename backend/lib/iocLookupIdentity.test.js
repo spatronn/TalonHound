@@ -122,6 +122,19 @@ function aliasPool({ rows = [MD5_ROW], aliases = { [`sha1\0${SHA1}`]: [MD5_ROW],
         return { rows: rows.filter((r) => r.observable === params[0] && r.observable_type === params[1]).map((r) => ({ ioc_item_id: r.id, ioc_source_id: 19, source_name: 'Threat_Library', created_at: r.created_at, last_seen_at: r.last_seen_at, expires_at: null })) };
       }
       if (s.includes('FROM threat_report_candidates c') && s.includes('GROUP BY r.public_id')) return { rows: [] };
+      // Source observation timestamps: the identity rows of each requested record; no report claims.
+      if (s.includes('AS item_first_seen_at')) {
+        const [observables, types] = params;
+        return {
+          rows: rows
+            .filter((r) => observables.some((o, i) => o === r.observable && types[i] === r.observable_type))
+            .map((r) => ({
+              id: r.id, observable: r.observable, observable_type: r.observable_type, source_name: r.source_name ?? null,
+              created_at: r.created_at, item_first_seen_at: r.first_seen_at ?? r.created_at, item_last_seen_at: r.last_seen_at ?? null
+            }))
+        };
+      }
+      if (s.includes("c.evidence->'source_observation'")) return { rows: [] };
       throw new Error(`Unexpected SQL: ${s.slice(0, 140)}`);
     }
   };

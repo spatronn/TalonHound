@@ -38,6 +38,7 @@ import {
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
 import { findArtifactLinkedIocsByIocId, resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
 import { fetchObservableMembershipSummary } from './iocActiveSources.js';
+import { loadIocSourceObservationTimestamps } from './threatLibrary/iocSourceObservationTimestamps.js';
 import { collectDerivedInfrastructure, collectIocEnrichments } from './iocEnrichmentAggregator.js';
 import { loadIocThreatContext, loadThreatLibraryEvidenceReports } from './threatLibrary/iocThreatContext.js';
 import { IOC_SOURCE_NAME as THREAT_LIBRARY_IOC_SOURCE_NAME } from './threatLibrary/constants.js';
@@ -142,8 +143,7 @@ function serializeLookupHit(row, extras = {}) {
       || row.threat_classifications
       || (row.threat_classification ? [row.threat_classification] : []),
     confidence: row.confidence ?? null,
-      first_seen: row.first_seen_at || row.created_at || null,
-      last_seen: row.last_seen_at || row.created_at || null,
+    ...sourceObservationFields(extras.timestamps, row),
     note: row.note ?? null,
     tags: Array.isArray(row.tags)
       ? row.tags.map((t) => (typeof t === 'string' ? t : t?.name)).filter(Boolean)
@@ -152,6 +152,35 @@ function serializeLookupHit(row, extras = {}) {
     historical_sources: extras.historical_sources || [],
     evidence_sources: extras.evidence_sources || [],
     ...extras.rest
+  };
+}
+
+/**
+ * Top-level IOC timestamps, same meaning as IOC Details "IOC Timestamps":
+ * first_seen / last_seen = earliest / latest SOURCE OBSERVATION across all
+ * sources (feed provider dates; Threat Library: the report's publisher
+ * observation of the value, else its publication day), imported_at = first
+ * insert into TalonHound. *_provenance is set when the value is a Threat
+ * Library report-side date (date precision).
+ * @param {object|undefined} ts entry of loadIocSourceObservationTimestamps
+ * @param {object} row fallback ioc_items row (when no timestamps were loaded)
+ */
+function sourceObservationFields(ts, row = {}) {
+  if (!ts) {
+    return {
+      first_seen: row.first_seen_at || row.created_at || null,
+      last_seen: row.last_seen_at || row.created_at || null,
+      imported_at: row.created_at || null,
+      first_seen_provenance: null,
+      last_seen_provenance: null
+    };
+  }
+  return {
+    first_seen: ts.first_seen ?? null,
+    last_seen: ts.last_seen ?? null,
+    imported_at: ts.imported_at ?? row.created_at ?? null,
+    first_seen_provenance: ts.first_seen_provenance || null,
+    last_seen_provenance: ts.last_seen_provenance || null
   };
 }
 
@@ -294,9 +323,10 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
   // tags the IOC's own report evidence names. Same batched hydrator as
   // search_iocs / bulk_lookup_iocs, keyed by the returned row's id.
   // Sources are keyed by the returned (stored) row, never the queried alias.
-  const [metaMap, sourceEvidence] = await Promise.all([
+  const [metaMap, sourceEvidence, timestamps] = await Promise.all([
     hydrateIocApiMetadata(pool, [existing]),
-    loadIocSourceEvidence(pool, existing)
+    loadIocSourceEvidence(pool, existing),
+    loadIocSourceObservationTimestamps(pool, [existing])
   ]);
   const meta = metaMap.get(iocPairKey(existing.id, existing.observable_type)) || EMPTY_IOC_API_METADATA;
 
@@ -310,6 +340,7 @@ export async function mcpLookupIoc(pool, { value, type } = {}, opts = {}) {
       },
       {
         ...sourceEvidence,
+        timestamps: timestamps.get(iocPairKey(existing.id, existing.observable_type)),
         rest: {
           // Additive: who asserts each effective classification (feed sources / analyst).
           classification_context: meta.classification_context,
@@ -518,9 +549,10 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   // UI, so use the shared effective hydrator (same one lookup_ioc /
   // bulk_lookup_iocs / search_iocs use). The legacy column is read by the
   // hydrator (body carries junction slugs, not the raw column).
-  const [metaMap, sourceEvidence] = await Promise.all([
+  const [metaMap, sourceEvidence, timestamps] = await Promise.all([
     hydrateIocApiMetadata(pool, [{ id: body.id, observable_type: body.type }]),
-    loadIocSourceEvidence(pool, { id: body.id, observable: body.value, observable_type: body.type })
+    loadIocSourceEvidence(pool, { id: body.id, observable: body.value, observable_type: body.type }),
+    loadIocSourceObservationTimestamps(pool, [{ id: body.id, observable: body.value, observable_type: body.type }])
   ]);
   const meta = metaMap.get(iocPairKey(body.id, body.type)) || EMPTY_IOC_API_METADATA;
   const classificationSlugs = meta.classifications;
@@ -609,8 +641,11 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       // unless ioc_evidence is true (then they are also in `tags`).
       report_context_tags: meta.report_context_tags,
       note: body.note,
-      first_seen: body.first_seen_at || body.created_at,
-      last_seen: body.last_seen_in_source || body.last_seen_at || body.created_at,
+      ...sourceObservationFields(timestamps.get(iocPairKey(body.id, body.type)), {
+        first_seen_at: body.first_seen_at,
+        last_seen_at: body.last_seen_in_source || body.last_seen_at,
+        created_at: body.created_at
+      }),
       // Per-provider source memberships (own lifecycle each); see loadIocSourceViews.
       sources: sourceEvidence.sources,
       historical_sources: sourceEvidence.historical_sources,
@@ -724,7 +759,11 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
   // (constant query count, no N+1) — parity with lookup_ioc / search_iocs /
   // get_ioc_context. Rows carry threat_classification, so the legacy fallback
   // needs no extra read.
-  const metaMap = await hydrateIocApiMetadata(pool, [...byKey.values()].map((m) => m.row));
+  const hitRows = [...byKey.values()].map((m) => m.row);
+  const [metaMap, timestampMap] = await Promise.all([
+    hydrateIocApiMetadata(pool, hitRows),
+    loadIocSourceObservationTimestamps(pool, hitRows)
+  ]);
 
   const existing = [];
   const missing = [];
@@ -766,7 +805,11 @@ export async function mcpBulkLookupIocs(pool, { iocs } = {}, opts = {}) {
         status: hit.status || null,
         confidence: hit.confidence ?? null,
         classifications: meta.classifications,
-        first_seen: hit.created_at || null,
+        ...sourceObservationFields(timestampMap.get(iocPairKey(hit.id, hit.observable_type)), {
+          first_seen_at: hit.created_at,
+          last_seen_at: hit.created_at,
+          created_at: hit.created_at
+        }),
         // Additive (parity with lookup_ioc / search_iocs).
         classification_context: meta.classification_context,
         tags: meta.tags,
