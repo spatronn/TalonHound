@@ -938,3 +938,24 @@ test('refresh re-applies vulnerability grounding to stored AI output: subtractiv
   assert.equal(grounding.entity_links_removed, 1);
   assert.equal(grounding.relationships_removed, 1);
 });
+
+test('a later analyst Context Only / Ignore of a created IOC identity survives refresh (not reset to suspicious)', () => {
+  // Prod report 13: IOCs created 2026-09-15, analyst marked api.telegram.org /
+  // backblazeb2.com Context Only on 2026-09-17; a refresh turned them back into
+  // suspicious / existing IOC candidates.
+  const fresh = () => ({ candidate_type: 'domain', normalized_value: 'api.telegram.org', assessment: 'suspicious', role: 'malicious_infrastructure', match_state: 'existing', is_ioc: true, matched_ioc_id: 3445485 });
+  const ctx = applyAnalystState(fresh(), { review_status: 'context_only', promotion_outcome: 'created', evidence: {} });
+  assert.equal(ctx.review_status, 'context_only');
+  assert.equal(ctx.assessment, 'context_only');
+  assert.equal(ctx.match_state, 'context_only');
+  for (const review of ['ignored', 'rejected']) {
+    const c = applyAnalystState({ ...fresh(), assessment: 'context_only', match_state: 'context_only' }, { review_status: review, promotion_outcome: 'already_existing', evidence: {} });
+    assert.equal(c.review_status, review);
+    assert.equal(c.assessment, 'context_only', `${review}: extraction reading kept, not forced back to suspicious`);
+  }
+  // Unchanged: an approved created identity a new extraction reads as context is kept as an IOC.
+  const kept = applyAnalystState({ ...fresh(), assessment: 'context_only', match_state: 'context_only', role: 'reference' }, { review_status: 'approved', promotion_outcome: 'created', evidence: {} });
+  assert.equal(kept.assessment, 'suspicious');
+  assert.equal(kept.is_ioc, true);
+  assert.equal(kept.match_state, 'existing');
+});

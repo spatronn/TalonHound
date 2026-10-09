@@ -44,6 +44,12 @@ export const REVIEW_RELEVANT_CANDIDATE_COLUMNS = Object.freeze([
 
 const REVIEW_RELEVANT_COLUMN_SET = new Set(REVIEW_RELEVANT_CANDIDATE_COLUMNS);
 const CREATED_IOC_OUTCOMES = new Set(['created', 'already_existing']);
+/**
+ * Analyst decisions that take an indicator out of the IOC set. They are made
+ * after (and so override) an earlier Create IOCs outcome: an analyst may mark
+ * a created / linked identity Context Only or Ignore it on a finalized report.
+ */
+const ANALYST_EXCLUSION_REVIEWS = new Set(['context_only', 'ignored', 'rejected']);
 
 function evidenceOf(row) {
   return row?.evidence && typeof row.evidence === 'object' ? row.evidence : {};
@@ -101,8 +107,10 @@ export function applyAnalystState(candidate, prior) {
   // Create-IOC / link outcome. The catalog match is the linkage; this stops a
   // new extraction or AI pass from demoting that identity back to non-IOC and
   // making the stored outcome look reset. It does not freeze an AI assessment
-  // that is still an IOC.
-  if (CREATED_IOC_OUTCOMES.has(String(prior.promotion_outcome || ''))) {
+  // that is still an IOC, and it never overrides a LATER analyst exclusion
+  // (Context Only / Ignore / Reject of the created identity): that decision
+  // stands, exactly as the review action left it.
+  if (CREATED_IOC_OUTCOMES.has(String(prior.promotion_outcome || '')) && !ANALYST_EXCLUSION_REVIEWS.has(review)) {
     if (isContextOnlyCandidate(candidate) || candidate.is_ioc === false) {
       candidate.is_ioc = true;
       if (!candidate.assessment || candidate.assessment === 'context_only' || candidate.assessment === 'invalid') {
