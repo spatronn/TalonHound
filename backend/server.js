@@ -79,8 +79,11 @@ import {
 import { registerRdapEnrichmentRoutes } from './routes/rdapEnrichment.js';
 import { registerIpEnrichmentRoutes } from './routes/ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './routes/abuseipdbEnrichment.js';
+import { registerUrlscanEnrichmentRoutes } from './routes/urlscanEnrichment.js';
 import { registerSpamhausDropEnrichmentRoutes } from './routes/spamhausDropEnrichment.js';
 import { registerEnrichmentUsageRoutes } from './routes/enrichmentUsage.js';
+import { getUrlscanConfig } from './services/urlscanService.js';
+import { URLSCAN_PROVIDER, URLSCAN_DISPLAY_NAME } from './lib/urlscanEnrichment.js';
 import { recordEnrichmentUsage } from './lib/enrichmentUsageTelemetry.js';
 import {
   registerAnalystIntelligenceRoutes,
@@ -2994,6 +2997,8 @@ registerRouteModule('rdap_enrichment');
 registerIpEnrichmentRoutes(app, pool, auditLogService);
 registerAbuseIpdbEnrichmentRoutes(app, pool, auditLogService);
 registerRouteModule('abuseipdb_enrichment');
+registerUrlscanEnrichmentRoutes(app, pool, auditLogService);
+registerRouteModule('urlscan_enrichment');
 registerSpamhausDropEnrichmentRoutes(app, pool, auditLogService, { importQueue });
 registerEnrichmentUsageRoutes(app, pool);
 registerRouteModule('enrichment_usage');
@@ -6620,10 +6625,11 @@ app.post('/api/ioc/:id/enrichments/virustotal/refresh', async (req, res) => {
 registerEnrichmentExecutor(VT_PROVIDER, (ctx) => runVirusTotalRefresh(ctx.req, ctx.ioc.id, ctx.audit || auditLogService));
 
 async function loadEnrichmentProviderSummaries() {
-  const [cfg, ipinfo, abuseipdb, sdCfg, sdState] = await Promise.all([
+  const [cfg, ipinfo, abuseipdb, urlscan, sdCfg, sdState] = await Promise.all([
     getThreatIntelProviderConfig(VT_PROVIDER),
     getIpinfoLiteConfig(pool),
     getAbuseIpdbConfig(pool),
+    getUrlscanConfig(pool),
     getSpamhausDropConfig(pool),
     getSpamhausDropSyncState(pool)
   ]);
@@ -6674,6 +6680,26 @@ async function loadEnrichmentProviderSummaries() {
         last_success_at: abuseipdb.last_success_at,
         last_error_at: abuseipdb.last_error_at,
         last_error_message: abuseipdb.last_error_message
+      },
+      {
+        provider: URLSCAN_PROVIDER,
+        name: URLSCAN_DISPLAY_NAME,
+        enabled: urlscan.enabled,
+        configured: urlscan.configured,
+        masked_key: urlscan.api_key_masked,
+        source: urlscan.source,
+        cache_ttl_hours: urlscan.cache_ttl_hours,
+        timeout_ms: urlscan.timeout_ms,
+        lookback_days: urlscan.lookback_days,
+        search_size: urlscan.search_size,
+        detail_limit: urlscan.detail_limit,
+        no_result_ttl_hours: urlscan.no_result_ttl_hours,
+        read_only: true,
+        scan_submission_enabled: false,
+        last_test_at: urlscan.last_test_at,
+        last_success_at: urlscan.last_success_at,
+        last_error_at: urlscan.last_error_at,
+        last_error_message: urlscan.last_error_message
       },
       getRdapProviderAdminSummary(),
       {

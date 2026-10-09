@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { registerIpEnrichmentRoutes } from './ipEnrichment.js';
 import { registerAbuseIpdbEnrichmentRoutes } from './abuseipdbEnrichment.js';
+import { registerUrlscanEnrichmentRoutes } from './urlscanEnrichment.js';
 
 // Capture Express handlers registered by a route module without a real server.
 function captureRoutes(register, pool, audit) {
@@ -95,5 +96,21 @@ test('AbuseIPDB refresh: disabled provider → 409 PROVIDER_DISABLED, external c
   assert.equal(res.statusCode, 409);
   assert.equal(res.body.error, 'PROVIDER_DISABLED');
   assert.equal(res.body.provider, 'abuseipdb');
+  assert.equal(fetchCalled, false);
+});
+
+test('urlscan refresh: disabled provider → 409 PROVIDER_DISABLED, external client not called', async () => {
+  const routes = captureRoutes(registerUrlscanEnrichmentRoutes, disabledPool('urlscan'), noopAudit);
+  const handler = routes['POST /api/ioc/:id/enrichments/urlscan/refresh'];
+  assert.ok(handler, 'urlscan refresh route registered');
+
+  const res = fakeRes();
+  const fetchCalled = await withFetchSpy(async () => {
+    await handler({ params: { id: '1' }, query: {}, body: {}, user: { role: 'admin' } }, res);
+  });
+
+  assert.equal(res.statusCode, 409);
+  assert.equal(res.body.error, 'PROVIDER_DISABLED');
+  assert.equal(res.body.provider, 'urlscan');
   assert.equal(fetchCalled, false);
 });

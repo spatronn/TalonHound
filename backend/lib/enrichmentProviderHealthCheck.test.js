@@ -199,5 +199,6 @@ test('runProviderHealthProbe does not probe a provider missing required credenti
 test('ACTIVE_PROBE_PROVIDERS excludes the scheduled-operation provider (spamhaus)', () => {
   assert.ok(ACTIVE_PROBE_PROVIDERS.includes('rdap'));
   assert.ok(ACTIVE_PROBE_PROVIDERS.includes('virustotal'));
+  assert.ok(ACTIVE_PROBE_PROVIDERS.includes('urlscan'));
   assert.ok(!ACTIVE_PROBE_PROVIDERS.includes('spamhaus_drop'));
 });

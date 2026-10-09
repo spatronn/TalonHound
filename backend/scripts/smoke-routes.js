@@ -75,7 +75,7 @@ const CHECKS = [
     assert: (_res, body) => {
       const data = /** @type {{ providers?: Array<{ provider?: string }> }} */ (body);
       const providers = (data?.providers || []).map((p) => p.provider);
-      for (const key of ['virustotal', 'ipinfo_lite', 'abuseipdb', 'rdap']) {
+      for (const key of ['virustotal', 'ipinfo_lite', 'abuseipdb', 'urlscan', 'rdap']) {
         if (!providers.includes(key)) {
           throw new Error(`admin enrichment providers missing ${key}; got ${providers.join(', ')}`);
         }

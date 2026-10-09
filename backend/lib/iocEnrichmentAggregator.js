@@ -6,6 +6,7 @@
 //   provider         supported IOC types   storage table                   read fn
 //   ---------------  --------------------  ------------------------------  -------------------------------
 //   virustotal       ip/domain/url/hash    ioc_enrichments (generic)       (direct query here)
+//   urlscan          url/domain/ip         ioc_enrichments (generic)       (direct query here)
 //   rdap             domain/url            ioc_domain_enrichment           rdapEnrichmentService
 //   abuseipdb        ip (+ URL derived)    ioc_abuseipdb_enrichment        abuseipdbService
 //   ipinfo_lite      ip (+ URL derived)    ioc_ip_enrichment               ipinfoLiteService
@@ -252,7 +253,7 @@ async function readSpamhausEnrichment(pool, type, value) {
 export async function collectIocEnrichments(pool, { iocId, type, value, linkedIocIds } = {}) {
   const entries = [];
 
-  // Generic table (VirusTotal today) — keyed by ioc_id, plus any exact-hash alias
+  // Generic table (VirusTotal, urlscan) — keyed by ioc_id, plus any exact-hash alias
   // ioc_ids of the same file artifact so one VT file result covers every hash.
   const genericIds = [...new Set([
     ...(iocId != null ? [iocId] : []),

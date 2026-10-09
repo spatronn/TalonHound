@@ -33,6 +33,14 @@ export const PROVIDER_META = {
     shortDescription: 'Periodic CIDR blocklist dataset sync.',
     longDescription: 'Periodic CIDR blocklist dataset sync. Local lookup only — no per-IP external calls.',
     editable: true
+  },
+  urlscan: {
+    key: 'urlscan',
+    name: 'urlscan.io',
+    shortDescription: 'Passive historical website scan search (read-only).',
+    longDescription: 'Read-only historical scan search via urlscan.io Search and Result APIs. Never submits URLs for scanning.',
+    editable: true,
+    category: 'Web / URL Intelligence'
   }
 };
 
@@ -40,6 +48,7 @@ export const PROVIDER_ORDER = [
   'virustotal',
   'ipinfo_lite',
   'abuseipdb',
+  'urlscan',
   'rdap',
   'spamhaus_drop'
 ];

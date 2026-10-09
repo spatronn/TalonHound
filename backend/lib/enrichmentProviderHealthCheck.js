@@ -8,7 +8,7 @@
 // health check has ever produced evidence.
 //
 // Provider health modes:
-//   active_probe        virustotal, ipinfo_lite, abuseipdb, rdap  (explicit connection test)
+//   active_probe        virustotal, ipinfo_lite, abuseipdb, rdap, urlscan  (explicit connection test)
 //   scheduled_operation spamhaus_drop                             (dataset sync is the evidence)
 
 // Provider services and the registry are imported lazily inside the probe paths
@@ -21,6 +21,7 @@ export const PROVIDER_HEALTH_MODE = Object.freeze({
   ipinfo_lite: 'active_probe',
   abuseipdb: 'active_probe',
   rdap: 'active_probe',
+  urlscan: 'active_probe',
   spamhaus_drop: 'scheduled_operation'
 });
 
@@ -190,11 +191,21 @@ async function probeRdap(pool) {
   return testRdapConnection(pool);
 }
 
+async function probeUrlscan(pool) {
+  const { testUrlscanConnection } = await import('../services/urlscanService.js');
+  const result = await testUrlscanConnection(pool);
+  return {
+    search_total: result?.search_total ?? null,
+    read_only: true
+  };
+}
+
 const PROBES = Object.freeze({
   virustotal: probeVirustotal,
   ipinfo_lite: probeIpinfoLite,
   abuseipdb: probeAbuseIpdb,
-  rdap: probeRdap
+  rdap: probeRdap,
+  urlscan: probeUrlscan
 });
 
 // --- Persistence -----------------------------------------------------------

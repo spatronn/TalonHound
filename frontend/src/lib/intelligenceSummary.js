@@ -18,19 +18,21 @@ export function snapshotHasResult(snapshot) {
 
 function providerCoverageStatus(snapshot) {
   const status = String(snapshot?.status || 'not_run').toLowerCase();
-  if (['success', 'available', 'enriched', 'vt_not_indexed', 'listed', 'not_listed'].includes(status)) {
+  if (['success', 'available', 'enriched', 'vt_not_indexed', 'listed', 'not_listed', 'skipped'].includes(status)) {
     if (snapshot?.found === false) return 'not_found';
+    if (snapshot?.assessment === 'no_results') return 'not_found';
     if (snapshot?.scan_state === 'success_partial') return 'partial';
     return 'available';
   }
   if (status === 'not_found') return 'not_found';
   if (status === 'no_data') return 'not_found';
+  if (status === 'no_results') return 'not_found';
   if (status === 'completed') return snapshot?.known === false ? 'not_found' : 'available';
   // Disabled provider: keep historical results distinguishable from an empty one.
   if (status === 'disabled') return snapshotHasResult(snapshot) ? 'historical_disabled' : 'disabled';
   if (['not_configured', 'api_key_missing'].includes(status)) return 'not_configured';
-  if (['dataset_not_synced', 'suspicious', 'stale'].includes(status)) return 'not_configured';
-  if (['error', 'failed'].includes(status)) return 'error';
+  if (['dataset_not_synced', 'suspicious', 'stale', 'privacy_restricted'].includes(status)) return 'not_configured';
+  if (['error', 'failed', 'rate_limited'].includes(status)) return 'error';
   return 'not_run';
 }
 
@@ -39,6 +41,7 @@ export function computeProviderCoverage(snapshots, { iocType, rdapEligible = fal
     { key: 'virustotal', label: 'VT' },
     { key: 'ipinfo', label: 'IPinfo' },
     { key: 'abuseipdb', label: 'AbuseIPDB' },
+    { key: 'urlscan', label: 'urlscan' },
     { key: 'rdap', label: 'RDAP' },
     { key: 'spamhaus_drop', label: 'Spamhaus' }
   ];

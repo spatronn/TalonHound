@@ -577,6 +577,7 @@ export function IntelligenceTabPanel({
   VirusTotalEnrichmentCard,
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
+  UrlscanEnrichmentCard,
   RdapEnrichmentCard,
   SpamhausDropEnrichmentCard
 }) {
@@ -596,6 +597,7 @@ export function IntelligenceTabPanel({
 
   const showVt = isProviderApplicable('virustotal', iocType);
   const showAbuse = isProviderApplicable('abuseipdb', iocType);
+  const showUrlscan = isProviderApplicable('urlscan', iocType);
   const showIpinfo = isProviderApplicable('ipinfo', iocType);
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
   const showSpamhaus = isProviderApplicable('spamhaus_drop', iocType);
@@ -649,6 +651,9 @@ export function IntelligenceTabPanel({
           ) : null}
           {showAbuse ? (
             <AbuseIpdbEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)} />
+          ) : null}
+          {showUrlscan && UrlscanEnrichmentCard ? (
+            <UrlscanEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('urlscan', snap)} />
           ) : null}
           {showIpinfo ? (
             <IpEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)} />

@@ -358,7 +358,7 @@ test('job view is owner-scoped (no existence leak to other owners)', async () =>
 });
 
 test('registry: test providers did not displace the real provider entries', () => {
-  for (const key of ['virustotal', 'ipinfo_lite', 'abuseipdb', 'rdap', 'spamhaus_drop']) {
+  for (const key of ['virustotal', 'ipinfo_lite', 'abuseipdb', 'urlscan', 'rdap', 'spamhaus_drop']) {
     assert.ok(getEnrichmentProvider(key), key);
   }
 });

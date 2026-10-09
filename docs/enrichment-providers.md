@@ -13,10 +13,11 @@ Provider credentials and security-sensitive settings require the **admin** role.
 | VirusTotal | API key required | File, URL, and domain reputation lookup | Yes |
 | IPinfo Lite | API token required | On-demand IP enrichment (ASN, country, continent) | Yes |
 | AbuseIPDB | API key required | Public IP reputation checks (check endpoint only) | Yes |
+| urlscan.io | API key required | Passive historical website scan search (Search + Result APIs only) | Yes |
 | RDAP / WHOIS | No credentials required | Domain registration data via public RDAP | Yes |
 | Spamhaus DROP | No credentials required | Periodic CIDR blocklist dataset sync; local IP lookup | No — use **Run sync now** |
 
-On a fresh install, **VirusTotal** and **RDAP / WHOIS** are enabled by default. **IPinfo Lite**, **AbuseIPDB**, and **Spamhaus DROP** are disabled until you turn them on in the provider card. Credential-protected providers still need a saved key or token before enrichment works, even when enabled.
+On a fresh install, **VirusTotal** and **RDAP / WHOIS** are enabled by default. **IPinfo Lite**, **AbuseIPDB**, **urlscan.io**, and **Spamhaus DROP** are disabled until you turn them on in the provider card. Credential-protected providers still need a saved key or token before enrichment works, even when enabled.
 
 ## Configuring credentials
 
@@ -59,6 +60,20 @@ IPinfo Lite enriches IP observables (and IP hosts extracted from URL IOCs). The 
 
 AbuseIPDB enriches public IP observables (and IP hosts extracted from URL IOCs).
 
+### urlscan.io
+
+1. Create or sign in to a [urlscan.io](https://urlscan.io/) account.
+2. Create an API key from your urlscan.io account settings / API page.
+3. In TalonHound, open **Administration → Enrichment Providers → urlscan.io**.
+4. Turn **Enabled** on.
+5. Paste the key into **API Key**.
+6. Click **Save Changes** (TalonHound prompts for an audit reason).
+7. Click **Test Connection**.
+
+urlscan.io enrichment is **strictly read-only**: TalonHound searches historical scans and may retrieve bounded Result API details. It **never** submits URLs for scanning (`POST /api/v1/scan` is forbidden by the provider client). Applies to URL, domain, and public IP observables from **IOC Details → Intelligence**.
+
+Absence of historical scans is reported as **No results**, not clean/safe. urlscan scores are provider observations and are not TalonHound confidence.
+
 ## Providers that work without credentials
 
 ### RDAP / WHOIS
@@ -85,7 +100,7 @@ Health reflects sync success rather than a live **Test Connection** probe. After
 On **Administration → Enrichment Providers**, check each provider card’s **Status** (for example **Healthy**, **Degraded**, or **Unhealthy**) and **Enabled** state.
 
 - Confirm the provider is **Enabled** when you expect enrichment to run.
-- For VirusTotal, IPinfo Lite, and AbuseIPDB, verify the **API Key** or **API Token** was saved and use **Test Connection**.
+- For VirusTotal, IPinfo Lite, AbuseIPDB, and urlscan.io, verify the **API Key** or **API Token** was saved and use **Test Connection**.
 - For Spamhaus DROP, confirm a sync has completed successfully (**Run sync now** or wait for the scheduled interval).
 - Review error messages shown on the provider card and check whether the provider account quota or rate limit may be exhausted.
 - Ensure TalonHound has outbound HTTPS access to the provider endpoints.

@@ -26,18 +26,30 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
   const [vt, setVt] = useState(null);
   const [ipinfo, setIpinfo] = useState(null);
   const [abuseipdb, setAbuseipdb] = useState(null);
+  const [urlscan, setUrlscan] = useState(null);
   const [rdap, setRdap] = useState(null);
   const [spamhaus, setSpamhaus] = useState(null);
   const [openCards, setOpenCards] = useState(() => new Set());
   const [vtForm, setVtForm] = useState({ enabled: true, ttl_hours: 24, timeout_ms: 12000, api_key: '' });
   const [ipForm, setIpForm] = useState({ enabled: true, token: '', base_url: 'https://api.ipinfo.io/lite', timeout_seconds: 6, usage_note: '' });
   const [abuseForm, setAbuseForm] = useState({ enabled: false, api_key: '', cache_ttl_hours: 24, timeout_ms: 8000, max_age_days: 90, verbose: false, test_ip: '' });
+  const [urlscanForm, setUrlscanForm] = useState({
+    enabled: false,
+    api_key: '',
+    cache_ttl_hours: 24,
+    timeout_ms: 12000,
+    lookback_days: 30,
+    search_size: 20,
+    detail_limit: 3,
+    no_result_ttl_hours: 6
+  });
   const [spamhausForm, setSpamhausForm] = useState({ enabled: false, sync_interval_hours: 24, timeout_ms: 30000 });
   const [feedback, setFeedback] = useState({ type: '', text: '' });
   const [busy, setBusy] = useState({
     vtSave: false, vtTest: false, vtRemove: false,
     ipSave: false, ipTest: false, ipRemove: false,
     abuseSave: false, abuseTest: false, abuseRemove: false,
+    urlscanSave: false, urlscanTest: false, urlscanRemove: false,
     rdapTest: false,
     spamSave: false, spamSync: false
   });
@@ -50,11 +62,13 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
       const vtRow = rows.find((x) => x.provider === 'virustotal') || null;
       const ipRow = rows.find((x) => x.provider === 'ipinfo_lite') || null;
       const abuseRow = rows.find((x) => x.provider === 'abuseipdb') || null;
+      const urlscanRow = rows.find((x) => x.provider === 'urlscan') || null;
       const rdapRow = rows.find((x) => x.provider === 'rdap') || null;
       const spamRow = rows.find((x) => x.provider === 'spamhaus_drop') || null;
       setVt(vtRow);
       setIpinfo(ipRow);
       setAbuseipdb(abuseRow);
+      setUrlscan(urlscanRow);
       setRdap(rdapRow);
       setSpamhaus(spamRow);
       if (vtRow) setVtForm((f) => ({ ...f, enabled: vtRow.enabled, ttl_hours: vtRow.ttl_hours || 24, timeout_ms: vtRow.timeout_ms || 12000 }));
@@ -76,6 +90,18 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
           verbose: abuseRow.verbose === true
         }));
       }
+      if (urlscanRow) {
+        setUrlscanForm((f) => ({
+          ...f,
+          enabled: urlscanRow.enabled === true,
+          cache_ttl_hours: urlscanRow.cache_ttl_hours || urlscanRow.ttl_hours || 24,
+          timeout_ms: urlscanRow.timeout_ms || 12000,
+          lookback_days: urlscanRow.lookback_days || 30,
+          search_size: urlscanRow.search_size || 20,
+          detail_limit: urlscanRow.detail_limit ?? 3,
+          no_result_ttl_hours: urlscanRow.no_result_ttl_hours || 6
+        }));
+      }
       if (spamRow) {
         setSpamhausForm((f) => ({
           ...f,
@@ -92,11 +118,11 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
   useEffect(() => { load().catch(() => {}); }, [load]);
 
   const providersForStats = useMemo(() => {
-    return [vt, ipinfo, abuseipdb, rdap, spamhaus].filter(Boolean).map((row) => ({
+    return [vt, ipinfo, abuseipdb, urlscan, rdap, spamhaus].filter(Boolean).map((row) => ({
       ...row,
       status: resolveProviderStatus(row)
     }));
-  }, [vt, ipinfo, abuseipdb, rdap, spamhaus]);
+  }, [vt, ipinfo, abuseipdb, urlscan, rdap, spamhaus]);
 
   const anyBusy = Object.values(busy).some(Boolean);
 
@@ -263,6 +289,53 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     }
   }
 
+  async function saveUrlscan() {
+    setBusy((b) => ({ ...b, urlscanSave: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const reason = await requestRequiredReason('Update urlscan.io provider settings');
+      if (!reason) return;
+      await api.put('/admin/enrichment-providers/urlscan', { ...urlscanForm, reason });
+      setFeedback({ type: 'success', text: 'urlscan.io settings saved.' });
+      setUrlscanForm((f) => ({ ...f, api_key: '' }));
+      await load();
+    } catch (e) {
+      setFeedback({ type: 'error', text: e?.response?.data?.message || 'Save failed' });
+    } finally {
+      setBusy((b) => ({ ...b, urlscanSave: false }));
+    }
+  }
+
+  async function testUrlscan() {
+    setBusy((b) => ({ ...b, urlscanTest: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      const { data } = await api.post('/admin/enrichment-providers/urlscan/test');
+      setFeedback({ type: 'success', text: data?.message || 'urlscan.io connection successful' });
+      await load();
+    } catch (e) {
+      const msg = e?.response?.data?.message || 'Test failed';
+      setFeedback({ type: /rate limit/i.test(msg) ? 'warn' : 'error', text: msg });
+      await load();
+    } finally {
+      setBusy((b) => ({ ...b, urlscanTest: false }));
+    }
+  }
+
+  async function removeUrlscanKey() {
+    setBusy((b) => ({ ...b, urlscanRemove: true }));
+    setFeedback({ type: '', text: '' });
+    try {
+      await api.post('/admin/enrichment-providers/urlscan/remove-key');
+      setFeedback({ type: 'success', text: 'urlscan.io API key removed.' });
+      await load();
+    } catch (e) {
+      throw new Error(e?.response?.data?.message || 'Remove failed');
+    } finally {
+      setBusy((b) => ({ ...b, urlscanRemove: false }));
+    }
+  }
+
   async function testRdap() {
     setBusy((b) => ({ ...b, rdapTest: true }));
     setFeedback({ type: '', text: '' });
@@ -323,6 +396,8 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
       await api.put('/admin/enrichment-providers/ipinfo-lite', { ...ipForm, enabled: false, token: '', reason: DISABLE_REASON });
     } else if (providerKey === 'abuseipdb') {
       await api.put('/admin/enrichment-providers/abuseipdb', { ...abuseForm, enabled: false, api_key: '', reason: DISABLE_REASON });
+    } else if (providerKey === 'urlscan') {
+      await api.put('/admin/enrichment-providers/urlscan', { ...urlscanForm, enabled: false, api_key: '', reason: DISABLE_REASON });
     } else if (providerKey === 'spamhaus_drop') {
       await api.put('/admin/enrichment-providers/spamhaus-drop', { ...spamhausForm, enabled: false, reason: DISABLE_REASON });
     } else {
@@ -348,6 +423,7 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
     virustotal: vt,
     ipinfo_lite: ipinfo,
     abuseipdb,
+    urlscan,
     rdap,
     spamhaus_drop: spamhaus
   };
@@ -602,6 +678,92 @@ export default function EnrichmentProvidersPage({ AppShell, useSession, useReaso
                             removeLabel="Remove key"
                             disabled={!isAdmin || anyBusy}
                             busy={{ save: busy.abuseSave, test: busy.abuseTest, remove: busy.abuseRemove }}
+                          />
+                        )}
+                      />
+                    </ProviderAccordionCard>
+                  );
+                }
+
+                if (key === 'urlscan') {
+                  const hs = headerStatus(row, urlscanForm.enabled);
+                  return (
+                    <ProviderAccordionCard
+                      key={key}
+                      providerKey={key}
+                      name={meta.name}
+                      description={meta.shortDescription}
+                      status={hs.status}
+                      statusLabel={hs.label}
+                      enabled={urlscanForm.enabled}
+                      open={open}
+                      onToggle={() => toggleCard(key)}
+                    >
+                      <ProviderConfigForm
+                        status={hs.status}
+                        statusLabel={hs.label}
+                        enabled={urlscanForm.enabled}
+                        onEnabledChange={(v) => handleEnabledChange('urlscan', v, setUrlscanForm)}
+                        enabledDisabled={!isAdmin}
+                        health={row.health}
+                        lastEnrichmentAt={row.last_enrichment_at}
+                        description={meta.longDescription}
+                        errorMessage={row.last_error_message}
+                        left={(
+                          <>
+                            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 8 }}>
+                              Passive historical search only. TalonHound never submits URLs for scanning.
+                            </div>
+                            <ProviderField
+                              id="urlscan-api-key"
+                              label="API Key"
+                              hint={row.masked_key ? `Current key: ${row.masked_key}. Env fallback: URLSCAN_API_KEY` : 'Env fallback: URLSCAN_API_KEY. Key is never returned in plaintext.'}
+                            >
+                              <input
+                                id="urlscan-api-key"
+                                type="password"
+                                value={urlscanForm.api_key}
+                                onChange={(e) => setUrlscanForm((x) => ({ ...x, api_key: e.target.value }))}
+                                placeholder={row.masked_key ? 'Leave blank to keep current key' : 'Paste urlscan.io API key'}
+                                disabled={!isAdmin}
+                              />
+                            </ProviderField>
+                            <div className="ep-field-grid">
+                              <ProviderField id="urlscan-ttl" label="Cache TTL (hours)">
+                                <input id="urlscan-ttl" type="number" min="1" value={urlscanForm.cache_ttl_hours} onChange={(e) => setUrlscanForm((x) => ({ ...x, cache_ttl_hours: Number(e.target.value) }))} disabled={!isAdmin} />
+                              </ProviderField>
+                              <ProviderField id="urlscan-timeout" label="Timeout (ms)">
+                                <input id="urlscan-timeout" type="number" min="3000" value={urlscanForm.timeout_ms} onChange={(e) => setUrlscanForm((x) => ({ ...x, timeout_ms: Number(e.target.value) }))} disabled={!isAdmin} />
+                              </ProviderField>
+                              <ProviderField id="urlscan-lookback" label="Lookback (days)">
+                                <input id="urlscan-lookback" type="number" min="1" max="90" value={urlscanForm.lookback_days} onChange={(e) => setUrlscanForm((x) => ({ ...x, lookback_days: Number(e.target.value) }))} disabled={!isAdmin} />
+                              </ProviderField>
+                              <ProviderField id="urlscan-size" label="Search size">
+                                <input id="urlscan-size" type="number" min="1" max="50" value={urlscanForm.search_size} onChange={(e) => setUrlscanForm((x) => ({ ...x, search_size: Number(e.target.value) }))} disabled={!isAdmin} />
+                              </ProviderField>
+                              <ProviderField id="urlscan-detail" label="Detail lookups">
+                                <input id="urlscan-detail" type="number" min="0" max="5" value={urlscanForm.detail_limit} onChange={(e) => setUrlscanForm((x) => ({ ...x, detail_limit: Number(e.target.value) }))} disabled={!isAdmin} />
+                              </ProviderField>
+                              <ProviderField id="urlscan-nores-ttl" label="No-result TTL (hours)">
+                                <input id="urlscan-nores-ttl" type="number" min="1" max="48" value={urlscanForm.no_result_ttl_hours} onChange={(e) => setUrlscanForm((x) => ({ ...x, no_result_ttl_hours: Number(e.target.value) }))} disabled={!isAdmin} />
+                              </ProviderField>
+                            </div>
+                          </>
+                        )}
+                        actions={(
+                          <ProviderActionBar
+                            onTest={() => testUrlscan().catch(() => {})}
+                            onSave={() => saveUrlscan().catch(() => {})}
+                            onRemove={() => removeKey.request({
+                              providerKey: key,
+                              providerName: meta.name,
+                              keyNoun: 'API key',
+                              confirmLabel: 'Remove key',
+                              onConfirm: removeUrlscanKey
+                            })}
+                            removeLabel="Remove key"
+                            disabled={!isAdmin || anyBusy}
+                            busy={{ save: busy.urlscanSave, test: busy.urlscanTest, remove: busy.urlscanRemove }}
                           />
                         )}
                       />

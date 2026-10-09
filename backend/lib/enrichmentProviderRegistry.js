@@ -32,6 +32,12 @@ import {
   getEnrichmentByIp as getAbuseIpdbEnrichmentByIp,
   isCacheFresh as isAbuseIpdbCacheFresh
 } from '../services/abuseipdbService.js';
+import {
+  getUrlscanConfig,
+  getUrlscanEnrichmentByIoc,
+  isCacheFresh as isUrlscanCacheFresh
+} from '../services/urlscanService.js';
+import { URLSCAN_PROVIDER, isSupportedUrlscanIocType } from './urlscanEnrichment.js';
 import { getRdapProviderAdminSummary, getEnrichmentByRootDomain } from '../services/rdapEnrichmentService.js';
 import { getSpamhausDropEnrichmentByIp } from '../services/spamhausDropEnrichmentService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './spamhausDropSync.js';
@@ -39,6 +45,7 @@ import { resolveIpEnrichmentTarget } from './ipEnrichmentEligibility.js';
 import { extractIpLiteralFromIoc } from './iocIpExtraction.js';
 import { normalizeRdapTarget, isRdapSupportedIocType } from './domainRoot.js';
 import { resolveVtEnrichmentRow } from './virustotalEnrichmentReuse.js';
+import { validatePublicIp, isValidIpAddress } from './publicIp.js';
 
 export const VIRUSTOTAL_PROVIDER = 'virustotal';
 
@@ -101,6 +108,25 @@ function resolveVirustotalTarget(ioc) {
   const category = observableCategory(ioc.observable_type);
   if (!['ip', 'domain', 'url', 'hash'].includes(category)) return notApplicable('unsupported_type');
   return { applicable: true, scope: 'direct', target_type: category, target_value: String(ioc.observable || '') };
+}
+
+/** urlscan.io: URL, domain, and public IP observables (passive search only). */
+function resolveUrlscanTarget(ioc) {
+  const category = observableCategory(ioc.observable_type);
+  const supported = isSupportedUrlscanIocType(category);
+  if (!supported) return notApplicable('unsupported_type');
+  if (supported === 'ip') {
+    const ip = String(ioc.observable || '').trim();
+    if (!isValidIpAddress(ip)) return notApplicable('invalid_ip');
+    if (!validatePublicIp(ip)) return notApplicable('unsupported_private_ip');
+    return { applicable: true, scope: 'direct', target_type: 'ip', target_value: ip };
+  }
+  return {
+    applicable: true,
+    scope: 'direct',
+    target_type: supported,
+    target_value: String(ioc.observable || '')
+  };
 }
 
 // Freshness = "would a normal (non-force) refresh reuse the stored result?",
@@ -168,6 +194,19 @@ async function spamhausDropFreshness(pool, target) {
     fresh: enrichedAt > 0 && enrichedAt >= lastSync,
     stored_status: row.provider_status,
     last_enriched_at: toIso(row.enriched_at)
+  };
+}
+
+async function urlscanFreshness(pool, _target, ioc) {
+  const row = await getUrlscanEnrichmentByIoc(pool, Number(ioc.id));
+  if (!row) return { fresh: false, last_enriched_at: null };
+  const config = await getUrlscanConfig(pool);
+  const usable = row.status === 'success' || row.status === 'not_found' || row.status === 'skipped';
+  return {
+    fresh: usable && isUrlscanCacheFresh(row, config),
+    stored_status: row.status || null,
+    last_enriched_at: toIso(row.fetched_at),
+    expires_at: toIso(row.expires_at)
   };
 }
 
@@ -251,6 +290,17 @@ const DEFAULT_PROVIDERS = [
     resolveTarget: resolveIpLiteralTarget,
     readFreshness: spamhausDropFreshness,
     automationRatePerMin: 120
+  },
+  {
+    key: URLSCAN_PROVIDER,
+    displayName: 'urlscan.io',
+    loadState: async (pool) => pickState(await getUrlscanConfig(pool)),
+    external: true,
+    supportedObservableTypes: ['url', 'domain', 'ip'],
+    resolveTarget: resolveUrlscanTarget,
+    readFreshness: urlscanFreshness,
+    // Search API free-tier minute budgets are modest; keep automation conservative.
+    automationRatePerMin: 10
   }
 ];
 

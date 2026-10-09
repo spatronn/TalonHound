@@ -377,6 +377,7 @@ import {
   expirationPolicyModeHint
 } from './lib/feedExpirationPolicyUi.js';
 import { IntelligenceTabPanel } from './intelligenceTab.jsx';
+import UrlscanEnrichmentCard from './components/UrlscanEnrichmentCard.jsx';
 
 // Shared, process-wide cache for the source-color catalog so the many screens
 // that render source badges resolve identical colors without each refetching.
@@ -17386,6 +17387,7 @@ function IOCDetailsPage() {
                   VirusTotalEnrichmentCard={VirusTotalEnrichmentCard}
                   IpEnrichmentCard={IpEnrichmentCard}
                   AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
+                  UrlscanEnrichmentCard={UrlscanEnrichmentCard}
                   RdapEnrichmentCard={RdapEnrichmentCard}
                   SpamhausDropEnrichmentCard={SpamhausDropEnrichmentCard}
                 />

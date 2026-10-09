@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { registerAbuseIpdbEnrichmentRoutes, runAbuseIpdbRefresh } from './abuseipdbEnrichment.js';
+import { registerUrlscanEnrichmentRoutes, runUrlscanRefresh } from './urlscanEnrichment.js';
 import { registerIpEnrichmentRoutes, runIpinfoRefresh } from './ipEnrichment.js';
 import { registerRdapEnrichmentRoutes, runRdapRefresh } from './rdapEnrichment.js';
 import { registerSpamhausDropEnrichmentRoutes, runSpamhausDropRefresh } from './spamhausDropEnrichment.js';
@@ -38,10 +39,11 @@ test('every enrichment route module registers its canonical refresh as the provi
   resetEnrichmentExecutorsForTests();
   const app = fakeApp();
   registerAbuseIpdbEnrichmentRoutes(app, noDbPool, noAudit);
+  registerUrlscanEnrichmentRoutes(app, noDbPool, noAudit);
   registerIpEnrichmentRoutes(app, noDbPool, noAudit);
   registerRdapEnrichmentRoutes(app, noDbPool, noAudit);
   registerSpamhausDropEnrichmentRoutes(app, noDbPool, noAudit);
-  for (const key of ['abuseipdb', 'ipinfo_lite', 'rdap', 'spamhaus_drop']) {
+  for (const key of ['abuseipdb', 'urlscan', 'ipinfo_lite', 'rdap', 'spamhaus_drop']) {
     assert.equal(typeof getEnrichmentExecutor(key), 'function', key);
   }
   // VirusTotal's refresh lives in server.js and registers there.
@@ -50,7 +52,7 @@ test('every enrichment route module registers its canonical refresh as the provi
   assert.match(server, /app\.post\('\/api\/ioc\/:id\/enrichments\/virustotal\/refresh', async \(req, res\) => \{\n  const out = await runVirusTotalRefresh\(req, req\.params\.id\);/);
   // Every registry provider is covered by some executor registration site.
   const keys = listEnrichmentProviders().map((p) => p.key).filter((k) => !k.startsWith('t_'));
-  assert.deepEqual(keys.sort(), ['abuseipdb', 'ipinfo_lite', 'rdap', 'spamhaus_drop', 'virustotal']);
+  assert.deepEqual(keys.sort(), ['abuseipdb', 'ipinfo_lite', 'rdap', 'spamhaus_drop', 'urlscan', 'virustotal']);
   resetEnrichmentExecutorsForTests();
 });
 
@@ -87,7 +89,8 @@ test('admin-only force refresh: analyst owner refused, admin owner passes the ro
   for (const run of [
     (req) => runIpinfoRefresh(noDbPool, noAudit, req, { ip: '8.8.8.8', force: true }),
     (req) => runAbuseIpdbRefresh(noDbPool, noAudit, req, { ip: '8.8.8.8', force: true }),
-    (req) => runRdapRefresh(noDbPool, noAudit, req, { value: 'example.org', hintType: 'domain', force: true })
+    (req) => runRdapRefresh(noDbPool, noAudit, req, { value: 'example.org', hintType: 'domain', force: true }),
+    (req) => runUrlscanRefresh(noDbPool, noAudit, req, { iocId: 1, force: true })
   ]) {
     assert.equal((await run({ user: { role: 'analyst' }, authVia: 'mcp', body })).status, 403);
     // Admin passes the role gate and proceeds to the provider path (which this
