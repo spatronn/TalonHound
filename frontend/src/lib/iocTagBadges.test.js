@@ -54,10 +54,10 @@ test('buildIocTagBadges shows Threat Library tags as a separate, provenance-carr
   assert.equal(hasTags, true);
   assert.deepEqual(manual.map((m) => m.label), ['clickfix']);
   assert.equal(feed.length, 0);
-  // Inherited tags are never presented as direct assignments.
+  // Report tags are never presented as direct assignments.
   assert.deepEqual(context.map((c) => [c.kind, c.label]), [['threat_library', 'winpot'], ['threat_library', 'atm']]);
-  assert.equal(context[0].title, 'Inherited from Threat Library reports: WinPot malware campaign; ATM jackpotting wave');
-  assert.equal(context[1].title, 'Inherited from Threat Library report: WinPot malware campaign');
+  assert.equal(context[0].title, 'Report context from Threat Library reports: WinPot malware campaign; ATM jackpotting wave (not an assertion about this IOC)');
+  assert.equal(context[1].title, 'Report context from Threat Library report: WinPot malware campaign (not an assertion about this IOC)');
 });
 
 test('buildIocTagBadges: direct tag wins over the same inherited tag, which is noted in its tooltip', () => {
@@ -67,13 +67,13 @@ test('buildIocTagBadges: direct tag wins over the same inherited tag, which is n
   });
   assert.equal(manual.length, 1);
   assert.equal(context.length, 0, 'effective tag appears once');
-  assert.match(manual[0].title, /^Added by analyst\. Also inherited from Threat Library report: WinPot malware campaign$/);
+  assert.match(manual[0].title, /^Added by analyst\. Also report context from Threat Library report: WinPot malware campaign \(not an assertion about this IOC\)$/);
 });
 
 test('buildIocTagBadges: only inherited tags still count as tags', () => {
   const { hasTags, context } = buildIocTagBadges({ contextTags: [{ name: 'atm', reports: [] }] });
   assert.equal(hasTags, true);
-  assert.equal(context[0].title, 'Inherited from a Threat Library report');
+  assert.equal(context[0].title, 'Report context from a Threat Library report (not an assertion about this IOC)');
 });
 
 test('buildIocTagBadges hides disabled catalog names from feed badges', () => {
@@ -84,4 +84,29 @@ test('buildIocTagBadges hides disabled catalog names from feed badges', () => {
   });
   assert.equal(manual.length, 0);
   assert.equal(feed.length, 0);
+});
+
+test('report tags named by the IOC evidence vs report-level context get different, non-"inherited" tooltips', () => {
+  const { context } = buildIocTagBadges({
+    contextTags: [
+      { name: 'clickfix', ioc_evidence: true, reports: [{ id: 'r-a', title: 'ClickFix wave', ioc_evidence: true }] },
+      { name: 'data theft', ioc_evidence: false, reports: [{ id: 'r-b', title: 'Joint advisory', ioc_evidence: false }] },
+      { name: 'mixed', ioc_evidence: true, reports: [{ id: 'r-a', title: 'ClickFix wave', ioc_evidence: true }, { id: 'r-b', title: 'Joint advisory', ioc_evidence: false }] },
+      { name: 'untitled', ioc_evidence: true, reports: [] }
+    ]
+  });
+  assert.equal(context[0].title, 'Named for this IOC in Threat Library report: ClickFix wave');
+  assert.equal(context[0].iocEvidence, true);
+  assert.equal(context[1].title, 'Report context from Threat Library report: Joint advisory (not an assertion about this IOC)');
+  assert.equal(context[1].iocEvidence, false);
+  assert.equal(context[2].title, 'Named for this IOC in Threat Library report: ClickFix wave. Report context from Threat Library report: Joint advisory (not an assertion about this IOC)');
+  assert.equal(context[3].title, 'Named for this IOC in a Threat Library report');
+  for (const c of context) assert.doesNotMatch(c.title, /Inherited/i);
+});
+
+test('IOC Details Threat Context group label no longer says "Inherited"', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../main.jsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /title="Inherited from Threat Library reports linked to this IOC/);
+  assert.match(src, /report context unless the report's evidence for this IOC names the tag/);
 });

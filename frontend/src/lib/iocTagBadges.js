@@ -3,13 +3,33 @@
  * Threat Library context teal).
  */
 
-/** "Inherited from Threat Library: A; B" — why the IOC carries this tag. */
-export function describeThreatLibraryTagSources(reports = []) {
-  const titles = (Array.isArray(reports) ? reports : [])
-    .map((r) => String(r?.title || '').trim())
-    .filter(Boolean);
-  if (!titles.length) return 'Inherited from a Threat Library report';
-  return `Inherited from Threat Library report${titles.length > 1 ? 's' : ''}: ${titles.join('; ')}`;
+function reportTitles(reports) {
+  return reports.map((r) => String(r?.title || '').trim()).filter(Boolean);
+}
+
+function reportList(titles) {
+  return `Threat Library report${titles.length > 1 ? 's' : ''}: ${titles.join('; ')}`;
+}
+
+/**
+ * Why a Threat Library report tag shows on this IOC. A report tag is an IOC
+ * tag only when the report's evidence for THIS IOC names it (`ioc_evidence`);
+ * otherwise it is report-level context (campaign, sector, theme) and the
+ * tooltip says so — never "inherited", which reads as an IOC assertion.
+ * @param {Array<{ title?: string, ioc_evidence?: boolean }>} reports
+ * @param {{ iocEvidence?: boolean }} [opts] entry-level flag when no report titles are known
+ */
+export function describeThreatLibraryTagSources(reports = [], opts = {}) {
+  const list = Array.isArray(reports) ? reports : [];
+  const named = reportTitles(list.filter((r) => r?.ioc_evidence === true));
+  const context = reportTitles(list.filter((r) => r?.ioc_evidence !== true));
+  const parts = [];
+  if (named.length) parts.push(`Named for this IOC in ${reportList(named)}`);
+  if (context.length) parts.push(`Report context from ${reportList(context)} (not an assertion about this IOC)`);
+  if (parts.length) return parts.join('. ');
+  return opts.iocEvidence === true
+    ? 'Named for this IOC in a Threat Library report'
+    : 'Report context from a Threat Library report (not an assertion about this IOC)';
 }
 
 export function formatTagSourcesCell(sources = [], { maxVisible = 2 } = {}) {
@@ -39,10 +59,13 @@ export function formatTagSourcesCell(sources = [], { maxVisible = 2 } = {}) {
  *   disabledTagNames?: Iterable<string>
  * }} opts
  *
- * contextTags = tags inherited from linked Threat Library reports. They are
- * shown in their own group (never as direct assignments) and cannot be removed
- * here — they are managed on the report. When the same tag is also assigned
- * directly or by a feed, that badge wins and its tooltip notes the inheritance.
+ * contextTags = tags of linked Threat Library reports (GET
+ * /api/ioc/:id/tags/threat-library), each with `ioc_evidence`: true when the
+ * report's evidence for this IOC names the tag (an IOC tag), false when it is
+ * report-level context only. They are shown in their own group (never as
+ * direct assignments) and cannot be removed here — they are managed on the
+ * report. When the same tag is also assigned directly or by a feed, that badge
+ * wins and its tooltip notes the report source.
  */
 export function buildIocTagBadges({
   manualTags = [],
@@ -111,7 +134,8 @@ export function buildIocTagBadges({
     if (!normalized || disabled.has(normalized) || seenContext.has(normalized)) continue;
     seenContext.add(normalized);
     const reports = Array.isArray(ct?.reports) ? ct.reports : [];
-    const inheritedNote = describeThreatLibraryTagSources(reports);
+    const iocEvidence = ct?.ioc_evidence === true || reports.some((r) => r?.ioc_evidence === true);
+    const inheritedNote = describeThreatLibraryTagSources(reports, { iocEvidence });
     const owner = manual.find((m) => m.normalized === normalized) || feed.find((f) => f.normalized === normalized);
     if (owner) {
       owner.title = `${owner.title}. Also ${inheritedNote.charAt(0).toLowerCase()}${inheritedNote.slice(1)}`;
@@ -124,6 +148,7 @@ export function buildIocTagBadges({
       label,
       normalized,
       reports,
+      iocEvidence,
       title: inheritedNote
     });
   }

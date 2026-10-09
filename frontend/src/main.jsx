@@ -17241,7 +17241,7 @@ function IOCDetailsPage() {
                       <div data-testid="ioc-threat-context-tags" style={{ marginTop: 10 }}>
                         <div
                           style={{ fontSize: 11, marginBottom: 6, color: '#64748b' }}
-                          title="Inherited from Threat Library reports linked to this IOC. Manage them on the report."
+                          title="Tags of Threat Library reports linked to this IOC: report context unless the report's evidence for this IOC names the tag. Manage them on the report."
                         >
                           Threat Context
                         </div>
