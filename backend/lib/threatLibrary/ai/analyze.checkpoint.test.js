@@ -174,7 +174,7 @@ test('an obsolete semantic-v7 checkpoint carrying mitre_attack is never reused a
     }
   );
   assert.equal(out.ok, true);
-  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v9');
+  assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v10');
   // Every chunk was re-analyzed: no v7 checkpoint was trusted.
   assert.ok(calls.length >= chunks.length);
   assert.equal(out.meta.chunks_from_cache, 0);

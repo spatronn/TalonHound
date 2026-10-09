@@ -938,6 +938,40 @@ export async function linkReportEntity(pool, reportId, entityId, meta = {}) {
   );
 }
 
+/** Entity links of one report with the entity name (grounding / refresh). */
+export async function loadReportEntityLinks(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT re.entity_id, e.entity_type, e.name
+     FROM threat_report_entities re
+     JOIN threat_entities e ON e.id = re.entity_id
+     WHERE re.report_id = $1
+     ORDER BY re.entity_id`,
+    [reportId]
+  );
+  return rows;
+}
+
+/**
+ * Unlink entities from ONE report, with that report's relationships that use
+ * them. The global threat_entities rows (shared across reports) stay.
+ * @returns {Promise<{ links_removed: number, relationships_removed: number }>}
+ */
+export async function removeReportEntityLinks(pool, reportId, entityIds) {
+  const ids = (entityIds || []).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+  if (!ids.length) return { links_removed: 0, relationships_removed: 0 };
+  const rel = await pool.query(
+    `DELETE FROM threat_relationships
+     WHERE report_id = $1
+       AND (subject_entity_id = ANY($2::bigint[]) OR object_entity_id = ANY($2::bigint[]))`,
+    [reportId, ids]
+  );
+  const links = await pool.query(
+    `DELETE FROM threat_report_entities WHERE report_id = $1 AND entity_id = ANY($2::bigint[])`,
+    [reportId, ids]
+  );
+  return { links_removed: links.rowCount || 0, relationships_removed: rel.rowCount || 0 };
+}
+
 export async function replaceRelationships(pool, reportId, relationships) {
   await pool.query(`DELETE FROM threat_relationships WHERE report_id = $1`, [reportId]);
   for (const r of relationships) {

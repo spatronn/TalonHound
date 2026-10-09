@@ -51,6 +51,7 @@ import {
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { preserveAnalystCandidates } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
+import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
 
 // Deterministic stages live in extractionStages.js (shared with the
 // AI-free extraction refresh); re-exported for existing callers.
@@ -386,6 +387,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
 
     let aiValue = null;
     let aiMeta = null;
+    let vulnerabilityGrounding = null;
     const progressGate = createProgressGate(async (progress) => {
       if (await isAnalysisCancelRequested(pool, report.id)) {
         abort.abort();
@@ -426,7 +428,11 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           details: ai.details
         });
       }
-      aiValue = ai.value;
+      // CVE ids / CVE-product pairings the source does not state are model
+      // fabrications: removed before anything is persisted.
+      const grounded = groundAiVulnerabilities(ai.value, document);
+      aiValue = grounded.value;
+      vulnerabilityGrounding = grounded.diagnostics;
       aiMeta = ai.meta || null;
       log.info('AI analysis completed', {
         reportId: report.id,
@@ -607,7 +613,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         chunks_from_cache: aiMeta?.chunks_from_cache ?? null,
         prompt_chars_total: aiMeta?.prompt_chars_total ?? null,
         elapsed_ms: aiMeta?.elapsed_ms ?? null,
-        synthesis: aiMeta?.synthesis ?? null
+        synthesis: aiMeta?.synthesis ?? null,
+        vulnerability_grounding: vulnerabilityGrounding
       },
       canonical_document: document,
       analysis_status: 'review_required',

@@ -45,6 +45,12 @@ import {
 } from './observableTypeResolver.js';
 import { hexRunIsHostnameLabelFragment, ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
+import {
+  buildRowObservation,
+  inferSlashDateOrder,
+  isDateCell,
+  recoverHeaderLabels
+} from './sourceObservation.js';
 
 export { normalizeCandidateValue } from './candidateValue.js';
 export {
@@ -116,10 +122,56 @@ export {
  * v19: the same in prose when the clause marks a release ("Apache Struts
  * 2.3.24.1", "versions prior to 2.3.20.2", "Version=4.0.0.0"); a network cue at
  * the token ("C2 IP 2.3.24.1") keeps the address (ipv4VersionContext.js).
+ * v20: an indicator table row keeps the publisher's whole row as evidence
+ * (every cell, column order, labels) instead of only the widest unlabelled
+ * column, and records the row's publisher observation dates as structured
+ * `observation` / candidate `source_observation` (sourceObservation.js).
+ * Membership, typing and assessment are unchanged: classification still reads
+ * the asserted cells only.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v19';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v20';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
+
+/** Cell texts of every canonical table block (publisher date-order evidence). */
+function* tableCellTexts(blocks) {
+  for (const block of blocks || []) {
+    if (block?.type !== 'table' || !Array.isArray(block.table?.rows)) continue;
+    for (const row of block.table.rows) {
+      if (Array.isArray(row)) for (const cell of row) yield String(cell ?? '');
+    }
+  }
+}
+
+/**
+ * Column labels of an interpreted indicator table: its own header (table
+ * headers or a promoted header row), else the label line printed just above
+ * a headerless table (PDF appendices repeat "IP Address First Seen Last Seen"
+ * on every page as a separate line). Recovered labels must agree with the
+ * columns they name; they only label row evidence (observation dates), never
+ * change column intent or assertion.
+ * @param {object} interp tableSemantics.interpretIocTable result
+ * @param {object|undefined} previousBlock
+ * @returns {Array<string|null>|null}
+ */
+function tableColumnLabels(interp, previousBlock) {
+  const columns = Array.isArray(interp?.columns) ? interp.columns : [];
+  if (!columns.length) return null;
+  const own = columns.map((c) => (c.header ? String(c.header) : null));
+  if (own.some(Boolean)) return own;
+  if (!previousBlock || previousBlock.type === 'table' || previousBlock.type === 'list_item') return null;
+  const rows = (interp.rows || []).filter((r) => r.status === 'valid' && Array.isArray(r.cells));
+  if (!rows.length) return null;
+  const dateColumns = columns
+    .map((c) => c.index)
+    .filter((i) => rows.every((r) => !r.cells[i] || isDateCell(r.cells[i])) && rows.some((r) => isDateCell(r.cells[i])));
+  if (!dateColumns.length) return null;
+  return recoverHeaderLabels(previousBlock.text || '', {
+    width: columns.length,
+    indicatorColumns: interp.indicator_columns || [],
+    dateColumns
+  });
+}
 
 /**
  * IPv4-shaped tokens of a table block split by column role: those found in its
@@ -443,7 +495,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       row_shape: rowShape,
       port: extra.port ?? null,
       table_row: extra.tableRow ? extra.tableRow.row_index : null,
-      surrounding_text: text ? surroundingWindow(text, focus, 140, extra.focusOrdinal || 0) : null,
+      surrounding_text: (extra.evidenceRowText || text)
+        ? surroundingWindow(extra.evidenceRowText || text, focus, 140, extra.focusOrdinal || 0)
+        : null,
       typing_reason: extra.typingReason || null
     };
   }
@@ -471,7 +525,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   }
 
   function evidenceTextFor(block, extra = {}) {
-    if (extra.rowText) return String(extra.rowText).slice(0, 500);
+    if (extra.evidenceRowText || extra.rowText) return String(extra.evidenceRowText || extra.rowText).slice(0, 500);
     if (!block?.text) return null;
     const text = String(block.text).slice(0, 500);
     if ((block.type === 'list_item' || block.layout === 'observable_row') && block.section_heading) {
@@ -846,9 +900,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   /** Blocks handled row-by-row (typed indicator tables) — skipped by the regex passes. */
   const tableHandled = new Set();
+  // Publisher observation dates in indicator rows: slash-date order is decided
+  // once per document from its own table cells (sourceObservation.js).
+  const slashDateOrder = inferSlashDateOrder(tableCellTexts(blocks));
+  const observationNotAfter = opts.observationNotAfter || null;
 
   // Pass 0: typed indicator tables — every valid row is a source assertion with row provenance.
-  for (const block of blocks) {
+  for (let blockIndex = 0; blockIndex < blocks.length; blockIndex += 1) {
+    const block = blocks[blockIndex];
     if (block.type !== 'table' || !block.table) continue;
     const t = diagnostics.explicit_tables;
     t.tables_seen += 1;
@@ -879,12 +938,29 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     for (const [reason, n] of Object.entries(summary.rejection_reasons)) {
       t.rejection_reasons[reason] = (t.rejection_reasons[reason] || 0) + n;
     }
+    const columnLabels = tableColumnLabels(interp, blocks[blockIndex - 1]);
     for (const row of interp.rows || []) {
       if (row.status !== 'valid') {
         if (summary.rejected_rows.length < 12) summary.rejected_rows.push({ row_index: row.row_index, reason: row.reason });
         continue;
       }
+      // Classification haystack (typing / credential / embedded-host checks)
+      // stays the asserted cells; evidence shows the publisher's whole row.
       const rowText = [row.type_cell, row.values[0]?.indicator_cell, row.description].filter(Boolean).join(' | ');
+      const rowCells = Array.isArray(row.cells) ? row.cells : [];
+      const fullRowText = rowCells.filter(Boolean).join(' | ') || rowText;
+      const observation = buildRowObservation({
+        cells: rowCells,
+        headers: columnLabels,
+        indicatorColumns: interp.indicator_columns,
+        slashOrder: slashDateOrder,
+        notAfter: observationNotAfter
+      });
+      const contextCells = rowCells
+        .map((text, index) => ({ column_index: index, header: columnLabels?.[index] || null, text }))
+        .filter((c) => c.text && !interp.indicator_columns.includes(c.column_index))
+        .slice(0, 8)
+        .map((c) => ({ ...c, text: c.text.slice(0, 160) }));
       const related = relatedValuesFromDescription(row.description);
       for (const v of row.values) {
         t.values_asserted += 1;
@@ -906,7 +982,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           declared_type_mismatch: v.declared_type_mismatch === true || undefined,
           related_values: related.length ? related : undefined,
           resolved_type: v.resolved_type || v.candidate_type,
-          typing_reason: v.typing_reason || undefined
+          typing_reason: v.typing_reason || undefined,
+          cells: contextCells.length ? contextCells : undefined,
+          observation: observation || undefined
         };
         const entry = add(v.refanged, v.candidate_type, block, {
           form: OCCURRENCE_FORMS.TABLE_ROW,
@@ -914,6 +992,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           originalValue: v.raw,
           tableRow,
           rowText,
+          evidenceRowText: fullRowText,
           typeLabel: row.type_cell || null,
           declaredType: v.declared_type || null,
           typing: {

@@ -64,7 +64,16 @@ export function resolveManualExpirationFromSource(sourceRow, opts = {}) {
   );
 }
 
-export function resolveManualIocConfidenceProvenance(body, sourceRow, confidence) {
+export function resolveManualIocConfidenceProvenance(body, sourceRow, confidence, opts = {}) {
+  // A system writer that derives per-entry confidence from its own evidence
+  // (Threat Library: the report's assertion strength) records it as the
+  // source's entry confidence, not as a person's manual entry.
+  if (opts.confidenceOrigin === 'source_entry' && body?.confidence != null && String(body.confidence).trim() !== '') {
+    return {
+      confidence_source: 'source_entry',
+      confidence_source_name: String(sourceRow.name)
+    };
+  }
   const sourceDefault = sourceRow?.default_confidence
     ? String(sourceRow.default_confidence).trim().toLowerCase()
     : null;
@@ -168,9 +177,12 @@ export function serializeManualIocResponse(row, source, expiration, classificati
  *   user?: object,
  *   audit?: object,
  *   onAfterInsert?: Function,
- *   auditMetadata?: Record<string, unknown>
+ *   auditMetadata?: Record<string, unknown>,
+ *   confidenceOrigin?: 'source_entry'
  * }} opts - `auditMetadata` is merged into the ioc.created row (origin such as
- *   a Threat Library report / candidate / operation id).
+ *   a Threat Library report / candidate / operation id). `confidenceOrigin:
+ *   'source_entry'` records a sent confidence as the IOC source's per-entry
+ *   confidence (system writer), not as a manual entry.
  */
 export async function createManualIoc(pool, body, opts = {}) {
   const value = String(body?.ip || body?.observable || '').trim();
@@ -242,7 +254,9 @@ export async function createManualIoc(pool, body, opts = {}) {
     threatActorRows = check.rows || [];
   }
   const threatActorId = legacyThreatActorColumnValue(threatActorIds);
-  const confidenceProvenance = resolveManualIocConfidenceProvenance(body, sourceRow, confidence);
+  const confidenceProvenance = resolveManualIocConfidenceProvenance(body, sourceRow, confidence, {
+    confidenceOrigin: opts.confidenceOrigin
+  });
   const sourceName = String(sourceRow.name);
   const sourceUrl = body?.source_url ? String(body.source_url).trim() || null : null;
   const category = body?.category ? String(body.category).trim() || null : null;

@@ -18,6 +18,7 @@
 import { getIocThreatContext } from './store.js';
 import { TLP_DISPLAY } from './constants.js';
 import { serializePublicationDate } from './publicationDate.js';
+import { serializeSourceObservation } from './sourceObservation.js';
 import { findArtifactLinkedIocsByIocId } from '../fileArtifacts/read.js';
 import { reportTagInheritanceEligibleSql } from './reportTagInheritance.js';
 
@@ -105,6 +106,10 @@ export function serializeThreatContextClaim(c, entitiesByReport = new Map()) {
     // IOC-specific context: where this value appears in the report.
     occurrence_count,
     occurrences,
+    // When the publisher observed THIS value (its own indicator row), e.g. an
+    // appendix "First Seen / Last Seen". Independent of report.published_* and
+    // report.created_at (TalonHound import); null when the report gives none.
+    source_observation: serializeSourceObservation(c.evidence),
     report: {
       id: c.report_public_id,
       title: c.report_title,

@@ -166,6 +166,21 @@ function createFakeDb({ report, iocCatalog = [] }) {
       db.relationships = db.relationships.filter((r) => !gone.has(r.subject_candidate_id) && !gone.has(r.object_candidate_id));
       return { rows: [] };
     }
+    if (/FROM threat_report_entities re\s+JOIN threat_entities e/.test(s)) {
+      return { rows: db.entities.filter((e) => e.report_id === params[0]).map((e) => ({ entity_id: e.entity_id, entity_type: e.entity_type || 'malware', name: e.name })) };
+    }
+    if (/^DELETE FROM threat_relationships\s+WHERE report_id = \$1\s+AND \(subject_entity_id = ANY/.test(t)) {
+      const ids = new Set(params[1].map(Number));
+      const before = db.relationships.length;
+      db.relationships = db.relationships.filter((r) => r.report_id !== params[0] || !(ids.has(r.subject_entity_id) || ids.has(r.object_entity_id)));
+      return { rows: [], rowCount: before - db.relationships.length };
+    }
+    if (/^DELETE FROM threat_report_entities WHERE report_id = \$1 AND entity_id = ANY/.test(t)) {
+      const ids = new Set(params[1].map(Number));
+      const before = db.entities.length;
+      db.entities = db.entities.filter((e) => e.report_id !== params[0] || !ids.has(Number(e.entity_id)));
+      return { rows: [], rowCount: before - db.entities.length };
+    }
     if (/^DELETE FROM threat_report_entities WHERE report_id = \$1/.test(t)) {
       db.entities = db.entities.filter((e) => e.report_id !== params[0]);
       return { rows: [] };
@@ -284,10 +299,15 @@ const AI_OWNED_TABLES = /threat_library_analysis_chunks|threat_report_entities|t
 // report_type, summary, ai_result, analysis_run_id, tlp_source.
 const AI_OWNED_REPORT_PARAMS = [1, 3, 4, 5, 6, 13, 19, 23];
 
-/** Every statement a refresh issued that touches AI-owned tables or report columns. */
+/**
+ * Every write a refresh issued to AI-owned tables or report columns. Reads are
+ * allowed: the vulnerability grounding gate reads the report's entity links
+ * (it writes only when a stored CVE is ungrounded — covered separately).
+ */
 function aiOwnedWrites(db) {
   const out = [];
   for (const { sql, params } of db.calls) {
+    if (/^\s*SELECT/i.test(sql)) continue;
     if (AI_OWNED_TABLES.test(sql) || /SET analysis_run_id/.test(sql)) out.push(sql.trim().slice(0, 80));
     if (/^\s*UPDATE threat_reports SET\s+title = COALESCE/.test(sql)) {
       for (const i of AI_OWNED_REPORT_PARAMS) if (params[i] != null) out.push(`updateReportStatus param ${i + 1}`);
@@ -894,3 +914,27 @@ for (const jobType of ['retry', 'rerun_ai']) {
     assert.equal(db.report.analysis_status, 'review_required');
   });
 }
+
+test('refresh re-applies vulnerability grounding to stored AI output: subtractive only, analyst state untouched, no AI', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport();
+  // Stored model output carrying a CVE the source never mentions, paired with a product.
+  db.report.summary = 'Operator Group X targets Microsoft Exchange (CVE-2019-0708) with SyntheticLoader.';
+  db.entities.push({ report_id: 77, entity_id: 9003, entity_type: 'vulnerability', name: 'CVE-2019-0708', confidence: null });
+  db.relationships.push({ id: 3002, report_id: 77, subject_kind: 'entity', subject_entity_id: 9002, relationship_type: 'exploits', object_kind: 'entity', object_entity_id: 9003 });
+  const candidatesBefore = clone(db.candidates.map((c) => [c.id, c.review_status, c.assessment, c.role, c.match_state, c.matched_ioc_id]));
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true);
+  assert.equal(calls.analyze, 0);
+  assert.equal(calls.fetch, 0);
+  assert.equal(db.report.summary, 'Operator Group X targets Microsoft Exchange with SyntheticLoader.');
+  assert.deepEqual(db.entities.map((e) => e.entity_id), [9001, 9002], 'only the ungrounded CVE entity link is removed');
+  assert.deepEqual(db.relationships.map((r) => r.id), [3001], 'only the relationship that used it is removed');
+  assert.deepEqual(db.reportTags, [{ report_id: 77, tag_id: 11 }, { report_id: 77, tag_id: 12 }]);
+  assert.deepEqual(clone(db.candidates.map((c) => [c.id, c.review_status, c.assessment, c.role, c.match_state, c.matched_ioc_id])), candidatesBefore);
+  const grounding = db.report.analysis_progress.last_refresh.vulnerability_grounding;
+  assert.equal(grounding.summary_changed, true);
+  assert.deepEqual(grounding.summary_removed_cves, ['CVE-2019-0708']);
+  assert.equal(grounding.entity_links_removed, 1);
+  assert.equal(grounding.relationships_removed, 1);
+});

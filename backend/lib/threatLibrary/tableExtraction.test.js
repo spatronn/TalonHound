@@ -132,7 +132,7 @@ function extractFromHtml(html, url = 'https://socradar.example/blog/cve-2025-252
 test('internal contracts bumped for structured table extraction (product VERSION untouched)', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v4');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v4');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v19');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v20');
   const version = fs.readFileSync(path.join(here, '..', '..', '..', 'VERSION'), 'utf8').trim();
   assert.equal(version, '0.2.0-beta.14');
 });

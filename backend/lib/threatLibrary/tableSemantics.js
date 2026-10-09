@@ -607,6 +607,9 @@ export function interpretIocTable(block, opts = {}) {
       declared_type: declaredRow,
       type_cell: typeCol ? String(cells[typeCol.index] || '').trim() || null : null,
       description,
+      // Every cell of the publisher's row, in column order: provenance only
+      // (observation dates, columns no intent claimed), never assertions.
+      cells: cells.map((c) => String(c || '').trim()),
       values: []
     };
     const rejected = [];

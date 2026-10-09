@@ -7,9 +7,14 @@
  * candidate counts — and reconciles the result into the stored candidate set.
  *
  * It never invokes a model. This module and its whole static import graph stay
- * free of `./ai/*` (extractionRefresh.test.js enforces it), and it writes none
- * of the AI-owned report data: entities, relationships, report tags, summary,
- * confidence, report type, TLP, ai_result, analysis chunks / run id.
+ * free of `./ai/*` (extractionRefresh.test.js enforces it), and it never
+ * regenerates AI-owned report data: entities, relationships, report tags,
+ * summary, confidence, report type, TLP, ai_result, analysis chunks / run id.
+ * The one exception is subtractive and deterministic: the vulnerability
+ * grounding gate the pipeline applies to every model result
+ * (vulnerabilityGrounding.js) is re-applied to the STORED summary and entity
+ * links, so a CVE the source never mentions, or a CVE-product pairing the
+ * source never states, is removed. Nothing is added or rewritten otherwise.
  *
  * State ownership on a surviving canonical identity (candidate_type,
  * normalized_value):
@@ -41,11 +46,14 @@ import {
 import {
   getReportById,
   loadReportCandidateRows,
+  loadReportEntityLinks,
   reconcileReportCandidates,
+  removeReportEntityLinks,
   restoreReportStatus,
   updateJob,
   updateReportStatus
 } from './store.js';
+import { groundStoredVulnerabilities, VULNERABILITY_GROUNDING_VERSION } from './vulnerabilityGrounding.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import {
   preserveAnalystCandidates,
@@ -176,6 +184,31 @@ export async function computeExtractionRefresh(pool, { report, document, previou
 }
 
 /**
+ * Re-apply the vulnerability grounding gate to the stored model output of a
+ * report (summary + entity links). Subtractive only; returns the grounded
+ * summary when it changed (else null) and diagnostics.
+ * @param {import('pg').Pool} pool
+ * @param {{ id: number, summary?: string|null }} report
+ * @param {object} document canonical document the refresh extracted from
+ */
+export async function applyStoredVulnerabilityGrounding(pool, report, document) {
+  const entities = await loadReportEntityLinks(pool, report.id);
+  const grounded = groundStoredVulnerabilities({ summary: report.summary ?? null, entities }, document);
+  const removal = await removeReportEntityLinks(pool, report.id, grounded.entity_ids_removed);
+  return {
+    summary: grounded.summary_changed ? grounded.summary : null,
+    diagnostics: {
+      version: VULNERABILITY_GROUNDING_VERSION,
+      summary_changed: grounded.summary_changed,
+      summary_removed_cves: grounded.removed_cves,
+      summary_unpaired: grounded.unpaired,
+      entity_links_removed: removal.links_removed,
+      relationships_removed: removal.relationships_removed
+    }
+  };
+}
+
+/**
  * Worker entry for `refresh_extraction` jobs.
  * @param {import('pg').Pool} pool
  * @param {{ reportId: number, jobId: number, restoreStatus?: object }} ctx
@@ -239,6 +272,7 @@ export async function runExtractionRefresh(pool, ctx) {
     const refreshed = await computeExtractionRefresh(pool, { report, document, previousRows, documentRebuilt });
     const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates);
     const outcome = resolveRefreshOutcomeStatus(restore, persisted);
+    const grounding = await applyStoredVulnerabilityGrounding(pool, report, refreshed.document);
 
     const result = {
       document_rebuilt: documentRebuilt,
@@ -248,6 +282,7 @@ export async function runExtractionRefresh(pool, ctx) {
       unchanged: persisted.unchanged,
       removed: persisted.removed.length,
       replayed_ai_decisions: refreshed.replayedAiDecisions,
+      vulnerability_grounding: grounding.diagnostics,
       ai_invoked: false,
       review_relevant: outcome.review_relevant,
       reopened_for_review: outcome.reopened_for_review,
@@ -266,6 +301,7 @@ export async function runExtractionRefresh(pool, ctx) {
     await updateReportStatus(pool, report.id, {
       canonical_document: refreshed.document,
       candidate_summary: refreshed.summary,
+      ...(grounding.summary != null ? { summary: grounding.summary } : {}),
       analysis_status: outcome.analysis_status,
       import_status: outcome.import_status,
       analysis_progress: {

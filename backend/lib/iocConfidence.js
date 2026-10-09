@@ -12,6 +12,8 @@ export const CONFIDENCE_SOURCES = Object.freeze({
   MANUAL: 'manual',
   MANUAL_ENTRY: 'manual_entry',
   IOC_SOURCE_DEFAULT: 'ioc_source_default',
+  /** Per-entry confidence a system IOC source assigned (e.g. Threat Library assertion strength). */
+  SOURCE_ENTRY: 'source_entry',
   FEED_ENTRY: 'feed_entry',
   FEED_DEFAULT: 'feed_default',
   ANALYST_OVERRIDE: 'analyst_override',
@@ -170,6 +172,10 @@ export function buildConfidenceSourceDescription(sourceKind, contextName, opts =
   if (sourceKind === CONFIDENCE_SOURCES.IOC_SOURCE_DEFAULT || sourceKind === 'ioc_source_default') {
     if (historical && name) return `${name} (historical)`;
     return name ? `IOC source default from ${name}` : 'IOC source default';
+  }
+  if (sourceKind === CONFIDENCE_SOURCES.SOURCE_ENTRY) {
+    if (historical && name) return `${name} (historical)`;
+    return name ? `${name} entry confidence` : 'Source entry confidence';
   }
   if (sourceKind === CONFIDENCE_SOURCES.FEED_ENTRY || sourceKind === 'feed_provided') {
     if (historical && name) return `${name} (historical)`;

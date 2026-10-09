@@ -1499,6 +1499,7 @@ test('get_ioc_context: Threat Library claim surfaces under threat_context with c
     page_number: 3,
     occurrence_count: 0,
     occurrences: [],
+    source_observation: null,
     report: {
       id: 'f1b3a0c2-1111-4222-8333-444455556666',
       title: 'Illegal Gambling Sites Reveal Three Types of Cybercrime',

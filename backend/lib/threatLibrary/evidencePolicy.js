@@ -12,6 +12,7 @@
 
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES, evidenceTierForZone } from './documentZones.js';
 import { CONFIDENCE_POLICY } from './constants.js';
+import { aggregateSourceObservation } from './sourceObservation.js';
 import {
   SOURCE_RELATIONS,
   attachOccurrenceRelations,
@@ -602,8 +603,20 @@ export function buildCandidateEvidenceRecord(c) {
     description: r.description ? String(r.description).slice(0, 300) : null,
     explicit: r.explicit === true,
     declared_type_mismatch: r.declared_type_mismatch === true || undefined,
-    related_values: Array.isArray(r.related_values) ? r.related_values.slice(0, 8) : undefined
+    related_values: Array.isArray(r.related_values) ? r.related_values.slice(0, 8) : undefined,
+    cells: Array.isArray(r.cells)
+      ? r.cells.slice(0, 8).map((cell) => ({
+          column_index: cell?.column_index ?? null,
+          header: cell?.header ? String(cell.header).slice(0, 80) : null,
+          text: cell?.text ? String(cell.text).slice(0, 160) : null
+        }))
+      : undefined,
+    observation: r.observation && typeof r.observation === 'object'
+      ? { ...r.observation, dates: Array.isArray(r.observation.dates) ? r.observation.dates.slice(0, 6) : [] }
+      : undefined
   }));
+  const sourceObservation = aggregateSourceObservation(tableRows)
+    || (c.source_observation && typeof c.source_observation === 'object' ? c.source_observation : null);
   return {
     source_assertion: c.source_assertion || null,
     evidence_strength: c.evidence_strength || null,
@@ -632,6 +645,9 @@ export function buildCandidateEvidenceRecord(c) {
     // only present on promoted rows, carried by the extraction refresh.
     ...(c.promoted_from && typeof c.promoted_from === 'object' ? { promoted_from: c.promoted_from } : {}),
     table_rows: tableRows,
+    // Publisher observation dates of this value (its own table rows), distinct
+    // from the report publication date and from TalonHound import time.
+    ...(sourceObservation ? { source_observation: sourceObservation } : {}),
     occurrences
   };
 }

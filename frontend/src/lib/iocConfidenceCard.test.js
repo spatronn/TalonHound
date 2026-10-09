@@ -84,3 +84,15 @@ test('formatConfidenceAuditMetadata', () => {
 test('confidenceLabel', () => {
   assert.equal(confidenceLabel('high'), 'High');
 });
+
+test('getIocConfidencePresentation source entry (Threat Library assertion strength) is not a manual entry', () => {
+  const p = getIocConfidencePresentation({
+    effective: 'high',
+    source: 'source_entry',
+    confidence_source: 'source_entry',
+    confidence_source_name: 'Threat_Library'
+  });
+  assert.equal(p.effectiveLabel, 'High');
+  assert.equal(p.sourceLine, 'Source: Threat_Library entry confidence');
+  assert.doesNotMatch(p.sourceLine, /Manual entry/);
+});

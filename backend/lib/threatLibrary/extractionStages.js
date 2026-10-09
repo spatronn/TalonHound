@@ -199,8 +199,28 @@ export function extractReportCandidates(report, document) {
       candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
     }
   };
-  const extracted = extractCandidatesWithDiagnostics(stamped, { sourceUrl });
+  const extracted = extractCandidatesWithDiagnostics(stamped, {
+    sourceUrl,
+    observationNotAfter: observationNotAfterFor(report)
+  });
   return { document: stamped, candidates: extracted.candidates, diagnostics: extracted.diagnostics };
+}
+
+/**
+ * Latest calendar day a publisher observation in this report can carry: the
+ * report's publication day when known, never later than today (UTC).
+ * @param {{ published_at?: string|Date|null }|null|undefined} report
+ * @param {Date} [now]
+ * @returns {string} YYYY-MM-DD
+ */
+export function observationNotAfterFor(report, now = new Date()) {
+  const today = now.toISOString().slice(0, 10);
+  const raw = report?.published_at;
+  if (!raw) return today;
+  const published = raw instanceof Date ? raw : new Date(raw);
+  if (Number.isNaN(published.getTime())) return today;
+  const day = published.toISOString().slice(0, 10);
+  return day < today ? day : today;
 }
 
 /**

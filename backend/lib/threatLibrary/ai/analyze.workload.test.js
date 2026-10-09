@@ -112,7 +112,8 @@ test('fixture report: one chunk, one AI call, bounded prompt, resolved context p
   const user = calls[0].user;
   // v3 sent the full page-blob document + 18 candidate evidence lines (~15.3k chars).
   // v6 adds ~1.7k chars of fixed relationship/evidence/update rules.
-  assert.ok(user.length < 12_500, `prompt chars ${user.length}`);
+  // v10 adds the ~350-char vulnerability grounding rule.
+  assert.ok(user.length < 13_000, `prompt chars ${user.length}`);
   assert.ok(user.includes('=== RESOLVED INDICATORS'));
   assert.ok(user.includes('source_assertion=explicit_c2'));
   assert.ok(user.includes('value=107.172.249.140'));

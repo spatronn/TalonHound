@@ -24,8 +24,12 @@
  * unrelated reports); v9 defines a tag as what the whole report is about and
  * gives no example vocabulary. A v8 checkpoint is never reused, so a Retry
  * re-asks for tags.
+ * v10: vulnerability grounding — chunk and synthesis prompts forbid CVE ids
+ * absent from the report text and CVE-product pairings the report does not
+ * state (vulnerabilityGrounding.js enforces both deterministically). A v9
+ * checkpoint is never reused.
  */
-export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v9';
+export const THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION = 'threat-library-semantic-v10';
 
 export const CANDIDATE_ROLE_VALUES = Object.freeze([
   'command_and_control',

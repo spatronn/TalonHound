@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatPublicationDate } from './publicationDate.js';
+import { formatSourceObservation, SOURCE_OBSERVATION_TITLE } from './sourceObservation.js';
 import { TlpBadge } from './tlp.jsx';
 import { badgeStyle } from './styles.js';
 
@@ -105,6 +106,11 @@ export default function IocThreatContextSection({ iocId, active = true }) {
                 {c.section ? ` · ${c.section}` : ''}
                 {c.page_number != null ? ` · p.${c.page_number}` : ''}
               </div>
+              {formatSourceObservation(c.source_observation) ? (
+                <div style={{ fontSize: 12, color: '#cbd5e1', marginBottom: 6 }} title={SOURCE_OBSERVATION_TITLE}>
+                  {formatSourceObservation(c.source_observation)}
+                </div>
+              ) : null}
               {c.evidence_text ? (
                 <div style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>
                   {c.evidence_text}

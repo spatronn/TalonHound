@@ -207,6 +207,7 @@ test('serializeIocThreatContext: claim shape = HTTP threat-context shape + occur
     section: 'Indicators',
     page_number: 2,
     occurrence_count: 2,
+    source_observation: null,
     occurrences: [
       { zone: 'report_body', section_heading: 'Why casinos', page: null, form: 'standalone', surrounding_text: 'Figure 1 … zzyud[.]com' },
       { zone: 'explicit_ioc_section', section_heading: 'Indicators', page: 3, form: 'list_row', surrounding_text: 'zzyud[.]com' }

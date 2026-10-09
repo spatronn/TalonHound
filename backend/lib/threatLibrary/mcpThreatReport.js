@@ -25,6 +25,7 @@ import {
   serializeThreatContextRelationship,
   THREAT_CONTEXT_MAX_SUMMARY_CHARS
 } from './iocThreatContext.js';
+import { serializeSourceObservation } from './sourceObservation.js';
 
 export const THREAT_REPORT_INDICATOR_LIMIT_DEFAULT = 100;
 export const THREAT_REPORT_INDICATOR_LIMIT_MAX = 500;
@@ -72,6 +73,8 @@ export function serializeThreatReportIndicator(c) {
     page_number: c.page_number ?? null,
     evidence_text: c.evidence_text ?? null,
     occurrence_count: Number.isFinite(occurrenceCount) ? occurrenceCount : 0,
+    // Publisher observation dates of this value (its indicator row); null when none.
+    source_observation: serializeSourceObservation(c.evidence),
     // Same normalization the report detail API applies.
     review_status: c.review_status === 'created_ioc' ? 'approved' : (c.review_status ?? null),
     match_state: c.match_state ?? null,

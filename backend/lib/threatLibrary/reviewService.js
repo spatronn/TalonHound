@@ -637,7 +637,12 @@ async function promoteCandidate(pool, report, candidate, ctx) {
       // `req` lets createManualIoc emit its own ioc.created row (actor, IP,
       // request id); the origin metadata ties that row back to this report.
       req: opts.req,
-      auditMetadata: iocCreatedOriginMetadata({ report, candidate, operationId, user: opts.user })
+      auditMetadata: iocCreatedOriginMetadata({ report, candidate, operationId, user: opts.user }),
+      // high/medium is the report's assertion strength for this value
+      // (EXPLICIT_ASSERTION_CONFIDENCE / model confidence), recorded as the
+      // Threat Library source's entry confidence — not a manual entry and not
+      // a statement about current reputation.
+      confidenceOrigin: 'source_entry'
     }
   );
 

@@ -118,7 +118,7 @@ test('serializeThreatReport: indicators carry their own role/assessment, allow-l
   assert.deepEqual(out.indicators.items[0], {
     id: 'c-1', value: 'd1.com', original_value: 'd1[.]com', type: 'domain', is_ioc: true,
     assessment: 'malicious', role: 'command_and_control', confidence: '1.000', section: 'explicit_ioc_section',
-    page_number: null, evidence_text: 'd1[.]com', occurrence_count: 4, review_status: 'approved', match_state: 'existing',
+    page_number: null, evidence_text: 'd1[.]com', occurrence_count: 4, source_observation: null, review_status: 'approved', match_state: 'existing',
     ioc_id: 3451501, ioc_type: 'domain'
   });
   const ctx = out.indicators.items[1];

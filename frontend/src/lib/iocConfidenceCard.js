@@ -86,6 +86,11 @@ export function getIocConfidencePresentation(detail) {
       || detail.confidence_provenance?.source_name
       || 'source';
     sourceLine = `Source: IOC source default from ${srcName}`;
+  } else if (detail.source === 'source_entry') {
+    const srcName = detail.confidence_source_name
+      || detail.confidence_provenance?.source_name
+      || null;
+    sourceLine = srcName ? `Source: ${srcName} entry confidence` : 'Source: Source entry confidence';
   } else if (detail.source === 'manual_entry') {
     sourceLine = 'Source: Manual entry';
   } else if (detail.source === 'system_fallback') {
