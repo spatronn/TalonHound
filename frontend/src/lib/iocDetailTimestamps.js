@@ -1,5 +1,5 @@
 import { resolveIocListTimestamp } from './iocListTimestampPresentation.js';
-import { formatUserDateTime } from './formatDate.js';
+import { formatCalendarDate, formatUserDateTime } from './formatDate.js';
 
 export const IOC_DETAIL_TIMESTAMP_CARDS = Object.freeze({
   imported: Object.freeze({
@@ -69,6 +69,25 @@ export function resolveTimestampSourceContext({
   return emptyLabel;
 }
 
+const REPORT_SIDE_BASIS = Object.freeze({
+  publisher_observation: 'publisher observation',
+  report_publication: 'report publication date'
+});
+
+/**
+ * A timestamp that is a Threat Library report-side date (summary
+ * first_seen_provenance / last_seen_provenance): the publisher's observation of
+ * the value, else the report publication day. Calendar day only — the source
+ * gave no time, so none is shown.
+ */
+function reportSideTimestamp(provenance) {
+  if (!provenance || provenance.precision !== 'date') return null;
+  const display = formatCalendarDate(provenance.date);
+  if (!display) return null;
+  const basis = REPORT_SIDE_BASIS[provenance.basis] || 'report';
+  return { display, context: `Source: Threat Library report (${basis})` };
+}
+
 /**
  * Build the IOC Timestamps cards for Overview.
  * @param {object|null} summary
@@ -80,6 +99,8 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
   const importedAt = resolveIocDetailImportedAt(summary || {});
   const firstSeen = summary?.first_seen_at ?? null;
   const lastSeen = summary?.last_seen_in_source ?? null;
+  const firstReport = reportSideTimestamp(summary?.first_seen_provenance);
+  const lastReport = reportSideTimestamp(summary?.last_seen_provenance);
 
   // Analyst lifecycle cards: Inserted / First seen / Last seen only.
   // last_changed_in_source remains on the API for compatibility but is not rendered here.
@@ -93,8 +114,8 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
     {
       ...IOC_DETAIL_TIMESTAMP_CARDS.firstSeen,
       value: firstSeen,
-      display: formatIocDetailDateTime(firstSeen),
-      context: resolveTimestampSourceContext({
+      display: firstReport ? firstReport.display : formatIocDetailDateTime(firstSeen),
+      context: firstReport ? firstReport.context : resolveTimestampSourceContext({
         value: firstSeen,
         sources,
         pick: (s) => s.first_seen_at
@@ -103,8 +124,8 @@ export function buildIocDetailTimestampCards(summary, activeSources = [], histor
     {
       ...IOC_DETAIL_TIMESTAMP_CARDS.lastSeen,
       value: lastSeen,
-      display: formatIocDetailDateTime(lastSeen),
-      context: resolveTimestampSourceContext({
+      display: lastReport ? lastReport.display : formatIocDetailDateTime(lastSeen),
+      context: lastReport ? lastReport.context : resolveTimestampSourceContext({
         value: lastSeen,
         sources,
         pick: (s) => s.last_seen_in_source || s.last_seen_at || null

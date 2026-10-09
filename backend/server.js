@@ -88,6 +88,11 @@ import {
   mergeAnalystIntelligenceItem
 } from './routes/analystIntelligence.js';
 import { registerThreatLibraryRoutes } from './routes/threatLibrary.js';
+import {
+  loadThreatLibraryObservationClaims,
+  resolveSourceObservationTimestamps,
+  resolveThreatLibraryObservationWindow
+} from './lib/threatLibrary/iocSourceObservationTimestamps.js';
 import { registerIocExpirationRoutes, serializeExpirationPolicy } from './routes/iocExpiration.js';
 import { registerIocBulkTriageRoutes } from './routes/iocBulkTriage.js';
 import { registerIocBulkQueryTriageRoutes } from './routes/iocBulkQueryTriage.js';
@@ -5693,15 +5698,24 @@ app.get('/api/ioc/details', async (req, res) => {
 
     const totalSourceMembershipCount = membershipSummary.activeSourceCount + membershipSummary.historicalSourceCount;
 
-    // Global first/last seen: prefer feed membership timestamps over ioc_items.created_at.
-    // first_seen_in_feed is set from the feed's own date_added (e.g. URLhaus dateAdded),
-    // not our import time â€” so it can predate created_at and is the correct analyst-facing value.
-    const globalFirstSeenAt = (() => {
-      const mDates = membershipSummary.membershipRows.map((m) => m.first_seen_in_feed).filter(Boolean);
-      if (mDates.length) return mDates.reduce((min, d) => new Date(d) < new Date(min) ? d : min);
-      const iDates = rows.map((r) => r.item_first_seen_at || r.created_at).filter(Boolean);
-      return iDates.length ? iDates.reduce((min, d) => new Date(d) < new Date(min) ? d : min) : null;
-    })();
+    // Global first/last seen = source observation time. Feed memberships carry
+    // the provider's own dates (first_seen_in_feed from e.g. URLhaus dateAdded);
+    // Threat_Library item rows carry import time, so the report's publisher
+    // observation (else its publication date) stands in for them
+    // (lib/threatLibrary/iocSourceObservationTimestamps.js).
+    let threatLibraryObservationWindow = null;
+    try {
+      const claims = await loadThreatLibraryObservationClaims(pool, rows.map((r) => r.id));
+      threatLibraryObservationWindow = resolveThreatLibraryObservationWindow(claims);
+    } catch (err) {
+      console.warn('[ioc-details] threat library observation window unavailable:', err.message);
+    }
+    const sourceObservation = resolveSourceObservationTimestamps({
+      membershipRows: membershipSummary.membershipRows,
+      itemRows: rows,
+      window: threatLibraryObservationWindow
+    });
+    const globalFirstSeenAt = sourceObservation.first_seen_at;
 
     // Analyst-visible "last changed", not "last polled". Uses last_changed_in_source so
     // an unchanged re-import cannot advance it; falls back to first_seen_in_feed for
@@ -5715,12 +5729,7 @@ app.get('/api/ioc/details', async (req, res) => {
       return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
     })();
 
-    const globalLastSeenInSource = (() => {
-      const mDates = membershipSummary.membershipRows.map((m) => m.last_seen_in_feed).filter(Boolean);
-      if (mDates.length) return mDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max);
-      const iDates = rows.map((r) => r.item_last_seen_at).filter(Boolean);
-      return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
-    })();
+    const globalLastSeenInSource = sourceObservation.last_seen_in_source;
 
     const rawFeedIntelligence = buildFeedIntelligence(evidenceRows);
     let feedIntelligence = rawFeedIntelligence;
@@ -5784,6 +5793,10 @@ app.get('/api/ioc/details', async (req, res) => {
       last_seen_at: globalLastChangedAt,
       last_changed_in_source: globalLastChangedAt,
       last_seen_in_source: globalLastSeenInSource,
+      // Set when a timestamp above is a Threat Library report-side date (date
+      // precision): { date, basis: publisher_observation|report_publication, report_id, report_title }.
+      first_seen_provenance: sourceObservation.first_seen_provenance,
+      last_seen_provenance: sourceObservation.last_seen_provenance,
       // Presence confirmation across feeds — null when no last_seen_in_feed (no silent fallback).
       last_confirmed_at: resolveDetailLastConfirmedAt(membershipSummary.membershipRows),
       // source_count kept for backward compat but now equals total_source_membership_count

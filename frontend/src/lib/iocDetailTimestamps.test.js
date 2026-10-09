@@ -128,3 +128,38 @@ test('non-removable / historical manual source does not enable removal', () => {
   const feedActions = listSourceMembershipActions({ source_type: 'feed', status: 'active', actions_enabled: true });
   assert.ok(!feedActions.some((a) => a.type === 'remove_manual_source'));
 });
+
+test('Threat Library report-side dates render as calendar days with publisher provenance (never import time)', () => {
+  const cards = buildIocDetailTimestampCards(
+    {
+      imported_at: '2026-10-09T16:51:33.814Z',
+      first_seen_at: '2023-05-25T03:00:00+03:00',
+      last_seen_in_source: '2023-05-25T03:00:00+03:00',
+      first_seen_provenance: { date: '2023-05-25', basis: 'publisher_observation', precision: 'date', report_id: 'r1', report_title: 'Advisory' },
+      last_seen_provenance: { date: '2023-05-25', basis: 'publisher_observation', precision: 'date', report_id: 'r1', report_title: 'Advisory' }
+    },
+    [{ name: 'Threat_Library', first_seen_at: '2026-10-09T16:51:33.814Z' }],
+    []
+  );
+  assert.equal(cards[1].display, '25/05/2023');
+  assert.equal(cards[1].context, 'Source: Threat Library report (publisher observation)');
+  assert.equal(cards[2].display, '25/05/2023');
+  assert.equal(cards[2].context, 'Source: Threat Library report (publisher observation)');
+  assert.notEqual(cards[0].display, cards[1].display, 'import time stays on Inserted into Platform only');
+});
+
+test('report publication fallback is labelled as such', () => {
+  const cards = buildIocDetailTimestampCards(
+    {
+      imported_at: '2026-10-09T16:51:33.814Z',
+      first_seen_at: '2026-10-08T00:00:00.000Z',
+      last_seen_in_source: '2026-10-08T00:00:00.000Z',
+      first_seen_provenance: { date: '2026-10-08', basis: 'report_publication', precision: 'date' },
+      last_seen_provenance: { date: '2026-10-08', basis: 'report_publication', precision: 'date' }
+    },
+    [],
+    []
+  );
+  assert.equal(cards[1].display, '08/10/2026');
+  assert.equal(cards[1].context, 'Source: Threat Library report (report publication date)');
+});
