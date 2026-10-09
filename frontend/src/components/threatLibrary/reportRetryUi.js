@@ -129,7 +129,7 @@ export function canShowRerunAi(report, opts = {}) {
 export const REFRESH_EXTRACTION_CONFIRM = Object.freeze({
   title: 'Refresh extraction?',
   description: 'Re-runs deterministic extraction and IOC matching using the current extractor. AI analysis will not run.',
-  detail: 'Review decisions on indicators that are still extracted are kept. Tags, entities, relationships and the summary are not changed.',
+  detail: 'Review decisions on indicators that are still extracted are kept. Tags, entities, relationships and the summary are not regenerated; only vulnerability references the source does not support (a CVE it never mentions, or a CVE-product pairing it never states) are removed.',
   confirmLabel: 'Refresh extraction',
   cancelLabel: 'Cancel'
 });

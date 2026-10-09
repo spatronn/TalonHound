@@ -33,3 +33,9 @@ test('IOC Details Threat Context renders claim.source_observation', () => {
   const src = fs.readFileSync(path.join(here, 'IocThreatContextSection.jsx'), 'utf8');
   assert.match(src, /formatSourceObservation\(c\.source_observation\)/);
 });
+
+test('Refresh extraction confirm copy states the vulnerability grounding exception', async () => {
+  const src = fs.readFileSync(path.join(here, 'reportRetryUi.js'), 'utf8');
+  assert.match(src, /not regenerated; only vulnerability references the source does not support/);
+  assert.doesNotMatch(src, /relationships and the summary are not changed\./);
+});
