@@ -1,4 +1,3 @@
-import { validatePublicIp, isValidIpAddress } from '../lib/publicIp.js';
 import {
   URLSCAN_PROVIDER,
   URLSCAN_DISPLAY_NAME,
@@ -354,23 +353,6 @@ export async function enrichIocWithUrlscan(pool, {
       assessment: URLSCAN_ASSESSMENT.UNSUPPORTED,
       row: null
     };
-  }
-
-  if (category === 'ip') {
-    if (!isValidIpAddress(iocValue)) {
-      const err = new Error('Invalid IP address');
-      err.code = 'invalid_ip';
-      err.provider_status = 'unsupported';
-      throw err;
-    }
-    if (!validatePublicIp(iocValue)) {
-      return {
-        skipped: true,
-        provider_status: 'unsupported_private_ip',
-        assessment: URLSCAN_ASSESSMENT.UNSUPPORTED,
-        row: null
-      };
-    }
   }
 
   const config = await getUrlscanConfig(pool);

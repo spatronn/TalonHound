@@ -34,7 +34,7 @@ test('urlscan malicious evidence maps to available without implying IOC verdict'
 test('urlscan rate_limited maps to error state', () => {
   const coverage = computeProviderCoverage(
     { urlscan: { status: 'rate_limited' } },
-    { iocType: 'ip' }
+    { iocType: 'domain' }
   );
   assert.equal(coverage.find((p) => p.key === 'urlscan').state, 'error');
 });
@@ -42,7 +42,8 @@ test('urlscan rate_limited maps to error state', () => {
 test('urlscan applicability matrix', () => {
   assert.equal(isProviderApplicable('urlscan', 'url'), true);
   assert.equal(isProviderApplicable('urlscan', 'domain'), true);
-  assert.equal(isProviderApplicable('urlscan', 'ip'), true);
+  assert.equal(isProviderApplicable('urlscan', 'ip'), false);
+  assert.equal(isProviderApplicable('urlscan', 'ipv6'), false);
   assert.equal(isProviderApplicable('urlscan', 'sha256'), false);
   assert.equal(isProviderApplicable('urlscan', 'email'), false);
 });

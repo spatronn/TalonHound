@@ -70,7 +70,7 @@ AbuseIPDB enriches public IP observables (and IP hosts extracted from URL IOCs).
 6. Click **Save Changes** (TalonHound prompts for an audit reason).
 7. Click **Test Connection**.
 
-urlscan.io enrichment is **strictly read-only**: TalonHound searches historical scans and may retrieve bounded Result API details. It **never** submits URLs for scanning (`POST /api/v1/scan` is forbidden by the provider client). Applies to URL, domain, and public IP observables from **IOC Details → Intelligence**.
+urlscan.io enrichment is **strictly read-only**: TalonHound searches historical scans and may retrieve bounded Result API details. It **never** submits URLs for scanning (`POST /api/v1/scan` is forbidden by the provider client). Applies to domain and URL observables only, from **IOC Details → Intelligence**; for IP, hash, and other IOC types urlscan.io is not applicable and is not shown, queried, or listed in provider coverage.
 
 Absence of historical scans is reported as **No results**, not clean/safe. urlscan scores are provider observations and are not TalonHound confidence.
 

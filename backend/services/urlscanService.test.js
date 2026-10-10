@@ -97,17 +97,23 @@ test('unsupported hash type skips without external request', async () => {
   assert.equal(fetchCalled, false);
 });
 
-test('private IP skipped without external request', async () => {
-  let fetchCalled = false;
-  const pool = mockPool();
-  const result = await enrichIocWithUrlscan(pool, {
-    iocId: 1,
-    iocValue: '10.0.0.1',
-    iocType: 'ip',
-    fetchImpl: async () => { fetchCalled = true; return jsonResponse({}); }
-  });
-  assert.equal(result.provider_status, 'unsupported_private_ip');
-  assert.equal(fetchCalled, false);
+test('IP observables (public or private) are unsupported and never reach urlscan', async () => {
+  for (const [iocValue, iocType] of [['8.218.50.207', 'ip'], ['10.0.0.1', 'ip'], ['2001:db8::1', 'ipv6']]) {
+    let fetchCalled = false;
+    let stored = false;
+    const pool = mockPool({ onUpsert: () => { stored = true; } });
+    const result = await enrichIocWithUrlscan(pool, {
+      iocId: 1,
+      iocValue,
+      iocType,
+      force: true,
+      fetchImpl: async () => { fetchCalled = true; return jsonResponse({}); }
+    });
+    assert.equal(result.skipped, true, iocValue);
+    assert.equal(result.provider_status, 'unsupported', iocValue);
+    assert.equal(fetchCalled, false, iocValue);
+    assert.equal(stored, false, iocValue);
+  }
 });
 
 test('sensitive URL is stored as privacy_restricted without calling urlscan', async () => {
@@ -180,37 +186,6 @@ test('successful search with exact malicious match stores malicious_evidence', a
   assert.equal(result.row.normalized_summary.is_authoritative_verdict, false);
   assert.equal(result.row.normalized_summary.score_is_not_confidence, true);
   assert.equal(result.row.normalized_summary.exact_match_count, 1);
-});
-
-test('related contacted IP malicious does not mark IP as authoritative malicious', async () => {
-  const uuid = '22222222-2222-4222-8222-222222222222';
-  const pool = mockPool();
-  const result = await enrichIocWithUrlscan(pool, {
-    iocId: 4,
-    iocValue: '8.8.8.8',
-    iocType: 'ip',
-    fetchImpl: async (url) => {
-      if (String(url).includes('/api/v1/search')) {
-        return jsonResponse({
-          total: 1,
-          results: [{
-            _id: uuid,
-            task: { uuid, url: 'https://victim.example/', time: '2024-06-01T00:00:00.000Z' },
-            page: { url: 'https://victim.example/', domain: 'victim.example', ip: '9.9.9.9' },
-            verdicts: { malicious: true, score: 95, urlscan: { malicious: true } }
-          }]
-        });
-      }
-      return jsonResponse({
-        task: { uuid },
-        page: { ip: '9.9.9.9' },
-        verdicts: { malicious: true },
-        lists: { ips: ['8.8.8.8', '9.9.9.9'] }
-      });
-    }
-  });
-  assert.equal(result.assessment, URLSCAN_ASSESSMENT.INSUFFICIENT_EVIDENCE);
-  assert.equal(result.row.normalized_summary.scans[0].match_relation, 'contacted_ip');
 });
 
 test('cache hit prevents external fetch', async () => {

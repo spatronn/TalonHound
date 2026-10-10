@@ -66,7 +66,10 @@ test('unsupported IOC types are rejected', () => {
   assert.equal(isSupportedUrlscanIocType('cve'), null);
   assert.equal(isSupportedUrlscanIocType('url'), 'url');
   assert.equal(isSupportedUrlscanIocType('domain'), 'domain');
-  assert.equal(isSupportedUrlscanIocType('ipv6'), 'ip');
+  // urlscan applies to domain/url only — IP observables are not applicable.
+  assert.equal(isSupportedUrlscanIocType('ip'), null);
+  assert.equal(isSupportedUrlscanIocType('ipv4'), null);
+  assert.equal(isSupportedUrlscanIocType('ipv6'), null);
 });
 
 test('search query uses exact URL keyword fields and never wildcards from input', () => {
@@ -83,15 +86,12 @@ test('sensitive URL search is rejected before query construction', () => {
   assert.equal(built.reason, 'privacy_restricted');
 });
 
-test('domain and IP search queries use documented fields', () => {
+test('domain search query uses documented fields; IP observables build no query', () => {
   const d = buildUrlscanSearchQuery('domain', 'Example.COM');
   assert.equal(d.ok, true);
   assert.match(d.query, /page\.domain\.keyword:"example\.com"/);
-  const ip4 = buildUrlscanSearchQuery('ip', '1.2.3.4');
-  assert.match(ip4.query, /page\.ip:"1\.2\.3\.4"/);
-  const ip6 = buildUrlscanSearchQuery('ipv6', '2001:db8::1');
-  assert.equal(ip6.ok, true);
-  assert.match(ip6.query, /page\.ip:"2001:db8::1"/);
+  assert.deepEqual(buildUrlscanSearchQuery('ip', '1.2.3.4'), { ok: false, reason: 'unsupported_type' });
+  assert.deepEqual(buildUrlscanSearchQuery('ipv6', '2001:db8::1'), { ok: false, reason: 'unsupported_type' });
 });
 
 test('validateUrlscanRequest allowlists GET search/result/quotas only', () => {

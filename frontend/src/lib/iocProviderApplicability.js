@@ -3,6 +3,13 @@ import { ipEnrichStripHostPort } from './ipEnrichmentTarget.js';
 
 export const PROVIDER_KEYS = Object.freeze(['virustotal', 'ipinfo', 'abuseipdb', 'urlscan', 'rdap', 'spamhaus_drop']);
 
+/**
+ * Normalized IOC types urlscan.io applies to (whitelist — any other or future
+ * type is not applicable). Mirrors URLSCAN_SUPPORTED_OBSERVABLE_TYPES in
+ * backend/lib/urlscanEnrichment.js; parity is enforced by a backend test.
+ */
+export const URLSCAN_SUPPORTED_IOC_TYPES = Object.freeze(['domain', 'url']);
+
 /** ICANN registrable domain only — private suffixes (e.g. netlify.app) are not treated as the RDAP root. */
 const RDAP_TLD_OPTS = { allowPrivateDomains: false, detectIp: false };
 const RDAP_HASH_RE = /^(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64})$/i;
@@ -158,7 +165,7 @@ export function isProviderApplicable(providerKey, iocType, { rdapEligible = fals
   if (key === 'virustotal') return true;
   if (key === 'ipinfo' || key === 'abuseipdb') return normalized === 'ip';
   if (key === 'spamhaus_drop') return normalized === 'ip';
-  if (key === 'urlscan') return normalized === 'url' || normalized === 'domain' || normalized === 'ip';
+  if (key === 'urlscan') return URLSCAN_SUPPORTED_IOC_TYPES.includes(normalized);
   if (key === 'rdap') return normalized === 'domain' && Boolean(rdapEligible);
   return false;
 }

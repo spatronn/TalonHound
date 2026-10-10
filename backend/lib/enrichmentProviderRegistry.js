@@ -37,7 +37,11 @@ import {
   getUrlscanEnrichmentByIoc,
   isCacheFresh as isUrlscanCacheFresh
 } from '../services/urlscanService.js';
-import { URLSCAN_PROVIDER, isSupportedUrlscanIocType } from './urlscanEnrichment.js';
+import {
+  URLSCAN_PROVIDER,
+  URLSCAN_SUPPORTED_OBSERVABLE_TYPES,
+  isSupportedUrlscanIocType
+} from './urlscanEnrichment.js';
 import { getRdapProviderAdminSummary, getEnrichmentByRootDomain } from '../services/rdapEnrichmentService.js';
 import { getSpamhausDropEnrichmentByIp } from '../services/spamhausDropEnrichmentService.js';
 import { getSpamhausDropConfig, getSpamhausDropSyncState } from './spamhausDropSync.js';
@@ -45,7 +49,6 @@ import { resolveIpEnrichmentTarget } from './ipEnrichmentEligibility.js';
 import { extractIpLiteralFromIoc } from './iocIpExtraction.js';
 import { normalizeRdapTarget, isRdapSupportedIocType } from './domainRoot.js';
 import { resolveVtEnrichmentRow } from './virustotalEnrichmentReuse.js';
-import { validatePublicIp, isValidIpAddress } from './publicIp.js';
 
 export const VIRUSTOTAL_PROVIDER = 'virustotal';
 
@@ -110,17 +113,10 @@ function resolveVirustotalTarget(ioc) {
   return { applicable: true, scope: 'direct', target_type: category, target_value: String(ioc.observable || '') };
 }
 
-/** urlscan.io: URL, domain, and public IP observables (passive search only). */
+/** urlscan.io: domain and URL observables only (passive search only). */
 function resolveUrlscanTarget(ioc) {
-  const category = observableCategory(ioc.observable_type);
-  const supported = isSupportedUrlscanIocType(category);
+  const supported = isSupportedUrlscanIocType(ioc.observable_type);
   if (!supported) return notApplicable('unsupported_type');
-  if (supported === 'ip') {
-    const ip = String(ioc.observable || '').trim();
-    if (!isValidIpAddress(ip)) return notApplicable('invalid_ip');
-    if (!validatePublicIp(ip)) return notApplicable('unsupported_private_ip');
-    return { applicable: true, scope: 'direct', target_type: 'ip', target_value: ip };
-  }
   return {
     applicable: true,
     scope: 'direct',
@@ -296,7 +292,7 @@ const DEFAULT_PROVIDERS = [
     displayName: 'urlscan.io',
     loadState: async (pool) => pickState(await getUrlscanConfig(pool)),
     external: true,
-    supportedObservableTypes: ['url', 'domain', 'ip'],
+    supportedObservableTypes: [...URLSCAN_SUPPORTED_OBSERVABLE_TYPES],
     resolveTarget: resolveUrlscanTarget,
     readFreshness: urlscanFreshness,
     // Search API free-tier minute budgets are modest; keep automation conservative.

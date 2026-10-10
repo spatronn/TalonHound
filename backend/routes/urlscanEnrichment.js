@@ -14,6 +14,7 @@ import {
 } from '../services/urlscanService.js';
 import {
   URLSCAN_ASSESSMENT,
+  URLSCAN_UNSUPPORTED_TYPE_MESSAGE,
   isSupportedUrlscanIocType,
   clampLookbackDays,
   clampSearchSize,
@@ -24,6 +25,34 @@ import { noteProviderRateLimited } from '../lib/enrichmentProviderGuard.js';
 import { auditProviderConfigUpdate } from '../lib/enrichmentProviderConfigAudit.js';
 import { recordEnrichmentUsage } from '../lib/enrichmentUsageTelemetry.js';
 import { recordHealthProbeResult, classifyProbeError } from '../lib/enrichmentProviderHealthCheck.js';
+
+/**
+ * Standard refusal for an IOC whose stored observable type urlscan.io does not
+ * apply to (anything but domain/url). Same 422 shape as the other providers'
+ * unsupported-target responses; no provider call is made.
+ */
+function unsupportedTypeOutcome() {
+  return {
+    status: 422,
+    body: {
+      error: 'IOC type not supported for urlscan enrichment',
+      message: URLSCAN_UNSUPPORTED_TYPE_MESSAGE,
+      provider: URLSCAN_PROVIDER,
+      provider_status: 'unsupported',
+      status: 'unsupported'
+    }
+  };
+}
+
+/** The IOC's canonical observable type from the DB — never a client-supplied type. */
+async function loadIocForUrlscan(pool, id) {
+  const itemRes = await pool.query(
+    `SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type
+     FROM ioc_items WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  return itemRes.rows[0] || null;
+}
 
 /**
  * Canonical urlscan refresh — shared by IOC Details and MCP enrichment executor.
@@ -50,28 +79,12 @@ export async function runUrlscanRefresh(pool, audit, req, { iocId, force = false
     const disabled = await providerDisabledOutcome(pool, URLSCAN_PROVIDER);
     if (disabled) return disabled;
 
-    const itemRes = await pool.query(
-      `SELECT id, observable AS ioc_value, lower(observable_type) AS ioc_type
-       FROM ioc_items WHERE id = $1 LIMIT 1`,
-      [id]
-    );
-    if (!itemRes.rowCount) {
+    const item = await loadIocForUrlscan(pool, id);
+    if (!item) {
       return { status: 404, body: { message: 'IOC not found', provider: URLSCAN_PROVIDER } };
     }
-    const item = itemRes.rows[0];
     const category = isSupportedUrlscanIocType(item.ioc_type);
-    if (!category) {
-      return {
-        status: 422,
-        body: {
-          error: 'IOC type not supported for urlscan enrichment',
-          message: 'urlscan.io supports URL, domain, and IP observables only',
-          provider: URLSCAN_PROVIDER,
-          provider_status: 'unsupported',
-          status: 'unsupported'
-        }
-      };
-    }
+    if (!category) return unsupportedTypeOutcome();
 
     const startedAt = Date.now();
     const result = await enrichIocWithUrlscan(pool, {
@@ -106,18 +119,7 @@ export async function runUrlscanRefresh(pool, audit, req, { iocId, force = false
         }
       };
     }
-    if (result.skipped && result.provider_status === 'unsupported_private_ip') {
-      return {
-        status: 422,
-        body: {
-          error: 'Private or reserved IP — external lookup not supported',
-          message: 'urlscan.io enrichment only supports public IP lookups',
-          provider: URLSCAN_PROVIDER,
-          provider_status: 'unsupported_private_ip',
-          status: 'unsupported'
-        }
-      };
-    }
+    if (result.skipped && result.provider_status === 'unsupported') return unsupportedTypeOutcome();
 
     if (!result.cached || force) {
       const auditValue = category === 'url'
@@ -208,7 +210,7 @@ export async function runUrlscanRefresh(pool, audit, req, { iocId, force = false
     return { status: 200, body: payload };
   } catch (err) {
     console.error('[urlscan-enrichment] refresh failed', err?.code || err?.message || err);
-    if (err?.code === 'invalid_ip' || err?.code === 'invalid_url' || err?.code === 'invalid_domain') {
+    if (err?.code === 'invalid_url' || err?.code === 'invalid_domain') {
       return {
         status: 400,
         body: {
@@ -276,6 +278,16 @@ export function registerUrlscanEnrichmentRoutes(app, pool, audit) {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {
         return res.status(400).json({ message: 'Invalid IOC id', provider: URLSCAN_PROVIDER });
+      }
+      // Stored rows for a non-applicable type (e.g. IP rows written before urlscan
+      // was limited to domain/url) are never served.
+      const item = await loadIocForUrlscan(pool, id);
+      if (!item) {
+        return res.status(404).json({ message: 'IOC not found', provider: URLSCAN_PROVIDER });
+      }
+      if (!isSupportedUrlscanIocType(item.ioc_type)) {
+        const out = unsupportedTypeOutcome();
+        return res.status(out.status).json(out.body);
       }
       const config = await getUrlscanConfig(pool);
       if (!config.configured) {

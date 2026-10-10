@@ -219,13 +219,23 @@ export function assessUrlPrivacyForLookup(rawUrl) {
   return { ok: true };
 }
 
+/**
+ * Canonical observable categories urlscan.io applies to — the single backend
+ * source of truth for urlscan eligibility (registry capabilities, refresh/GET
+ * routes, service, MCP enrichment read). A whitelist: any other type (IP, hash,
+ * future types) is not applicable. Mirrored by URLSCAN_SUPPORTED_IOC_TYPES in
+ * frontend/src/lib/iocProviderApplicability.js (parity enforced by test).
+ */
+export const URLSCAN_SUPPORTED_OBSERVABLE_TYPES = Object.freeze(['domain', 'url']);
+
+/** @returns {'url'|'domain'|null} the urlscan category, or null when not applicable. */
 export function isSupportedUrlscanIocType(observableType) {
   const t = String(observableType || '').trim().toLowerCase();
-  if (t === 'url') return 'url';
-  if (t === 'domain' || t === 'hostname') return 'domain';
-  if (t === 'ip' || t === 'ipv4' || t === 'ipv6' || t === 'ip6') return 'ip';
-  return null;
+  const category = t === 'hostname' ? 'domain' : t;
+  return URLSCAN_SUPPORTED_OBSERVABLE_TYPES.includes(category) ? category : null;
 }
+
+export const URLSCAN_UNSUPPORTED_TYPE_MESSAGE = 'urlscan.io is not supported for this observable type';
 
 export function normalizeHostname(value) {
   let h = String(value || '').trim().toLowerCase();
@@ -296,18 +306,7 @@ export function buildUrlscanSearchQuery(iocType, observable, { lookbackDays = DE
     };
   }
 
-  // IP (v4 or v6)
-  const ip = String(observable || '').trim();
-  if (!ip) return { ok: false, reason: 'invalid_ip' };
-  const q = quoteKeywordTerm(ip);
-  const query = `(page.ip:${q} OR ip:${q}) AND ${dateClause}`;
-  return {
-    ok: true,
-    category: 'ip',
-    query,
-    lookback_days: days,
-    ip
-  };
+  return { ok: false, reason: 'unsupported_type' };
 }
 
 export function clampSearchSize(n) {

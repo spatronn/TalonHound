@@ -6,7 +6,7 @@
 //   provider         supported IOC types   storage table                   read fn
 //   ---------------  --------------------  ------------------------------  -------------------------------
 //   virustotal       ip/domain/url/hash    ioc_enrichments (generic)       (direct query here)
-//   urlscan          url/domain/ip         ioc_enrichments (generic)       (direct query here)
+//   urlscan          url/domain            ioc_enrichments (generic)       (direct query here)
 //   rdap             domain/url            ioc_domain_enrichment           rdapEnrichmentService
 //   abuseipdb        ip (+ URL derived)    ioc_abuseipdb_enrichment        abuseipdbService
 //   ipinfo_lite      ip (+ URL derived)    ioc_ip_enrichment               ipinfoLiteService
@@ -38,6 +38,7 @@ import { VT_PROVIDER, buildVirusTotalNotFoundMessage, ensureVtGuiPermalink } fro
 import { ensureVtWebAnalysis } from './virustotalWebAnalysis.js';
 import { extractIpLiteralFromIoc } from './iocIpExtraction.js';
 import { resolveIpEnrichmentTarget } from './ipEnrichmentEligibility.js';
+import { URLSCAN_PROVIDER, isSupportedUrlscanIocType } from './urlscanEnrichment.js';
 
 const RDAP_PROVIDER = 'rdap';
 const IPINFO_LITE_PROVIDER = 'ipinfo_lite';
@@ -259,7 +260,11 @@ export async function collectIocEnrichments(pool, { iocId, type, value, linkedIo
     ...(iocId != null ? [iocId] : []),
     ...(Array.isArray(linkedIocIds) ? linkedIocIds : [])
   ])];
-  entries.push(...(await readGenericEnrichments(pool, genericIds)));
+  // urlscan applies to domain/url only: rows stored for any other type (IP rows
+  // written before that policy) are not part of this IOC's enrichment.
+  const urlscanApplicable = Boolean(isSupportedUrlscanIocType(type));
+  entries.push(...(await readGenericEnrichments(pool, genericIds))
+    .filter((e) => e.provider !== URLSCAN_PROVIDER || urlscanApplicable));
 
   // Provider-specific stores. Each is type-gated + data-aware; a missing table
   // on an older schema is non-fatal, but any other error propagates.
