@@ -26,6 +26,7 @@ import {
 import { getDerivedInfrastructureContext, isDerivedProviderApplicable, isProviderApplicable } from './lib/iocProviderApplicability.js';
 import { buildIntelligenceSectionOrder } from './lib/intelligenceSectionOrder.js';
 import IocThreatContextSection from './components/threatLibrary/IocThreatContextSection.jsx';
+import { createSnapshotHandlerCache } from './lib/providerSnapshotState.js';
 
 const sectionTitleStyle = { fontWeight: 700, color: '#e2e8f0', fontSize: 16 };
 const sectionDescStyle = { color: '#94a3b8', fontSize: 12, marginTop: 4 };
@@ -157,7 +158,7 @@ function DerivedInfrastructureSection({
   canWrite,
   isAdmin,
   providerGridStyle,
-  onProviderSnapshot,
+  snapshotHandlerFor,
   IpEnrichmentCard,
   AbuseIpdbEnrichmentCard,
   RdapEnrichmentCard,
@@ -202,7 +203,7 @@ function DerivedInfrastructureSection({
             active={active}
             isAdmin={isAdmin}
             compact
-            onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)}
+            onSnapshot={snapshotHandlerFor('ipinfo')}
           />
         ) : null}
         {isDerivedProviderApplicable('abuseipdb', context) ? (
@@ -214,7 +215,7 @@ function DerivedInfrastructureSection({
             canRefresh={canWrite}
             isAdmin={isAdmin}
             compact
-            onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)}
+            onSnapshot={snapshotHandlerFor('abuseipdb')}
           />
         ) : null}
         {isDerivedProviderApplicable('rdap', context) ? (
@@ -225,7 +226,7 @@ function DerivedInfrastructureSection({
             active={active}
             isAdmin={isAdmin}
             compact
-            onSnapshot={(snap) => onProviderSnapshot('rdap', snap)}
+            onSnapshot={snapshotHandlerFor('rdap')}
           />
         ) : null}
         {isDerivedProviderApplicable('spamhaus_drop', context) && SpamhausDropEnrichmentCard ? (
@@ -237,7 +238,7 @@ function DerivedInfrastructureSection({
             canRefresh={canWrite}
             isAdmin={isAdmin}
             compact
-            onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)}
+            onSnapshot={snapshotHandlerFor('spamhaus_drop')}
           />
         ) : null}
       </div>
@@ -590,10 +591,15 @@ export function IntelligenceTabPanel({
     [iocValue, iocType, isRdapEligible]
   );
 
-  useEffect(() => {
+  // Reset during render (not in an effect): parent effects run after the cards'
+  // first snapshot report, so an effect-based reset wiped it.
+  const snapshotIdentity = `${iocId}|${iocType}|${iocValue}`;
+  const [snapshotOwner, setSnapshotOwner] = useState(snapshotIdentity);
+  if (snapshotOwner !== snapshotIdentity) {
+    setSnapshotOwner(snapshotIdentity);
     setProviderSnapshots({});
     setDerivedProviderSnapshots({});
-  }, [iocId, iocType, iocValue]);
+  }
 
   const showVt = isProviderApplicable('virustotal', iocType);
   const showAbuse = isProviderApplicable('abuseipdb', iocType);
@@ -602,13 +608,10 @@ export function IntelligenceTabPanel({
   const showRdap = isProviderApplicable('rdap', iocType, { rdapEligible: isRdapEligible });
   const showSpamhaus = isProviderApplicable('spamhaus_drop', iocType);
 
-  const onProviderSnapshot = useCallback((provider, snapshot) => {
-    setProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
-  }, []);
-
-  const onDerivedProviderSnapshot = useCallback((provider, snapshot) => {
-    setDerivedProviderSnapshots((prev) => ({ ...prev, [provider]: snapshot }));
-  }, []);
+  // Stable per-provider callbacks + unchanged-snapshot bailout: cards report from an
+  // effect that depends on onSnapshot, so an inline callback re-rendered forever.
+  const providerSnapshotHandler = useMemo(() => createSnapshotHandlerCache(setProviderSnapshots), []);
+  const derivedSnapshotHandler = useMemo(() => createSnapshotHandlerCache(setDerivedProviderSnapshots), []);
 
   const providerGridStyle = useMemo(() => ({
     display: 'grid',
@@ -647,22 +650,22 @@ export function IntelligenceTabPanel({
         </div>
         <div style={providerGridStyle}>
           {showVt ? (
-            <VirusTotalEnrichmentCard iocId={iocId} active={active} compact onSnapshot={(snap) => onProviderSnapshot('virustotal', snap)} />
+            <VirusTotalEnrichmentCard iocId={iocId} active={active} compact onSnapshot={providerSnapshotHandler('virustotal')} />
           ) : null}
           {showAbuse ? (
-            <AbuseIpdbEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('abuseipdb', snap)} />
+            <AbuseIpdbEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={providerSnapshotHandler('abuseipdb')} />
           ) : null}
           {showUrlscan && UrlscanEnrichmentCard ? (
-            <UrlscanEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('urlscan', snap)} />
+            <UrlscanEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={providerSnapshotHandler('urlscan')} />
           ) : null}
           {showIpinfo ? (
-            <IpEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('ipinfo', snap)} />
+            <IpEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={providerSnapshotHandler('ipinfo')} />
           ) : null}
           {showRdap ? (
-            <RdapEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('rdap', snap)} />
+            <RdapEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} isAdmin={isAdmin} compact onSnapshot={providerSnapshotHandler('rdap')} />
           ) : null}
           {showSpamhaus && SpamhausDropEnrichmentCard ? (
-            <SpamhausDropEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={(snap) => onProviderSnapshot('spamhaus_drop', snap)} />
+            <SpamhausDropEnrichmentCard iocId={iocId} iocValue={iocValue} iocType={iocType} active={active} canRefresh={canWrite} isAdmin={isAdmin} compact onSnapshot={providerSnapshotHandler('spamhaus_drop')} />
           ) : null}
         </div>
       </div>
@@ -678,7 +681,7 @@ export function IntelligenceTabPanel({
         canWrite={canWrite}
         isAdmin={isAdmin}
         providerGridStyle={providerGridStyle}
-        onProviderSnapshot={onDerivedProviderSnapshot}
+        snapshotHandlerFor={derivedSnapshotHandler}
         IpEnrichmentCard={IpEnrichmentCard}
         AbuseIpdbEnrichmentCard={AbuseIpdbEnrichmentCard}
         RdapEnrichmentCard={RdapEnrichmentCard}
