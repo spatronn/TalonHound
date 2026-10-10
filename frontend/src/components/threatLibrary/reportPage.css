@@ -1080,7 +1080,7 @@
 .tl-ioc-source-card__url {
   font-size: 12px;
   line-height: 1.4;
-  color: #94a3b8;
+  color: #cbd5e1; /* match .tl-source-card__urltext contrast on dark surfaces */
   overflow-wrap: anywhere;
   word-break: break-word;
 }
@@ -1125,7 +1125,15 @@
   overflow-wrap: anywhere;
 }
 
-.tl-ioc-source-drawer__url,
+.tl-ioc-source-drawer__url {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .tl-ioc-source-drawer__canonical {
   margin: 0;
   font-size: 12px;
