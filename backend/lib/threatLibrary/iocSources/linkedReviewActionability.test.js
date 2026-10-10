@@ -210,7 +210,10 @@ test('selection tabs and approve eligibility include linked-only', () => {
     }
   });
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.filters.tab, 'linked_only');
+  // Legacy linked_only tab expands to All Indicators + Linked only source.
+  assert.equal(parsed.filters.tab, 'total_unique');
+  assert.equal(parsed.filters.source, 'linked_only');
+  assert.equal(matchSelectionTab(linked, 'linked_only'), true);
 });
 
 test('approve linked-only on finalized report; original approved rows untouched', async () => {

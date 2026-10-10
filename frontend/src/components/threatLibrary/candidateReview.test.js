@@ -6,12 +6,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   DEFAULT_REVIEW_FILTER,
+  DEFAULT_SOURCE_FILTER,
+  DEFAULT_MATCH_FILTER,
+  PRIMARY_REVIEW_VIEWS,
+  SOURCE_FILTERS,
+  MATCH_FILTERS,
   REVIEW_FILTERS,
   describeAnalysisFailureDetail,
   describeCandidateProvenance,
   isPublisherAuthoritativeReportIocMember,
   isReviewIndicator,
   matchReviewFilter,
+  matchReviewDimensions,
+  normalizeReviewFilterState,
+  describeIndicatorInventorySummary,
+  reviewFiltersAreDefault,
   withInferredPublisherIocScope,
   DEFAULT_PAGE_SIZE,
   PAGE_SIZES,
@@ -42,6 +51,7 @@ import {
   selectionScopeLabel,
   isReviewActionableIndicator,
   isUnionReviewIndicator,
+  isLinkedOnlyReviewIndicator,
   classifyCreateOutcome,
   describeCreateIocOperationPanel,
   isCreateIocAmbiguousFailure,
@@ -115,9 +125,13 @@ test('loopback / reserved evidence never enters the Indicators review set', () =
   assert.equal(matchReviewFilter(loopback, 'indicators'), false);
 });
 
-test('default review filter shows real IOC candidates only', () => {
-  assert.equal(DEFAULT_REVIEW_FILTER, 'indicators');
-  assert.equal(REVIEW_FILTERS[0].id, 'indicators');
+test('default review filter is All Indicators (total unique), not All Candidates', () => {
+  assert.equal(DEFAULT_REVIEW_FILTER, 'total_unique');
+  assert.equal(DEFAULT_SOURCE_FILTER, 'all');
+  assert.equal(DEFAULT_MATCH_FILTER, 'all');
+  assert.deepEqual(PRIMARY_REVIEW_VIEWS.map((v) => v.id), [
+    'total_unique', 'needs_review', 'context_only', 'all'
+  ]);
   assert.equal(isReviewIndicator(explicitUrl), true);
   assert.equal(isReviewIndicator(bodyIp), true);
   assert.equal(isReviewIndicator(referenceUrl), false, 'bibliography stays out of the indicator table');
@@ -128,12 +142,21 @@ test('default review filter shows real IOC candidates only', () => {
     'http://217.60.36.94/unicorn/mort.php',
     '107.172.249.140'
   ]);
+  assert.deepEqual(
+    filterReviewCandidates(all, { tab: DEFAULT_REVIEW_FILTER }).map((c) => c.normalized_value),
+    ['http://217.60.36.94/unicorn/mort.php', '107.172.249.140']
+  );
   assert.deepEqual(all.filter((c) => matchReviewFilter(c, 'context_only')).map((c) => c.normalized_value), [
     'https://www.fortinet.com/fr/blog/threat-research/x',
     'CVE-2026-0001'
   ]);
   assert.equal(all.filter((c) => matchReviewFilter(c, 'all')).length, 5);
   assert.equal(all.filter((c) => matchReviewFilter(c, 'needs_review')).some((c) => c === derived), false);
+  assert.notEqual(
+    filterReviewCandidates(all, { tab: 'total_unique' }).length,
+    filterReviewCandidates(all, { tab: 'all' }).length,
+    'All Candidates must remain broader than Total Unique'
+  );
 });
 
 test('MODE A Indicators list is the publisher-declared set only', () => {
@@ -672,15 +695,19 @@ test('all-matching selection excludes and reincludes by candidate id, not page i
 });
 
 test('filter identity changes are detectable; page size is not part of the selection scope', () => {
-  const base = { tab: 'needs_review', type: 'all', result: 'all', search: '' };
+  const base = { tab: 'needs_review', source: 'all', match: 'all', type: 'all', result: 'all', search: '' };
   assert.equal(reviewFiltersEqual(base, { ...base }), true);
   assert.equal(reviewFiltersEqual(base, { ...base, tab: 'all' }), false);
+  assert.equal(reviewFiltersEqual(base, { ...base, source: 'original' }), false);
+  assert.equal(reviewFiltersEqual(base, { ...base, match: 'new' }), false);
   assert.equal(reviewFiltersEqual(base, { ...base, search: 'evil' }), false);
   assert.equal(reviewFiltersEqual(base, { ...base, type: 'ip' }), false);
   assert.equal(reviewFiltersEqual(base, { ...base, result: 'created' }), false);
   assert.equal(selectionScopeLabel(base), 'Needs Review');
   assert.match(selectionScopeLabel({ ...base, type: 'ip', search: '203.0' }), /Needs Review/);
   assert.match(selectionScopeLabel({ ...base, type: 'ip', search: '203.0' }), /IP/);
+  assert.match(selectionScopeLabel({ ...base, source: 'linked', match: 'existing' }), /Linked sources/);
+  assert.match(selectionScopeLabel({ ...base, source: 'linked', match: 'existing' }), /Existing IOC/);
 });
 
 test('all-matching request carries filters and exclusions, not the matching id list', () => {
@@ -695,6 +722,8 @@ test('all-matching request carries filters and exclusions, not the matching id l
   assert.equal(body.preview, true);
   assert.equal(body.candidate_ids, undefined);
   assert.deepEqual(body.selection.excluded_candidate_ids, [1, 2]);
+  assert.equal(body.selection.filters.source, 'all');
+  assert.equal(body.selection.filters.match, 'all');
   assert.equal(JSON.stringify(body).includes('"candidate_ids"'), false);
   assert.ok(JSON.stringify(body).length < 1000, 'payload stays small for 1200 matches');
   const commit = buildAllMatchingReviewBody({
@@ -914,4 +943,187 @@ test('Create IOCs session marker is report-scoped and clearable', () => {
     if (prev === undefined) delete globalThis.sessionStorage;
     else globalThis.sessionStorage = prev;
   }
+});
+
+test('legacy exclusive tabs migrate into scope + source + match dimensions', () => {
+  assert.deepEqual(normalizeReviewFilterState({ tab: 'indicators' }), {
+    tab: 'total_unique', source: 'original', match: 'all'
+  });
+  assert.deepEqual(normalizeReviewFilterState({ tab: 'linked_only' }), {
+    tab: 'total_unique', source: 'linked_only', match: 'all'
+  });
+  assert.deepEqual(normalizeReviewFilterState({ tab: 'existing' }), {
+    tab: 'total_unique', source: 'all', match: 'existing'
+  });
+  assert.deepEqual(normalizeReviewFilterState({ tab: 'new' }), {
+    tab: 'total_unique', source: 'all', match: 'new'
+  });
+  assert.deepEqual(normalizeReviewFilterState({ tab: 'needs_review', source: 'linked' }), {
+    tab: 'needs_review', source: 'linked', match: 'all'
+  });
+});
+
+test('URL deep links migrate old tabs and round-trip new dimensions', () => {
+  const legacy = parseReviewTableUrlState('tab=indicators&type=ip');
+  assert.equal(legacy.tab, 'total_unique');
+  assert.equal(legacy.source, 'original');
+  assert.equal(legacy.type, 'ip');
+  const existing = parseReviewTableUrlState('tab=existing');
+  assert.equal(existing.tab, 'total_unique');
+  assert.equal(existing.match, 'existing');
+  const combined = parseReviewTableUrlState('tab=needs_review&source=linked&match=new&result=not_created');
+  assert.deepEqual(
+    { tab: combined.tab, source: combined.source, match: combined.match, result: combined.result },
+    { tab: 'needs_review', source: 'linked', match: 'new', result: 'not_created' }
+  );
+  const serialized = serializeReviewTableUrlState({
+    tab: 'needs_review',
+    source: 'linked_only',
+    match: 'existing',
+    q: 'evil',
+    type: 'domain',
+    result: 'all',
+    page: 2,
+    pageSize: 50
+  });
+  assert.equal(serialized.get('tab'), 'needs_review');
+  assert.equal(serialized.get('source'), 'linked_only');
+  assert.equal(serialized.get('match'), 'existing');
+  assert.equal(serialized.get('q'), 'evil');
+  assert.equal(serialized.get('type'), 'domain');
+  assert.equal(serialized.get('page'), '2');
+  assert.equal(serialized.get('result'), null);
+  const defaults = serializeReviewTableUrlState({
+    tab: DEFAULT_REVIEW_FILTER,
+    source: DEFAULT_SOURCE_FILTER,
+    match: DEFAULT_MATCH_FILTER,
+    page: 1,
+    pageSize: DEFAULT_PAGE_SIZE
+  });
+  assert.equal(defaults.toString(), '');
+  assert.equal(reviewFiltersAreDefault({
+    tab: DEFAULT_REVIEW_FILTER,
+    source: DEFAULT_SOURCE_FILTER,
+    match: DEFAULT_MATCH_FILTER
+  }), true);
+});
+
+test('combined source and match filters stay independent of review scope', () => {
+  const originalPending = {
+    id: 1,
+    candidate_type: 'ip',
+    normalized_value: '203.0.113.10',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    has_original_document_occurrence: true,
+    source_assertion: 'explicit_ioc',
+    evidence: { source_assertion: 'explicit_ioc', document_has_authoritative_scope: true }
+  };
+  const linkedPendingExisting = {
+    id: 2,
+    candidate_type: 'domain',
+    normalized_value: 'linked.evil',
+    assessment: 'malicious',
+    match_state: 'existing',
+    matched_ioc_id: 55,
+    review_status: 'pending',
+    is_ioc: true,
+    has_original_document_occurrence: false,
+    source_assertion: 'linked_source_ioc',
+    sources: [{ id: 'src-1', name: 'Pack' }],
+    evidence: { source_assertion: 'linked_source_ioc' }
+  };
+  const linkedOnlyNew = {
+    id: 3,
+    candidate_type: 'ip',
+    normalized_value: '198.51.100.9',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'approved',
+    is_ioc: true,
+    has_original_document_occurrence: false,
+    source_assertion: 'linked_source_ioc',
+    sources: [{ id: 'src-1', name: 'Pack' }],
+    evidence: { source_assertion: 'linked_source_ioc' }
+  };
+  const overlapLinked = {
+    id: 4,
+    candidate_type: 'url',
+    normalized_value: 'http://overlap.example/a',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'approved',
+    is_ioc: true,
+    has_original_document_occurrence: true,
+    source_assertion: 'linked_source_ioc',
+    sources: [{ id: 'src-1', name: 'Pack' }],
+    evidence: {
+      source_assertion: 'linked_source_ioc',
+      document_has_authoritative_scope: true,
+      occurrences: [{ zone: 'explicit_ioc_section', asserted: true }]
+    }
+  };
+  const contextRow = {
+    id: 5,
+    candidate_type: 'domain',
+    normalized_value: 'context.example',
+    assessment: 'context_only',
+    match_state: 'context_only',
+    review_status: 'context_only',
+    is_ioc: false,
+    has_original_document_occurrence: true
+  };
+  const rows = [originalPending, linkedPendingExisting, linkedOnlyNew, overlapLinked, contextRow];
+
+  assert.equal(isLinkedOnlyReviewIndicator(linkedOnlyNew), true);
+  assert.equal(isLinkedOnlyReviewIndicator(overlapLinked), false);
+  assert.equal(matchReviewDimensions(overlapLinked, { tab: 'total_unique', source: 'linked' }), true);
+  assert.equal(matchReviewDimensions(overlapLinked, { tab: 'total_unique', source: 'linked_only' }), false);
+
+  const linkedExisting = filterReviewCandidates(rows, {
+    tab: 'total_unique', source: 'linked', match: 'existing'
+  }).map((c) => c.id);
+  assert.deepEqual(linkedExisting, [2]);
+
+  const needsOriginal = filterReviewCandidates(rows, {
+    tab: 'needs_review', source: 'original'
+  }).map((c) => c.id);
+  assert.deepEqual(needsOriginal, [1]);
+
+  const needsLinkedNew = filterReviewCandidates(rows, {
+    tab: 'needs_review', source: 'linked', match: 'new'
+  }).map((c) => c.id);
+  assert.deepEqual(needsLinkedNew, []);
+
+  const needsLinkedExisting = filterReviewCandidates(rows, {
+    tab: 'needs_review', source: 'linked', match: 'existing'
+  }).map((c) => c.id);
+  assert.deepEqual(needsLinkedExisting, [2]);
+
+  const allCandidatesOriginal = filterReviewCandidates(rows, {
+    tab: 'all', source: 'original'
+  }).map((c) => c.id);
+  assert.ok(allCandidatesOriginal.includes(5), 'All Candidates keeps context rows');
+  assert.ok(allCandidatesOriginal.includes(1));
+  assert.equal(allCandidatesOriginal.includes(3), false, 'linked-only excluded from original source');
+
+  assert.equal(filterReviewCandidates(rows, {
+    tab: 'needs_review', source: 'linked_only', match: 'new', type: 'hash'
+  }).length, 0);
+
+  const inventory = describeIndicatorInventorySummary({
+    original: 70,
+    totalUnique: 3218,
+    linkedOnly: 3148,
+    needsReview: 0
+  });
+  assert.equal(inventory.headline, '3,218 Unique Indicators');
+  assert.match(inventory.detail, /70 Original/);
+  assert.match(inventory.detail, /3,148 Linked Only/);
+  assert.match(inventory.detail, /0 Needs Review/);
+  assert.ok(SOURCE_FILTERS.some((s) => s.id === 'linked_only'));
+  assert.ok(MATCH_FILTERS.some((m) => m.id === 'existing'));
+  assert.ok(REVIEW_FILTERS.some((f) => f.id === 'linked_only'));
 });

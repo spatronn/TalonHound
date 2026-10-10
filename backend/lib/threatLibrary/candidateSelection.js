@@ -24,14 +24,19 @@ import {
 export const SELECTION_TABS = Object.freeze([
   'indicators', 'total_unique', 'linked_only', 'existing', 'new', 'needs_review', 'context_only', 'all'
 ]);
+export const SELECTION_SOURCES = Object.freeze(['all', 'original', 'linked', 'linked_only']);
+export const SELECTION_MATCHES = Object.freeze(['all', 'existing', 'new']);
 export const SELECTION_TYPES = Object.freeze(['all', 'ip', 'domain', 'url', 'hash', 'cidr']);
 export const SELECTION_RESULTS = Object.freeze([
   'all', 'created', 'already_existing', 'unsupported', 'not_created'
 ]);
 
 const TAB_SET = new Set(SELECTION_TABS);
+const SOURCE_SET = new Set(SELECTION_SOURCES);
+const MATCH_SET = new Set(SELECTION_MATCHES);
 const TYPE_SET = new Set(SELECTION_TYPES);
 const RESULT_SET = new Set(SELECTION_RESULTS);
+const PRIMARY_SCOPE_TABS = new Set(['total_unique', 'needs_review', 'context_only', 'all']);
 const HASH_TYPES = new Set(['md5', 'sha1', 'sha256']);
 const IP_TYPES = new Set(['ip', 'ipv6']);
 const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
@@ -78,10 +83,14 @@ export function parseReviewSelection(opts = {}) {
       return fail('All-matching selection requires filters');
     }
     const tab = filters.tab == null ? '' : String(filters.tab);
+    const source = filters.source == null || filters.source === '' ? 'all' : String(filters.source);
+    const match = filters.match == null || filters.match === '' ? 'all' : String(filters.match);
     const type = filters.type == null || filters.type === '' ? 'all' : String(filters.type);
     const result = filters.result == null || filters.result === '' ? 'all' : String(filters.result);
     const tabOk = TAB_SET.has(tab) || String(tab).startsWith('source:');
     if (!tabOk) return fail('Invalid selection tab');
+    if (!SOURCE_SET.has(source)) return fail('Invalid selection source');
+    if (!MATCH_SET.has(match)) return fail('Invalid selection match');
     if (!TYPE_SET.has(type)) return fail('Invalid selection type');
     if (!RESULT_SET.has(result)) return fail('Invalid selection result');
     if (filters.search != null && typeof filters.search !== 'string') return fail('Invalid selection search');
@@ -94,11 +103,12 @@ export function parseReviewSelection(opts = {}) {
       scopeToken = String(selection.scope_token);
       if (!TOKEN_RE.test(scopeToken)) return fail('Invalid selection token');
     }
+    const dims = normalizeSelectionFilters({ tab, source, match });
     return {
       ok: true,
       mode: 'all_matching',
       ids: [],
-      filters: { tab, type, result, search },
+      filters: { tab: dims.tab, source: dims.source, match: dims.match, type, result, search },
       excludedIds: excluded.ids,
       scopeToken
     };
@@ -222,8 +232,64 @@ export function matchSelectionTab(candidate, tab) {
   return false;
 }
 
+/**
+ * Expand legacy exclusive tabs into scope + source + match dimensions.
+ * Mirrors frontend normalizeReviewFilterState.
+ */
+export function normalizeSelectionFilters(input = {}) {
+  let tab = input.tab == null || input.tab === '' ? 'total_unique' : String(input.tab);
+  let source = input.source == null || input.source === '' ? 'all' : String(input.source);
+  let match = input.match == null || input.match === '' ? 'all' : String(input.match);
+
+  if (tab === 'indicators') {
+    tab = 'total_unique';
+    if (source === 'all') source = 'original';
+  } else if (tab === 'linked_only') {
+    tab = 'total_unique';
+    if (source === 'all') source = 'linked_only';
+  } else if (tab === 'existing') {
+    tab = 'total_unique';
+    if (match === 'all') match = 'existing';
+  } else if (tab === 'new') {
+    tab = 'total_unique';
+    if (match === 'all') match = 'new';
+  }
+
+  if (!(PRIMARY_SCOPE_TABS.has(tab) || TAB_SET.has(tab) || String(tab).startsWith('source:'))) {
+    tab = 'total_unique';
+  }
+  if (!SOURCE_SET.has(source)) source = 'all';
+  if (!MATCH_SET.has(match)) match = 'all';
+  return { tab, source, match };
+}
+
+export function matchSelectionSource(candidate, source) {
+  if (!source || source === 'all') return true;
+  if (source === 'original') return candidate?.has_original_document_occurrence !== false;
+  if (source === 'linked') {
+    const ev = (candidate && candidate.evidence) || {};
+    const assertion = lower(candidate?.source_assertion || ev.source_assertion);
+    if (assertion === 'linked_source_ioc') return true;
+    if (Array.isArray(candidate?.sources) && candidate.sources.length > 0) return true;
+    return Array.isArray(ev.linked_sources) && ev.linked_sources.length > 0;
+  }
+  if (source === 'linked_only') return candidate?.has_original_document_occurrence === false;
+  return true;
+}
+
+export function matchSelectionMatch(candidate, match) {
+  if (!match || match === 'all') return true;
+  const state = lower(candidate?.match_state);
+  if (match === 'existing') return state === 'existing' || Boolean(candidate?.matched_ioc_id);
+  if (match === 'new') return state === 'new';
+  return true;
+}
+
 export function candidateMatchesSelectionFilters(candidate, filters) {
-  return matchSelectionTab(candidate, filters.tab)
+  const dims = normalizeSelectionFilters(filters || {});
+  return matchSelectionTab(candidate, dims.tab)
+    && matchSelectionSource(candidate, dims.source)
+    && matchSelectionMatch(candidate, dims.match)
     && candidateMatchesQuery(candidate, filters.search)
     && candidateMatchesTypeFilter(candidate, filters.type)
     && candidateMatchesResultFilter(candidate, filters.result);

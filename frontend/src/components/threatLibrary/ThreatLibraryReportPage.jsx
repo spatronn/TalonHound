@@ -25,15 +25,17 @@ import {
   shouldShowProcessingPanel
 } from './reportRetryUi.js';
 import {
-  REVIEW_FILTERS,
+  PRIMARY_REVIEW_VIEWS,
+  SOURCE_FILTERS,
+  MATCH_FILTERS,
   DEFAULT_REVIEW_FILTER,
+  DEFAULT_SOURCE_FILTER,
+  DEFAULT_MATCH_FILTER,
   TYPE_FILTERS,
   RESULT_FILTERS,
   PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
   isReviewIndicator,
-  isUnionReviewIndicator,
-  isLinkedOnlyReviewIndicator,
   withInferredPublisherIocScope,
   describeAnalysisFailureDetail,
   confidenceLabel,
@@ -41,6 +43,9 @@ import {
   paginateRows,
   parseReviewTableUrlState,
   serializeReviewTableUrlState,
+  normalizeReviewFilterState,
+  describeIndicatorInventorySummary,
+  reviewFiltersAreDefault,
   iocResultLabel,
   iocResultLink,
   iocResultOutcome,
@@ -532,6 +537,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [job, setJob] = useState(null);
   const [view, setView] = useState(() => parseReportView(searchParams));
   const [filter, setFilter] = useState(urlState.tab || DEFAULT_REVIEW_FILTER);
+  const [sourceFilter, setSourceFilter] = useState(urlState.source || DEFAULT_SOURCE_FILTER);
+  const [matchFilter, setMatchFilter] = useState(urlState.match || DEFAULT_MATCH_FILTER);
   const [search, setSearch] = useState(urlState.q || '');
   const [typeFilter, setTypeFilter] = useState(urlState.type || 'all');
   const [resultFilter, setResultFilter] = useState(urlState.result || 'all');
@@ -673,8 +680,15 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }, [pendingMaintenance, processing, job]);
 
   const filtered = useMemo(
-    () => filterReviewCandidates(candidates, { tab: filter, q: search, type: typeFilter, result: resultFilter }),
-    [candidates, filter, search, typeFilter, resultFilter]
+    () => filterReviewCandidates(candidates, {
+      tab: filter,
+      source: sourceFilter,
+      match: matchFilter,
+      q: search,
+      type: typeFilter,
+      result: resultFilter
+    }),
+    [candidates, filter, sourceFilter, matchFilter, search, typeFilter, resultFilter]
   );
   const paged = useMemo(
     () => paginateRows(filtered, page, pageSize),
@@ -682,10 +696,26 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   );
   const pageRows = paged.rows;
   const filterCounts = useMemo(() => buildReviewFilterCounts(candidates), [candidates]);
+  const inventorySummary = useMemo(() => describeIndicatorInventorySummary({
+    original: filterCounts.indicators || 0,
+    totalUnique: filterCounts.total_unique || 0,
+    linkedOnly: filterCounts.linked_only || 0,
+    needsReview: filterCounts.needs_review || 0
+  }), [filterCounts]);
+  const filtersDefault = reviewFiltersAreDefault({
+    tab: filter,
+    source: sourceFilter,
+    match: matchFilter,
+    type: typeFilter,
+    result: resultFilter,
+    search
+  });
 
   useEffect(() => {
     const next = withReportView(serializeReviewTableUrlState({
       tab: filter,
+      source: sourceFilter,
+      match: matchFilter,
       q: search,
       type: typeFilter,
       result: resultFilter,
@@ -695,7 +725,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     if (next.toString() !== searchParams.toString()) {
       setSearchParams(next, { replace: true });
     }
-  }, [view, filter, search, typeFilter, resultFilter, paged.page, paged.pageSize, searchParams, setSearchParams]);
+  }, [view, filter, sourceFilter, matchFilter, search, typeFilter, resultFilter, paged.page, paged.pageSize, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (paged.page !== page) setPage(paged.page);
@@ -730,7 +760,22 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }, [reportId]);
 
   function changeFilter(next) {
-    setFilter(next);
+    const dims = normalizeReviewFilterState({ tab: next, source: sourceFilter, match: matchFilter });
+    setFilter(dims.tab);
+    setSourceFilter(dims.source);
+    setMatchFilter(dims.match);
+    setPage(1);
+    clearIndicatorSelection();
+  }
+
+  function changeSource(next) {
+    setSourceFilter(next || DEFAULT_SOURCE_FILTER);
+    setPage(1);
+    clearIndicatorSelection();
+  }
+
+  function changeMatch(next) {
+    setMatchFilter(next || DEFAULT_MATCH_FILTER);
     setPage(1);
     clearIndicatorSelection();
   }
@@ -753,6 +798,17 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     clearIndicatorSelection();
   }
 
+  function resetIndicatorFilters() {
+    setFilter(DEFAULT_REVIEW_FILTER);
+    setSourceFilter(DEFAULT_SOURCE_FILTER);
+    setMatchFilter(DEFAULT_MATCH_FILTER);
+    setSearch('');
+    setTypeFilter('all');
+    setResultFilter('all');
+    setPage(1);
+    clearIndicatorSelection();
+  }
+
   function changePageSize(next) {
     setPageSize(Number(next) || DEFAULT_PAGE_SIZE);
     setPage(1);
@@ -763,7 +819,14 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }
 
   function currentFilters() {
-    return { tab: filter, type: typeFilter, result: resultFilter, search };
+    return {
+      tab: filter,
+      source: sourceFilter,
+      match: matchFilter,
+      type: typeFilter,
+      result: resultFilter,
+      search
+    };
   }
 
   function toggleOne(id) {
@@ -1500,18 +1563,6 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     () => scopedCandidates.filter((c) => isReviewIndicator(c)).length,
     [scopedCandidates]
   );
-  const totalUniqueCount = useMemo(
-    () => scopedCandidates.filter((c) => isUnionReviewIndicator(c)).length,
-    [scopedCandidates]
-  );
-  const linkedOnlyCount = useMemo(
-    () => scopedCandidates.filter((c) => isLinkedOnlyReviewIndicator(c)).length,
-    [scopedCandidates]
-  );
-  const pendingUnionCount = useMemo(
-    () => scopedCandidates.filter((c) => isUnionReviewIndicator(c) && String(c.review_status || '').toLowerCase() === 'pending').length,
-    [scopedCandidates]
-  );
   const indicatorCount = describeIndicatorCount(report, showReview ? { reviewCount } : { rawCount: candidates.length || null });
   const metrics = useMemo(() => buildOverviewMetrics(candidates, report), [candidates, report]);
   const tabs = useMemo(() => buildReportTabs({
@@ -1543,7 +1594,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     () => describeDrawerPosition(filtered, openCandidateId, paged.pageSize),
     [filtered, openCandidateId, paged.pageSize]
   );
-  const acrossActive = Boolean(acrossPages && reviewFiltersEqual(acrossPages.filters, { tab: filter, type: typeFilter, result: resultFilter, search }));
+  const acrossActive = Boolean(acrossPages && reviewFiltersEqual(acrossPages.filters, currentFilters()));
   const selectedRows = useMemo(() => {
     if (acrossActive) return filtered.filter((c) => !acrossPages.excluded.has(c.id));
     return candidates.filter((c) => selected.has(c.id));
@@ -1564,7 +1615,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     pageSelectedCount: selectedOnPage,
     matchingCount: filtered.length,
     excludedCount: acrossActive ? Math.max(0, filtered.length - selectedRows.length) : 0,
-    scopeLabel: selectionScopeLabel({ tab: filter, type: typeFilter, result: resultFilter, search })
+    scopeLabel: selectionScopeLabel(currentFilters())
   });
   // Which review actions exist for this filter and whether the selection can drive them.
   const toolbar = useMemo(
@@ -1828,66 +1879,113 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
 
             {showReview ? (
               <div>
-                <ul className="tl-inventory-counts" aria-label="Indicator inventory counts" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', listStyle: 'none', margin: '0 0 0.75rem', padding: 0, fontSize: '0.85rem' }}>
-                  <li><strong>{reviewCount}</strong> original</li>
-                  <li><strong>{totalUniqueCount}</strong> total unique</li>
-                  <li><strong>{linkedOnlyCount}</strong> linked-only</li>
-                  <li><strong>{pendingUnionCount}</strong> pending review</li>
-                </ul>
-                <div className="tl-filterbar">
-                  <div className="tl-filterbar__tabs" role="tablist" aria-label="Indicator filters">
-                    {REVIEW_FILTERS.map((f) => (
+                <div className="tl-inventory-summary" data-testid="indicator-inventory-summary" aria-label="Indicator inventory summary">
+                  <p className="tl-inventory-summary__headline">{inventorySummary.headline}</p>
+                  <p className="tl-inventory-summary__detail">{inventorySummary.detail}</p>
+                </div>
+                <div className="tl-filterbar" data-testid="indicator-filterbar">
+                  <div className="tl-filterbar__tabs" role="tablist" aria-label="Indicator view">
+                    {PRIMARY_REVIEW_VIEWS.map((f) => (
                       <button
                         key={f.id}
                         type="button"
                         role="tab"
                         aria-selected={filter === f.id}
-                        className="tl-filter-tab"
+                        className={`tl-filter-tab${f.id === 'all' ? ' tl-filter-tab--advanced' : ''}`}
+                        data-testid={`filter-tab-${f.id}`}
                         onClick={() => changeFilter(f.id)}
+                        title={f.id === 'all'
+                          ? 'Include every extracted candidate, including narrative-only and contextual rows'
+                          : undefined}
                       >
                         {f.label}
-                        <span className="tl-filter-tab__count" data-testid={`filter-count-${f.id}`}>{filterCounts[f.id] ?? 0}</span>
+                        <span className="tl-filter-tab__count" data-testid={`filter-count-${f.id}`}>
+                          {filterCounts[f.id] ?? 0}
+                        </span>
                       </button>
                     ))}
                   </div>
                   <div className="tl-filterbar__controls">
-                    <label htmlFor="tl-indicator-search" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                      Search indicators
-                    </label>
-                    <input
-                      id="tl-indicator-search"
-                      type="search"
-                      value={search}
-                      onChange={(e) => changeSearch(e.target.value)}
-                      placeholder="Search indicators…"
-                      style={{ ...compactInput, width: 220 }}
-                    />
-                    <label htmlFor="tl-type-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                      Type
-                    </label>
-                    <select
-                      id="tl-type-filter"
-                      value={typeFilter}
-                      onChange={(e) => changeType(e.target.value)}
-                      style={compactSelect}
-                    >
-                      {TYPE_FILTERS.map((t) => (
-                        <option key={t.id} value={t.id}>{t.label}</option>
-                      ))}
-                    </select>
-                    <label htmlFor="tl-result-filter" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
-                      IOC Result
-                    </label>
-                    <select
-                      id="tl-result-filter"
-                      value={resultFilter}
-                      onChange={(e) => changeResult(e.target.value)}
-                      style={compactSelect}
-                    >
-                      {RESULT_FILTERS.map((t) => (
-                        <option key={t.id} value={t.id}>{t.label}</option>
-                      ))}
-                    </select>
+                    <div className="tl-filter-field">
+                      <label htmlFor="tl-source-filter">Source</label>
+                      <select
+                        id="tl-source-filter"
+                        data-testid="source-filter"
+                        value={sourceFilter}
+                        onChange={(e) => changeSource(e.target.value)}
+                        style={compactSelect}
+                        title="Original report vs linked-source provenance. Linked sources may overlap the original report; Linked only is exclusive."
+                      >
+                        {SOURCE_FILTERS.map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tl-filter-field">
+                      <label htmlFor="tl-match-filter">IOC match</label>
+                      <select
+                        id="tl-match-filter"
+                        data-testid="match-filter"
+                        value={matchFilter}
+                        onChange={(e) => changeMatch(e.target.value)}
+                        style={compactSelect}
+                        title="Relationship to the global IOC inventory. Independent of review status and Create IOCs outcome."
+                      >
+                        {MATCH_FILTERS.map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tl-filter-field">
+                      <label htmlFor="tl-type-filter">Type</label>
+                      <select
+                        id="tl-type-filter"
+                        data-testid="type-filter"
+                        value={typeFilter}
+                        onChange={(e) => changeType(e.target.value)}
+                        style={compactSelect}
+                      >
+                        {TYPE_FILTERS.map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tl-filter-field">
+                      <label htmlFor="tl-result-filter">Creation result</label>
+                      <select
+                        id="tl-result-filter"
+                        data-testid="result-filter"
+                        value={resultFilter}
+                        onChange={(e) => changeResult(e.target.value)}
+                        style={compactSelect}
+                        title="Outcome of Create IOCs for this candidate, not global inventory match."
+                      >
+                        {RESULT_FILTERS.map((t) => (
+                          <option key={t.id} value={t.id}>{t.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="tl-filter-field tl-filter-field--search">
+                      <label htmlFor="tl-indicator-search">Search</label>
+                      <input
+                        id="tl-indicator-search"
+                        type="search"
+                        value={search}
+                        onChange={(e) => changeSearch(e.target.value)}
+                        placeholder="Search indicators…"
+                        style={{ ...compactInput, width: 200, maxWidth: '100%' }}
+                      />
+                    </div>
+                    {!filtersDefault ? (
+                      <button
+                        type="button"
+                        className="tl-ghost-btn"
+                        data-testid="reset-filters"
+                        onClick={resetIndicatorFilters}
+                      >
+                        Reset filters
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -1984,7 +2082,16 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                     </thead>
                     <tbody>
                       {pageRows.length === 0 ? (
-                        <tr><td colSpan={canWrite ? 11 : 10} style={{ color: '#94a3b8' }}>No candidates in this filter.</td></tr>
+                        <tr>
+                          <td colSpan={canWrite ? 11 : 10} className="tl-table-empty" data-testid="indicator-empty">
+                            <p>No indicators match these filters.</p>
+                            {!filtersDefault ? (
+                              <button type="button" className="tl-ghost-btn" onClick={resetIndicatorFilters}>
+                                Reset filters
+                              </button>
+                            ) : null}
+                          </td>
+                        </tr>
                       ) : pageRows.map((c) => {
                         const value = candidateDisplayValue(c);
                         const resultTone = promotionOutcomeTone(iocResultOutcome(c));

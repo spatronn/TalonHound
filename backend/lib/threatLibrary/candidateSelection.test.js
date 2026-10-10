@@ -143,7 +143,11 @@ const FILTERS = [
   { tab: 'all', type: 'all', result: 'all', search: '198.51' },
   { tab: 'context_only', type: 'domain', result: 'all', search: '' },
   { tab: 'new', type: 'all', result: 'not_created', search: '' },
-  { tab: 'existing', type: 'all', result: 'already_existing', search: '' }
+  { tab: 'existing', type: 'all', result: 'already_existing', search: '' },
+  { tab: 'total_unique', source: 'original', match: 'all', type: 'all', result: 'all', search: '' },
+  { tab: 'total_unique', source: 'linked', match: 'existing', type: 'all', result: 'all', search: '' },
+  { tab: 'needs_review', source: 'linked_only', match: 'new', type: 'all', result: 'all', search: '' },
+  { tab: 'all', source: 'original', match: 'all', type: 'all', result: 'all', search: '' }
 ];
 
 test('selection filters match the review table, including MODE A narrative rows', () => {
@@ -152,11 +156,23 @@ test('selection filters match the review table, including MODE A narrative rows'
     narrative({ id: 2 }),
     contextOnly({ id: 3 }),
     member({ id: 4, review_status: 'approved', match_state: 'existing', matched_ioc_id: 9, promotion_outcome: 'already_existing' }),
-    member({ id: 5, candidate_type: 'domain', normalized_value: 'evil.example', original_value: 'evil.example' })
+    member({ id: 5, candidate_type: 'domain', normalized_value: 'evil.example', original_value: 'evil.example' }),
+    member({
+      id: 6,
+      has_original_document_occurrence: false,
+      source_assertion: 'linked_source_ioc',
+      sources: [{ id: 'src-1' }],
+      evidence: { source_assertion: 'linked_source_ioc' },
+      match_state: 'existing',
+      matched_ioc_id: 11,
+      review_status: 'pending'
+    })
   ];
   for (const filters of FILTERS) {
     const fe = frontend.filterReviewCandidates(rows, {
       tab: filters.tab,
+      source: filters.source,
+      match: filters.match,
       q: filters.search,
       type: filters.type,
       result: filters.result
@@ -605,4 +621,81 @@ test('scope token changes when candidate state changes and ignores order', () =>
   assert.equal(selectionScopeToken(a), selectionScopeToken(b));
   a[0].review_status = 'approved';
   assert.notEqual(selectionScopeToken(a), selectionScopeToken(b));
+});
+
+test('parseReviewSelection expands legacy tabs and accepts source/match dimensions', () => {
+  const legacy = parseReviewSelection({
+    selection: {
+      mode: 'all_matching',
+      filters: { tab: 'indicators', type: 'all', result: 'all', search: '' }
+    }
+  });
+  assert.equal(legacy.ok, true);
+  assert.deepEqual(legacy.filters, {
+    tab: 'total_unique',
+    source: 'original',
+    match: 'all',
+    type: 'all',
+    result: 'all',
+    search: ''
+  });
+  const combined = parseReviewSelection({
+    selection: {
+      mode: 'all_matching',
+      filters: {
+        tab: 'needs_review',
+        source: 'linked',
+        match: 'existing',
+        type: 'domain',
+        result: 'all',
+        search: 'evil'
+      }
+    }
+  });
+  assert.equal(combined.ok, true);
+  assert.equal(combined.filters.source, 'linked');
+  assert.equal(combined.filters.match, 'existing');
+  const badSource = parseReviewSelection({
+    selection: {
+      mode: 'all_matching',
+      filters: { tab: 'total_unique', source: 'publisher', type: 'all', result: 'all', search: '' }
+    }
+  });
+  assert.equal(badSource.ok, false);
+  assert.equal(badSource.code, 'selection_malformed');
+});
+
+test('combined source filters distinguish linked sources from linked-only', () => {
+  const rows = [
+    member({
+      id: 1,
+      has_original_document_occurrence: true,
+      source_assertion: 'linked_source_ioc',
+      sources: [{ id: 'src-1' }],
+      evidence: {
+        source_assertion: 'linked_source_ioc',
+        document_has_authoritative_scope: true,
+        occurrences: [{ zone: 'explicit_ioc_section', asserted: true }]
+      }
+    }),
+    member({
+      id: 2,
+      has_original_document_occurrence: false,
+      source_assertion: 'linked_source_ioc',
+      sources: [{ id: 'src-1' }],
+      evidence: { source_assertion: 'linked_source_ioc' }
+    })
+  ];
+  const linked = filterCandidatesForSelection(rows, {
+    mode: 'all_matching',
+    filters: { tab: 'total_unique', source: 'linked', match: 'all', type: 'all', result: 'all', search: '' },
+    excludedIds: []
+  }).map((c) => c.id);
+  const linkedOnly = filterCandidatesForSelection(rows, {
+    mode: 'all_matching',
+    filters: { tab: 'total_unique', source: 'linked_only', match: 'all', type: 'all', result: 'all', search: '' },
+    excludedIds: []
+  }).map((c) => c.id);
+  assert.deepEqual(linked, [1, 2]);
+  assert.deepEqual(linkedOnly, [2]);
 });

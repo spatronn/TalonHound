@@ -256,12 +256,32 @@
   color: #94a3b8;
 }
 
+.tl-inventory-summary {
+  margin: 0 0 12px;
+  min-width: 0;
+}
+
+.tl-inventory-summary__headline {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #e2e8f0;
+  letter-spacing: 0.01em;
+}
+
+.tl-inventory-summary__detail {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  line-height: 1.4;
+}
+
 .tl-filterbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
   margin-bottom: 10px;
+  min-width: 0;
 }
 
 .tl-filterbar__tabs {
@@ -273,9 +293,35 @@
 
 .tl-filterbar__controls {
   display: flex;
-  gap: 8px;
+  gap: 8px 10px;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: flex-end;
+  min-width: 0;
+}
+
+.tl-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.tl-filter-field label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.tl-filter-field--search {
+  flex: 1 1 160px;
+  max-width: 260px;
+}
+
+.tl-filter-field select,
+.tl-filter-field input {
+  max-width: 100%;
 }
 
 .tl-filter-tab {
@@ -293,10 +339,27 @@
   gap: 6px;
 }
 
+.tl-filter-tab--advanced {
+  border-style: dashed;
+  color: #94a3b8;
+}
+
 .tl-filter-tab[aria-selected='true'] {
   border-color: #0f766e;
   background: rgba(15, 118, 110, 0.25);
   color: #ccfbf1;
+}
+
+.tl-filter-tab--advanced[aria-selected='true'] {
+  border-style: solid;
+}
+
+.tl-filter-tab:focus-visible,
+.tl-filter-field select:focus-visible,
+.tl-filter-field input:focus-visible,
+.tl-filterbar__controls .tl-ghost-btn:focus-visible {
+  outline: 2px solid #2dd4bf;
+  outline-offset: 2px;
 }
 
 .tl-filter-tab__count {
@@ -304,6 +367,46 @@
   font-weight: 600;
   opacity: 0.8;
   font-variant-numeric: tabular-nums;
+}
+
+.tl-table-empty {
+  color: #94a3b8;
+  text-align: center;
+  padding: 28px 12px !important;
+}
+
+.tl-table-empty p {
+  margin: 0 0 10px;
+}
+
+@media (max-width: 768px) {
+  .tl-filterbar__controls {
+    align-items: stretch;
+  }
+
+  .tl-filter-field {
+    flex: 1 1 calc(50% - 10px);
+  }
+
+  .tl-filter-field--search {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .tl-filter-field select,
+  .tl-filter-field input {
+    width: 100%;
+  }
+}
+
+@media (max-width: 375px) {
+  .tl-filter-field {
+    flex: 1 1 100%;
+  }
+
+  .tl-inventory-summary__headline {
+    font-size: 0.98rem;
+  }
 }
 
 .tl-bulkbar {

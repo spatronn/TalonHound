@@ -8,18 +8,56 @@
  * module and the backend contract against the same fixture matrix).
  */
 
+/**
+ * Legacy single-dimension tab ids (still used for inventory counts and
+ * backward-compatible deep links). The Indicators UI now exposes these as
+ * independent scope / source / match dimensions via normalizeReviewFilterState.
+ */
 export const REVIEW_FILTERS = Object.freeze([
   { id: 'indicators', label: 'Original' },
-  { id: 'total_unique', label: 'Total unique' },
+  { id: 'total_unique', label: 'All Indicators' },
   { id: 'linked_only', label: 'Linked only' },
-  { id: 'existing', label: 'Existing' },
-  { id: 'new', label: 'New' },
+  { id: 'existing', label: 'Existing IOC' },
+  { id: 'new', label: 'New IOC' },
   { id: 'needs_review', label: 'Needs Review' },
   { id: 'context_only', label: 'Context Only' },
-  { id: 'all', label: 'All' }
+  { id: 'all', label: 'All Candidates' }
 ]);
 
-export const DEFAULT_REVIEW_FILTER = 'indicators';
+/** Primary scope tabs shown in the Indicators filter bar. */
+export const PRIMARY_REVIEW_VIEWS = Object.freeze([
+  { id: 'total_unique', label: 'All Indicators' },
+  { id: 'needs_review', label: 'Needs Review' },
+  { id: 'context_only', label: 'Context Only' },
+  { id: 'all', label: 'All Candidates' }
+]);
+
+/**
+ * Provenance dimension. "Linked sources" includes identities that also appear
+ * in the original report; "Linked only" is the exclusive linked-source set.
+ */
+export const SOURCE_FILTERS = Object.freeze([
+  { id: 'all', label: 'All sources' },
+  { id: 'original', label: 'Original report' },
+  { id: 'linked', label: 'Linked sources' },
+  { id: 'linked_only', label: 'Linked only' }
+]);
+
+/** Global IOC inventory match (independent of review status / Create outcome). */
+export const MATCH_FILTERS = Object.freeze([
+  { id: 'all', label: 'All matches' },
+  { id: 'existing', label: 'Existing IOC' },
+  { id: 'new', label: 'New IOC' }
+]);
+
+/** Default primary scope: Total Unique Indicators. */
+export const DEFAULT_REVIEW_FILTER = 'total_unique';
+export const DEFAULT_SOURCE_FILTER = 'all';
+export const DEFAULT_MATCH_FILTER = 'all';
+
+const PRIMARY_REVIEW_VIEW_IDS = new Set(PRIMARY_REVIEW_VIEWS.map((f) => f.id));
+const SOURCE_FILTER_IDS = new Set(SOURCE_FILTERS.map((f) => f.id));
+const MATCH_FILTER_IDS = new Set(MATCH_FILTERS.map((f) => f.id));
 
 const LINKED_SOURCE_IOC_ASSERTION = 'linked_source_ioc';
 
@@ -206,6 +244,91 @@ export function matchReviewFilter(candidate, filter) {
     return (candidate.sources || []).some((s) => s.id === sourceId);
   }
   return true;
+}
+
+/**
+ * Expand legacy exclusive tabs (Original / Linked only / Existing / New) into
+ * independent scope + source + match dimensions. Idempotent for already-normalized
+ * state and for primary views (All Indicators / Needs Review / …).
+ */
+export function normalizeReviewFilterState(input = {}) {
+  let tab = input.tab == null || input.tab === '' ? DEFAULT_REVIEW_FILTER : String(input.tab);
+  let source = input.source == null || input.source === '' ? DEFAULT_SOURCE_FILTER : String(input.source);
+  let match = input.match == null || input.match === '' ? DEFAULT_MATCH_FILTER : String(input.match);
+
+  if (tab === 'indicators') {
+    tab = 'total_unique';
+    if (source === DEFAULT_SOURCE_FILTER) source = 'original';
+  } else if (tab === 'linked_only') {
+    tab = 'total_unique';
+    if (source === DEFAULT_SOURCE_FILTER) source = 'linked_only';
+  } else if (tab === 'existing') {
+    tab = 'total_unique';
+    if (match === DEFAULT_MATCH_FILTER) match = 'existing';
+  } else if (tab === 'new') {
+    tab = 'total_unique';
+    if (match === DEFAULT_MATCH_FILTER) match = 'new';
+  }
+
+  const tabOk = PRIMARY_REVIEW_VIEW_IDS.has(tab)
+    || REVIEW_FILTERS.some((f) => f.id === tab)
+    || String(tab).startsWith('source:');
+  if (!tabOk) tab = DEFAULT_REVIEW_FILTER;
+  if (!SOURCE_FILTER_IDS.has(source)) source = DEFAULT_SOURCE_FILTER;
+  if (!MATCH_FILTER_IDS.has(match)) match = DEFAULT_MATCH_FILTER;
+  return { tab, source, match };
+}
+
+/** Provenance dimension (AND with primary scope). */
+export function matchReviewSource(candidate, source) {
+  if (!source || source === 'all') return true;
+  if (source === 'original') return candidate?.has_original_document_occurrence !== false;
+  if (source === 'linked') return isLinkedSourceAssertedIoc(candidate);
+  if (source === 'linked_only') return candidate?.has_original_document_occurrence === false;
+  return true;
+}
+
+/** Global IOC match dimension (AND with primary scope; not Create-IOCs outcome). */
+export function matchReviewMatch(candidate, match) {
+  if (!match || match === 'all') return true;
+  const state = String(candidate?.match_state || '').toLowerCase();
+  if (match === 'existing') return state === 'existing' || Boolean(candidate?.matched_ioc_id);
+  if (match === 'new') return state === 'new';
+  return true;
+}
+
+/** Combined primary scope + source + match predicates. */
+export function matchReviewDimensions(candidate, filters = {}) {
+  const dims = normalizeReviewFilterState(filters);
+  return matchReviewFilter(candidate, dims.tab)
+    && matchReviewSource(candidate, dims.source)
+    && matchReviewMatch(candidate, dims.match);
+}
+
+export function reviewFiltersAreDefault(filters = {}) {
+  const dims = normalizeReviewFilterState(filters);
+  return dims.tab === DEFAULT_REVIEW_FILTER
+    && dims.source === DEFAULT_SOURCE_FILTER
+    && dims.match === DEFAULT_MATCH_FILTER
+    && (!filters.type || filters.type === 'all')
+    && (!filters.result || filters.result === 'all')
+    && !String(filters.search || filters.q || '').trim();
+}
+
+export function describeIndicatorInventorySummary({
+  original = 0,
+  totalUnique = 0,
+  linkedOnly = 0,
+  needsReview = 0
+} = {}) {
+  return {
+    headline: `${Number(totalUnique).toLocaleString()} Unique Indicators`,
+    detail: [
+      `${Number(original).toLocaleString()} Original`,
+      `${Number(linkedOnly).toLocaleString()} Linked Only`,
+      `${Number(needsReview).toLocaleString()} Needs Review`
+    ].join('  ·  ')
+  };
 }
 
 const SOURCE_ASSERTION_LABELS = Object.freeze({
@@ -415,7 +538,7 @@ export const TYPE_FILTERS = Object.freeze([
 ]);
 
 export const RESULT_FILTERS = Object.freeze([
-  { id: 'all', label: 'All results' },
+  { id: 'all', label: 'All creation results' },
   { id: 'created', label: 'Created' },
   { id: 'already_existing', label: 'Already exists' },
   { id: 'unsupported', label: 'Not supported' },
@@ -458,9 +581,17 @@ export function candidateMatchesResultFilter(candidate, result) {
   return outcome === result;
 }
 
-export function filterReviewCandidates(candidates, { tab, q, type, result } = {}) {
+export function filterReviewCandidates(candidates, {
+  tab,
+  source,
+  match,
+  q,
+  type,
+  result
+} = {}) {
+  const dims = normalizeReviewFilterState({ tab, source, match });
   return withInferredPublisherIocScope(candidates).filter((c) => (
-    matchReviewFilter(c, tab || DEFAULT_REVIEW_FILTER)
+    matchReviewDimensions(c, dims)
     && candidateMatchesQuery(c, q)
     && candidateMatchesTypeFilter(c, type)
     && candidateMatchesResultFilter(c, result)
@@ -487,16 +618,25 @@ export function parseReviewTableUrlState(searchParams) {
     ? searchParams
     : new URLSearchParams(String(searchParams || ''));
   const tabRaw = params.get('tab') || params.get('filter') || DEFAULT_REVIEW_FILTER;
+  const sourceRaw = params.get('source') || DEFAULT_SOURCE_FILTER;
+  const matchRaw = params.get('match') || DEFAULT_MATCH_FILTER;
   const typeRaw = params.get('type') || 'all';
   const resultRaw = params.get('result') || 'all';
   let pageSize = Number(params.get('pageSize'));
   if (!PAGE_SIZES.includes(pageSize)) pageSize = DEFAULT_PAGE_SIZE;
   let page = Number(params.get('page'));
   if (!Number.isInteger(page) || page < 1) page = 1;
-  return {
+  const dims = normalizeReviewFilterState({
     tab: REVIEW_FILTER_IDS.has(tabRaw) || String(tabRaw).startsWith('source:')
       ? tabRaw
       : DEFAULT_REVIEW_FILTER,
+    source: SOURCE_FILTER_IDS.has(sourceRaw) ? sourceRaw : DEFAULT_SOURCE_FILTER,
+    match: MATCH_FILTER_IDS.has(matchRaw) ? matchRaw : DEFAULT_MATCH_FILTER
+  });
+  return {
+    tab: dims.tab,
+    source: dims.source,
+    match: dims.match,
     q: params.get('q') || '',
     type: TYPE_FILTER_IDS.has(typeRaw) ? typeRaw : 'all',
     result: RESULT_FILTER_IDS.has(resultRaw) ? resultRaw : 'all',
@@ -506,8 +646,11 @@ export function parseReviewTableUrlState(searchParams) {
 }
 
 export function serializeReviewTableUrlState(state) {
+  const dims = normalizeReviewFilterState(state);
   const params = new URLSearchParams();
-  if (state.tab && state.tab !== DEFAULT_REVIEW_FILTER) params.set('tab', state.tab);
+  if (dims.tab && dims.tab !== DEFAULT_REVIEW_FILTER) params.set('tab', dims.tab);
+  if (dims.source && dims.source !== DEFAULT_SOURCE_FILTER) params.set('source', dims.source);
+  if (dims.match && dims.match !== DEFAULT_MATCH_FILTER) params.set('match', dims.match);
   if (state.q) params.set('q', String(state.q));
   if (state.type && state.type !== 'all') params.set('type', state.type);
   if (state.result && state.result !== 'all') params.set('result', state.result);
@@ -852,20 +995,39 @@ export function headerCheckState({ mode, selectedIds, excludedIds, pageIds } = {
 }
 
 export function reviewFiltersEqual(a, b) {
-  const norm = (f) => ({
-    tab: f?.tab || DEFAULT_REVIEW_FILTER,
-    type: f?.type || 'all',
-    result: f?.result || 'all',
-    search: f?.search || ''
-  });
+  const norm = (f) => {
+    const dims = normalizeReviewFilterState(f);
+    return {
+      tab: dims.tab,
+      source: dims.source,
+      match: dims.match,
+      type: f?.type || 'all',
+      result: f?.result || 'all',
+      search: f?.search || ''
+    };
+  };
   const x = norm(a);
   const y = norm(b);
-  return x.tab === y.tab && x.type === y.type && x.result === y.result && x.search === y.search;
+  return x.tab === y.tab
+    && x.source === y.source
+    && x.match === y.match
+    && x.type === y.type
+    && x.result === y.result
+    && x.search === y.search;
 }
 
-export function selectionScopeLabel({ tab, type, result, search } = {}) {
-  const tabLabel = REVIEW_FILTERS.find((f) => f.id === tab)?.label || 'Indicators';
+export function selectionScopeLabel({ tab, source, match, type, result, search } = {}) {
+  const dims = normalizeReviewFilterState({ tab, source, match });
+  const tabLabel = PRIMARY_REVIEW_VIEWS.find((f) => f.id === dims.tab)?.label
+    || REVIEW_FILTERS.find((f) => f.id === dims.tab)?.label
+    || 'Indicators';
   const extras = [];
+  if (dims.source && dims.source !== DEFAULT_SOURCE_FILTER) {
+    extras.push(SOURCE_FILTERS.find((t) => t.id === dims.source)?.label || dims.source);
+  }
+  if (dims.match && dims.match !== DEFAULT_MATCH_FILTER) {
+    extras.push(MATCH_FILTERS.find((t) => t.id === dims.match)?.label || dims.match);
+  }
   if (type && type !== 'all') extras.push(TYPE_FILTERS.find((t) => t.id === type)?.label || type);
   if (result && result !== 'all') extras.push(RESULT_FILTERS.find((t) => t.id === result)?.label || result);
   const q = String(search || '').trim();
@@ -915,10 +1077,13 @@ export function buildAllMatchingReviewBody({
   confirm = null,
   preview = false
 } = {}) {
+  const dims = normalizeReviewFilterState(filters);
   const selection = {
     mode: 'all_matching',
     filters: {
-      tab: filters?.tab || DEFAULT_REVIEW_FILTER,
+      tab: dims.tab,
+      source: dims.source,
+      match: dims.match,
       type: filters?.type || 'all',
       result: filters?.result || 'all',
       search: filters?.search || ''

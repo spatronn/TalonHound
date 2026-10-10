@@ -99,6 +99,15 @@ test('overview metrics and report details come from the loaded rows, never hardc
   assert.match(pageSrc, /<DetailList items=\{reportDetails\} testId="report-details" className="tl-dl--info" \/>/);
   assert.match(pageSrc, /const filterCounts = useMemo\(\(\) => buildReviewFilterCounts\(candidates\)/);
   assert.match(pageSrc, /\{filterCounts\[f\.id\] \?\? 0\}/);
+  assert.match(pageSrc, /data-testid="indicator-inventory-summary"/);
+  assert.match(pageSrc, /PRIMARY_REVIEW_VIEWS\.map/);
+  assert.match(pageSrc, /data-testid="source-filter"/);
+  assert.match(pageSrc, /data-testid="match-filter"/);
+  assert.match(pageSrc, /data-testid="reset-filters"/);
+  assert.doesNotMatch(pageSrc, /REVIEW_FILTERS\.map/, 'eight-chip filter row replaced by primary views + dropdowns');
+  assert.match(pageCss, /@media \(max-width: 768px\)/);
+  assert.match(pageCss, /@media \(max-width: 375px\)/);
+  assert.match(pageCss, /\.tl-inventory-summary/);
   assert.doesNotMatch(pageSrc, /<Meta label="File name"/, 'empty file name / sha256 rows are gone');
   assert.doesNotMatch(pageSrc, /<Meta label="SHA-256"/);
 });
@@ -223,7 +232,11 @@ test('indicator selection survives pagination and page size, and clears when the
   const size = pageSrc.slice(pageSrc.indexOf('function changePageSize'), pageSrc.indexOf('function goToPage'));
   assert.doesNotMatch(go, /clearIndicatorSelection|setSelected|setAcrossPages/);
   assert.doesNotMatch(size, /clearIndicatorSelection|setSelected|setAcrossPages/);
-  assert.match(pageSrc, /function changeFilter\(next\) \{\s*setFilter\(next\);\s*setPage\(1\);\s*clearIndicatorSelection\(\);/);
+  assert.match(pageSrc, /function changeFilter\(next\) \{\s*const dims = normalizeReviewFilterState/);
+  assert.match(pageSrc, /clearIndicatorSelection\(\);/);
+  assert.match(pageSrc, /function changeSource\(next\)/);
+  assert.match(pageSrc, /function changeMatch\(next\)/);
+  assert.match(pageSrc, /function resetIndicatorFilters\(\)/);
   assert.match(pageSrc, /function changeSearch\(next\) \{\s*setSearch\(next\);\s*setPage\(1\);\s*clearIndicatorSelection\(\);/);
   assert.match(pageSrc, /useEffect\(\(\) => \{\s*setSelected\(\(\) => new Set\(\)\);\s*setAcrossPages\(null\);\s*\}, \[reportId\]\);/);
   assert.match(pageSrc, /data-testid="selection-banner"/);
