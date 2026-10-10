@@ -54,7 +54,11 @@ export const IOC_SOURCE_ELIGIBLE_EXTENSIONS = Object.freeze([
   '.md',
   '.ioc',
   '.yml',
-  '.yaml'
+  '.yaml',
+  // Publisher hash-list files (e.g. Gen Digital WardenStealer samples.sha256)
+  '.sha256',
+  '.sha1',
+  '.md5'
 ]);
 
 export const IOC_SOURCE_CONTENT_TYPES = Object.freeze([

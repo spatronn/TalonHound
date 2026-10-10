@@ -20,7 +20,15 @@ export function detectSourceFormat({ contentType, url, path }) {
   if (ct === 'application/json' || name.endsWith('.json')) return 'json';
   if (ct === 'text/csv' || name.endsWith('.csv')) return 'csv';
   if (ct.includes('html') || name.endsWith('.html') || name.endsWith('.htm')) return 'html';
-  if (name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.ioc') || ct.startsWith('text/')) return 'txt';
+  if (
+    name.endsWith('.txt')
+    || name.endsWith('.md')
+    || name.endsWith('.ioc')
+    || name.endsWith('.sha256')
+    || name.endsWith('.sha1')
+    || name.endsWith('.md5')
+    || ct.startsWith('text/')
+  ) return 'txt';
   const fromUrl = guessTypeFromUrl(url);
   if (fromUrl !== 'unknown' && fromUrl !== 'github_dir' && fromUrl !== 'github_file') return fromUrl;
   return 'txt';

@@ -59,6 +59,10 @@ test('github URL parse and eligible files', () => {
   assert.equal(isEligibleIocFilePath('domains.txt'), true);
   assert.equal(isEligibleIocFilePath('README.md'), false);
   assert.equal(isEligibleIocFilePath('nested/hashes.csv'), true);
+  assert.equal(isEligibleIocFilePath('samples.sha256'), true);
+  assert.equal(isEligibleIocFilePath('samples.sha1'), true);
+  assert.equal(isEligibleIocFilePath('samples.md5'), true);
+  assert.equal(isEligibleIocFilePath('notes.docx'), false);
 });
 
 test('source state machine: dismiss and approve guards', () => {
