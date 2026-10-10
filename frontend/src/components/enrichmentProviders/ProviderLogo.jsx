@@ -4,11 +4,13 @@ import virustotalLogo from '../../assets/provider-logos/virustotal.png';
 import ipinfoLogo from '../../assets/provider-logos/ipinfo.png';
 import rdapLogo from '../../assets/provider-logos/rdap.png';
 import spamhausLogo from '../../assets/provider-logos/spamhaus.png';
+import urlscanLogo from '../../assets/provider-logos/urlscan.png';
 
 const LOGO_BY_KEY = {
   virustotal: virustotalLogo,
   ipinfo_lite: ipinfoLogo,
   abuseipdb: abuseipdbLogo,
+  urlscan: urlscanLogo,
   rdap: rdapLogo,
   spamhaus_drop: spamhausLogo
 };
