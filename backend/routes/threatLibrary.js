@@ -198,11 +198,13 @@ function publicReport(row) {
     // Raw persisted rows (All) vs. original Indicators membership vs. Context Only.
     raw_candidate_count: row.indicator_count ?? null,
     review_candidate_count: row.review_candidate_count ?? null,
-    // Alias: original-document Indicators (MODE A/B publisher set).
+    // Alias: original-document Indicators (MODE A/B publisher set). MCP counts.indicators.
     original_indicator_count: row.review_candidate_count ?? null,
+    // Canonical inventory for UI list/tab badges (original ∪ linked-source Indicators).
     total_unique_indicator_count: row.total_unique_indicator_count ?? row.review_candidate_count ?? null,
     linked_only_indicator_count: row.linked_only_indicator_count ?? 0,
     context_only_count: row.context_only_count ?? null,
+    // Union Indicators with a matched global IOC (never exceeds total_unique).
     matched_count: row.matched_count,
     entity_count: row.entity_count,
     ioc_source_summary: row.ioc_source_summary || undefined,

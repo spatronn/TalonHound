@@ -141,7 +141,8 @@ export function buildReportListOrderBy({ sort, order } = {}) {
     source: `${REPORT_LIST_SOURCE_SORT_SQL} ${dir} NULLS LAST, ${tie}`,
     tlp: `${REPORT_LIST_TLP_SORT_SQL} ${dir}, ${tie}`,
     entities: `entity_count ${dir}, ${tie}`,
-    indicators: `indicator_count ${dir}, ${tie}`,
+    // Sort by Total Unique Indicators (same field the list Indicators cell shows).
+    indicators: `total_unique_indicator_count ${dir}, ${tie}`,
     matched: `matched_count ${dir}, ${tie}`,
     status: `r.analysis_status ${dir} NULLS LAST, ${tie}`,
     published: `r.published_at ${dir} NULLS LAST, ${tie}`,

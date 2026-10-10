@@ -209,13 +209,23 @@ const REVIEW_CANDIDATE_WHERE = reportIndicatorMembershipSql('c');
 const UNION_INDICATOR_WHERE = unionReportIndicatorMembershipSql('c');
 const LINKED_ONLY_WHERE = linkedOnlyIndicatorMembershipSql('c');
 
+/**
+ * Report list/detail count contract (live correlated subselects — not snapshots):
+ *   indicator_count              = all candidate rows (historical alias)
+ *   review_candidate_count       = Original Indicators (publisher-document set)
+ *   total_unique_indicator_count = Original ∪ linked-source Indicators
+ *   linked_only_indicator_count  = union − original
+ *   matched_count                = union Indicators with matched_ioc_id
+ *                                  (never exceeds total_unique; excludes narrative/
+ *                                  context-only matches outside Indicator membership)
+ */
 const REPORT_COUNT_COLUMNS = `
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id) AS indicator_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${REVIEW_CANDIDATE_WHERE}) AS review_candidate_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${UNION_INDICATOR_WHERE}) AS total_unique_indicator_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${LINKED_ONLY_WHERE}) AS linked_only_indicator_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${isContextOnlySql('c')}) AS context_only_count,
-  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND c.matched_ioc_id IS NOT NULL) AS matched_count,
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND c.matched_ioc_id IS NOT NULL AND (${UNION_INDICATOR_WHERE})) AS matched_count,
   (SELECT COUNT(*)::int FROM threat_report_entities e WHERE e.report_id = r.id) AS entity_count`;
 
 /**

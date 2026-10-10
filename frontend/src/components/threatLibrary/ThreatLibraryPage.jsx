@@ -20,7 +20,7 @@ import {
   reportListSortMarker
 } from './reportList.js';
 import { createReportListLoader } from './reportListLoader.js';
-import { indicatorListCell } from './reportPhase.js';
+import { indicatorListCell, indicatorListCellTitle } from './reportPhase.js';
 import { formatPublicationDate, publicationDateTitle } from './publicationDate.js';
 import { TlpBadge, isElevatedTlp } from './tlp.jsx';
 import { ui, badgeStyle } from './styles.js';
@@ -252,7 +252,7 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                 <SortableTh label="TLP" column="tlp" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Entities" column="entities" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Indicators" column="indicators" sort={sort} order={order} onCycle={cycleSort} />
-                <SortableTh label="Matched" column="matched" sort={sort} order={order} onCycle={cycleSort} />
+                <SortableTh label="Matched IOCs" column="matched" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Status" column="status" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Published" column="published" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Imported" column="imported" sort={sort} order={order} onCycle={cycleSort} />
@@ -285,8 +285,13 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                   </td>
                   <td style={ui.td}><TlpBadge tlp={row.tlp} display={row.tlp_display} /></td>
                   <td style={ui.td}>{row.entity_count ?? 0}</td>
-                  <td style={ui.td}>{indicatorListCell(row)}</td>
-                  <td style={ui.td}>{row.matched_count ?? 0}</td>
+                  <td style={ui.td} title={indicatorListCellTitle(row)}>{indicatorListCell(row)}</td>
+                  <td
+                    style={ui.td}
+                    title="Unique Indicators matched to an existing global IOC record"
+                  >
+                    {row.matched_count ?? 0}
+                  </td>
                   <td style={ui.td}>
                     <span style={badgeStyle(statusColors(row))}>{statusLabel(row)}</span>
                   </td>

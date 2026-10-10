@@ -134,13 +134,13 @@ export function serializeThreatReport(snapshot, page = {}) {
     created_at: r.created_at,
     updated_at: r.updated_at ?? null,
     finalized_at: r.finalized_at ?? null,
-    // Product counts: indicators = report Indicator membership (UI Indicators tab).
-    // all = full candidate roster size (same as indicators.total for paging).
-    // Legacy: some early MCP clients treated counts.indicators as the roster;
-    // use counts.all / indicators.total for that. counts.indicators is membership.
+    // Product counts (API/MCP contract — do not silently redefine):
+    //   indicators   = Original Indicators (publisher-document membership)
+    //   total_unique = Original ∪ linked-source Indicators (UI list/tab badge)
+    //   all          = full candidate roster size (indicators.total for paging)
     counts: {
       all: buckets.all,
-      // Original-document Indicators membership (UI default Indicators filter).
+      // Preserved: original-document Indicators membership (not UI Total Unique).
       indicators: buckets.indicators,
       total_unique: buckets.total_unique ?? buckets.indicators,
       linked_only: buckets.linked_only ?? 0,

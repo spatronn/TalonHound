@@ -100,6 +100,8 @@ test('overview metrics and report details come from the loaded rows, never hardc
   assert.match(pageSrc, /const filterCounts = useMemo\(\(\) => buildReviewFilterCounts\(candidates\)/);
   assert.match(pageSrc, /\{filterCounts\[f\.id\] \?\? 0\}/);
   assert.match(pageSrc, /data-testid="indicator-inventory-summary"/);
+  assert.match(pageSrc, /isUnionReviewIndicator\(c\)/, 'Indicators tab badge uses Total Unique membership');
+  assert.match(pageSrc, /totalUniqueCount/);
   assert.match(pageSrc, /PRIMARY_REVIEW_VIEWS\.map/);
   assert.match(pageSrc, /data-testid="source-filter"/);
   assert.match(pageSrc, /data-testid="match-filter"/);

@@ -61,15 +61,31 @@ export function indicatorSectionTitle(report) {
 }
 
 /**
+ * Stable Total Unique Indicator count for list cells / tab badges / metadata.
+ * Prefers `total_unique_indicator_count`; falls back to original membership for
+ * older payloads that predate linked-source inventory.
+ */
+export function resolveTotalUniqueIndicatorCount(report, counts = {}) {
+  const unique = counts.totalUniqueCount
+    ?? report?.total_unique_indicator_count
+    ?? counts.reviewCount
+    ?? report?.review_candidate_count
+    ?? report?.original_indicator_count
+    ?? null;
+  return unique == null ? null : Number(unique);
+}
+
+/**
  * Count label for the indicator area / metadata / list page.
+ * Review-ready and finalized surfaces use Total Unique Indicators so the
+ * badge matches the Indicators inventory headline.
  * @param {object} report
- * @param {{ reviewCount?: number|null, rawCount?: number|null }} [counts] overrides from loaded rows
+ * @param {{ totalUniqueCount?: number|null, reviewCount?: number|null, rawCount?: number|null }} [counts]
  * @returns {{ label: string, value: number|null, text: string }}
  */
 export function describeIndicatorCount(report, counts = {}) {
   const phase = resolveReportPhase(report);
   const raw = counts.rawCount ?? report?.raw_candidate_count ?? report?.indicator_count ?? null;
-  const review = counts.reviewCount ?? report?.review_candidate_count ?? null;
   if (phase === REPORT_PHASES.PREPARING || phase === REPORT_PHASES.FAILED) {
     const value = raw == null ? null : Number(raw);
     return {
@@ -78,16 +94,16 @@ export function describeIndicatorCount(report, counts = {}) {
       text: value == null ? 'Preliminary observables: —' : `Preliminary observables: ${value}`
     };
   }
-  const value = review == null ? (raw == null ? null : Number(raw)) : Number(review);
+  const unique = resolveTotalUniqueIndicatorCount(report, counts);
+  const value = unique == null ? (raw == null ? null : Number(raw)) : unique;
   const label = phase === REPORT_PHASES.FINALIZED ? 'Indicators' : 'Review candidates';
   return { label, value, text: value == null ? `${label}: —` : `${label}: ${value}` };
 }
 
-/** Compact list-page cell: never presents a preliminary count as a stable total. */
+/** Compact list-page cell: Total Unique Indicators when review-ready/finalized. */
 export function indicatorListCell(report) {
   const phase = resolveReportPhase(report);
   const raw = report?.raw_candidate_count ?? report?.indicator_count ?? null;
-  const review = report?.review_candidate_count ?? null;
   if (phase === REPORT_PHASES.PREPARING) {
     if (raw == null || Number(raw) === 0) return 'Analyzing…';
     return `${Number(raw)} preliminary`;
@@ -95,8 +111,24 @@ export function indicatorListCell(report) {
   if (phase === REPORT_PHASES.FAILED) {
     return raw == null || Number(raw) === 0 ? '—' : `${Number(raw)} preliminary`;
   }
-  const value = review == null ? raw : review;
-  return value == null ? '0' : String(Number(value));
+  const value = resolveTotalUniqueIndicatorCount(report);
+  if (value != null) return String(value);
+  return raw == null ? '0' : String(Number(raw));
+}
+
+/** Tooltip for the list Indicators cell (original stays visible without a new column). */
+export function indicatorListCellTitle(report) {
+  const phase = resolveReportPhase(report);
+  if (phase === REPORT_PHASES.PREPARING || phase === REPORT_PHASES.FAILED) return undefined;
+  const original = report?.original_indicator_count ?? report?.review_candidate_count;
+  const linked = report?.linked_only_indicator_count;
+  const unique = resolveTotalUniqueIndicatorCount(report);
+  if (original == null && linked == null) return undefined;
+  const parts = [];
+  if (unique != null) parts.push(`${Number(unique).toLocaleString()} unique Indicators`);
+  if (original != null) parts.push(`${Number(original).toLocaleString()} original`);
+  if (linked != null) parts.push(`${Number(linked).toLocaleString()} linked only`);
+  return parts.join(' · ');
 }
 
 /**

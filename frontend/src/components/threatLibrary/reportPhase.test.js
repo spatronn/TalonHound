@@ -16,6 +16,8 @@ import {
   indicatorSectionTitle,
   describeIndicatorCount,
   indicatorListCell,
+  indicatorListCellTitle,
+  resolveTotalUniqueIndicatorCount,
   describeAnalysisStage,
   describePreliminaryState,
   shouldIgnoreStalePoll,
@@ -43,9 +45,25 @@ const reviewReady = {
   candidate_state: 'review_ready',
   raw_candidate_count: 56,
   review_candidate_count: 16,
+  original_indicator_count: 16,
+  total_unique_indicator_count: 16,
+  linked_only_indicator_count: 0,
+  matched_count: 5,
   updated_at: '2026-09-13T10:06:00Z'
 };
 const finalized = { ...reviewReady, analysis_status: 'ready', review_phase: 'finalized', candidate_state: 'finalized', updated_at: '2026-09-13T11:00:00Z' };
+const wardenShaped = {
+  analysis_status: 'ready',
+  review_phase: 'finalized',
+  candidate_state: 'finalized',
+  raw_candidate_count: 3222,
+  review_candidate_count: 70,
+  original_indicator_count: 70,
+  total_unique_indicator_count: 3218,
+  linked_only_indicator_count: 3148,
+  matched_count: 3218,
+  updated_at: '2026-10-10T14:23:05Z'
+};
 const failed = { analysis_status: 'failed', review_phase: 'failed', raw_candidate_count: 56, review_candidate_count: 20, failure_stage: 'analyzing', updated_at: '2026-09-13T10:03:00Z' };
 
 test('phase comes from the API field and falls back to the identical status mapping', () => {
@@ -98,7 +116,7 @@ test('review ready: Review indicators with the review count, actions and finaliz
   assert.equal(canFinalize(reviewReady), true);
   assert.equal(indicatorSectionTitle(reviewReady), 'Review indicators');
   assert.equal(describeIndicatorCount(reviewReady).text, 'Review candidates: 16');
-  assert.equal(describeIndicatorCount(reviewReady, { reviewCount: 16 }).label, 'Review candidates');
+  assert.equal(describeIndicatorCount(reviewReady, { totalUniqueCount: 16 }).label, 'Review candidates');
   assert.notEqual(describeIndicatorCount(reviewReady).label, describeIndicatorCount(analyzing).label, 'preliminary and review counts never share a label');
 });
 
@@ -158,13 +176,25 @@ test('stale response race: an older poll or detail response never overwrites the
   assert.match(pageSrc, /const token = latestDetail\.current\.next\(\);[\s\S]*?if \(!latestDetail\.current\.isLatest\(token\)\) return data;/);
 });
 
-test('list page: preliminary counts are labelled, final counts are the review count', () => {
+test('list page: preliminary counts are labelled; stable cells use Total Unique Indicators', () => {
   assert.equal(indicatorListCell(analyzing), '56 preliminary');
   assert.equal(indicatorListCell({ analysis_status: 'fetching', raw_candidate_count: 0 }), 'Analyzing…');
   assert.equal(indicatorListCell(reviewReady), '16');
   assert.equal(indicatorListCell(finalized), '16');
+  assert.equal(indicatorListCell(wardenShaped), '3218');
   assert.equal(indicatorListCell(failed), '56 preliminary');
-  assert.equal(indicatorListCell({ analysis_status: 'ready', indicator_count: 9 }), '9', 'older API without review count falls back to rows');
+  assert.equal(indicatorListCell({ analysis_status: 'ready', indicator_count: 9 }), '9', 'older API without unique count falls back to rows');
+  assert.equal(
+    indicatorListCell({ analysis_status: 'ready', review_candidate_count: 70, total_unique_indicator_count: 3218 }),
+    '3218',
+    'list Indicators prefers total unique over original-only'
+  );
+  assert.match(indicatorListCellTitle(wardenShaped), /3,218 unique Indicators/);
+  assert.match(indicatorListCellTitle(wardenShaped), /70 original/);
+  assert.match(indicatorListCellTitle(wardenShaped), /3,148 linked only/);
+  assert.equal(resolveTotalUniqueIndicatorCount(wardenShaped), 3218);
+  assert.equal(describeIndicatorCount(wardenShaped).value, 3218);
+  assert.equal(describeIndicatorCount(wardenShaped, { totalUniqueCount: 3218 }).text, 'Indicators: 3218');
 });
 
 test('backend rejection is handled as state, not as a generic error', () => {

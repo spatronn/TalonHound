@@ -36,6 +36,7 @@ import {
   PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
   isReviewIndicator,
+  isUnionReviewIndicator,
   withInferredPublisherIocScope,
   describeAnalysisFailureDetail,
   confidenceLabel,
@@ -1563,7 +1564,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     () => scopedCandidates.filter((c) => isReviewIndicator(c)).length,
     [scopedCandidates]
   );
-  const indicatorCount = describeIndicatorCount(report, showReview ? { reviewCount } : { rawCount: candidates.length || null });
+  // Tab badge / metadata use Total Unique Indicators (stable report inventory),
+  // not the active Indicators filter and not original-only membership.
+  const totalUniqueCount = useMemo(
+    () => scopedCandidates.filter((c) => isUnionReviewIndicator(c)).length,
+    [scopedCandidates]
+  );
+  const indicatorCount = describeIndicatorCount(
+    report,
+    showReview
+      ? { totalUniqueCount, reviewCount }
+      : { rawCount: candidates.length || null }
+  );
   const metrics = useMemo(() => buildOverviewMetrics(candidates, report), [candidates, report]);
   const tabs = useMemo(() => buildReportTabs({
     indicatorCount: indicatorCount.value,
