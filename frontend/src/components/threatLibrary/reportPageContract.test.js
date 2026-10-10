@@ -111,7 +111,7 @@ test('review workflow gates are unchanged: canWrite for actions, showReview for 
   assert.match(pageSrc, /async function createIocs\(\) \{\s*if \(!canWrite \|\| !selected\.size\) return;/);
   // The toolbar renders the filter-aware descriptor: no hardcoded action buttons.
   assert.match(pageSrc, /className="tl-bulkbar"[\s\S]*?\{toolbar\.actions\.map\(\(a\) => \([\s\S]*?onClick=\{\(\) => runReview\(a\.id\)\.catch/);
-  assert.match(pageSrc, /describeReviewToolbar\(\{ filter, selectedRows, busy: Boolean\(busy\) \}\)/);
+  assert.match(pageSrc, /describeReviewToolbar\(\{\s*filter,\s*selectedRows,\s*busy: Boolean\(busy\) \|\| createOp\?\.phase === 'processing'\s*\}\)/);
   assert.doesNotMatch(pageSrc, /runReview\('(approve|context_only|ignore|create_iocs|approve_high_confidence_malicious)'\)/, 'no filter-blind action buttons');
   assert.match(pageSrc, /SourceUrlEditor[\s\S]*?canWrite=\{canWrite\}/);
   assert.match(pageSrc, /if \(!canWrite\) return;\s*setBusy\('export'\)/);
@@ -183,6 +183,13 @@ test('drawer is read-only: no review mutation controls, no review handler, no ge
   assert.doesNotMatch(pageSrc, /Review action applied\./, 'generic feedback replaced by action-specific text');
   assert.match(pageSrc, /describeReviewFeedback\(action, \{/);
   assert.match(pageSrc, /describeCreateIocFeedback\(\{/);
+  assert.match(pageSrc, /data-testid="create-ioc-operation"/);
+  assert.match(pageSrc, /describeCreateIocOperationPanel\(/);
+  assert.match(pageSrc, /isCreateIocAmbiguousFailure\(/);
+  assert.match(pageSrc, /writeCreateIocSession\(/);
+  assert.match(pageCss, /\.tl-create-op/);
+  assert.match(pageCss, /tl-create-op__bar--indeterminate/);
+  assert.doesNotMatch(pageCss, /var\(--th-surface/);
   // Status stays visible, read-only, in the body.
   assert.match(drawerSrc, /<Field label="Review">/);
   assert.match(drawerSrc, /<Field label="IOC result">/);

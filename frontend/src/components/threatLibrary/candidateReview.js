@@ -1016,13 +1016,186 @@ export function describeAcrossPagesOutcome(action, data) {
 }
 
 /** Success banner after Create IOCs (confirmed run). */
-export function describeCreateIocFeedback({ created = 0, existing = 0, errors = 0 } = {}) {
+export function describeCreateIocFeedback({ created = 0, existing = 0, errors = 0, skipped = 0 } = {}) {
   const c = Number(created) || 0;
   const e = Number(existing) || 0;
   const errs = Number(errors) || 0;
+  const skip = Number(skipped) || 0;
   const head = c === 1 ? 'IOC created.' : `${c} IOCs created.`;
   const parts = [head];
   if (e > 0) parts.push(`${e} already existed.`);
+  if (skip > 0) parts.push(`${skip} skipped.`);
   if (errs > 0) parts.push(`${errs} error${errs === 1 ? '' : 's'}.`);
   return parts.join(' ');
+}
+
+/** sessionStorage key for an in-flight Create IOCs request (refresh awareness). */
+export const CREATE_IOC_SESSION_KEY = 'talonhound.tl.createIocs';
+
+export function formatElapsedMs(ms) {
+  const n = Math.max(0, Number(ms) || 0);
+  const sec = Math.floor(n / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const rem = sec % 60;
+  return `${min}m ${rem}s`;
+}
+
+/**
+ * True when the browser lost the response and server-side creation may have
+ * committed rows. Never treat these as "zero IOCs created".
+ */
+export function isCreateIocAmbiguousFailure(err) {
+  if (!err) return false;
+  if (err?.response?.data?.code === 'create_iocs_in_progress') return false;
+  if (err?.response?.data?.code === 'create_iocs_none_eligible') return false;
+  if (err?.response?.data?.code === 'selection_conflict') return false;
+  if (err?.response?.data?.code === 'report_not_ready_for_review') return false;
+  const status = Number(err?.response?.status);
+  if (status === 409 || status === 400 || status === 403 || status === 404) return false;
+  if (status >= 500) return true;
+  if (status === 504 || status === 502 || status === 408) return true;
+  if (!err.response) return true;
+  const msg = String(err?.message || err?.code || '');
+  return /timeout|network|aborted|econnaborted|err_network/i.test(msg);
+}
+
+export function writeCreateIocSession(payload) {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.setItem(CREATE_IOC_SESSION_KEY, JSON.stringify({
+      reportId: payload?.reportId || null,
+      startedAt: payload?.startedAt || Date.now(),
+      eligible: Number(payload?.eligible) || 0,
+      selected: Number(payload?.selected) || 0,
+      acrossPages: payload?.acrossPages === true
+    }));
+  } catch {
+    /* best-effort */
+  }
+}
+
+export function readCreateIocSession(reportId) {
+  if (typeof sessionStorage === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(CREATE_IOC_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || String(parsed.reportId) !== String(reportId)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearCreateIocSession() {
+  if (typeof sessionStorage === 'undefined') return;
+  try {
+    sessionStorage.removeItem(CREATE_IOC_SESSION_KEY);
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Presentation model for the Create IOCs operation panel.
+ * Progress is indeterminate unless the caller supplies committed counts
+ * (never a fabricated percentage).
+ *
+ * @returns {{
+ *   phase: 'processing'|'completed'|'failed'|'ambiguous',
+ *   title: string,
+ *   body: string,
+ *   detail: string|null,
+ *   counts: { eligible: number, selected: number, created: number, existing: number, skipped: number, failed: number }|null,
+ *   elapsedLabel: string|null,
+ *   dismissible: boolean,
+ *   indeterminate: boolean
+ * }|null}
+ */
+export function describeCreateIocOperationPanel({
+  phase,
+  eligible = 0,
+  selected = 0,
+  summary = null,
+  elapsedMs = 0,
+  error = null
+} = {}) {
+  const elig = Number(eligible) || 0;
+  const sel = Number(selected) || elig;
+  if (phase === 'processing') {
+    return {
+      phase: 'processing',
+      title: 'Creating IOCs',
+      body: elig > 0
+        ? `Processing ${elig.toLocaleString()} eligible indicator${elig === 1 ? '' : 's'}… Please wait.`
+        : 'Creating IOCs… Please wait.',
+      detail: 'Do not refresh or navigate away while this request is in progress. Duplicate submissions are blocked.',
+      counts: { eligible: elig, selected: sel, created: 0, existing: 0, skipped: 0, failed: 0 },
+      elapsedLabel: formatElapsedMs(elapsedMs),
+      dismissible: false,
+      indeterminate: true
+    };
+  }
+  if (phase === 'completed') {
+    const created = Number(summary?.created) || 0;
+    const existing = Number(summary?.already_existing ?? summary?.existing) || 0;
+    const failed = Number(summary?.failed) || 0;
+    const notApproved = Number(summary?.not_approved) || 0;
+    const notApplicable = Number(summary?.not_applicable) || 0;
+    const unsupported = Number(summary?.unsupported) || 0;
+    const skipped = notApproved + notApplicable + unsupported;
+    const bits = [
+      `${created.toLocaleString()} IOC${created === 1 ? '' : 's'} created`,
+      `${existing.toLocaleString()} already existed`
+    ];
+    if (skipped > 0) bits.push(`${skipped.toLocaleString()} skipped`);
+    if (failed > 0) bits.push(`${failed.toLocaleString()} failed`);
+    return {
+      phase: 'completed',
+      title: 'IOC creation complete',
+      body: bits.join(' · '),
+      detail: elig > 0 ? `Eligible for creation: ${elig.toLocaleString()}.` : null,
+      counts: { eligible: elig, selected: sel, created, existing, skipped, failed },
+      elapsedLabel: elapsedMs > 0 ? formatElapsedMs(elapsedMs) : null,
+      dismissible: true,
+      indeterminate: false
+    };
+  }
+  if (phase === 'ambiguous') {
+    return {
+      phase: 'ambiguous',
+      title: 'Create IOCs response interrupted',
+      body: 'The browser lost the response. IOC records may already have been created on the server.',
+      detail: 'Indicator results were refreshed. Review the IOC Result column before running Create IOCs again. Do not assume zero IOCs were created.',
+      counts: null,
+      elapsedLabel: elapsedMs > 0 ? formatElapsedMs(elapsedMs) : null,
+      dismissible: true,
+      indeterminate: false
+    };
+  }
+  if (phase === 'failed') {
+    return {
+      phase: 'failed',
+      title: 'IOC creation failed',
+      body: String(error || 'Create IOCs failed before a result could be confirmed.'),
+      detail: 'No automatic retry was started. Review indicators and try again only if needed.',
+      counts: null,
+      elapsedLabel: elapsedMs > 0 ? formatElapsedMs(elapsedMs) : null,
+      dismissible: true,
+      indeterminate: false
+    };
+  }
+  return null;
+}
+
+/** Compact counter line for the completed Create IOCs panel. */
+export function formatCreateIocCountLine(counts) {
+  if (!counts) return '';
+  const parts = [];
+  if (counts.created != null) parts.push(`Created ${Number(counts.created) || 0}`);
+  if (counts.existing != null) parts.push(`Existing ${Number(counts.existing) || 0}`);
+  if (counts.skipped) parts.push(`Skipped ${Number(counts.skipped) || 0}`);
+  if (counts.failed) parts.push(`Failed ${Number(counts.failed) || 0}`);
+  return parts.join(' · ');
 }

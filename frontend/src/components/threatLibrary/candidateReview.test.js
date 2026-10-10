@@ -42,7 +42,14 @@ import {
   selectionScopeLabel,
   isReviewActionableIndicator,
   isUnionReviewIndicator,
-  classifyCreateOutcome
+  classifyCreateOutcome,
+  describeCreateIocOperationPanel,
+  isCreateIocAmbiguousFailure,
+  formatElapsedMs,
+  writeCreateIocSession,
+  readCreateIocSession,
+  clearCreateIocSession,
+  CREATE_IOC_SESSION_KEY
 } from './candidateReview.js';
 
 const explicitUrl = {
@@ -834,4 +841,77 @@ test('linked-only survives MODE A scope inference next to publisher Indicators',
   assert.equal(linked.has_original_document_occurrence, false);
   assert.equal(linked.evidence.document_has_authoritative_scope, false);
   assert.equal(isReviewActionableIndicator(linked), true);
+});
+
+test('Create IOCs processing panel is indeterminate and shows eligible count', () => {
+  const panel = describeCreateIocOperationPanel({
+    phase: 'processing',
+    eligible: 3148,
+    selected: 3148,
+    elapsedMs: 45000
+  });
+  assert.equal(panel.phase, 'processing');
+  assert.equal(panel.title, 'Creating IOCs');
+  assert.match(panel.body, /3,148/);
+  assert.match(panel.body, /Please wait/);
+  assert.equal(panel.indeterminate, true);
+  assert.equal(panel.dismissible, false);
+  assert.equal(panel.elapsedLabel, '45s');
+  assert.doesNotMatch(panel.body, /%/);
+});
+
+test('Create IOCs completed panel uses server summary counts, not selected as created', () => {
+  const panel = describeCreateIocOperationPanel({
+    phase: 'completed',
+    eligible: 3148,
+    selected: 3148,
+    summary: { created: 3140, already_existing: 8, failed: 0, not_approved: 0 },
+    elapsedMs: 61000
+  });
+  assert.equal(panel.phase, 'completed');
+  assert.match(panel.body, /3,140 IOCs created/);
+  assert.match(panel.body, /8 already existed/);
+  assert.equal(panel.counts.created, 3140);
+  assert.equal(panel.counts.existing, 8);
+  assert.equal(panel.dismissible, true);
+  assert.equal(formatElapsedMs(61000), '1m 1s');
+  assert.equal(
+    describeCreateIocFeedback({ created: 3140, existing: 8, errors: 0 }),
+    '3140 IOCs created. 8 already existed.'
+  );
+});
+
+test('ambiguous Create IOCs failure never claims zero creations', () => {
+  assert.equal(isCreateIocAmbiguousFailure({ message: 'timeout of 60000ms exceeded' }), true);
+  assert.equal(isCreateIocAmbiguousFailure({ response: { status: 504 } }), true);
+  assert.equal(isCreateIocAmbiguousFailure({ response: { status: 500 } }), true);
+  assert.equal(isCreateIocAmbiguousFailure({ response: { status: 409, data: { code: 'create_iocs_in_progress' } } }), false);
+  assert.equal(isCreateIocAmbiguousFailure({ response: { status: 409, data: { code: 'create_iocs_none_eligible' } } }), false);
+  const amb = describeCreateIocOperationPanel({ phase: 'ambiguous', eligible: 100, elapsedMs: 12000 });
+  assert.match(amb.body, /may already have been created/i);
+  assert.doesNotMatch(amb.body, /0 IOCs created/);
+});
+
+test('Create IOCs session marker is report-scoped and clearable', () => {
+  const store = new Map();
+  const prev = globalThis.sessionStorage;
+  globalThis.sessionStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => { store.set(k, String(v)); },
+    removeItem: (k) => { store.delete(k); }
+  };
+  try {
+    clearCreateIocSession();
+    writeCreateIocSession({ reportId: 'abc', startedAt: 1000, eligible: 12, selected: 12 });
+    assert.equal(readCreateIocSession('other'), null);
+    const sess = readCreateIocSession('abc');
+    assert.equal(sess.eligible, 12);
+    assert.equal(sess.reportId, 'abc');
+    clearCreateIocSession();
+    assert.equal(readCreateIocSession('abc'), null);
+    assert.equal(CREATE_IOC_SESSION_KEY.startsWith('talonhound.'), true);
+  } finally {
+    if (prev === undefined) delete globalThis.sessionStorage;
+    else globalThis.sessionStorage = prev;
+  }
 });

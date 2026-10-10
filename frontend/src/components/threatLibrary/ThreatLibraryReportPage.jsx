@@ -49,6 +49,8 @@ import {
   formatCreateIocSummary,
   describeReviewFeedback,
   describeCreateIocFeedback,
+  describeCreateIocOperationPanel,
+  formatCreateIocCountLine,
   describePromoteFeedback,
   describeReviewToolbar,
   isContextOnlyCandidate,
@@ -63,7 +65,11 @@ import {
   toggleExcludedId,
   togglePageExcluded,
   reviewFiltersEqual,
-  selectionScopeLabel
+  selectionScopeLabel,
+  writeCreateIocSession,
+  readCreateIocSession,
+  clearCreateIocSession,
+  isCreateIocAmbiguousFailure
 } from './candidateReview.js';
 import {
   REPORT_PHASES,
@@ -133,6 +139,43 @@ import {
 } from './reportPageParts.jsx';
 import IndicatorDetailDrawer from './IndicatorDetailDrawer.jsx';
 import './reportPage.css';
+
+function CreateIocOperationPanel({ model, onDismiss }) {
+  if (!model) return null;
+  return (
+    <div
+      className="tl-create-op"
+      data-phase={model.phase}
+      data-testid="create-ioc-operation"
+      role={model.phase === 'failed' || model.phase === 'ambiguous' ? 'alert' : 'status'}
+      aria-live="polite"
+    >
+      <div className="tl-create-op__header">
+        <h3 className="tl-create-op__title">{model.title}</h3>
+        {model.elapsedLabel ? (
+          <span className="tl-create-op__elapsed" data-testid="create-ioc-elapsed">
+            Elapsed {model.elapsedLabel}
+          </span>
+        ) : null}
+      </div>
+      <p className="tl-create-op__body">{model.body}</p>
+      {model.detail ? <p className="tl-create-op__detail">{model.detail}</p> : null}
+      {model.phase === 'completed' && model.counts ? (
+        <p className="tl-create-op__counts">{formatCreateIocCountLine(model.counts)}</p>
+      ) : null}
+      {model.phase === 'processing' ? (
+        <div className="tl-create-op__track" aria-hidden="true">
+          <span className={`tl-create-op__bar${model.indeterminate ? ' tl-create-op__bar--indeterminate' : ''}`} />
+        </div>
+      ) : null}
+      {model.dismissible ? (
+        <button type="button" className="tl-create-op__dismiss" onClick={onDismiss}>
+          Dismiss
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function EvidencePreview({ candidate }) {
   const p = describeEvidencePreview(candidate);
@@ -500,6 +543,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [openCandidateId, setOpenCandidateId] = useState(null);
   const [tlpEditOpen, setTlpEditOpen] = useState(false);
   const [busy, setBusy] = useState('');
+  /** Create IOCs UX: processing / completed / failed / ambiguous (not a fake %). */
+  const [createOp, setCreateOp] = useState(null);
+  const [createElapsedMs, setCreateElapsedMs] = useState(0);
   const [retryAcceptedAt, setRetryAcceptedAt] = useState(0);
   const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
   // Maintenance job (refresh_extraction / rerun_ai) whose outcome is still to be reported.
@@ -550,6 +596,23 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     setLoading(true);
     setError('');
     loadDetail()
+      .then(() => {
+        if (cancelled) return;
+        // Refresh during a sync Create IOCs: never auto-retry; reconcile results.
+        const sess = readCreateIocSession(reportId);
+        if (!sess) return;
+        const age = Date.now() - Number(sess.startedAt || 0);
+        clearCreateIocSession();
+        if (!Number.isFinite(age) || age < 0 || age > 30 * 60 * 1000) return;
+        setCreateOp({
+          phase: 'ambiguous',
+          eligible: Number(sess.eligible) || 0,
+          selected: Number(sess.selected) || 0,
+          startedAt: Number(sess.startedAt) || Date.now(),
+          summary: null,
+          error: null
+        });
+      })
       .catch((err) => {
         if (!cancelled) setError(err?.response?.data?.message || 'Failed to load report');
       })
@@ -557,7 +620,28 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [loadDetail]);
+  }, [loadDetail, reportId]);
+
+  useEffect(() => {
+    if (createOp?.phase !== 'processing' || !createOp.startedAt) {
+      setCreateElapsedMs(0);
+      return undefined;
+    }
+    const tick = () => setCreateElapsedMs(Date.now() - createOp.startedAt);
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [createOp?.phase, createOp?.startedAt]);
+
+  useEffect(() => {
+    if (createOp?.phase !== 'processing') return undefined;
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [createOp?.phase]);
 
   const processing = isProcessingStatus(report);
 
@@ -716,6 +800,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   async function runReview(action) {
     if (!canWrite) return;
     if (busyRef.current) return;
+    if (createOp?.phase === 'processing') return;
     busyRef.current = action;
     try {
       const acrossActive = acrossPages && reviewFiltersEqual(acrossPages.filters, currentFilters());
@@ -786,6 +871,9 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }
     const excludedIds = [...acrossPages.excluded];
     const label = selectionScopeLabel(filters);
+    let createStartedAt = null;
+    let createEligible = 0;
+    let createSelected = 0;
     setBusy(action);
     setFeedback('');
     setError('');
@@ -853,12 +941,39 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         }));
         return data;
       };
+
+      if (action === 'create_iocs') {
+        createEligible = Number(preview?.summary?.eligible || 0);
+        createSelected = Number(preview?.summary?.selected || preview?.matching || 0);
+        createStartedAt = Date.now();
+        writeCreateIocSession({
+          reportId,
+          startedAt: createStartedAt,
+          eligible: createEligible,
+          selected: createSelected,
+          acrossPages: true
+        });
+        setCreateOp({
+          phase: 'processing',
+          eligible: createEligible,
+          selected: createSelected,
+          startedAt: createStartedAt,
+          summary: null,
+          error: null
+        });
+        setCreateElapsedMs(0);
+      }
+
       let data;
       try {
         data = await postCommit(scopeToken);
       } catch (err) {
         const conflict = err?.response?.data;
         if (conflict?.code !== 'selection_conflict') throw err;
+        if (action === 'create_iocs') {
+          clearCreateIocSession();
+          setCreateOp(null);
+        }
         const again = await requestConfirm({
           title: 'Selection changed',
           description: conflict.message || 'The selected indicators changed before this action ran.',
@@ -867,10 +982,32 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           cancelLabel: 'Cancel'
         });
         if (!again) return;
+        if (action === 'create_iocs') {
+          createEligible = Number(conflict.eligible) || createEligible;
+          createSelected = Number(conflict.matching) || createSelected;
+          createStartedAt = Date.now();
+          writeCreateIocSession({
+            reportId,
+            startedAt: createStartedAt,
+            eligible: createEligible,
+            selected: createSelected,
+            acrossPages: true
+          });
+          setCreateOp({
+            phase: 'processing',
+            eligible: createEligible,
+            selected: createSelected,
+            startedAt: createStartedAt,
+            summary: null,
+            error: null
+          });
+        }
         try {
           data = await postCommit(conflict.scope_token);
         } catch (err2) {
           if (err2?.response?.data?.code === 'selection_conflict') {
+            clearCreateIocSession();
+            setCreateOp(null);
             setError(err2.response.data.message || 'The selection changed again. Refresh the indicators and select them again.');
             clearIndicatorSelection();
             return;
@@ -878,19 +1015,23 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           throw err2;
         }
       }
-      if (action === 'create_iocs' && data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
-      setFeedback(describeAcrossPagesOutcome(action, data));
-      clearIndicatorSelection();
-      await loadDetail();
+      if (action === 'create_iocs') {
+        await finishCreateIocsSuccess(data, {
+          eligible: createEligible,
+          selectedCount: createSelected,
+          startedAt: createStartedAt || Date.now()
+        });
+      } else {
+        setFeedback(describeAcrossPagesOutcome(action, data));
+        clearIndicatorSelection();
+        await loadDetail();
+      }
     } catch (err) {
-      if (action === 'create_iocs' && err?.response?.data?.code === 'create_iocs_none_eligible') {
-        await requestConfirm({
-          title: 'Approve indicators first',
-          description: err.response.data.message
-            || 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
-          detail: err.response.data.summary ? formatCreateIocSummary(err.response.data.summary) : '',
-          informational: true,
-          cancelLabel: 'Close'
+      if (action === 'create_iocs') {
+        await finishCreateIocsFailure(err, {
+          eligible: createEligible,
+          selectedCount: createSelected,
+          startedAt: createStartedAt || Date.now()
         });
         return;
       }
@@ -900,8 +1041,94 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     }
   }
 
+  async function finishCreateIocsSuccess(data, { eligible, selectedCount, startedAt }) {
+    if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
+    const created = data?.summary?.created ?? data?.created?.length ?? 0;
+    const existing = data?.summary?.already_existing ?? 0;
+    const failed = Array.isArray(data?.errors) ? data.errors.length : Number(data?.summary?.failed || 0);
+    const elapsedMs = Date.now() - startedAt;
+    clearCreateIocSession();
+    setCreateOp({
+      phase: 'completed',
+      eligible,
+      selected: selectedCount,
+      startedAt,
+      summary: data?.summary || { created, already_existing: existing, failed },
+      error: null,
+      elapsedMs
+    });
+    setFeedback(describeCreateIocFeedback({ created, existing, errors: failed }));
+    clearIndicatorSelection();
+    await loadDetail();
+  }
+
+  async function finishCreateIocsFailure(err, { eligible, selectedCount, startedAt }) {
+    const elapsedMs = Date.now() - startedAt;
+    if (err?.response?.data?.code === 'create_iocs_none_eligible') {
+      clearCreateIocSession();
+      setCreateOp(null);
+      await requestConfirm({
+        title: 'Approve indicators first',
+        description: err.response.data.message
+          || 'Only approved indicators can be created as IOCs. Review and approve the selected indicators before creating IOC records.',
+        detail: err.response.data.summary ? formatCreateIocSummary(err.response.data.summary) : '',
+        informational: true,
+        cancelLabel: 'Close'
+      });
+      return;
+    }
+    if (err?.response?.data?.code === 'create_iocs_in_progress') {
+      clearCreateIocSession();
+      setCreateOp({
+        phase: 'failed',
+        eligible,
+        selected: selectedCount,
+        startedAt,
+        summary: null,
+        error: err.response.data.message || 'IOC creation is already in progress for this report.',
+        elapsedMs
+      });
+      return;
+    }
+    if (isCreateIocAmbiguousFailure(err)) {
+      clearCreateIocSession();
+      setCreateOp({
+        phase: 'ambiguous',
+        eligible,
+        selected: selectedCount,
+        startedAt,
+        summary: null,
+        error: null,
+        elapsedMs
+      });
+      setError('');
+      try {
+        await loadDetail();
+      } catch {
+        /* panel already explains refresh may be needed */
+      }
+      return;
+    }
+    clearCreateIocSession();
+    if (!applyNotReadyRejection(err)) {
+      setCreateOp({
+        phase: 'failed',
+        eligible,
+        selected: selectedCount,
+        startedAt,
+        summary: null,
+        error: err?.response?.data?.message || 'Review action failed',
+        elapsedMs
+      });
+      setError(err?.response?.data?.message || 'Review action failed');
+    } else {
+      setCreateOp(null);
+    }
+  }
+
   async function createIocs() {
     if (!canWrite || !selected.size) return;
+    if (createOp?.phase === 'processing' || busyRef.current === 'create_iocs') return;
     const { ids, excluded } = selectionForAction('create_iocs', selectedRows);
     if (!ids.length) return;
     setBusy('create_iocs');
@@ -940,21 +1167,36 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         cancelLabel: 'Cancel'
       });
       if (!ok) return;
-      const { data } = await api.post(`/threat-library/reports/${reportId}/review`, {
-        action: 'create_iocs',
-        candidate_ids: ids,
-        confirm: true
+
+      const startedAt = Date.now();
+      const selectedCount = Number(summary.selected) || ids.length;
+      writeCreateIocSession({
+        reportId,
+        startedAt,
+        eligible,
+        selected: selectedCount,
+        acrossPages: false
       });
-      if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
-      const created = data?.summary?.created ?? data?.created?.length ?? 0;
-      const existing = data?.summary?.already_existing ?? 0;
-      setFeedback(describeCreateIocFeedback({
-        created,
-        existing,
-        errors: Array.isArray(data?.errors) ? data.errors.length : 0
-      }));
-      clearIndicatorSelection();
-      await loadDetail();
+      setCreateOp({
+        phase: 'processing',
+        eligible,
+        selected: selectedCount,
+        startedAt,
+        summary: null,
+        error: null
+      });
+      setCreateElapsedMs(0);
+
+      try {
+        const { data } = await api.post(`/threat-library/reports/${reportId}/review`, {
+          action: 'create_iocs',
+          candidate_ids: ids,
+          confirm: true
+        });
+        await finishCreateIocsSuccess(data, { eligible, selectedCount, startedAt });
+      } catch (err) {
+        await finishCreateIocsFailure(err, { eligible, selectedCount, startedAt });
+      }
     } catch (err) {
       if (err?.response?.data?.code === 'create_iocs_none_eligible') {
         await requestConfirm({
@@ -1326,9 +1568,27 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   });
   // Which review actions exist for this filter and whether the selection can drive them.
   const toolbar = useMemo(
-    () => describeReviewToolbar({ filter, selectedRows, busy: Boolean(busy) }),
-    [filter, selectedRows, busy]
+    () => describeReviewToolbar({
+      filter,
+      selectedRows,
+      busy: Boolean(busy) || createOp?.phase === 'processing'
+    }),
+    [filter, selectedRows, busy, createOp?.phase]
   );
+
+  const createOpModel = useMemo(() => {
+    if (!createOp?.phase) return null;
+    return describeCreateIocOperationPanel({
+      phase: createOp.phase,
+      eligible: createOp.eligible,
+      selected: createOp.selected,
+      summary: createOp.summary,
+      elapsedMs: createOp.phase === 'processing'
+        ? createElapsedMs
+        : (createOp.elapsedMs || createElapsedMs),
+      error: createOp.error
+    });
+  }, [createOp, createElapsedMs]);
   const overflowItems = [
     canShowRefreshExtraction(report, { busy: Boolean(busy), canWrite })
       ? { id: 'refresh-extraction', label: 'Refresh extraction', disabled: Boolean(busy), onSelect: () => runMaintenance(MAINTENANCE_MODES.REFRESH_EXTRACTION).catch(() => {}) }
@@ -1644,7 +1904,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                         title={!a.enabled && a.hint ? a.hint : undefined}
                         onClick={() => runReview(a.id).catch(() => {})}
                       >
-                        {a.label}
+                        {busy === 'create_iocs' && a.id === 'create_iocs' ? 'Creating…' : a.label}
                       </button>
                     ))}
                     <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 'auto' }} aria-live="polite">
@@ -1655,6 +1915,13 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                           : `${selected.size} selected (${selectedOnPage} on this page)`}
                     </span>
                   </div>
+                ) : null}
+
+                {createOpModel ? (
+                  <CreateIocOperationPanel
+                    model={createOpModel}
+                    onDismiss={() => setCreateOp(null)}
+                  />
                 ) : null}
 
                 {canWrite && selectionBanner ? (

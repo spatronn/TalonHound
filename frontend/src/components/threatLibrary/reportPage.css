@@ -362,6 +362,119 @@
   border-radius: 2px;
 }
 
+/* Create IOCs operation panel — dark Threat Library surface only. */
+.tl-create-op {
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.tl-create-op[data-phase='processing'] {
+  border-color: #0f766e;
+}
+
+.tl-create-op[data-phase='completed'] {
+  border-color: #166534;
+}
+
+.tl-create-op[data-phase='failed'],
+.tl-create-op[data-phase='ambiguous'] {
+  border-color: #854d0e;
+}
+
+.tl-create-op__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.tl-create-op__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.tl-create-op__elapsed {
+  font-size: 12px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-create-op__body {
+  margin: 0 0 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #cbd5e1;
+}
+
+.tl-create-op__detail {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #94a3b8;
+}
+
+.tl-create-op__counts {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-create-op__track {
+  margin-top: 10px;
+  height: 4px;
+  border-radius: 999px;
+  background: #1e293b;
+  overflow: hidden;
+}
+
+.tl-create-op__bar {
+  display: block;
+  height: 100%;
+  width: 36%;
+  border-radius: 999px;
+  background: #2dd4bf;
+}
+
+.tl-create-op__bar--indeterminate {
+  animation: tl-create-op-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes tl-create-op-indeterminate {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+.tl-create-op__dismiss {
+  margin-top: 10px;
+  background: none;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 4px 10px;
+  color: #cbd5e1;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tl-create-op__dismiss:hover {
+  border-color: #64748b;
+  color: #f1f5f9;
+}
+
+.tl-create-op__dismiss:focus-visible {
+  outline: 2px solid #5eead4;
+  outline-offset: 2px;
+}
+
 .tl-table-wrap {
   border: 1px solid #1e293b;
   border-radius: 8px;

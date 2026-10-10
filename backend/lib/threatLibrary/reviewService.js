@@ -27,6 +27,7 @@ import {
 import { CONFIDENCE_POLICY } from './constants.js';
 import { isEligibleForHighConfidenceMalicious } from './evidencePolicy.js';
 import { isFinalizeAllowed, isReviewMutationAllowed, reviewNotReadyError } from './reportPhase.js';
+import { acquireCreateIocsLock, createIocsInProgressError } from './createIocsLock.js';
 import {
   canExecutePromotion,
   classifyCreateEligibility,
@@ -526,6 +527,19 @@ async function createIocsFromCandidates(pool, report, ids, opts, preloaded = nul
     };
   }
 
+  // One confirmed Create IOCs at a time per report. Retries after completion
+  // remain safe via IOC match / promotion_outcome; this blocks overlapping runs.
+  const opLock = await acquireCreateIocsLock(pool, report.id);
+  if (!opLock.acquired) return createIocsInProgressError();
+
+  try {
+    return await runConfirmedCreateIocs(pool, report, ordered, preview, opts);
+  } finally {
+    await opLock.release();
+  }
+}
+
+async function runConfirmedCreateIocs(pool, report, ordered, preview, opts) {
   const sourceId = await getThreatLibraryIocSourceId(pool);
   if (!sourceId) return { ok: false, status: 500, error: 'Threat Library IOC source missing' };
 
