@@ -6,7 +6,7 @@ import {
   guessTypeFromUrl
 } from './discover.js';
 import { validateIocSourceUrl } from './fetchSafe.js';
-import { parseGitHubUrl, isEligibleIocFilePath } from './github.js';
+import { parseGitHubUrl, isEligibleIocFilePath, resolveGitHubCommitSha } from './github.js';
 import { transitionPatch } from './sourceState.js';
 import { jsonIndicatorsToText, buildPreviewFromParses, candidatesFromDocument } from './parseContent.js';
 import { plainTextToCanonicalDocument } from '../urlIngest.js';
@@ -63,6 +63,27 @@ test('github URL parse and eligible files', () => {
   assert.equal(isEligibleIocFilePath('samples.sha1'), true);
   assert.equal(isEligibleIocFilePath('samples.md5'), true);
   assert.equal(isEligibleIocFilePath('notes.docx'), false);
+});
+
+test('resolveGitHubCommitSha keeps full SHA refs and records branch as repo_ref', async () => {
+  const sha = '08c0b6e89c41be2dfaee90788610f5dab7ddb22c';
+  const direct = await resolveGitHubCommitSha({
+    owner: 'gendigitalinc',
+    repo: 'ioc',
+    ref: sha,
+    path: 'WardenStealer'
+  });
+  assert.equal(direct.ok, true);
+  assert.equal(direct.repo_revision, sha);
+  assert.equal(direct.repo_ref, sha);
+
+  const resolved = await resolveGitHubCommitSha(
+    { owner: 'gendigitalinc', repo: 'ioc', ref: 'master', path: 'WardenStealer' },
+    { fetchImpl: async () => ({ body: JSON.stringify([{ sha }]) }) }
+  );
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.repo_ref, 'master');
+  assert.equal(resolved.repo_revision, sha);
 });
 
 test('source state machine: dismiss and approve guards', () => {

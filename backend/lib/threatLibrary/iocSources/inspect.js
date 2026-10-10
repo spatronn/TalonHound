@@ -68,6 +68,8 @@ export async function inspectIocSource(pool, source, deps = {}) {
           parseResults.push({ ...parsed, path: file.path });
           fileRows.push({
             ...file,
+            // Persist sha256 of fetched bytes for extract-time drift detection.
+            content_sha: fetched.contentHash || file.content_sha || null,
             content_type: fetched.contentType || null,
             parse_status: parsed.ok ? 'ok' : parsed.code === 'unsupported_json_schema' || parsed.code === 'unsupported_format' ? 'unsupported' : 'failed',
             estimated_raw_count: parsed.raw_count ?? 0,
@@ -87,10 +89,14 @@ export async function inspectIocSource(pool, source, deps = {}) {
       }
 
       await replaceSourceFiles(pool, source.id, fileRows);
-      const preview = buildPreviewFromParses(parseResults, {
-        originalKeys,
-        otherLinkedKeys: otherKeys
-      });
+      const preview = {
+        ...buildPreviewFromParses(parseResults, {
+          originalKeys,
+          otherLinkedKeys: otherKeys
+        }),
+        // Keep original branch/tag alongside resolved commit SHA in repo_revision.
+        ...(listing.repo_ref ? { repo_ref: listing.repo_ref } : {})
+      };
 
       if (!fileRows.some((f) => f.parse_status === 'ok')) {
         await transitionSource(pool, source, 'unsupported', {
