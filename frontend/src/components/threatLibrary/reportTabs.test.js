@@ -61,15 +61,21 @@ test('Overview stays implicit and a stale view param is replaced', () => {
 });
 
 test('tab counts are dynamic and omitted while preliminary', () => {
-  const stable = buildReportTabs({ indicatorCount: 25, indicatorCountStable: true, entityCount: 8 });
+  const stable = buildReportTabs({
+    indicatorCount: 25,
+    indicatorCountStable: true,
+    entityCount: 8,
+    iocSourceCount: 2
+  });
   assert.deepEqual(stable.map((t) => [t.id, t.label, t.count]), [
     ['overview', 'Overview', null],
     ['indicators', 'Indicators', 25],
+    ['ioc_sources', 'IOC Sources', 2],
     ['entities', 'Entities', 8],
     ['source', 'Source', null]
   ]);
   const preliminary = buildReportTabs({ indicatorCount: 51, indicatorCountStable: false, entityCount: 0 });
   assert.equal(preliminary[1].count, null);
-  assert.equal(preliminary[2].count, 0);
+  assert.equal(preliminary.find((t) => t.id === 'entities').count, 0);
   assert.equal(buildReportTabs({}).find((t) => t.id === 'entities').count, null);
 });

@@ -9,7 +9,9 @@
  */
 
 export const REVIEW_FILTERS = Object.freeze([
-  { id: 'indicators', label: 'Indicators' },
+  { id: 'indicators', label: 'Original' },
+  { id: 'total_unique', label: 'Total unique' },
+  { id: 'linked_only', label: 'Linked only' },
   { id: 'existing', label: 'Existing' },
   { id: 'new', label: 'New' },
   { id: 'needs_review', label: 'Needs Review' },
@@ -18,6 +20,8 @@ export const REVIEW_FILTERS = Object.freeze([
 ]);
 
 export const DEFAULT_REVIEW_FILTER = 'indicators';
+
+const LINKED_SOURCE_IOC_ASSERTION = 'linked_source_ioc';
 
 /** Keep in lockstep with backend indicatorMembership.NON_IOC_CANDIDATE_TYPES */
 const NON_IOC_TYPES = new Set(['cve', 'attack_technique']);
@@ -96,20 +100,13 @@ export function withInferredPublisherIocScope(candidates) {
   });
 }
 
-/**
- * Report Indicator membership (Indicators tab).
- * Canonical name on the backend: indicatorMembership.isReportIndicatorMember
- * (also exported as isActionableReviewIndicator for historical callers).
- */
-export function isReviewIndicator(candidate) {
+function passesIndicatorTypeGates(candidate) {
   if (!candidate) return false;
   if (candidate.is_ioc === false) return false;
   if (NON_IOC_TYPES.has(String(candidate.candidate_type || '').toLowerCase())) return false;
   const ev = candidate.evidence || {};
   if (ev.is_parser_derived_metadata === true) return false;
   if (ev.is_direct_source_observable === false) return false;
-  // Loopback / reserved identities are never Create-IOC rows, even when a
-  // publisher IOC section asserted them.
   if (
     candidate.reserved_address === true
     || candidate.non_actionable_local === true
@@ -122,8 +119,42 @@ export function isReviewIndicator(candidate) {
   const review = String(candidate.review_status || '').toLowerCase();
   if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;
   if (state === 'invalid' || candidate.assessment === 'invalid') return false;
+  return true;
+}
+
+export function isLinkedSourceAssertedIoc(candidate) {
+  if (!candidate) return false;
+  const ev = candidate.evidence || {};
+  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
+  if (assertion === LINKED_SOURCE_IOC_ASSERTION) return true;
+  if (Array.isArray(candidate.sources) && candidate.sources.length > 0) return true;
+  return Array.isArray(ev.linked_sources) && ev.linked_sources.length > 0;
+}
+
+export function isLinkedSourceIndicatorMember(candidate) {
+  return passesIndicatorTypeGates(candidate) && isLinkedSourceAssertedIoc(candidate);
+}
+
+/**
+ * Original-document Indicator membership (default Indicators filter).
+ * Linked-only identities are excluded so attaching an external pack never
+ * inflates MODE A publisher counts. Canonical: backend isReportIndicatorMember.
+ */
+export function isReviewIndicator(candidate) {
+  if (!candidate) return false;
+  if (candidate.has_original_document_occurrence === false) return false;
+  if (!passesIndicatorTypeGates(candidate)) return false;
   if (!isPublisherAuthoritativeReportIocMember(candidate)) return false;
   return true;
+}
+
+/** Total unique inventory: original ∪ linked-source Indicators. */
+export function isUnionReviewIndicator(candidate) {
+  return isReviewIndicator(candidate) || isLinkedSourceIndicatorMember(candidate);
+}
+
+export function isLinkedOnlyReviewIndicator(candidate) {
+  return isUnionReviewIndicator(candidate) && !isReviewIndicator(candidate);
 }
 
 /** Alias matching the backend canonical name. */
@@ -148,10 +179,22 @@ export function matchReviewFilter(candidate, filter) {
   const state = String(candidate.match_state || '').toLowerCase();
   const review = String(candidate.review_status || '').toLowerCase();
   if (filter === 'indicators') return isReviewIndicator(candidate);
-  if (filter === 'existing') return isReviewIndicator(candidate) && (state === 'existing' || Boolean(candidate.matched_ioc_id));
-  if (filter === 'new') return isReviewIndicator(candidate) && state === 'new';
+  if (filter === 'total_unique') return isUnionReviewIndicator(candidate);
+  if (filter === 'linked_only') return isLinkedOnlyReviewIndicator(candidate);
+  if (filter === 'existing') {
+    return isUnionReviewIndicator(candidate) && (state === 'existing' || Boolean(candidate.matched_ioc_id));
+  }
+  if (filter === 'new') return isUnionReviewIndicator(candidate) && state === 'new';
   if (filter === 'context_only') return state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only';
-  if (filter === 'needs_review') return (state === 'needs_review' || review === 'pending') && isReviewIndicator(candidate);
+  if (filter === 'needs_review') {
+    return (state === 'needs_review' || review === 'pending') && isUnionReviewIndicator(candidate);
+  }
+  // Source-scoped filter: `source:<public_id>`
+  if (String(filter || '').startsWith('source:')) {
+    const sourceId = String(filter).slice('source:'.length);
+    if (!isUnionReviewIndicator(candidate)) return false;
+    return (candidate.sources || []).some((s) => s.id === sourceId);
+  }
   return true;
 }
 
@@ -159,6 +202,7 @@ const SOURCE_ASSERTION_LABELS = Object.freeze({
   explicit_ioc: 'Explicit IOC',
   explicit_c2: 'Explicit C2',
   explicit_operational_infrastructure: 'Operational infrastructure',
+  linked_source_ioc: 'Linked IOC source',
   body_mention: 'Body assertion',
   provider_service: 'Provider/service',
   reference_only: 'Reference',
@@ -385,7 +429,9 @@ export function parseReviewTableUrlState(searchParams) {
   let page = Number(params.get('page'));
   if (!Number.isInteger(page) || page < 1) page = 1;
   return {
-    tab: REVIEW_FILTER_IDS.has(tabRaw) ? tabRaw : DEFAULT_REVIEW_FILTER,
+    tab: REVIEW_FILTER_IDS.has(tabRaw) || String(tabRaw).startsWith('source:')
+      ? tabRaw
+      : DEFAULT_REVIEW_FILTER,
     q: params.get('q') || '',
     type: TYPE_FILTER_IDS.has(typeRaw) ? typeRaw : 'all',
     result: RESULT_FILTER_IDS.has(resultRaw) ? resultRaw : 'all',

@@ -104,10 +104,10 @@ function isNonActionableLocalOrReserved(candidate) {
 }
 
 /**
- * Report Indicator membership — the Indicators tab / review_candidate_count set.
- * Alias history: frontend `isReviewIndicator`, backend `isActionableReviewIndicator`.
+ * Shared non-membership gates (type, context_only, reserved, …) used by both
+ * original-document Indicators and the linked-source union inventory.
  */
-export function isReportIndicatorMember(candidate) {
+export function passesIndicatorTypeGates(candidate) {
   if (!candidate) return false;
   if (candidate.is_ioc === false) return false;
   if (NON_IOC_TYPE_SET.has(typeOf(candidate))) return false;
@@ -119,8 +119,58 @@ export function isReportIndicatorMember(candidate) {
   const review = reviewOf(candidate);
   if (state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only') return false;
   if (state === 'invalid' || candidate.assessment === 'invalid') return false;
+  return true;
+}
+
+export const LINKED_SOURCE_IOC_ASSERTION = 'linked_source_ioc';
+
+/**
+ * True when the identity is contributed by an approved linked IOC source
+ * (source-scoped authoritative assertion), independent of the original document.
+ */
+export function isLinkedSourceAssertedIoc(candidate) {
+  if (!candidate) return false;
+  const ev = evidenceOf(candidate);
+  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
+  if (assertion === LINKED_SOURCE_IOC_ASSERTION) return true;
+  if (candidate.has_linked_source_occurrence === true) return true;
+  if (Array.isArray(candidate.sources) && candidate.sources.length > 0) return true;
+  const links = ev.linked_sources;
+  return Array.isArray(links) && links.length > 0;
+}
+
+/**
+ * Linked-source Indicator member (may or may not also be an original Indicator).
+ */
+export function isLinkedSourceIndicatorMember(candidate) {
+  if (!passesIndicatorTypeGates(candidate)) return false;
+  return isLinkedSourceAssertedIoc(candidate);
+}
+
+/**
+ * Report Indicator membership — the Indicators tab / review_candidate_count set
+ * for the **original document** only. Linked-only identities are excluded so
+ * attaching an external pack never inflates MODE A publisher counts (e.g. 70/70).
+ * Alias history: frontend `isReviewIndicator`, backend `isActionableReviewIndicator`.
+ */
+export function isReportIndicatorMember(candidate) {
+  if (!candidate) return false;
+  if (candidate.has_original_document_occurrence === false) return false;
+  if (!passesIndicatorTypeGates(candidate)) return false;
   if (!isPublisherAuthoritativeReportIocMember(candidate)) return false;
   return true;
+}
+
+/**
+ * Total unique report Indicator inventory: original Indicators ∪ linked-source Indicators.
+ */
+export function isUnionReportIndicatorMember(candidate) {
+  return isReportIndicatorMember(candidate) || isLinkedSourceIndicatorMember(candidate);
+}
+
+/** In the union inventory but not in the original-document Indicators set. */
+export function isLinkedOnlyIndicatorMember(candidate) {
+  return isUnionReportIndicatorMember(candidate) && !isReportIndicatorMember(candidate);
 }
 
 /** @deprecated Prefer isReportIndicatorMember — kept as the historical backend name. */
@@ -161,10 +211,9 @@ export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
 }
 
 /**
- * SQL equivalent of isReportIndicatorMember / isActionableReviewIndicator.
- * Reserved / loopback flags live in evidence JSONB (no dedicated columns).
+ * SQL equivalent of passesIndicatorTypeGates (shared gates).
  */
-export function reportIndicatorMembershipSql(alias = 'c') {
+export function indicatorTypeGatesSql(alias = 'c') {
   const p = alias ? `${alias}.` : '';
   const nonIoc = NON_IOC_CANDIDATE_TYPES.map((t) => `'${t}'`).join(', ');
   return `
@@ -176,8 +225,62 @@ export function reportIndicatorMembershipSql(alias = 'c') {
   AND COALESCE(${p}evidence->>'non_actionable_local', 'false') <> 'true'
   AND COALESCE(${p}assessment, '') NOT IN ('context_only', 'invalid')
   AND COALESCE(${p}match_state, '') NOT IN ('context_only', 'invalid')
-  AND COALESCE(${p}review_status, '') <> 'context_only'
+  AND COALESCE(${p}review_status, '') <> 'context_only'`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * SQL equivalent of isReportIndicatorMember / isActionableReviewIndicator.
+ * Original-document Indicators only (`has_original_document_occurrence`).
+ */
+export function reportIndicatorMembershipSql(alias = 'c') {
+  const p = alias ? `${alias}.` : '';
+  return `
+  ${p}has_original_document_occurrence = true
+  AND ${indicatorTypeGatesSql(alias)}
   AND ${publisherAuthoritativeIocMembershipSql(alias)}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * SQL: candidate has at least one linked IOC source provenance row.
+ */
+export function linkedSourceOccurrenceSql(alias = 'c') {
+  const p = alias ? `${alias}.` : '';
+  return `EXISTS (
+    SELECT 1 FROM threat_report_candidate_source_links lsl
+    WHERE lsl.candidate_id = ${p}id
+  )`;
+}
+
+/**
+ * Linked-source Indicator member (source-scoped authoritative assertion).
+ */
+export function linkedSourceIndicatorMembershipSql(alias = 'c') {
+  const p = alias ? `${alias}.` : '';
+  return `(
+    ${indicatorTypeGatesSql(alias)}
+    AND (
+      COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') = '${LINKED_SOURCE_IOC_ASSERTION}'
+      OR ${linkedSourceOccurrenceSql(alias)}
+    )
+  )`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Total unique Indicator inventory: original ∪ linked-source members.
+ */
+export function unionReportIndicatorMembershipSql(alias = 'c') {
+  return `(
+    (${reportIndicatorMembershipSql(alias)})
+    OR (${linkedSourceIndicatorMembershipSql(alias)})
+  )`.replace(/\s+/g, ' ').trim();
+}
+
+/** Linked-only: in union, not in original Indicators. */
+export function linkedOnlyIndicatorMembershipSql(alias = 'c') {
+  return `(
+    (${linkedSourceIndicatorMembershipSql(alias)})
+    AND NOT (${reportIndicatorMembershipSql(alias)})
+  )`.replace(/\s+/g, ' ').trim();
 }
 
 /** SQL equivalent of NOT isContextOnlyCandidate. */
@@ -200,17 +303,29 @@ export function isContextOnlySql(alias = 'c') {
 
 /**
  * Bucket counts for a candidate list using the canonical predicates.
- * @returns {{ all: number, indicators: number, context_only: number }}
+ * @returns {{ all: number, indicators: number, context_only: number, total_unique: number, linked_only: number }}
  */
 export function countCandidateBuckets(candidates) {
   const list = Array.isArray(candidates) ? candidates : [];
   let indicators = 0;
   let contextOnly = 0;
+  let totalUnique = 0;
+  let linkedOnly = 0;
   for (const c of list) {
-    if (isReportIndicatorMember(c)) indicators += 1;
+    const original = isReportIndicatorMember(c);
+    const union = isUnionReportIndicatorMember(c);
+    if (original) indicators += 1;
+    if (union) totalUnique += 1;
+    if (union && !original) linkedOnly += 1;
     if (isContextOnlyCandidate(c)) contextOnly += 1;
   }
-  return { all: list.length, indicators, context_only: contextOnly };
+  return {
+    all: list.length,
+    indicators,
+    context_only: contextOnly,
+    total_unique: totalUnique,
+    linked_only: linkedOnly
+  };
 }
 
 /**

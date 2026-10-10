@@ -19,7 +19,7 @@ const pageCss = readFileSync(path.join(here, 'reportPage.css'), 'utf8');
 
 test('page is split into Overview / Indicators / Entities / Source with the Overview default', () => {
   assert.match(pageSrc, /<ReportTabBar tabs=\{tabs\} active=\{view\} onChange=\{setView\} \/>/);
-  for (const v of ['OVERVIEW', 'INDICATORS', 'ENTITIES', 'SOURCE']) {
+  for (const v of ['OVERVIEW', 'INDICATORS', 'IOC_SOURCES', 'ENTITIES', 'SOURCE']) {
     assert.match(pageSrc, new RegExp(`view === REPORT_VIEWS\\.${v} \\? \\(`), `panel for ${v}`);
   }
   assert.match(pageSrc, /useState\(\(\) => parseReportView\(searchParams\)\)/);

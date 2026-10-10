@@ -107,6 +107,7 @@ test('SQL predicates agree with JS on an ephemeral table (behavioural, not strin
         match_state text,
         review_status text,
         source_assertion text,
+        has_original_document_occurrence boolean NOT NULL DEFAULT true,
         evidence jsonb
       ) ON COMMIT DROP`);
 
@@ -114,8 +115,9 @@ test('SQL predicates agree with JS on an ephemeral table (behavioural, not strin
       const c = row.candidate;
       await client.query(
         `INSERT INTO membership_parity_rows
-           (id, candidate_type, is_ioc, assessment, match_state, review_status, source_assertion, evidence)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+           (id, candidate_type, is_ioc, assessment, match_state, review_status, source_assertion,
+            has_original_document_occurrence, evidence)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
         [
           row.id,
           c.candidate_type,
@@ -124,6 +126,7 @@ test('SQL predicates agree with JS on an ephemeral table (behavioural, not strin
           c.match_state ?? null,
           c.review_status ?? 'pending',
           c.source_assertion ?? null,
+          c.has_original_document_occurrence !== false,
           JSON.stringify({
             ...(c.evidence || {}),
             document_has_authoritative_scope: c.document_has_authoritative_scope === true

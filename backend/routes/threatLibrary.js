@@ -34,8 +34,22 @@ import {
   cancelUnclaimedAnalysisJobs,
   dispatchQueuedThreatLibraryAnalyses,
   enqueueClaimedThreatLibraryJob,
+  queueThreatLibraryAnalysis,
   restoreStatusForCancelledJobs
 } from '../lib/threatLibrary/analysisConcurrency.js';
+import {
+  createManualIocSource,
+  getIocSourceByPublicId,
+  listIocSourcesForReport,
+  listSourceFiles,
+  loadCandidateSourceLinks,
+  publicIocSource,
+  setSelectedSourceFiles,
+  summarizeIocSources,
+  transitionSource
+} from '../lib/threatLibrary/iocSources/store.js';
+import { validateIocSourceUrl } from '../lib/threatLibrary/iocSources/fetchSafe.js';
+import { IOC_SOURCE_JOB_MODES } from '../lib/threatLibrary/iocSources/constants.js';
 import {
   getAiSettings,
   updateAiSettings,
@@ -181,12 +195,17 @@ function publicReport(row) {
     review_phase: resolveReportPhase(row),
     candidate_state: resolveCandidateState(row),
     indicator_count: row.indicator_count,
-    // Raw persisted rows (All) vs. Indicators membership vs. Context Only.
+    // Raw persisted rows (All) vs. original Indicators membership vs. Context Only.
     raw_candidate_count: row.indicator_count ?? null,
     review_candidate_count: row.review_candidate_count ?? null,
+    // Alias: original-document Indicators (MODE A/B publisher set).
+    original_indicator_count: row.review_candidate_count ?? null,
+    total_unique_indicator_count: row.total_unique_indicator_count ?? row.review_candidate_count ?? null,
+    linked_only_indicator_count: row.linked_only_indicator_count ?? 0,
     context_only_count: row.context_only_count ?? null,
     matched_count: row.matched_count,
     entity_count: row.entity_count,
+    ioc_source_summary: row.ioc_source_summary || undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
     finalized_at: row.finalized_at,
@@ -228,7 +247,28 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   async function reportWithDetail(row) {
     if (!row) return row;
     const counted = await attachReportCounts(pool, row);
-    return { ...counted, tags: await loadReportTags(pool, row.id) };
+    let ioc_source_summary;
+    try {
+      ioc_source_summary = await summarizeIocSources(pool, row.id);
+    } catch {
+      ioc_source_summary = { total: 0, discovered_pending: 0, attached: 0, extracted: 0, failed: 0 };
+    }
+    return { ...counted, tags: await loadReportTags(pool, row.id), ioc_source_summary };
+  }
+
+  async function queueIocSourceJob(report, source, jobType, actor, dispatchExtra = {}) {
+    return queueThreatLibraryAnalysis(pool, queue, {
+      reportId: report.id,
+      jobType,
+      requestedBy: actor?.public_id || null,
+      jobPayload: { source_public_id: source.public_id },
+      createJob,
+      dispatch: {
+        jobType,
+        jobPayload: { source_public_id: source.public_id },
+        ...dispatchExtra
+      }
+    });
   }
 
   /**
@@ -409,6 +449,12 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       if (!report) return res.status(404).json({ message: 'Report not found' });
       const snap = await loadReportSnapshot(pool, report.id);
       const matchedIocPublicId = await loadMatchedIocPublicIds(pool, snap.candidates);
+      let sourceLinksByCandidate = new Map();
+      try {
+        sourceLinksByCandidate = await loadCandidateSourceLinks(pool, report.id);
+      } catch {
+        sourceLinksByCandidate = new Map();
+      }
       return res.json({
         report: publicReport(await reportWithDetail(snap.report)),
         candidates: snap.candidates.map((c) => ({
@@ -435,6 +481,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           promoted_at: c.promoted_at || null,
           is_ioc: c.is_ioc !== false,
           source_assertion: c.source_assertion || c.evidence?.source_assertion || null,
+          has_original_document_occurrence: c.has_original_document_occurrence !== false,
+          sources: sourceLinksByCandidate.get(c.id) || [],
           document_has_authoritative_scope: c.document_has_authoritative_scope === true
             || c.evidence?.document_has_authoritative_scope === true,
           evidence: publicCandidateEvidence(c.evidence)
@@ -1321,6 +1369,249 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       return res.status(500).json({ message: 'Failed to load Threat Library tags', detail: err.message });
     }
   });
+
+  // --- Additional IOC Sources ---
+  app.get('/api/threat-library/reports/:publicId/ioc-sources', async (req, res) => {
+    try {
+      const report = await getReportByPublicId(pool, req.params.publicId);
+      if (!report) return res.status(404).json({ message: 'Report not found' });
+      const rows = await listIocSourcesForReport(pool, report.id);
+      const items = [];
+      for (const row of rows) {
+        const files = await listSourceFiles(pool, row.id);
+        items.push(publicIocSource(row, files));
+      }
+      return res.json({
+        report_id: report.public_id,
+        summary: await summarizeIocSources(pool, report.id),
+        items
+      });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to list IOC sources', detail: err.message });
+    }
+  });
+
+  app.post(
+    '/api/threat-library/reports/:publicId/ioc-sources',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const url = String(req.body?.url || '').trim();
+        const policy = validateIocSourceUrl(url);
+        if (!policy.ok) {
+          return res.status(400).json({ message: policy.error || 'Invalid URL', code: 'blocked_url' });
+        }
+        const actor = await actorOf(req);
+        const row = await createManualIocSource(pool, report.id, {
+          url,
+          requestedBy: actor?.public_id || null
+        });
+        await writeAudit(req, {
+          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_ADDED,
+          ...reportAuditEntity(report),
+          severity: AUDIT_SEVERITY.INFO,
+          status: AUDIT_STATUS.SUCCESS,
+          metadata: {
+            ...reportAuditSnapshot(report),
+            source_public_id: row.public_id,
+            canonical_url: row.canonical_url,
+            discovery_method: 'manual',
+            initiated_by: initiatedBy(actor)
+          }
+        });
+        const { jobRow } = await queueIocSourceJob(report, row, IOC_SOURCE_JOB_MODES.INSPECT, actor);
+        await writeAudit(req, {
+          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED,
+          ...reportAuditEntity(report),
+          severity: AUDIT_SEVERITY.INFO,
+          status: AUDIT_STATUS.SUCCESS,
+          metadata: {
+            ...reportAuditSnapshot(report),
+            source_public_id: row.public_id,
+            job_id: jobRow.public_id
+          }
+        });
+        return res.status(202).json({
+          source: publicIocSource(row),
+          job_id: jobRow.public_id
+        });
+      } catch (err) {
+        return res.status(500).json({ message: 'Failed to add IOC source', detail: err.message });
+      }
+    }
+  );
+
+  app.get('/api/threat-library/reports/:publicId/ioc-sources/:sourceId', async (req, res) => {
+    try {
+      const report = await getReportByPublicId(pool, req.params.publicId);
+      if (!report) return res.status(404).json({ message: 'Report not found' });
+      const source = await getIocSourceByPublicId(pool, req.params.sourceId);
+      if (!source || Number(source.report_id) !== Number(report.id)) {
+        return res.status(404).json({ message: 'IOC source not found' });
+      }
+      const files = await listSourceFiles(pool, source.id);
+      return res.json({ source: publicIocSource(source, files) });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to load IOC source', detail: err.message });
+    }
+  });
+
+  app.post(
+    '/api/threat-library/ioc-sources/:sourceId/inspect',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const source = await getIocSourceByPublicId(pool, req.params.sourceId);
+        if (!source) return res.status(404).json({ message: 'IOC source not found' });
+        const report = await getReportByPublicId(pool, source.report_public_id);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const actor = await actorOf(req);
+        const { jobRow } = await queueIocSourceJob(report, source, IOC_SOURCE_JOB_MODES.INSPECT, actor);
+        await writeAudit(req, {
+          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED,
+          ...reportAuditEntity(report),
+          severity: AUDIT_SEVERITY.INFO,
+          status: AUDIT_STATUS.SUCCESS,
+          metadata: {
+            ...reportAuditSnapshot(report),
+            source_public_id: source.public_id,
+            job_id: jobRow.public_id
+          }
+        });
+        return res.status(202).json({ source: publicIocSource(source), job_id: jobRow.public_id });
+      } catch (err) {
+        const status = err.code === 'invalid_source_transition' ? 409 : 500;
+        return res.status(status).json({ message: err.message, code: err.code || null });
+      }
+    }
+  );
+
+  app.post(
+    '/api/threat-library/ioc-sources/:sourceId/approve',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const source = await getIocSourceByPublicId(pool, req.params.sourceId);
+        if (!source) return res.status(404).json({ message: 'IOC source not found' });
+        const report = await getReportByPublicId(pool, source.report_public_id);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const actor = await actorOf(req);
+        if (Array.isArray(req.body?.selected_paths)) {
+          await setSelectedSourceFiles(pool, source.id, req.body.selected_paths);
+        }
+        const updated = await transitionSource(pool, source, 'approve', {
+          approved_by: actor?.public_id || null
+        });
+        await writeAudit(req, {
+          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_APPROVED,
+          ...reportAuditEntity(report),
+          severity: AUDIT_SEVERITY.INFO,
+          status: AUDIT_STATUS.SUCCESS,
+          metadata: {
+            ...reportAuditSnapshot(report),
+            source_public_id: source.public_id,
+            canonical_url: source.canonical_url,
+            initiated_by: initiatedBy(actor)
+          }
+        });
+        const { jobRow } = await queueIocSourceJob(report, updated || source, IOC_SOURCE_JOB_MODES.EXTRACT, actor);
+        await writeAudit(req, {
+          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_EXTRACT_QUEUED,
+          ...reportAuditEntity(report),
+          severity: AUDIT_SEVERITY.INFO,
+          status: AUDIT_STATUS.SUCCESS,
+          metadata: {
+            ...reportAuditSnapshot(report),
+            source_public_id: source.public_id,
+            job_id: jobRow.public_id
+          }
+        });
+        const files = await listSourceFiles(pool, source.id);
+        return res.status(202).json({
+          source: publicIocSource(updated || source, files),
+          job_id: jobRow.public_id
+        });
+      } catch (err) {
+        const status = err.code === 'invalid_source_transition' ? 409 : 500;
+        return res.status(status).json({ message: err.message, code: err.code || null });
+      }
+    }
+  );
+
+  app.post(
+    '/api/threat-library/ioc-sources/:sourceId/dismiss',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const source = await getIocSourceByPublicId(pool, req.params.sourceId);
+        if (!source) return res.status(404).json({ message: 'IOC source not found' });
+        const report = await getReportByPublicId(pool, source.report_public_id);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const actor = await actorOf(req);
+        const updated = await transitionSource(pool, source, 'dismiss', {
+          dismissed_by: actor?.public_id || null
+        });
+        await writeAudit(req, {
+          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_DISMISSED,
+          ...reportAuditEntity(report),
+          severity: AUDIT_SEVERITY.INFO,
+          status: AUDIT_STATUS.SUCCESS,
+          metadata: {
+            ...reportAuditSnapshot(report),
+            source_public_id: source.public_id,
+            initiated_by: initiatedBy(actor)
+          }
+        });
+        return res.json({ source: publicIocSource(updated || source) });
+      } catch (err) {
+        const status = err.code === 'invalid_source_transition' || err.code === 'source_dismissed' ? 409 : 500;
+        return res.status(status).json({ message: err.message, code: err.code || null });
+      }
+    }
+  );
+
+  app.post(
+    '/api/threat-library/ioc-sources/:sourceId/retry-inspect',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      req.url = `/api/threat-library/ioc-sources/${req.params.sourceId}/inspect`;
+      // Fall through by invoking the same queue path
+      try {
+        const source = await getIocSourceByPublicId(pool, req.params.sourceId);
+        if (!source) return res.status(404).json({ message: 'IOC source not found' });
+        const report = await getReportByPublicId(pool, source.report_public_id);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const actor = await actorOf(req);
+        const { jobRow } = await queueIocSourceJob(report, source, IOC_SOURCE_JOB_MODES.INSPECT, actor);
+        return res.status(202).json({ source: publicIocSource(source), job_id: jobRow.public_id });
+      } catch (err) {
+        return res.status(500).json({ message: err.message, code: err.code || null });
+      }
+    }
+  );
+
+  app.post(
+    '/api/threat-library/ioc-sources/:sourceId/retry-extract',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const source = await getIocSourceByPublicId(pool, req.params.sourceId);
+        if (!source) return res.status(404).json({ message: 'IOC source not found' });
+        const report = await getReportByPublicId(pool, source.report_public_id);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const actor = await actorOf(req);
+        if (source.lifecycle_status !== 'attached' && source.lifecycle_status !== 'extracted' && source.lifecycle_status !== 'failed' && source.lifecycle_status !== 'stale') {
+          return res.status(409).json({ message: 'Source must be attached before extraction', code: 'invalid_source_transition' });
+        }
+        const { jobRow } = await queueIocSourceJob(report, source, IOC_SOURCE_JOB_MODES.EXTRACT, actor);
+        return res.status(202).json({ source: publicIocSource(source), job_id: jobRow.public_id });
+      } catch (err) {
+        return res.status(500).json({ message: err.message, code: err.code || null });
+      }
+    }
+  );
 
   // --- Delete ---
   app.delete(

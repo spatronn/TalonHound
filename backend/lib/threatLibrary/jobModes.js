@@ -19,13 +19,24 @@ export const THREAT_LIBRARY_JOB_MODES = Object.freeze({
   ANALYZE: 'analyze',
   RETRY: 'retry',
   REFRESH_EXTRACTION: 'refresh_extraction',
-  RERUN_AI: 'rerun_ai'
+  RERUN_AI: 'rerun_ai',
+  INSPECT_IOC_SOURCE: 'inspect_ioc_source',
+  EXTRACT_IOC_SOURCE: 'extract_ioc_source'
 });
 
-/** Every mode the shared URL/PDF worker executes (all share the analysis slot budget). */
-export const PIPELINE_JOB_MODES = Object.freeze(Object.values(THREAT_LIBRARY_JOB_MODES));
+/** Modes that run the full report analysis pipeline (AI slot budget). */
+export const PIPELINE_JOB_MODES = Object.freeze([
+  THREAT_LIBRARY_JOB_MODES.ANALYZE,
+  THREAT_LIBRARY_JOB_MODES.RETRY,
+  THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION,
+  THREAT_LIBRARY_JOB_MODES.RERUN_AI
+]);
+
+/** Every mode the shared URL/PDF worker executes. */
+export const ALL_THREAT_LIBRARY_JOB_MODES = Object.freeze(Object.values(THREAT_LIBRARY_JOB_MODES));
 
 const PIPELINE_JOB_MODE_SET = new Set(PIPELINE_JOB_MODES);
+const ALL_JOB_MODE_SET = new Set(ALL_THREAT_LIBRARY_JOB_MODES);
 
 export class UnknownJobModeError extends Error {
   constructor(value) {
@@ -37,17 +48,28 @@ export class UnknownJobModeError extends Error {
 
 /**
  * @param {unknown} value
- * @returns {'analyze'|'retry'|'refresh_extraction'|'rerun_ai'}
+ * @returns {string}
  */
 export function parseJobMode(value) {
   const mode = typeof value === 'string' ? value.trim() : '';
-  if (!PIPELINE_JOB_MODE_SET.has(mode)) throw new UnknownJobModeError(value);
+  if (!ALL_JOB_MODE_SET.has(mode)) throw new UnknownJobModeError(value);
   return mode;
+}
+
+export function isIocSourceJobMode(mode) {
+  return mode === THREAT_LIBRARY_JOB_MODES.INSPECT_IOC_SOURCE
+    || mode === THREAT_LIBRARY_JOB_MODES.EXTRACT_IOC_SOURCE;
+}
+
+export function isPipelineJobMode(mode) {
+  return PIPELINE_JOB_MODE_SET.has(mode);
 }
 
 /** Whether a mode may call the configured model / provider. */
 export function jobModeInvokesAi(mode) {
-  return parseJobMode(mode) !== THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION;
+  const m = parseJobMode(mode);
+  if (isIocSourceJobMode(m)) return false;
+  return m !== THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION;
 }
 
 /**

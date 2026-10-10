@@ -644,6 +644,14 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       progress: { stage: 'review_required', summary }
     });
 
+    // Discover Additional IOC Source references (never fetch/attach).
+    try {
+      const { runIocSourceDiscoveryForReport } = await import('./iocSources/runDiscovery.js');
+      await runIocSourceDiscoveryForReport(pool, { ...report, canonical_document: document }, { logger: log });
+    } catch (err) {
+      log.warn('ioc source discovery failed (non-fatal)', { reportId: report.id, error: err.message });
+    }
+
     log.info('matching complete', { reportId: report.id, ...summary });
     return { ok: true, summary };
   } catch (err) {

@@ -223,6 +223,11 @@ export const AUDIT_ACTION = Object.freeze({
   THREAT_LIBRARY_REPORT_TAG_REMOVED: 'threat_library.report.tag.removed',
   THREAT_LIBRARY_REPORT_DELETED: 'threat_library.report.deleted',
   THREAT_LIBRARY_THIB_EXPORTED: 'threat_library.thib.exported',
+  THREAT_LIBRARY_IOC_SOURCE_ADDED: 'threat_library.ioc_source.added',
+  THREAT_LIBRARY_IOC_SOURCE_DISMISSED: 'threat_library.ioc_source.dismissed',
+  THREAT_LIBRARY_IOC_SOURCE_APPROVED: 'threat_library.ioc_source.approved',
+  THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED: 'threat_library.ioc_source.inspect_queued',
+  THREAT_LIBRARY_IOC_SOURCE_EXTRACT_QUEUED: 'threat_library.ioc_source.extract_queued',
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -433,6 +438,11 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_TAG_REMOVED]: 'Threat Library › Report Tag Removed',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_DELETED]: 'Threat Library › Report Deleted',
   [AUDIT_ACTION.THREAT_LIBRARY_THIB_EXPORTED]: 'Threat Library › THIB Exported',
+  [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_ADDED]: 'Threat Library › IOC Source Added',
+  [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_DISMISSED]: 'Threat Library › IOC Source Dismissed',
+  [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_APPROVED]: 'Threat Library › IOC Source Approved',
+  [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED]: 'Threat Library › IOC Source Inspect Queued',
+  [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_EXTRACT_QUEUED]: 'Threat Library › IOC Source Extract Queued',
   // Legacy action names written before the Threat Library audit model existed.
   // Historical rows are never rewritten; they only get a readable label.
   'threat_library.import.pdf': 'Threat Library › Report Imported (PDF)',

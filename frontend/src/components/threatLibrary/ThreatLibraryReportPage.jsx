@@ -32,6 +32,8 @@ import {
   PAGE_SIZES,
   DEFAULT_PAGE_SIZE,
   isReviewIndicator,
+  isUnionReviewIndicator,
+  isLinkedOnlyReviewIndicator,
   withInferredPublisherIocScope,
   describeAnalysisFailureDetail,
   confidenceLabel,
@@ -95,6 +97,7 @@ import {
   parseReportView,
   withReportView
 } from './reportTabs.js';
+import IocSourcesPanel from './IocSourcesPanel.jsx';
 import {
   buildOverviewMetrics,
   buildReportDetails,
@@ -1250,17 +1253,31 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const phase = resolveReportPhase(report);
   const showReview = Boolean(report) && canShowReviewTable(report);
   const showPreliminary = Boolean(report) && !loading && (phase === REPORT_PHASES.PREPARING || phase === REPORT_PHASES.FAILED);
+  const scopedCandidates = useMemo(() => withInferredPublisherIocScope(candidates), [candidates]);
   const reviewCount = useMemo(
-    () => withInferredPublisherIocScope(candidates).filter((c) => isReviewIndicator(c)).length,
-    [candidates]
+    () => scopedCandidates.filter((c) => isReviewIndicator(c)).length,
+    [scopedCandidates]
+  );
+  const totalUniqueCount = useMemo(
+    () => scopedCandidates.filter((c) => isUnionReviewIndicator(c)).length,
+    [scopedCandidates]
+  );
+  const linkedOnlyCount = useMemo(
+    () => scopedCandidates.filter((c) => isLinkedOnlyReviewIndicator(c)).length,
+    [scopedCandidates]
+  );
+  const pendingUnionCount = useMemo(
+    () => scopedCandidates.filter((c) => isUnionReviewIndicator(c) && String(c.review_status || '').toLowerCase() === 'pending').length,
+    [scopedCandidates]
   );
   const indicatorCount = describeIndicatorCount(report, showReview ? { reviewCount } : { rawCount: candidates.length || null });
   const metrics = useMemo(() => buildOverviewMetrics(candidates, report), [candidates, report]);
   const tabs = useMemo(() => buildReportTabs({
     indicatorCount: indicatorCount.value,
     indicatorCountStable: showReview,
-    entityCount: entities.length
-  }), [indicatorCount.value, showReview, entities.length]);
+    entityCount: entities.length,
+    iocSourceCount: report?.ioc_source_summary?.total ?? null
+  }), [indicatorCount.value, showReview, entities.length, report?.ioc_source_summary?.total]);
   const reportDetails = useMemo(() => buildReportDetails(report, {
     documentMeta,
     artifacts,
@@ -1551,6 +1568,12 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
 
             {showReview ? (
               <div>
+                <ul className="tl-inventory-counts" aria-label="Indicator inventory counts" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', listStyle: 'none', margin: '0 0 0.75rem', padding: 0, fontSize: '0.85rem' }}>
+                  <li><strong>{reviewCount}</strong> original</li>
+                  <li><strong>{totalUniqueCount}</strong> total unique</li>
+                  <li><strong>{linkedOnlyCount}</strong> linked-only</li>
+                  <li><strong>{pendingUnionCount}</strong> pending review</li>
+                </ul>
                 <div className="tl-filterbar">
                   <div className="tl-filterbar__tabs" role="tablist" aria-label="Indicator filters">
                     {REVIEW_FILTERS.map((f) => (
@@ -1805,6 +1828,23 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 </div>
               </div>
             ) : null}
+          </div>
+        ) : null}
+
+        {report && view === REPORT_VIEWS.IOC_SOURCES ? (
+          <div role="tabpanel" id="tl-panel-ioc-sources" aria-labelledby="tl-tab-ioc_sources">
+            <IocSourcesPanel
+              reportId={reportId}
+              canWrite={canWrite}
+              summary={report.ioc_source_summary}
+              onChanged={() => {
+                // Refresh report detail so indicator provenance/counts stay current.
+                api.get(`/threat-library/reports/${reportId}`).then((res) => {
+                  if (res.data?.report) setReport(res.data.report);
+                  if (Array.isArray(res.data?.candidates)) setCandidates(res.data.candidates);
+                }).catch(() => {});
+              }}
+            />
           </div>
         ) : null}
 

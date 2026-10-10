@@ -8,7 +8,12 @@ import { isValidTlpSource } from './tlpPolicy.js';
 import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
 import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility } from './evidencePolicy.js';
-import { reportIndicatorMembershipSql, isContextOnlySql } from './indicatorMembership.js';
+import {
+  reportIndicatorMembershipSql,
+  unionReportIndicatorMembershipSql,
+  linkedOnlyIndicatorMembershipSql,
+  isContextOnlySql
+} from './indicatorMembership.js';
 import { buildReportListOrderBy, buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
 
@@ -201,9 +206,14 @@ export async function getReportById(pool, id) {
  */
 const REVIEW_CANDIDATE_WHERE = reportIndicatorMembershipSql('c');
 
+const UNION_INDICATOR_WHERE = unionReportIndicatorMembershipSql('c');
+const LINKED_ONLY_WHERE = linkedOnlyIndicatorMembershipSql('c');
+
 const REPORT_COUNT_COLUMNS = `
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id) AS indicator_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${REVIEW_CANDIDATE_WHERE}) AS review_candidate_count,
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${UNION_INDICATOR_WHERE}) AS total_unique_indicator_count,
+  (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${LINKED_ONLY_WHERE}) AS linked_only_indicator_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND ${isContextOnlySql('c')}) AS context_only_count,
   (SELECT COUNT(*)::int FROM threat_report_candidates c WHERE c.report_id = r.id AND c.matched_ioc_id IS NOT NULL) AS matched_count,
   (SELECT COUNT(*)::int FROM threat_report_entities e WHERE e.report_id = r.id) AS entity_count`;
@@ -500,9 +510,9 @@ const INSERT_CANDIDATE_SQL = `INSERT INTO threat_report_candidates (
            report_id, portable_id, candidate_type, original_value, normalized_value,
            assessment, role, confidence, evidence_text, section, block_id, page_number,
            review_status, match_state, matched_ioc_id, matched_ioc_observable_type,
-           is_ioc, source_assertion, evidence
+           is_ioc, source_assertion, evidence, has_original_document_occurrence
          ) VALUES (
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb
+           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,$20
          )
          ON CONFLICT (report_id, candidate_type, normalized_value) DO UPDATE SET
            assessment = EXCLUDED.assessment,
@@ -515,6 +525,8 @@ const INSERT_CANDIDATE_SQL = `INSERT INTO threat_report_candidates (
            is_ioc = EXCLUDED.is_ioc,
            source_assertion = EXCLUDED.source_assertion,
            evidence = EXCLUDED.evidence,
+           has_original_document_occurrence = threat_report_candidates.has_original_document_occurrence
+             OR EXCLUDED.has_original_document_occurrence,
            updated_at = NOW()
          RETURNING *`;
 
@@ -544,7 +556,8 @@ export function candidateColumns(input) {
     matched_ioc_observable_type: c.matched_ioc_observable_type || null,
     is_ioc: c.is_ioc !== false,
     source_assertion: c.source_assertion || null,
-    evidence: buildCandidateEvidenceRecord(c)
+    evidence: buildCandidateEvidenceRecord(c),
+    has_original_document_occurrence: c.has_original_document_occurrence !== false
   };
 }
 
@@ -568,7 +581,8 @@ function insertCandidateParams(reportId, col) {
     col.matched_ioc_observable_type,
     col.is_ioc,
     col.source_assertion,
-    JSON.stringify(col.evidence)
+    JSON.stringify(col.evidence),
+    col.has_original_document_occurrence !== false
   ];
 }
 
@@ -648,26 +662,30 @@ export function changedCandidateColumns(row, next) {
 }
 
 /**
- * Shared candidate persistence for Refresh extraction, Retry and Re-run AI:
- * reconcile a report's candidate rows with a recomputed set by canonical
- * identity (candidate_type, normalized_value) in ONE transaction.
+ * Shared candidate persistence for Refresh extraction, Retry, Re-run AI, and
+ * linked IOC source extraction: reconcile by canonical identity in ONE transaction.
  *
- *  - surviving identity → updated IN PLACE: id, public_id, portable_id,
- *    promotion_outcome / promotion_detail / promoted_at and created_at are
- *    kept, so relationships, IOC links and analyst history stay attached;
- *    rows whose values do not change are not written at all
- *  - new identity → inserted
- *  - identity the current contract no longer produces → deleted (relationship
- *    rows that point at it cascade, exactly as on every candidate rebuild)
+ * Scope:
+ *  - `'original'` (default): primary document extract. Never deletes linked-only
+ *    identities. Identities that leave the original document but still have
+ *    linked-source provenance clear `has_original_document_occurrence` instead.
+ *  - `{ sourceId, sourceFileId? }`: linked-source extract. Upserts identities,
+ *    replaces that source's link rows, and deletes a candidate only when it has
+ *    no original occurrence and no remaining source links. Never overwrites
+ *    original-document assertion/evidence on overlapping identities.
  *
- * Unlike replaceCandidates there is no delete-all: an unchanged report keeps
- * every row byte-identical.
  * @param {import('pg').Pool} pool
  * @param {number} reportId
  * @param {object[]} candidates resolved (matched) candidates carrying review_status
+ * @param {{ scope?: 'original'|{ sourceId: number, sourceFileId?: number|null } }} [options]
  * @returns {Promise<{ rows: object[], added: object[], updated: object[], unchanged: number, removed: object[] }>}
  */
-export async function reconcileReportCandidates(pool, reportId, candidates) {
+export async function reconcileReportCandidates(pool, reportId, candidates, options = {}) {
+  const scope = options.scope == null || options.scope === 'original' ? 'original' : options.scope;
+  const sourceId = scope && typeof scope === 'object' ? Number(scope.sourceId) : null;
+  const sourceFileId = scope && typeof scope === 'object' ? (scope.sourceFileId ?? null) : null;
+  const isSourceScope = Number.isFinite(sourceId) && sourceId > 0;
+
   const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
   const owned = client !== pool;
   try {
@@ -679,7 +697,12 @@ export async function reconcileReportCandidates(pool, reportId, candidates) {
     const byKey = new Map(existing.map((r) => [`${r.candidate_type}\0${r.normalized_value}`, r]));
     const nextByKey = new Map();
     for (const input of candidates || []) {
-      const col = candidateColumns(input);
+      const col = candidateColumns({
+        ...input,
+        has_original_document_occurrence: isSourceScope
+          ? input.has_original_document_occurrence === true
+          : input.has_original_document_occurrence !== false
+      });
       nextByKey.set(`${col.candidate_type}\0${col.normalized_value}`, col);
     }
 
@@ -687,17 +710,55 @@ export async function reconcileReportCandidates(pool, reportId, candidates) {
     const added = [];
     const updated = [];
     let unchanged = 0;
+    const persistedByKey = new Map();
+
     for (const [key, col] of nextByKey) {
       const prior = byKey.get(key);
       if (!prior) {
         const { rows: ins } = await client.query(INSERT_CANDIDATE_SQL, insertCandidateParams(reportId, col));
         rows.push(ins[0]);
+        persistedByKey.set(key, ins[0]);
         added.push({ candidate_type: col.candidate_type, normalized_value: col.normalized_value });
         continue;
       }
+
+      if (isSourceScope && prior.has_original_document_occurrence !== false) {
+        // Overlap with original document: keep original assertion/evidence; refresh match only.
+        const matchChanged =
+          comparableColumn('match_state', prior.match_state) !== comparableColumn('match_state', col.match_state)
+          || comparableColumn('matched_ioc_id', prior.matched_ioc_id) !== comparableColumn('matched_ioc_id', col.matched_ioc_id)
+          || comparableColumn('matched_ioc_observable_type', prior.matched_ioc_observable_type)
+            !== comparableColumn('matched_ioc_observable_type', col.matched_ioc_observable_type);
+        if (!matchChanged) {
+          rows.push(prior);
+          persistedByKey.set(key, prior);
+          unchanged += 1;
+          continue;
+        }
+        const { rows: upd } = await client.query(
+          `UPDATE threat_report_candidates SET
+             match_state = $2,
+             matched_ioc_id = $3,
+             matched_ioc_observable_type = $4,
+             updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [prior.id, col.match_state, col.matched_ioc_id, col.matched_ioc_observable_type]
+        );
+        rows.push(upd[0]);
+        persistedByKey.set(key, upd[0]);
+        updated.push({
+          candidate_type: col.candidate_type,
+          normalized_value: col.normalized_value,
+          columns: ['match_state', 'matched_ioc_id', 'matched_ioc_observable_type']
+        });
+        continue;
+      }
+
       const changed = changedCandidateColumns(prior, col);
       if (!changed.length) {
         rows.push(prior);
+        persistedByKey.set(key, prior);
         unchanged += 1;
         continue;
       }
@@ -718,6 +779,7 @@ export async function reconcileReportCandidates(pool, reportId, candidates) {
            is_ioc = $14,
            source_assertion = $15,
            evidence = $16::jsonb,
+           has_original_document_occurrence = $17,
            updated_at = NOW()
          WHERE id = $1
          RETURNING *`,
@@ -737,33 +799,120 @@ export async function reconcileReportCandidates(pool, reportId, candidates) {
           col.matched_ioc_observable_type,
           col.is_ioc,
           col.source_assertion,
-          JSON.stringify(col.evidence)
+          JSON.stringify(col.evidence),
+          isSourceScope
+            ? prior.has_original_document_occurrence !== false
+            : col.has_original_document_occurrence !== false
         ]
       );
       rows.push(upd[0]);
+      persistedByKey.set(key, upd[0]);
       updated.push({ candidate_type: col.candidate_type, normalized_value: col.normalized_value, columns: changed });
     }
 
-    const removedRows = existing.filter((r) => !nextByKey.has(`${r.candidate_type}\0${r.normalized_value}`));
-    if (removedRows.length) {
-      await client.query(
-        `DELETE FROM threat_report_candidates WHERE report_id = $1 AND id = ANY($2::bigint[])`,
-        [reportId, removedRows.map((r) => r.id)]
+    const removed = [];
+
+    if (isSourceScope) {
+      // Replace this source's provenance links with the current extract set.
+      await client.query(`DELETE FROM threat_report_candidate_source_links WHERE source_id = $1`, [sourceId]);
+      for (const [key, col] of nextByKey) {
+        const row = persistedByKey.get(key);
+        if (!row) continue;
+        await client.query(
+          `INSERT INTO threat_report_candidate_source_links (
+             candidate_id, source_id, source_file_id, source_assertion, evidence
+           ) VALUES ($1,$2,$3,$4,$5::jsonb)
+           ON CONFLICT (candidate_id, source_id) DO UPDATE SET
+             source_file_id = EXCLUDED.source_file_id,
+             source_assertion = EXCLUDED.source_assertion,
+             evidence = EXCLUDED.evidence,
+             updated_at = NOW()`,
+          [
+            row.id,
+            sourceId,
+            sourceFileId,
+            col.source_assertion || 'linked_source_ioc',
+            JSON.stringify(col.evidence || {})
+          ]
+        );
+      }
+
+      // Drop linked-only identities that no longer have any source links.
+      const { rows: orphans } = await client.query(
+        `SELECT c.*
+         FROM threat_report_candidates c
+         WHERE c.report_id = $1
+           AND c.has_original_document_occurrence = false
+           AND NOT EXISTS (
+             SELECT 1 FROM threat_report_candidate_source_links l WHERE l.candidate_id = c.id
+           )
+         FOR UPDATE`,
+        [reportId]
       );
+      if (orphans.length) {
+        await client.query(
+          `DELETE FROM threat_report_candidates WHERE id = ANY($1::bigint[])`,
+          [orphans.map((r) => r.id)]
+        );
+        for (const r of orphans) {
+          removed.push({
+            candidate_type: r.candidate_type,
+            normalized_value: r.normalized_value,
+            review_status: r.review_status,
+            promotion_outcome: r.promotion_outcome || null
+          });
+        }
+      }
+    } else {
+      // Original document scope: never delete linked-only rows.
+      const missing = existing.filter((r) => !nextByKey.has(`${r.candidate_type}\0${r.normalized_value}`));
+      const toDelete = [];
+      for (const r of missing) {
+        if (r.has_original_document_occurrence === false) {
+          // Linked-only — leave untouched.
+          rows.push(r);
+          continue;
+        }
+        const { rows: linkRows } = await client.query(
+          `SELECT 1 FROM threat_report_candidate_source_links WHERE candidate_id = $1 LIMIT 1`,
+          [r.id]
+        );
+        if (linkRows.length) {
+          const { rows: cleared } = await client.query(
+            `UPDATE threat_report_candidates
+             SET has_original_document_occurrence = false, updated_at = NOW()
+             WHERE id = $1
+             RETURNING *`,
+            [r.id]
+          );
+          rows.push(cleared[0]);
+          updated.push({
+            candidate_type: r.candidate_type,
+            normalized_value: r.normalized_value,
+            columns: ['has_original_document_occurrence']
+          });
+          continue;
+        }
+        toDelete.push(r);
+      }
+      if (toDelete.length) {
+        await client.query(
+          `DELETE FROM threat_report_candidates WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+          [reportId, toDelete.map((r) => r.id)]
+        );
+        for (const r of toDelete) {
+          removed.push({
+            candidate_type: r.candidate_type,
+            normalized_value: r.normalized_value,
+            review_status: r.review_status,
+            promotion_outcome: r.promotion_outcome || null
+          });
+        }
+      }
     }
+
     if (owned) await client.query('COMMIT');
-    return {
-      rows,
-      added,
-      updated,
-      unchanged,
-      removed: removedRows.map((r) => ({
-        candidate_type: r.candidate_type,
-        normalized_value: r.normalized_value,
-        review_status: r.review_status,
-        promotion_outcome: r.promotion_outcome || null
-      }))
-    };
+    return { rows, added, updated, unchanged, removed };
   } catch (err) {
     if (owned) {
       try {
@@ -1008,12 +1157,18 @@ export async function replaceRelationships(pool, reportId, relationships) {
   }
 }
 
-export async function createJob(pool, { reportId, jobType, requestedBy, bullmqJobId }) {
+export async function createJob(pool, { reportId, jobType, requestedBy, bullmqJobId, jobPayload }) {
   const { rows } = await pool.query(
-    `INSERT INTO threat_library_jobs (report_id, job_type, status, stage, requested_by, bullmq_job_id)
-     VALUES ($1,$2,'queued','queued',$3::uuid,$4)
+    `INSERT INTO threat_library_jobs (report_id, job_type, status, stage, requested_by, bullmq_job_id, job_payload)
+     VALUES ($1,$2,'queued','queued',$3::uuid,$4,COALESCE($5::jsonb, '{}'::jsonb))
      RETURNING *`,
-    [reportId, jobType || 'analyze', requestedBy || null, bullmqJobId || null]
+    [
+      reportId,
+      jobType || 'analyze',
+      requestedBy || null,
+      bullmqJobId || null,
+      jobPayload != null ? JSON.stringify(jobPayload) : null
+    ]
   );
   return rows[0];
 }

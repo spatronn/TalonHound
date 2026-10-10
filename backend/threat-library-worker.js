@@ -10,7 +10,7 @@ import { getRedisUrl } from './lib/redis-url.js';
 import { createServiceLogger } from './lib/appLogger.js';
 import { getThreatLibraryQueueName, getThreatLibraryWorkerOptions } from './lib/threatLibrary/queueConfig.js';
 import { runThreatLibraryJob } from './lib/threatLibrary/jobRunner.js';
-import { parseJobMode, jobModeInvokesAi, UnknownJobModeError } from './lib/threatLibrary/jobModes.js';
+import { parseJobMode, jobModeInvokesAi, isIocSourceJobMode, UnknownJobModeError } from './lib/threatLibrary/jobModes.js';
 import { updateJob, getReportById, updateReportStatus } from './lib/threatLibrary/store.js';
 import { createAuditLogService } from './lib/auditLogService.js';
 import { auditAnalysisOutcome } from './lib/threatLibrary/audit.js';
@@ -92,13 +92,16 @@ const worker = new Worker(
       if (!(err instanceof UnknownJobModeError)) throw err;
       log.warn('job rejected', { bullmqJobId: job.id, reportId, jobId, code: err.code });
       await updateJob(pool, jobId, { status: 'failed', stage: 'starting', error_message: err.code, bullmq_job_id: String(job.id) });
-      await updateReportStatus(pool, reportId, {
-        analysis_status: 'failed',
-        import_status: 'failed',
-        failure_stage: 'starting',
-        failure_code: err.code,
-        failure_reason: err.message
-      });
+      // IOC-source jobs must never fail the parent report analysis.
+      if (!isIocSourceJobMode(String(job.data?.jobType || job.name || ''))) {
+        await updateReportStatus(pool, reportId, {
+          analysis_status: 'failed',
+          import_status: 'failed',
+          failure_stage: 'starting',
+          failure_code: err.code,
+          failure_reason: err.message
+        });
+      }
       await releaseSlotAndDispatch('unknown_job_mode', { bullmqJobId: job.id, reportId, jobId });
       return { ok: false, code: err.code };
     }
@@ -120,16 +123,19 @@ const worker = new Worker(
         resumeAnalysis: job.data?.resumeAnalysis === true,
         jobType: mode,
         newAnalysisRun: job.data?.newAnalysisRun === true,
-        restoreStatus: job.data?.restoreStatus
+        restoreStatus: job.data?.restoreStatus,
+        jobPayload: job.data?.jobPayload
       });
       log.info('job finished', { bullmqJobId: job.id, reportId, mode, ok: result?.ok === true, code: result?.code });
-      await auditAnalysisOutcome(pool, auditService, {
-        reportId,
-        jobId,
-        ok: result?.ok === true,
-        code: result?.code || null,
-        summary: result?.summary || null
-      });
+      if (!isIocSourceJobMode(mode)) {
+        await auditAnalysisOutcome(pool, auditService, {
+          reportId,
+          jobId,
+          ok: result?.ok === true,
+          code: result?.code || null,
+          summary: result?.summary || null
+        });
+      }
       return result;
     } finally {
       await releaseSlotAndDispatch(mode, { bullmqJobId: job.id, reportId, jobId });
@@ -148,8 +154,9 @@ worker.on('failed', async (job, err) => {
   const jobId = Number(job?.data?.jobId);
   if (reportId && jobId) {
     try {
+      const failedMode = String(job?.data?.jobType || job?.name || '');
       const report = await getReportById(pool, reportId);
-      if (report && report.analysis_status === 'analyzing') {
+      if (!isIocSourceJobMode(failedMode) && report && report.analysis_status === 'analyzing') {
         await updateReportStatus(pool, reportId, {
           analysis_status: 'failed',
           import_status: 'failed',
@@ -157,19 +164,21 @@ worker.on('failed', async (job, err) => {
           failure_code: 'worker_failed',
           failure_reason: err?.message || 'Threat Library worker failed'
         });
-        await updateJob(pool, jobId, {
-          status: 'failed',
-          stage: 'analyzing',
-          error_message: err?.message || 'worker failed'
+      }
+      await updateJob(pool, jobId, {
+        status: 'failed',
+        stage: isIocSourceJobMode(failedMode) ? failedMode : 'analyzing',
+        error_message: err?.message || 'worker failed'
+      });
+      if (!isIocSourceJobMode(failedMode)) {
+        await auditAnalysisOutcome(pool, auditService, {
+          reportId,
+          jobId,
+          ok: false,
+          code: 'worker_failed',
+          summary: null
         });
       }
-      await auditAnalysisOutcome(pool, auditService, {
-        reportId,
-        jobId,
-        ok: false,
-        code: 'worker_failed',
-        summary: null
-      });
     } catch (e) {
       log.warn('failed to mark report after worker failure', { error: e?.message });
     }

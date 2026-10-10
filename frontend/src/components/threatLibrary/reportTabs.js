@@ -10,6 +10,7 @@
 export const REPORT_VIEWS = Object.freeze({
   OVERVIEW: 'overview',
   INDICATORS: 'indicators',
+  IOC_SOURCES: 'ioc_sources',
   ENTITIES: 'entities',
   SOURCE: 'source'
 });
@@ -52,17 +53,24 @@ export function withReportView(params, view) {
  * number: the indicator count is omitted while the candidate set is still
  * preliminary so an in-flight total is never presented as the report's size.
  *
- * @param {{ indicatorCount?: number|null, indicatorCountStable?: boolean, entityCount?: number|null }} counts
+ * @param {{ indicatorCount?: number|null, indicatorCountStable?: boolean, entityCount?: number|null, iocSourceCount?: number|null }} counts
  * @returns {{ id: string, label: string, count: number|null }[]}
  */
-export function buildReportTabs({ indicatorCount = null, indicatorCountStable = false, entityCount = null } = {}) {
+export function buildReportTabs({
+  indicatorCount = null,
+  indicatorCountStable = false,
+  entityCount = null,
+  iocSourceCount = null
+} = {}) {
   const indicators = indicatorCountStable && indicatorCount != null && Number.isFinite(Number(indicatorCount))
     ? Number(indicatorCount)
     : null;
   const entities = entityCount != null && Number.isFinite(Number(entityCount)) ? Number(entityCount) : null;
+  const iocSources = iocSourceCount != null && Number.isFinite(Number(iocSourceCount)) ? Number(iocSourceCount) : null;
   return [
     { id: REPORT_VIEWS.OVERVIEW, label: 'Overview', count: null },
     { id: REPORT_VIEWS.INDICATORS, label: 'Indicators', count: indicators },
+    { id: REPORT_VIEWS.IOC_SOURCES, label: 'IOC Sources', count: iocSources },
     { id: REPORT_VIEWS.ENTITIES, label: 'Entities', count: entities },
     { id: REPORT_VIEWS.SOURCE, label: 'Source', count: null }
   ];

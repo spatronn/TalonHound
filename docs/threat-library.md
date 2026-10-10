@@ -365,6 +365,35 @@ AI Settings field: `max_concurrent_report_analyses` (UI: **Concurrent report ana
 
 The worker must run the same backend image as the API (`talonhound-backend:local`). Building only the `backend` service and recreating workers without a shared image tag previously left the worker on a stale AbortController timeout path.
 
+## Additional IOC Sources
+
+A Threat Library report may reference multiple external IOC datasets (for example a publisher GitHub IOC directory) in addition to the original HTML/PDF document.
+
+```text
+Report analysis completes
+      │
+      ▼
+Auto-discovery (links only — never fetch/attach)
+      │
+      ▼
+Analyst inspects → Approve & Attach → deterministic extract
+      │
+      ▼
+Same candidate identity + source provenance links → existing review workflow
+```
+
+**Counts (must stay aligned across UI, API, MCP, SQL):**
+
+| Count | Meaning |
+|---|---|
+| Original indicators (`review_candidate_count`) | Unchanged MODE A/B publisher membership on original-document occurrences |
+| Total unique | Original Indicators ∪ approved linked-source Indicators |
+| Linked-only | In the union, not in the original set |
+
+Approving a source authorizes extraction and report association. It does **not** approve IOCs into the global inventory. Linked-source extraction is deterministic (no AI) in the first delivery. Unsafe URLs fail at the source only and never alter the parent report’s analysis status.
+
+Lifecycle: `discovered → inspecting → inspected → attached → extracting → extracted`, with `dismissed`, `blocked`, `unsupported`, `failed`, and `stale` (refresh reserved for a later phase).
+
 ## Future STIX note
 
 Canonical entities/relationships intentionally resemble STIX concepts (threat-actor, malware, indicator, relationship) without implementing STIX 2.1 in V1.

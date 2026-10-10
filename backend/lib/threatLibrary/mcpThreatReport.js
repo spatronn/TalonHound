@@ -78,6 +78,7 @@ export function serializeThreatReportIndicator(c) {
     // Same normalization the report detail API applies.
     review_status: c.review_status === 'created_ioc' ? 'approved' : (c.review_status ?? null),
     match_state: c.match_state ?? null,
+    has_original_document_occurrence: c.has_original_document_occurrence !== false,
     // Internal IOC id, the same id lookup_ioc / get_ioc_context expose.
     ioc_id: c.matched_ioc_id ?? null,
     ioc_type: c.matched_ioc_observable_type ?? null
@@ -139,7 +140,10 @@ export function serializeThreatReport(snapshot, page = {}) {
     // use counts.all / indicators.total for that. counts.indicators is membership.
     counts: {
       all: buckets.all,
+      // Original-document Indicators membership (UI default Indicators filter).
       indicators: buckets.indicators,
+      total_unique: buckets.total_unique ?? buckets.indicators,
+      linked_only: buckets.linked_only ?? 0,
       context_only: buckets.context_only,
       entities: entities.length,
       relationships: relationships.length

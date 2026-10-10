@@ -50,6 +50,9 @@ export function buildOverviewMetrics(candidates, report) {
     needsReview,
     contextOnly: counts.context_only || 0,
     all: counts.all || 0,
+    original: counts.indicators || 0,
+    totalUnique: counts.total_unique || counts.indicators || 0,
+    linkedOnly: counts.linked_only || 0,
     reviewed,
     total,
     progressPct: total > 0 ? Math.round((reviewed / total) * 100) : 0

@@ -88,6 +88,20 @@ export function describeCandidateDetail(candidate, { formatDateTime } = {}) {
   if (c.original_value && c.normalized_value && c.original_value !== c.normalized_value) {
     fields.push({ key: 'original_value', label: 'As written', value: String(c.original_value), raw: c.original_value, mono: true });
   }
+  const provenanceBits = [];
+  if (c.has_original_document_occurrence !== false) provenanceBits.push('Original report');
+  const linkedSources = Array.isArray(c.sources) ? c.sources : [];
+  for (const s of linkedSources) {
+    provenanceBits.push(s.canonical_url || s.id || 'Linked source');
+  }
+  if (provenanceBits.length) {
+    fields.push({
+      key: 'ioc_sources',
+      label: 'IOC sources',
+      value: provenanceBits.join(' · '),
+      raw: { original: c.has_original_document_occurrence !== false, sources: linkedSources }
+    });
+  }
 
   const occurrences = Array.isArray(ev.occurrences) ? ev.occurrences : [];
   const tableRows = Array.isArray(ev.table_rows) ? ev.table_rows : [];

@@ -11,7 +11,7 @@
 import { createServiceLogger } from '../appLogger.js';
 import { getThreatLibraryJobOptions } from './queueConfig.js';
 import { getAiSettings, updateJob, updateReportStatus } from './store.js';
-import { PIPELINE_JOB_MODES, THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
+import { ALL_THREAT_LIBRARY_JOB_MODES, THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 
 const log = createServiceLogger('threat-library-scheduler');
 
@@ -23,7 +23,8 @@ export const ANALYSIS_SLOT_LOCK_KEY = 'threat-library.analysis_slots';
 
 // Every URL/PDF pipeline mode (jobModes.js) shares the slot budget, crash
 // recovery and unclaimed-cancel handling — including the AI-free refresh.
-const ANALYSIS_JOB_TYPES = PIPELINE_JOB_MODES;
+/** All worker-dispatched Threat Library job types (analysis + IOC source jobs). */
+const ANALYSIS_JOB_TYPES = ALL_THREAT_LIBRARY_JOB_MODES;
 const OCCUPIED_JOB_STATUSES = Object.freeze(['queued', 'running']);
 const LIVE_BULLMQ_STATES = new Set(['active', 'waiting', 'delayed', 'paused', 'waiting-children']);
 
@@ -101,6 +102,9 @@ export function dispatchExtraFromJob(job) {
   const progress = job?.progress && typeof job.progress === 'object' ? job.progress : {};
   const dispatch = progress.dispatch && typeof progress.dispatch === 'object' ? progress.dispatch : {};
   const jobType = dispatch.jobType || job?.job_type || 'analyze';
+  const payload = job?.job_payload && typeof job.job_payload === 'object'
+    ? job.job_payload
+    : (dispatch.jobPayload && typeof dispatch.jobPayload === 'object' ? dispatch.jobPayload : null);
   const extra = {
     sourceUrl: dispatch.sourceUrl || job?.source_url || undefined,
     resumeAnalysis:
@@ -108,7 +112,8 @@ export function dispatchExtraFromJob(job) {
       jobType === THREAT_LIBRARY_JOB_MODES.RETRY ||
       jobType === THREAT_LIBRARY_JOB_MODES.RERUN_AI,
     newAnalysisRun: dispatch.newAnalysisRun === true || jobType === THREAT_LIBRARY_JOB_MODES.RERUN_AI,
-    jobType
+    jobType,
+    ...(payload ? { jobPayload: payload } : {})
   };
   // Maintenance jobs return the report to the status it had when requested.
   if (dispatch.restoreStatus && typeof dispatch.restoreStatus === 'object') {
@@ -163,7 +168,7 @@ export async function dispatchQueuedThreatLibraryAnalyses(pool, opts = {}) {
     }
 
     const { rows: candidates } = await client.query(
-      `SELECT j.id, j.report_id, j.job_type, j.status, j.progress, j.created_at,
+      `SELECT j.id, j.report_id, j.job_type, j.status, j.progress, j.job_payload, j.created_at,
               r.source_url, r.public_id AS report_public_id, r.source_type
        FROM threat_library_jobs j
        JOIN threat_reports r ON r.id = j.report_id
@@ -256,7 +261,8 @@ export async function enqueueClaimedThreatLibraryJob(queue, job) {
       resumeAnalysis: extra.resumeAnalysis === true,
       jobType: extra.jobType,
       newAnalysisRun: extra.newAnalysisRun === true,
-      ...(extra.restoreStatus ? { restoreStatus: extra.restoreStatus } : {})
+      ...(extra.restoreStatus ? { restoreStatus: extra.restoreStatus } : {}),
+      ...(extra.jobPayload ? { jobPayload: extra.jobPayload } : {})
     },
     getThreatLibraryJobOptions()
   );
@@ -280,7 +286,8 @@ export async function queueThreatLibraryAnalysis(pool, queue, input) {
   const jobRow = await createJob(pool, {
     reportId: input.reportId,
     jobType: input.jobType || 'analyze',
-    requestedBy: input.requestedBy || null
+    requestedBy: input.requestedBy || null,
+    jobPayload: input.jobPayload || input.dispatch?.jobPayload || null
   });
   if (input.dispatch && typeof input.dispatch === 'object') {
     await updateJob(pool, jobRow.id, {
