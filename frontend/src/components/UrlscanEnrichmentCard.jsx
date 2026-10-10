@@ -1,19 +1,79 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
+import { formatUserDateTime } from '../lib/formatDate.js';
+import { buildUrlscanView } from '../lib/urlscanScanView.js';
 
-const RELATION_LABELS = {
-  exact_url: 'Exact URL',
-  canonical_url: 'Canonical URL',
-  page_hostname: 'Page hostname',
-  task_hostname: 'Task hostname',
-  page_apex: 'Page apex domain',
-  subdomain_of_ioc: 'Subdomain of IOC',
-  ioc_subdomain_of_page: 'IOC is subdomain of page',
-  contacted_domain: 'Contacted domain',
-  primary_page_ip: 'Primary page IP',
-  contacted_ip: 'Contacted IP (related)',
-  related: 'Related'
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, monospace';
+
+const CLASSIFICATION_STYLE = {
+  malicious: { border: '#7f1d1d', bg: '#450a0a', color: '#fca5a5' },
+  benign: { border: '#334155', bg: '#0b1220', color: '#cbd5e1' },
+  unclassified: { border: '#475569', bg: '#0b1220', color: '#e2e8f0' },
+  unknown: { border: '#475569', bg: '#0b1220', color: '#94a3b8' }
 };
+
+const sectionLabelStyle = {
+  fontSize: 11,
+  fontWeight: 700,
+  letterSpacing: 0.4,
+  textTransform: 'uppercase',
+  color: '#94a3b8',
+  margin: '14px 0 6px'
+};
+
+const kvGridStyle = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(96px, 36%) minmax(0, 1fr)',
+  columnGap: 10,
+  rowGap: 4,
+  fontSize: 13
+};
+
+const toggleStyle = { marginTop: 8, fontSize: 12 };
+
+function CopyValue({ value }) {
+  const [copied, setCopied] = useState(false);
+  if (!value || !navigator?.clipboard?.writeText) return null;
+  return (
+    <button
+      type="button"
+      title="Copy value"
+      aria-label={`Copy ${value}`}
+      onClick={() => {
+        navigator.clipboard.writeText(String(value))
+          .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); })
+          .catch(() => {});
+      }}
+      style={{ marginLeft: 6, minHeight: 0, padding: '1px 6px', borderRadius: 4, fontSize: 11, fontWeight: 500, lineHeight: '16px', verticalAlign: 'baseline' }}
+    >
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  );
+}
+
+function KeyValueRows({ rows }) {
+  if (!rows?.length) return null;
+  return (
+    <div style={kvGridStyle}>
+      {rows.map((row) => (
+        <React.Fragment key={row.label}>
+          <div style={{ color: '#94a3b8' }}>{row.label}</div>
+          <div style={{
+            color: row.tone === 'caution' ? '#fde68a' : '#e2e8f0',
+            minWidth: 0,
+            overflowWrap: 'anywhere',
+            fontFamily: row.mono ? MONO : undefined,
+            fontSize: row.mono ? 12 : undefined
+          }}
+          >
+            {row.date ? formatUserDateTime(row.value) : row.value}
+            {row.copy ? <CopyValue value={row.value} /> : null}
+          </div>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
 
 function assessmentStyle(assessment) {
   switch (assessment) {
@@ -35,17 +95,6 @@ function assessmentStyle(assessment) {
   }
 }
 
-function isOfficialResultUrl(href) {
-  try {
-    const u = new URL(String(href || ''));
-    return u.protocol === 'https:'
-      && u.hostname === 'urlscan.io'
-      && /^\/result\/[0-9a-f-]{36}\/?$/i.test(u.pathname);
-  } catch {
-    return false;
-  }
-}
-
 export default function UrlscanEnrichmentCard({
   iocId,
   active = true,
@@ -57,6 +106,7 @@ export default function UrlscanEnrichmentCard({
   const [state, setState] = useState({ status: 'loading', data: null, message: '' });
   const [refreshing, setRefreshing] = useState(false);
   const [showScans, setShowScans] = useState(false);
+  const [showRelated, setShowRelated] = useState(false);
 
   const applyPayload = useCallback((data) => {
     const status = String(data?.provider_status || data?.status || 'not_run').toLowerCase();
@@ -156,6 +206,7 @@ export default function UrlscanEnrichmentCard({
   const assessmentLabel = summary?.evidence_assessment_label
     || state.data?.evidence_assessment_label
     || null;
+  const view = useMemo(() => buildUrlscanView(summary), [summary]);
 
   useEffect(() => {
     if (!onSnapshot) return;
@@ -275,115 +326,283 @@ export default function UrlscanEnrichmentCard({
   }
 
   const style = assessmentStyle(assessment);
-  const scans = Array.isArray(summary?.scans) ? summary.scans : [];
-  const latest = summary?.most_recent_scan || scans[0] || null;
-  const resultHref = latest?.result_url && isOfficialResultUrl(latest.result_url) ? latest.result_url : null;
+
+  if (state.status === 'no_results' || !view) {
+    return (
+      <div style={cardShellStyle}>
+        {header}
+        <div style={{
+          marginTop: 10,
+          border: `1px solid ${style.border}`,
+          background: style.bg,
+          color: style.color,
+          borderRadius: 8,
+          padding: '8px 10px',
+          fontSize: 13,
+          fontWeight: 600
+        }}
+        >
+          {assessmentLabel || 'No results'}
+        </div>
+        <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 8 }}>
+          No historical scans were found in the configured lookback window. This is not a clean or safe verdict.
+        </div>
+        {summary?.fetched_at ? (
+          <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>
+            Evidence refreshed: {formatUserDateTime(summary.fetched_at)}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  const cls = CLASSIFICATION_STYLE[view.classification.state] || CLASSIFICATION_STYLE.unknown;
+  const history = view.history;
+  const visibleHistory = showScans ? history.rows : history.rows.slice(0, 3);
 
   return (
     <div style={cardShellStyle}>
       {header}
+
+      {/* Section 1 — Assessment (provider evidence, never a TalonHound verdict) */}
       <div style={{
         marginTop: 10,
-        border: `1px solid ${style.border}`,
-        background: style.bg,
-        color: style.color,
+        border: `1px solid ${cls.border}`,
+        background: cls.bg,
         borderRadius: 8,
-        padding: '8px 10px',
-        fontSize: 13,
-        fontWeight: 600
+        padding: '8px 10px'
       }}
       >
-        {assessmentLabel || (state.status === 'no_results' ? 'No results' : 'Evidence available')}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ color: '#94a3b8', fontSize: 12 }}>urlscan classification</span>
+          <span style={{ color: cls.color, fontSize: 14, fontWeight: 700 }}>{view.classification.label}</span>
+          {view.classification.score !== null ? (
+            <span style={{ color: '#94a3b8', fontSize: 12 }} title="urlscan scale −100 (legitimate) … 100 (malicious). Not a probability and not TalonHound confidence.">
+              score {view.classification.score}
+            </span>
+          ) : null}
+        </div>
+        {view.classification.categories.length || view.classification.brands.length ? (
+          <div style={{ color: '#cbd5e1', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>
+            {view.classification.categories.length ? <>Categories: {view.classification.categories.join(', ')}</> : null}
+            {view.classification.categories.length && view.classification.brands.length ? ' · ' : null}
+            {view.classification.brands.length ? <>Targeted brands: {view.classification.brands.join(', ')}</> : null}
+          </div>
+        ) : null}
+        {view.verdictSources.length ? (
+          <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4, overflowWrap: 'anywhere' }}>
+            {view.verdictSources.map((v, i) => (
+              <span key={v.source}>
+                {i ? ' · ' : ''}
+                {v.source}: <span style={{ color: v.caution ? '#fde68a' : '#cbd5e1' }}>{v.value}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 4 }}>
+          Sample assessment: <span style={{ color: style.color }}>{assessmentLabel || '—'}</span>
+          {' · '}
+          {view.counts.retrieved} scan{view.counts.retrieved === 1 ? '' : 's'} retrieved
+          {view.counts.bounded ? ' (bounded sample)' : ''}
+          {' · '}
+          {view.counts.exact} exact / {view.counts.related} related
+          {' · '}
+          {view.counts.malicious} malicious
+        </div>
       </div>
-      {state.status === 'no_results' ? (
+
+      {view.observations.length ? (
+        <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, display: 'grid', gap: 6 }}>
+          {view.observations.map((o) => (
+            <li
+              key={o.code}
+              style={{
+                borderLeft: `3px solid ${o.level === 'caution' ? '#ca8a04' : '#475569'}`,
+                padding: '2px 0 2px 8px',
+                fontSize: 12
+              }}
+            >
+              <div style={{ color: o.level === 'caution' ? '#fde68a' : '#cbd5e1', fontWeight: 600 }}>{o.label}</div>
+              {o.detail ? <div style={{ color: '#94a3b8', overflowWrap: 'anywhere' }}>{o.detail}</div> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {view.needsRefreshForDetail ? (
         <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 8 }}>
-          No historical scans were found in the configured lookback window. This is not a clean or safe verdict.
+          Stored before detailed scan parsing. Use Refresh to load the scan verdict, network activity, TLS and related observables.
         </div>
-      ) : (
-        <div style={{ display: 'grid', gap: 6, marginTop: 10, fontSize: 13, color: '#cbd5e1' }}>
-          <div>
-            <span style={{ color: '#94a3b8' }}>{summary?.matches_retrieved_label || 'Matches retrieved'}: </span>
-            <b>{summary?.matches_retrieved ?? 0}</b>
-            {summary?.results_are_exhaustive === false ? (
-              <span style={{ color: '#64748b', marginLeft: 6 }}>(bounded sample)</span>
-            ) : null}
+      ) : null}
+
+      <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 8, overflowWrap: 'anywhere' }}>
+        {view.primaryScan.scanned_at ? <>Scan: <span style={{ color: '#cbd5e1' }}>{formatUserDateTime(view.primaryScan.scanned_at)}</span></> : null}
+        {view.primaryScan.relation ? <> · {view.primaryScan.relation}{view.primaryScan.exact ? ' (exact)' : ''}</> : null}
+        {view.primaryScan.href ? (
+          <>
+            {' · '}
+            <a href={view.primaryScan.href} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>
+              Open urlscan result
+            </a>
+          </>
+        ) : null}
+      </div>
+
+      {/* Section 2 — Page & Hosting */}
+      {view.pageRows.length || view.hostingRows.length ? (
+        <>
+          <div style={sectionLabelStyle}>Page &amp; hosting</div>
+          <KeyValueRows rows={[...view.pageRows, ...view.hostingRows]} />
+        </>
+      ) : null}
+
+      {/* Section 3 — Network activity (aggregates only) */}
+      {view.networkStats.length ? (
+        <>
+          <div style={sectionLabelStyle}>Network activity</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 6 }}>
+            {view.networkStats.map((s) => (
+              <div key={s.label} style={{ border: '1px solid #1e293b', borderRadius: 6, padding: '4px 8px', background: '#0f172a' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: s.tone === 'caution' ? '#fde68a' : '#e2e8f0' }}>{s.value}</div>
+                <div style={{ fontSize: 11, color: '#94a3b8' }}>{s.label}</div>
+              </div>
+            ))}
           </div>
-          <div>
-            <span style={{ color: '#94a3b8' }}>Exact / related: </span>
-            <b>{summary?.exact_match_count ?? 0}</b>
-            <span style={{ color: '#64748b' }}> / </span>
-            <b>{summary?.related_match_count ?? 0}</b>
+          {view.statusCodes.length || view.resourceTypes.length || view.failedErrors.length ? (
+            <div style={{ color: '#94a3b8', fontSize: 12, marginTop: 6, display: 'grid', gap: 2, overflowWrap: 'anywhere' }}>
+              {view.statusCodes.length ? <div>Response codes: <span style={{ color: '#cbd5e1' }}>{view.statusCodes.join(' · ')}</span></div> : null}
+              {view.resourceTypes.length ? <div>Resource types: <span style={{ color: '#cbd5e1' }}>{view.resourceTypes.join(' · ')}</span></div> : null}
+              {view.failedErrors.length ? <div>Failed loads: <span style={{ color: '#fde68a' }}>{view.failedErrors.join(' · ')}</span></div> : null}
+            </div>
+          ) : null}
+          {view.redirects.length ? (
+            <ol style={{ margin: '6px 0 0', paddingLeft: 18, color: '#cbd5e1', fontSize: 12, fontFamily: MONO }}>
+              {view.redirects.map((r, i) => (
+                <li key={`${r.from}-${i}`} style={{ overflowWrap: 'anywhere', marginBottom: 2 }}>
+                  {r.status ? <span style={{ color: '#94a3b8' }}>{r.status} </span> : null}
+                  {r.from} <span style={{ color: '#94a3b8' }}>→</span> {r.to}
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </>
+      ) : null}
+
+      {/* Section 4 — TLS / Technologies (omitted when the scan has none) */}
+      {view.tlsRows.length ? (
+        <>
+          <div style={sectionLabelStyle}>TLS certificate</div>
+          <KeyValueRows rows={view.tlsRows} />
+        </>
+      ) : null}
+      {view.technologies.length ? (
+        <>
+          <div style={sectionLabelStyle}>Detected technologies</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {view.technologies.map((t) => (
+              <span
+                key={t.name}
+                title={t.categories.join(', ') || undefined}
+                style={{ border: '1px solid #334155', borderRadius: 999, padding: '1px 8px', fontSize: 12, color: '#cbd5e1' }}
+              >
+                {t.name}
+              </span>
+            ))}
           </div>
-          <div>
-            <span style={{ color: '#94a3b8' }}>Malicious scans (in sample): </span>
-            <b>{summary?.malicious_scan_count ?? 0}</b>
+        </>
+      ) : null}
+
+      {/* Section 5 — Related observables (evidence only; never auto-created or enriched) */}
+      {view.related.length ? (
+        <>
+          <div style={sectionLabelStyle}>Related observables ({view.related.length})</div>
+          <button type="button" onClick={() => setShowRelated((v) => !v)} style={{ ...toggleStyle, marginTop: 0 }}>
+            {showRelated ? 'Hide related observables' : 'Show related observables'}
+          </button>
+          {showRelated ? (
+            <>
+              <ul style={{ listStyle: 'none', margin: '8px 0 0', padding: 0, display: 'grid', gap: 6 }}>
+                {view.related.map((r) => (
+                  <li key={`${r.type}|${r.value}`} style={{ borderTop: '1px solid #1e293b', paddingTop: 6, fontSize: 12 }}>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                      <span style={{ border: '1px solid #334155', borderRadius: 4, padding: '0 5px', fontSize: 10, color: '#94a3b8', textTransform: 'uppercase' }}>{r.type}</span>
+                      <span style={{ color: '#e2e8f0', fontFamily: MONO, overflowWrap: 'anywhere', minWidth: 0 }}>{r.value}</span>
+                      <CopyValue value={r.value} />
+                    </div>
+                    <div style={{ color: '#94a3b8', marginTop: 2, overflowWrap: 'anywhere' }}>
+                      {r.relationship}
+                      {r.role ? ` · ${r.role}` : ''}
+                      {r.note ? ` · ${r.note}` : ''}
+                      {r.origin ? <span style={{ color: '#64748b' }}> · {r.origin}</span> : null}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              <div style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>
+                Observed in this scan only. Not added to TalonHound and not enriched automatically.
+                {view.hashTotal !== null && view.hashTotal > view.related.filter((r) => r.type === 'sha256').length
+                  ? ` ${view.hashTotal} response-body hashes in the scan; largest shown.`
+                  : ''}
+              </div>
+            </>
+          ) : null}
+        </>
+      ) : null}
+
+      {/* Section 6 — Historical results (bounded to the retrieved search sample) */}
+      {history.rows.length ? (
+        <>
+          <div style={sectionLabelStyle}>Scan history</div>
+          {history.changes.length ? (
+            <div style={{ display: 'grid', gap: 2, fontSize: 12, marginBottom: 6 }}>
+              {history.changes.map((c) => (
+                <div key={c.label} style={{ color: '#fde68a', overflowWrap: 'anywhere' }}>
+                  {c.label} changed: <span style={{ color: '#cbd5e1' }}>{c.values.join(' · ')}</span>
+                </div>
+              ))}
+            </div>
+          ) : history.compared !== null && history.compared > 1 ? (
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 6 }}>
+              No IP, ASN, title, status or TLS-issuer change across {history.compared} directly matching scans.
+            </div>
+          ) : null}
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'grid', gap: 6 }}>
+            {visibleHistory.map((row) => (
+              <li key={row.scan_id} style={{ borderTop: '1px solid #1e293b', paddingTop: 6, fontSize: 12, color: '#cbd5e1', overflowWrap: 'anywhere' }}>
+                <div>
+                  {row.scanned_at ? formatUserDateTime(row.scanned_at) : 'Unknown date'}
+                  {row.relation ? <span style={{ color: '#94a3b8' }}> · {row.relation}</span> : null}
+                  {' · '}
+                  <span style={{ color: row.malicious ? '#fca5a5' : '#94a3b8' }}>{row.verdict}</span>
+                  {row.href ? (
+                    <>
+                      {' · '}
+                      <a href={row.href} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>result</a>
+                    </>
+                  ) : null}
+                </div>
+                <div style={{ color: '#94a3b8' }}>
+                  {[row.status ? `HTTP ${row.status}` : null, row.title ? `“${row.title}”` : null, row.ip, row.asn].filter(Boolean).join(' · ') || '—'}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {history.rows.length > 3 ? (
+            <button type="button" onClick={() => setShowScans((v) => !v)} style={toggleStyle}>
+              {showScans ? 'Show fewer scans' : `Show all ${history.rows.length} retrieved scans`}
+            </button>
+          ) : null}
+          <div style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>
+            {history.retrieved} of {history.total ?? history.retrieved} scan{(history.total ?? history.retrieved) === 1 ? '' : 's'} in the lookback window retrieved
+            {history.bounded ? ' (bounded sample — not a complete history)' : ''}.
+            {' '}Verdicts are only retrieved for the top detailed scans.
           </div>
-          {latest?.scanned_at ? (
-            <div>
-              <span style={{ color: '#94a3b8' }}>Latest scan: </span>
-              <b style={{ wordBreak: 'break-all' }}>{latest.scanned_at}</b>
-            </div>
-          ) : null}
-          {latest?.urlscan_score != null ? (
-            <div>
-              <span style={{ color: '#94a3b8' }}>urlscan score: </span>
-              <b>{latest.urlscan_score}</b>
-              <span style={{ color: '#64748b', marginLeft: 6 }}>(not TalonHound confidence)</span>
-            </div>
-          ) : null}
-          {Array.isArray(latest?.categories) && latest.categories.length ? (
-            <div>
-              <span style={{ color: '#94a3b8' }}>Categories: </span>
-              {latest.categories.join(', ')}
-            </div>
-          ) : null}
-          {latest?.match_relation ? (
-            <div>
-              <span style={{ color: '#94a3b8' }}>Latest match: </span>
-              {RELATION_LABELS[latest.match_relation] || latest.match_relation}
-              {latest.exact_match ? ' (exact)' : ''}
-            </div>
-          ) : null}
-          {resultHref ? (
-            <div>
-              <a href={resultHref} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>
-                Open latest urlscan result
-              </a>
-            </div>
-          ) : null}
-          {scans.length > 1 ? (
-            <div>
-              <button type="button" onClick={() => setShowScans((v) => !v)} style={{ marginTop: 4 }}>
-                {showScans ? 'Hide scan list' : `Show ${scans.length} scans`}
-              </button>
-              {showScans ? (
-                <ul style={{ margin: '8px 0 0', paddingLeft: 18, color: '#94a3b8', fontSize: 12 }}>
-                  {scans.slice(0, 20).map((scan) => {
-                    const href = isOfficialResultUrl(scan.result_url) ? scan.result_url : null;
-                    return (
-                      <li key={scan.scan_id} style={{ marginBottom: 4, wordBreak: 'break-word' }}>
-                        {scan.scanned_at || 'unknown date'}
-                        {' · '}
-                        {RELATION_LABELS[scan.match_relation] || scan.match_relation}
-                        {scan.malicious === true ? ' · malicious evidence' : ''}
-                        {href ? (
-                          <>
-                            {' · '}
-                            <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>result</a>
-                          </>
-                        ) : null}
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      )}
-      {summary?.fetched_at ? (
+        </>
+      ) : null}
+
+      {view.fetchedAt ? (
         <div style={{ color: '#64748b', fontSize: 11, marginTop: 10 }}>
-          Evidence refreshed: {summary.fetched_at}
+          Evidence refreshed: {formatUserDateTime(view.fetchedAt)}
         </div>
       ) : null}
     </div>

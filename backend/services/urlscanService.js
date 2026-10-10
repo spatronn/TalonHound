@@ -22,7 +22,8 @@ import {
   assessUrlPrivacyForLookup,
   DEFAULT_SEARCH_SIZE,
   DEFAULT_DETAIL_LIMIT,
-  DEFAULT_LOOKBACK_DAYS
+  DEFAULT_LOOKBACK_DAYS,
+  RESULT_MAX_RESPONSE_BYTES
 } from '../lib/urlscanEnrichment.js';
 
 const DEFAULT_TIMEOUT_MS = 12000;
@@ -243,7 +244,8 @@ export async function fetchUrlscanResult(scanId, config, options = {}) {
   const result = await fetchWithRetry(url, {
     apiKey: config.apiKey,
     timeoutMs: config.timeout_ms,
-    fetchImpl: options.fetchImpl
+    fetchImpl: options.fetchImpl,
+    maxResponseBytes: RESULT_MAX_RESPONSE_BYTES
   }, { retries: 1 });
   return normalizeResultDetail(result.json, id);
 }
@@ -536,19 +538,22 @@ export async function enrichIocWithUrlscan(pool, {
     try {
       const detail = await fetchUrlscanResult(scanId, config, { fetchImpl });
       if (detail) details.push(detail);
-      // Merge verdict from detail into matching hit when search lacked it
+      // The Result API verdict is authoritative for the scan (search hits carry
+      // no verdicts on non-Pro plans); also backfill page facts search lacked.
       if (detail) {
         const hit = hits.find((h) => h.scan_id === detail.scan_id);
         if (hit) {
-          if (hit.malicious == null && detail.overall_malicious != null) {
-            hit.malicious = detail.overall_malicious === true;
-          }
-          if (hit.urlscan_score == null && detail.urlscan_score != null) {
+          if (typeof detail.overall_malicious === 'boolean') {
+            hit.malicious = detail.overall_malicious;
             hit.urlscan_score = detail.urlscan_score;
+            hit.categories = detail.categories || [];
           }
-          if (!hit.categories?.length && detail.categories?.length) {
-            hit.categories = detail.categories;
+          if (detail.verdicts?.engines) {
+            hit.engine_malicious = detail.verdicts.engines.malicious === true;
           }
+          hit.classification_state = detail.classification?.state || null;
+          hit.detail_available = true;
+          if (!hit.page_status && detail.page_status) hit.page_status = detail.page_status;
         }
       }
     } catch (err) {

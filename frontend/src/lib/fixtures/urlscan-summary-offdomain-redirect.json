@@ -1,0 +1,741 @@
+{
+ "summary_version": 2,
+ "provider": "urlscan",
+ "provider_display_name": "urlscan.io",
+ "evidence_assessment": "no_malicious_evidence",
+ "evidence_assessment_label": "No malicious evidence observed",
+ "is_authoritative_verdict": false,
+ "score_is_not_confidence": true,
+ "ioc_category": "url",
+ "lookback_days": 30,
+ "search_size_requested": 20,
+ "matches_retrieved": 3,
+ "matches_retrieved_label": "Matches retrieved (bounded sample)",
+ "total_reported_by_api": 10000,
+ "results_are_exhaustive": false,
+ "exact_match_count": 1,
+ "related_match_count": 2,
+ "malicious_scan_count": 0,
+ "first_observed_scan": "2026-10-10T12:02:03.431Z",
+ "last_observed_scan": "2026-10-10T12:02:12.397Z",
+ "most_recent_scan": {
+  "scan_id": "01a125b1-19c1-7295-bb46-2577148b105d",
+  "scanned_at": "2026-10-10T12:02:12.397Z",
+  "result_url": "https://urlscan.io/result/01a125b1-19c1-7295-bb46-2577148b105d/",
+  "task_url": "https://quicksupport.fom.de/",
+  "page_url": "https://get.teamviewer.com/bcw-gruppe",
+  "visibility": "public",
+  "page_domain": "get.teamviewer.com",
+  "page_ip": "104.16.62.16",
+  "page_asn": "AS13335",
+  "page_country": null,
+  "page_server": "cloudflare",
+  "page_title": "TeamViewer",
+  "page_redirected": "off-domain",
+  "page_status": "200",
+  "page_asnname": "CLOUDFLARENET - Cloudflare, Inc., US",
+  "page_mime_type": "text/html",
+  "tls_issuer": "Sectigo Public Server Authentication CA DV R36",
+  "match_relation": "exact_url",
+  "exact_match": true,
+  "malicious": false,
+  "urlscan_score": 0,
+  "categories": [],
+  "engine_malicious": false,
+  "score_is_not_confidence": true,
+  "stats_requests": 12,
+  "classification_state": "unclassified",
+  "detail_available": true
+ },
+ "most_recent_malicious_scan": null,
+ "scans": [
+  {
+   "scan_id": "01a125b1-19c1-7295-bb46-2577148b105d",
+   "scanned_at": "2026-10-10T12:02:12.397Z",
+   "result_url": "https://urlscan.io/result/01a125b1-19c1-7295-bb46-2577148b105d/",
+   "task_url": "https://quicksupport.fom.de/",
+   "page_url": "https://get.teamviewer.com/bcw-gruppe",
+   "visibility": "public",
+   "page_domain": "get.teamviewer.com",
+   "page_ip": "104.16.62.16",
+   "page_asn": "AS13335",
+   "page_country": null,
+   "page_server": "cloudflare",
+   "page_title": "TeamViewer",
+   "page_redirected": "off-domain",
+   "page_status": "200",
+   "page_asnname": "CLOUDFLARENET - Cloudflare, Inc., US",
+   "page_mime_type": "text/html",
+   "tls_issuer": "Sectigo Public Server Authentication CA DV R36",
+   "match_relation": "exact_url",
+   "exact_match": true,
+   "malicious": false,
+   "urlscan_score": 0,
+   "categories": [],
+   "engine_malicious": false,
+   "score_is_not_confidence": true,
+   "stats_requests": 12,
+   "classification_state": "unclassified",
+   "detail_available": true
+  },
+  {
+   "scan_id": "01a125b1-1049-770c-9060-5d826499e749",
+   "scanned_at": "2026-10-10T12:02:10.615Z",
+   "result_url": "https://urlscan.io/result/01a125b1-1049-770c-9060-5d826499e749/",
+   "task_url": "https://outlook.1xbet-kb0.top/",
+   "page_url": "https://106casinoslots.top/",
+   "visibility": "public",
+   "page_domain": "106casinoslots.top",
+   "page_ip": "186.2.174.137",
+   "page_asn": "AS59692",
+   "page_country": "AE",
+   "page_server": "ddos-guard",
+   "page_title": "403 Forbidden",
+   "page_redirected": "off-domain",
+   "page_status": "403",
+   "page_asnname": "IQWEB IQWeb FZ-LLC, AE",
+   "page_mime_type": "text/html",
+   "tls_issuer": "YR1",
+   "match_relation": "related",
+   "exact_match": false,
+   "malicious": null,
+   "urlscan_score": null,
+   "categories": [],
+   "engine_malicious": null,
+   "score_is_not_confidence": true,
+   "stats_requests": 2
+  },
+  {
+   "scan_id": "01a125b0-f716-7631-a6b2-43c1c18d3f8d",
+   "scanned_at": "2026-10-10T12:02:03.431Z",
+   "result_url": "https://urlscan.io/result/01a125b0-f716-7631-a6b2-43c1c18d3f8d/",
+   "task_url": "http://g-956487.com/",
+   "page_url": "https://www.google.com/",
+   "visibility": "public",
+   "page_domain": "www.google.com",
+   "page_ip": "142.251.150.119",
+   "page_asn": "AS15169",
+   "page_country": "US",
+   "page_server": "gws",
+   "page_title": "Google",
+   "page_redirected": "off-domain",
+   "page_status": "200",
+   "page_asnname": "GOOGLE - Google LLC, US",
+   "page_mime_type": "text/html",
+   "tls_issuer": "WR2",
+   "match_relation": "related",
+   "exact_match": false,
+   "malicious": null,
+   "urlscan_score": null,
+   "categories": [],
+   "engine_malicious": null,
+   "score_is_not_confidence": true,
+   "stats_requests": 42
+  }
+ ],
+ "detail_scans": [
+  {
+   "detail_version": 2,
+   "scan_id": "01a125b1-19c1-7295-bb46-2577148b105d",
+   "result_url": "https://urlscan.io/result/01a125b1-19c1-7295-bb46-2577148b105d/",
+   "scanned_at": "2026-10-10T12:02:12.397Z",
+   "visibility": "public",
+   "task_url": "https://quicksupport.fom.de/",
+   "page_url": "https://get.teamviewer.com/bcw-gruppe",
+   "page_domain": "get.teamviewer.com",
+   "page_ip": "104.16.62.16",
+   "page_asn": "AS13335",
+   "page_asnname": "CLOUDFLARENET - Cloudflare, Inc., US",
+   "page_country": null,
+   "page_city": null,
+   "page_server": "cloudflare",
+   "page_title": "TeamViewer",
+   "page_status": "200",
+   "page_redirected": "off-domain",
+   "urlscan_malicious": false,
+   "engines_malicious": false,
+   "community_malicious": false,
+   "overall_malicious": false,
+   "urlscan_score": 0,
+   "score_is_not_confidence": true,
+   "categories": [],
+   "contacted_ips_sample": [
+    "20.50.2.60",
+    "151.101.193.155",
+    "104.16.62.16",
+    "87.190.244.23"
+   ],
+   "contacted_domains_sample": [
+    "get.teamviewer.com",
+    "code.jquery.com",
+    "customdesignservice.teamviewer.com",
+    "quicksupport.fom.de"
+   ],
+   "classification": {
+    "state": "unclassified",
+    "label": "Unclassified",
+    "score": 0,
+    "categories": [],
+    "brands": []
+   },
+   "verdicts": {
+    "overall": {
+     "malicious": false,
+     "score": 0,
+     "has_verdicts": true,
+     "categories": [],
+     "brands": [],
+     "tags": []
+    },
+    "urlscan": {
+     "malicious": false,
+     "score": 0,
+     "has_verdicts": false,
+     "categories": [],
+     "brands": [],
+     "tags": []
+    },
+    "engines": {
+     "malicious": false,
+     "score": -98,
+     "has_verdicts": true,
+     "engines_total": 0,
+     "malicious_total": 0,
+     "benign_total": 0,
+     "malicious_engines": [],
+     "categories": [],
+     "tags": [
+      "urlscan-ml",
+      "urlscan-ml-60c5e22"
+     ]
+    },
+    "community": {
+     "malicious": false,
+     "score": 0,
+     "has_verdicts": false,
+     "votes_total": 0,
+     "votes_malicious": 0,
+     "votes_benign": 0
+    }
+   },
+   "page": {
+    "submitted_url": "https://quicksupport.fom.de/",
+    "effective_url": "https://get.teamviewer.com/bcw-gruppe",
+    "url_changed": true,
+    "submitted_domain": "quicksupport.fom.de",
+    "domain": "get.teamviewer.com",
+    "apex_domain": "teamviewer.com",
+    "title": "TeamViewer",
+    "status": 200,
+    "status_text": null,
+    "navigation_error": null,
+    "mime_type": "text/html",
+    "redirected": "off-domain",
+    "server": "cloudflare",
+    "ip": "104.16.62.16",
+    "ptr": null,
+    "asn": "AS13335",
+    "asn_name": "CLOUDFLARENET - Cloudflare, Inc., US",
+    "country": null,
+    "city": null,
+    "language": null,
+    "umbrella_rank": 402060
+   },
+   "network": {
+    "requests": 12,
+    "unique_ips": 4,
+    "unique_domains": 4,
+    "unique_countries": 3,
+    "redirects": 1,
+    "http_error_responses": 0,
+    "failed_requests": 1,
+    "failed_request_errors": [
+     {
+      "error": "net::ERR_ABORTED",
+      "count": 1
+     }
+    ],
+    "status_codes": [
+     {
+      "status": "200",
+      "count": 12
+     }
+    ],
+    "methods": [
+     {
+      "method": "GET",
+      "count": 11
+     },
+     {
+      "method": "POST",
+      "count": 1
+     }
+    ],
+    "resource_types": [
+     {
+      "type": "Script",
+      "count": 4
+     },
+     {
+      "type": "Image",
+      "count": 2
+     },
+     {
+      "type": "Stylesheet",
+      "count": 2
+     },
+     {
+      "type": "Document",
+      "count": 2
+     },
+     {
+      "type": "Other",
+      "count": 1
+     },
+     {
+      "type": "XHR",
+      "count": 1
+     }
+    ],
+    "console_errors": 0,
+    "outgoing_links": 7,
+    "link_domains": 2,
+    "websockets": 0,
+    "downloads": 1,
+    "secure_percentage": 100,
+    "ipv6_percentage": 0,
+    "primary_status": 200
+   },
+   "redirects": [
+    {
+     "from": "https://quicksupport.fom.de/",
+     "to": "https://get.teamviewer.com/bcw-gruppe",
+     "status": 301
+    }
+   ],
+   "tls": {
+    "issuer": "Sectigo Public Server Authentication CA DV R36",
+    "subject": "*.teamviewer.com",
+    "valid_from": "2026-10-02T00:00:00.000Z",
+    "valid_to": "2027-04-18T23:59:59.000Z",
+    "valid_days": 198,
+    "age_days": 8,
+    "protocol": "TLS 1.3",
+    "san_count": 2,
+    "certificates_observed": 3
+   },
+   "technologies": [
+    {
+     "name": "spin.js",
+     "categories": [
+      "JavaScript graphics"
+     ],
+     "confidence": 100
+    },
+    {
+     "name": "Microsoft ASP.NET",
+     "categories": [
+      "Web frameworks"
+     ],
+     "confidence": 100
+    },
+    {
+     "name": "Cloudflare Bot Management",
+     "categories": [
+      "Security"
+     ],
+     "confidence": 100
+    },
+    {
+     "name": "jQuery",
+     "categories": [
+      "JavaScript libraries"
+     ],
+     "confidence": 100
+    },
+    {
+     "name": "jQuery CDN",
+     "categories": [
+      "CDN"
+     ],
+     "confidence": 100
+    },
+    {
+     "name": "jQuery UI",
+     "categories": [
+      "JavaScript libraries"
+     ],
+     "confidence": 100
+    }
+   ],
+   "infrastructure": {
+    "ips": [
+     {
+      "ip": "104.16.62.16",
+      "role": "primary",
+      "asn": "13335",
+      "asn_name": "Cloudflare",
+      "country": "US",
+      "requests": 8,
+      "domains": [
+       "get.teamviewer.com"
+      ],
+      "ptr": null
+     },
+     {
+      "ip": "87.190.244.23",
+      "role": "redirect_hop",
+      "asn": "3320",
+      "asn_name": "DTAG Deutsche Telekom AG",
+      "country": "DE",
+      "requests": 1,
+      "domains": [
+       "quicksupport.fom.de"
+      ],
+      "ptr": null
+     },
+     {
+      "ip": "20.50.2.60",
+      "role": "same_site",
+      "asn": "8075",
+      "asn_name": "Microsoft Corporation",
+      "country": "NL",
+      "requests": 1,
+      "domains": [
+       "customdesignservice.teamviewer.com"
+      ],
+      "ptr": null
+     },
+     {
+      "ip": "151.101.193.155",
+      "role": "third_party",
+      "asn": "54113",
+      "asn_name": "Fastly",
+      "country": "US",
+      "requests": 3,
+      "domains": [
+       "code.jquery.com"
+      ],
+      "ptr": null
+     }
+    ],
+    "domains": [
+     {
+      "domain": "get.teamviewer.com",
+      "role": "primary",
+      "requests": 8,
+      "ips": [
+       "104.16.62.16"
+      ]
+     },
+     {
+      "domain": "quicksupport.fom.de",
+      "role": "redirect_hop",
+      "requests": 1,
+      "ips": [
+       "87.190.244.23"
+      ]
+     },
+     {
+      "domain": "customdesignservice.teamviewer.com",
+      "role": "same_site",
+      "requests": 1,
+      "ips": [
+       "20.50.2.60"
+      ]
+     },
+     {
+      "domain": "code.jquery.com",
+      "role": "third_party",
+      "requests": 3,
+      "ips": [
+       "151.101.193.155"
+      ]
+     }
+    ],
+    "linked_not_contacted_domains": [
+     "www.teamviewer.com"
+    ]
+   },
+   "response_hashes": {
+    "total": 11,
+    "sample": [
+     {
+      "sha256": "64434a98d1bd07a1476fdfa60c28e2460ef6e5776b46fcf94e9a4f3bf5548af7",
+      "context": "primary_response_body",
+      "resource_type": "Document",
+      "http_status": 200,
+      "mime_type": "text/html",
+      "size": 10244,
+      "url": "https://get.teamviewer.com/bcw-gruppe"
+     },
+     {
+      "sha256": "9528ca634fecad433d044ddd3e6f9ce1f068d5d932dafdbb19d8e6daea1968bd",
+      "context": "resource_response_body",
+      "resource_type": "Script",
+      "http_status": 200,
+      "mime_type": "application/javascript",
+      "size": 255082,
+      "url": "https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"
+     },
+     {
+      "sha256": "9e6f88a0e72d6a6374406ba80280cbca99e6257e5746bef21ded5d0ef9a9e0f5",
+      "context": "resource_response_body",
+      "resource_type": "Other",
+      "http_status": 200,
+      "mime_type": "image/x-icon",
+      "size": 186944,
+      "url": "https://get.teamviewer.com/favicon.ico?v=638302021779058096"
+     },
+     {
+      "sha256": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+      "context": "resource_response_body",
+      "resource_type": "Script",
+      "http_status": 200,
+      "mime_type": "application/javascript",
+      "size": 87533,
+      "url": "https://code.jquery.com/jquery-3.7.1.min.js"
+     },
+     {
+      "sha256": "c8c2157918c9fed0bb9dcc56c96b52dc7af70b05ca0228e467eaf91777751ad7",
+      "context": "resource_response_body",
+      "resource_type": "Stylesheet",
+      "http_status": 200,
+      "mime_type": "text/css",
+      "size": 36099,
+      "url": "https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css"
+     }
+    ]
+   },
+   "downloads": [
+    {
+     "filename": "TeamViewerQS.tar.gz",
+     "file_size": 35308469,
+     "state": "inProgress",
+     "url": "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=%5BREDACTED%5D&se=%5BREDACTED%5D&sr=%5BREDACTED%5D&sp=%5BREDACTED%5D&sig=%5BREDACTED%5D",
+     "sha256": null
+    }
+   ],
+   "related_observables": [
+    {
+     "type": "url",
+     "value": "https://get.teamviewer.com/bcw-gruppe",
+     "relationship": "final_url",
+     "origin": "page.url"
+    },
+    {
+     "type": "ip",
+     "value": "104.16.62.16",
+     "relationship": "primary_page_ip",
+     "origin": "page.ip"
+    },
+    {
+     "type": "domain",
+     "value": "get.teamviewer.com",
+     "relationship": "redirect_destination",
+     "origin": "page.domain"
+    },
+    {
+     "type": "domain",
+     "value": "quicksupport.fom.de",
+     "relationship": "redirect_hop",
+     "origin": "data.redirects"
+    },
+    {
+     "type": "sha256",
+     "value": "64434a98d1bd07a1476fdfa60c28e2460ef6e5776b46fcf94e9a4f3bf5548af7",
+     "relationship": "primary_response_body",
+     "origin": "data.requests[].response.hash",
+     "note": "Document · HTTP 200 · text/html"
+    },
+    {
+     "type": "sha256",
+     "value": "9528ca634fecad433d044ddd3e6f9ce1f068d5d932dafdbb19d8e6daea1968bd",
+     "relationship": "resource_response_body",
+     "origin": "data.requests[].response.hash",
+     "note": "Script · HTTP 200 · application/javascript"
+    },
+    {
+     "type": "sha256",
+     "value": "9e6f88a0e72d6a6374406ba80280cbca99e6257e5746bef21ded5d0ef9a9e0f5",
+     "relationship": "resource_response_body",
+     "origin": "data.requests[].response.hash",
+     "note": "Other · HTTP 200 · image/x-icon"
+    },
+    {
+     "type": "sha256",
+     "value": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+     "relationship": "resource_response_body",
+     "origin": "data.requests[].response.hash",
+     "note": "Script · HTTP 200 · application/javascript"
+    },
+    {
+     "type": "sha256",
+     "value": "c8c2157918c9fed0bb9dcc56c96b52dc7af70b05ca0228e467eaf91777751ad7",
+     "relationship": "resource_response_body",
+     "origin": "data.requests[].response.hash",
+     "note": "Stylesheet · HTTP 200 · text/css"
+    },
+    {
+     "type": "filename",
+     "value": "TeamViewerQS.tar.gz",
+     "relationship": "download_attempt",
+     "origin": "meta.processors.download",
+     "note": "inProgress · 35308469 bytes"
+    },
+    {
+     "type": "ip",
+     "value": "87.190.244.23",
+     "relationship": "contacted_ip",
+     "origin": "stats.ipStats",
+     "role": "redirect_hop"
+    },
+    {
+     "type": "ip",
+     "value": "20.50.2.60",
+     "relationship": "contacted_ip",
+     "origin": "stats.ipStats",
+     "role": "same_site"
+    },
+    {
+     "type": "ip",
+     "value": "151.101.193.155",
+     "relationship": "contacted_ip",
+     "origin": "stats.ipStats",
+     "role": "third_party"
+    },
+    {
+     "type": "domain",
+     "value": "customdesignservice.teamviewer.com",
+     "relationship": "contacted_domain",
+     "origin": "stats.domainStats",
+     "role": "same_site"
+    },
+    {
+     "type": "domain",
+     "value": "code.jquery.com",
+     "relationship": "contacted_domain",
+     "origin": "stats.domainStats",
+     "role": "third_party"
+    },
+    {
+     "type": "domain",
+     "value": "www.teamviewer.com",
+     "relationship": "linked_not_contacted",
+     "origin": "lists.linkDomains"
+    }
+   ],
+   "observations": [
+    {
+     "code": "off_domain_redirect",
+     "level": "info",
+     "label": "Redirected to a different domain",
+     "detail": "Scanned content came from get.teamviewer.com; page facts and the verdict describe the destination, not only the submitted URL."
+    },
+    {
+     "code": "unclassified",
+     "level": "info",
+     "label": "No urlscan classification",
+     "detail": "Neither urlscan nor the community classified this scan. A score of 0 means no verdict signal — it is not a benign or safe verdict."
+    },
+    {
+     "code": "download_attempt",
+     "level": "caution",
+     "label": "Page triggered 1 file download",
+     "detail": "Download metadata only — files were not retrieved by TalonHound."
+    }
+   ]
+  }
+ ],
+ "primary_scan_id": "01a125b1-19c1-7295-bb46-2577148b105d",
+ "classification": {
+  "state": "unclassified",
+  "label": "Unclassified",
+  "score": 0,
+  "categories": [],
+  "brands": []
+ },
+ "observations": [
+  {
+   "code": "off_domain_redirect",
+   "level": "info",
+   "label": "Redirected to a different domain",
+   "detail": "Scanned content came from get.teamviewer.com; page facts and the verdict describe the destination, not only the submitted URL."
+  },
+  {
+   "code": "unclassified",
+   "level": "info",
+   "label": "No urlscan classification",
+   "detail": "Neither urlscan nor the community classified this scan. A score of 0 means no verdict signal — it is not a benign or safe verdict."
+  },
+  {
+   "code": "download_attempt",
+   "level": "caution",
+   "label": "Page triggered 1 file download",
+   "detail": "Download metadata only — files were not retrieved by TalonHound."
+  }
+ ],
+ "history": {
+  "compared_scans": 1,
+  "sample_size": 3,
+  "total_reported": 10000,
+  "primary_ips": [
+   {
+    "value": "104.16.62.16",
+    "count": 1,
+    "first_seen": "2026-10-10T12:02:12.397Z",
+    "last_seen": "2026-10-10T12:02:12.397Z"
+   }
+  ],
+  "asns": [
+   {
+    "value": "AS13335",
+    "count": 1,
+    "first_seen": "2026-10-10T12:02:12.397Z",
+    "last_seen": "2026-10-10T12:02:12.397Z"
+   }
+  ],
+  "titles": [
+   {
+    "value": "TeamViewer",
+    "count": 1,
+    "first_seen": "2026-10-10T12:02:12.397Z",
+    "last_seen": "2026-10-10T12:02:12.397Z"
+   }
+  ],
+  "statuses": [
+   {
+    "value": "200",
+    "count": 1,
+    "first_seen": "2026-10-10T12:02:12.397Z",
+    "last_seen": "2026-10-10T12:02:12.397Z"
+   }
+  ],
+  "effective_domains": [
+   {
+    "value": "get.teamviewer.com",
+    "count": 1,
+    "first_seen": "2026-10-10T12:02:12.397Z",
+    "last_seen": "2026-10-10T12:02:12.397Z"
+   }
+  ],
+  "tls_issuers": [
+   {
+    "value": "Sectigo Public Server Authentication CA DV R36",
+    "count": 1,
+    "first_seen": "2026-10-10T12:02:12.397Z",
+    "last_seen": "2026-10-10T12:02:12.397Z"
+   }
+  ],
+  "changed": {
+   "primary_ip": false,
+   "asn": false,
+   "title": false,
+   "status": false,
+   "effective_domain": false,
+   "tls_issuer": false
+  }
+ },
+ "fetched_at": "2026-10-10T12:00:00.000Z",
+ "search_date_limit_days": 90
+}

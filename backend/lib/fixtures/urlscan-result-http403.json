@@ -1,0 +1,475 @@
+{
+ "data": {
+  "requests": [
+   {
+    "request": {
+     "requestId": "B53ADC6E0E96867B186651C591AFA745",
+     "loaderId": "B53ADC6E0E96867B186651C591AFA745",
+     "documentURL": "https://video-remb-annulfr.com/?r=prime/",
+     "request": {
+      "url": "https://video-remb-annulfr.com/?r=prime/",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "VeryHigh",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 6291467.580106,
+     "wallTime": 1791631831.222699,
+     "redirectHasExtraInfo": false,
+     "type": "Document",
+     "frameId": "277ABCD76BAB4ABB50810C7FCCB711A1",
+     "hasUserGesture": false,
+     "primaryRequest": true
+    },
+    "response": {
+     "encodedDataLength": 473,
+     "dataLength": 272,
+     "requestId": "B53ADC6E0E96867B186651C591AFA745",
+     "type": "Document",
+     "response": {
+      "url": "https://video-remb-annulfr.com/?r=prime/",
+      "status": 403,
+      "statusText": "Forbidden",
+      "mimeType": "text/html",
+      "charset": "iso-8859-1",
+      "remoteIPAddress": "45.74.61.10",
+      "remotePort": 443,
+      "encodedDataLength": 201,
+      "responseTime": 1791631832510.857,
+      "protocol": "http/1.1",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "insecure",
+      "securityDetails": {
+       "protocol": "TLS 1.3",
+       "keyExchange": "",
+       "keyExchangeGroup": "X25519",
+       "cipher": "AES_128_GCM",
+       "certificateId": 0,
+       "subjectName": "blackhole.invalid",
+       "sanList": [],
+       "issuer": "blackhole.invalid",
+       "validFrom": 1786964713,
+       "validTo": 2102324713,
+       "signedCertificateTimestampList": [],
+       "certificateTransparencyCompliance": "unknown",
+       "serverSignatureAlgorithm": 2052,
+       "encryptedClientHello": false
+      }
+     },
+     "hasExtraInfo": true,
+     "hash": "317123bb63824c1ec80c0dc9e19a4cfe02467432c055560b7dbb114414148909",
+     "size": 272
+    }
+   },
+   {
+    "request": {
+     "requestId": "168585.2",
+     "loaderId": "B53ADC6E0E96867B186651C591AFA745",
+     "documentURL": "https://video-remb-annulfr.com/?r=prime/",
+     "request": {
+      "url": "https://video-remb-annulfr.com/favicon.ico",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "High",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 6291468.891124,
+     "wallTime": 1791631832.533876,
+     "redirectHasExtraInfo": false,
+     "type": "Other",
+     "frameId": "277ABCD76BAB4ABB50810C7FCCB711A1",
+     "hasUserGesture": false
+    },
+    "response": {
+     "encodedDataLength": 472,
+     "dataLength": 272,
+     "requestId": "168585.2",
+     "type": "Other",
+     "response": {
+      "url": "https://video-remb-annulfr.com/favicon.ico",
+      "status": 403,
+      "statusText": "Forbidden",
+      "mimeType": "text/html",
+      "charset": "iso-8859-1",
+      "remoteIPAddress": "45.74.61.10",
+      "remotePort": 443,
+      "encodedDataLength": 200,
+      "responseTime": 1791631832683.045,
+      "protocol": "http/1.1",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "insecure"
+     },
+     "hasExtraInfo": true,
+     "hash": "317123bb63824c1ec80c0dc9e19a4cfe02467432c055560b7dbb114414148909",
+     "size": 272
+    }
+   }
+  ],
+  "cookies": [
+   {
+    "name": "fixture_session",
+    "value": "FAKE-COOKIE-VALUE-should-never-be-stored",
+    "domain": "example.invalid"
+   }
+  ],
+  "console": [
+   {
+    "message": {
+     "source": "network",
+     "level": "error",
+     "text": "Failed to load resource: the server responded with a status of 403 (Forbidden)",
+     "timestamp": 1791631832516.949,
+     "url": "https://video-remb-annulfr.com/?r=prime/"
+    }
+   },
+   {
+    "message": {
+     "source": "network",
+     "level": "error",
+     "text": "Failed to load resource: the server responded with a status of 403 (Forbidden)",
+     "timestamp": 1791631832685.178,
+     "url": "https://video-remb-annulfr.com/favicon.ico"
+    }
+   }
+  ],
+  "links": [],
+  "timing": {
+   "beginNavigation": "2026-10-10T11:30:31.218Z",
+   "frameStartedLoading": "2026-10-10T11:30:31.222Z",
+   "frameNavigated": "2026-10-10T11:30:32.517Z",
+   "domContentEventFired": "2026-10-10T11:30:32.527Z",
+   "frameStoppedLoading": "2026-10-10T11:30:32.533Z"
+  },
+  "globals": [],
+  "storages": [],
+  "websockets": [],
+  "clipboard": [],
+  "redirects": [],
+  "identifiers": []
+ },
+ "labels": [],
+ "lists": {
+  "ips": [
+   "45.74.61.10"
+  ],
+  "countries": [
+   "US"
+  ],
+  "asns": [
+   "205397"
+  ],
+  "domains": [
+   "video-remb-annulfr.com"
+  ],
+  "servers": [
+   "Apache"
+  ],
+  "urls": [
+   "https://video-remb-annulfr.com/?r=prime/",
+   "https://video-remb-annulfr.com/favicon.ico"
+  ],
+  "linkDomains": [],
+  "certificates": [
+   {
+    "subjectName": "blackhole.invalid",
+    "issuer": "blackhole.invalid",
+    "validFrom": 1786964713,
+    "validTo": 2102324713
+   }
+  ],
+  "hashes": [
+   "317123bb63824c1ec80c0dc9e19a4cfe02467432c055560b7dbb114414148909"
+  ]
+ },
+ "meta": {
+  "processors": {
+   "umbrella": {
+    "data": []
+   },
+   "geoip": {
+    "data": [
+     {
+      "ip": "45.74.61.10",
+      "geoip": {
+       "country": "US",
+       "region": "",
+       "timezone": "America/Chicago",
+       "city": "",
+       "ll": [
+        37.751,
+        -97.822
+       ],
+       "country_name": "United States",
+       "metro": 0
+      }
+     }
+    ]
+   },
+   "asn": {
+    "data": [
+     {
+      "ip": "45.74.61.10",
+      "asn": "205397",
+      "country": "US",
+      "description": "AS-69HOST 69HOST LLC, US",
+      "name": "AS-69HOST 69HOST LLC",
+      "route": "45.74.61.0/24"
+     }
+    ]
+   },
+   "rdns": {
+    "data": []
+   },
+   "wappa": {
+    "data": []
+   }
+  }
+ },
+ "page": {
+  "asn": "AS205397",
+  "asnname": "AS-69HOST 69HOST LLC, US",
+  "city": "",
+  "country": "US",
+  "domain": "video-remb-annulfr.com",
+  "ip": "45.74.61.10",
+  "server": "Apache",
+  "url": "https://video-remb-annulfr.com/?r=prime/",
+  "apexDomainAgeDays": 0,
+  "language": "en",
+  "mimeType": "text/html",
+  "title": "403 Forbidden",
+  "tlsValidDays": 3650,
+  "tlsAgeDays": 54,
+  "domainAgeDays": 0,
+  "tlsValidFrom": "2026-08-17T11:05:13.000Z",
+  "apexDomain": "video-remb-annulfr.com",
+  "tlsIssuer": "blackhole.invalid",
+  "status": "403"
+ },
+ "scanner": {
+  "country": "us"
+ },
+ "stats": {
+  "IPv6Percentage": 0,
+  "adBlocked": 0,
+  "domainStats": [
+   {
+    "count": 2,
+    "ips": [
+     "45.74.61.10"
+    ],
+    "domain": "video-remb-annulfr.com",
+    "size": 544,
+    "encodedSize": 945,
+    "countries": [
+     "US"
+    ],
+    "index": 0,
+    "initiators": [],
+    "redirects": 0
+   }
+  ],
+  "ipStats": [
+   {
+    "requests": 2,
+    "domains": [
+     "video-remb-annulfr.com"
+    ],
+    "ip": "45.74.61.10",
+    "asn": {
+     "ip": "45.74.61.10",
+     "asn": "205397",
+     "country": "US",
+     "description": "AS-69HOST 69HOST LLC, US",
+     "name": "AS-69HOST 69HOST LLC",
+     "route": "45.74.61.0/24"
+    },
+    "dns": {},
+    "geoip": {
+     "country": "US",
+     "region": "",
+     "timezone": "America/Chicago",
+     "city": "",
+     "ll": [
+      37.751,
+      -97.822
+     ],
+     "country_name": "United States",
+     "metro": 0
+    },
+    "size": 544,
+    "encodedSize": 945,
+    "countries": [
+     "US"
+    ],
+    "index": 0,
+    "ipv6": false,
+    "redirects": 0,
+    "count": null
+   }
+  ],
+  "malicious": 0,
+  "protocolStats": [
+   {
+    "count": 2,
+    "size": 544,
+    "encodedSize": 945,
+    "ips": [
+     "45.74.61.10"
+    ],
+    "countries": [
+     "US"
+    ],
+    "securityState": {},
+    "protocol": "http/1.1"
+   }
+  ],
+  "regDomainStats": [
+   {
+    "count": 2,
+    "ips": [
+     "45.74.61.10"
+    ],
+    "regDomain": "video-remb-annulfr.com",
+    "size": 544,
+    "encodedSize": 945,
+    "countries": [],
+    "index": 0,
+    "subDomains": [
+     {
+      "domain": "",
+      "country": "US"
+     }
+    ],
+    "redirects": 0
+   }
+  ],
+  "resourceStats": [
+   {
+    "count": 1,
+    "size": 272,
+    "encodedSize": 472,
+    "latency": 0,
+    "countries": [
+     "US"
+    ],
+    "ips": [
+     "45.74.61.10"
+    ],
+    "type": "Other",
+    "compression": "0.6",
+    "percentage": 50
+   },
+   {
+    "count": 1,
+    "size": 272,
+    "encodedSize": 473,
+    "latency": 0,
+    "countries": [
+     "US"
+    ],
+    "ips": [
+     "45.74.61.10"
+    ],
+    "type": "Document",
+    "compression": "0.6",
+    "percentage": 50
+   }
+  ],
+  "securePercentage": 0,
+  "secureRequests": 0,
+  "serverStats": [
+   {
+    "count": 2,
+    "size": 544,
+    "encodedSize": 945,
+    "ips": [
+     "45.74.61.10"
+    ],
+    "countries": [
+     "US"
+    ],
+    "server": "Apache"
+   }
+  ],
+  "tlsStats": [
+   {
+    "count": 2,
+    "size": 544,
+    "encodedSize": 945,
+    "ips": [
+     "45.74.61.10"
+    ],
+    "countries": [
+     "US"
+    ],
+    "protocols": {},
+    "securityState": "insecure"
+   }
+  ],
+  "totalLinks": 0,
+  "uniqCountries": 1
+ },
+ "submitter": {
+  "country": "US"
+ },
+ "task": {
+  "method": "api",
+  "source": "c4ff3feb",
+  "tags": [],
+  "time": "2026-10-10T11:30:37.899Z",
+  "url": "https://video-remb-annulfr.com/?r=prime/",
+  "uuid": "01a12594-300b-76cc-b97f-3b9e154c93fc",
+  "visibility": "public",
+  "reportURL": "https://urlscan.io/result/01a12594-300b-76cc-b97f-3b9e154c93fc/",
+  "screenshotURL": "https://urlscan.io/screenshots/01a12594-300b-76cc-b97f-3b9e154c93fc.png",
+  "domURL": "https://urlscan.io/dom/01a12594-300b-76cc-b97f-3b9e154c93fc/",
+  "domain": "video-remb-annulfr.com",
+  "apexDomain": "video-remb-annulfr.com"
+ },
+ "verdicts": {
+  "overall": {
+   "score": 0,
+   "categories": [],
+   "brands": [],
+   "tags": [],
+   "malicious": false,
+   "hasVerdicts": true
+  },
+  "urlscan": {
+   "score": 0,
+   "categories": [],
+   "brands": [],
+   "tags": [],
+   "malicious": false,
+   "hasVerdicts": false
+  },
+  "engines": {
+   "score": 60,
+   "malicious": true,
+   "categories": [],
+   "enginesTotal": 0,
+   "maliciousTotal": 0,
+   "benignTotal": 0,
+   "maliciousVerdicts": [],
+   "benignVerdicts": [],
+   "hasVerdicts": true,
+   "tags": [
+    "urlscan-ml",
+    "urlscan-ml-60c5e22"
+   ]
+  },
+  "community": {
+   "score": 0,
+   "categories": [],
+   "brands": [],
+   "votesTotal": 0,
+   "votesMalicious": 0,
+   "votesBenign": 0,
+   "malicious": false,
+   "hasVerdicts": false
+  }
+ }
+}

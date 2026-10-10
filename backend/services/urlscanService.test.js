@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   isCacheFresh,
   enrichIocWithUrlscan,
-  getUrlscanConfig
+  getUrlscanConfig,
+  rowToApiPayload
 } from './urlscanService.js';
 import { URLSCAN_ASSESSMENT, validateUrlscanRequest } from '../lib/urlscanEnrichment.js';
 
@@ -250,4 +252,128 @@ test('429 is stored as rate_limited', async () => {
   });
   assert.equal(result.provider_status, 'rate_limited');
   assert.equal(result.assessment, URLSCAN_ASSESSMENT.RATE_LIMITED);
+});
+
+const http403Result = JSON.parse(readFileSync(new URL('../lib/fixtures/urlscan-result-http403.json', import.meta.url), 'utf8'));
+const SCAN_403 = '01a12594-300b-76cc-b97f-3b9e154c93fc';
+const IOC_403 = 'https://video-remb-annulfr.com/?r=prime/';
+
+// Search hit exactly as returned on a non-Pro plan: no verdicts in search results.
+const http403SearchHit = {
+  task: { visibility: 'public', method: 'api', domain: 'video-remb-annulfr.com', apexDomain: 'video-remb-annulfr.com', time: '2026-10-10T11:30:37.899Z', uuid: SCAN_403, url: IOC_403 },
+  stats: { uniqIPs: 1, uniqCountries: 1, dataLength: 544, encodedDataLength: 945, requests: 2 },
+  page: {
+    country: 'US', server: 'Apache', ip: '45.74.61.10', mimeType: 'text/html', title: '403 Forbidden', url: IOC_403,
+    tlsValidDays: 3650, tlsAgeDays: 54, tlsValidFrom: '2026-08-17T11:05:13.000Z', domain: 'video-remb-annulfr.com',
+    apexDomain: 'video-remb-annulfr.com', asnname: 'AS-69HOST 69HOST LLC, US', asn: 'AS205397', tlsIssuer: 'blackhole.invalid', status: '403'
+  },
+  _id: SCAN_403,
+  sort: [1791631837899, SCAN_403]
+};
+
+function recordingFetch(routes) {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), method: init.method });
+    assert.equal(init.method, 'GET');
+    assert.equal(validateUrlscanRequest(init.method, url).ok, true);
+    assert.doesNotMatch(String(url), /\/api\/v1\/scan/);
+    for (const [re, body] of routes) {
+      if (re.test(String(url))) return jsonResponse(typeof body === 'function' ? body(String(url)) : body);
+    }
+    throw new Error(`unexpected url ${url}`);
+  };
+  return { calls, fetchImpl };
+}
+
+test('target 403 scan end-to-end: unclassified + limited visibility, engine signal is insufficient evidence, 1 search + 1 result', async () => {
+  let stored;
+  const pool = mockPool({ onUpsert: (row) => { stored = row; } });
+  const { calls, fetchImpl } = recordingFetch([
+    [/\/api\/v1\/search/, { results: [http403SearchHit], total: 1, has_more: false, search_date_limit_days: 90 }],
+    [/\/api\/v1\/result\//, http403Result]
+  ]);
+  const result = await enrichIocWithUrlscan(pool, { iocId: 3606863, iocValue: IOC_403, iocType: 'url', fetchImpl });
+  assert.equal(calls.length, 2);
+  assert.equal(calls.filter((c) => /\/search/.test(c.url)).length, 1);
+  assert.equal(calls.filter((c) => /\/result\//.test(c.url)).length, 1);
+
+  const s = stored.normalized_summary;
+  assert.equal(s.summary_version, 2);
+  assert.equal(s.primary_scan_id, SCAN_403);
+  assert.equal(s.classification.state, 'unclassified');
+  assert.equal(s.classification.label, 'Unclassified');
+  assert.ok(s.observations.some((o) => o.label === 'Limited page visibility — HTTP 403 Forbidden'));
+  assert.ok(s.observations.some((o) => o.code === 'engine_signal_conflict'));
+  // The overall verdict is not malicious; the ML engine flag is a signal, not "no malicious evidence".
+  assert.equal(s.scans[0].malicious, false);
+  assert.equal(s.scans[0].engine_malicious, true);
+  assert.equal(s.scans[0].page_status, '403');
+  assert.equal(s.malicious_scan_count, 0);
+  assert.equal(result.assessment, URLSCAN_ASSESSMENT.INSUFFICIENT_EVIDENCE);
+  assert.equal(s.is_authoritative_verdict, false);
+  assert.equal(s.history.compared_scans, 1);
+  assert.equal(s.history.changed.primary_ip, false);
+  assert.ok(JSON.stringify(s).length < 32 * 1024, 'stored summary stays bounded');
+  assert.doesNotMatch(JSON.stringify(stored), /test-key-12345/, 'API key never persisted');
+});
+
+test('Result API overall.malicious marks the scan malicious (search hit had no verdicts)', async () => {
+  const uuid = '44444444-4444-4444-8444-444444444444';
+  const pool = mockPool();
+  const { fetchImpl } = recordingFetch([
+    [/\/api\/v1\/search/, { total: 1, results: [{ _id: uuid, task: { uuid, url: 'https://phish.example/login', time: '2026-10-01T00:00:00.000Z' }, page: { url: 'https://phish.example/login', domain: 'phish.example', ip: '203.0.113.5', status: '200' } }] }],
+    [/\/api\/v1\/result\//, {
+      task: { uuid, url: 'https://phish.example/login', time: '2026-10-01T00:00:00.000Z' },
+      page: { url: 'https://phish.example/login', domain: 'phish.example', ip: '203.0.113.5', status: '200', title: 'Sign in' },
+      verdicts: {
+        overall: { score: 100, categories: ['phishing'], brands: [{ key: 'msft', name: 'Microsoft' }], malicious: true, hasVerdicts: true },
+        urlscan: { score: 100, categories: ['phishing'], malicious: true, hasVerdicts: true },
+        engines: { score: 0, malicious: false, hasVerdicts: false },
+        community: { score: 0, malicious: false, hasVerdicts: false }
+      }
+    }]
+  ]);
+  const result = await enrichIocWithUrlscan(pool, { iocId: 5, iocValue: 'https://phish.example/login', iocType: 'url', fetchImpl });
+  assert.equal(result.assessment, URLSCAN_ASSESSMENT.MALICIOUS_EVIDENCE);
+  const s = result.row.normalized_summary;
+  assert.equal(s.scans[0].malicious, true);
+  assert.equal(s.scans[0].urlscan_score, 100);
+  assert.deepEqual(s.scans[0].categories, ['phishing']);
+  assert.equal(s.classification.state, 'malicious');
+  assert.deepEqual(s.classification.brands, ['Microsoft']);
+});
+
+test('Result API detail fetches stay bounded by detail_limit (no N+1 over the search sample)', async () => {
+  const pool = mockPool();
+  const ids = Array.from({ length: 10 }, (_, i) => `55555555-5555-4555-8555-${String(i).padStart(12, '0')}`);
+  const { calls, fetchImpl } = recordingFetch([
+    [/\/api\/v1\/search/, { total: 10, results: ids.map((id, i) => ({ _id: id, task: { uuid: id, url: 'https://many.example/', time: `2026-10-0${(i % 9) + 1}T00:00:00.000Z` }, page: { url: 'https://many.example/', domain: 'many.example', ip: '203.0.113.9' } })) }],
+    [/\/api\/v1\/result\//, (url) => ({ task: { uuid: url.match(/result\/([^/]+)/)[1], url: 'https://many.example/' }, page: { url: 'https://many.example/' } })]
+  ]);
+  const result = await enrichIocWithUrlscan(pool, { iocId: 6, iocValue: 'https://many.example/', iocType: 'url', fetchImpl });
+  // configRow detail_limit = 2
+  assert.equal(calls.filter((c) => /\/result\//.test(c.url)).length, 2);
+  assert.equal(calls.length, 3);
+  assert.equal(result.row.normalized_summary.history.compared_scans, 10);
+});
+
+test('legacy v1 cached rows are served unchanged (no forced refresh, no crash)', () => {
+  const legacy = {
+    ioc_id: 1,
+    ioc_value: IOC_403,
+    ioc_type: 'url',
+    status: 'success',
+    normalized_summary: {
+      evidence_assessment: 'no_malicious_evidence',
+      evidence_assessment_label: 'No malicious evidence observed',
+      scans: [{ scan_id: SCAN_403, page_title: '403 Forbidden', malicious: false }],
+      detail_scans: [{ scan_id: SCAN_403, page_status: '403', overall_malicious: false }]
+    },
+    fetched_at: '2026-10-10T11:43:09.743Z'
+  };
+  const payload = rowToApiPayload(legacy, { cached: true, iocId: 1 });
+  assert.equal(payload.summary.summary_version, undefined);
+  assert.equal(payload.summary.detail_scans[0].page_status, '403');
+  assert.equal(payload.is_authoritative_verdict, false);
 });

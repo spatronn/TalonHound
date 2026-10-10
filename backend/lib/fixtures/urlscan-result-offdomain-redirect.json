@@ -1,0 +1,1808 @@
+{
+ "data": {
+  "requests": [
+   {
+    "request": {
+     "requestId": "583DCA53E20CC244404ABA470271365A",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/bcw-gruppe",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "VeryHigh",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765899.794285,
+     "wallTime": 1791633726.491053,
+     "redirectHasExtraInfo": true,
+     "redirectResponse": {
+      "url": "https://quicksupport.fom.de/",
+      "status": 301,
+      "statusText": "",
+      "mimeType": "text/html",
+      "charset": "",
+      "remoteIPAddress": "87.190.244.23",
+      "remotePort": 443,
+      "encodedDataLength": 271,
+      "responseTime": 1791633726472.299,
+      "protocol": "h2",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "secure"
+     },
+     "type": "Document",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "primaryRequest": true
+    },
+    "requests": [
+     {
+      "requestId": "583DCA53E20CC244404ABA470271365A",
+      "loaderId": "583DCA53E20CC244404ABA470271365A",
+      "documentURL": "https://quicksupport.fom.de/",
+      "request": {
+       "url": "https://quicksupport.fom.de/",
+       "method": "GET",
+       "mixedContentType": "none",
+       "initialPriority": "VeryHigh",
+       "referrerPolicy": "strict-origin-when-cross-origin",
+       "isSameSite": true
+      },
+      "timestamp": 58765899.64042,
+      "wallTime": 1791633726.337171,
+      "redirectHasExtraInfo": false,
+      "type": "Document",
+      "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+      "hasUserGesture": false
+     },
+     {
+      "requestId": "583DCA53E20CC244404ABA470271365A",
+      "loaderId": "583DCA53E20CC244404ABA470271365A",
+      "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+      "request": {
+       "url": "https://get.teamviewer.com/bcw-gruppe",
+       "method": "GET",
+       "mixedContentType": "none",
+       "initialPriority": "VeryHigh",
+       "referrerPolicy": "strict-origin-when-cross-origin",
+       "isSameSite": true
+      },
+      "timestamp": 58765899.794285,
+      "wallTime": 1791633726.491053,
+      "redirectHasExtraInfo": true,
+      "redirectResponse": {
+       "url": "https://quicksupport.fom.de/",
+       "status": 301,
+       "statusText": "",
+       "mimeType": "text/html",
+       "charset": "",
+       "remoteIPAddress": "87.190.244.23",
+       "remotePort": 443,
+       "encodedDataLength": 271,
+       "responseTime": 1791633726472.299,
+       "protocol": "h2",
+       "alternateProtocolUsage": "unspecifiedReason",
+       "securityState": "secure",
+       "asn": {
+        "ip": "87.190.244.23",
+        "asn": "3320",
+        "country": "DE",
+        "description": "DTAG Deutsche Telekom AG, DE",
+        "name": "DTAG Deutsche Telekom AG",
+        "route": "87.128.0.0/10"
+       },
+       "geoip": {
+        "country": "DE",
+        "region": "BW",
+        "timezone": "Europe/Berlin",
+        "city": "Eislingen",
+        "ll": [
+         48.6953,
+         9.7079
+        ],
+        "country_name": "Germany",
+        "metro": 0
+       }
+      },
+      "type": "Document",
+      "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+      "hasUserGesture": false
+     }
+    ],
+    "response": {
+     "encodedDataLength": 5082,
+     "dataLength": 10334,
+     "requestId": "583DCA53E20CC244404ABA470271365A",
+     "type": "Document",
+     "response": {
+      "url": "https://get.teamviewer.com/bcw-gruppe",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "text/html",
+      "charset": "utf-8",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 3701,
+      "responseTime": 1791633726929.495,
+      "protocol": "h2",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "secure",
+      "securityDetails": {
+       "protocol": "TLS 1.3",
+       "keyExchange": "",
+       "keyExchangeGroup": "X25519MLKEM768",
+       "cipher": "AES_128_GCM",
+       "certificateId": 0,
+       "subjectName": "*.teamviewer.com",
+       "sanList": [
+        "*.teamviewer.com",
+        "teamviewer.com"
+       ],
+       "issuer": "Sectigo Public Server Authentication CA DV R36",
+       "validFrom": 1790899200,
+       "validTo": 1808092799,
+       "signedCertificateTimestampList": [
+        {
+         "status": "Verified",
+         "origin": "Embedded in certificate",
+         "logDescription": "Google 'Argon2027h1'",
+         "logId": "D6D58DA9D01753F36A4AA0C7574902AFEBC7DC2CD38CD9F764C80C89191E9F02",
+         "timestamp": 1790938815055,
+         "hashAlgorithm": "SHA-256",
+         "signatureAlgorithm": "ECDSA",
+         "signatureData": "3045022100FC04F966CD987334641B8895B250310E7209CCAD31AE49A0C1938C11798A53A402207D4E16E636648705C9A2F46F07DB555C3E0A6E3540EFC9EA330237B66C9994A8"
+        },
+        {
+         "status": "Verified",
+         "origin": "Embedded in certificate",
+         "logDescription": "Sectigo 'Elephant2027h1'",
+         "logId": "604C9AAF7A7F775F01D406FC920DC899EB0B1C7DF8C9521BFAFA17773B978BC9",
+         "timestamp": 1790938815201,
+         "hashAlgorithm": "SHA-256",
+         "signatureAlgorithm": "ECDSA",
+         "signatureData": "3045022100C269C9F83A765C63AF694DC5C4675BF45F806D75905C4C8044F09904D3E7BD000220445492F01AA91F9117103F5F1A83406A66BA51D9E1D07219B2E8C1AA4BA5A7DC"
+        },
+        {
+         "status": "Verified",
+         "origin": "Embedded in certificate",
+         "logDescription": "IPng Networks 'Gouda2027h1'",
+         "logId": "1A8B9D6B8DD791D1CD0549EDB60355D606B64FAD30DB71FE788F0FC7C8FBC4B1",
+         "timestamp": 1790938815580,
+         "hashAlgorithm": "SHA-256",
+         "signatureAlgorithm": "ECDSA",
+         "signatureData": "3045022100FE7B3BACC28872ED368045CE50A1D63E3DABC2FBC21731B3ABF6E5E32BDD46D70220759E9784F99CBD6749C170A99B222B09A8A2AA570399B074A7268234DE345681"
+        }
+       ],
+       "certificateTransparencyCompliance": "compliant",
+       "serverSignatureAlgorithm": 2052,
+       "encryptedClientHello": false
+      },
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "64434a98d1bd07a1476fdfa60c28e2460ef6e5776b46fcf94e9a4f3bf5548af7",
+     "size": 10244
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.2",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/get/styles/stylesTv11.css?v=638720353736633204",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "VeryHigh",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.258923,
+     "wallTime": 1791633726.955702,
+     "redirectHasExtraInfo": false,
+     "type": "Stylesheet",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "renderBlockingBehavior": "Blocking"
+    },
+    "response": {
+     "encodedDataLength": 3605,
+     "dataLength": 15510,
+     "requestId": "1027907.2",
+     "type": "Stylesheet",
+     "response": {
+      "url": "https://get.teamviewer.com/get/styles/stylesTv11.css?v=638720353736633204",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "text/css",
+      "charset": "",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 1523,
+      "responseTime": 1791633727066.561,
+      "protocol": "h2",
+      "alternateProtocolUsage": "mainJobWonRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "e7d4cedaa3d53508e887cfc9ca05544eb07b3502bc5e33d7f011248216b6a7aa",
+     "size": 15510
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.3",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://code.jquery.com/jquery-3.7.1.min.js",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "High",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": false
+     },
+     "timestamp": 58765900.259166,
+     "wallTime": 1791633726.955915,
+     "redirectHasExtraInfo": false,
+     "type": "Script",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "renderBlockingBehavior": "Blocking"
+    },
+    "response": {
+     "encodedDataLength": 30708,
+     "dataLength": 87533,
+     "requestId": "1027907.3",
+     "type": "Script",
+     "response": {
+      "url": "https://code.jquery.com/jquery-3.7.1.min.js",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "application/javascript",
+      "charset": "utf-8",
+      "remoteIPAddress": "151.101.193.155",
+      "remotePort": 443,
+      "encodedDataLength": 354,
+      "responseTime": 1791633727006.186,
+      "protocol": "h2",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "secure"
+     },
+     "hasExtraInfo": true,
+     "hash": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+     "size": 87533
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.4",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "VeryHigh",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": false
+     },
+     "timestamp": 58765900.259213,
+     "wallTime": 1791633726.955959,
+     "redirectHasExtraInfo": false,
+     "type": "Stylesheet",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "renderBlockingBehavior": "Blocking"
+    },
+    "response": {
+     "encodedDataLength": 8491,
+     "dataLength": 36099,
+     "requestId": "1027907.4",
+     "type": "Stylesheet",
+     "response": {
+      "url": "https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "text/css",
+      "charset": "",
+      "remoteIPAddress": "151.101.193.155",
+      "remotePort": 443,
+      "encodedDataLength": 8491,
+      "responseTime": 1791633727020.003,
+      "protocol": "h2",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "secure"
+     },
+     "hasExtraInfo": true,
+     "hash": "c8c2157918c9fed0bb9dcc56c96b52dc7af70b05ca0228e467eaf91777751ad7",
+     "size": 36099
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.5",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://code.jquery.com/ui/1.13.2/jquery-ui.min.js",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "High",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": false
+     },
+     "timestamp": 58765900.259252,
+     "wallTime": 1791633726.956016,
+     "redirectHasExtraInfo": false,
+     "type": "Script",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "renderBlockingBehavior": "Blocking"
+    },
+    "response": {
+     "encodedDataLength": 67794,
+     "dataLength": 255084,
+     "requestId": "1027907.5",
+     "type": "Script",
+     "response": {
+      "url": "https://code.jquery.com/ui/1.13.2/jquery-ui.min.js",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "application/javascript",
+      "charset": "utf-8",
+      "remoteIPAddress": "151.101.193.155",
+      "remotePort": 443,
+      "encodedDataLength": 6890,
+      "responseTime": 1791633727006.369,
+      "protocol": "h2",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "secure"
+     },
+     "hasExtraInfo": true,
+     "hash": "9528ca634fecad433d044ddd3e6f9ce1f068d5d932dafdbb19d8e6daea1968bd",
+     "size": 255082
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.6",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/get/res/scripts/connect.js?v=638236211494850667",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "Low",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.259331,
+     "wallTime": 1791633726.956076,
+     "redirectHasExtraInfo": false,
+     "type": "Script",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "renderBlockingBehavior": "NonBlocking"
+    },
+    "response": {
+     "encodedDataLength": 1985,
+     "dataLength": 3032,
+     "requestId": "1027907.6",
+     "type": "Script",
+     "response": {
+      "url": "https://get.teamviewer.com/get/res/scripts/connect.js?v=638236211494850667",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "application/javascript",
+      "charset": "",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 782,
+      "responseTime": 1791633727152.33,
+      "protocol": "h3",
+      "alternateProtocolUsage": "alternativeJobWonWithoutRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "c4c2d06bad5c178d61124492d6c161da31b3f806f95f7bfebedce107c9b59172",
+     "size": 3030
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.7",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/common/logo/get.ashx?configID=58mkmfx&systemName=GetTeamviewerCom",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "Medium",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.259367,
+     "wallTime": 1791633726.956111,
+     "redirectHasExtraInfo": false,
+     "type": "Image",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false
+    },
+    "response": {
+     "encodedDataLength": 6721,
+     "dataLength": 6616,
+     "requestId": "1027907.7",
+     "type": "Image",
+     "response": {
+      "url": "https://get.teamviewer.com/common/logo/get.ashx?configID=58mkmfx&systemName=GetTeamviewerCom",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "image/png",
+      "charset": "",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 3648,
+      "responseTime": 1791633727064.818,
+      "protocol": "h2",
+      "alternateProtocolUsage": "mainJobWonRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "b3632a4e47cab10d50e8b2f01a8127b7f9294fff958c05803939e1cb787d0436",
+     "size": 8824
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.8",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/js/spin.min.js?v=504911232000000000",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "Low",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.259402,
+     "wallTime": 1791633726.95616,
+     "redirectHasExtraInfo": false,
+     "type": "Script",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false,
+     "renderBlockingBehavior": "NonBlocking"
+    },
+    "response": {
+     "encodedDataLength": 2837,
+     "dataLength": 4278,
+     "requestId": "1027907.8",
+     "type": "Script",
+     "response": {
+      "url": "https://get.teamviewer.com/js/spin.min.js?v=504911232000000000",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "application/javascript",
+      "charset": "",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 746,
+      "responseTime": 1791633727176.987,
+      "protocol": "h3",
+      "alternateProtocolUsage": "alternativeJobWonWithoutRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "b9f9a432b70cb46ac75cd0c112ef9b2e81fbb1a18c4a17fcbd459436bab3a2a7",
+     "size": 4278
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.16",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/get/styles/background_globe.jpg?v=638236211494910524",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "Low",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.393156,
+     "wallTime": 1791633727.089922,
+     "redirectHasExtraInfo": false,
+     "type": "Image",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false
+    },
+    "response": {
+     "encodedDataLength": 23447,
+     "dataLength": 22708,
+     "requestId": "1027907.16",
+     "type": "Image",
+     "response": {
+      "url": "https://get.teamviewer.com/get/styles/background_globe.jpg?v=638236211494910524",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "image/jpeg",
+      "charset": "",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 731,
+      "responseTime": 1791633727163.953,
+      "protocol": "h3",
+      "alternateProtocolUsage": "alternativeJobWonWithoutRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "632bf72cd454ca3bd75d2e7b082e9783b19ef863c54fe2deacd349e06dec8489",
+     "size": 30280
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.17",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/api/CustomDesign",
+      "method": "POST",
+      "postData": "{\"ConfigId\":\"58mkmfx\",\"Version\":\"15\",\"IsCustomModule\":true,\"Subdomain\":\"1\",\"ConnectionId\":\"\"}",
+      "hasPostData": true,
+      "postDataEntries": [
+       {
+        "bytes": "eyJDb25maWdJZCI6IjU4bWttZngiLCJWZXJzaW9uIjoiMTUiLCJJc0N1c3RvbU1vZHVsZSI6dHJ1ZSwiU3ViZG9tYWluIjoiMSIsIkNvbm5lY3Rpb25JZCI6IiJ9"
+       }
+      ],
+      "mixedContentType": "none",
+      "initialPriority": "High",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.487061,
+     "wallTime": 1791633727.184539,
+     "redirectHasExtraInfo": false,
+     "type": "XHR",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false
+    },
+    "response": {
+     "encodedDataLength": 1005,
+     "dataLength": 200,
+     "requestId": "1027907.17",
+     "type": "XHR",
+     "response": {
+      "url": "https://get.teamviewer.com/api/CustomDesign",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "application/json",
+      "charset": "utf-8",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 836,
+      "responseTime": 1791633729198.598,
+      "protocol": "h3",
+      "alternateProtocolUsage": "alternativeJobWonWithoutRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "a23d1bdc51bf1a1223d5f724076ddec149c0ea7f2e6d70f4ee8332bee337c4ae",
+     "size": 200
+    }
+   },
+   {
+    "request": {
+     "requestId": "1027907.18",
+     "loaderId": "583DCA53E20CC244404ABA470271365A",
+     "documentURL": "https://get.teamviewer.com/bcw-gruppe",
+     "request": {
+      "url": "https://get.teamviewer.com/favicon.ico?v=638302021779058096",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "High",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765900.495949,
+     "wallTime": 1791633727.192712,
+     "redirectHasExtraInfo": false,
+     "type": "Other",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false
+    },
+    "response": {
+     "encodedDataLength": 16697,
+     "dataLength": 140206,
+     "requestId": "1027907.18",
+     "type": "Other",
+     "response": {
+      "url": "https://get.teamviewer.com/favicon.ico?v=638302021779058096",
+      "status": 200,
+      "statusText": "",
+      "mimeType": "image/x-icon",
+      "charset": "",
+      "remoteIPAddress": "104.16.62.16",
+      "remotePort": 443,
+      "encodedDataLength": 737,
+      "responseTime": 1791633727276.625,
+      "protocol": "h3",
+      "alternateProtocolUsage": "alternativeJobWonWithoutRace",
+      "securityState": "secure",
+      "securityHeaders": [
+       {
+        "name": "Content-Security-Policy",
+        "value": "default-src 'self' https://download.teamviewer.com/ https://dl.teamviewer.com/ https://cdn.cookielaw.org/; script-src-elem 'self' 'unsafe-inline' https://cdn.cookielaw.org/ https://code.jquery.com data:; script-src data: 'unsafe-inline' 'self' https://code.jquery.com; object-src 'self'; style-src 'unsafe-inline' 'self' https://code.jquery.com; img-src 'self' https://code.jquery.com; frame-src 'self' *.teamviewer.com teamviewer8: tvassign1: tvsqcustomer1: tvcustomqs: intent:"
+       },
+       {
+        "name": "Strict-Transport-Security",
+        "value": "max-age=31536000; includeSubDomains"
+       },
+       {
+        "name": "X-Content-Type-Options",
+        "value": "nosniff"
+       }
+      ]
+     },
+     "hasExtraInfo": true,
+     "hash": "9e6f88a0e72d6a6374406ba80280cbca99e6257e5746bef21ded5d0ef9a9e0f5",
+     "size": 186944
+    }
+   },
+   {
+    "request": {
+     "requestId": "C5D88F5DA9670C9062F4AFFC70B66BF1",
+     "loaderId": "C5D88F5DA9670C9062F4AFFC70B66BF1",
+     "documentURL": "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=2023-11-03&se=2026-10-11T12%3A02%3A09Z&sr=b&sp=r&sig=FAKESIGNATUREfixture000000000000",
+     "request": {
+      "url": "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=2023-11-03&se=2026-10-11T12%3A02%3A09Z&sr=b&sp=r&sig=FAKESIGNATUREfixture000000000000",
+      "method": "GET",
+      "mixedContentType": "none",
+      "initialPriority": "VeryHigh",
+      "referrerPolicy": "strict-origin-when-cross-origin",
+      "isSameSite": true
+     },
+     "timestamp": 58765902.686044,
+     "wallTime": 1791633729.38282,
+     "redirectHasExtraInfo": false,
+     "type": "Document",
+     "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51",
+     "hasUserGesture": false
+    },
+    "response": {
+     "encodedDataLength": 0,
+     "dataLength": 0,
+     "requestId": "C5D88F5DA9670C9062F4AFFC70B66BF1",
+     "type": "Document",
+     "response": {
+      "url": "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=2023-11-03&se=2026-10-11T12%3A02%3A09Z&sr=b&sp=r&sig=FAKESIGNATUREfixture000000000000",
+      "status": 200,
+      "statusText": "OK",
+      "mimeType": "application/octet-stream",
+      "charset": "",
+      "remoteIPAddress": "20.50.2.60",
+      "remotePort": 443,
+      "encodedDataLength": 951,
+      "responseTime": 1791633729589.385,
+      "protocol": "http/1.1",
+      "alternateProtocolUsage": "unspecifiedReason",
+      "securityState": "secure"
+     },
+     "hasExtraInfo": true,
+     "failed": {
+      "requestId": "C5D88F5DA9670C9062F4AFFC70B66BF1",
+      "timestamp": 58765902.894706,
+      "type": "Document",
+      "errorText": "net::ERR_ABORTED",
+      "canceled": true
+     }
+    }
+   }
+  ],
+  "cookies": [
+   {
+    "name": "fixture_session",
+    "value": "FAKE-COOKIE-VALUE-should-never-be-stored",
+    "domain": "example.invalid"
+   }
+  ],
+  "console": [],
+  "links": [
+   {
+    "href": "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=2023-11-03&se=2026-10-11T12%3A02%3A09Z&sr=b&sp=r&sig=FAKESIGNATUREfixture000000000000&1791633729201",
+    "text": "Erneut versuchen",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   },
+   {
+    "href": "https://www.teamviewer.com/en/address/",
+    "text": "Impressum",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   },
+   {
+    "href": "https://www.teamviewer.com/privacy-policy/",
+    "text": "Datenschutzerklärung",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   },
+   {
+    "href": "https://www.teamviewer.com/support/contact/",
+    "text": "Kontakt",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   },
+   {
+    "href": "https://www.teamviewer.com/eula/",
+    "text": "EULA",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   },
+   {
+    "href": "https://www.teamviewer.com/link/?url=741273",
+    "text": "Copyright Info",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   },
+   {
+    "href": "https://www.teamviewer.com/de/",
+    "text": "www.teamviewer.com",
+    "frameId": "7C9F610E54AE6A0DD6AE2712DD737A51"
+   }
+  ],
+  "timing": {
+   "beginNavigation": "2026-10-10T12:02:06.322Z",
+   "frameStartedLoading": "2026-10-10T12:02:09.390Z",
+   "frameNavigated": "2026-10-10T12:02:07.043Z",
+   "domContentEventFired": "2026-10-10T12:02:07.181Z",
+   "frameStoppedLoading": "2026-10-10T12:02:09.599Z"
+  },
+  "globals": [
+   {
+    "prop": "$",
+    "type": "function"
+   },
+   {
+    "prop": "jQuery",
+    "type": "function"
+   },
+   {
+    "prop": "configId",
+    "type": "string"
+   }
+  ],
+  "storages": [],
+  "websockets": [],
+  "clipboard": [],
+  "redirects": [
+   {
+    "from": "https://quicksupport.fom.de/",
+    "to": "https://get.teamviewer.com/bcw-gruppe",
+    "status": 301
+   }
+  ],
+  "identifiers": [
+   "html-id",
+   "html-id.appleItunesMetaTag",
+   "html-id.bodyTag",
+   "html-id.linkLogo",
+   "html-id.formMain",
+   "html-id.__VIEWSTATE",
+   "html-id.__VIEWSTATEGENERATOR",
+   "html-id.mainBoxInner",
+   "html-id.webConnectorLinkCaption",
+   "html-id.webConnectorLink",
+   "html-id.MasterBodyContent_btnRetry",
+   "html-id.Footer1_lImprint",
+   "html-id.Footer1_lPrivacyCookies",
+   "html-id.Footer1_lContact",
+   "html-id.Footer1_lEula",
+   "html-id.Footer1_lCopyrightInfo",
+   "html-id.Footer1_lCopyright",
+   "html-id.Footer1_selLanguage"
+  ]
+ },
+ "labels": [],
+ "lists": {
+  "ips": [
+   "20.50.2.60",
+   "151.101.193.155",
+   "104.16.62.16",
+   "87.190.244.23"
+  ],
+  "countries": [
+   "NL",
+   "US",
+   "DE"
+  ],
+  "asns": [
+   "8075",
+   "54113",
+   "13335",
+   "3320"
+  ],
+  "domains": [
+   "get.teamviewer.com",
+   "code.jquery.com",
+   "customdesignservice.teamviewer.com",
+   "quicksupport.fom.de"
+  ],
+  "servers": [
+   "cloudflare",
+   "nginx",
+   "Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0"
+  ],
+  "urls": [
+   "https://get.teamviewer.com/bcw-gruppe",
+   "https://quicksupport.fom.de/",
+   "https://get.teamviewer.com/get/styles/stylesTv11.css?v=638720353736633204",
+   "https://code.jquery.com/jquery-3.7.1.min.js",
+   "https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css",
+   "https://code.jquery.com/ui/1.13.2/jquery-ui.min.js",
+   "https://get.teamviewer.com/get/res/scripts/connect.js?v=638236211494850667",
+   "https://get.teamviewer.com/common/logo/get.ashx?configID=58mkmfx&systemName=GetTeamviewerCom",
+   "https://get.teamviewer.com/js/spin.min.js?v=504911232000000000",
+   "https://get.teamviewer.com/get/styles/background_globe.jpg?v=638236211494910524",
+   "https://get.teamviewer.com/api/CustomDesign",
+   "https://get.teamviewer.com/favicon.ico?v=638302021779058096",
+   "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=2023-11-03&se=2026-10-11T12%3A02%3A09Z&sr=b&sp=r&sig=FAKESIGNATUREfixture000000000000"
+  ],
+  "linkDomains": [
+   "customdesignservice.teamviewer.com",
+   "www.teamviewer.com"
+  ],
+  "certificates": [
+   {
+    "subjectName": "*.teamviewer.com",
+    "issuer": "Sectigo Public Server Authentication CA DV R36",
+    "validFrom": 1790899200,
+    "validTo": 1808092799
+   },
+   {
+    "subjectName": "*.jquery.com",
+    "issuer": "Sectigo Public Server Authentication CA DV E36",
+    "validFrom": 1779235200,
+    "validTo": 1796428799
+   },
+   {
+    "subjectName": "customdesignservice.teamviewer.com",
+    "issuer": "Sectigo Public Server Authentication CA DV R36",
+    "validFrom": 1791331200,
+    "validTo": 1808524799
+   }
+  ],
+  "hashes": [
+   "64434a98d1bd07a1476fdfa60c28e2460ef6e5776b46fcf94e9a4f3bf5548af7",
+   "e7d4cedaa3d53508e887cfc9ca05544eb07b3502bc5e33d7f011248216b6a7aa",
+   "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+   "c8c2157918c9fed0bb9dcc56c96b52dc7af70b05ca0228e467eaf91777751ad7",
+   "9528ca634fecad433d044ddd3e6f9ce1f068d5d932dafdbb19d8e6daea1968bd",
+   "c4c2d06bad5c178d61124492d6c161da31b3f806f95f7bfebedce107c9b59172",
+   "b3632a4e47cab10d50e8b2f01a8127b7f9294fff958c05803939e1cb787d0436",
+   "b9f9a432b70cb46ac75cd0c112ef9b2e81fbb1a18c4a17fcbd459436bab3a2a7",
+   "632bf72cd454ca3bd75d2e7b082e9783b19ef863c54fe2deacd349e06dec8489",
+   "a23d1bdc51bf1a1223d5f724076ddec149c0ea7f2e6d70f4ee8332bee337c4ae",
+   "9e6f88a0e72d6a6374406ba80280cbca99e6257e5746bef21ded5d0ef9a9e0f5"
+  ]
+ },
+ "meta": {
+  "processors": {
+   "umbrella": {
+    "data": [
+     {
+      "hostname": "get.teamviewer.com",
+      "rank": 402060
+     },
+     {
+      "hostname": "code.jquery.com",
+      "rank": 891
+     },
+     {
+      "hostname": "customdesignservice.teamviewer.com",
+      "rank": 645516
+     }
+    ]
+   },
+   "geoip": {
+    "data": [
+     {
+      "ip": "104.16.62.16",
+      "geoip": {
+       "country": "",
+       "region": "",
+       "timezone": "",
+       "city": "",
+       "ll": [
+        null,
+        null
+       ],
+       "country_name": "Ascension Island"
+      }
+     },
+     {
+      "ip": "151.101.193.155",
+      "geoip": {
+       "country": "US",
+       "region": "",
+       "timezone": "America/Chicago",
+       "city": "",
+       "ll": [
+        37.751,
+        -97.822
+       ],
+       "country_name": "United States",
+       "metro": 0
+      }
+     },
+     {
+      "ip": "20.50.2.60",
+      "geoip": {
+       "country": "NL",
+       "region": "NH",
+       "timezone": "Europe/Amsterdam",
+       "city": "Amsterdam",
+       "ll": [
+        52.3716,
+        4.8883
+       ],
+       "country_name": "Netherlands",
+       "metro": 0
+      }
+     },
+     {
+      "ip": "87.190.244.23",
+      "geoip": {
+       "country": "DE",
+       "region": "BW",
+       "timezone": "Europe/Berlin",
+       "city": "Eislingen",
+       "ll": [
+        48.6953,
+        9.7079
+       ],
+       "country_name": "Germany",
+       "metro": 0
+      }
+     }
+    ]
+   },
+   "asn": {
+    "data": [
+     {
+      "ip": "104.16.62.16",
+      "asn": "13335",
+      "country": "US",
+      "description": "CLOUDFLARENET - Cloudflare, Inc., US",
+      "name": "Cloudflare",
+      "route": "104.16.0.0/14"
+     },
+     {
+      "ip": "151.101.193.155",
+      "asn": "54113",
+      "country": "US",
+      "description": "FASTLY - Fastly, Inc., US",
+      "name": "Fastly",
+      "route": "151.101.0.0/16"
+     },
+     {
+      "ip": "20.50.2.60",
+      "asn": "8075",
+      "country": "US",
+      "description": "MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation, US",
+      "name": "Microsoft Corporation",
+      "route": "20.48.0.0/12"
+     },
+     {
+      "ip": "87.190.244.23",
+      "asn": "3320",
+      "country": "DE",
+      "description": "DTAG Deutsche Telekom AG, DE",
+      "name": "DTAG Deutsche Telekom AG",
+      "route": "87.128.0.0/10"
+     }
+    ]
+   },
+   "rdns": {
+    "data": []
+   },
+   "wappa": {
+    "data": [
+     {
+      "confidence": [
+       {
+        "confidence": 100,
+        "pattern": "spin(?:\\.min)?\\.js(?:\\?ver=([\\d.]+))?"
+       }
+      ],
+      "confidenceTotal": 100,
+      "app": "spin.js",
+      "icon": "spin.js.png",
+      "website": "https://spin.js.org/",
+      "categories": [
+       {
+        "groups": [
+         9
+        ],
+        "name": "JavaScript graphics",
+        "priority": 6
+       }
+      ]
+     },
+     {
+      "confidence": [
+       {
+        "confidence": 100,
+        "pattern": "<input[^>]+name=\"__VIEWSTATE"
+       }
+      ],
+      "confidenceTotal": 100,
+      "app": "Microsoft ASP.NET",
+      "icon": "Microsoft ASP.NET.svg",
+      "website": "https://www.asp.net",
+      "categories": [
+       {
+        "groups": [
+         9
+        ],
+        "name": "Web frameworks",
+        "priority": 7
+       }
+      ]
+     },
+     {
+      "confidence": [
+       {
+        "confidence": 100,
+        "pattern": ""
+       }
+      ],
+      "confidenceTotal": 100,
+      "app": "Cloudflare Bot Management",
+      "icon": "CloudFlare.svg",
+      "website": "https://www.cloudflare.com/en-gb/products/bot-management/",
+      "categories": [
+       {
+        "groups": [
+         11
+        ],
+        "name": "Security",
+        "priority": 9
+       }
+      ]
+     },
+     {
+      "confidence": [
+       {
+        "confidence": 100,
+        "pattern": "jquery"
+       },
+       {
+        "confidence": 100,
+        "pattern": "/jquery(?:-(\\d+\\.\\d+\\.\\d+))[/.-]"
+       }
+      ],
+      "confidenceTotal": 100,
+      "app": "jQuery",
+      "icon": "jQuery.svg",
+      "website": "https://jquery.com",
+      "categories": [
+       {
+        "groups": [
+         9
+        ],
+        "name": "JavaScript libraries",
+        "priority": 9
+       }
+      ]
+     },
+     {
+      "confidence": [
+       {
+        "confidence": 100,
+        "pattern": "code\\.jquery\\.com/"
+       }
+      ],
+      "confidenceTotal": 100,
+      "app": "jQuery CDN",
+      "icon": "jQuery.svg",
+      "website": "https://code.jquery.com/",
+      "categories": [
+       {
+        "groups": [
+         7
+        ],
+        "name": "CDN",
+        "priority": 9
+       }
+      ]
+     },
+     {
+      "confidence": [
+       {
+        "confidence": 100,
+        "pattern": "([\\d.]+)/jquery-ui(?:\\.min)?\\.js"
+       },
+       {
+        "confidence": 100,
+        "pattern": "jquery-ui.*\\.js"
+       }
+      ],
+      "confidenceTotal": 100,
+      "app": "jQuery UI",
+      "icon": "jQuery UI.svg",
+      "website": "https://jqueryui.com",
+      "categories": [
+       {
+        "groups": [
+         9
+        ],
+        "name": "JavaScript libraries",
+        "priority": 9
+       }
+      ]
+     }
+    ]
+   },
+   "download": {
+    "data": [
+     {
+      "filename": "TeamViewerQS.tar.gz",
+      "filesize": 35308469,
+      "receivedBytes": 22878020,
+      "url": "https://customdesignservice.teamviewer.com/download/linux/v15/58mkmfx/TeamViewerQS.tar.gz?sv=2023-11-03&se=2026-10-11T12%3A02%3A09Z&sr=b&sp=r&sig=FAKESIGNATUREfixture000000000000",
+      "startedAt": "2026-10-10T12:02:09.599Z",
+      "state": "inProgress"
+     }
+    ]
+   }
+  }
+ },
+ "page": {
+  "asn": "AS13335",
+  "asnname": "CLOUDFLARENET - Cloudflare, Inc., US",
+  "city": "",
+  "country": "",
+  "domain": "get.teamviewer.com",
+  "ip": "104.16.62.16",
+  "server": "cloudflare",
+  "url": "https://get.teamviewer.com/bcw-gruppe",
+  "redirected": "off-domain",
+  "apexDomainAgeDays": 4946,
+  "mimeType": "text/html",
+  "title": "TeamViewer",
+  "tlsValidDays": 198,
+  "tlsAgeDays": 8,
+  "domainAgeDays": 3774,
+  "tlsValidFrom": "2026-10-02T00:00:00.000Z",
+  "umbrellaRank": 402060,
+  "apexDomain": "teamviewer.com",
+  "tlsIssuer": "Sectigo Public Server Authentication CA DV R36",
+  "status": "200"
+ },
+ "scanner": {
+  "country": "de"
+ },
+ "stats": {
+  "IPv6Percentage": 0,
+  "adBlocked": 0,
+  "domainStats": [
+   {
+    "count": 8,
+    "ips": [
+     "104.16.62.16"
+    ],
+    "domain": "get.teamviewer.com",
+    "size": 202884,
+    "encodedSize": 61379,
+    "countries": [],
+    "index": 1,
+    "initiators": [
+     "get.teamviewer.com",
+     "code.jquery.com"
+    ],
+    "redirects": 0
+   },
+   {
+    "count": 3,
+    "ips": [
+     "151.101.193.155"
+    ],
+    "domain": "code.jquery.com",
+    "size": 378716,
+    "encodedSize": 106993,
+    "countries": [
+     "US"
+    ],
+    "index": 3,
+    "initiators": [
+     "get.teamviewer.com"
+    ],
+    "redirects": 0
+   },
+   {
+    "count": 1,
+    "ips": [
+     "20.50.2.60"
+    ],
+    "domain": "customdesignservice.teamviewer.com",
+    "size": 0,
+    "encodedSize": 0,
+    "countries": [
+     "NL"
+    ],
+    "index": 12,
+    "initiators": [
+     "get.teamviewer.com"
+    ],
+    "redirects": 0
+   },
+   {
+    "count": 1,
+    "ips": [
+     "87.190.244.23"
+    ],
+    "domain": "quicksupport.fom.de",
+    "size": 0,
+    "encodedSize": 271,
+    "countries": [
+     "DE"
+    ],
+    "index": 0,
+    "initiators": [],
+    "redirects": 1
+   }
+  ],
+  "ipStats": [
+   {
+    "requests": 1,
+    "domains": [
+     "quicksupport.fom.de"
+    ],
+    "ip": "87.190.244.23",
+    "asn": {
+     "ip": "87.190.244.23",
+     "asn": "3320",
+     "country": "DE",
+     "description": "DTAG Deutsche Telekom AG, DE",
+     "name": "DTAG Deutsche Telekom AG",
+     "route": "87.128.0.0/10"
+    },
+    "dns": {},
+    "geoip": {
+     "country": "DE",
+     "region": "BW",
+     "timezone": "Europe/Berlin",
+     "city": "Eislingen",
+     "ll": [
+      48.6953,
+      9.7079
+     ],
+     "country_name": "Germany",
+     "metro": 0
+    },
+    "size": 0,
+    "encodedSize": 271,
+    "countries": [
+     "DE"
+    ],
+    "index": 0,
+    "ipv6": false,
+    "redirects": 1,
+    "count": null
+   },
+   {
+    "requests": 8,
+    "domains": [
+     "get.teamviewer.com"
+    ],
+    "ip": "104.16.62.16",
+    "asn": {
+     "ip": "104.16.62.16",
+     "asn": "13335",
+     "country": "US",
+     "description": "CLOUDFLARENET - Cloudflare, Inc., US",
+     "name": "Cloudflare",
+     "route": "104.16.0.0/14"
+    },
+    "dns": {},
+    "geoip": {
+     "country": "",
+     "region": "",
+     "timezone": "",
+     "city": "",
+     "ll": [
+      null,
+      null
+     ],
+     "country_name": "Ascension Island"
+    },
+    "size": 202884,
+    "encodedSize": 61379,
+    "countries": [],
+    "index": 1,
+    "ipv6": false,
+    "redirects": 0,
+    "count": null
+   },
+   {
+    "requests": 3,
+    "domains": [
+     "code.jquery.com"
+    ],
+    "ip": "151.101.193.155",
+    "asn": {
+     "ip": "151.101.193.155",
+     "asn": "54113",
+     "country": "US",
+     "description": "FASTLY - Fastly, Inc., US",
+     "name": "Fastly",
+     "route": "151.101.0.0/16"
+    },
+    "dns": {},
+    "geoip": {
+     "country": "US",
+     "region": "",
+     "timezone": "America/Chicago",
+     "city": "",
+     "ll": [
+      37.751,
+      -97.822
+     ],
+     "country_name": "United States",
+     "metro": 0
+    },
+    "size": 378716,
+    "encodedSize": 106993,
+    "countries": [
+     "US"
+    ],
+    "index": 3,
+    "ipv6": false,
+    "redirects": 0,
+    "count": null
+   },
+   {
+    "requests": 1,
+    "domains": [
+     "customdesignservice.teamviewer.com"
+    ],
+    "ip": "20.50.2.60",
+    "asn": {
+     "ip": "20.50.2.60",
+     "asn": "8075",
+     "country": "US",
+     "description": "MICROSOFT-CORP-MSN-AS-BLOCK - Microsoft Corporation, US",
+     "name": "Microsoft Corporation",
+     "route": "20.48.0.0/12"
+    },
+    "dns": {},
+    "geoip": {
+     "country": "NL",
+     "region": "NH",
+     "timezone": "Europe/Amsterdam",
+     "city": "Amsterdam",
+     "ll": [
+      52.3716,
+      4.8883
+     ],
+     "country_name": "Netherlands",
+     "metro": 0
+    },
+    "size": 0,
+    "encodedSize": 0,
+    "countries": [
+     "NL"
+    ],
+    "index": 12,
+    "ipv6": false,
+    "redirects": 0,
+    "count": null
+   }
+  ],
+  "malicious": 0,
+  "protocolStats": [
+   {
+    "count": 6,
+    "size": 411176,
+    "encodedSize": 122401,
+    "ips": [
+     "104.16.62.16",
+     "151.101.193.155"
+    ],
+    "countries": [
+     "US"
+    ],
+    "securityState": {},
+    "protocol": "h2"
+   },
+   {
+    "count": 5,
+    "size": 170424,
+    "encodedSize": 45971,
+    "ips": [
+     "104.16.62.16"
+    ],
+    "countries": [],
+    "securityState": {},
+    "protocol": "h3"
+   },
+   {
+    "count": 1,
+    "size": 0,
+    "encodedSize": 0,
+    "ips": [
+     "20.50.2.60"
+    ],
+    "countries": [
+     "NL"
+    ],
+    "securityState": {},
+    "protocol": "http/1.1"
+   }
+  ],
+  "regDomainStats": [
+   {
+    "count": 9,
+    "ips": [
+     "104.16.62.16",
+     "20.50.2.60"
+    ],
+    "regDomain": "teamviewer.com",
+    "size": 202884,
+    "encodedSize": 61379,
+    "countries": [],
+    "index": 1,
+    "subDomains": [
+     {
+      "domain": "get",
+      "country": ""
+     },
+     {
+      "domain": "customdesignservice",
+      "country": "NL"
+     }
+    ],
+    "redirects": 0
+   },
+   {
+    "count": 3,
+    "ips": [
+     "151.101.193.155"
+    ],
+    "regDomain": "jquery.com",
+    "size": 378716,
+    "encodedSize": 106993,
+    "countries": [],
+    "index": 3,
+    "subDomains": [
+     {
+      "domain": "code",
+      "country": "US"
+     }
+    ],
+    "redirects": 0
+   },
+   {
+    "count": 1,
+    "ips": [
+     "87.190.244.23"
+    ],
+    "regDomain": "fom.de",
+    "size": 0,
+    "encodedSize": 271,
+    "countries": [],
+    "index": 0,
+    "subDomains": [
+     {
+      "domain": "quicksupport",
+      "country": "DE"
+     }
+    ],
+    "redirects": 1
+   }
+  ],
+  "resourceStats": [
+   {
+    "count": 4,
+    "size": 349927,
+    "encodedSize": 103324,
+    "latency": 0,
+    "countries": [
+     "US"
+    ],
+    "ips": [
+     "151.101.193.155",
+     "104.16.62.16"
+    ],
+    "type": "Script",
+    "compression": "3.4",
+    "percentage": 33
+   },
+   {
+    "count": 2,
+    "size": 29324,
+    "encodedSize": 30168,
+    "latency": 0,
+    "countries": [],
+    "ips": [
+     "104.16.62.16"
+    ],
+    "type": "Image",
+    "compression": "1.0",
+    "percentage": 16
+   },
+   {
+    "count": 2,
+    "size": 51609,
+    "encodedSize": 12096,
+    "latency": 0,
+    "countries": [
+     "US"
+    ],
+    "ips": [
+     "104.16.62.16",
+     "151.101.193.155"
+    ],
+    "type": "Stylesheet",
+    "compression": "4.3",
+    "percentage": 16
+   },
+   {
+    "count": 2,
+    "size": 10334,
+    "encodedSize": 5082,
+    "latency": 0,
+    "countries": [
+     "NL"
+    ],
+    "ips": [
+     "104.16.62.16",
+     "20.50.2.60"
+    ],
+    "type": "Document",
+    "compression": "2.0",
+    "percentage": 16
+   },
+   {
+    "count": 1,
+    "size": 140206,
+    "encodedSize": 16697,
+    "latency": 0,
+    "countries": [],
+    "ips": [
+     "104.16.62.16"
+    ],
+    "type": "Other",
+    "compression": "8.4",
+    "percentage": 8
+   },
+   {
+    "count": 1,
+    "size": 200,
+    "encodedSize": 1005,
+    "latency": 0,
+    "countries": [],
+    "ips": [
+     "104.16.62.16"
+    ],
+    "type": "XHR",
+    "compression": "0.2",
+    "percentage": 8
+   }
+  ],
+  "securePercentage": 100,
+  "secureRequests": 12,
+  "serverStats": [
+   {
+    "count": 8,
+    "size": 202884,
+    "encodedSize": 61379,
+    "ips": [
+     "104.16.62.16"
+    ],
+    "countries": [],
+    "server": "cloudflare"
+   },
+   {
+    "count": 3,
+    "size": 378716,
+    "encodedSize": 106993,
+    "ips": [
+     "151.101.193.155"
+    ],
+    "countries": [
+     "US"
+    ],
+    "server": "nginx"
+   },
+   {
+    "count": 1,
+    "size": 0,
+    "encodedSize": 0,
+    "ips": [
+     "20.50.2.60"
+    ],
+    "countries": [
+     "NL"
+    ],
+    "server": "Windows-Azure-Blob/1.0 Microsoft-HTTPAPI/2.0"
+   }
+  ],
+  "tlsStats": [
+   {
+    "count": 12,
+    "size": 581600,
+    "encodedSize": 168372,
+    "ips": [
+     "104.16.62.16",
+     "151.101.193.155",
+     "20.50.2.60"
+    ],
+    "countries": [
+     "US",
+     "NL"
+    ],
+    "protocols": {
+     "TLS 1.3 /  / AES_128_GCM": 6,
+     "QUIC /  / AES_128_GCM": 5,
+     "TLS 1.3 /  / AES_256_GCM": 1
+    },
+    "securityState": "secure"
+   }
+  ],
+  "totalLinks": 7,
+  "uniqCountries": 4
+ },
+ "submitter": {},
+ "task": {
+  "method": "automatic",
+  "source": "certstream-suspicious",
+  "tags": [],
+  "time": "2026-10-10T12:02:12.397Z",
+  "url": "https://quicksupport.fom.de/",
+  "uuid": "01a125b1-19c1-7295-bb46-2577148b105d",
+  "visibility": "public",
+  "reportURL": "https://urlscan.io/result/01a125b1-19c1-7295-bb46-2577148b105d/",
+  "screenshotURL": "https://urlscan.io/screenshots/01a125b1-19c1-7295-bb46-2577148b105d.png",
+  "domURL": "https://urlscan.io/dom/01a125b1-19c1-7295-bb46-2577148b105d/",
+  "domain": "quicksupport.fom.de",
+  "apexDomain": "fom.de"
+ },
+ "verdicts": {
+  "overall": {
+   "score": 0,
+   "categories": [],
+   "brands": [],
+   "tags": [],
+   "malicious": false,
+   "hasVerdicts": true
+  },
+  "urlscan": {
+   "score": 0,
+   "categories": [],
+   "brands": [],
+   "tags": [],
+   "malicious": false,
+   "hasVerdicts": false
+  },
+  "engines": {
+   "score": -98,
+   "malicious": false,
+   "categories": [],
+   "enginesTotal": 0,
+   "maliciousTotal": 0,
+   "benignTotal": 0,
+   "maliciousVerdicts": [],
+   "benignVerdicts": [],
+   "hasVerdicts": true,
+   "tags": [
+    "urlscan-ml",
+    "urlscan-ml-60c5e22"
+   ]
+  },
+  "community": {
+   "score": 0,
+   "categories": [],
+   "brands": [],
+   "votesTotal": 0,
+   "votesMalicious": 0,
+   "votesBenign": 0,
+   "malicious": false,
+   "hasVerdicts": false
+  }
+ }
+}

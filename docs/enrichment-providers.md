@@ -74,6 +74,16 @@ urlscan.io enrichment is **strictly read-only**: TalonHound searches historical 
 
 Absence of historical scans is reported as **No results**, not clean/safe. urlscan scores are provider observations and are not TalonHound confidence.
 
+Each enrichment costs one Search request plus at most **Detail limit** Result requests (default 3). From the best direct-match scan the card shows:
+
+- **Classification** from urlscan's overall verdict only: *Malicious*, *Benign verdict* (negative score), or *Unclassified*. A score of 0 without a verdict is *Unclassified*, never clean. An ML engine flag that the overall verdict does not adopt is shown as an observation and makes the sample assessment *Insufficient evidence*.
+- **Visibility observations**, for example *Limited page visibility — HTTP 403* when the scanner only received an error page, failed navigation, challenge pages, off-domain redirects, downloads, and unusual TLS certificates.
+- **Page & hosting**, **network activity** (counts only), **redirect chain**, **TLS certificate**, and **detected technologies**.
+- **Related observables** with their relationship and origin field. Response-body SHA256 values are labelled as page/resource bodies, not malware samples. Nothing is added to TalonHound or enriched automatically.
+- **Scan history**, comparing IP, ASN, title, status, and TLS issuer across the retrieved search sample only.
+
+Results stored before this format show the page facts that were kept and ask for **Refresh** to load the rest. Cookies, headers, response bodies, DOM content, and screenshots are never stored or loaded. Signed URL tokens are masked.
+
 ## Providers that work without credentials
 
 ### RDAP / WHOIS

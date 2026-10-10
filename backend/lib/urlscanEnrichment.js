@@ -9,6 +9,14 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import {
+  extractUrlscanResultDetail,
+  normalizeUrlscanVerdicts,
+  buildUrlscanScanHistory,
+  URLSCAN_DETAIL_VERSION
+} from './urlscanResultDetail.js';
+
+export const URLSCAN_SUMMARY_VERSION = 2;
 
 export const URLSCAN_PROVIDER = 'urlscan';
 export const URLSCAN_DISPLAY_NAME = 'urlscan.io';
@@ -65,6 +73,8 @@ const MAX_DETAIL_LIMIT = 5;
 const DEFAULT_LOOKBACK_DAYS = 30;
 const MAX_LOOKBACK_DAYS = 90;
 const DEFAULT_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+// Result API documents grow with the number of page requests; parsed transiently, never stored.
+const RESULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const MAX_RAW_STORE_BYTES = 64 * 1024;
 
 let cachedAppVersion = null;
@@ -605,32 +615,29 @@ export function classifyMatchRelation(category, observable, hit) {
   return { relation: URLSCAN_MATCH_RELATION.CONTACTED_IP, exact_match: false, scan_id: id };
 }
 
+/**
+ * Malicious flag for a scan = urlscan's overall verdict only. Engine (ML)
+ * signals are tracked separately and never promote a scan to malicious.
+ * Search hits on non-Pro plans carry no verdicts at all → null.
+ */
 function verdictMaliciousFlag(verdicts) {
-  if (!verdicts || typeof verdicts !== 'object') return null;
-  if (verdicts.malicious === true) return true;
-  if (verdicts.urlscan?.malicious === true) return true;
-  if (verdicts.engines?.malicious === true) return true;
-  if (verdicts.community?.malicious === true) return true;
-  if (verdicts.malicious === false
-    && verdicts.urlscan?.malicious !== true
-    && verdicts.engines?.malicious !== true
-    && verdicts.community?.malicious !== true) {
-    return false;
-  }
-  return null;
+  const v = normalizeUrlscanVerdicts(verdicts);
+  const flag = v?.overall?.malicious;
+  return typeof flag === 'boolean' ? flag : null;
+}
+
+function engineMaliciousFlag(verdicts) {
+  const flag = normalizeUrlscanVerdicts(verdicts)?.engines?.malicious;
+  return typeof flag === 'boolean' ? flag : null;
 }
 
 function extractScore(verdicts) {
-  if (!verdicts || typeof verdicts !== 'object') return null;
-  const s = verdicts.score ?? verdicts.urlscan?.score ?? verdicts.engines?.score;
-  if (s === null || s === undefined || !Number.isFinite(Number(s))) return null;
-  return Math.round(Number(s));
+  const s = normalizeUrlscanVerdicts(verdicts)?.overall?.score;
+  return s === null || s === undefined ? null : Math.round(s);
 }
 
 function extractCategories(verdicts) {
-  const cats = verdicts?.urlscan?.categories || verdicts?.categories;
-  if (!Array.isArray(cats)) return [];
-  return cats.map((c) => String(c).trim()).filter(Boolean).slice(0, 20);
+  return (normalizeUrlscanVerdicts(verdicts)?.overall?.categories || []).slice(0, 20);
 }
 
 /**
@@ -657,11 +664,17 @@ export function normalizeSearchHit(hit, category, observable) {
     page_server: page.server ? String(page.server).slice(0, 200) : null,
     page_title: page.title ? String(page.title).slice(0, 300) : null,
     page_redirected: page.redirected ? String(page.redirected) : null,
+    // Search-index page facts (available on all plans) — feed bounded history comparison.
+    page_status: page.status != null && page.status !== '' ? String(page.status).slice(0, 8) : null,
+    page_asnname: page.asnname ? String(page.asnname).slice(0, 200) : null,
+    page_mime_type: page.mimeType ? String(page.mimeType).slice(0, 80) : null,
+    tls_issuer: page.tlsIssuer ? String(page.tlsIssuer).slice(0, 200) : null,
     match_relation: relation.relation,
     exact_match: relation.exact_match === true,
     malicious,
     urlscan_score: score,
     categories: extractCategories(verdicts),
+    engine_malicious: engineMaliciousFlag(verdicts),
     // Score is urlscan's scale (-100..100), NOT TalonHound confidence.
     score_is_not_confidence: true,
     stats_requests: Number.isFinite(Number(stats.requests)) ? Number(stats.requests) : null
@@ -713,57 +726,14 @@ export function selectDetailCandidates(normalizedHits, limit = DEFAULT_DETAIL_LI
 }
 
 /**
- * Extract safe detail fields from Result API JSON (no cookies/DOM/bodies).
+ * Extract safe detail fields from Result API JSON (no cookies/DOM/bodies/headers).
  */
 export function normalizeResultDetail(raw, scanId) {
   if (!raw || typeof raw !== 'object') return null;
   const task = raw.task && typeof raw.task === 'object' ? raw.task : {};
-  const page = raw.page && typeof raw.page === 'object' ? raw.page : {};
-  const verdicts = raw.verdicts && typeof raw.verdicts === 'object' ? raw.verdicts : {};
-  const lists = raw.lists && typeof raw.lists === 'object' ? raw.lists : {};
   const id = String(task.uuid || scanId || '').toLowerCase();
   if (!URLSCAN_RESULT_UUID_RE.test(id)) return null;
-
-  const engineVerdicts = Array.isArray(verdicts.engines?.verdicts)
-    ? verdicts.engines.verdicts.slice(0, 10).map((v) => ({
-      engine: v?.engine ? String(v.engine).slice(0, 80) : null,
-      malicious: v?.malicious === true,
-      categories: Array.isArray(v?.categories) ? v.categories.map(String).slice(0, 10) : []
-    }))
-    : [];
-
-  return {
-    scan_id: id,
-    result_url: buildUrlscanResultPageUrl(id),
-    scanned_at: task.time ? String(task.time) : null,
-    visibility: task.visibility ? String(task.visibility) : null,
-    task_url: task.url ? String(task.url).slice(0, 2048) : null,
-    page_url: page.url ? String(page.url).slice(0, 2048) : null,
-    page_domain: page.domain ? normalizeHostname(page.domain) : null,
-    page_ip: page.ip ? String(page.ip) : null,
-    page_asn: page.asn ? String(page.asn) : null,
-    page_asnname: page.asnname ? String(page.asnname).slice(0, 200) : null,
-    page_country: page.country ? String(page.country).toUpperCase() : null,
-    page_city: page.city ? String(page.city).slice(0, 120) : null,
-    page_server: page.server ? String(page.server).slice(0, 200) : null,
-    page_title: page.title ? String(page.title).slice(0, 300) : null,
-    page_status: page.status != null ? String(page.status) : null,
-    page_redirected: page.redirected ? String(page.redirected) : null,
-    urlscan_malicious: verdicts.urlscan?.malicious === true,
-    engines_malicious: verdicts.engines?.malicious === true,
-    community_malicious: verdicts.community?.malicious === true,
-    overall_malicious: verdicts.malicious === true,
-    urlscan_score: extractScore(verdicts),
-    score_is_not_confidence: true,
-    categories: extractCategories(verdicts),
-    engine_verdicts: engineVerdicts,
-    contacted_ips_sample: Array.isArray(lists.ips)
-      ? lists.ips.map(String).slice(0, 15)
-      : [],
-    contacted_domains_sample: Array.isArray(lists.domains)
-      ? lists.domains.map(String).slice(0, 15)
-      : []
-  };
+  return extractUrlscanResultDetail(raw, { scanId: id, resultUrl: buildUrlscanResultPageUrl(id) });
 }
 
 /**
@@ -800,8 +770,12 @@ export function buildUrlscanNormalizedSummary({
   const bounded = totalReported > normalizedHits.length || searchMeta?.has_more === true;
 
   const assessmentLabel = assessmentDisplayLabel(assessment);
+  const detailScans = (details || []).filter(Boolean).slice(0, MAX_DETAIL_LIMIT);
+  // Details are fetched in selectDetailCandidates order: the first is the best direct match.
+  const primaryDetail = detailScans.find((d) => d.detail_version >= URLSCAN_DETAIL_VERSION) || null;
 
   return {
+    summary_version: URLSCAN_SUMMARY_VERSION,
     provider: URLSCAN_PROVIDER,
     provider_display_name: URLSCAN_DISPLAY_NAME,
     evidence_assessment: assessment,
@@ -824,7 +798,12 @@ export function buildUrlscanNormalizedSummary({
     most_recent_scan: normalizedHits[0] || null,
     most_recent_malicious_scan: latestMalicious,
     scans: normalizedHits.slice(0, searchSize),
-    detail_scans: (details || []).filter(Boolean).slice(0, MAX_DETAIL_LIMIT),
+    detail_scans: detailScans,
+    primary_scan_id: primaryDetail?.scan_id || null,
+    // Provider classification of the primary detailed scan — never a TalonHound IOC verdict.
+    classification: primaryDetail?.classification || null,
+    observations: primaryDetail?.observations || [],
+    history: normalizedHits.length ? buildUrlscanScanHistory(normalizedHits, { totalReported }) : null,
     fetched_at: fetchedAt || new Date().toISOString(),
     search_date_limit_days: searchMeta?.search_date_limit_days ?? null
   };
@@ -911,6 +890,11 @@ export function deriveEvidenceAssessment(category, normalizedHits) {
   const anyMalicious = normalizedHits.some((h) => h.malicious === true);
   if (anyMalicious) return URLSCAN_ASSESSMENT.INSUFFICIENT_EVIDENCE;
 
+  // An ML engine flag on a direct match is a malicious *signal* without an
+  // overall verdict — report it as insufficient, never as "no malicious evidence".
+  const directEngineSignal = normalizedHits.some((h) => h.exact_match && h.engine_malicious === true);
+  if (directEngineSignal) return URLSCAN_ASSESSMENT.INSUFFICIENT_EVIDENCE;
+
   const hasVerdict = normalizedHits.some((h) => h.malicious === false || h.malicious === true);
   if (!hasVerdict) return URLSCAN_ASSESSMENT.INSUFFICIENT_EVIDENCE;
 
@@ -961,5 +945,6 @@ export {
   MAX_DETAIL_LIMIT,
   DEFAULT_LOOKBACK_DAYS,
   MAX_LOOKBACK_DAYS,
-  DEFAULT_MAX_RESPONSE_BYTES
+  DEFAULT_MAX_RESPONSE_BYTES,
+  RESULT_MAX_RESPONSE_BYTES
 };
