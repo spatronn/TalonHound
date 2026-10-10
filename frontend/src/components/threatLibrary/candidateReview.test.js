@@ -39,7 +39,10 @@ import {
   describeBulkActionConfirm,
   describeAcrossPagesOutcome,
   reviewFiltersEqual,
-  selectionScopeLabel
+  selectionScopeLabel,
+  isReviewActionableIndicator,
+  isUnionReviewIndicator,
+  classifyCreateOutcome
 } from './candidateReview.js';
 
 const explicitUrl = {
@@ -743,4 +746,92 @@ test('report filter counts are unchanged by the toolbar rules', () => {
   assert.equal(count('existing'), 0);
   assert.equal(count('context_only'), 4);
   assert.equal(count('all'), 6);
+});
+
+const linkedPending = {
+  id: 7001,
+  candidate_type: 'md5',
+  normalized_value: 'c5ed005bed369b4cb1aa07280fc13f7f',
+  assessment: 'malicious',
+  match_state: 'new',
+  review_status: 'pending',
+  is_ioc: true,
+  confidence: 0.9,
+  has_original_document_occurrence: false,
+  source_assertion: 'linked_source_ioc',
+  sources: [{
+    id: 's-warden',
+    source_type: 'github_dir',
+    canonical_url: 'https://github.com/gendigitalinc/ioc/tree/master/WardenStealer',
+    lifecycle_status: 'extracted',
+    repo_revision: '08c0b6e89c41be2dfaee90788610f5dab7ddb22c',
+    file_path: 'md5.txt'
+  }],
+  evidence: {
+    document_has_authoritative_scope: false,
+    source_assertion: 'linked_source_ioc',
+    is_direct_source_observable: true,
+    occurrence_count: 0,
+    occurrences: [],
+    zones: ['report_body']
+  }
+};
+
+test('linked-only pending enables Approve; Create IOCs after approve', () => {
+  assert.equal(isReviewIndicator(linkedPending), false);
+  assert.equal(isUnionReviewIndicator(linkedPending), true);
+  assert.equal(isReviewActionableIndicator(linkedPending), true);
+
+  const pendingToolbar = describeReviewToolbar({ filter: 'linked_only', selectedRows: [linkedPending] });
+  assert.ok(pendingToolbar.actions.find((a) => a.id === 'approve').enabled);
+  assert.equal(pendingToolbar.actions.find((a) => a.id === 'create_iocs').enabled, false);
+  assert.deepEqual(selectionForAction('approve', [linkedPending]).ids, [7001]);
+
+  assert.equal(classifyCreateOutcome(linkedPending), 'not_approved');
+  const approved = { ...linkedPending, review_status: 'approved' };
+  assert.equal(classifyCreateOutcome(approved), 'will_create');
+  const createToolbar = describeReviewToolbar({ filter: 'linked_only', selectedRows: [approved] });
+  assert.ok(createToolbar.actions.find((a) => a.id === 'create_iocs').enabled);
+
+  const modeANarrative = {
+    id: 88,
+    candidate_type: 'ip',
+    normalized_value: '198.51.100.9',
+    assessment: 'malicious',
+    match_state: 'new',
+    review_status: 'pending',
+    is_ioc: true,
+    has_original_document_occurrence: true,
+    source_assertion: 'body_mention',
+    document_has_authoritative_scope: true,
+    evidence: {
+      document_has_authoritative_scope: true,
+      source_assertion: 'body_mention',
+      is_direct_source_observable: true,
+      occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }]
+    }
+  };
+  const mixed = describeReviewToolbar({ filter: 'all', selectedRows: [linkedPending, modeANarrative] });
+  assert.ok(mixed.actions.find((a) => a.id === 'approve').enabled);
+  assert.deepEqual(selectionForAction('approve', [linkedPending, modeANarrative]).ids, [7001]);
+});
+
+test('linked-only survives MODE A scope inference next to publisher Indicators', () => {
+  const publisher = {
+    ...iocA,
+    source_assertion: 'explicit_ioc',
+    document_has_authoritative_scope: true,
+    has_original_document_occurrence: true,
+    evidence: {
+      document_has_authoritative_scope: true,
+      source_assertion: 'explicit_ioc',
+      is_direct_source_observable: true,
+      occurrences: [{ zone: 'explicit_ioc_section', asserted: true }]
+    }
+  };
+  const [pub, linked] = withInferredPublisherIocScope([publisher, linkedPending]);
+  assert.equal(pub.document_has_authoritative_scope, true);
+  assert.equal(linked.has_original_document_occurrence, false);
+  assert.equal(linked.evidence.document_has_authoritative_scope, false);
+  assert.equal(isReviewActionableIndicator(linked), true);
 });

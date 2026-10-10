@@ -141,6 +141,39 @@ test('display value prefers normalized over original and tolerates empty rows', 
   assert.ok(Array.isArray(d.fields));
 });
 
+test('linked-only evidence prefers source provenance over report_body / 0 occurrences', () => {
+  const linked = {
+    candidate_type: 'md5',
+    normalized_value: 'c5ed005bed369b4cb1aa07280fc13f7f',
+    has_original_document_occurrence: false,
+    source_assertion: 'linked_source_ioc',
+    section: 'report_body',
+    sources: [{
+      id: 's1',
+      source_type: 'github_dir',
+      canonical_url: 'https://github.com/gendigitalinc/ioc/tree/master/WardenStealer',
+      lifecycle_status: 'extracted',
+      repo_revision: '08c0b6e89c41be2dfaee90788610f5dab7ddb22c',
+      file_path: 'md5.txt'
+    }],
+    evidence: {
+      source_assertion: 'linked_source_ioc',
+      document_has_authoritative_scope: false,
+      is_direct_source_observable: true,
+      occurrence_count: 0,
+      occurrences: [],
+      zones: ['report_body']
+    }
+  };
+  const p = describeEvidencePreview(linked);
+  assert.equal(p.primary, 'Linked IOC source');
+  assert.match(p.secondary, /gendigitalinc\/ioc/);
+  assert.match(p.secondary, /md5\.txt/);
+  assert.match(p.tertiary, /Source assertion/);
+  assert.doesNotMatch(p.tertiary, /0 occurrences/);
+  assert.doesNotMatch(String(p.secondary), /report body/i);
+});
+
 test('drawer position walks the filtered set across pages and stops at the boundaries', () => {
   const rows = Array.from({ length: 7 }, (_, i) => ({ id: 100 + i }));
   assert.deepEqual(describeDrawerPosition(rows, 100, 3), { index: 1, total: 7, prevId: null, nextId: 101, page: 1 });

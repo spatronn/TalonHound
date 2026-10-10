@@ -8,12 +8,13 @@
  */
 
 import {
-  isPublisherAuthoritativeReportIocMember,
   publisherAuthoritativeIocMembershipSql,
   isReportIndicatorMember,
+  isUnionReportIndicatorMember,
   isPendingReviewActionableIndicator,
   isContextOnlyCandidate as isContextOnlyFromContract,
   notContextOnlySql,
+  reviewActionableIndicatorSql,
   NON_IOC_CANDIDATE_TYPES
 } from './indicatorMembership.js';
 
@@ -23,7 +24,10 @@ export {
   isPublisherAuthoritativeReportIocMember,
   publisherAuthoritativeIocMembershipSql,
   isReportIndicatorMember,
-  isPendingReviewActionableIndicator
+  isReviewActionableIndicator,
+  isUnionReportIndicatorMember,
+  isPendingReviewActionableIndicator,
+  reviewActionableIndicatorSql
 } from './indicatorMembership.js';
 
 export const PUBLISHER_AUTHORITATIVE_IOC_MEMBERSHIP_SQL = publisherAuthoritativeIocMembershipSql('c');
@@ -72,8 +76,9 @@ export function isAnalystApproved(candidate) {
 }
 
 /**
- * Rows that belong in the analyst review set / Indicators tab.
+ * Original-document Indicator membership (Indicators / Original filter).
  * Canonical implementation: indicatorMembership.isReportIndicatorMember.
+ * For Approve / Create eligibility use isReviewActionableIndicator (union).
  */
 export function isActionableReviewIndicator(candidate) {
   return isReportIndicatorMember(candidate);
@@ -151,11 +156,12 @@ export function classifyCreateEligibility(candidate) {
     };
   }
 
-  if (!isPublisherAuthoritativeReportIocMember(candidate)) {
+  // Original publisher Indicators or authoritative linked-source Indicators.
+  if (!isUnionReportIndicatorMember(candidate)) {
     return {
       eligible: false,
       outcome: PROMOTION_OUTCOMES.NOT_APPLICABLE,
-      detail: 'Not a publisher-declared report IOC.'
+      detail: 'Not an actionable report Indicator (original publisher or linked IOC source).'
     };
   }
 

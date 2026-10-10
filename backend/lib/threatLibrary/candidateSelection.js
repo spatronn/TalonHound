@@ -14,14 +14,15 @@
 import crypto from 'node:crypto';
 import {
   isContextOnlyCandidate,
+  isLinkedOnlyIndicatorMember,
   isPublisherAssertedReportIoc,
-  isPublisherAuthoritativeReportIocMember,
   isReportIndicatorMember,
+  isUnionReportIndicatorMember,
   hasAuthoritativePublisherIocScope
 } from './indicatorMembership.js';
 
 export const SELECTION_TABS = Object.freeze([
-  'indicators', 'existing', 'new', 'needs_review', 'context_only', 'all'
+  'indicators', 'total_unique', 'linked_only', 'existing', 'new', 'needs_review', 'context_only', 'all'
 ]);
 export const SELECTION_TYPES = Object.freeze(['all', 'ip', 'domain', 'url', 'hash', 'cidr']);
 export const SELECTION_RESULTS = Object.freeze([
@@ -79,7 +80,8 @@ export function parseReviewSelection(opts = {}) {
     const tab = filters.tab == null ? '' : String(filters.tab);
     const type = filters.type == null || filters.type === '' ? 'all' : String(filters.type);
     const result = filters.result == null || filters.result === '' ? 'all' : String(filters.result);
-    if (!TAB_SET.has(tab)) return fail('Invalid selection tab');
+    const tabOk = TAB_SET.has(tab) || String(tab).startsWith('source:');
+    if (!tabOk) return fail('Invalid selection tab');
     if (!TYPE_SET.has(type)) return fail('Invalid selection type');
     if (!RESULT_SET.has(result)) return fail('Invalid selection result');
     if (filters.search != null && typeof filters.search !== 'string') return fail('Invalid selection search');
@@ -126,6 +128,8 @@ export function withInferredPublisherIocScope(candidates) {
   if (!list.some((c) => isPublisherAssertedReportIoc(c))) return list;
   return list.map((c) => {
     if (hasAuthoritativePublisherIocScope(c)) return c;
+    // Linked-only identities keep source-scoped semantics; do not stamp MODE A.
+    if (c.has_original_document_occurrence === false) return c;
     const ev = c.evidence && typeof c.evidence === 'object' ? c.evidence : {};
     return {
       ...c,
@@ -167,7 +171,7 @@ function classifyCreateOutcome(candidate) {
     || review === 'ignored' || review === 'context_only'
     || assessment === 'context_only' || assessment === 'invalid'
     || state === 'context_only' || state === 'invalid') return 'not_applicable';
-  if (!isPublisherAuthoritativeReportIocMember(c)) return 'not_applicable';
+  if (!isUnionReportIndicatorMember(c)) return 'not_applicable';
   if (!PROMOTABLE_TYPES.has(type)) return 'unsupported';
   if (review !== 'approved' && review !== 'created_ioc') return 'not_approved';
   if (assessment !== 'malicious' && assessment !== 'suspicious') return 'not_applicable';
@@ -198,15 +202,22 @@ export function matchSelectionTab(candidate, tab) {
   const state = lower(candidate?.match_state);
   const review = lower(candidate?.review_status);
   if (tab === 'indicators') return isReportIndicatorMember(candidate);
+  if (tab === 'total_unique') return isUnionReportIndicatorMember(candidate);
+  if (tab === 'linked_only') return isLinkedOnlyIndicatorMember(candidate);
   if (tab === 'existing') {
-    return isReportIndicatorMember(candidate) && (state === 'existing' || Boolean(candidate?.matched_ioc_id));
+    return isUnionReportIndicatorMember(candidate) && (state === 'existing' || Boolean(candidate?.matched_ioc_id));
   }
-  if (tab === 'new') return isReportIndicatorMember(candidate) && state === 'new';
+  if (tab === 'new') return isUnionReportIndicatorMember(candidate) && state === 'new';
   if (tab === 'context_only') {
     return state === 'context_only' || review === 'context_only' || candidate?.assessment === 'context_only';
   }
   if (tab === 'needs_review') {
-    return (state === 'needs_review' || review === 'pending') && isReportIndicatorMember(candidate);
+    return (state === 'needs_review' || review === 'pending') && isUnionReportIndicatorMember(candidate);
+  }
+  if (String(tab || '').startsWith('source:')) {
+    const sourceId = String(tab).slice('source:'.length);
+    if (!isUnionReportIndicatorMember(candidate)) return false;
+    return (candidate.sources || []).some((s) => s.id === sourceId);
   }
   return false;
 }
@@ -262,15 +273,15 @@ export function selectionScopeToken(rows) {
 }
 
 /**
- * Ids this action may change. Approve uses report-Indicator membership
- * (the same predicate as the existing UPDATE). Context only skips rows that
- * are already context-only. Ignore applies to the whole selection. Create
- * keeps every selected row so the existing classifier can count skips.
+ * Ids this action may change. Approve uses union Indicator membership
+ * (original publisher ∪ linked-source). Context only skips rows that are
+ * already context-only. Ignore applies to the whole selection. Create keeps
+ * every selected row so the existing classifier can count skips.
  */
 export function eligibleCandidateIds(action, rows) {
   const list = Array.isArray(rows) ? rows : [];
   if (action === 'approve') {
-    return list.filter((c) => isReportIndicatorMember(c)).map((c) => Number(c.id));
+    return list.filter((c) => isUnionReportIndicatorMember(c)).map((c) => Number(c.id));
   }
   if (action === 'context_only') {
     return list.filter((c) => !isContextOnlyCandidate(c)).map((c) => Number(c.id));

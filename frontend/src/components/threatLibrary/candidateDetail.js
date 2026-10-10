@@ -24,6 +24,8 @@ export function candidateDisplayValue(candidate) {
 /**
  * Concise evidence cell: assertion (with derived / AI qualifiers), the first
  * section heading or table reference, and the occurrence count.
+ * Linked-only candidates show source-aware provenance instead of
+ * misleading original-document "0 occurrences".
  * @returns {{ primary: string, secondary: string|null, tertiary: string, warning: string|null }}
  */
 export function describeEvidencePreview(candidate) {
@@ -32,6 +34,24 @@ export function describeEvidencePreview(candidate) {
   if (p.decision === 'AI') qualifiers.push('AI');
   if (!p.direct) qualifiers.push('derived');
   const primary = qualifiers.length ? `${p.assertion} · ${qualifiers.join(' · ')}` : p.assertion;
+  if (p.linkedOnly) {
+    const typeLabel = p.sourceType
+      ? String(p.sourceType).replace(/_/g, ' ')
+      : null;
+    const secondary = p.linkedSource || p.section || typeLabel || null;
+    const tertiaryBits = ['Source assertion'];
+    if (typeLabel && secondary !== typeLabel) tertiaryBits.push(typeLabel);
+    if (p.repoRevision) {
+      const rev = String(p.repoRevision);
+      tertiaryBits.push(rev.length > 12 ? `${rev.slice(0, 7)}…` : rev);
+    }
+    return {
+      primary,
+      secondary,
+      tertiary: tertiaryBits.join(' · '),
+      warning: p.resolution ? p.resolution.label : null
+    };
+  }
   const secondary = p.section || p.tableRow || null;
   const parts = [`${p.occurrences} occurrence${p.occurrences === 1 ? '' : 's'}`];
   if (p.pages) parts.push(p.pages);

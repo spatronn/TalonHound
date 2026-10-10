@@ -17,6 +17,8 @@ import {
   isActionableReviewIndicator,
   isContextOnlyCandidate,
   isPendingReviewActionableIndicator,
+  isReviewActionableIndicator,
+  isUnionReportIndicatorMember,
   reportIndicatorMembershipSql,
   isContextOnlySql,
   countCandidateBuckets,
@@ -55,6 +57,16 @@ test('parity matrix: frontend == backend JS for every membership branch', () => 
       isPendingReviewActionableIndicator(candidate),
       expect.pending_actionable,
       `${row.id} pending actionable`
+    );
+    assert.equal(
+      isReviewActionableIndicator(candidate),
+      isUnionReportIndicatorMember(candidate),
+      `${row.id} review actionable == union`
+    );
+    assert.equal(
+      frontend.isReviewActionableIndicator(candidate),
+      isReviewActionableIndicator(candidate),
+      `${row.id} FE/BE review actionable`
     );
   }
 });

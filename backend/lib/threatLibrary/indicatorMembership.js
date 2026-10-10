@@ -179,11 +179,27 @@ export function isActionableReviewIndicator(candidate) {
 }
 
 /**
- * Analyst review actionability: member ∧ still pending.
+ * Approve / Create IOCs actionability membership.
+ * Original-document Indicators ∪ authoritative linked-source Indicators.
+ * A finalized original report may still review subsequently attached linked packs.
+ */
+export function isReviewActionableIndicator(candidate) {
+  return isUnionReportIndicatorMember(candidate);
+}
+
+/**
+ * Analyst review actionability: union member ∧ still pending.
  * Distinct from membership (an approved/existing Indicator is still a member).
  */
 export function isPendingReviewActionableIndicator(candidate) {
-  return isReportIndicatorMember(candidate) && reviewOf(candidate) === 'pending';
+  return isReviewActionableIndicator(candidate) && reviewOf(candidate) === 'pending';
+}
+
+/**
+ * SQL equivalent of isReviewActionableIndicator (approve UPDATE / bulk eligibility).
+ */
+export function reviewActionableIndicatorSql(alias = 'c') {
+  return unionReportIndicatorMembershipSql(alias);
 }
 
 /**
@@ -465,6 +481,31 @@ export function membershipParityCases() {
       role: 'command_and_control',
       source_assertion: 'explicit_c2',
       evidence: { source_assertion: 'explicit_c2' }
-    }, { member: true, context_only: false, pending_actionable: true })
+    }, { member: true, context_only: false, pending_actionable: true }),
+    // Linked-only: not an original Indicator member, but pending-actionable via union.
+    wrap('linked_source_pending', {
+      has_original_document_occurrence: false,
+      source_assertion: 'linked_source_ioc',
+      document_has_authoritative_scope: false,
+      sources: [{ id: 'src-1', lifecycle_status: 'extracted' }],
+      evidence: {
+        document_has_authoritative_scope: false,
+        source_assertion: 'linked_source_ioc',
+        is_direct_source_observable: true,
+        occurrences: []
+      }
+    }, { member: false, context_only: false, pending_actionable: true }),
+    wrap('linked_source_approved', {
+      has_original_document_occurrence: false,
+      review_status: 'approved',
+      source_assertion: 'linked_source_ioc',
+      document_has_authoritative_scope: false,
+      sources: [{ id: 'src-1', lifecycle_status: 'extracted' }],
+      evidence: {
+        document_has_authoritative_scope: false,
+        source_assertion: 'linked_source_ioc',
+        is_direct_source_observable: true
+      }
+    }, { member: false, context_only: false, pending_actionable: false })
   ];
 }

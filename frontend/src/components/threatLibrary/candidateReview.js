@@ -91,6 +91,8 @@ export function withInferredPublisherIocScope(candidates) {
   if (!list.some((c) => isPublisherAssertedReportIoc(c))) return list;
   return list.map((c) => {
     if (hasAuthoritativePublisherIocScope(c)) return c;
+    // Linked-only identities keep source-scoped semantics; do not stamp MODE A.
+    if (c.has_original_document_occurrence === false) return c;
     const ev = c.evidence && typeof c.evidence === 'object' ? c.evidence : {};
     return {
       ...c,
@@ -160,6 +162,14 @@ export function isLinkedOnlyReviewIndicator(candidate) {
 /** Alias matching the backend canonical name. */
 export function isReportIndicatorMember(candidate) {
   return isReviewIndicator(candidate);
+}
+
+/**
+ * Approve / Create IOCs actionability (union membership).
+ * Mirrors backend isReviewActionableIndicator.
+ */
+export function isReviewActionableIndicator(candidate) {
+  return isUnionReviewIndicator(candidate);
 }
 
 /**
@@ -278,8 +288,48 @@ export function confidenceLabel(candidate) {
 }
 
 /**
+ * Compact title for a linked IOC source — prefer path/name over a long URL.
+ */
+export function linkedSourceEvidenceLabel(source) {
+  if (!source || typeof source !== 'object') return null;
+  if (source.file_path) {
+    const path = String(source.file_path);
+    const base = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path;
+    const urlLabel = (() => {
+      const url = String(source.canonical_url || source.original_url || '').trim();
+      if (!url) return null;
+      try {
+        const u = new URL(url);
+        const parts = u.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2 && /github\.com$/i.test(u.hostname)) return `${parts[0]}/${parts[1]}`;
+      } catch { /* ignore */ }
+      return null;
+    })();
+    return urlLabel ? `${urlLabel} · ${base}` : base;
+  }
+  const url = String(source.canonical_url || source.original_url || '').trim();
+  if (!url) return source.id ? 'Linked IOC source' : null;
+  try {
+    const u = new URL(url);
+    if (/github\.com$/i.test(u.hostname) || /githubusercontent\.com$/i.test(u.hostname)) {
+      const parts = u.pathname.split('/').filter(Boolean);
+      if (parts.length >= 2) {
+        const ownerRepo = `${parts[0]}/${parts[1]}`;
+        const pathStart = parts[2] && /^(tree|blob)$/i.test(parts[2]) ? 4 : 2;
+        const pathParts = parts.slice(pathStart);
+        if (pathParts.length) return `${ownerRepo} · ${pathParts.join('/')}`;
+        return ownerRepo;
+      }
+    }
+    return u.hostname;
+  } catch {
+    return url.length > 48 ? `${url.slice(0, 45)}…` : url;
+  }
+}
+
+/**
  * Compact provenance summary for one candidate row.
- * @returns {{ assertion: string, section: string|null, pages: string|null, occurrences: number, direct: boolean, ports: string|null, decision: string|null, description: string|null, tableRow: string|null, declaredType: string|null, sourceAsserted: boolean, resolution: { label: string, detail: string|null, syntaxGuess: string|null }|null }}
+ * @returns {{ assertion: string, section: string|null, pages: string|null, occurrences: number, direct: boolean, ports: string|null, decision: string|null, description: string|null, tableRow: string|null, declaredType: string|null, sourceAsserted: boolean, linkedOnly: boolean, linkedSource: string|null, resolution: { label: string, detail: string|null, syntaxGuess: string|null }|null }}
  */
 export function describeCandidateProvenance(candidate) {
   const ev = (candidate && candidate.evidence) || {};
@@ -291,19 +341,34 @@ export function describeCandidateProvenance(candidate) {
   const zones = Array.isArray(ev.zones) && ev.zones.length ? ev.zones : occurrences.map((o) => o.zone).filter(Boolean);
   const ports = Array.isArray(ev.parsed?.ports) && ev.parsed.ports.length ? ev.parsed.ports.join('/') : null;
   const decision = ev.decision_source === 'ai' ? 'AI' : ev.decision_source === 'deterministic' ? 'Report evidence' : null;
+  const linkedOnly = candidate?.has_original_document_occurrence === false
+    || String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase() === LINKED_SOURCE_IOC_ASSERTION;
+  const linkedSources = Array.isArray(candidate?.sources) ? candidate.sources : [];
+  const linkedLabel = linkedSources.map(linkedSourceEvidenceLabel).find(Boolean)
+    || (ev.linked_source_path ? String(ev.linked_source_path) : null);
+  const zoneLabel = zones.length ? [...new Set(zones)].join(', ').replace(/_/g, ' ') : null;
+  // Linked-only rows often inherit extract zones like report_body with 0
+  // original-document occurrences — prefer source provenance instead.
+  const section = linkedOnly
+    ? (linkedLabel || heading || null)
+    : (heading || zoneLabel || candidate?.section || null);
   return {
     assertion: sourceAssertionLabel(candidate?.source_assertion || ev.source_assertion),
-    section: heading || (zones.length ? [...new Set(zones)].join(', ').replace(/_/g, ' ') : null) || candidate?.section || null,
-    pages: pages.length ? `p${pages.slice(0, 6).join(', p')}${pages.length > 6 ? '…' : ''}` : null,
-    occurrences: Number(ev.occurrence_count) || occurrences.length || 0,
+    section,
+    pages: linkedOnly ? null : (pages.length ? `p${pages.slice(0, 6).join(', p')}${pages.length > 6 ? '…' : ''}` : null),
+    occurrences: linkedOnly ? 0 : (Number(ev.occurrence_count) || occurrences.length || 0),
     direct: ev.is_direct_source_observable !== false && ev.is_parser_derived_metadata !== true,
     ports,
-    decision,
+    decision: linkedOnly ? 'Linked source' : decision,
     urlHost: candidate?.candidate_type === 'url' && ev.parsed?.host ? ev.parsed.host : null,
     description: firstRow?.description || null,
-    tableRow: firstRow ? `table ${firstRow.table_id || '?'} row ${Number.isInteger(firstRow.row_index) ? firstRow.row_index + 1 : '?'}` : null,
+    tableRow: linkedOnly ? null : (firstRow ? `table ${firstRow.table_id || '?'} row ${Number.isInteger(firstRow.row_index) ? firstRow.row_index + 1 : '?'}` : null),
     declaredType: firstRow?.type_cell || null,
-    sourceAsserted: isSourceAsserted(candidate),
+    sourceAsserted: isSourceAsserted(candidate) || linkedOnly,
+    linkedOnly,
+    linkedSource: linkedLabel,
+    sourceType: linkedSources[0]?.source_type || null,
+    repoRevision: linkedSources[0]?.repo_revision || null,
     resolution: describeTypeResolution(candidate)
   };
 }
@@ -473,7 +538,7 @@ export function classifyCreateOutcome(candidate) {
     || review === 'ignored' || review === 'context_only'
     || assessment === 'context_only' || assessment === 'invalid'
     || state === 'context_only' || state === 'invalid') return 'not_applicable';
-  if (!isPublisherAuthoritativeReportIocMember(c)) return 'not_applicable';
+  if (!isUnionReviewIndicator(c)) return 'not_applicable';
   if (!PROMOTABLE_TYPES.has(type)) return 'unsupported';
   if (review !== 'approved' && review !== 'created_ioc') return 'not_approved';
   if (assessment !== 'malicious' && assessment !== 'suspicious') return 'not_applicable';
@@ -620,7 +685,7 @@ export function selectionForAction(action, selectedRows) {
   }
   const eligible = String(action) === 'context_only'
     ? rows.filter((c) => !isContextOnlyCandidate(c))
-    : rows.filter((c) => isReviewIndicator(c));
+    : rows.filter((c) => isReviewActionableIndicator(c));
   return { ids: eligible.map((c) => c.id), excluded: rows.length - eligible.length };
 }
 
@@ -656,7 +721,8 @@ export const NO_CREATABLE_HINT = 'No new approved indicators selected.';
  */
 export function describeReviewToolbar({ filter, selectedRows, busy = false } = {}) {
   const rows = Array.isArray(selectedRows) ? selectedRows : [];
-  const iocSelected = rows.filter((c) => isReviewIndicator(c)).length;
+  // Union membership: original publisher Indicators + linked-source Indicators.
+  const iocSelected = rows.filter((c) => isReviewActionableIndicator(c)).length;
   const markableSelected = rows.filter((c) => !isContextOnlyCandidate(c)).length;
   const contextOnlySelected = rows.length - markableSelected;
   const isBusy = Boolean(busy);

@@ -246,10 +246,12 @@ export async function loadOtherLinkedKeys(pool, reportId, excludeSourceId) {
 export async function loadCandidateSourceLinks(pool, reportId) {
   const { rows } = await pool.query(
     `SELECT l.candidate_id, l.source_id, l.source_assertion, s.public_id AS source_public_id,
-            s.source_type, s.canonical_url, s.lifecycle_status
+            s.source_type, s.canonical_url, s.lifecycle_status, s.repo_revision,
+            f.path AS file_path
      FROM threat_report_candidate_source_links l
      JOIN threat_report_ioc_sources s ON s.id = l.source_id
      JOIN threat_report_candidates c ON c.id = l.candidate_id
+     LEFT JOIN threat_report_ioc_source_files f ON f.id = l.source_file_id
      WHERE c.report_id = $1`,
     [reportId]
   );
@@ -261,7 +263,9 @@ export async function loadCandidateSourceLinks(pool, reportId) {
       source_type: r.source_type,
       canonical_url: r.canonical_url,
       source_assertion: r.source_assertion,
-      lifecycle_status: r.lifecycle_status
+      lifecycle_status: r.lifecycle_status,
+      repo_revision: r.repo_revision || null,
+      file_path: r.file_path || null
     });
     byCandidate.set(r.candidate_id, list);
   }

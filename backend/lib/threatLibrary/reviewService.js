@@ -31,14 +31,14 @@ import {
   canExecutePromotion,
   classifyCreateEligibility,
   classifyPromoteEligibility,
-  isActionableReviewIndicator,
   isContextOnlyCandidate,
   isNoneEligibleBlock,
   isPendingActionableCandidate,
+  isReviewActionableIndicator,
   NOT_CONTEXT_ONLY_SQL,
-  publisherAuthoritativeIocMembershipSql,
   previewCreateIocPromotion,
   PROMOTION_OUTCOMES,
+  reviewActionableIndicatorSql,
   summarizePromotionResults
 } from './promotion.js';
 import {
@@ -134,13 +134,13 @@ async function selectHighConfidenceIds(pool, reportId) {
        AND review_status = 'pending'
        AND is_ioc = true
        AND ${NOT_CONTEXT_ONLY_SQL}
-       AND ${publisherAuthoritativeIocMembershipSql('')}`,
+       AND (${reviewActionableIndicatorSql('')})`,
     [reportId, CONFIDENCE_POLICY.AUTO_APPROVE_SUGGEST]
   );
   return rows
     .filter((r) => {
       const ev = r.evidence && typeof r.evidence === 'object' ? r.evidence : {};
-      if (!isActionableReviewIndicator(r)) return false;
+      if (!isReviewActionableIndicator(r)) return false;
       if (ev.is_parser_derived_metadata === true || r.is_ioc === false) return false;
       const occurrences = Array.isArray(ev.occurrences) && ev.occurrences.length
         ? ev.occurrences
@@ -294,12 +294,12 @@ async function applyStatusChange(db, report, ids, action) {
   let updated = ids.length;
   let skippedIds = [];
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {
-    skippedIds = selectedBefore.filter((c) => !isActionableReviewIndicator(c)).map((c) => Number(c.id));
+    skippedIds = selectedBefore.filter((c) => !isReviewActionableIndicator(c)).map((c) => Number(c.id));
     const res = await db.query(
       `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
        WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true
          AND ${NOT_CONTEXT_ONLY_SQL}
-         AND ${publisherAuthoritativeIocMembershipSql('')}`,
+         AND (${reviewActionableIndicatorSql('')})`,
       [report.id, ids]
     );
     updated = Number.isInteger(res?.rowCount) ? res.rowCount : Math.max(0, selectedBefore.length - skippedIds.length);
@@ -371,15 +371,15 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   let updated = ids.length;
   let skippedIds = [];
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {
-    // Non-IOC artifacts (mutex names, relative paths, code identifiers),
-    // context-only rows, and MODE A narrative-only observables are not report
-    // Indicators: a mixed selection approves only the review-set members.
-    skippedIds = selectedBefore.filter((c) => !isActionableReviewIndicator(c)).map((c) => Number(c.id));
+    // Non-IOC artifacts, context-only rows, and MODE A narrative-only
+    // observables are excluded. Linked-source Indicators (union membership)
+    // remain approvable on a finalized original report.
+    skippedIds = selectedBefore.filter((c) => !isReviewActionableIndicator(c)).map((c) => Number(c.id));
     const res = await pool.query(
       `UPDATE threat_report_candidates SET review_status = 'approved', updated_at = NOW()
        WHERE report_id = $1 AND id = ANY($2::bigint[]) AND is_ioc = true
          AND ${NOT_CONTEXT_ONLY_SQL}
-         AND ${publisherAuthoritativeIocMembershipSql('')}`,
+         AND (${reviewActionableIndicatorSql('')})`,
       [reportId, ids]
     );
     updated = Number.isInteger(res?.rowCount) ? res.rowCount : Math.max(0, selectedBefore.length - skippedIds.length);
