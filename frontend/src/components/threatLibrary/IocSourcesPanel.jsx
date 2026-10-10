@@ -1,32 +1,81 @@
 /**
  * Threat Library report — Additional IOC Sources tab.
+ * Visual system matches Threat Library reportPage.css / styles.js (dark surfaces).
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
-import { ui } from './styles.js';
-
-function statusTone(status) {
-  const s = String(status || '').toLowerCase();
-  if (s === 'extracted' || s === 'inspected' || s === 'succeeded') return 'ok';
-  if (s === 'failed' || s === 'blocked' || s === 'unsupported') return 'danger';
-  if (s === 'dismissed') return 'muted';
-  if (s === 'inspecting' || s === 'extracting' || s === 'attached') return 'warn';
-  return 'neutral';
-}
+import { badgeStyle, ui } from './styles.js';
+import {
+  isAttachedLifecycle,
+  isPendingLifecycle,
+  lifecycleBadge,
+  shortSourceTitle,
+  sourceCardMeta,
+  sourceTypeLabel
+} from './iocSourcesUi.js';
 
 function PreviewBlock({ preview }) {
   if (!preview || typeof preview !== 'object') return null;
   const estimated = preview.estimated === true;
   const label = estimated ? 'Estimated' : 'Inspected';
   return (
-    <dl className="th-ioc-source-preview">
-      <div><dt>{label} raw</dt><dd>{preview.raw_count ?? '—'}</dd></div>
-      <div><dt>{label} unique</dt><dd>{preview.unique_count ?? '—'}</dd></div>
-      <div><dt>Overlap (original)</dt><dd>{preview.overlap_with_original ?? '—'}</dd></div>
-      <div><dt>New identities</dt><dd>{preview.new_identities ?? '—'}</dd></div>
+    <dl className="tl-ioc-source-preview">
+      <div>
+        <dt>{label} raw</dt>
+        <dd>{preview.raw_count ?? '—'}</dd>
+      </div>
+      <div>
+        <dt>{label} unique</dt>
+        <dd>{preview.unique_count ?? '—'}</dd>
+      </div>
+      <div>
+        <dt>Overlap (original)</dt>
+        <dd>{preview.overlap_with_original ?? '—'}</dd>
+      </div>
+      <div>
+        <dt>New identities</dt>
+        <dd>{preview.new_identities ?? '—'}</dd>
+      </div>
+      {preview.repo_ref ? (
+        <div>
+          <dt>Branch / ref</dt>
+          <dd>{preview.repo_ref}</dd>
+        </div>
+      ) : null}
     </dl>
+  );
+}
+
+function SourceCard({ source, selected, onSelect }) {
+  const badge = lifecycleBadge(source.lifecycle_status);
+  const title = shortSourceTitle(source);
+  const meta = sourceCardMeta(source);
+  const url = source.original_url || source.canonical_url || '';
+  return (
+    <button
+      type="button"
+      className={`tl-ioc-source-card${selected ? ' is-selected' : ''}`}
+      onClick={() => onSelect(source)}
+      aria-pressed={selected}
+      data-testid="ioc-source-card"
+      data-lifecycle={source.lifecycle_status || ''}
+    >
+      <div className="tl-ioc-source-card__head">
+        <span className="tl-ioc-source-card__type">{sourceTypeLabel(source.source_type)}</span>
+        <span className="tl-badge" style={badgeStyle(badge)} data-testid="ioc-source-status">
+          {badge.label}
+        </span>
+      </div>
+      <div className="tl-ioc-source-card__title">{title}</div>
+      {url ? (
+        <div className="tl-ioc-source-card__url" title={url}>
+          {url}
+        </div>
+      ) : null}
+      {meta ? <div className="tl-ioc-source-card__meta">{meta}</div> : null}
+    </button>
   );
 }
 
@@ -100,20 +149,21 @@ export default function IocSourcesPanel({
     });
   }
 
-  const discovered = items.filter((s) => s.lifecycle_status === 'discovered' || s.lifecycle_status === 'inspected' || s.lifecycle_status === 'failed' || s.lifecycle_status === 'blocked' || s.lifecycle_status === 'unsupported');
-  const attached = items.filter((s) => ['attached', 'extracting', 'extracted', 'stale'].includes(s.lifecycle_status));
+  const discovered = items.filter((s) => isPendingLifecycle(s.lifecycle_status));
+  const attached = items.filter((s) => isAttachedLifecycle(s.lifecycle_status));
+  const selectedBadge = selected ? lifecycleBadge(selected.lifecycle_status) : null;
 
   return (
-    <section className="th-ioc-sources" aria-label="IOC Sources">
-      <header className="th-ioc-sources__header">
-        <div>
-          <h2 style={{ margin: 0, fontSize: '1.1rem' }}>IOC Sources</h2>
-          <p style={{ margin: '0.35rem 0 0', color: 'var(--th-muted, #64748b)', fontSize: '0.9rem' }}>
+    <section className="tl-ioc-sources" aria-label="IOC Sources" data-testid="ioc-sources-panel">
+      <header className="tl-ioc-sources__header">
+        <div className="tl-ioc-sources__intro">
+          <h2 className="tl-ioc-sources__title">IOC Sources</h2>
+          <p className="tl-ioc-sources__lede">
             External IOC datasets linked to this report. Approving a source authorizes extraction;
             it does not approve IOCs into inventory.
           </p>
         </div>
-        <ul className="th-ioc-sources__counts" aria-label="Source counts">
+        <ul className="tl-ioc-sources__counts" aria-label="Source counts">
           <li><strong>{summary?.total ?? items.length}</strong> total</li>
           <li><strong>{summary?.discovered_pending ?? 0}</strong> need review</li>
           <li><strong>{summary?.attached ?? 0}</strong> attached</li>
@@ -123,102 +173,104 @@ export default function IocSourcesPanel({
       </header>
 
       {canWrite ? (
-        <form className="th-ioc-sources__add" onSubmit={addSource}>
-          <label htmlFor="th-ioc-source-url">Add source URL</label>
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <form className="tl-ioc-sources__add" onSubmit={addSource}>
+          <label htmlFor="tl-ioc-source-url" style={ui.label}>Add source URL</label>
+          <div className="tl-ioc-sources__add-row">
             <input
-              id="th-ioc-source-url"
+              id="tl-ioc-source-url"
               type="url"
               value={addUrl}
               onChange={(e) => setAddUrl(e.target.value)}
               placeholder="https://github.com/org/ioc/…"
-              style={{ flex: '1 1 16rem', minWidth: 0 }}
+              style={{ ...ui.input, flex: '1 1 16rem', minWidth: 0 }}
               disabled={Boolean(busy)}
             />
-            <button type="submit" className="btn btn-primary" disabled={Boolean(busy) || !addUrl.trim()}>
+            <button
+              type="submit"
+              style={ui.btnPrimary}
+              disabled={Boolean(busy) || !addUrl.trim()}
+            >
               {busy === 'add' ? 'Adding…' : 'Add Source'}
             </button>
           </div>
         </form>
       ) : null}
 
-      {error ? <p role="alert" style={{ color: 'var(--th-danger, #b91c1c)' }}>{error}</p> : null}
-      {loading ? <p>Loading sources…</p> : null}
+      {error ? <p role="alert" style={ui.error}>{error}</p> : null}
+      {loading ? <p style={ui.muted}>Loading sources…</p> : null}
 
       {!loading && !items.length ? (
-        <p style={{ color: 'var(--th-muted, #64748b)' }}>
+        <p style={ui.muted}>
           No additional IOC sources discovered or added yet.
         </p>
       ) : null}
 
-      <div className="th-ioc-sources__layout">
-        <div className="th-ioc-sources__list">
+      <div className="tl-ioc-sources__layout">
+        <div className="tl-ioc-sources__list">
           {discovered.length ? (
-            <div>
-              <h3 style={{ fontSize: '0.95rem' }}>Discovered / pending</h3>
-              <ul className="th-ioc-source-cards">
+            <section className="tl-ioc-sources__group" aria-label="Discovered or pending sources">
+              <h3 className="tl-ioc-sources__group-title">Discovered / pending</h3>
+              <ul className="tl-ioc-source-cards">
                 {discovered.map((s) => (
                   <li key={s.id}>
-                    <button
-                      type="button"
-                      className={`th-ioc-source-card${selected?.id === s.id ? ' is-selected' : ''}`}
-                      onClick={() => setSelected(s)}
-                    >
-                      <span className={`th-ioc-source-status is-${statusTone(s.lifecycle_status)}`}>
-                        {s.lifecycle_status}
-                      </span>
-                      <span className="th-ioc-source-card__url">{s.original_url}</span>
-                      <span className="th-ioc-source-card__meta">
-                        {s.source_type} · {s.discovery_method}
-                      </span>
-                    </button>
+                    <SourceCard
+                      source={s}
+                      selected={selected?.id === s.id}
+                      onSelect={setSelected}
+                    />
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           ) : null}
 
           {attached.length ? (
-            <div>
-              <h3 style={{ fontSize: '0.95rem' }}>Attached</h3>
-              <ul className="th-ioc-source-cards">
+            <section className="tl-ioc-sources__group" aria-label="Attached sources">
+              <h3 className="tl-ioc-sources__group-title">Attached</h3>
+              <ul className="tl-ioc-source-cards">
                 {attached.map((s) => (
                   <li key={s.id}>
-                    <button
-                      type="button"
-                      className={`th-ioc-source-card${selected?.id === s.id ? ' is-selected' : ''}`}
-                      onClick={() => setSelected(s)}
-                    >
-                      <span className={`th-ioc-source-status is-${statusTone(s.lifecycle_status)}`}>
-                        {s.lifecycle_status}
-                      </span>
-                      <span className="th-ioc-source-card__url">{s.original_url}</span>
-                      <span className="th-ioc-source-card__meta">
-                        extract: {s.extraction_status}
-                      </span>
-                    </button>
+                    <SourceCard
+                      source={s}
+                      selected={selected?.id === s.id}
+                      onSelect={setSelected}
+                    />
                   </li>
                 ))}
               </ul>
-            </div>
+            </section>
           ) : null}
         </div>
 
         {selected ? (
-          <aside className="th-ioc-source-drawer" aria-label="Source detail">
-            <header>
-              <h3 style={{ marginTop: 0, fontSize: '1rem', wordBreak: 'break-all' }}>{selected.original_url}</h3>
-              <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--th-muted, #64748b)' }}>
-                Canonical: {selected.canonical_url}
+          <aside className="tl-ioc-source-drawer" aria-label="Source detail" data-testid="ioc-source-drawer">
+            <header className="tl-ioc-source-drawer__header">
+              <div className="tl-ioc-source-drawer__head-row">
+                <span className="tl-ioc-source-card__type">{sourceTypeLabel(selected.source_type)}</span>
+                {selectedBadge ? (
+                  <span className="tl-badge" style={badgeStyle(selectedBadge)}>{selectedBadge.label}</span>
+                ) : null}
+              </div>
+              <h3 className="tl-ioc-source-drawer__title">{shortSourceTitle(selected)}</h3>
+              <p className="tl-ioc-source-drawer__url" title={selected.original_url || ''}>
+                {selected.original_url}
               </p>
+              {selected.canonical_url && selected.canonical_url !== selected.original_url ? (
+                <p className="tl-ioc-source-drawer__canonical">
+                  Canonical: {selected.canonical_url}
+                </p>
+              ) : null}
             </header>
 
-            <dl className="th-ioc-source-meta">
+            <dl className="tl-ioc-source-meta">
               <div><dt>Status</dt><dd>{selected.lifecycle_status}</dd></div>
-              <div><dt>Type</dt><dd>{selected.source_type}</dd></div>
-              <div><dt>Discovery</dt><dd>{selected.discovery_method}</dd></div>
-              <div><dt>Inspection</dt><dd>{selected.inspection_status}</dd></div>
-              <div><dt>Extraction</dt><dd>{selected.extraction_status}</dd></div>
+              <div><dt>Type</dt><dd>{sourceTypeLabel(selected.source_type)}</dd></div>
+              <div><dt>Discovery</dt><dd>{selected.discovery_method || '—'}</dd></div>
+              <div><dt>Inspection</dt><dd>{selected.inspection_status || '—'}</dd></div>
+              <div><dt>Extraction</dt><dd>{selected.extraction_status || '—'}</dd></div>
+              {selected.repo_revision ? (
+                <div><dt>Revision</dt><dd className="tl-ioc-source-meta__mono">{selected.repo_revision}</dd></div>
+              ) : null}
               {selected.last_fetched_at ? (
                 <div><dt>Last fetch</dt><dd>{formatUserDateTime(selected.last_fetched_at)}</dd></div>
               ) : null}
@@ -228,13 +280,13 @@ export default function IocSourcesPanel({
             </dl>
 
             {selected.discovery_evidence?.link_text || selected.discovery_evidence?.surrounding_text ? (
-              <div>
-                <h4 style={{ fontSize: '0.9rem' }}>Discovery evidence</h4>
+              <div className="tl-ioc-source-drawer__block">
+                <h4 className="tl-ioc-source-drawer__h">Discovery evidence</h4>
                 {selected.discovery_evidence.link_text ? (
-                  <p style={{ fontSize: '0.9rem' }}>Link text: {selected.discovery_evidence.link_text}</p>
+                  <p className="tl-ioc-source-drawer__body">Link text: {selected.discovery_evidence.link_text}</p>
                 ) : null}
                 {selected.discovery_evidence.surrounding_text ? (
-                  <p style={{ fontSize: '0.85rem', color: 'var(--th-muted, #64748b)' }}>
+                  <p className="tl-ioc-source-drawer__muted">
                     {selected.discovery_evidence.surrounding_text}
                   </p>
                 ) : null}
@@ -244,18 +296,18 @@ export default function IocSourcesPanel({
             <PreviewBlock preview={selected.preview} />
 
             {selected.error_detail ? (
-              <p role="alert" style={{ color: 'var(--th-danger, #b91c1c)', fontSize: '0.9rem' }}>
+              <p role="alert" className="tl-ioc-source-drawer__error">
                 {selected.error_code ? `${selected.error_code}: ` : ''}{selected.error_detail}
               </p>
             ) : null}
 
             {Array.isArray(selected.files) && selected.files.length ? (
-              <div>
-                <h4 style={{ fontSize: '0.9rem' }}>Files</h4>
-                <ul className="th-ioc-source-files">
+              <div className="tl-ioc-source-drawer__block">
+                <h4 className="tl-ioc-source-drawer__h">Files</h4>
+                <ul className="tl-ioc-source-files">
                   {selected.files.map((f) => (
                     <li key={f.path}>
-                      <label style={{ display: 'flex', gap: '0.4rem', alignItems: 'flex-start' }}>
+                      <label className="tl-ioc-source-files__row">
                         <input
                           type="checkbox"
                           checked={selectedPaths.has(f.path)}
@@ -270,9 +322,8 @@ export default function IocSourcesPanel({
                           }}
                         />
                         <span>
-                          <code style={{ wordBreak: 'break-all' }}>{f.path}</code>
-                          <br />
-                          <span style={{ fontSize: '0.8rem', color: 'var(--th-muted, #64748b)' }}>
+                          <code className="tl-ioc-source-files__path">{f.path}</code>
+                          <span className="tl-ioc-source-files__meta">
                             {f.parse_status}
                             {f.estimated_unique_count != null ? ` · ~${f.estimated_unique_count} unique` : ''}
                           </span>
@@ -285,11 +336,11 @@ export default function IocSourcesPanel({
             ) : null}
 
             {canWrite ? (
-              <div className="th-ioc-source-actions" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '1rem' }}>
+              <div className="tl-ioc-source-actions">
                 {['discovered', 'inspected', 'failed', 'blocked', 'unsupported', 'attached', 'extracted', 'stale'].includes(selected.lifecycle_status) ? (
                   <button
                     type="button"
-                    className="btn"
+                    style={ui.btn}
                     disabled={Boolean(busy)}
                     onClick={() => runAction('inspect', () => api.post(`/threat-library/ioc-sources/${selected.id}/retry-inspect`))}
                   >
@@ -299,7 +350,7 @@ export default function IocSourcesPanel({
                 {['inspected', 'failed', 'stale'].includes(selected.lifecycle_status) ? (
                   <button
                     type="button"
-                    className="btn btn-primary"
+                    style={ui.btnPrimary}
                     disabled={Boolean(busy)}
                     onClick={() => runAction('approve', () => api.post(`/threat-library/ioc-sources/${selected.id}/approve`, {
                       selected_paths: [...selectedPaths]
@@ -311,7 +362,7 @@ export default function IocSourcesPanel({
                 {['attached', 'extracted', 'failed', 'stale'].includes(selected.lifecycle_status) ? (
                   <button
                     type="button"
-                    className="btn"
+                    style={ui.btn}
                     disabled={Boolean(busy)}
                     onClick={() => runAction('extract', () => api.post(`/threat-library/ioc-sources/${selected.id}/retry-extract`))}
                   >
@@ -321,7 +372,7 @@ export default function IocSourcesPanel({
                 {['discovered', 'inspected', 'failed', 'blocked', 'unsupported', 'stale'].includes(selected.lifecycle_status) ? (
                   <button
                     type="button"
-                    className="btn"
+                    style={ui.btnDanger}
                     disabled={Boolean(busy)}
                     onClick={() => runAction('dismiss', () => api.post(`/threat-library/ioc-sources/${selected.id}/dismiss`))}
                   >
@@ -333,35 +384,6 @@ export default function IocSourcesPanel({
           </aside>
         ) : null}
       </div>
-
-      <style>{`
-        .th-ioc-sources__header { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; margin-bottom: 1rem; }
-        .th-ioc-sources__counts { display: flex; flex-wrap: wrap; gap: 0.75rem; list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
-        .th-ioc-sources__add { margin-bottom: 1.25rem; }
-        .th-ioc-sources__add label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; }
-        .th-ioc-sources__layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-        @media (min-width: 900px) {
-          .th-ioc-sources__layout { grid-template-columns: minmax(0, 1fr) minmax(18rem, 22rem); }
-        }
-        .th-ioc-source-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
-        .th-ioc-source-card {
-          width: 100%; text-align: left; border: 1px solid var(--th-border, #e2e8f0);
-          background: var(--th-surface, #fff); padding: 0.75rem; border-radius: 6px; cursor: pointer;
-        }
-        .th-ioc-source-card.is-selected { border-color: var(--th-accent, #0f766e); box-shadow: inset 0 0 0 1px var(--th-accent, #0f766e); }
-        .th-ioc-source-card__url { display: block; font-size: 0.9rem; word-break: break-all; margin: 0.35rem 0; }
-        .th-ioc-source-card__meta { font-size: 0.8rem; color: var(--th-muted, #64748b); }
-        .th-ioc-source-status { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
-        .th-ioc-source-status.is-ok { color: #047857; }
-        .th-ioc-source-status.is-danger { color: #b91c1c; }
-        .th-ioc-source-status.is-warn { color: #b45309; }
-        .th-ioc-source-status.is-muted { color: #64748b; }
-        .th-ioc-source-drawer { border: 1px solid var(--th-border, #e2e8f0); border-radius: 6px; padding: 1rem; background: var(--th-surface, #fff); }
-        .th-ioc-source-meta, .th-ioc-source-preview { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem 1rem; font-size: 0.85rem; }
-        .th-ioc-source-meta dt, .th-ioc-source-preview dt { color: var(--th-muted, #64748b); font-weight: 500; }
-        .th-ioc-source-meta dd, .th-ioc-source-preview dd { margin: 0.1rem 0 0; }
-        .th-ioc-source-files { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; max-height: 14rem; overflow: auto; }
-      `}</style>
     </section>
   );
 }

@@ -1,5 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { buildReportTabs, REPORT_VIEWS, parseReportView } from './reportTabs.js';
 import {
   isReviewIndicator,
@@ -8,6 +11,18 @@ import {
   matchReviewFilter,
   REVIEW_FILTERS
 } from './candidateReview.js';
+import {
+  lifecycleBadge,
+  shortSourceTitle,
+  sourceCardMeta,
+  sourceTypeLabel,
+  isAttachedLifecycle,
+  isPendingLifecycle
+} from './iocSourcesUi.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const panelSrc = fs.readFileSync(path.join(__dirname, 'IocSourcesPanel.jsx'), 'utf8');
+const pageCss = fs.readFileSync(path.join(__dirname, 'reportPage.css'), 'utf8');
 
 test('IOC Sources tab is present with optional count', () => {
   const tabs = buildReportTabs({
@@ -66,4 +81,38 @@ test('default Original filter preserves MODE A membership; total/linked filters 
   assert.equal(matchReviewFilter(linked, 'linked_only'), true);
   assert.equal(matchReviewFilter(linked, 'source:s1'), true);
   assert.equal(matchReviewFilter(linked, 'source:other'), false);
+});
+
+test('source card title and type helpers for GitHub Warden pack', () => {
+  const url = 'https://github.com/gendigitalinc/ioc/tree/master/WardenStealer';
+  assert.equal(
+    shortSourceTitle({ canonical_url: url, source_type: 'github_dir' }),
+    'gendigitalinc/ioc · WardenStealer'
+  );
+  assert.equal(sourceTypeLabel('github_dir'), 'GitHub directory');
+  assert.equal(lifecycleBadge('extracted').label, 'Extracted');
+  assert.equal(isAttachedLifecycle('extracted'), true);
+  assert.equal(isPendingLifecycle('inspected'), true);
+  assert.match(
+    sourceCardMeta({
+      source_type: 'github_dir',
+      extraction_status: 'succeeded',
+      preview: { unique_count: 3150 },
+      discovery_method: 'manual'
+    }),
+    /3150 unique indicators/
+  );
+});
+
+test('IOC Sources panel uses Threat Library dark surface classes, not light fallbacks', () => {
+  assert.match(panelSrc, /className="tl-ioc-sources"/);
+  assert.match(panelSrc, /tl-ioc-source-card/);
+  assert.doesNotMatch(panelSrc, /--th-surface/);
+  assert.doesNotMatch(panelSrc, /background:\s*#fff|#ffffff|white/i);
+  assert.doesNotMatch(panelSrc, /<style>/);
+
+  assert.match(pageCss, /\.tl-ioc-source-card \{/);
+  assert.match(pageCss, /background:\s*#0f172a/);
+  assert.doesNotMatch(pageCss, /\.tl-ioc-source-card[^{]*\{[^}]*background:\s*#fff/);
+  assert.doesNotMatch(pageCss, /var\(--th-surface/);
 });

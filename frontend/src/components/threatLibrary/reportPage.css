@@ -908,3 +908,347 @@
 .tl-intel {
   margin-top: 22px;
 }
+
+/* -------------------------------------------------------------------------
+ * IOC Sources tab — Additional IOC Sources panel.
+ * Surfaces / text / borders reuse the same dark tokens as .tl-source-card
+ * and threatLibrary/styles.js. Do not introduce light-theme fallbacks here.
+ * ------------------------------------------------------------------------- */
+
+.tl-ioc-sources {
+  min-width: 0;
+  color: #e2e8f0;
+}
+
+.tl-ioc-sources__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.tl-ioc-sources__intro {
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.tl-ioc-sources__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.tl-ioc-sources__lede {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #94a3b8;
+  max-width: 52rem;
+}
+
+.tl-ioc-sources__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.tl-ioc-sources__counts strong {
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-ioc-sources__add {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #0f172a;
+}
+
+.tl-ioc-sources__add-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+
+.tl-ioc-sources__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .tl-ioc-sources__layout {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem);
+    align-items: start;
+  }
+}
+
+.tl-ioc-sources__group {
+  margin-bottom: 18px;
+  min-width: 0;
+}
+
+.tl-ioc-sources__group-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tl-ioc-source-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tl-ioc-source-card {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  text-align: left;
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e2e8f0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.tl-ioc-source-card:hover {
+  border-color: #334155;
+  background: #111827;
+}
+
+.tl-ioc-source-card:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
+}
+
+.tl-ioc-source-card.is-selected {
+  border-color: #0f766e;
+  box-shadow: inset 0 0 0 1px #0f766e;
+  background: #111827;
+}
+
+.tl-ioc-source-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.tl-ioc-source-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tl-ioc-source-card__type {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
+.tl-ioc-source-card__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #f1f5f9;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.tl-ioc-source-card__url {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.tl-ioc-source-card__meta {
+  font-size: 12px;
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+}
+
+.tl-ioc-source-drawer {
+  border: 1px solid #1e293b;
+  border-radius: 10px;
+  background: #0f172a;
+  padding: 14px 16px;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  position: sticky;
+  top: calc(var(--th-sticky-top, 0px) + 8px);
+}
+
+.tl-ioc-source-drawer__header {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tl-ioc-source-drawer__head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tl-ioc-source-drawer__title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #f1f5f9;
+  overflow-wrap: anywhere;
+}
+
+.tl-ioc-source-drawer__url,
+.tl-ioc-source-drawer__canonical {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.tl-ioc-source-drawer__h {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tl-ioc-source-drawer__body {
+  margin: 0;
+  font-size: 13px;
+  color: #e2e8f0;
+  overflow-wrap: anywhere;
+}
+
+.tl-ioc-source-drawer__muted {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+  overflow-wrap: anywhere;
+}
+
+.tl-ioc-source-drawer__error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #7f1d1d;
+  background: rgba(127, 29, 29, 0.22);
+  color: #fecaca;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.tl-ioc-source-meta,
+.tl-ioc-source-preview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 12px;
+  font-size: 12px;
+  margin: 0;
+}
+
+.tl-ioc-source-meta dt,
+.tl-ioc-source-preview dt {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.tl-ioc-source-meta dd,
+.tl-ioc-source-preview dd {
+  margin: 2px 0 0;
+  color: #e2e8f0;
+  overflow-wrap: anywhere;
+}
+
+.tl-ioc-source-meta__mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
+
+.tl-ioc-source-files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.tl-ioc-source-files__row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.tl-ioc-source-files__path {
+  display: block;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.tl-ioc-source-files__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.tl-ioc-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 899px) {
+  .tl-ioc-source-drawer {
+    position: static;
+  }
+}
+
+@media (max-width: 480px) {
+  .tl-ioc-source-meta,
+  .tl-ioc-source-preview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tl-ioc-sources__add {
+    padding: 12px;
+  }
+}
