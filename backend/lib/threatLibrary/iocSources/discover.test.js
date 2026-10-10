@@ -7,6 +7,7 @@ import {
 } from './discover.js';
 import { validateIocSourceUrl } from './fetchSafe.js';
 import { parseGitHubUrl, isEligibleIocFilePath, resolveGitHubCommitSha } from './github.js';
+import { bulkMatchCandidates } from '../iocMatch.js';
 import { transitionPatch } from './sourceState.js';
 import { jsonIndicatorsToText, buildPreviewFromParses, candidatesFromDocument } from './parseContent.js';
 import { plainTextToCanonicalDocument } from '../urlIngest.js';
@@ -206,6 +207,21 @@ test('Warden-shaped: original 70 stays 70 when linked pack adds more', () => {
   assert.equal(buckets.indicators, 70);
   assert.equal(buckets.linked_only, 30);
   assert.equal(buckets.total_unique, 100);
+});
+
+test('bulkMatchCandidates returns {candidates} for linked-source extract', async () => {
+  const pool = { query: async () => ({ rows: [] }) };
+  const input = [{
+    candidate_type: 'sha256',
+    normalized_value: 'a'.repeat(64),
+    is_ioc: true,
+    assessment: 'malicious'
+  }];
+  const matched = await bulkMatchCandidates(pool, input);
+  assert.ok(Array.isArray(matched.candidates));
+  assert.equal(matched.candidates.length, 1);
+  // Extract must unwrap .candidates — the helper never returns a bare array.
+  assert.equal(Array.isArray(matched), false);
 });
 
 test('preview overlap math for multi-source inspect', () => {

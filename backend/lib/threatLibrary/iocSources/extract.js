@@ -173,7 +173,8 @@ export async function extractIocSource(pool, source, deps = {}) {
     }
 
     let candidates = [...mergedByKey.values()];
-    candidates = await bulkMatchCandidates(pool, candidates);
+    const matched = await bulkMatchCandidates(pool, candidates);
+    candidates = Array.isArray(matched?.candidates) ? matched.candidates : candidates;
 
     // Preserve analyst decisions on surviving identities.
     candidates = candidates.map((c) => {
