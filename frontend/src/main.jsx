@@ -19850,21 +19850,22 @@ function App() {
           display: block;
         }
         .malware-families-page .mf-col-actions {
-          white-space: nowrap;
           vertical-align: middle;
         }
+        /* View IOCs + Edit + Disable wrap inside the fixed Actions column instead of spilling out. */
         .malware-families-page .mf-action-buttons {
-          display: inline-flex;
-          flex-wrap: nowrap;
+          display: flex;
+          flex-wrap: wrap;
           gap: 6px;
           align-items: center;
         }
-        .malware-families-page .mf-action-buttons button {
+        .malware-families-page .mf-action-buttons button,
+        .malware-families-page .mf-action-buttons a {
           white-space: nowrap;
         }
         @media (max-width: 980px) {
           .malware-families-page .malware-families-table .mf-col-created { display: none; }
-          .malware-families-page .malware-families-table { min-width: 760px; }
+          .malware-families-page .malware-families-table { min-width: 860px; }
         }
         .app-feedback-stack {
           position: fixed;
