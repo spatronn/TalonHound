@@ -15,7 +15,7 @@
  * Safe: idempotent upserts, does not mutate IOC status/confidence/membership.
  */
 
-import { pool } from '../lib/pg-pool.js';
+import { createIntegrationPool } from '../lib/pg-pool.js';
 import { config } from '../config.js';
 import {
   ALIENVAULT_OTX_SOURCE_NAME,
@@ -238,6 +238,7 @@ async function main() {
   const maxEvidence = Number(argValue('limit', process.env.OTX_BACKFILL_LIMIT || '5000'));
   const pageSize = Number(argValue('page-size', '200'));
 
+  const pool = createIntegrationPool(config.db);
   const client = await pool.connect();
   const stats = {
     examined: 0,
