@@ -378,6 +378,9 @@ import {
   MALWARE_FAMILY_DESCRIPTION_CLAMP_CLASS,
   MALWARE_FAMILY_PAGE_CLASS,
   MALWARE_FAMILY_TABLE_CLASS,
+  MALWARE_FAMILY_ACTIONS_COL_CLASS,
+  MALWARE_FAMILY_ACTION_BUTTONS_CLASS,
+  MALWARE_FAMILY_ACTIONS_COL_WIDTH_PX,
   buildMalwareFamilyDescriptionModalState,
   formatMalwareFamilyAliasesCell,
   formatMalwareFamilyDescriptionCell,
@@ -9824,7 +9827,7 @@ function MalwareFamilyManagerPage() {
                 <th className="mf-col-iocs" style={ui.th} title="Unique IOCs: analyst associations plus current source-reported assertions (deduplicated)">IOCs</th>
                 <th className="mf-col-active" style={ui.th}>Active</th>
                 <th className="mf-col-created" style={ui.th}>Created At</th>
-                <th className="mf-col-actions" style={ui.th}>Actions</th>
+                <th className={MALWARE_FAMILY_ACTIONS_COL_CLASS} style={ui.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -9904,8 +9907,8 @@ function MalwareFamilyManagerPage() {
                   </td>
                   <td className="mf-col-active" style={ui.td}>{family.active ? 'Yes' : 'No'}</td>
                   <td className="mf-col-created" style={ui.td}>{formatUserDateTime(family.created_at)}</td>
-                  <td className="mf-col-actions" style={ui.td}>
-                    <div className="mf-action-buttons">
+                  <td className={MALWARE_FAMILY_ACTIONS_COL_CLASS} style={ui.td}>
+                    <div className={MALWARE_FAMILY_ACTION_BUTTONS_CLASS}>
                       <Link to={malwareFamilyDetailHref(family.id)} style={{ ...ui.btnCompact, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>View IOCs</Link>
                       {isAdmin ? (
                         <>
@@ -19797,7 +19800,8 @@ function App() {
         }
         .malware-families-page .malware-families-table .mf-col-active { width: 72px; }
         .malware-families-page .malware-families-table .mf-col-created { width: 160px; }
-        .malware-families-page .malware-families-table .mf-col-actions { width: 150px; }
+        /* Three compact actions (View IOCs + Edit + Disable): ~208px content + cell padding. */
+        .malware-families-page .malware-families-table .mf-col-actions { width: ${MALWARE_FAMILY_ACTIONS_COL_WIDTH_PX}px; }
         .malware-families-page .malware-families-table tbody tr {
           border-bottom: 1px solid #334155;
         }
@@ -19852,20 +19856,31 @@ function App() {
         .malware-families-page .mf-col-actions {
           vertical-align: middle;
         }
-        /* View IOCs + Edit + Disable wrap inside the fixed Actions column instead of spilling out. */
+        /*
+         * Constrain the flex box to the Actions cell width. Without width/min-width:0,
+         * table-layout:fixed still lets the flex min-content (all three buttons) paint
+         * past the cell/table edge even when flex-wrap is set.
+         */
         .malware-families-page .mf-action-buttons {
           display: flex;
           flex-wrap: wrap;
           gap: 6px;
           align-items: center;
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
         }
         .malware-families-page .mf-action-buttons button,
         .malware-families-page .mf-action-buttons a {
           white-space: nowrap;
+          flex: 0 0 auto;
+          max-width: 100%;
+          box-sizing: border-box;
         }
         @media (max-width: 980px) {
           .malware-families-page .malware-families-table .mf-col-created { display: none; }
-          .malware-families-page .malware-families-table { min-width: 860px; }
+          .malware-families-page .malware-families-table { min-width: 940px; }
         }
         .app-feedback-stack {
           position: fixed;
