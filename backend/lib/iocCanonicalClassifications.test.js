@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   computeCanonicalIocClassifications,
+  loadCanonicalIocClassifications,
   CLASSIFICATION_PROVENANCE
 } from './iocCanonicalClassifications.js';
 
@@ -216,4 +217,90 @@ test('importer legacy mirrored by analyst junction is not double-counted as feed
   assert.deepEqual(out.classifications, ['credential_theft']);
   assert.deepEqual(out.classification_context[0].sources, [{ type: 'analyst' }]);
   assert.deepEqual(out.feed, []);
+});
+
+test('loadCanonicalIocClassifications: empty input performs no SQL', async () => {
+  let queries = 0;
+  const pool = { async query() { queries += 1; return { rows: [] }; } };
+  const map = await loadCanonicalIocClassifications(pool, []);
+  assert.equal(map.size, 0);
+  assert.equal(queries, 0);
+});
+
+test('loadCanonicalIocClassifications: mixed page never OR-joins pair and hash lookups', async () => {
+  const sqls = [];
+  const pool = {
+    async query(sql, params = []) {
+      const text = String(sql).replace(/\s+/g, ' ').trim();
+      sqls.push({ text, params });
+      if (text.includes('FROM ioc_items') && text.includes('unnest($1::text[], $2::bigint[])')) {
+        return {
+          rows: [{
+            id: 10, observable_type: 'domain', observable: 'evil.test',
+            threat_classification: null, ioc_source_id: null, source_name: null
+          }]
+        };
+      }
+      if (text.includes('FROM ioc_items') && text.includes('id = ANY($2::bigint[])')) {
+        return {
+          rows: [{
+            id: 20, observable_type: 'sha256', observable: 'a'.repeat(64),
+            threat_classification: null, ioc_source_id: null, source_name: null
+          }]
+        };
+      }
+      if (text.includes('FROM ioc_items') && text.includes('unnest($1::text[], $2::text[])')) {
+        return { rows: [] }; // siblings
+      }
+      if (text.includes('FROM ioc_threat_classifications')) return { rows: [] };
+      if (text.includes('FROM ioc_feed_source_evidence')) return { rows: [] };
+      if (text.includes('FROM ioc_threat_classification_overrides')) return { rows: [] };
+      return { rows: [] };
+    }
+  };
+
+  const prev = process.env.FILE_ARTIFACTS_READ_ENABLED;
+  process.env.FILE_ARTIFACTS_READ_ENABLED = '0';
+  try {
+    const map = await loadCanonicalIocClassifications(pool, [
+      { id: 10, observable_type: 'domain' },
+      { id: 20, observable_type: 'sha256' }
+    ], { scopeBySeed: new Map([[10, [10]], [20, [20]]]) });
+    assert.equal(map.size, 2);
+    const baseSqls = sqls.filter((q) => q.text.includes('FROM ioc_items') && q.text.includes('threat_classification'));
+    // Pair PK + hash-id branches are separate statements (and siblings is a third).
+    assert.ok(baseSqls.length >= 2);
+    assert.ok(!baseSqls.some((q) => /\bOR\b/.test(q.text) && q.text.includes('id = ANY')),
+      'identity base lookup must not OR pair-PK with hash-id filter');
+    assert.ok(baseSqls.some((q) => q.text.includes('unnest($1::text[], $2::bigint[])')));
+    assert.ok(baseSqls.some((q) => q.text.includes('id = ANY($2::bigint[])') && !q.text.includes('OR')));
+  } finally {
+    if (prev === undefined) delete process.env.FILE_ARTIFACTS_READ_ENABLED;
+    else process.env.FILE_ARTIFACTS_READ_ENABLED = prev;
+  }
+});
+
+test('loadCanonicalIocClassifications: hash-only page skips pair-PK branch', async () => {
+  const sqls = [];
+  const pool = {
+    async query(sql) {
+      const text = String(sql).replace(/\s+/g, ' ').trim();
+      sqls.push(text);
+      if (text.includes('FROM ioc_items') && text.includes('id = ANY($2::bigint[])')) {
+        return {
+          rows: [{
+            id: 20, observable_type: 'sha256', observable: 'b'.repeat(64),
+            threat_classification: null, ioc_source_id: null, source_name: null
+          }]
+        };
+      }
+      return { rows: [] };
+    }
+  };
+  await loadCanonicalIocClassifications(pool, [{ id: 20, observable_type: 'sha256' }], {
+    scopeBySeed: new Map([[20, [20]]])
+  });
+  const identity = sqls.filter((t) => t.includes('FROM ioc_items') && t.includes('threat_classification'));
+  assert.equal(identity.filter((t) => t.includes('unnest($1::text[], $2::bigint[])')).length, 0);
+  assert.equal(identity.filter((t) => t.includes('id = ANY($2::bigint[])')).length, 1);
 });

@@ -251,6 +251,32 @@ test('upsert/reconcile/merge integration with mock client — single pulse', asy
   assert.equal(emptyPulse.families, 0);
 });
 
+test('loadEffectiveIocAttributions: multi-pair withdrawn placeholder is not hard-coded $3', async () => {
+  const { loadEffectiveIocAttributions } = await import('./iocSourceAttributions.js');
+  const seen = [];
+  const client = {
+    async query(sql, params = []) {
+      const text = String(sql).replace(/\s+/g, ' ').trim();
+      if (text.includes('FROM ioc_source_attributions')) {
+        seen.push({ text, params });
+        return { rows: [] };
+      }
+      return { rows: [] };
+    }
+  };
+  await loadEffectiveIocAttributions(client, [
+    { id: 1, observable_type: 'domain' },
+    { id: 2, observable_type: 'ip' },
+    { id: 3, observable_type: 'url' }
+  ]);
+  assert.equal(seen.length, 1);
+  // 3 pairs → 6 VALUES params; withdrawn flag must be $7, not $3 (which would be id=2).
+  assert.match(seen[0].text, /\$7::boolean OR a\.assertion_status = 'current'/);
+  assert.equal(seen[0].params.length, 7);
+  assert.equal(seen[0].params[6], false);
+  assert.ok(!seen[0].text.includes('$3::boolean OR a.assertion_status'));
+});
+
 test('incomplete observation must not withdraw (caller contract)', async () => {
   const { applyOtxPulseAttributions } = await import('./iocSourceAttributions.js');
   let updateCalled = false;

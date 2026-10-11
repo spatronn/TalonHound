@@ -537,6 +537,9 @@ async function loadSourceAttributions(client, pairs, { includeWithdrawn = false 
   if (!pairs.length) return new Map();
   const values = pairs.map((_, i) => `($${i * 2 + 1}::bigint, $${i * 2 + 2}::text)`).join(', ');
   const params = pairs.flatMap((p) => [p.id, p.observable_type]);
+  // Placeholder must follow the VALUES params — hard-coded $3 only works for one pair
+  // and casts the second pair's ioc_id (bigint) to boolean for multi-IOC list pages.
+  const withdrawnParam = params.length + 1;
   let rows;
   try {
     ({ rows } = await client.query(
@@ -572,7 +575,7 @@ async function loadSourceAttributions(client, pairs, { includeWithdrawn = false 
        LEFT JOIN malware_families mf
          ON a.entity_kind = 'malware_family' AND mf.id = a.entity_id
        WHERE (a.ioc_id, a.ioc_observable_type) IN (VALUES ${values})
-         AND ($3::boolean OR a.assertion_status = 'current')
+         AND ($${withdrawnParam}::boolean OR a.assertion_status = 'current')
        ORDER BY a.source_label ASC, a.evidence_ref_id ASC`,
       [...params, includeWithdrawn]
     ));

@@ -236,8 +236,9 @@ function rowFacts(r) {
 
 /**
  * Batched canonical classifications for a set of IOC rows. Constant query count
- * in the number of rows: ≤1 artifact scope, 2 ioc_items reads (identity rows +
- * same-observable siblings), 1 junction, 1 feed evidence, 1 suppression.
+ * in the number of rows: ≤1 artifact scope, ≤2 identity base reads (pair-PK and
+ * hash-id branches are separate — never OR'd, which seq-scans partitions) +
+ * 1 same-observable siblings read, 1 junction, 1 feed evidence, 1 suppression.
  *
  * @param {import('pg').Pool|import('pg').PoolClient} pool
  * @param {Array<{ id: number|string, observable_type: string }>} items
@@ -272,14 +273,31 @@ export async function loadCanonicalIocClassifications(pool, items, opts = {}) {
   for (const s of seeds) {
     for (const id of scopeBySeed.get(s.id) || [s.id]) if (!pairSeedIds.has(Number(id))) hashIds.add(Number(id));
   }
-  const { rows: baseRows } = await pool.query(
-    `SELECT id, observable_type, observable, threat_classification, ioc_source_id, source_name
-     FROM ioc_items
-     WHERE (observable_type, id) IN (SELECT * FROM unnest($1::text[], $2::bigint[]))
-        OR (observable_type = ANY($3::text[]) AND id = ANY($4::bigint[]))`,
-    [pairSeeds.map((s) => s.type), pairSeeds.map((s) => s.id), FILE_HASH_TYPES, [...hashIds]]
-  );
-  const rowById = new Map(baseRows.map((r) => [Number(r.id), rowFacts(r)]));
+  // IMPORTANT: never OR the pair-PK lookup with the hash-id lookup in one statement.
+  // On partitioned ioc_items that OR forces sequential scans of every partition
+  // (~600–700 ms for a 25-row page). Separate branches keep index PK plans.
+  const baseSelect = `SELECT id, observable_type, observable, threat_classification, ioc_source_id, source_name
+     FROM ioc_items`;
+  const baseQueries = [];
+  if (pairSeeds.length) {
+    baseQueries.push(pool.query(
+      `${baseSelect}
+       WHERE (observable_type, id) IN (SELECT * FROM unnest($1::text[], $2::bigint[]))`,
+      [pairSeeds.map((s) => s.type), pairSeeds.map((s) => s.id)]
+    ));
+  }
+  if (hashIds.size) {
+    baseQueries.push(pool.query(
+      `${baseSelect}
+       WHERE observable_type = ANY($1::text[]) AND id = ANY($2::bigint[])`,
+      [FILE_HASH_TYPES, [...hashIds]]
+    ));
+  }
+  const baseResults = await Promise.all(baseQueries);
+  const rowById = new Map();
+  for (const res of baseResults) {
+    for (const r of res.rows) rowById.set(Number(r.id), rowFacts(r));
+  }
 
   // 2) Same-observable sibling rows of every identity row (one indexed lookup).
   const observableKey = (type, value) => `${type}\u0000${value}`;
