@@ -101,8 +101,10 @@ function linksCteSql() {
     FROM ioc_source_attributions a
     WHERE a.entity_kind = 'threat_actor'
       AND $4::boolean
-      AND $1::uuid IS NOT NULL
-      AND a.entity_id = $1::uuid
+      AND (
+        ($1::uuid IS NOT NULL AND a.entity_id = $1::uuid)
+        OR ($1::uuid IS NULL AND $2::text IS NOT NULL AND a.source_label_normalized = $2::text)
+      )
       AND (
         ($5::text = 'current' AND a.assertion_status = 'current')
         OR ($5::text = 'historical' AND a.assertion_status <> 'current')
