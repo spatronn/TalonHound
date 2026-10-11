@@ -40,13 +40,11 @@ import {
 import { getIocStatusCardPresentation } from './lib/iocStatusCard.js';
 import { iocDetailHref } from './lib/iocDetailLink.js';
 import {
-  DISCOVERY_ORIGIN_OPTIONS,
   DISCOVERY_STATUS_OPTIONS,
   DISCOVERY_TYPE_OPTIONS,
   MALWARE_FAMILY_DISCOVERY_PAGE_SIZE,
   buildDiscoveryQueryParams,
   buildDiscoveryUrlSearchParams,
-  discoveryAttributionLabel,
   formatAssociatedIocCount,
   formatDiscoveryEvidence,
   malwareFamilyDetailHref,
@@ -54,6 +52,7 @@ import {
   parseDiscoveryUrlState,
   reportedAsLabels
 } from './lib/malwareFamilyDiscovery.js';
+import { RelationshipScopeFilter, RelationshipScopePills } from './components/catalog/RelationshipScope.jsx';
 import {
   THREAT_ACTOR_DISCOVERY_PAGE_SIZE,
   threatActorDetailHref
@@ -1164,6 +1163,8 @@ const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_actor.catalog_created_and_linked',
   'ioc.malware_family.catalog_linked',
   'ioc.malware_family.catalog_created_and_linked',
+  'ioc.threat_actor.direct_source_evidence_recorded',
+  'ioc.malware_family.direct_source_evidence_recorded',
   'threat_classification.created',
   'threat_classification.updated',
   'threat_classification.reordered',
@@ -8952,7 +8953,7 @@ function ThreatActorIocsPage() {
   const from = total ? (state.page - 1) * pageSize + 1 : 0;
   const to = Math.min(state.page * pageSize, total);
   const byType = summary?.by_type ? Object.entries(summary.by_type) : [];
-  const filtersActive = state.origin !== 'all' || state.type || state.status !== 'all' || state.q;
+  const filtersActive = state.scope !== 'all' || state.type || state.status !== 'all' || state.q;
 
   return (
     <AppShell>
@@ -8969,14 +8970,13 @@ function ThreatActorIocsPage() {
         {actor ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6, fontSize: 13, color: '#94a3b8' }}>
             {actor.aliases?.length ? <div style={{ overflowWrap: 'anywhere' }}>Aliases: {actor.aliases.join(', ')}</div> : null}
+            {actor.description ? <CatalogDescription text={actor.description} /> : null}
           </div>
         ) : null}
 
         {summary ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
-            <MalwareFamilyStat label="Unique IOCs" value={summary.all_unique} hint="Analyst associations plus current source-reported assertions, deduplicated by IOC" />
-            <MalwareFamilyStat label="Analyst" value={summary.analyst_unique} hint="Unique IOCs with an analyst-managed association (may overlap with source-reported)" />
-            <MalwareFamilyStat label="Source-reported" value={summary.source_unique} hint="Unique IOCs with a current source assertion (may overlap with analyst)" />
+            <MalwareFamilyStat label="Unique IOCs" value={summary.all_unique} hint="Direct, Context and Analyst relationships, deduplicated by IOC (an IOC in several scopes counts once)" />
             <MalwareFamilyStat label="OTX Pulses" value={summary.otx_pulses} hint="Distinct AlienVault OTX Pulses supporting the source-reported associations" />
             {byType.length ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '10px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220' }}>
@@ -8989,19 +8989,7 @@ function ThreatActorIocsPage() {
         ) : null}
 
         <div className="ta-discovery-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 16 }}>
-          <div role="group" aria-label="Association origin" style={{ display: 'inline-flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
-            {DISCOVERY_ORIGIN_OPTIONS.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                aria-pressed={state.origin === o.value}
-                onClick={() => update({ origin: o.value })}
-                style={{ ...ui.btnCompact, border: 'none', borderRadius: 0, background: state.origin === o.value ? '#1d4ed8' : 'transparent', color: state.origin === o.value ? '#fff' : '#cbd5e1' }}
-              >
-                {o.label}
-              </button>
-            ))}
-          </div>
+          <RelationshipScopeFilter value={state.scope} summary={summary} onChange={(scope) => update({ scope })} buttonStyle={ui.btnCompact} />
           <select aria-label="IOC type" value={state.type} onChange={(e) => update({ type: e.target.value })} style={{ ...ui.input, width: 'auto' }}>
             {DISCOVERY_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -9012,7 +9000,7 @@ function ThreatActorIocsPage() {
             <input
               type="checkbox"
               checked={state.lifecycle === 'historical'}
-              onChange={(e) => update({ lifecycle: e.target.checked ? 'historical' : 'current', origin: e.target.checked ? 'source' : state.origin })}
+              onChange={(e) => update({ lifecycle: e.target.checked ? 'historical' : 'current', scope: e.target.checked && state.scope === 'analyst' ? 'all' : state.scope })}
             />
             Historical evidence
           </label>
@@ -9036,7 +9024,7 @@ function ThreatActorIocsPage() {
                 <th style={ui.th}>Status</th>
                 <th className="ta-discovery-col-secondary" style={ui.th}>Confidence</th>
                 <th className="ta-discovery-col-secondary" style={ui.th}>Source</th>
-                <th style={ui.th}>Attribution</th>
+                <th style={ui.th}>Relationship</th>
                 <th className="ta-discovery-col-secondary" style={ui.th}>Evidence</th>
               </tr>
             </thead>
@@ -9049,7 +9037,7 @@ function ThreatActorIocsPage() {
                     title={filtersActive ? 'No matching IOCs' : 'No associated IOCs'}
                     description={filtersActive
                       ? 'Try different filters.'
-                      : 'No analyst association or current source-reported assertion links an IOC to this threat actor.'}
+                      : 'No analyst attribution or current source assertion links an IOC to this threat actor.'}
                   />
                 </td></tr>
               ) : items.map((item) => {
@@ -9075,8 +9063,7 @@ function ThreatActorIocsPage() {
                     </td>
                     <td style={ui.td}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                        <MalwareFamilyAttributionPill item={item} />
-                        {ev.kinds.length ? <span style={{ fontSize: 11, color: '#94a3b8' }}>{ev.kinds.join(', ')}</span> : null}
+                        <RelationshipScopePills scopes={item.relationship_scopes} associationKinds={item.association_kinds} />
                       </div>
                     </td>
                     <td className="ta-discovery-col-secondary" style={{ ...ui.td, fontSize: 12, color: '#94a3b8', overflowWrap: 'anywhere', lineHeight: 1.4 }}>
@@ -9409,7 +9396,7 @@ function ThreatActorManagerPage() {
                     {Number(actor.associated_iocs?.all_unique) > 0 ? (
                       <Link
                         to={threatActorDetailHref(actor.id)}
-                        title={`${actor.associated_iocs.analyst_unique} analyst · ${actor.associated_iocs.source_unique} source-reported (unique IOCs; may overlap)`}
+                        title={`${actor.associated_iocs.direct_unique ?? 0} direct · ${actor.associated_iocs.context_unique ?? actor.associated_iocs.source_unique} context · ${actor.associated_iocs.analyst_unique} analyst (unique IOCs; scopes overlap)`}
                         style={{ color: '#93c5fd', fontWeight: 600, textDecoration: 'none' }}
                       >
                         {formatAssociatedIocCount(actor.associated_iocs)}
@@ -9603,11 +9590,16 @@ const MF_DISCOVERY_PILL = {
   whiteSpace: 'nowrap'
 };
 
-function MalwareFamilyAttributionPill({ item }) {
-  const palette = item.attribution === 'source_reported'
-    ? { color: '#e2e8f0', background: '#1e293b', border: '1px solid #475569' }
-    : { color: '#c7d2fe', background: '#312e81', border: '1px solid #4338ca' };
-  return <span style={{ ...MF_DISCOVERY_PILL, ...palette }}>{discoveryAttributionLabel(item)}</span>;
+/** Catalog description with its cited https links clickable (plain text otherwise). */
+function CatalogDescription({ text }) {
+  const parts = String(text || '').split(/(https:\/\/[^\s<>"]+)/g);
+  return (
+    <div style={{ maxWidth: 860, color: '#cbd5e1', lineHeight: 1.5, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+      {parts.map((part, i) => (/^https:\/\//.test(part)
+        ? <a key={i} href={part.replace(/[.,;)]+$/, '')} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>{part}</a>
+        : <React.Fragment key={i}>{part}</React.Fragment>))}
+    </div>
+  );
 }
 
 function MalwareFamilyStat({ label, value, hint }) {
@@ -9710,7 +9702,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
   const from = total ? (state.page - 1) * pageSize + 1 : 0;
   const to = Math.min(state.page * pageSize, total);
   const byType = summary?.by_type ? Object.entries(summary.by_type) : [];
-  const filtersActive = state.origin !== 'all' || state.type || state.status !== 'all' || state.q;
+  const filtersActive = state.scope !== 'all' || state.type || state.status !== 'all' || state.q;
 
   return (
     <AppShell>
@@ -9739,6 +9731,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
               </div>
             ) : null}
             {family.aliases?.length ? <div style={{ overflowWrap: 'anywhere' }}>Aliases: {family.aliases.join(', ')}</div> : null}
+            {family.description ? <CatalogDescription text={family.description} /> : null}
           </div>
         ) : null}
         {mode === 'label' ? (
@@ -9749,9 +9742,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
 
         {summary ? (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
-            <MalwareFamilyStat label="Unique IOCs" value={summary.all_unique} hint="Analyst associations plus current source-reported assertions, deduplicated by IOC" />
-            {mode === 'family' ? <MalwareFamilyStat label="Analyst" value={summary.analyst_unique} hint="Unique IOCs with an analyst-managed association (may overlap with source-reported)" /> : null}
-            <MalwareFamilyStat label="Source-reported" value={summary.source_unique} hint="Unique IOCs with a current source assertion (may overlap with analyst)" />
+            <MalwareFamilyStat label="Unique IOCs" value={summary.all_unique} hint="Direct, Context and Analyst relationships, deduplicated by IOC (an IOC in several scopes counts once)" />
             <MalwareFamilyStat label="OTX Pulses" value={summary.otx_pulses} hint="Distinct AlienVault OTX Pulses supporting the source-reported associations" />
             {byType.length ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '10px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220' }}>
@@ -9765,19 +9756,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
 
         <div className="mf-discovery-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 16 }}>
           {mode === 'family' ? (
-            <div role="group" aria-label="Association origin" style={{ display: 'inline-flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
-              {DISCOVERY_ORIGIN_OPTIONS.map((o) => (
-                <button
-                  key={o.value}
-                  type="button"
-                  aria-pressed={state.origin === o.value}
-                  onClick={() => update({ origin: o.value })}
-                  style={{ ...ui.btnCompact, border: 'none', borderRadius: 0, background: state.origin === o.value ? '#1d4ed8' : 'transparent', color: state.origin === o.value ? '#fff' : '#cbd5e1' }}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
+            <RelationshipScopeFilter value={state.scope} summary={summary} onChange={(scope) => update({ scope })} buttonStyle={ui.btnCompact} />
           ) : null}
           <select aria-label="IOC type" value={state.type} onChange={(e) => update({ type: e.target.value })} style={{ ...ui.input, width: 'auto' }}>
             {DISCOVERY_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -9789,7 +9768,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
             <input
               type="checkbox"
               checked={state.lifecycle === 'historical'}
-              onChange={(e) => update({ lifecycle: e.target.checked ? 'historical' : 'current', origin: e.target.checked ? 'source' : state.origin })}
+              onChange={(e) => update({ lifecycle: e.target.checked ? 'historical' : 'current', scope: e.target.checked && state.scope === 'analyst' ? 'all' : state.scope })}
             />
             Historical evidence
           </label>
@@ -9813,7 +9792,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
                 <th style={ui.th}>Status</th>
                 <th className="mf-discovery-col-secondary" style={ui.th}>Confidence</th>
                 <th className="mf-discovery-col-secondary" style={ui.th}>Source</th>
-                <th style={ui.th}>Attribution</th>
+                <th style={ui.th}>Relationship</th>
                 <th className="mf-discovery-col-secondary" style={ui.th}>Evidence</th>
               </tr>
             </thead>
@@ -9827,7 +9806,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
                     description={filtersActive
                       ? 'Try different filters.'
                       : (mode === 'family'
-                        ? 'No analyst association or current source-reported assertion links an IOC to this family.'
+                        ? 'No analyst attribution or current source assertion links an IOC to this family.'
                         : 'No source assertion uses this label.')}
                   />
                 </td></tr>
@@ -9854,8 +9833,7 @@ function MalwareFamilyIocsPage({ mode = 'family' }) {
                     </td>
                     <td style={ui.td}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                        <MalwareFamilyAttributionPill item={item} />
-                        {ev.kinds.length ? <span style={{ fontSize: 11, color: '#94a3b8' }}>{ev.kinds.join(', ')}</span> : null}
+                        <RelationshipScopePills scopes={item.relationship_scopes} associationKinds={item.association_kinds} />
                       </div>
                     </td>
                     <td className="mf-discovery-col-secondary" style={{ ...ui.td, fontSize: 12, color: '#94a3b8', overflowWrap: 'anywhere', lineHeight: 1.4 }}>
@@ -10187,7 +10165,7 @@ function MalwareFamilyManagerPage() {
                     {Number(family.associated_iocs?.all_unique) > 0 ? (
                       <Link
                         to={malwareFamilyDetailHref(family.id)}
-                        title={`${family.associated_iocs.analyst_unique} analyst · ${family.associated_iocs.source_unique} source-reported (unique IOCs; may overlap)`}
+                        title={`${family.associated_iocs.direct_unique ?? 0} direct · ${family.associated_iocs.context_unique ?? family.associated_iocs.source_unique} context · ${family.associated_iocs.analyst_unique} analyst (unique IOCs; scopes overlap)`}
                         style={{ color: '#93c5fd', fontWeight: 600, textDecoration: 'none' }}
                       >
                         {formatAssociatedIocCount(family.associated_iocs)}

@@ -137,3 +137,11 @@ test('cross-catalog notice names the other catalog entry and never claims it is 
   assert.match(text, /can be legitimate/);
   assert.match(crossCatalogNotice([{ entity_kind: 'malware_family', name: 'GlassWorm', match: 'name', active: false }]), /Malware Family.*GlassWorm — disabled/);
 });
+
+test('audit summary for direct source evidence names the publisher row, never analyst attribution', () => {
+  const text = formatCatalogLinkAuditSummary({
+    operation: 'direct_source_evidence', entity_name: 'PhantomPolia', attribution: 'source_reported',
+    source: { publisher: 'LevelBlue SpiderLabs', section: 'Appendix B', row_label: 'PhantomPolia Domain' }
+  });
+  assert.equal(text, 'PhantomPolia: LevelBlue SpiderLabs (Appendix B · “PhantomPolia Domain”) · direct source evidence · source-reported');
+});

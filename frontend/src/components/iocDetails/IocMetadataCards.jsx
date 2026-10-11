@@ -5,7 +5,8 @@ import {
   getAnalystMalwareFamilyIdsFromSummary,
   getAnalystThreatActorIdsFromSummary,
   getMalwareFamiliesFromSummary,
-  getThreatActorsFromSummary
+  getThreatActorsFromSummary,
+  sourceRelationshipScope
 } from '../../lib/iocAttributionSummary.js';
 import { catalogLinkTarget, chipLinkAriaLabel, isAnalystCatalogLink } from '../../lib/sourceEntityCatalogLink.js';
 
@@ -21,10 +22,16 @@ function entityTitle(entity) {
   const pulses = (entity?.sources || [])
     .filter((s) => s.evidence_ref_type === 'otx_pulse' && s.evidence_ref_id)
     .map((s) => s.evidence_title || s.evidence_ref_id);
+  // Direct source evidence: where the source ties this IOC to the entity.
+  const direct = (entity?.sources || [])
+    .filter((s) => s.assertion_status === 'current' && sourceRelationshipScope(s) === 'direct')
+    .map((s) => [s.source_name, s.evidence_title, s.evidence_section, s.evidence_row_label ? `“${s.evidence_row_label}”` : null]
+      .filter(Boolean).join(' · '));
   const parts = [
     entity?.name || '',
     hint,
-    pulses.length ? `Pulse: ${pulses.join(', ')}` : null,
+    direct.length ? `Direct evidence: ${direct.join('; ')}` : null,
+    pulses.length ? `Pulse context: ${pulses.join(', ')}` : null,
     isAnalystCatalogLink(entity) ? 'Catalog link confirmed by an analyst (still source-reported)' : null,
     !entity?.id && entity?.sources?.length ? 'Not linked to a local catalog entry' : null
   ].filter(Boolean);
@@ -79,6 +86,7 @@ export function AttributionEntityBadges({
       {shown.map((entity) => {
         const hint = attributionHint(entity);
         const isSourceOnly = entity.attribution === 'source_reported';
+        const hasDirect = Array.isArray(entity.relationship_scopes) && entity.relationship_scopes.includes('direct');
         return (
           <span
             key={entity.id || entity.name}
@@ -94,7 +102,7 @@ export function AttributionEntityBadges({
               fontWeight: 700,
               background: isSourceOnly ? '#1e293b' : '#312e81',
               color: isSourceOnly ? '#e2e8f0' : '#c7d2fe',
-              border: `1px solid ${isSourceOnly ? '#475569' : '#4338ca'}`,
+              border: `1px solid ${isSourceOnly ? (hasDirect ? '#0f766e' : '#475569') : '#4338ca'}`,
               maxWidth: '100%'
             }}
           >

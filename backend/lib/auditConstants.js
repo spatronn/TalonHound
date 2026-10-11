@@ -114,6 +114,11 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_THREAT_ACTOR_CATALOG_CREATED_AND_LINKED: 'ioc.threat_actor.catalog_created_and_linked',
   IOC_MALWARE_FAMILY_CATALOG_LINKED: 'ioc.malware_family.catalog_linked',
   IOC_MALWARE_FAMILY_CATALOG_CREATED_AND_LINKED: 'ioc.malware_family.catalog_created_and_linked',
+  // A publisher's report explicitly ties one IOC to a catalog entity (direct
+  // source evidence; source-reported, NOT analyst attribution — see
+  // lib/directSourceEvidence.js).
+  IOC_THREAT_ACTOR_DIRECT_SOURCE_EVIDENCE_RECORDED: 'ioc.threat_actor.direct_source_evidence_recorded',
+  IOC_MALWARE_FAMILY_DIRECT_SOURCE_EVIDENCE_RECORDED: 'ioc.malware_family.direct_source_evidence_recorded',
   IOC_SOURCE_CREATED: 'ioc_source.created',
   IOC_SOURCE_UPDATED: 'ioc_source.updated',
   IOC_SOURCE_DISABLED: 'ioc_source.disabled',
@@ -364,6 +369,8 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_THREAT_ACTOR_CATALOG_CREATED_AND_LINKED]: 'IOC Threat Actor Created in Catalog and Linked',
   [AUDIT_ACTION.IOC_MALWARE_FAMILY_CATALOG_LINKED]: 'IOC Malware Family Linked to Catalog',
   [AUDIT_ACTION.IOC_MALWARE_FAMILY_CATALOG_CREATED_AND_LINKED]: 'IOC Malware Family Created in Catalog and Linked',
+  [AUDIT_ACTION.IOC_THREAT_ACTOR_DIRECT_SOURCE_EVIDENCE_RECORDED]: 'IOC Threat Actor Direct Source Evidence Recorded',
+  [AUDIT_ACTION.IOC_MALWARE_FAMILY_DIRECT_SOURCE_EVIDENCE_RECORDED]: 'IOC Malware Family Direct Source Evidence Recorded',
   [AUDIT_ACTION.IOC_SOURCE_CREATED]: 'IOC Source Created',
   [AUDIT_ACTION.IOC_SOURCE_UPDATED]: 'IOC Source Updated',
   [AUDIT_ACTION.IOC_SOURCE_DISABLED]: 'IOC Source Disabled',

@@ -66,3 +66,17 @@ test('empty summary yields empty attribution lists', () => {
   assert.deepEqual(getThreatActorsFromSummary({}), []);
   assert.deepEqual(getMalwareFamiliesFromSummary({}), []);
 });
+
+test('attributionHint leads with direct source evidence and keeps Pulse context', async () => {
+  const { attributionHint: hint, sourceRelationshipScope } = await import('./iocAttributionSummary.js');
+  const direct = { source_name: 'LevelBlue SpiderLabs', assertion_status: 'current', association_kind: 'directly_attributed_to' };
+  const pulse = { source_name: 'AlienVault OTX', assertion_status: 'current', association_kind: 'associated_via_source_pulse' };
+  assert.equal(hint({ attribution: 'source_reported', sources: [pulse, direct] }), 'Direct · LevelBlue SpiderLabs · Context · AlienVault OTX');
+  assert.equal(hint({ attribution: 'mixed', sources: [direct] }), 'Analyst · Direct · LevelBlue SpiderLabs');
+  // Context-only wording is unchanged.
+  assert.equal(hint({ attribution: 'source_reported', sources: [pulse] }), 'AlienVault OTX · Source-reported (pulse context)');
+  // An analyst-confirmed catalog link is still a source claim, not analyst attribution.
+  assert.equal(hint({ attribution: 'source_reported', sources: [{ ...pulse, resolution_method: 'analyst' }] }), 'AlienVault OTX · Source-reported (pulse context)');
+  assert.equal(sourceRelationshipScope({ association_kind: 'malware_sample_of' }), 'direct');
+  assert.equal(sourceRelationshipScope({ relationship_scope: 'context', association_kind: 'directly_attributed_to' }), 'context');
+});

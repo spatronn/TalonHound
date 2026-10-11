@@ -19,7 +19,10 @@ import {
   DISCOVERY_MAX_OFFSET,
   attributionOrigin,
   loadRepresentativeRows,
-  parseDiscoveryOptions
+  parseDiscoveryOptions,
+  relationshipScopesOf,
+  scopeFlagsSql,
+  scopeHavingSql
 } from '../malwareFamilies/iocDiscovery.js';
 
 const DIRECT_KINDS = ['directly_attributed_to'];
@@ -155,6 +158,7 @@ export async function queryDiscoveryPage(client, target, opts) {
   params.push(opts.q ? `%${opts.q.replace(/([%_\\])/g, '\\$1')}%` : null); // $9
   params.push(opts.limit); // $10
   params.push(opts.offset); // $11
+  params.push(opts.scope || 'all'); // $12
   const orderBy = opts.sort === 'value'
     ? 'g.observable_type ASC, g.observable ASC'
     : 'g.last_seen_at DESC NULLS LAST, g.observable_type ASC, g.observable ASC';
@@ -165,6 +169,7 @@ export async function queryDiscoveryPage(client, target, opts) {
               (array_agg(i.id ORDER BY (l.origin = 'analyst') DESC, i.id ASC))[1] AS rep_id,
               bool_or(l.origin = 'analyst') AS has_analyst,
               bool_or(l.origin = 'source') AS has_source,
+              ${scopeFlagsSql(DIRECT_KINDS)},
               COUNT(*) FILTER (WHERE l.origin = 'source')::int AS source_assertions,
               COUNT(DISTINCT (l.feed_key, l.evidence_ref_id)) FILTER (WHERE l.origin = 'source')::int AS source_references,
               array_remove(array_agg(DISTINCT l.association_kind), NULL) AS association_kinds,
@@ -176,7 +181,8 @@ export async function queryDiscoveryPage(client, target, opts) {
        WHERE ($7::text[] IS NULL OR i.observable_type = ANY($7::text[]))
          AND ($9::text IS NULL OR i.observable ILIKE $9::text ESCAPE '\\')
        GROUP BY i.observable_type, i.observable
-       HAVING $8::text = 'all' OR bool_or(COALESCE(i.status, 'active') = $8::text)
+       HAVING ($8::text = 'all' OR bool_or(COALESCE(i.status, 'active') = $8::text))
+          AND ${scopeHavingSql('$12', DIRECT_KINDS)}
      )
      SELECT g.*, COUNT(*) OVER()::int AS total_unique
      FROM grouped g
@@ -229,6 +235,14 @@ export async function queryDiscoverySummary(client, target, { lifecycle = 'curre
     both_unique: r.both_unique || 0,
     pulse_context_unique: r.pulse_context_unique || 0,
     direct_unique: r.direct_unique || 0,
+    // Relationship scopes over unique IOC identities. They overlap, so
+    // all >= each scope and, in general, all != direct + context + analyst.
+    scopes: {
+      all: r.all_unique || 0,
+      direct: r.direct_unique || 0,
+      context: r.pulse_context_unique || 0,
+      analyst: r.analyst_unique || 0
+    },
     source_assertions: r.source_assertions || 0,
     source_references: r.source_references || 0,
     otx_pulses: r.otx_pulses || 0,
@@ -253,7 +267,8 @@ export async function queryDiscoveryEvidence(client, target, opts, identities, {
               l.source_label, l.assertion_status, l.linked_at,
               ROW_NUMBER() OVER (
                 PARTITION BY i.observable_type, i.observable
-                ORDER BY l.linked_at DESC NULLS LAST, l.evidence_ref_id
+                ORDER BY (l.association_kind = ANY('{${DIRECT_KINDS.join(',')}}'::text[])) DESC,
+                         l.linked_at DESC NULLS LAST, l.evidence_ref_id
               ) AS rn
        FROM links l
        JOIN ioc_items i ON i.id = l.ioc_id AND i.observable_type = l.ioc_observable_type
@@ -291,11 +306,12 @@ export async function countAssociatedIocsForActors(client, actorIds) {
   if (!ids.length) return new Map();
   const { rows } = await client.query(
     `WITH links AS (
-       SELECT ita.threat_actor_id AS actor_id, ita.ioc_id, ita.ioc_observable_type, 'analyst'::text AS origin
+       SELECT ita.threat_actor_id AS actor_id, ita.ioc_id, ita.ioc_observable_type, 'analyst'::text AS origin,
+              NULL::text AS association_kind
        FROM ioc_threat_actors ita
        WHERE ita.threat_actor_id = ANY($1::uuid[])
        UNION ALL
-       SELECT a.entity_id, a.ioc_id, a.ioc_observable_type, 'source'::text
+       SELECT a.entity_id, a.ioc_id, a.ioc_observable_type, 'source'::text, a.association_kind
        FROM ioc_source_attributions a
        WHERE a.entity_kind = 'threat_actor'
          AND a.entity_id = ANY($1::uuid[])
@@ -315,7 +331,8 @@ export async function countAssociatedIocsForActors(client, actorIds) {
      grouped AS (
        SELECT l.actor_id, i.observable_type, i.observable,
               bool_or(l.origin = 'analyst') AS has_analyst,
-              bool_or(l.origin = 'source') AS has_source
+              bool_or(l.origin = 'source') AS has_source,
+              ${scopeFlagsSql(DIRECT_KINDS)}
        FROM links l
        JOIN ioc_items i ON i.id = l.ioc_id AND i.observable_type = l.ioc_observable_type
        GROUP BY l.actor_id, i.observable_type, i.observable
@@ -323,7 +340,9 @@ export async function countAssociatedIocsForActors(client, actorIds) {
      SELECT actor_id::text AS actor_id,
             COUNT(*)::int AS all_unique,
             COUNT(*) FILTER (WHERE has_analyst)::int AS analyst_unique,
-            COUNT(*) FILTER (WHERE has_source)::int AS source_unique
+            COUNT(*) FILTER (WHERE has_source)::int AS source_unique,
+            COUNT(*) FILTER (WHERE has_direct)::int AS direct_unique,
+            COUNT(*) FILTER (WHERE has_context)::int AS context_unique
      FROM grouped
      GROUP BY actor_id`,
     [ids]
@@ -331,7 +350,9 @@ export async function countAssociatedIocsForActors(client, actorIds) {
   return new Map(rows.map((r) => [r.actor_id, {
     all_unique: r.all_unique,
     analyst_unique: r.analyst_unique,
-    source_unique: r.source_unique
+    source_unique: r.source_unique,
+    direct_unique: r.direct_unique,
+    context_unique: r.context_unique
   }]));
 }
 
@@ -362,6 +383,7 @@ export async function discoverIocs(client, target, rawOptions = {}, { includeSum
       confidence: rep.analyst_confidence_override || rep.confidence || null,
       last_seen_at: r.last_seen_at || null,
       attribution: attributionOrigin(r),
+      relationship_scopes: relationshipScopesOf(r),
       association_kinds: r.association_kinds || [],
       reported_labels: r.reported_labels || [],
       source_names: r.source_names || [],

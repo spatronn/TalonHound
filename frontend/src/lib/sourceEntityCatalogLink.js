@@ -217,6 +217,15 @@ export function isAnalystCatalogLink(entity) {
 /** IOC History "Details" text for catalog link events. */
 export function formatCatalogLinkAuditSummary(metadata) {
   if (!metadata || typeof metadata !== 'object') return null;
+  if (metadata.operation === 'direct_source_evidence' && metadata.entity_name) {
+    const src = metadata.source || {};
+    const where = [src.section, src.row_label ? `“${src.row_label}”` : null].filter(Boolean).join(' · ');
+    return [
+      `${metadata.entity_name}: ${src.publisher || 'source'}${where ? ` (${where})` : ''}`,
+      'direct source evidence',
+      'source-reported'
+    ].join(' · ');
+  }
   if (metadata.operation !== 'link' && metadata.operation !== 'create_and_link') return null;
   if (!metadata.entity_name) return null;
   const sources = [...new Set((metadata.sources || []).map((s) => s?.source_name).filter(Boolean))];

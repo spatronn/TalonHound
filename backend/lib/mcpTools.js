@@ -464,13 +464,16 @@ export function registerMcpTools(server, deps) {
         + '"Cobalt Strike-related IPs and domains reported by OTX". Identify the family with exactly one of: `malware_family_id` (catalog uuid, preferred — from list_malware_families), '
         + '`malware_family` (exact canonical name, slug or alias — e.g. "Geodo" resolves to Emotet; ambiguous names are rejected with candidates, never fuzzy-matched), '
         + 'or `source_label` (a raw source-reported label that is NOT in the catalog, e.g. an OTX Pulse malware_families value; if a name is not a catalog family but such a label exists, the error says so). '
-        + 'Associations combine analyst-managed links and CURRENT source-reported assertions (AlienVault OTX Pulse metadata). `attribution_origin` = all (default) | analyst | source; '
-        + '`association` = all | pulse_context (IOC belongs to a Pulse whose metadata names the family — context, NOT proof of a sample) | direct; '
+        + 'Associations combine analyst-managed links and CURRENT source-reported assertions (AlienVault OTX Pulse metadata, publisher report evidence). '
+        + '`scope` (preferred, same as the UI) = all (default, unique union) | direct (a source explicitly ties the IOC to the family, e.g. a publisher IOC table row) | '
+        + 'context (the IOC is in a source Pulse whose metadata names the family — context, NOT proof of a sample) | analyst (analyst attribution). '
+        + 'An IOC can be in several scopes, so all != direct + context + analyst; a scope filter keeps all of a matching IOC\'s evidence. '
+        + 'Legacy filters: `attribution_origin` = all | analyst | source; `association` = all | pulse_context | direct (ignored when `scope` is set). '
         + '`lifecycle` = current (default) | historical (withdrawn/stale source assertions only, never mixed into current). '
         + '`observable_type` filters (ip, ipv6, domain, url, hash = md5/sha1/sha256, or a specific hash type). `status` = all (default) | active | expired | suppressed | disabled. '
         + 'Results are deduplicated by IOC (type+value): one IOC in many Pulses counts once (`source_assertions` / `source_references` give the evidence volume). '
-        + '`summary` has all_unique / analyst_unique / source_unique (overlapping), pulse_context_unique, direct_unique, otx_pulses, by_type. '
-        + 'Each IOC item: id, public_id, value, type, status, confidence, last_seen_at, attribution (analyst | source_reported | mixed), association_kinds, reported_labels (as the source wrote them), source_names, evidence (≤3 assertions: pulse id/title/url). '
+        + '`summary` has scopes {all, direct, context, analyst} (unique IOCs, overlapping), all_unique / analyst_unique / source_unique, pulse_context_unique, direct_unique, otx_pulses, by_type. '
+        + 'Each IOC item: id, public_id, value, type, status, confidence, last_seen_at, relationship_scopes, attribution (analyst | source_reported | mixed), association_kinds, reported_labels (as the source wrote them), source_names, evidence (≤3 assertions, direct first: source/pulse id/title/url). '
         + 'Bounded: limit ≤ 100 (default 25), page with offset / next_offset. Read-only: never changes associations or the catalog and never triggers enrichment; use get_ioc_context for full IOC detail. Requires an analyst/admin owner.',
       inputSchema: {
         malware_family_id: z.string().max(64).optional().describe('Catalog malware family uuid (preferred)'),
@@ -478,6 +481,8 @@ export function registerMcpTools(server, deps) {
         source_label: z.string().max(128).optional().describe('Raw source-reported malware family label (for labels not in the catalog)'),
         observable_type: z.union([z.string().max(64), z.array(z.string().max(16)).max(10)]).optional()
           .describe('ip | ipv6 | domain | url | hash | md5 | sha1 | sha256 (comma list or array)'),
+        scope: z.enum(['all', 'direct', 'context', 'analyst']).optional()
+          .describe('Relationship scope (unique IOCs; scopes overlap): all | direct | context | analyst'),
         attribution_origin: z.enum(['all', 'analyst', 'source']).optional(),
         association: z.enum(['all', 'pulse_context', 'direct']).optional(),
         lifecycle: z.enum(['current', 'historical']).optional(),

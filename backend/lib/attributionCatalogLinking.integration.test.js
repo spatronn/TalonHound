@@ -260,7 +260,7 @@ test('link existing malware family: catalog identity only, provenance + analyst 
 
   // Family inventory + catalog counter + summary agree (one identity, source origin).
   const counts = await countAssociatedIocsForFamilies(pool, [fam.id]);
-  assert.deepEqual(counts.get(String(fam.id)), { all_unique: 1, analyst_unique: 0, source_unique: 1 });
+  assert.deepEqual(counts.get(String(fam.id)), { all_unique: 1, analyst_unique: 0, source_unique: 1, direct_unique: 0, context_unique: 1 });
   const summary = await familySummary(pool, { familyId: fam.id });
   assert.equal(summary.all_unique, 1);
   assert.equal(summary.source_unique, 1);
@@ -378,7 +378,7 @@ test('create + link threat actor; duplicates (name/alias/similar) are refused or
     `SELECT 1 FROM ioc_threat_actors WHERE ioc_id = $1 AND ioc_observable_type = $2`, [ioc.id, ioc.observable_type]);
   assert.equal(analystLinks.length, 0, 'catalog linking is not analyst attribution');
   const counts = await countAssociatedIocsForActors(pool, [res.entity.id]);
-  assert.deepEqual(counts.get(String(res.entity.id)), { all_unique: 1, analyst_unique: 0, source_unique: 1 });
+  assert.deepEqual(counts.get(String(res.entity.id)), { all_unique: 1, analyst_unique: 0, source_unique: 1, direct_unique: 0, context_unique: 1 });
   assert.equal((await actorSummary(pool, { actorId: res.entity.id })).source_unique, 1);
 
   // Retry of the same create → existing result, still exactly one catalog row.

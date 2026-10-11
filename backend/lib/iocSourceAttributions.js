@@ -31,6 +31,21 @@ export const RESOLUTION_STATUS = Object.freeze({
   AMBIGUOUS: 'ambiguous'
 });
 
+/** Source assertion kinds where the source explicitly ties the IOC to the entity. */
+export const DIRECT_ASSOCIATION_KINDS = Object.freeze([
+  ASSOCIATION_KIND.DIRECTLY_ATTRIBUTED_TO,
+  ASSOCIATION_KIND.MALWARE_SAMPLE_OF
+]);
+
+/**
+ * Relationship scope of one source assertion: 'direct' (explicit source
+ * evidence) or 'context' (Pulse/report context). Catalog resolution
+ * (resolution_method) never changes it.
+ */
+export function sourceRelationshipScope(associationKind) {
+  return DIRECT_ASSOCIATION_KINDS.includes(associationKind) ? 'direct' : 'context';
+}
+
 export const ATTRIBUTION_PROVENANCE = Object.freeze({
   ANALYST: 'analyst',
   SOURCE_REPORTED: 'source_reported',
@@ -568,6 +583,9 @@ async function loadSourceAttributions(client, pairs, { includeWithdrawn = false 
               a.evidence_url, a.evidence_title, a.association_kind, a.assertion_status,
               a.observed_at, a.first_ingested_at, a.last_ingested_at, a.withdrawn_at,
               a.is_backfill, a.resolution_method, a.resolved_at,
+              a.provider_metadata->>'section' AS evidence_section,
+              a.provider_metadata->>'row_label' AS evidence_row_label,
+              a.provider_metadata->>'published_at' AS source_published_at,
               CASE
                 WHEN a.entity_kind = 'threat_actor' THEN ta.name
                 WHEN a.entity_kind = 'malware_family' THEN mf.name
@@ -662,11 +680,17 @@ function buildSourceProvenance(row) {
     source_name: row.source_name,
     feed_key: row.feed_key,
     association_kind: row.association_kind,
+    relationship_scope: sourceRelationshipScope(row.association_kind),
     assertion_status: row.assertion_status,
     evidence_ref_type: row.evidence_ref_type,
     evidence_ref_id: row.evidence_ref_id,
     evidence_url: row.evidence_url || null,
     evidence_title: row.evidence_title || null,
+    // Where in the source the direct evidence sits (publisher report section /
+    // table row label) and the source's own publication time, when recorded.
+    evidence_section: row.evidence_section || null,
+    evidence_row_label: row.evidence_row_label || null,
+    source_published_at: row.source_published_at || null,
     source_label: row.source_label,
     resolution_status: row.resolution_status,
     // How this assertion's label was linked to the catalog identity:
@@ -730,7 +754,14 @@ function mergeEntityGroup({ entityKind, analystRows = [], sourceRows = [] }) {
   }
 
   const list = [...groups.values()].map((g) => {
+    // Direct evidence first (stable otherwise), so the stronger relationship
+    // leads while Pulse context stays listed.
+    g.sources.sort((a, b) => (b.relationship_scope === 'direct') - (a.relationship_scope === 'direct'));
     const currentSources = g.sources.filter((s) => s.assertion_status === 'current');
+    const scopes = [];
+    if (currentSources.some((s) => s.relationship_scope === 'direct')) scopes.push('direct');
+    if (currentSources.some((s) => s.relationship_scope === 'context')) scopes.push('context');
+    if (g.analyst) scopes.push('analyst');
     const attribution = g.analyst && currentSources.length
       ? ATTRIBUTION_PROVENANCE.MIXED
       : g.analyst
@@ -744,8 +775,10 @@ function mergeEntityGroup({ entityKind, analystRows = [], sourceRows = [] }) {
       aliases: g.aliases,
       active: g.active,
       attribution,
+      // Strongest current source relationship (direct before Pulse context).
       association_kind: currentSources[0]?.association_kind
         || (g.analyst ? null : ASSOCIATION_KIND.ASSOCIATED_VIA_SOURCE_PULSE),
+      relationship_scopes: scopes,
       sources: g.sources
     };
   });

@@ -23,7 +23,7 @@ test('countAssociatedIocsForActors ignores invalid ids and batches once', async 
       captured.push({ sql: String(sql), params });
       return {
         rows: [
-          { actor_id: a, all_unique: 34, analyst_unique: 2, source_unique: 33 }
+          { actor_id: a, all_unique: 34, analyst_unique: 2, source_unique: 33, direct_unique: 3, context_unique: 32 }
         ]
       };
     }
@@ -34,7 +34,9 @@ test('countAssociatedIocsForActors ignores invalid ids and batches once', async 
   assert.match(captured[0].sql, /entity_kind = 'threat_actor'/);
   assert.match(captured[0].sql, /ANY\(\$1::uuid\[\]\)/);
   assert.deepEqual(captured[0].params[0].sort(), [a, b].sort());
-  assert.deepEqual(map.get(a), { all_unique: 34, analyst_unique: 2, source_unique: 33 });
+  assert.deepEqual(map.get(a), { all_unique: 34, analyst_unique: 2, source_unique: 33, direct_unique: 3, context_unique: 32 });
+  assert.match(captured[0].sql, /AS has_direct/);
+  assert.match(captured[0].sql, /AS has_context/);
   assert.equal(map.has(b), false, 'actors with zero links omitted from SQL result');
 });
 
@@ -104,4 +106,34 @@ test('serializeActorIdentity keeps inactive flag and aliases', () => {
     active: false,
     catalog_sources: ['bundled']
   });
+});
+
+test('relationship scope: parsed, supersedes legacy filters, filters identities in HAVING', async () => {
+  const { parseDiscoveryOptions, relationshipScopesOf, queryDiscoveryPage: familyPage } = await import('../malwareFamilies/iocDiscovery.js');
+  const { queryDiscoveryPage: actorPage } = await import('./iocDiscovery.js');
+  assert.equal(parseDiscoveryOptions({}).scope, 'all');
+  assert.equal(parseDiscoveryOptions({ scope: 'DIRECT' }).scope, 'direct');
+  assert.equal(parseDiscoveryOptions({ scope: 'bogus' }).scope, 'all');
+  const scoped = parseDiscoveryOptions({ scope: 'context', origin: 'analyst', association: 'direct' });
+  assert.equal(scoped.origin, 'all');
+  assert.equal(scoped.association, 'all');
+  // Legacy-only requests keep their meaning (no scope reported).
+  assert.equal(parseDiscoveryOptions({ origin: 'analyst' }).scope, null);
+  assert.deepEqual(relationshipScopesOf({ has_direct: true, has_context: true, has_analyst: false }), ['direct', 'context']);
+  assert.deepEqual(relationshipScopesOf({ has_analyst: true }), ['analyst']);
+
+  for (const [page, target, sampleKinds] of [
+    [familyPage, { familyId: '8bd4f10c-0904-43cb-acdf-02aa0b0a81e6' }, /malware_sample_of/],
+    [actorPage, { actorId: '8bd4f10c-0904-43cb-acdf-02aa0b0a81e6' }, null]
+  ]) {
+    const captured = [];
+    await page({ async query(sql, params) { captured.push({ sql: String(sql), params }); return { rows: [] }; } },
+      target, parseDiscoveryOptions({ scope: 'direct' }));
+    assert.equal(captured[0].params[11], 'direct');
+    assert.equal(captured[0].params[2], true, 'analyst links still loaded so a direct IOC keeps its analyst scope');
+    assert.match(captured[0].sql, /HAVING[\s\S]*\$12::text = 'direct'/);
+    assert.match(captured[0].sql, /AS has_direct/);
+    if (sampleKinds) assert.match(captured[0].sql, sampleKinds);
+    else assert.doesNotMatch(captured[0].sql, /malware_sample_of/);
+  }
 });

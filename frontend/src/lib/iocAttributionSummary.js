@@ -43,10 +43,27 @@ export function getAnalystMalwareFamilyIdsFromSummary(summary) {
     .map((f) => String(f.id));
 }
 
+const DIRECT_KINDS = ['directly_attributed_to', 'malware_sample_of'];
+
+/** 'direct' when a source explicitly ties the IOC to the entity, else 'context'. */
+export function sourceRelationshipScope(source) {
+  if (source?.relationship_scope) return source.relationship_scope;
+  return DIRECT_KINDS.includes(source?.association_kind) ? 'direct' : 'context';
+}
+
 export function attributionHint(entity) {
   const attribution = entity?.attribution || null;
   const sources = Array.isArray(entity?.sources) ? entity.sources.filter((s) => s.assertion_status === 'current') : [];
   if (attribution === 'analyst') return 'Analyst';
+  const direct = sources.filter((s) => sourceRelationshipScope(s) === 'direct');
+  if (direct.length) {
+    // The stronger relationship leads; Pulse context stays named.
+    const namesOf = (list) => [...new Set(list.map((s) => s.source_name).filter(Boolean))].join(', ');
+    const context = sources.filter((s) => sourceRelationshipScope(s) === 'context');
+    const parts = [attribution === 'mixed' ? 'Analyst' : null, `Direct · ${namesOf(direct) || 'source'}`];
+    if (context.length) parts.push(`Context · ${namesOf(context) || 'source'}`);
+    return parts.filter(Boolean).join(' · ');
+  }
   if (attribution === 'mixed') {
     const names = [...new Set(sources.map((s) => s.source_name).filter(Boolean))];
     return names.length ? `Analyst · ${names.join(', ')}` : 'Analyst · Source-reported';

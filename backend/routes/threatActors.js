@@ -71,6 +71,7 @@ async function findDuplicate(pool, { name, slug, excludeId = null }) {
 function shapeDiscoveryResponse(result) {
   return {
     filters: {
+      scope: result.options.scope,
       origin: result.options.origin,
       lifecycle: result.options.lifecycle,
       association: result.options.association,
