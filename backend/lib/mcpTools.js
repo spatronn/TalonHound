@@ -27,11 +27,16 @@ function toolText(obj) {
   };
 }
 
-function toolError(message, code = 'ERROR') {
+function toolError(message, code = 'ERROR', details = null) {
+  // Additive structured details (e.g. ambiguity candidates, source-label hints).
+  const extra = details && typeof details === 'object'
+    ? Object.fromEntries(Object.entries(details).filter(([k]) => k !== 'code' && k !== 'message'))
+    : {};
+  const error = { code, message, ...extra };
   return {
     isError: true,
-    content: [{ type: 'text', text: JSON.stringify({ error: { code, message } }) }],
-    structuredContent: { error: { code, message } }
+    content: [{ type: 'text', text: JSON.stringify({ error }) }],
+    structuredContent: { error }
   };
 }
 
@@ -47,7 +52,7 @@ async function withAuth(toolName, ctx, handler) {
   try {
     const outcome = await handler();
     if (outcome?.error) {
-      return toolError(outcome.error.message, outcome.error.code || 'ERROR');
+      return toolError(outcome.error.message, outcome.error.code || 'ERROR', outcome.error);
     }
     // import_iocs, the enrichment action tools and the tag tools write their own dedicated audit events.
     if (ctx.audit?.auditSuccess && ctx.req && toolName !== 'import_iocs'
