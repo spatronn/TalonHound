@@ -135,6 +135,15 @@ export const NavIcons = {
       <path d="M16.4 3.8a3.5 3.5 0 0 1 0 6.4" />
     </Icon>
   ),
+  malwareFamilies: (
+    <Icon>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h10" />
+      <circle cx="18.5" cy="17" r="2.5" />
+      <path d="m20.2 18.7 1.3 1.3" />
+    </Icon>
+  ),
   iocSources: (
     <Icon>
       <circle cx="12" cy="12" r="2.5" />

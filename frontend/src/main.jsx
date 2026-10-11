@@ -261,8 +261,7 @@ import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx
 import { IocMetadataCards, AttributionEntityBadges } from './components/iocDetails/IocMetadataCards.jsx';
 import {
   getAnalystThreatActorIdsFromSummary,
-  getAnalystMalwareFamilyIdsFromSummary,
-  getMalwareFamiliesFromSummary
+  getAnalystMalwareFamilyIdsFromSummary
 } from './lib/iocAttributionSummary.js';
 import talonHoundLogo from './assets/talonhound-logo.png';
 import { formatSidebarRoleLabel, userInitialsFromEmail } from './lib/sidebarAccount.js';
@@ -341,6 +340,27 @@ import {
   formatThreatActorDescriptionCell,
   threatActorDescriptionModalTitle
 } from './lib/threatActorTableDisplay.js';
+import {
+  EMPTY_MALWARE_FAMILY_FORM,
+  MALWARE_FAMILY_MANAGER_PAGE_SIZE,
+  MALWARE_FAMILY_MANAGER_SEARCH_DEBOUNCE_MS,
+  buildMalwareFamilyManagerQueryParams,
+  buildMalwareFamilyManagerUrlSearchParams,
+  clampMalwareFamilyManagerPage,
+  formatMalwareFamilyAliases,
+  formatMalwareFamilyManagerShowingLabel,
+  parseMalwareFamilyManagerUrlState
+} from './lib/malwareFamilyManagerList.js';
+import {
+  MALWARE_FAMILY_ALIASES_CLAMP_CLASS,
+  MALWARE_FAMILY_DESCRIPTION_CLAMP_CLASS,
+  MALWARE_FAMILY_PAGE_CLASS,
+  MALWARE_FAMILY_TABLE_CLASS,
+  buildMalwareFamilyDescriptionModalState,
+  formatMalwareFamilyAliasesCell,
+  formatMalwareFamilyDescriptionCell,
+  malwareFamilyDescriptionModalTitle
+} from './lib/malwareFamilyTableDisplay.js';
 import {
   ACTION_CENTER_FILTERS,
   ACTION_CENTER_PAGE_SIZE,
@@ -2252,6 +2272,7 @@ function AppShell({ children }) {
     && !isActive('/administration/tags')
     && !isActive('/administration/threat-classifications')
     && !isActive('/administration/threat-actors')
+    && !isActive('/administration/malware-families')
     && !isActive('/administration/ioc-sources');
 
   const navLinkClass = (active) => `sidebar-nav-link${active ? ' is-active' : ''}`;
@@ -2321,6 +2342,7 @@ function AppShell({ children }) {
             <Link to="/threat-intelligence/published-feeds" className={navLinkClass(isActive('/threat-intelligence/published-feeds'))}>{NavIcons.publishedFeeds}<span>Published Feeds</span></Link>
             {isAdmin ? <Link to="/administration/ioc-sources" className={navLinkClass(isActive('/administration/ioc-sources'))}>{NavIcons.iocSources}<span>IOC Sources</span></Link> : null}
             {isAdmin ? <Link to="/administration/threat-actors" className={navLinkClass(isActive('/administration/threat-actors'))}>{NavIcons.threatActors}<span>Threat Actors</span></Link> : null}
+            {isAdmin ? <Link to="/administration/malware-families" className={navLinkClass(isActive('/administration/malware-families'))}>{NavIcons.malwareFamilies}<span>Malware Families</span></Link> : null}
             {isAdmin ? <Link to="/administration/threat-classifications" className={navLinkClass(isActive('/administration/threat-classifications'))}>{NavIcons.classifications}<span>Threat Classifications</span></Link> : null}
             <Link to="/administration/tags" className={navLinkClass(isActive('/administration/tags'))}>{NavIcons.tags}<span>Tags</span></Link>
             <Link to="/administration/enrichment-providers" className={navLinkClass(isActive('/administration/enrichment-providers'))}>{NavIcons.enrichmentProviders}<span>Enrichment Providers</span></Link>
@@ -7969,6 +7991,48 @@ function ThreatActorMultiSelect({
   );
 }
 
+function MalwareFamilyMultiSelect({
+  value,
+  onChange,
+  options = [],
+  disabled = false,
+  inline = false,
+  searchInputRef = null
+}) {
+  const selected = Array.isArray(value) ? value.map(String).filter(Boolean) : [];
+  const optionList = Array.isArray(options) ? options : [];
+  const pickerOptions = optionList.map((o) => {
+    const name = o.name || String(o.id);
+    const aliases = Array.isArray(o.aliases) ? o.aliases.map((a) => String(a || '').trim()).filter(Boolean) : [];
+    return {
+      value: String(o.id),
+      label: aliases.length ? `${name} (${aliases.join(', ')})` : name,
+      chipLabel: name
+    };
+  });
+
+  function toggle(id) {
+    if (disabled) return;
+    onChange(toggleMultiSelectValue(selected, id));
+  }
+
+  return (
+    <SearchableMultiSelect
+      selectedValues={selected}
+      options={pickerOptions}
+      onToggle={toggle}
+      disabled={disabled}
+      inline={inline}
+      searchInputRef={searchInputRef}
+      ariaLabel="Malware families"
+      placeholder="Select malware families…"
+      searchPlaceholder="Search malware families…"
+      emptyOptionsLabel="No malware families available — create them under Threat Intelligence → Malware Families"
+      chipLabelFor={(id) => pickerOptions.find((o) => o.value === String(id))?.chipLabel || String(id)}
+    />
+  );
+}
+
 const EMPTY_IOC_SOURCE_FORM = {
   name: '',
   description: '',
@@ -9099,6 +9163,427 @@ function ThreatActorManagerPage() {
         >
           <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, color: '#e2e8f0' }}>
             {descriptionModalActor.description}
+          </div>
+        </ModalOverlay>
+      ) : null}
+    </AppShell>
+  );
+}
+
+function MalwareFamilyManagerPage() {
+  const { isAdmin } = useSession();
+  const requestConfirm = useAppConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const ui = PUBLISHED_FEEDS_UI;
+  const initial = useMemo(() => parseMalwareFamilyManagerUrlState(searchParams), []);
+  const [families, setFamilies] = useState([]);
+  const [pagination, setPagination] = useState({
+    page: initial.page,
+    page_size: MALWARE_FAMILY_MANAGER_PAGE_SIZE,
+    total_items: 0,
+    total_pages: 1,
+    has_previous: false,
+    has_next: false
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showInactive, setShowInactive] = useState(initial.showInactive);
+  const [page, setPage] = useState(initial.page);
+  const [searchInput, setSearchInput] = useState(initial.search);
+  const [search, setSearch] = useState(initial.search.trim());
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [editingFamily, setEditingFamily] = useState(null);
+  const [form, setForm] = useState(EMPTY_MALWARE_FAMILY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [descriptionModalFamily, setDescriptionModalFamily] = useState(null);
+  const requestSeqRef = useRef(0);
+  const abortRef = useRef(null);
+  const familyNameRef = useRef(null);
+
+  const load = useCallback(async () => {
+    if (!isAdmin) return;
+    const seq = ++requestSeqRef.current;
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setLoading(true);
+    setError('');
+    try {
+      const params = buildMalwareFamilyManagerQueryParams({ page, search, showInactive });
+      const { data } = await api.get('/admin/malware-families', { params, signal: controller.signal });
+      if (seq !== requestSeqRef.current) return;
+      const items = Array.isArray(data?.malware_families) ? data.malware_families : [];
+      const pag = data?.pagination || {
+        page,
+        page_size: MALWARE_FAMILY_MANAGER_PAGE_SIZE,
+        total_items: items.length,
+        total_pages: 1,
+        has_previous: false,
+        has_next: false
+      };
+      setFamilies(items);
+      setPagination(pag);
+      const clamped = clampMalwareFamilyManagerPage(page, pag.total_items, MALWARE_FAMILY_MANAGER_PAGE_SIZE);
+      if (clamped !== page) setPage(clamped);
+    } catch (err) {
+      if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError' || err?.name === 'AbortError') return;
+      if (seq !== requestSeqRef.current) return;
+      setFamilies([]);
+      setPagination({
+        page: 1,
+        page_size: MALWARE_FAMILY_MANAGER_PAGE_SIZE,
+        total_items: 0,
+        total_pages: 1,
+        has_previous: false,
+        has_next: false
+      });
+      setError(apiErrorMessage(err, 'Failed to load malware families'));
+    } finally {
+      if (seq === requestSeqRef.current) setLoading(false);
+    }
+  }, [isAdmin, page, search, showInactive]);
+
+  useEffect(() => {
+    load().catch(() => {});
+    return () => {
+      if (abortRef.current) abortRef.current.abort();
+    };
+  }, [load]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      setSearch((prev) => {
+        if (prev === next) return prev;
+        setPage(1);
+        return next;
+      });
+    }, MALWARE_FAMILY_MANAGER_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setSearchParams(buildMalwareFamilyManagerUrlSearchParams({ page, search, showInactive }), { replace: true });
+  }, [page, search, showInactive, setSearchParams]);
+
+  const showingLabel = formatMalwareFamilyManagerShowingLabel({
+    page: pagination.page,
+    pageSize: pagination.page_size || MALWARE_FAMILY_MANAGER_PAGE_SIZE,
+    totalItems: pagination.total_items
+  });
+
+  function openCreateModal() {
+    setEditingFamily(null);
+    setForm(EMPTY_MALWARE_FAMILY_FORM);
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  function openEditModal(family) {
+    setEditingFamily(family);
+    setForm({
+      name: family?.name || '',
+      aliases: formatMalwareFamilyAliases(family?.aliases) === '—' ? '' : formatMalwareFamilyAliases(family?.aliases),
+      description: family?.description || '',
+      active: family?.active !== false
+    });
+    setFormError('');
+    setShowFormModal(true);
+  }
+
+  async function submitForm(e) {
+    e.preventDefault();
+    if (!isAdmin) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const payload = {
+        name: form.name.trim(),
+        aliases: form.aliases,
+        description: form.description,
+        active: form.active
+      };
+      if (editingFamily?.id) {
+        await api.patch(`/admin/malware-families/${editingFamily.id}`, payload);
+      } else {
+        await api.post('/admin/malware-families', payload);
+      }
+      setShowFormModal(false);
+      setEditingFamily(null);
+      setForm(EMPTY_MALWARE_FAMILY_FORM);
+      await load();
+    } catch (err) {
+      setFormError(apiErrorMessage(err, editingFamily ? 'Update failed' : 'Create failed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disableFamily(family) {
+    if (!family?.id || !isAdmin) return;
+    const ok = await requestConfirm({
+      title: 'Disable malware family?',
+      description: `Disable malware family "${family.name}"? Existing IOC assignments will remain visible, but the family will no longer appear in pickers.`,
+      variant: 'warning',
+      confirmLabel: 'Disable'
+    });
+    if (!ok) return;
+    setError('');
+    try {
+      await api.patch(`/admin/malware-families/${family.id}/disable`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Disable failed'));
+    }
+  }
+
+  async function enableFamily(family) {
+    if (!family?.id || !isAdmin) return;
+    setError('');
+    try {
+      await api.patch(`/admin/malware-families/${family.id}/enable`);
+      await load();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Enable failed'));
+    }
+  }
+
+  if (!isAdmin) {
+    return (
+      <AppShell>
+        <section style={ui.section}>
+          <h1 style={ui.pageTitle}>Malware Families</h1>
+          <p style={ui.pageSub}>Admin access required.</p>
+        </section>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell>
+      <section style={ui.section} className={MALWARE_FAMILY_PAGE_CLASS}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <h1 style={ui.pageTitle}>Malware Families</h1>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <label style={ui.checkLabel}>
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => {
+                  setShowInactive(e.target.checked);
+                  setPage(1);
+                }}
+              />
+              Show inactive
+            </label>
+            <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Malware Family</button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14, maxWidth: 420 }}>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            style={ui.input}
+            placeholder="Search malware families..."
+            aria-label="Search malware families"
+          />
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div className="malware-families-table-wrap">
+          <table className={`ioc-table ${MALWARE_FAMILY_TABLE_CLASS}`} style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th className="mf-col-name" style={ui.th}>Name</th>
+                <th className="mf-col-aliases" style={ui.th}>Aliases</th>
+                <th className="mf-col-description" style={ui.th}>Description</th>
+                <th className="mf-col-active" style={ui.th}>Active</th>
+                <th className="mf-col-created" style={ui.th}>Created At</th>
+                <th className="mf-col-actions" style={ui.th}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !families.length ? (
+                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+              ) : !families.length ? (
+                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>
+                  <EmptyState
+                    title={search ? 'No matching malware families' : 'No malware families yet'}
+                    description={search ? 'Try a different search term.' : 'Add a malware family to link them to IOCs.'}
+                    ctaLabel="Add Malware Family"
+                    canWrite={isAdmin && !search}
+                    onCta={openCreateModal}
+                  />
+                </td></tr>
+              ) : families.map((family) => {
+                const descriptionCell = formatMalwareFamilyDescriptionCell(family.description);
+                const aliasesCell = formatMalwareFamilyAliasesCell(family.aliases);
+                return (
+                <tr key={family.id} className="malware-families-row" style={{ opacity: family.active ? 1 : 0.62 }}>
+                  <td className="mf-col-name" style={ui.td}>
+                    <div style={{ fontWeight: 600 }}>{family.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{family.slug || family.name}</div>
+                  </td>
+                  <td className="mf-col-aliases" style={ui.td}>
+                    <span
+                      className={aliasesCell.isPlaceholder ? 'mf-aliases-static' : MALWARE_FAMILY_ALIASES_CLAMP_CLASS}
+                      title={aliasesCell.title}
+                    >
+                      {aliasesCell.displayText}
+                    </span>
+                  </td>
+                  <td className="mf-col-description" style={ui.td}>
+                    {descriptionCell.isPlaceholder ? (
+                      <span className={`mf-description-static ${MALWARE_FAMILY_DESCRIPTION_CLAMP_CLASS}`}>
+                        {descriptionCell.displayText}
+                      </span>
+                    ) : descriptionCell.expandable ? (
+                      <button
+                        type="button"
+                        className={`mf-description-button ${MALWARE_FAMILY_DESCRIPTION_CLAMP_CLASS}`}
+                        onClick={() => {
+                          const modalState = buildMalwareFamilyDescriptionModalState(family);
+                          if (modalState) setDescriptionModalFamily(modalState);
+                        }}
+                        aria-label={`View full description for ${family.name}`}
+                      >
+                        {descriptionCell.displayText}
+                      </button>
+                    ) : (
+                      <span className={`mf-description-static ${MALWARE_FAMILY_DESCRIPTION_CLAMP_CLASS}`}>
+                        {descriptionCell.displayText}
+                      </span>
+                    )}
+                  </td>
+                  <td className="mf-col-active" style={ui.td}>{family.active ? 'Yes' : 'No'}</td>
+                  <td className="mf-col-created" style={ui.td}>{formatUserDateTime(family.created_at)}</td>
+                  <td className="mf-col-actions" style={ui.td}>
+                    <div className="mf-action-buttons">
+                      <button type="button" style={ui.btnCompact} onClick={() => openEditModal(family)}>Edit</button>
+                      {family.active ? (
+                        <button type="button" style={ui.btnCompact} onClick={() => disableFamily(family).catch(() => {})}>Disable</button>
+                      ) : (
+                        <button type="button" style={ui.btnCompact} onClick={() => enableFamily(family).catch(() => {})}>Enable</button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {pagination.total_items > 0 ? (
+          <div style={{
+            marginTop: 14,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 10,
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            color: '#94a3b8',
+            fontSize: 13
+          }}
+          >
+            <div>{showingLabel}{loading ? ' · Updating…' : ''}</div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={ui.btnCompact}
+                disabled={!pagination.has_previous || loading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span>
+                Page {pagination.page} of {pagination.total_pages}
+              </span>
+              <button
+                type="button"
+                style={ui.btnCompact}
+                disabled={!pagination.has_next || loading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      {showFormModal ? (
+        <ModalOverlay
+          size="sm"
+          title={editingFamily ? 'Edit Malware Family' : 'Add Malware Family'}
+          onClose={saving ? undefined : () => setShowFormModal(false)}
+          initialFocusRef={familyNameRef}
+          footer={(
+            <>
+              <button
+                type="button"
+                className={buttonClassName({ variant: 'secondary' })}
+                data-modal-cancel
+                onClick={() => setShowFormModal(false)}
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="malware-family-form"
+                className={buttonClassName({ variant: 'primary' })}
+                disabled={saving}
+              >
+                {saving ? 'Saving…' : (editingFamily ? 'Save Changes' : 'Create Malware Family')}
+              </button>
+            </>
+          )}
+        >
+          <form id="malware-family-form" onSubmit={submitForm} noValidate>
+            <FeedFormField ui={ui} label="Name" fullWidth required>
+              <input ref={familyNameRef} required value={form.name} onChange={(e) => setForm((x) => ({ ...x, name: e.target.value }))} style={ui.input} placeholder="e.g. Remcos" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Aliases" helper="Comma-separated alternate names." fullWidth>
+              <input value={form.aliases} onChange={(e) => setForm((x) => ({ ...x, aliases: e.target.value }))} style={ui.input} placeholder="Remcos RAT, REMCOS" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Description" fullWidth>
+              <textarea value={form.description} onChange={(e) => setForm((x) => ({ ...x, description: e.target.value }))} style={ui.textarea} placeholder="Optional description" />
+            </FeedFormField>
+            <FeedFormField ui={ui} label="Active" fullWidth>
+              <label style={ui.checkLabel}>
+                <input type="checkbox" checked={form.active} onChange={(e) => setForm((x) => ({ ...x, active: e.target.checked }))} />
+                Malware family is active
+              </label>
+            </FeedFormField>
+            {formError ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{formError}</div> : null}
+          </form>
+        </ModalOverlay>
+      ) : null}
+
+      {descriptionModalFamily ? (
+        <ModalOverlay
+          size="md"
+          title={malwareFamilyDescriptionModalTitle(descriptionModalFamily.name)}
+          onClose={() => setDescriptionModalFamily(null)}
+          footer={(
+            <button
+              type="button"
+              className={buttonClassName({ variant: 'secondary' })}
+              data-modal-cancel
+              onClick={() => setDescriptionModalFamily(null)}
+            >
+              Close
+            </button>
+          )}
+        >
+          <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.55, color: '#e2e8f0' }}>
+            {descriptionModalFamily.description}
           </div>
         </ModalOverlay>
       ) : null}
@@ -16085,6 +16570,7 @@ function IOCDetailsPage() {
   const [confidenceError, setConfidenceError] = useState('');
   const { options: threatClassOptions, labelFor: threatClassLabelFor } = useThreatClassifications();
   const [threatActors, setThreatActors] = useState([]);
+  const [malwareFamilies, setMalwareFamilies] = useState([]);
   const [showThreatClassModal, setShowThreatClassModal] = useState(false);
   const [threatClassDraft, setThreatClassDraft] = useState([]);
   const [threatClassSaving, setThreatClassSaving] = useState(false);
@@ -16096,9 +16582,10 @@ function IOCDetailsPage() {
   const [threatActorError, setThreatActorError] = useState('');
   const threatActorSearchRef = useRef(null);
   const [showMalwareFamilyModal, setShowMalwareFamilyModal] = useState(false);
-  const [malwareFamilyDraftNames, setMalwareFamilyDraftNames] = useState('');
+  const [malwareFamilyDraft, setMalwareFamilyDraft] = useState([]);
   const [malwareFamilySaving, setMalwareFamilySaving] = useState(false);
   const [malwareFamilyError, setMalwareFamilyError] = useState('');
+  const malwareFamilySearchRef = useRef(null);
   const loadGuardRef = useRef(null);
   if (loadGuardRef.current === null) loadGuardRef.current = createLatestOnly();
 
@@ -16242,10 +16729,17 @@ function IOCDetailsPage() {
     let active = true;
     (async () => {
       try {
-        const { data } = await api.get('/threat-actors');
-        if (active) setThreatActors(Array.isArray(data?.threat_actors) ? data.threat_actors : []);
+        const [{ data: actorData }, { data: familyData }] = await Promise.all([
+          api.get('/threat-actors'),
+          api.get('/malware-families')
+        ]);
+        if (!active) return;
+        setThreatActors(Array.isArray(actorData?.threat_actors) ? actorData.threat_actors : []);
+        setMalwareFamilies(Array.isArray(familyData?.malware_families) ? familyData.malware_families : []);
       } catch {
-        if (active) setThreatActors([]);
+        if (!active) return;
+        setThreatActors([]);
+        setMalwareFamilies([]);
       }
     })();
     return () => { active = false; };
@@ -16672,16 +17166,7 @@ function IOCDetailsPage() {
   }
 
   function openMalwareFamilyEditor() {
-    const analystNames = getMalwareFamiliesFromSummary(summary)
-      .filter((f) => f.attribution === 'analyst' || f.attribution === 'mixed')
-      .map((f) => f.name)
-      .filter(Boolean);
-    const ids = getAnalystMalwareFamilyIdsFromSummary(summary);
-    const byIdNames = getMalwareFamiliesFromSummary(summary)
-      .filter((f) => f.id && ids.includes(String(f.id)))
-      .map((f) => f.name)
-      .filter(Boolean);
-    setMalwareFamilyDraftNames([...new Set([...analystNames, ...byIdNames])].join(', '));
+    setMalwareFamilyDraft(getAnalystMalwareFamilyIdsFromSummary(summary));
     setMalwareFamilyError('');
     setShowMalwareFamilyModal(true);
   }
@@ -16691,24 +17176,19 @@ function IOCDetailsPage() {
     const observableType = String(summary?.observable_type || '').trim();
     if (!Number.isFinite(iocId) || !observableType) return;
 
-    const names = String(malwareFamilyDraftNames || '')
-      .split(/[,;\n]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
     setMalwareFamilySaving(true);
     setMalwareFamilyError('');
     try {
       const { data: patchData } = await api.patch(`/ioc/${iocId}/malware-families`, {
         observable_type: observableType,
-        malware_family_names: names
+        malware_family_ids: Array.isArray(malwareFamilyDraft) ? malwareFamilyDraft : []
       });
       if (!patchData?.success) {
         setMalwareFamilyError(patchData?.error || 'Request failed');
         return;
       }
       setShowMalwareFamilyModal(false);
-      setMalwareFamilyDraftNames('');
+      setMalwareFamilyDraft([]);
       setActionToast('Malware families updated');
       await load();
     } catch (err) {
@@ -17735,10 +18215,11 @@ function IOCDetailsPage() {
         <ModalOverlay
           title="Edit malware families"
           size="md"
+          initialFocusRef={malwareFamilySearchRef}
           onClose={() => {
             if (malwareFamilySaving) return;
             setShowMalwareFamilyModal(false);
-            setMalwareFamilyDraftNames('');
+            setMalwareFamilyDraft([]);
             setMalwareFamilyError('');
           }}
           footer={(
@@ -17749,7 +18230,7 @@ function IOCDetailsPage() {
                 style={ui.btn}
                 onClick={() => {
                   setShowMalwareFamilyModal(false);
-                  setMalwareFamilyDraftNames('');
+                  setMalwareFamilyDraft([]);
                   setMalwareFamilyError('');
                 }}
                 disabled={malwareFamilySaving}
@@ -17763,29 +18244,18 @@ function IOCDetailsPage() {
           )}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
-            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#cbd5e1' }}>
-              Analyst malware families (comma-separated)
-              <textarea
-                value={malwareFamilyDraftNames}
-                onChange={(e) => setMalwareFamilyDraftNames(e.target.value)}
-                rows={4}
-                disabled={malwareFamilySaving}
-                placeholder="e.g. GRAYRABBIT, RABBITFUR"
-                style={{
-                  width: '100%',
-                  padding: '8px 10px',
-                  borderRadius: 8,
-                  border: '1px solid #475569',
-                  background: '#0f172a',
-                  color: '#e2e8f0',
-                  fontFamily: 'inherit',
-                  resize: 'vertical'
-                }}
-              />
-            </label>
+            <MalwareFamilyMultiSelect
+              value={malwareFamilyDraft}
+              onChange={setMalwareFamilyDraft}
+              options={malwareFamilies}
+              disabled={malwareFamilySaving}
+              inline
+              searchInputRef={malwareFamilySearchRef}
+            />
             {malwareFamilyError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{malwareFamilyError}</div> : null}
             <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>
-              Edits analyst-managed associations only. Source-reported families from AlienVault OTX pulses remain visible on Overview.
+              Edits analyst-managed associations only. Create new families under Threat Intelligence → Malware Families.
+              Source-reported families from AlienVault OTX pulses remain visible on Overview and are not removed by clearing this list.
             </div>
           </div>
         </ModalOverlay>
@@ -18864,6 +19334,89 @@ function App() {
           .threat-actors-page .threat-actors-table .ta-col-created { display: none; }
           .threat-actors-page .threat-actors-table { min-width: 760px; }
         }
+        .malware-families-page .malware-families-table-wrap {
+          margin-top: 16px;
+          overflow-x: auto;
+        }
+        .malware-families-page .malware-families-table {
+          width: 100%;
+          table-layout: fixed;
+          font-size: 13px;
+        }
+        .malware-families-page .malware-families-table .mf-col-name { width: 16%; min-width: 140px; }
+        .malware-families-page .malware-families-table .mf-col-aliases { width: 20%; min-width: 160px; }
+        .malware-families-page .malware-families-table .mf-col-description { width: auto; }
+        .malware-families-page .malware-families-table .mf-col-active { width: 72px; }
+        .malware-families-page .malware-families-table .mf-col-created { width: 160px; }
+        .malware-families-page .malware-families-table .mf-col-actions { width: 150px; }
+        .malware-families-page .malware-families-table tbody tr {
+          border-bottom: 1px solid #334155;
+        }
+        .malware-families-page .malware-families-table tbody tr:hover {
+          background: rgba(30, 41, 59, 0.55);
+        }
+        .malware-families-page .malware-families-table td {
+          vertical-align: middle;
+        }
+        .malware-families-page .mf-clamp-description,
+        .malware-families-page .mf-clamp-aliases {
+          display: -webkit-box;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          word-break: break-word;
+          overflow-wrap: anywhere;
+          white-space: normal;
+        }
+        .malware-families-page .mf-clamp-description {
+          -webkit-line-clamp: 3;
+          line-clamp: 3;
+        }
+        .malware-families-page .mf-clamp-aliases {
+          -webkit-line-clamp: 2;
+          line-clamp: 2;
+        }
+        .malware-families-page .mf-description-button {
+          display: block;
+          width: 100%;
+          padding: 0;
+          margin: 0;
+          border: 0;
+          background: transparent;
+          color: inherit;
+          font: inherit;
+          text-align: left;
+          cursor: pointer;
+        }
+        .malware-families-page .mf-description-button:hover {
+          color: #cbd5e1;
+        }
+        .malware-families-page .mf-description-button:focus-visible {
+          outline: 2px solid #93c5fd;
+          outline-offset: 2px;
+          border-radius: 4px;
+        }
+        .malware-families-page .mf-description-static,
+        .malware-families-page .mf-aliases-static {
+          display: block;
+        }
+        .malware-families-page .mf-col-actions {
+          white-space: nowrap;
+          vertical-align: middle;
+        }
+        .malware-families-page .mf-action-buttons {
+          display: inline-flex;
+          flex-wrap: nowrap;
+          gap: 6px;
+          align-items: center;
+        }
+        .malware-families-page .mf-action-buttons button {
+          white-space: nowrap;
+        }
+        @media (max-width: 980px) {
+          .malware-families-page .malware-families-table .mf-col-created { display: none; }
+          .malware-families-page .malware-families-table { min-width: 760px; }
+        }
         .app-feedback-stack {
           position: fixed;
           top: var(--th-shell-pad);
@@ -19211,6 +19764,7 @@ function App() {
           <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />
           <Route path="/administration/threat-classifications" element={<Protected><ThreatClassificationManagerPage /></Protected>} />
           <Route path="/administration/threat-actors" element={<Protected><ThreatActorManagerPage /></Protected>} />
+          <Route path="/administration/malware-families" element={<Protected><MalwareFamilyManagerPage /></Protected>} />
           <Route path="/administration/ioc-sources" element={<Protected><IocSourcesPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />

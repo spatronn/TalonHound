@@ -280,6 +280,7 @@ import { registerIocSourceRoutes } from './routes/iocSources.js';
 import { registerCustomThreatFeedRoutes } from './routes/customThreatFeeds.js';
 import { isValidTrustLevel } from './lib/trustLevel.js';
 import { registerThreatActorRoutes } from './routes/threatActors.js';
+import { registerMalwareFamilyRoutes } from './routes/malwareFamilies.js';
 import { registerThreatClassificationRoutes } from './routes/threatClassifications.js';
 import { registerIocThreatMetadataRoutes, buildThreatMetadataFields, enrichItemsWithThreatMetadata, mergeThreatMetadataItem, loadListCanonicalClassifications, mergeCanonicalClassificationsIntoItem } from './routes/iocThreatMetadata.js';
 import { loadThreatClassificationRegistry, buildThreatClassificationResponseFields } from './lib/threatClassification.js';
@@ -3063,6 +3064,7 @@ registerCustomThreatFeedRoutes(app, pool, auditLogService, {
 registerRouteModule('custom_threat_feeds');
 registerThreatClassificationRoutes(app, pool, auditLogService);
 registerThreatActorRoutes(app, pool, auditLogService);
+registerMalwareFamilyRoutes(app, pool, auditLogService);
 registerIocThreatMetadataRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache
 });

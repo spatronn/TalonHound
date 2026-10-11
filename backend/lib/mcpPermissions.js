@@ -22,6 +22,8 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   bulk_enrich_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_ENRICHMENT_WRITE],
   // Tag catalog = the IOC Details tag picker (GET /api/tags, analyst/admin).
   list_tags: [API_SCOPE.MCP_IOC_READ],
+  // Malware Families catalog discovery (active catalog for IOC picker / MCP).
+  list_malware_families: [API_SCOPE.MCP_IOC_READ],
   // Analyst (manual) IOC tag writes. Separate scope — never implied by read,
   // import or enrichment scopes.
   add_ioc_tags: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_TAGS_WRITE],
@@ -85,6 +87,8 @@ export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
     enrichment_write: ownerCanMcpEnrich(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_ENRICHMENT_WRITE),
     tags_read: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_IOC_READ),
     tags_write: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_TAGS_WRITE),
+    // Same owner gate as tags: catalog discovery for analyst/admin pickers.
+    malware_families_read: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_IOC_READ),
     owner_role: normalizeAppRole(ownerRole),
     owner_readonly: isReadOnlyRole(ownerRole)
   });
@@ -141,6 +145,14 @@ export function authorizeMcpTool(toolName, auth = {}) {
         ok: false,
         code: 'RBAC_DENIED',
         message: 'Owner user is not permitted to read the tag catalog'
+      };
+    }
+  } else if (name === 'list_malware_families') {
+    if (!caps.malware_families_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to read the malware family catalog'
       };
     }
   } else if (name === 'list_enrichment_providers' || name === 'get_enrichment_job') {

@@ -616,6 +616,28 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
   // of masquerading as "no context".
   const threatContext = await loadIocThreatContext(pool, body.id);
 
+  // Catalog Threat Actors + Malware Families (analyst ∪ source-reported), same
+  // effective merge as IOC Overview. Bounded provenance per entity.
+  let threatActors = [];
+  let malwareFamilies = [];
+  let analystThreatActorIds = [];
+  let analystMalwareFamilyIds = [];
+  try {
+    const { fetchEffectiveIocAttributions } = await import('./iocSourceAttributions.js');
+    const { serializeMcpAttributionEntities } = await import('./mcpMalwareFamilyService.js');
+    const attrs = await fetchEffectiveIocAttributions(pool, body.id, body.type);
+    threatActors = serializeMcpAttributionEntities(attrs.threat_actors || []);
+    malwareFamilies = serializeMcpAttributionEntities(attrs.malware_families || []);
+    analystThreatActorIds = attrs.analyst_threat_actor_ids || [];
+    analystMalwareFamilyIds = attrs.analyst_malware_family_ids || [];
+  } catch (err) {
+    if (!String(err?.message || '').includes('ioc_source_attributions')
+      && !String(err?.message || '').includes('ioc_threat_actors')
+      && !String(err?.message || '').includes('malware_families')) {
+      throw err;
+    }
+  }
+
   return {
     status: 200,
     body: {
@@ -630,6 +652,11 @@ export async function mcpGetIocContext(pool, { value, type, id } = {}, opts = {}
       classifications: classificationSlugs,
       // Who asserts each effective classification (feed source names / analyst).
       classification_context: meta.classification_context,
+      // Additive: effective Threat Actors / Malware Families (analyst ∪ source-reported).
+      threat_actors: threatActors,
+      analyst_threat_actor_ids: analystThreatActorIds,
+      malware_families: malwareFamilies,
+      analyst_malware_family_ids: analystMalwareFamilyIds,
       // IOC tag names: the IOC's own tags (analyst + source-integration) plus
       // Threat Library report tags that the IOC's own report evidence names.
       tags: catalogTags.map((t) => t.name),

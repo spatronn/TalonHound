@@ -39,6 +39,7 @@ export const MCP_DEFAULTS = Object.freeze({
   // Analyst tag tools (add_ioc_tags / remove_ioc_tags / list_tags).
   TAG_WRITE_MAX: 10,
   TAG_LIST_MAX: 100,
+  MALWARE_FAMILY_LIST_MAX: 100,
   RATE_LIMIT_TAG_WRITE_PER_MIN: 30
 });
 
@@ -81,6 +82,12 @@ export function getMcpConfig(env = process.env) {
     rateLimitBulkEnrichPerMin: intEnv(env, 'MCP_RATE_LIMIT_BULK_ENRICH_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_BULK_ENRICH_PER_MIN, { min: 1, max: 30 }),
     tagWriteMax: intEnv(env, 'MCP_TAG_WRITE_MAX', MCP_DEFAULTS.TAG_WRITE_MAX, { min: 1, max: 25 }),
     tagListMax: intEnv(env, 'MCP_TAG_LIST_MAX', MCP_DEFAULTS.TAG_LIST_MAX, { min: 1, max: 200 }),
+    malwareFamilyListMax: intEnv(
+      env,
+      'MCP_MALWARE_FAMILY_LIST_MAX',
+      MCP_DEFAULTS.MALWARE_FAMILY_LIST_MAX,
+      { min: 1, max: 200 }
+    ),
     rateLimitTagWritePerMin: intEnv(env, 'MCP_RATE_LIMIT_TAG_WRITE_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_TAG_WRITE_PER_MIN, { min: 1, max: 300 })
   });
 }

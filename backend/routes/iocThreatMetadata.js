@@ -437,12 +437,24 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       });
     }
 
-    const ensuredIds = [];
+    const resolvedIds = [];
     for (const name of parsed.names || []) {
-      const row = await ensureMalwareFamilyByName(pool, name, { actor: userLabel(req) });
-      if (row?.id) ensuredIds.push(row.id);
+      const row = await ensureMalwareFamilyByName(pool, name);
+      if (!row?.id) {
+        return res.status(400).json({
+          success: false,
+          error: `Unknown malware family: ${name}. Create it under Threat Intelligence → Malware Families first.`
+        });
+      }
+      if (row.active === false) {
+        return res.status(400).json({
+          success: false,
+          error: `Malware family is inactive: ${row.name || name}`
+        });
+      }
+      resolvedIds.push(row.id);
     }
-    const candidateIds = [...(parsed.ids || []), ...ensuredIds];
+    const candidateIds = [...(parsed.ids || []), ...resolvedIds];
     const check = await validateIocMalwareFamilyIds(pool, candidateIds, { requireActive: true });
     if (!check.ok) return res.status(400).json({ success: false, error: check.error });
     const nextIds = check.value;
