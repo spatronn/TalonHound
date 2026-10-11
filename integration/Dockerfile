@@ -75,7 +75,10 @@ COPY backend/lib/fileArtifactReconciliationScheduleSync.js ./lib/fileArtifactRec
 COPY backend/lib/workerHeartbeat.js ./lib/workerHeartbeat.js
 COPY backend/lib/iocClassificationMapping.js ./lib/iocClassificationMapping.js
 COPY backend/lib/tagHelpers.js ./lib/tagHelpers.js
+COPY backend/lib/tagHelpers.js /backend/lib/tagHelpers.js
 COPY backend/lib/tagCatalogService.js ./lib/tagCatalogService.js
+COPY backend/lib/iocSourceAttributions.js ./lib/iocSourceAttributions.js
+COPY backend/lib/iocSourceAttributions.js /backend/lib/iocSourceAttributions.js
 COPY backend/lib/fileArtifacts /backend/lib/fileArtifacts
 # Backend modules copied into ./lib lazily import './fileArtifacts/…' (e.g. custom feed
 # dual-write). Point that at the single copy above so they resolve to the same module
