@@ -92,7 +92,7 @@ Create keys in the TalonHound UI under API key management (same place as publish
 
 | Scope | Grants |
 |-------|--------|
-| `mcp:ioc:read` | `lookup_ioc`, `search_iocs`, `get_ioc_context`, `bulk_lookup_iocs`, `get_threat_report` |
+| `mcp:ioc:read` | `lookup_ioc`, `search_iocs`, `get_ioc_context`, `bulk_lookup_iocs`, `get_threat_report`, `list_tags`, `list_malware_families` |
 | `mcp:ioc:create` | `import_iocs` (also needs owner analyst/admin) |
 | `mcp:enrichment:read` | Include stored enrichment rows in `get_ioc_context`; `list_enrichment_providers`, `get_enrichment_job` |
 | `mcp:enrichment:write` | `enrich_ioc`, `bulk_enrich_iocs` — triggers external, possibly paid providers (also needs `mcp:ioc:read` and an analyst/admin owner) |
@@ -112,7 +112,7 @@ Profile presets:
 |------|-------------------|-----------|-------------|
 | `lookup_ioc` | `mcp:ioc:read` | Yes | Exact lookup of one observable. Type optional (auto-detect + normalize). |
 | `search_iocs` | `mcp:ioc:read` | Yes | Search inventory by DSL or plain-text `query` and/or `type` / `classification` / `source` filters (AND-combined); cursor pagination; bounded page size. See [search semantics](#search_iocs-query-semantics). |
-| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment (use `enrich_ioc`). For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. Always returns `threat_context` — Threat Library claims for this IOC (role / assessment / confidence, up to 5 IOC-specific `occurrences`, `report.summary`, bounded `report.entities`) and explicit `relationships`; see [Threat Context semantics](#threat-context-semantics). |
+| `get_ioc_context` | `mcp:ioc:read` | Yes | Analyst context by value or id. Includes `threat_actors` and `malware_families` (analyst ∪ source-reported with provenance) plus `analyst_threat_actor_ids` / `analyst_malware_family_ids`. Enrichment included only with `mcp:enrichment:read`. Does **not** trigger new enrichment (use `enrich_ioc`). For URL IOCs with an IP-literal host, also returns additive `derived_infrastructure` (extracted host + stored IPinfo / AbuseIPDB / Spamhaus DROP) matching the UI Derived Infrastructure panel — without creating an IOC for that host. Always returns `threat_context` — Threat Library claims for this IOC (role / assessment / confidence, up to 5 IOC-specific `occurrences`, `report.summary`, bounded `report.entities`) and explicit `relationships`; see [Threat Context semantics](#threat-context-semantics). |
 | `get_threat_report` | `mcp:ioc:read` | Yes | One persisted Threat Library report by `id` (from `threat_context.claims[].report.id`): metadata + `summary`, `counts` (`all` = full candidate roster, `indicators` = report Indicator membership matching the UI Indicators tab, `context_only`, plus entities/relationships), paged `indicators` roster of **all** candidates in document order (`indicator_limit` default 100, max 500; `indicator_offset`; use `indicators.total` for roster paging), `entities` (≤50), explicit `relationships` (≤100), and report `tags`. Never the report body, artifacts or parser internals; never re-fetches or re-analyzes. |
 | `bulk_lookup_iocs` | `mcp:ioc:read` | Yes | Batch existence check → `existing` / `missing` / `invalid` (max batch size configurable). |
 | `list_ioc_sources` | `mcp:sources:read` | Yes | Active, selectable IOC Sources usable as `import_iocs` targets. |
@@ -122,6 +122,7 @@ Profile presets:
 | `bulk_enrich_iocs` | `mcp:ioc:read` + `mcp:enrichment:write` | **No — action** | Same for up to 25 IOCs / 100 provider operations per call. |
 | `get_enrichment_job` | `mcp:enrichment:read` | Yes | Job + per-IOC, per-provider status for jobs created by the same owner. |
 | `list_tags` | `mcp:ioc:read` (analyst/admin owner) | Yes | Enabled tag catalog — what the IOC Details tag picker offers (`name`, `category`, `description`); optional `query` contains-filter; bounded, `truncated` when more match. |
+| `list_malware_families` | `mcp:ioc:read` (analyst/admin owner) | Yes | Active Malware Families catalog (`id`, `name`, `slug`, `aliases`, `description`); optional `query` name/alias contains-filter; bounded, `truncated` when more match. Read-only — never creates catalog entries or changes IOC associations. |
 | `add_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Add 1–10 existing, enabled catalog tags to one IOC as analyst (`manual`) tags. All-or-nothing; never creates or re-enables catalog tags. See [Tags](#tags-action-tools). |
 | `remove_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Remove analyst tags from one IOC. Source/feed and Threat Library tags are never removed (`not_removable`). |
 
