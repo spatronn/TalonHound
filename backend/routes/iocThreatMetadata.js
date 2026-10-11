@@ -626,6 +626,13 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
                 slug: createdEntity.slug,
                 origin: 'ioc_source_label_link',
                 source_label: result.source_label,
+                // What the provider called it vs. where TalonHound put it.
+                provider_entity_types: [...new Set(result.evidence.map((e) => e.provider_entity_type).filter(Boolean))],
+                local_entity_kind: kind,
+                classification_basis: 'source_reported_metadata_unverified',
+                cross_catalog_matches: (result.cross_catalog_matches || []).map((m) => ({
+                  entity_kind: m.entity_kind, id: m.id, name: m.name, match: m.match
+                })),
                 ioc_id: Number(ioc.id),
                 ioc_observable_type: ioc.observable_type
               }
@@ -656,6 +663,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
               sources: result.evidence.map((e) => ({
                 source_name: e.source_name,
                 feed_key: e.feed_key,
+                provider_field: e.provider_field || null,
                 evidence_ref_type: e.evidence_ref_type,
                 evidence_ref_id: e.evidence_ref_id,
                 evidence_title: e.evidence_title,
@@ -676,6 +684,7 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
           linked_assertions: result.linked_assertions,
           source_label: result.source_label,
           evidence: result.evidence,
+          cross_catalog_matches: result.cross_catalog_matches || [],
           public_id: ioc.public_id,
           ...fields
         });

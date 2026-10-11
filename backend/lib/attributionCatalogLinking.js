@@ -384,6 +384,7 @@ async function loadLabelAssertions(client, { iocId, observableType, entityKind, 
             a.resolved_at, a.resolved_by, a.feed_key, a.source_name, a.evidence_ref_type,
             a.evidence_ref_id, a.evidence_url, a.evidence_title, a.association_kind,
             a.assertion_status, a.observed_at, a.first_ingested_at, a.last_ingested_at,
+            a.provider_metadata->>'field' AS provider_field,
             ${SUPPRESSED_SQL} AS suppressed
      FROM ioc_source_attributions a
      WHERE a.ioc_id = $1
@@ -400,9 +401,26 @@ async function loadLabelAssertions(client, { iocId, observableType, entityKind, 
   }));
 }
 
+/**
+ * Provider metadata field that carried the label → the entity type the PROVIDER
+ * asserted (e.g. OTX Pulse `malware_families` / `adversary`). This is the
+ * source's classification, not TalonHound's; it is never used to pick or change
+ * the local catalog (that is entity_kind, fixed at ingestion).
+ */
+export const PROVIDER_FIELD_ENTITY_TYPE = Object.freeze({
+  malware_families: ENTITY_KIND.MALWARE_FAMILY,
+  adversary: ENTITY_KIND.THREAT_ACTOR
+});
+
+export function providerEntityType(row) {
+  const field = row?.provider_field || null;
+  return { provider_field: field, provider_entity_type: (field && PROVIDER_FIELD_ENTITY_TYPE[field]) || null };
+}
+
 export function serializeEvidence(row) {
   return {
     source_name: row.source_name,
+    ...providerEntityType(row),
     feed_key: row.feed_key,
     source_label: row.source_label,
     evidence_ref_type: row.evidence_ref_type,
@@ -473,6 +491,51 @@ export function serializeCatalogEntity(row) {
   };
 }
 
+/**
+ * Exact name / alias / slug matches of a label in the OTHER catalog
+ * (threat actor ↔ malware family). Informational only: many names are
+ * legitimately shared (ATT&CK itself names groups and their malware alike), so
+ * this never blocks, links or converts anything — it lets the analyst see that
+ * the provider's classification might not be the only reading of the name.
+ */
+export async function findCrossCatalogMatches(client, entityKind, names) {
+  const own = catalogKindConfig(entityKind);
+  if (!own) return [];
+  const otherKind = own.kind === ENTITY_KIND.THREAT_ACTOR ? ENTITY_KIND.MALWARE_FAMILY : ENTITY_KIND.THREAT_ACTOR;
+  const other = CATALOG_KINDS[otherKind];
+  const keys = [...new Set((names || []).flatMap((n) => labelIdentity(own.kind, n).keys))];
+  if (!keys.length) return [];
+  const slugs = [...new Set(keys.map((k) => normalizeTagSlug(k)).filter(Boolean))];
+  const { rows } = await client.query(
+    `SELECT t.id, t.name, t.slug, t.aliases, t.active, ${other.referenceColumn} AS reference_sources
+     FROM ${other.table} t
+     WHERE lower(t.name) = ANY($1::text[])
+        OR t.slug = ANY($2::text[])
+        OR EXISTS (
+          SELECT 1 FROM unnest(COALESCE(t.aliases, '{}'::text[])) AS alias
+          WHERE ${ALIAS_KEY_SQL} = ANY($1::text[])
+        )
+     ORDER BY t.active DESC, t.name ASC
+     LIMIT 10`,
+    [keys, slugs]
+  );
+  const identity = { key: keys[0], keys, slugs, compacts: [], attackId: null };
+  return rows
+    .filter((row) => !(other.kind === ENTITY_KIND.THREAT_ACTOR && row.slug === UNKNOWN_ACTOR_SLUG))
+    .map((row) => {
+      const c = classifyCatalogCandidate(row, identity);
+      return {
+        entity_kind: other.kind,
+        id: row.id,
+        name: row.name,
+        active: row.active !== false,
+        match: c.match,
+        match_detail: c.match_detail,
+        attack_id: attackIdOf(row)
+      };
+    });
+}
+
 function parseTarget({ iocId, observableType, entityKind, sourceLabel }) {
   const id = Number(iocId);
   if (!Number.isInteger(id) || id <= 0) throw new CatalogLinkError(400, 'INVALID_IOC', 'Invalid IOC id');
@@ -505,9 +568,10 @@ export async function loadCatalogLinkContext(pool, { iocId, observableType, enti
   }
   const summary = summarizeLabelAssertions(rows);
   const displayLabel = (summary.visible[0] || rows[0]).source_label;
-  const [{ candidates }, linked] = await Promise.all([
+  const [{ candidates }, linked, crossCatalog] = await Promise.all([
     findCatalogCandidates(pool, target.cfg.kind, { label: displayLabel, q }),
-    fetchCatalogEntities(pool, target.cfg, summary.linkedIds)
+    fetchCatalogEntities(pool, target.cfg, summary.linkedIds),
+    findCrossCatalogMatches(pool, target.cfg.kind, [displayLabel])
   ]);
   const evidenceRows = summary.visible.length ? summary.visible : rows;
   return {
@@ -521,6 +585,11 @@ export async function loadCatalogLinkContext(pool, { iocId, observableType, enti
     evidence_total: evidenceRows.length,
     candidates,
     exact_candidate_ids: candidates.filter((c) => c.exact).map((c) => c.id),
+    // The same name in the other catalog (informational; never blocks or converts).
+    cross_catalog_matches: crossCatalog,
+    // TalonHound's catalog for this label = the provider field it arrived in;
+    // linking/creating never moves it to another catalog.
+    local_entity_kind: target.cfg.kind,
     // Prefill = what the source reported, nothing else (analyst edits it).
     create_prefill: { name: displayLabel }
   };
@@ -691,7 +760,8 @@ export async function linkSourceLabelToCatalog(pool, input) {
          AND entity_id IS NULL
        RETURNING id, source_label, feed_key, source_name, evidence_ref_type, evidence_ref_id,
                  evidence_url, evidence_title, association_kind, assertion_status,
-                 observed_at, first_ingested_at, last_ingested_at`,
+                 observed_at, first_ingested_at, last_ingested_at,
+                 provider_metadata->>'field' AS provider_field`,
       [
         target.iocId,
         target.observableType,
@@ -703,10 +773,16 @@ export async function linkSourceLabelToCatalog(pool, input) {
         actorLabel
       ]
     );
+    // Recorded with a newly created entry (audit): the same name already exists
+    // in the other catalog. Informational; the analyst's choice stands.
+    const crossCatalog = createdRow
+      ? await findCrossCatalogMatches(client, cfg.kind, [createdRow.name, ...(createValue?.aliases || [])])
+      : [];
     await client.query('COMMIT');
 
     return {
       outcome: createdRow ? CATALOG_LINK_OUTCOME.CREATED_AND_LINKED : CATALOG_LINK_OUTCOME.LINKED,
+      cross_catalog_matches: crossCatalog,
       ioc,
       entity: serializeCatalogEntity(entityRow),
       created_entity: createdRow,

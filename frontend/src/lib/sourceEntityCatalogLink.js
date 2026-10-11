@@ -63,6 +63,40 @@ export function evidenceLine(evidence) {
   return parts.join(' · ');
 }
 
+/** Shown on Create: the local catalog type comes from provider metadata only. */
+export const CLASSIFICATION_UNVERIFIED_NOTE =
+  'Entity type is based on source-reported metadata and has not been independently verified.';
+
+/**
+ * What the provider(s) called the label, from stored evidence
+ * (e.g. OTX Pulse field `malware_families`) — the source's classification,
+ * shown separately from TalonHound's catalog.
+ */
+export function providerClassificationLines(evidence) {
+  const seen = new Map();
+  for (const e of Array.isArray(evidence) ? evidence : []) {
+    const type = e?.provider_entity_type ? catalogKindText(e.provider_entity_type).noun : null;
+    const key = `${e?.source_name || ''}|${e?.provider_field || ''}|${type || ''}`;
+    if (seen.has(key)) continue;
+    const source = e?.source_name || e?.feed_key || 'Source';
+    const field = e?.provider_field ? ` (field “${e.provider_field}”)` : '';
+    seen.set(key, type ? `${source}: ${type}${field}` : `${source}: type not stated${field}`);
+  }
+  return [...seen.values()];
+}
+
+/** "Also a Threat Actor in the catalog: BelialDemon (alias “Matanbuchus”)". */
+export function crossCatalogNotice(matches) {
+  const list = Array.isArray(matches) ? matches.filter((m) => m?.name) : [];
+  if (!list.length) return null;
+  const kind = catalogKindText(list[0].entity_kind);
+  const names = list.map((m) => {
+    const via = m.match === 'alias' && m.match_detail ? ` (alias “${m.match_detail}”)` : '';
+    return `${m.name}${via}${m.active === false ? ' — disabled' : ''}`;
+  });
+  return `This name is also a ${kind.title} in the catalog: ${names.join(', ')}. Shared names can be legitimate — check the source before choosing.`;
+}
+
 export function describeCandidateMatch(candidate) {
   switch (candidate?.match) {
     case 'name': return 'Exact name';

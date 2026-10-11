@@ -127,3 +127,15 @@ test('linkSourceLabelToCatalog validates IOC, kind, label, mode and entity id be
   await rejectsCode(linkSourceLabelToCatalog(pool, { ...base, mode: 'create', create: { name: 'PureRAT' }, canCreate: false }), 403, 'CATALOG_CREATE_FORBIDDEN');
   await rejectsCode(linkSourceLabelToCatalog(pool, { ...base, mode: 'create', create: { name: '' }, canCreate: true }), 400, 'INVALID_CREATE_INPUT');
 });
+
+test('evidence keeps the provider classification separate from the local catalog', async () => {
+  const { serializeEvidence, providerEntityType } = await import('./attributionCatalogLinking.js');
+  assert.deepEqual(providerEntityType({ provider_field: 'malware_families' }), { provider_field: 'malware_families', provider_entity_type: 'malware_family' });
+  assert.deepEqual(providerEntityType({ provider_field: 'adversary' }), { provider_field: 'adversary', provider_entity_type: 'threat_actor' });
+  // Unknown or missing field: no invented classification.
+  assert.deepEqual(providerEntityType({ provider_field: 'tags' }), { provider_field: 'tags', provider_entity_type: null });
+  assert.deepEqual(providerEntityType({}), { provider_field: null, provider_entity_type: null });
+  const e = serializeEvidence({ source_name: 'AlienVault OTX', provider_field: 'malware_families', evidence_ref_id: 'p1' });
+  assert.equal(e.provider_entity_type, 'malware_family');
+  assert.equal(e.provider_field, 'malware_families');
+});

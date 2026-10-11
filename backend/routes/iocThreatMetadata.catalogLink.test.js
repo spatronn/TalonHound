@@ -214,3 +214,27 @@ test('GET catalog-candidates validates input (no DB access for invalid kind)', a
     assert.equal((await res.json()).code, 'INVALID_ENTITY_KIND');
   });
 });
+
+test('created entries record provider vs local classification and cross-catalog matches in the audit', async () => {
+  const link = async () => ({
+    outcome: 'created_and_linked', ioc: IOC, entity: FAMILY,
+    created_entity: { ...FAMILY, catalog_sources: ['manual'], description: null },
+    linked_assertions: 1,
+    evidence: [{ ...EVIDENCE[0], provider_field: 'malware_families', provider_entity_type: 'malware_family' }],
+    cross_catalog_matches: [{ entity_kind: 'threat_actor', id: 'a1', name: 'BelialDemon', match: 'alias', active: true }],
+    source_label: 'PureRAT', source_label_key: 'purerat'
+  });
+  await withServer({ user: ADMIN, catalogLinking: { link } }, async (base, { audit }) => {
+    const res = await post(base, { ...LINK_BODY, mode: 'create', create: { name: 'PureRAT' } });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.deepEqual(body.cross_catalog_matches.map((m) => m.name), ['BelialDemon']);
+    const created = audit.events.find((e) => e.action === AUDIT_ACTION.MALWARE_FAMILY_CREATED);
+    assert.deepEqual(created.metadata.provider_entity_types, ['malware_family']);
+    assert.equal(created.metadata.local_entity_kind, 'malware_family');
+    assert.equal(created.metadata.classification_basis, 'source_reported_metadata_unverified');
+    assert.deepEqual(created.metadata.cross_catalog_matches, [{ entity_kind: 'threat_actor', id: 'a1', name: 'BelialDemon', match: 'alias' }]);
+    const linked = audit.events.find((e) => e.action === AUDIT_ACTION.IOC_MALWARE_FAMILY_CATALOG_CREATED_AND_LINKED);
+    assert.equal(linked.metadata.sources[0].provider_field, 'malware_families');
+  });
+});

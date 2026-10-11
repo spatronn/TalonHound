@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  CLASSIFICATION_UNVERIFIED_NOTE,
   buildCatalogLinkRequest,
   catalogKindText,
   catalogLinkTarget,
+  crossCatalogNotice,
   describeCandidateMatch,
   evidenceLine,
-  interpretCatalogLinkError
+  interpretCatalogLinkError,
+  providerClassificationLines
 } from '../../lib/sourceEntityCatalogLink.js';
 
 const EVIDENCE_SHOWN = 5;
@@ -220,6 +223,8 @@ export function SourceEntityCatalogLinkDialog({
   }
 
   const evidence = ctx?.evidence || [];
+  const providerLines = providerClassificationLines(evidence);
+  const crossNotice = crossCatalogNotice(ctx?.cross_catalog_matches);
   const primaryDisabled = submitting || loading || !ctx || alreadyLinked || (tab === 'link'
     ? !canLink || !selected?.linkable
     : !canCreate || !form.name.trim() || (needsDistinct && !confirmDistinct));
@@ -268,11 +273,27 @@ export function SourceEntityCatalogLinkDialog({
                 </>
               ) : '—'}
             </span>
+            {providerLines.length ? (
+              <>
+                <span style={labelStyle}>Provider classification</span>
+                <span style={{ color: '#cbd5e1', overflowWrap: 'anywhere' }}>
+                  {providerLines.map((line) => <span key={line} style={{ display: 'block' }}>{line}</span>)}
+                </span>
+              </>
+            ) : null}
+            <span style={labelStyle}>TalonHound catalog</span>
+            <span style={{ color: '#cbd5e1' }}>{text.catalog}</span>
           </div>
           <div style={{ ...muted, marginTop: 8 }}>
             Linking sets which catalog {text.noun} this label refers to. The association stays source-reported; it does not confirm the attribution.
           </div>
         </div>
+
+        {crossNotice ? (
+          <div role="note" style={{ ...box, borderColor: '#854d0e', color: '#fcd34d', fontSize: 13, lineHeight: 1.45 }}>
+            {crossNotice}
+          </div>
+        ) : null}
 
         {loadError ? <div role="alert" style={{ color: '#fca5a5', fontSize: 13 }}>{loadError}</div> : null}
 
@@ -406,6 +427,7 @@ export function SourceEntityCatalogLinkDialog({
                     {[...new Set(evidence.map((e) => e.source_name).filter(Boolean))].join(', ') || 'Source'} label “{ctx?.source_label || label}” on this IOC (kept in its evidence and audit history)
                   </span>
                 </div>
+                <div role="note" style={{ ...muted, color: '#fcd34d' }}>{CLASSIFICATION_UNVERIFIED_NOTE}</div>
                 <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <span style={labelStyle}>Aliases (optional, comma-separated)</span>
                   <input

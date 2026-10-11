@@ -5,6 +5,7 @@ import {
   linkSourceLabelToCatalog,
   loadCatalogLinkContext
 } from './attributionCatalogLinking.js';
+import { runSourceLabelResolution } from './malwareFamilies/sourceLabelBackfill.js';
 import {
   fetchEffectiveIocAttributions,
   reconcileSourceAttributionsForEvidence,
@@ -97,7 +98,7 @@ async function assertSource(ioc, kind, label, src, ref, { status = 'current' } =
        'https://otx.example/pulse/' || $7, 'Pulse ' || $7, 'associated_via_source_pulse', $8,
        '2026-01-02T00:00:00Z', '2026-01-03T00:00:00Z', '2026-01-04T00:00:00Z',
        CASE WHEN $8 = 'current' THEN NULL ELSE '2026-01-05T00:00:00Z'::timestamptz END,
-       '{"provider":"alienvault_otx"}'::jsonb)`,
+       jsonb_build_object('provider', 'alienvault_otx', 'field', CASE WHEN $3 = 'threat_actor' THEN 'adversary' ELSE 'malware_families' END))`,
     [ioc.id, ioc.observable_type, kind, label, src.feedKey, src.sourceName, ref, status]
   );
 }
@@ -290,7 +291,7 @@ test('re-ingestion and withdrawal never undo an analyst catalog link', opts, asy
     iocId: ioc.id, observableType: ioc.observable_type, entityKind: 'malware_family', sourceLabel: label,
     feedKey: OTX.feedKey, sourceName: OTX.sourceName, evidenceRefType: 'otx_pulse', evidenceRefId: 'P1',
     evidenceUrl: 'https://otx.example/pulse/P1', evidenceTitle: 'Pulse P1',
-    observedAt: '2026-01-02T00:00:00Z', providerMetadata: { provider: 'alienvault_otx' }
+    observedAt: '2026-01-02T00:00:00Z', providerMetadata: { provider: 'alienvault_otx', field: 'malware_families' }
   });
   assert.equal(result, 'updated');
   let [row] = await assertionRows(ioc, 'malware_family');
@@ -479,4 +480,52 @@ test('invalid targets: inactive entity, unknown entity, suppressed/withdrawn-onl
     [ioc.id, ioc.observable_type, `Lbl-${TOKEN}`]
   );
   await rejectsCode(link(ioc, 'malware_family', `Lbl-${TOKEN}`, { mode: 'link', entityId: inactive.id }), 'SOURCE_LABEL_NOT_FOUND');
+});
+
+test('classification safety: provider type shown, cross-catalog names surfaced, cross-type linking impossible, backfill reports conflicts only', opts, async () => {
+  // A name that is a Threat Actor alias in the catalog but reported by the source as a malware family.
+  const actor = await insertActor(`Belial-${TOKEN}`, { aliases: [`Matan-${TOKEN}`] });
+  const ioc = await insertIoc('domain', `classif.${TOKEN}.example`);
+  const label = `Matan-${TOKEN}`;
+  await assertSource(ioc, 'malware_family', label, OTX, 'P1');
+
+  const ctx = await loadCatalogLinkContext(pool, {
+    iocId: ioc.id, observableType: 'domain', entityKind: 'malware_family', sourceLabel: label
+  });
+  assert.equal(ctx.local_entity_kind, 'malware_family');
+  assert.equal(ctx.evidence[0].provider_field, 'malware_families');
+  assert.equal(ctx.evidence[0].provider_entity_type, 'malware_family');
+  assert.deepEqual(ctx.cross_catalog_matches.map((m) => [m.entity_kind, m.id, m.match]), [['threat_actor', actor.id, 'alias']]);
+  assert.equal(ctx.candidates.some((c) => c.id === actor.id), false, 'other-catalog entries are never link candidates');
+
+  // Cross-type link: a malware-family label cannot be linked to a threat actor id.
+  await rejectsCode(link(ioc, 'malware_family', label, { mode: 'link', entityId: actor.id }), 'ENTITY_NOT_FOUND');
+  const [unchanged] = await assertionRows(ioc, 'malware_family');
+  assert.equal(unchanged.entity_id, null);
+
+  // Backfill dry run (scoped) reports the conflict and writes nothing.
+  const c = await pool.connect();
+  let report;
+  try {
+    report = await runSourceLabelResolution(c, { apply: false, feedKeys: [OTX.feedKey], labelKeys: [label] });
+  } finally {
+    c.release();
+  }
+  assert.equal(report.totals.labels_classification_conflicts, 1);
+  assert.equal(report.classification_conflicts[0].threat_actors[0].id, actor.id);
+  assert.equal(report.totals.rows_to_resolve, 0, 'no family exists, nothing resolved; never cross-linked to the actor');
+
+  // A warning never blocks legitimate creation; the match is recorded with the result.
+  const res = await link(ioc, 'malware_family', label, { mode: 'create', create: { name: label }, canCreate: true });
+  created.familyIds.push(res.entity.id);
+  assert.equal(res.outcome, 'created_and_linked');
+  assert.deepEqual(res.cross_catalog_matches.map((m) => m.id), [actor.id]);
+  assert.equal(res.evidence[0].provider_entity_type, 'malware_family');
+  const [row] = await assertionRows(ioc, 'malware_family');
+  assert.equal(row.entity_id, res.entity.id);
+  assert.equal(row.provider_metadata.field, 'malware_families', 'provider metadata preserved');
+  // The actor is untouched and still unlinked to this IOC.
+  const { rows: actorLinks } = await pool.query(
+    `SELECT 1 FROM ioc_source_attributions WHERE entity_id = $1 UNION ALL SELECT 1 FROM ioc_threat_actors WHERE threat_actor_id = $1`, [actor.id]);
+  assert.equal(actorLinks.length, 0);
 });

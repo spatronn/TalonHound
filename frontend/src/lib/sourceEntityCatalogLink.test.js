@@ -113,3 +113,27 @@ test('audit summary text', () => {
   assert.equal(formatCatalogLinkAuditSummary({ operation: 'create_and_link', entity_name: 'X', source_label: 'x' }), '"x" created + linked to X · source-reported');
   assert.equal(formatCatalogLinkAuditSummary({ old_threat_actor: 'a' }), null);
 });
+
+test('provider classification is shown as the source said it, separate from the local catalog', async () => {
+  const { providerClassificationLines, CLASSIFICATION_UNVERIFIED_NOTE } = await import('./sourceEntityCatalogLink.js');
+  assert.deepEqual(providerClassificationLines([
+    { source_name: 'AlienVault OTX', provider_field: 'malware_families', provider_entity_type: 'malware_family' },
+    { source_name: 'AlienVault OTX', provider_field: 'malware_families', provider_entity_type: 'malware_family' },
+    { source_name: 'Other Feed', provider_field: null, provider_entity_type: null }
+  ]), [
+    'AlienVault OTX: malware family (field “malware_families”)',
+    'Other Feed: type not stated'
+  ]);
+  assert.deepEqual(providerClassificationLines([]), []);
+  assert.match(CLASSIFICATION_UNVERIFIED_NOTE, /source-reported metadata and has not been independently verified/);
+});
+
+test('cross-catalog notice names the other catalog entry and never claims it is wrong', async () => {
+  const { crossCatalogNotice } = await import('./sourceEntityCatalogLink.js');
+  assert.equal(crossCatalogNotice([]), null);
+  assert.equal(crossCatalogNotice(null), null);
+  const text = crossCatalogNotice([{ entity_kind: 'threat_actor', name: 'BelialDemon', match: 'alias', match_detail: 'Matanbuchus', active: true }]);
+  assert.match(text, /also a Threat Actor in the catalog: BelialDemon \(alias “Matanbuchus”\)/);
+  assert.match(text, /can be legitimate/);
+  assert.match(crossCatalogNotice([{ entity_kind: 'malware_family', name: 'GlassWorm', match: 'name', active: false }]), /Malware Family.*GlassWorm — disabled/);
+});
