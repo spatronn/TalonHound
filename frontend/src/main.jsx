@@ -278,6 +278,12 @@ import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
 import { ActiveSourcesTable, IocSummaryStrip } from './components/iocDetails/ActiveSourcesTable.jsx';
 import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx';
 import { IocMetadataCards, AttributionEntityBadges } from './components/iocDetails/IocMetadataCards.jsx';
+import { SourceEntityCatalogLinkDialog } from './components/iocDetails/SourceEntityCatalogLinkDialog.jsx';
+import {
+  catalogLinkSuccessMessage,
+  formatCatalogLinkAuditSummary,
+  mergeAttributionFields
+} from './lib/sourceEntityCatalogLink.js';
 import {
   getAnalystThreatActorIdsFromSummary,
   getAnalystMalwareFamilyIdsFromSummary,
@@ -1154,6 +1160,10 @@ const IOC_TAXONOMY_AUDIT_ACTIONS = new Set([
   'ioc.threat_classification.restored',
   'ioc.threat_actor.updated',
   'ioc.threat_actors.updated',
+  'ioc.threat_actor.catalog_linked',
+  'ioc.threat_actor.catalog_created_and_linked',
+  'ioc.malware_family.catalog_linked',
+  'ioc.malware_family.catalog_created_and_linked',
   'threat_classification.created',
   'threat_classification.updated',
   'threat_classification.reordered',
@@ -1411,6 +1421,7 @@ function AuditTaxonomySummary({ item }) {
   const rows = [
     ['Classifications', classSummary],
     ['Threat actor', oldActor != null || newActor != null ? `${oldActor || 'Not selected'} → ${newActor || 'Not selected'}` : null],
+    ['Catalog link', formatCatalogLinkAuditSummary(metadata)],
     ['IOC', auditSnapshotValue(item, 'ioc_value', 'observable')],
     ['Type', auditSnapshotValue(item, 'ioc_observable_type', 'observable_type')]
   ].filter(([, value]) => value && value !== '—');
@@ -7994,18 +8005,34 @@ function getThreatActorsFromSummary(summary) {
   return [];
 }
 
-function ThreatActorBadges({ actors, max = 8 }) {
-  return <AttributionEntityBadges entities={actors} max={max} />;
+function renderAttributionLink({ href, children, style, 'aria-label': ariaLabel }) {
+  return <Link to={href} style={style} aria-label={ariaLabel}>{children}</Link>;
 }
 
-function MalwareFamilyBadges({ families, max = 8 }) {
+function ThreatActorBadges({ actors, max = 8, onLinkToCatalog = null }) {
+  return (
+    <AttributionEntityBadges
+      entities={actors}
+      max={max}
+      kind="threat_actor"
+      hrefFor={(entity) => threatActorDetailHref(entity.id)}
+      reportedAsFor={reportedAsLabels}
+      renderLink={renderAttributionLink}
+      onLinkToCatalog={onLinkToCatalog}
+    />
+  );
+}
+
+function MalwareFamilyBadges({ families, max = 8, onLinkToCatalog = null }) {
   return (
     <AttributionEntityBadges
       entities={families}
       max={max}
+      kind="malware_family"
       hrefFor={(entity) => malwareFamilyDetailHref(entity.id)}
       reportedAsFor={reportedAsLabels}
-      renderLink={({ href, children, style }) => <Link to={href} style={style}>{children}</Link>}
+      renderLink={renderAttributionLink}
+      onLinkToCatalog={onLinkToCatalog}
     />
   );
 }
@@ -17076,6 +17103,8 @@ function iocAuditMetadataSummary(metadata) {
   if (!metadata || typeof metadata !== 'object') return '-';
   const confidenceText = formatConfidenceAuditMetadata(metadata);
   if (confidenceText) return confidenceText;
+  const catalogLinkText = formatCatalogLinkAuditSummary(metadata);
+  if (catalogLinkText) return catalogLinkText;
   const taxonomyText = formatTaxonomyAuditMetadata(metadata);
   if (taxonomyText) return taxonomyText;
   const expirationParts = [];
@@ -17297,6 +17326,8 @@ function IOCDetailsPage() {
   const [malwareFamilySaving, setMalwareFamilySaving] = useState(false);
   const [malwareFamilyError, setMalwareFamilyError] = useState('');
   const malwareFamilySearchRef = useRef(null);
+  // Source-reported Threat Actor / Malware Family → local catalog ("+" on a chip).
+  const [catalogLinkTarget, setCatalogLinkTarget] = useState(null);
   const loadGuardRef = useRef(null);
   if (loadGuardRef.current === null) loadGuardRef.current = createLatestOnly();
 
@@ -17872,6 +17903,21 @@ function IOCDetailsPage() {
     setShowThreatActorModal(true);
   }
 
+  function openSourceEntityCatalogLink(kind, entity) {
+    if (!canWrite || !summary?.id) return;
+    setCatalogLinkTarget({ kind, entity });
+  }
+
+  function handleSourceEntityLinked(response) {
+    const kind = catalogLinkTarget?.kind;
+    // Server returns the refreshed attribution fields; no page reload needed.
+    setData((prev) => (prev?.summary
+      ? { ...prev, summary: mergeAttributionFields(prev.summary, response) }
+      : prev));
+    setCatalogLinkTarget(null);
+    setActionToast(catalogLinkSuccessMessage(response, kind));
+  }
+
   function openMalwareFamilyEditor() {
     setMalwareFamilyDraft(getAnalystMalwareFamilyIdsFromSummary(summary));
     setMalwareFamilyError('');
@@ -18317,6 +18363,7 @@ function IOCDetailsPage() {
                   onEditThreatClass={openThreatClassEditor}
                   onEditThreatActor={openThreatActorEditor}
                   onEditMalwareFamily={openMalwareFamilyEditor}
+                  onLinkSourceEntity={openSourceEntityCatalogLink}
                   ThreatClassificationBadges={ThreatClassificationBadges}
                   ThreatActorBadges={ThreatActorBadges}
                   MalwareFamilyBadges={MalwareFamilyBadges}
@@ -18966,6 +19013,20 @@ function IOCDetailsPage() {
             </div>
           </div>
         </ModalOverlay>
+      ) : null}
+      {catalogLinkTarget && summary ? (
+        <SourceEntityCatalogLinkDialog
+          key={`${catalogLinkTarget.kind}:${catalogLinkTarget.entity?.source_label_key || catalogLinkTarget.entity?.name}`}
+          kind={catalogLinkTarget.kind}
+          entity={catalogLinkTarget.entity}
+          summary={summary}
+          api={api}
+          ModalOverlay={ModalOverlay}
+          ui={ui}
+          onClose={() => setCatalogLinkTarget(null)}
+          onLinked={handleSourceEntityLinked}
+          onRefresh={() => { load().catch(() => {}); }}
+        />
       ) : null}
     </AppShell>
   );

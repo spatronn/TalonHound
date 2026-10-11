@@ -55,6 +55,7 @@ export const HASHTEXT_ADVISORY_LOCK_NAMES = Object.freeze([
   // Dynamic: manual_ioc:\\0-joined identity via manualIocDuplicateLockKey()
   // Dynamic: published_feed_snapshots:... via feedPublisherService
   // Dynamic: talonhound:feed-sync:* via feedSyncLock
+  // Dynamic (transaction-scoped): talonhound:catalog-link:* via attributionCatalogLinking
 ]);
 
 export function findDuplicateFixedAdvisoryLocks(entries = FIXED_INTEGER_ADVISORY_LOCKS) {

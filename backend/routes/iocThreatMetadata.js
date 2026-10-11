@@ -1,4 +1,12 @@
 import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
+import { ROLES, normalizeAppRole, requireRole } from '../lib/rbac.js';
+import {
+  CATALOG_LINK_MODE,
+  CATALOG_LINK_OUTCOME,
+  CatalogLinkError,
+  linkSourceLabelToCatalog,
+  loadCatalogLinkContext
+} from '../lib/attributionCatalogLinking.js';
 import {
   buildMultiThreatClassificationResponseFields,
   diffThreatClassificationSlugs,
@@ -164,6 +172,13 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
   const invalidateDetailsCache = typeof opts.invalidateDetailsCache === 'function'
     ? opts.invalidateDetailsCache
     : () => {};
+  // Injectable for route tests; production uses lib/attributionCatalogLinking.js.
+  const catalogLinking = {
+    loadContext: loadCatalogLinkContext,
+    link: linkSourceLabelToCatalog,
+    loadAttributionFields: (iocId, observableType) => resolveThreatActorFields(pool, iocId, observableType),
+    ...(opts.catalogLinking || {})
+  };
 
   async function applyIocThreatClassifications(req, res, { auditAction }) {
     const iocId = Number(req.params.id);
@@ -526,6 +541,148 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
   }
 
   app.patch('/api/ioc/:id/malware-families', (req, res) => applyIocMalwareFamilies(req, res));
+
+  // ---------------------------------------------------------------------------
+  // Source-reported Threat Actor / Malware Family → local catalog identity
+  // (IOC Details "+" on an unlinked chip). Catalog resolution only: the source
+  // assertion stays a source claim; analyst attribution (Edit) is untouched.
+  // ---------------------------------------------------------------------------
+
+  function sendCatalogLinkError(res, err) {
+    if (err instanceof CatalogLinkError) {
+      return res.status(err.status).json({ success: false, error: err.message, code: err.code, ...err.details });
+    }
+    return res.status(500).json({ success: false, error: err?.message || 'Request failed' });
+  }
+
+  app.get('/api/ioc/:id/source-attributions/catalog-candidates', async (req, res) => {
+    try {
+      const ctx = await catalogLinking.loadContext(pool, {
+        iocId: req.params.id,
+        observableType: req.query?.observable_type,
+        entityKind: req.query?.entity_kind,
+        sourceLabel: req.query?.source_label,
+        q: req.query?.q || ''
+      });
+      const role = normalizeAppRole(req.user?.role);
+      const { ioc, ...rest } = ctx;
+      return res.json({
+        success: true,
+        public_id: ioc.public_id,
+        ...rest,
+        permissions: {
+          can_link: role === ROLES.ADMIN || role === ROLES.ANALYST,
+          // Catalog writes are admin-only (same boundary as the catalog pages).
+          can_create: role === ROLES.ADMIN
+        }
+      });
+    } catch (err) {
+      return sendCatalogLinkError(res, err);
+    }
+  });
+
+  app.post('/api/ioc/:id/source-attributions/catalog-link',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      const body = req.body || {};
+      const mode = String(body.mode || '').trim();
+      try {
+        const result = await catalogLinking.link(pool, {
+          iocId: req.params.id,
+          observableType: body.observable_type,
+          entityKind: body.entity_kind,
+          sourceLabel: body.source_label,
+          mode,
+          entityId: mode === CATALOG_LINK_MODE.LINK ? body.entity_id : null,
+          create: mode === CATALOG_LINK_MODE.CREATE ? body.create : null,
+          confirmDistinct: body.confirm_distinct === true,
+          canCreate: normalizeAppRole(req.user?.role) === ROLES.ADMIN,
+          actorLabel: userLabel(req)
+        });
+        const { ioc, entity, created_entity: createdEntity } = result;
+        const kind = String(body.entity_kind);
+        const isActor = kind === 'threat_actor';
+
+        if (result.outcome !== CATALOG_LINK_OUTCOME.ALREADY_LINKED) {
+          invalidateDetailsCache(ioc.public_id);
+          if (createdEntity) {
+            // Same catalog event the admin catalog pages emit, with its origin.
+            await audit.auditSuccess({
+              req,
+              action: isActor ? AUDIT_ACTION.THREAT_ACTOR_CREATED : AUDIT_ACTION.MALWARE_FAMILY_CREATED,
+              entityType: isActor ? AUDIT_ENTITY.THREAT_ACTOR : AUDIT_ENTITY.MALWARE_FAMILY,
+              entityId: String(createdEntity.id),
+              entityDisplay: createdEntity.name,
+              after: {
+                id: createdEntity.id,
+                name: createdEntity.name,
+                slug: createdEntity.slug,
+                aliases: createdEntity.aliases || [],
+                description: createdEntity.description || null,
+                active: createdEntity.active !== false,
+                catalog_sources: createdEntity.catalog_sources || ['manual']
+              },
+              metadata: {
+                slug: createdEntity.slug,
+                origin: 'ioc_source_label_link',
+                source_label: result.source_label,
+                ioc_id: Number(ioc.id),
+                ioc_observable_type: ioc.observable_type
+              }
+            });
+          }
+          const created = result.outcome === CATALOG_LINK_OUTCOME.CREATED_AND_LINKED;
+          await audit.auditSuccess({
+            req,
+            action: isActor
+              ? (created ? AUDIT_ACTION.IOC_THREAT_ACTOR_CATALOG_CREATED_AND_LINKED : AUDIT_ACTION.IOC_THREAT_ACTOR_CATALOG_LINKED)
+              : (created ? AUDIT_ACTION.IOC_MALWARE_FAMILY_CATALOG_CREATED_AND_LINKED : AUDIT_ACTION.IOC_MALWARE_FAMILY_CATALOG_LINKED),
+            entityType: AUDIT_ENTITY.IOC,
+            entityId: String(ioc.id),
+            entityDisplay: `${ioc.observable_type} · ${ioc.observable}`,
+            metadata: {
+              observable_type: ioc.observable_type,
+              ioc_value: ioc.observable,
+              ioc_public_id: ioc.public_id,
+              operation: created ? 'create_and_link' : 'link',
+              entity_kind: kind,
+              entity_id: entity.id,
+              entity_name: entity.name,
+              source_label: result.source_label,
+              // The analyst confirmed what the label means, not the source's claim.
+              resolution_method: 'analyst',
+              attribution: 'source_reported',
+              linked_assertions: result.linked_assertions,
+              sources: result.evidence.map((e) => ({
+                source_name: e.source_name,
+                feed_key: e.feed_key,
+                evidence_ref_type: e.evidence_ref_type,
+                evidence_ref_id: e.evidence_ref_id,
+                evidence_title: e.evidence_title,
+                assertion_status: e.assertion_status
+              }))
+            },
+            after: { entity_id: entity.id, entity_name: entity.name, source_label: result.source_label }
+          });
+        }
+
+        const fields = await catalogLinking.loadAttributionFields(Number(ioc.id), ioc.observable_type);
+        return res.json({
+          success: true,
+          outcome: result.outcome,
+          entity_kind: kind,
+          entity,
+          created: Boolean(createdEntity),
+          linked_assertions: result.linked_assertions,
+          source_label: result.source_label,
+          evidence: result.evidence,
+          public_id: ioc.public_id,
+          ...fields
+        });
+      } catch (err) {
+        return sendCatalogLinkError(res, err);
+      }
+    });
 }
 
 export async function buildThreatMetadataFields(pool, row) {

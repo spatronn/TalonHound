@@ -138,8 +138,21 @@ export async function resolveCatalogEntity(client, entityKind, label) {
   return { status: RESOLUTION_STATUS.UNRESOLVED, entityId: null, matches: [] };
 }
 
+/** Resolution method of an analyst-confirmed catalog link (lib/attributionCatalogLinking.js). */
+export const ANALYST_RESOLUTION_METHOD = 'analyst';
+
+/**
+ * Existing row (ON CONFLICT target) carries an analyst-confirmed catalog link.
+ * Re-ingestion never replaces it: the analyst decided what this source label
+ * means; the source only re-confirms (or withdraws) its own claim. NULL-safe
+ * (always true/false) because it is negated in the change detection below.
+ */
+const ANALYST_PINNED_SQL = `(ioc_source_attributions.resolution_method IS NOT DISTINCT FROM '${ANALYST_RESOLUTION_METHOD}'
+         AND ioc_source_attributions.entity_id IS NOT NULL)`;
+
 /**
  * Upsert one source assertion. Idempotent for identical content.
+ * Analyst-confirmed catalog links (resolution_method = 'analyst') are preserved.
  * @returns {'inserted'|'updated'|'unchanged'}
  */
 export async function upsertSourceAttribution(client, {
@@ -196,11 +209,15 @@ export async function upsertSourceAttribution(client, {
                   evidence_ref_type, evidence_ref_id, source_label_normalized)
      DO UPDATE SET
        source_label = EXCLUDED.source_label,
-       entity_id = EXCLUDED.entity_id,
-       resolution_status = EXCLUDED.resolution_status,
-       resolution_method = EXCLUDED.resolution_method,
+       entity_id = CASE WHEN ${ANALYST_PINNED_SQL}
+         THEN ioc_source_attributions.entity_id ELSE EXCLUDED.entity_id END,
+       resolution_status = CASE WHEN ${ANALYST_PINNED_SQL}
+         THEN ioc_source_attributions.resolution_status ELSE EXCLUDED.resolution_status END,
+       resolution_method = CASE WHEN ${ANALYST_PINNED_SQL}
+         THEN ioc_source_attributions.resolution_method ELSE EXCLUDED.resolution_method END,
        resolved_at = CASE
-         WHEN ioc_source_attributions.entity_id IS NOT DISTINCT FROM EXCLUDED.entity_id
+         WHEN ${ANALYST_PINNED_SQL}
+           OR ioc_source_attributions.entity_id IS NOT DISTINCT FROM EXCLUDED.entity_id
            THEN ioc_source_attributions.resolved_at
          ELSE EXCLUDED.resolved_at
        END,
@@ -213,8 +230,9 @@ export async function upsertSourceAttribution(client, {
        last_ingested_at = CASE
          WHEN ioc_source_attributions.assertion_status IS DISTINCT FROM 'current'
            OR ioc_source_attributions.source_label IS DISTINCT FROM EXCLUDED.source_label
-           OR ioc_source_attributions.entity_id IS DISTINCT FROM EXCLUDED.entity_id
-           OR ioc_source_attributions.resolution_status IS DISTINCT FROM EXCLUDED.resolution_status
+           OR (NOT ${ANALYST_PINNED_SQL} AND (
+             ioc_source_attributions.entity_id IS DISTINCT FROM EXCLUDED.entity_id
+             OR ioc_source_attributions.resolution_status IS DISTINCT FROM EXCLUDED.resolution_status))
            OR ioc_source_attributions.evidence_url IS DISTINCT FROM EXCLUDED.evidence_url
            OR ioc_source_attributions.evidence_title IS DISTINCT FROM EXCLUDED.evidence_title
            OR ioc_source_attributions.association_kind IS DISTINCT FROM EXCLUDED.association_kind
@@ -228,8 +246,9 @@ export async function upsertSourceAttribution(client, {
        updated_at = CASE
          WHEN ioc_source_attributions.assertion_status IS DISTINCT FROM 'current'
            OR ioc_source_attributions.source_label IS DISTINCT FROM EXCLUDED.source_label
-           OR ioc_source_attributions.entity_id IS DISTINCT FROM EXCLUDED.entity_id
-           OR ioc_source_attributions.resolution_status IS DISTINCT FROM EXCLUDED.resolution_status
+           OR (NOT ${ANALYST_PINNED_SQL} AND (
+             ioc_source_attributions.entity_id IS DISTINCT FROM EXCLUDED.entity_id
+             OR ioc_source_attributions.resolution_status IS DISTINCT FROM EXCLUDED.resolution_status))
            OR ioc_source_attributions.evidence_url IS DISTINCT FROM EXCLUDED.evidence_url
            OR ioc_source_attributions.evidence_title IS DISTINCT FROM EXCLUDED.evidence_title
            OR ioc_source_attributions.association_kind IS DISTINCT FROM EXCLUDED.association_kind
@@ -548,7 +567,7 @@ async function loadSourceAttributions(client, pairs, { includeWithdrawn = false 
               a.feed_key, a.source_name, a.evidence_ref_type, a.evidence_ref_id,
               a.evidence_url, a.evidence_title, a.association_kind, a.assertion_status,
               a.observed_at, a.first_ingested_at, a.last_ingested_at, a.withdrawn_at,
-              a.is_backfill,
+              a.is_backfill, a.resolution_method, a.resolved_at,
               CASE
                 WHEN a.entity_kind = 'threat_actor' THEN ta.name
                 WHEN a.entity_kind = 'malware_family' THEN mf.name
@@ -650,6 +669,11 @@ function buildSourceProvenance(row) {
     evidence_title: row.evidence_title || null,
     source_label: row.source_label,
     resolution_status: row.resolution_status,
+    // How this assertion's label was linked to the catalog identity:
+    // attack_id | name | slug | alias (automatic) or analyst (analyst-confirmed
+    // identity — still a source claim, not analyst attribution).
+    resolution_method: row.resolution_method || null,
+    resolved_at: row.resolved_at || null,
     observed_at: row.observed_at || null,
     first_ingested_at: row.first_ingested_at || null,
     last_ingested_at: row.last_ingested_at || null,
@@ -694,6 +718,8 @@ function mergeEntityGroup({ entityKind, analystRows = [], sourceRows = [] }) {
         aliases: row.resolved_aliases || [],
         active: row.resolved_active != null ? Boolean(row.resolved_active) : true,
         analyst: false,
+        // Unlinked label group: key the IOC Details "+" (catalog link) action uses.
+        sourceLabelKey: row.entity_id ? null : row.source_label_normalized || null,
         sources: []
       });
     }
@@ -712,6 +738,7 @@ function mergeEntityGroup({ entityKind, analystRows = [], sourceRows = [] }) {
         : ATTRIBUTION_PROVENANCE.SOURCE_REPORTED;
     return {
       id: g.id,
+      ...(g.id || !g.sourceLabelKey ? {} : { source_label_key: g.sourceLabelKey }),
       name: g.name,
       slug: g.slug,
       aliases: g.aliases,

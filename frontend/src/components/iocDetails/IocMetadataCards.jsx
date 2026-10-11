@@ -7,6 +7,7 @@ import {
   getMalwareFamiliesFromSummary,
   getThreatActorsFromSummary
 } from '../../lib/iocAttributionSummary.js';
+import { catalogLinkTarget, chipLinkAriaLabel, isAnalystCatalogLink } from '../../lib/sourceEntityCatalogLink.js';
 
 export {
   getThreatActorsFromSummary,
@@ -20,16 +21,53 @@ function entityTitle(entity) {
   const pulses = (entity?.sources || [])
     .filter((s) => s.evidence_ref_type === 'otx_pulse' && s.evidence_ref_id)
     .map((s) => s.evidence_title || s.evidence_ref_id);
-  const parts = [entity?.name || '', hint, pulses.length ? `Pulse: ${pulses.join(', ')}` : null].filter(Boolean);
+  const parts = [
+    entity?.name || '',
+    hint,
+    pulses.length ? `Pulse: ${pulses.join(', ')}` : null,
+    isAnalystCatalogLink(entity) ? 'Catalog link confirmed by an analyst (still source-reported)' : null,
+    !entity?.id && entity?.sources?.length ? 'Not linked to a local catalog entry' : null
+  ].filter(Boolean);
   return parts.join('\n');
 }
+
+const linkActionStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0,
+  width: 20,
+  height: 20,
+  // Global button min-height (36px) would stretch the compact chip action.
+  minHeight: 0,
+  minWidth: 0,
+  boxSizing: 'border-box',
+  padding: 0,
+  borderRadius: 6,
+  border: '1px solid #475569',
+  background: '#0f172a',
+  color: '#93c5fd',
+  fontSize: 14,
+  fontWeight: 700,
+  lineHeight: 1,
+  cursor: 'pointer'
+};
 
 /**
  * @param {{ hrefFor?: (entity) => string|null, reportedAsFor?: (entity) => string[], renderLink?: Function }} props
  *   hrefFor: canonical catalog link (e.g. Malware Family → associated IOCs)
  *   reportedAsFor: source labels that differ from the canonical name ("Reported as")
  */
-export function AttributionEntityBadges({ entities, max = 8, emptyLabel = 'Not selected', hrefFor = null, reportedAsFor = null, renderLink = null }) {
+export function AttributionEntityBadges({
+  entities,
+  max = 8,
+  emptyLabel = 'Not selected',
+  hrefFor = null,
+  reportedAsFor = null,
+  renderLink = null,
+  kind = null,
+  onLinkToCatalog = null
+}) {
   const list = Array.isArray(entities) ? entities.filter((e) => e?.name || e?.id) : [];
   if (!list.length) {
     return <span style={{ color: '#64748b', fontSize: 13, fontWeight: 500 }}>{emptyLabel}</span>;
@@ -60,14 +98,37 @@ export function AttributionEntityBadges({ entities, max = 8, emptyLabel = 'Not s
               maxWidth: '100%'
             }}
           >
-            {(() => {
-              const href = entity.id && typeof hrefFor === 'function' ? hrefFor(entity) : null;
-              const label = entity.name || entity.id;
-              if (href && typeof renderLink === 'function') {
-                return renderLink({ href, children: label, style: { wordBreak: 'break-word', color: 'inherit', textDecoration: 'underline', textDecorationColor: 'rgba(148,163,184,0.5)' } });
-              }
-              return <span style={{ wordBreak: 'break-word' }}>{label}</span>;
-            })()}
+            <span style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 6, maxWidth: '100%', minWidth: 0 }}>
+              {(() => {
+                const href = entity.id && typeof hrefFor === 'function' ? hrefFor(entity) : null;
+                const label = entity.name || entity.id;
+                if (href && typeof renderLink === 'function') {
+                  return renderLink({
+                    href,
+                    'aria-label': `Open ${label} in the local catalog`,
+                    children: (
+                      <>
+                        {label}
+                        <span aria-hidden="true" style={{ marginLeft: 4, fontSize: 11, color: '#94a3b8' }}>↗</span>
+                      </>
+                    ),
+                    style: { wordBreak: 'break-word', minWidth: 0, color: 'inherit', textDecoration: 'underline', textDecorationColor: 'rgba(148,163,184,0.5)' }
+                  });
+                }
+                return <span style={{ wordBreak: 'break-word', minWidth: 0 }}>{label}</span>;
+              })()}
+              {typeof onLinkToCatalog === 'function' && catalogLinkTarget(entity) ? (
+                <button
+                  type="button"
+                  onClick={() => onLinkToCatalog(entity)}
+                  aria-label={chipLinkAriaLabel(kind, entity)}
+                  title="Link to a local catalog entry"
+                  style={linkActionStyle}
+                >
+                  +
+                </button>
+              ) : null}
+            </span>
             {(() => {
               const reported = typeof reportedAsFor === 'function' ? reportedAsFor(entity) : [];
               return reported.length ? (
@@ -99,6 +160,7 @@ export function IocMetadataCards({
   onEditThreatClass,
   onEditThreatActor,
   onEditMalwareFamily,
+  onLinkSourceEntity = null,
   ThreatClassificationBadges,
   ThreatActorBadges,
   MalwareFamilyBadges
@@ -106,6 +168,12 @@ export function IocMetadataCards({
   const classifications = getEffectiveThreatClassifications(summary);
   const actors = getThreatActorsFromSummary(summary);
   const families = getMalwareFamiliesFromSummary(summary);
+  const linkActor = canWrite && typeof onLinkSourceEntity === 'function'
+    ? (entity) => onLinkSourceEntity('threat_actor', entity)
+    : null;
+  const linkFamily = canWrite && typeof onLinkSourceEntity === 'function'
+    ? (entity) => onLinkSourceEntity('malware_family', entity)
+    : null;
 
   const cardStyle = {
     padding: 12,
@@ -190,9 +258,9 @@ export function IocMetadataCards({
         </div>
         <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {ThreatActorBadges ? (
-            <ThreatActorBadges actors={actors} />
+            <ThreatActorBadges actors={actors} onLinkToCatalog={linkActor} />
           ) : (
-            <AttributionEntityBadges entities={actors} />
+            <AttributionEntityBadges entities={actors} kind="threat_actor" onLinkToCatalog={linkActor} />
           )}
         </div>
       </div>
@@ -206,9 +274,9 @@ export function IocMetadataCards({
         </div>
         <div style={{ fontSize: 15, fontWeight: 700, color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {MalwareFamilyBadges ? (
-            <MalwareFamilyBadges families={families} />
+            <MalwareFamilyBadges families={families} onLinkToCatalog={linkFamily} />
           ) : (
-            <AttributionEntityBadges entities={families} />
+            <AttributionEntityBadges entities={families} kind="malware_family" onLinkToCatalog={linkFamily} />
           )}
         </div>
       </div>
