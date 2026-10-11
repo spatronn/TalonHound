@@ -64,9 +64,38 @@ export function formatTagSourcesCell(sources = [], { maxVisible = 2 } = {}) {
  * report's evidence for this IOC names the tag (an IOC tag), false when it is
  * report-level context only. They are shown in their own group (never as
  * direct assignments) and cannot be removed here — they are managed on the
- * report. When the same tag is also assigned directly or by a feed, that badge
- * wins and its tooltip notes the report source.
+ * report.
+ *
+ * Overlap with a direct/feed tag must NOT remove the slug from Threat Context:
+ * Tags = direct IOC assertions; Threat Context = union of linked report tags.
+ * When the same slug exists in both, it appears in both sections (no duplicate
+ * within one section). The direct badge tooltip still notes the report source.
  */
+function mergeReportRefs(into, reports) {
+  const list = Array.isArray(into) ? into : [];
+  for (const r of Array.isArray(reports) ? reports : []) {
+    if (!r?.id) continue;
+    const known = list.find((x) => x.id === r.id);
+    if (known) {
+      known.ioc_evidence = known.ioc_evidence === true || r.ioc_evidence === true;
+      if (!known.title && r.title) known.title = r.title;
+      continue;
+    }
+    list.push({ ...r });
+  }
+  return list;
+}
+
+function annotateDirectOwnerWithContext(owner, reports) {
+  if (!owner) return;
+  owner.inheritedReports = mergeReportRefs(owner.inheritedReports || [], reports);
+  const inheritedNote = describeThreatLibraryTagSources(owner.inheritedReports);
+  const base = String(owner.title || '')
+    .replace(/\. Also (?:report context|named for this IOC).*$/i, '')
+    .trim() || (owner.kind === 'manual' ? 'Added by analyst' : 'Imported from feed');
+  owner.title = `${base}. Also ${inheritedNote.charAt(0).toLowerCase()}${inheritedNote.slice(1)}`;
+}
+
 export function buildIocTagBadges({
   manualTags = [],
   feedTags = [],
@@ -127,30 +156,36 @@ export function buildIocTagBadges({
   }));
 
   const context = [];
-  const seenContext = new Set();
+  const contextByNorm = new Map();
   for (const ct of contextTags || []) {
     const label = String(ct?.name || '').trim();
     const normalized = label.toLowerCase();
-    if (!normalized || disabled.has(normalized) || seenContext.has(normalized)) continue;
-    seenContext.add(normalized);
+    if (!normalized || disabled.has(normalized)) continue;
     const reports = Array.isArray(ct?.reports) ? ct.reports : [];
     const iocEvidence = ct?.ioc_evidence === true || reports.some((r) => r?.ioc_evidence === true);
-    const inheritedNote = describeThreatLibraryTagSources(reports, { iocEvidence });
     const owner = manual.find((m) => m.normalized === normalized) || feed.find((f) => f.normalized === normalized);
-    if (owner) {
-      owner.title = `${owner.title}. Also ${inheritedNote.charAt(0).toLowerCase()}${inheritedNote.slice(1)}`;
-      owner.inheritedReports = reports;
+    annotateDirectOwnerWithContext(owner, reports);
+
+    const existing = contextByNorm.get(normalized);
+    if (existing) {
+      existing.reports = mergeReportRefs(existing.reports, reports);
+      existing.iocEvidence = existing.iocEvidence === true || iocEvidence;
+      existing.title = describeThreatLibraryTagSources(existing.reports, { iocEvidence: existing.iocEvidence });
+      existing.alsoDirect = existing.alsoDirect || Boolean(owner);
       continue;
     }
-    context.push({
+    const entry = {
       kind: 'threat_library',
       key: `tl-${normalized}`,
       label,
       normalized,
-      reports,
+      reports: mergeReportRefs([], reports),
       iocEvidence,
-      title: inheritedNote
-    });
+      alsoDirect: Boolean(owner),
+      title: describeThreatLibraryTagSources(reports, { iocEvidence })
+    };
+    contextByNorm.set(normalized, entry);
+    context.push(entry);
   }
 
   return {
