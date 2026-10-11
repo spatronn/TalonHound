@@ -1,6 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY } from '../lib/auditConstants.js';
 import { normalizeTagSlug } from '../lib/tagHelpers.js';
+import { actorUserId } from '../lib/artifactOwnership.js';
 import { listAdminThreatActors } from '../lib/threatActorAdminList.js';
 import {
   CATALOG_SOURCE_MANUAL,
@@ -8,6 +9,13 @@ import {
   confirmBundledCatalogEquivalence,
   resolveCatalogSources
 } from '../lib/threatActors/catalogSources.js';
+import {
+  countAssociatedIocsForActors,
+  discoverIocs,
+  queryDiscoverySummary,
+  resolveActorReference,
+  serializeActorIdentity
+} from '../lib/threatActors/iocDiscovery.js';
 
 function isAdmin(req) {
   return String(req.user?.role || '').trim().toLowerCase() === ROLES.ADMIN;
@@ -60,12 +68,45 @@ async function findDuplicate(pool, { name, slug, excludeId = null }) {
   return rows[0] || null;
 }
 
+function shapeDiscoveryResponse(result) {
+  return {
+    filters: {
+      origin: result.options.origin,
+      lifecycle: result.options.lifecycle,
+      association: result.options.association,
+      observable_types: result.options.observableTypes,
+      status: result.options.status,
+      q: result.options.q || null,
+      sort: result.options.sort
+    },
+    summary: result.summary,
+    items: result.items,
+    pagination: result.pagination
+  };
+}
+
 /**
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
  * @param {{ auditSuccess: Function }} audit
+ * @param {{ mapIocListPageItems?: Function }} [options]
  */
-export function registerThreatActorRoutes(app, pool, audit) {
+export function registerThreatActorRoutes(app, pool, audit, { mapIocListPageItems = null } = {}) {
+  async function mapDiscoveryRows(rows, req) {
+    if (typeof mapIocListPageItems !== 'function' || !rows.length) return [];
+    return mapIocListPageItems(pool, rows.map((r) => ({
+      id: r.id,
+      public_id: r.public_id,
+      observable: r.observable,
+      observable_type: r.observable_type,
+      created_at: r.created_at,
+      imported_at: r.created_at,
+      first_seen_at: r.first_seen_at,
+      last_seen_at: r.last_seen_at,
+      status: r.status
+    })), { statusFilter: 'all', hasSearch: true, byItemIds: true, viewerUserId: actorUserId(req) });
+  }
+
   app.get('/api/threat-actors', async (_req, res) => {
     try {
       const rows = await fetchActiveThreatActors(pool);
@@ -86,10 +127,41 @@ export function registerThreatActorRoutes(app, pool, audit) {
   app.get('/api/admin/threat-actors', requireRole(ROLES.ADMIN), async (req, res) => {
     try {
       const result = await listAdminThreatActors(pool, req.query || {});
+      // One grouped query for the page's actors (no per-row counting).
+      const counts = await countAssociatedIocsForActors(pool, result.items.map((row) => row.id));
       return res.json({
-        threat_actors: result.items.map(serializeThreatActor),
+        threat_actors: result.items.map((row) => ({
+          ...serializeThreatActor(row),
+          associated_iocs: counts.get(String(row.id)) || { all_unique: 0, analyst_unique: 0, source_unique: 0 }
+        })),
         pagination: result.pagination
       });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/threat-actors/:id', async (req, res) => {
+    try {
+      const ref = await resolveActorReference(pool, { id: req.params.id });
+      if (!ref.ok) return res.status(ref.code === 'NOT_FOUND' ? 404 : 400).json({ success: false, error: ref.error });
+      const lifecycle = req.query?.lifecycle === 'historical' ? 'historical' : 'current';
+      const summary = await queryDiscoverySummary(pool, { actorId: ref.actor.id }, { lifecycle });
+      return res.json({ threat_actor: serializeActorIdentity(ref.actor), summary });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  app.get('/api/threat-actors/:id/iocs', async (req, res) => {
+    try {
+      const ref = await resolveActorReference(pool, { id: req.params.id });
+      if (!ref.ok) return res.status(ref.code === 'NOT_FOUND' ? 404 : 400).json({ success: false, error: ref.error });
+      const result = await discoverIocs(pool, { actorId: ref.actor.id }, req.query || {}, {
+        includeSummary: req.query?.summary !== 'false',
+        mapRows: (rows) => mapDiscoveryRows(rows, req)
+      });
+      return res.json({ threat_actor: serializeActorIdentity(ref.actor), ...shapeDiscoveryResponse(result) });
     } catch (err) {
       return res.status(500).json({ success: false, error: err.message });
     }

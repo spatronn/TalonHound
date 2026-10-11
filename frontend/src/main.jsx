@@ -55,6 +55,10 @@ import {
   reportedAsLabels
 } from './lib/malwareFamilyDiscovery.js';
 import {
+  THREAT_ACTOR_DISCOVERY_PAGE_SIZE,
+  threatActorDetailHref
+} from './lib/threatActorDiscovery.js';
+import {
   summarizeCustomThreatFeeds,
   customFeedStatePresentation,
   customFeedLastResultPresentation,
@@ -357,6 +361,9 @@ import {
   THREAT_ACTOR_DESCRIPTION_CLAMP_CLASS,
   THREAT_ACTOR_PAGE_CLASS,
   THREAT_ACTOR_TABLE_CLASS,
+  THREAT_ACTOR_ACTIONS_COL_CLASS,
+  THREAT_ACTOR_ACTION_BUTTONS_CLASS,
+  THREAT_ACTOR_ACTIONS_COL_WIDTH_PX,
   buildThreatActorDescriptionModalState,
   formatThreatActorAliasesCell,
   formatThreatActorDescriptionCell,
@@ -2367,7 +2374,7 @@ function AppShell({ children }) {
             <Link to="/threat-intelligence/custom-threat-feeds" className={navLinkClass(isActive('/threat-intelligence/custom-threat-feeds'))}>{NavIcons.customFeeds}<span>Custom Threat Feeds</span></Link>
             <Link to="/threat-intelligence/published-feeds" className={navLinkClass(isActive('/threat-intelligence/published-feeds'))}>{NavIcons.publishedFeeds}<span>Published Feeds</span></Link>
             {isAdmin ? <Link to="/administration/ioc-sources" className={navLinkClass(isActive('/administration/ioc-sources'))}>{NavIcons.iocSources}<span>IOC Sources</span></Link> : null}
-            {isAdmin ? <Link to="/administration/threat-actors" className={navLinkClass(isActive('/administration/threat-actors'))}>{NavIcons.threatActors}<span>Threat Actors</span></Link> : null}
+            {isAdmin ? <Link to="/administration/threat-actors" className={navLinkClass(isActive('/administration/threat-actors') || location.pathname.startsWith('/threat-intelligence/threat-actors'))}>{NavIcons.threatActors}<span>Threat Actors</span></Link> : null}
             <Link to="/administration/malware-families" className={navLinkClass(isActive('/administration/malware-families') || location.pathname.startsWith('/threat-intelligence/malware-families'))}>{NavIcons.malwareFamilies}<span>Malware Families</span></Link>
             {isAdmin ? <Link to="/administration/threat-classifications" className={navLinkClass(isActive('/administration/threat-classifications'))}>{NavIcons.classifications}<span>Threat Classifications</span></Link> : null}
             <Link to="/administration/tags" className={navLinkClass(isActive('/administration/tags'))}>{NavIcons.tags}<span>Tags</span></Link>
@@ -8838,6 +8845,246 @@ function ThreatClassificationManagerPage() {
   );
 }
 
+function ThreatActorIocsPage() {
+  const ui = PUBLISHED_FEEDS_UI;
+  const { actorId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [state, setState] = useState(() => parseDiscoveryUrlState(searchParams));
+  const [searchInput, setSearchInput] = useState(state.q);
+  const [actor, setActor] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [items, setItems] = useState([]);
+  const [pagination, setPagination] = useState({ total: 0, has_more: false });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const seqRef = useRef(0);
+
+  const update = useCallback((patch) => {
+    setState((prev) => ({ ...prev, page: 1, ...patch }));
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      setState((prev) => (prev.q === next ? prev : { ...prev, q: next, page: 1 }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setSearchParams(buildDiscoveryUrlSearchParams(state), { replace: true });
+  }, [state, setSearchParams]);
+
+  useEffect(() => {
+    if (!actorId) return undefined;
+    const controller = new AbortController();
+    api.get(`/threat-actors/${encodeURIComponent(actorId)}`, { params: { lifecycle: state.lifecycle }, signal: controller.signal })
+      .then(({ data }) => {
+        setActor(data?.threat_actor || null);
+        setSummary(data?.summary || null);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setActor(null);
+        setError(apiErrorMessage(err, 'Failed to load threat actor'));
+      });
+    return () => controller.abort();
+  }, [actorId, state.lifecycle]);
+
+  useEffect(() => {
+    if (!actorId) {
+      setLoading(false);
+      return undefined;
+    }
+    const seq = ++seqRef.current;
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    const params = buildDiscoveryQueryParams(state);
+    api.get(`/threat-actors/${encodeURIComponent(actorId)}/iocs`, { params: { ...params, summary: 'false' }, signal: controller.signal })
+      .then(({ data }) => {
+        if (seq !== seqRef.current) return;
+        setItems(Array.isArray(data?.items) ? data.items : []);
+        setPagination(data?.pagination || { total: 0, has_more: false });
+      })
+      .catch((err) => {
+        if (controller.signal.aborted || seq !== seqRef.current) return;
+        setItems([]);
+        setPagination({ total: 0, has_more: false });
+        setError(apiErrorMessage(err, 'Failed to load associated IOCs'));
+      })
+      .finally(() => {
+        if (seq === seqRef.current) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [actorId, state]);
+
+  const title = actor?.name || 'Threat Actor';
+  const total = Number(pagination?.total || 0);
+  const pageSize = THREAT_ACTOR_DISCOVERY_PAGE_SIZE;
+  const from = total ? (state.page - 1) * pageSize + 1 : 0;
+  const to = Math.min(state.page * pageSize, total);
+  const byType = summary?.by_type ? Object.entries(summary.by_type) : [];
+  const filtersActive = state.origin !== 'all' || state.type || state.status !== 'all' || state.q;
+
+  return (
+    <AppShell>
+      <section style={ui.section} className="ta-discovery-page">
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <Link to="/administration/threat-actors" style={{ color: '#93c5fd', textDecoration: 'none' }}>← Threat Actors</Link>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 10 }}>
+          <h1 style={{ ...ui.pageTitle, overflowWrap: 'anywhere' }}>{title}</h1>
+          {actor && actor.active === false ? (
+            <span style={{ ...MF_DISCOVERY_PILL, color: '#94a3b8', background: '#1e293b', border: '1px solid #475569' }}>Inactive</span>
+          ) : null}
+        </div>
+        {actor ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6, fontSize: 13, color: '#94a3b8' }}>
+            {actor.aliases?.length ? <div style={{ overflowWrap: 'anywhere' }}>Aliases: {actor.aliases.join(', ')}</div> : null}
+          </div>
+        ) : null}
+
+        {summary ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+            <MalwareFamilyStat label="Unique IOCs" value={summary.all_unique} hint="Analyst associations plus current source-reported assertions, deduplicated by IOC" />
+            <MalwareFamilyStat label="Analyst" value={summary.analyst_unique} hint="Unique IOCs with an analyst-managed association (may overlap with source-reported)" />
+            <MalwareFamilyStat label="Source-reported" value={summary.source_unique} hint="Unique IOCs with a current source assertion (may overlap with analyst)" />
+            <MalwareFamilyStat label="OTX Pulses" value={summary.otx_pulses} hint="Distinct AlienVault OTX Pulses supporting the source-reported associations" />
+            {byType.length ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '10px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220' }}>
+                {byType.map(([t, n]) => (
+                  <span key={t} style={{ ...MF_DISCOVERY_PILL, color: '#cbd5e1', background: '#1e293b', border: '1px solid #334155' }}>{t} {Number(n).toLocaleString('en-US')}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="ta-discovery-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 16 }}>
+          <div role="group" aria-label="Association origin" style={{ display: 'inline-flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
+            {DISCOVERY_ORIGIN_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                type="button"
+                aria-pressed={state.origin === o.value}
+                onClick={() => update({ origin: o.value })}
+                style={{ ...ui.btnCompact, border: 'none', borderRadius: 0, background: state.origin === o.value ? '#1d4ed8' : 'transparent', color: state.origin === o.value ? '#fff' : '#cbd5e1' }}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <select aria-label="IOC type" value={state.type} onChange={(e) => update({ type: e.target.value })} style={{ ...ui.input, width: 'auto' }}>
+            {DISCOVERY_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select aria-label="IOC status" value={state.status} onChange={(e) => update({ status: e.target.value })} style={{ ...ui.input, width: 'auto' }}>
+            {DISCOVERY_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <label style={ui.checkLabel} title="Withdrawn or stale source assertions only (never mixed into current results)">
+            <input
+              type="checkbox"
+              checked={state.lifecycle === 'historical'}
+              onChange={(e) => update({ lifecycle: e.target.checked ? 'historical' : 'current', origin: e.target.checked ? 'source' : state.origin })}
+            />
+            Historical evidence
+          </label>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Filter IOC value…"
+            aria-label="Filter IOC value"
+            style={{ ...ui.input, flex: '1 1 200px', maxWidth: 320 }}
+          />
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div className="ta-discovery-table-wrap" style={{ marginTop: 12, overflowX: 'auto' }}>
+          <table className="ioc-table ta-discovery-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>IOC</th>
+                <th style={ui.th}>Type</th>
+                <th style={ui.th}>Status</th>
+                <th className="ta-discovery-col-secondary" style={ui.th}>Confidence</th>
+                <th className="ta-discovery-col-secondary" style={ui.th}>Source</th>
+                <th style={ui.th}>Attribution</th>
+                <th className="ta-discovery-col-secondary" style={ui.th}>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !items.length ? (
+                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+              ) : !items.length ? (
+                <tr><td colSpan={7} style={{ ...ui.td, padding: 0 }}>
+                  <EmptyState
+                    title={filtersActive ? 'No matching IOCs' : 'No associated IOCs'}
+                    description={filtersActive
+                      ? 'Try different filters.'
+                      : 'No analyst association or current source-reported assertion links an IOC to this threat actor.'}
+                  />
+                </td></tr>
+              ) : items.map((item) => {
+                const row = item.ioc || {};
+                const status = String(row.lifecycle_status || item.status || 'active').toLowerCase();
+                const confidence = row.confidence_effective || item.confidence || null;
+                const sourceLabel = row.display_source || (item.source_names && item.source_names[0]) || '—';
+                const sourceExtra = Number(row.display_source_extra || 0);
+                const ev = formatDiscoveryEvidence(item, actor?.name || null);
+                const firstEvidence = item.evidence?.[0] || null;
+                return (
+                  <tr key={`${item.type}|${item.value}`}>
+                    <td style={{ ...ui.td, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                      <IocLink publicId={item.public_id}>{item.value}</IocLink>
+                    </td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{item.type}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{iocStatusBadge(status)}</td>
+                    <td className="ta-discovery-col-secondary" style={ui.td}>
+                      {confidence ? <span style={confidenceBadgeStyle(confidence)}>{confidence}</span> : '—'}
+                    </td>
+                    <td className="ta-discovery-col-secondary" style={{ ...ui.td, overflowWrap: 'anywhere' }}>
+                      {sourceLabel}{sourceExtra > 0 ? <span style={{ color: '#94a3b8' }}> +{sourceExtra}</span> : null}
+                    </td>
+                    <td style={ui.td}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        <MalwareFamilyAttributionPill item={item} />
+                        {ev.kinds.length ? <span style={{ fontSize: 11, color: '#94a3b8' }}>{ev.kinds.join(', ')}</span> : null}
+                      </div>
+                    </td>
+                    <td className="ta-discovery-col-secondary" style={{ ...ui.td, fontSize: 12, color: '#94a3b8', overflowWrap: 'anywhere', lineHeight: 1.4 }}>
+                      {ev.reportedAs.length ? <div>Reported as: <span style={{ color: '#e2e8f0' }}>{ev.reportedAs.join(', ')}</span></div> : null}
+                      {ev.referenceLabel ? <div>{ev.referenceLabel}</div> : null}
+                      {firstEvidence?.evidence_title ? (
+                        <div>
+                          {firstEvidence.evidence_url
+                            ? <a href={firstEvidence.evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>{firstEvidence.evidence_title}</a>
+                            : firstEvidence.evidence_title}
+                        </div>
+                      ) : null}
+                      {!ev.reportedAs.length && !ev.referenceLabel && !firstEvidence ? '—' : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {total > 0 ? (
+          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: 13 }}>
+            <div>{`Showing ${from}–${to} of ${total.toLocaleString('en-US')} unique IOCs`}{loading ? ' · Updating…' : ''}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={ui.btnCompact} disabled={state.page <= 1 || loading} onClick={() => setState((p) => ({ ...p, page: Math.max(1, p.page - 1) }))}>Previous</button>
+              <button type="button" style={ui.btnCompact} disabled={!pagination?.has_more || loading} onClick={() => setState((p) => ({ ...p, page: p.page + 1 }))}>Next</button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </AppShell>
+  );
+}
+
 function ThreatActorManagerPage() {
   const { isAdmin } = useSession();
   const requestConfirm = useAppConfirm();
@@ -9070,16 +9317,17 @@ function ThreatActorManagerPage() {
                 <th className="ta-col-name" style={ui.th}>Name</th>
                 <th className="ta-col-aliases" style={ui.th}>Aliases</th>
                 <th className="ta-col-description" style={ui.th}>Description</th>
+                <th className="ta-col-iocs" style={ui.th} title="Unique IOCs: analyst associations plus current source-reported assertions (deduplicated)">IOCs</th>
                 <th className="ta-col-active" style={ui.th}>Active</th>
                 <th className="ta-col-created" style={ui.th}>Created At</th>
-                <th className="ta-col-actions" style={ui.th}>Actions</th>
+                <th className={THREAT_ACTOR_ACTIONS_COL_CLASS} style={ui.th}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading && !actors.length ? (
-                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
               ) : !actors.length ? (
-                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>
+                <tr><td colSpan={7} style={{ ...ui.td, padding: 0 }}>
                   <EmptyState
                     title={search ? 'No matching threat actors' : 'No threat actors yet'}
                     description={search ? 'Try a different search term.' : 'Add a threat actor to link them to IOCs.'}
@@ -9094,7 +9342,9 @@ function ThreatActorManagerPage() {
                 return (
                 <tr key={actor.id} className="threat-actors-row" style={{ opacity: actor.active ? 1 : 0.62 }}>
                   <td className="ta-col-name" style={ui.td}>
-                    <div style={{ fontWeight: 600 }}>{actor.name}</div>
+                    <div style={{ fontWeight: 600 }}>
+                      <Link to={threatActorDetailHref(actor.id)} style={{ color: '#e2e8f0', textDecoration: 'none' }}>{actor.name}</Link>
+                    </div>
                     <div style={{ fontSize: 11, color: '#64748b' }}>{actor.slug || actor.name}</div>
                   </td>
                   <td className="ta-col-aliases" style={ui.td}>
@@ -9128,10 +9378,22 @@ function ThreatActorManagerPage() {
                       </span>
                     )}
                   </td>
+                  <td className="ta-col-iocs" style={ui.td}>
+                    {Number(actor.associated_iocs?.all_unique) > 0 ? (
+                      <Link
+                        to={threatActorDetailHref(actor.id)}
+                        title={`${actor.associated_iocs.analyst_unique} analyst · ${actor.associated_iocs.source_unique} source-reported (unique IOCs; may overlap)`}
+                        style={{ color: '#93c5fd', fontWeight: 600, textDecoration: 'none' }}
+                      >
+                        {formatAssociatedIocCount(actor.associated_iocs)}
+                      </Link>
+                    ) : <span style={{ color: '#64748b' }}>0</span>}
+                  </td>
                   <td className="ta-col-active" style={ui.td}>{actor.active ? 'Yes' : 'No'}</td>
                   <td className="ta-col-created" style={ui.td}>{formatUserDateTime(actor.created_at)}</td>
-                  <td className="ta-col-actions" style={ui.td}>
-                    <div className="ta-action-buttons">
+                  <td className={THREAT_ACTOR_ACTIONS_COL_CLASS} style={ui.td}>
+                    <div className={THREAT_ACTOR_ACTION_BUTTONS_CLASS}>
+                      <Link to={threatActorDetailHref(actor.id)} style={{ ...ui.btnCompact, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>View IOCs</Link>
                       <button type="button" style={ui.btnCompact} onClick={() => openEditModal(actor)}>Edit</button>
                       {actor.active ? (
                         <button type="button" style={ui.btnCompact} onClick={() => disableActor(actor).catch(() => {})}>Disable</button>
@@ -19708,9 +19970,17 @@ function App() {
         .threat-actors-page .threat-actors-table .ta-col-name { width: 16%; min-width: 140px; }
         .threat-actors-page .threat-actors-table .ta-col-aliases { width: 20%; min-width: 160px; }
         .threat-actors-page .threat-actors-table .ta-col-description { width: auto; }
+        .threat-actors-page .threat-actors-table .ta-col-iocs { width: 76px; text-align: right; }
+        .ta-discovery-page .ta-discovery-table { min-width: 640px; }
+        .ta-discovery-page .ta-discovery-table tbody tr:hover { background: rgba(30,41,59,0.45); }
+        @media (max-width: 760px) {
+          .ta-discovery-page .ta-discovery-col-secondary { display: none; }
+          .ta-discovery-page .ta-discovery-table { min-width: 0; }
+        }
         .threat-actors-page .threat-actors-table .ta-col-active { width: 72px; }
         .threat-actors-page .threat-actors-table .ta-col-created { width: 160px; }
-        .threat-actors-page .threat-actors-table .ta-col-actions { width: 150px; }
+        /* Three compact actions (View IOCs + Edit + Disable): match Malware Families width. */
+        .threat-actors-page .threat-actors-table .ta-col-actions { width: ${THREAT_ACTOR_ACTIONS_COL_WIDTH_PX}px; }
         .threat-actors-page .threat-actors-table tbody tr {
           border-bottom: 1px solid #334155;
         }
@@ -19763,21 +20033,28 @@ function App() {
           display: block;
         }
         .threat-actors-page .ta-col-actions {
-          white-space: nowrap;
           vertical-align: middle;
         }
         .threat-actors-page .ta-action-buttons {
-          display: inline-flex;
-          flex-wrap: nowrap;
+          display: flex;
+          flex-wrap: wrap;
           gap: 6px;
           align-items: center;
+          width: 100%;
+          max-width: 100%;
+          min-width: 0;
+          box-sizing: border-box;
         }
-        .threat-actors-page .ta-action-buttons button {
+        .threat-actors-page .ta-action-buttons button,
+        .threat-actors-page .ta-action-buttons a {
           white-space: nowrap;
+          flex: 0 0 auto;
+          max-width: 100%;
+          box-sizing: border-box;
         }
         @media (max-width: 980px) {
           .threat-actors-page .threat-actors-table .ta-col-created { display: none; }
-          .threat-actors-page .threat-actors-table { min-width: 760px; }
+          .threat-actors-page .threat-actors-table { min-width: 940px; }
         }
         .malware-families-page .malware-families-table-wrap {
           margin-top: 16px;
@@ -20229,6 +20506,7 @@ function App() {
           <Route path="/administration/tags" element={<Protected><TagManagerPage /></Protected>} />
           <Route path="/administration/threat-classifications" element={<Protected><ThreatClassificationManagerPage /></Protected>} />
           <Route path="/administration/threat-actors" element={<Protected><ThreatActorManagerPage /></Protected>} />
+          <Route path="/threat-intelligence/threat-actors/:actorId" element={<Protected><ThreatActorIocsPage /></Protected>} />
           <Route path="/administration/malware-families" element={<Protected><MalwareFamilyManagerPage /></Protected>} />
           <Route path="/threat-intelligence/malware-families/source-label" element={<Protected><MalwareFamilyIocsPage mode="label" /></Protected>} />
           <Route path="/threat-intelligence/malware-families/:familyId" element={<Protected><MalwareFamilyIocsPage mode="family" /></Protected>} />

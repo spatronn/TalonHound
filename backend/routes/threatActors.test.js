@@ -8,13 +8,35 @@ import { ROLES } from '../lib/rbac.js';
 const ADMIN = { role: ROLES.ADMIN, id: 1, email: 'admin@example.com', username: 'admin@example.com' };
 const VIEWER = { role: 'viewer', id: 2, email: 'viewer@example.com', username: 'viewer@example.com' };
 
-function createMockPool(store) {
+function createMockPool(store, { iocCounts = new Map() } = {}) {
   async function query(sql, params = []) {
     const s = String(sql);
 
-    if (s.includes('SELECT * FROM threat_actors WHERE id = $1::uuid')) {
+    if (s.includes('FROM threat_actors WHERE id = $1::uuid')) {
       const row = store.find((item) => item.id === params[0]);
       return { rows: row ? [{ ...row }] : [] };
+    }
+
+    if (s.includes('actor_id::text AS actor_id') && s.includes('FROM ioc_threat_actors')) {
+      const ids = (params[0] || []).map(String);
+      return {
+        rows: ids
+          .filter((id) => iocCounts.has(id))
+          .map((id) => {
+            const c = iocCounts.get(id);
+            return {
+              actor_id: id,
+              all_unique: c.all_unique ?? 0,
+              analyst_unique: c.analyst_unique ?? 0,
+              source_unique: c.source_unique ?? 0
+            };
+          })
+      };
+    }
+
+    if (s.includes('WITH') && s.includes('FROM ioc_threat_actors ita') && s.includes('grouped AS')) {
+      // Discovery page/summary: empty unless tests inject rows later.
+      return { rows: [] };
     }
 
     if (s.includes('SELECT id FROM threat_actors WHERE (lower(name) = lower($1) OR slug = $2)')) {
@@ -84,7 +106,7 @@ function createMockPool(store) {
   return { query };
 }
 
-async function withServer(store, fn, { user = ADMIN } = {}) {
+async function withServer(store, fn, { user = ADMIN, iocCounts } = {}) {
   const app = express();
   app.use(express.json());
   app.use((req, _res, next) => {
@@ -97,7 +119,7 @@ async function withServer(store, fn, { user = ADMIN } = {}) {
       audit.events.push(payload);
     }
   };
-  registerThreatActorRoutes(app, createMockPool(store), audit);
+  registerThreatActorRoutes(app, createMockPool(store, { iocCounts }), audit);
 
   await new Promise((resolve) => {
     const server = app.listen(0, async () => {
@@ -133,6 +155,95 @@ test('GET /api/admin/threat-actors returns pagination metadata', async () => {
     assert.equal(data.pagination.page, 2);
     assert.equal(data.pagination.total_items, 30);
     assert.equal(data.pagination.total_pages, 3);
+    assert.deepEqual(data.threat_actors[0].associated_iocs, {
+      all_unique: 0,
+      analyst_unique: 0,
+      source_unique: 0
+    });
+  });
+});
+
+test('GET /api/admin/threat-actors exposes associated_iocs counts (including zero)', async () => {
+  const withIocs = '8bd4f10c-0904-43cb-acdf-02aa0b0a81e6';
+  const zeroIocs = '364117ec-9e72-4531-956a-ba7f013f1b45';
+  const inactive = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const store = [
+    {
+      id: withIocs,
+      name: 'APT28',
+      slug: 'apt28',
+      aliases: ['Fancy Bear'],
+      description: null,
+      active: true,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      created_by: null,
+      updated_by: null
+    },
+    {
+      id: zeroIocs,
+      name: 'No Links',
+      slug: 'no-links',
+      aliases: [],
+      description: null,
+      active: true,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      created_by: null,
+      updated_by: null
+    },
+    {
+      id: inactive,
+      name: 'Retired Actor',
+      slug: 'retired-actor',
+      aliases: [],
+      description: null,
+      active: false,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      created_by: null,
+      updated_by: null
+    }
+  ];
+  const iocCounts = new Map([
+    [withIocs, { all_unique: 34, analyst_unique: 2, source_unique: 33 }],
+    [inactive, { all_unique: 7, analyst_unique: 0, source_unique: 7 }]
+  ]);
+
+  await withServer(store, async (baseUrl) => {
+    const res = await fetch(`${baseUrl}/api/admin/threat-actors?include_inactive=true&page_size=50`);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    const byName = Object.fromEntries(data.threat_actors.map((a) => [a.name, a.associated_iocs]));
+    assert.deepEqual(byName.APT28, { all_unique: 34, analyst_unique: 2, source_unique: 33 });
+    assert.deepEqual(byName['No Links'], { all_unique: 0, analyst_unique: 0, source_unique: 0 });
+    assert.deepEqual(byName['Retired Actor'], { all_unique: 7, analyst_unique: 0, source_unique: 7 });
+  }, { iocCounts });
+});
+
+test('discovery endpoints validate actor references', async () => {
+  const store = [{
+    id: '8bd4f10c-0904-43cb-acdf-02aa0b0a81e6',
+    name: 'APT28',
+    slug: 'apt28',
+    aliases: ['Fancy Bear'],
+    description: null,
+    active: true,
+    catalog_sources: ['bundled'],
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    created_by: null,
+    updated_by: null
+  }];
+  await withServer(store, async (baseUrl) => {
+    assert.equal((await fetch(`${baseUrl}/api/threat-actors/not-a-uuid`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/api/threat-actors/not-a-uuid/iocs`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/api/threat-actors/00000000-0000-4000-8000-999999999999/iocs`)).status, 404);
+    const ok = await fetch(`${baseUrl}/api/threat-actors/${store[0].id}`);
+    assert.equal(ok.status, 200);
+    const body = await ok.json();
+    assert.equal(body.threat_actor.name, 'APT28');
+    assert.equal(body.summary.all_unique, 0);
   });
 });
 

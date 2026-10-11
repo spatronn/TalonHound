@@ -3063,7 +3063,7 @@ registerCustomThreatFeedRoutes(app, pool, auditLogService, {
 });
 registerRouteModule('custom_threat_feeds');
 registerThreatClassificationRoutes(app, pool, auditLogService);
-registerThreatActorRoutes(app, pool, auditLogService);
+registerThreatActorRoutes(app, pool, auditLogService, { mapIocListPageItems });
 registerMalwareFamilyRoutes(app, pool, auditLogService, { mapIocListPageItems });
 registerIocThreatMetadataRoutes(app, pool, auditLogService, {
   invalidateDetailsCache: invalidateIocDetailsCache

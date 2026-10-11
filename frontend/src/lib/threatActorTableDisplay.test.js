@@ -4,9 +4,13 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import {
+  THREAT_ACTOR_ACTIONS_COL_CLASS,
+  THREAT_ACTOR_ACTION_BUTTONS_CLASS,
+  THREAT_ACTOR_ACTIONS_COL_WIDTH_PX,
   THREAT_ACTOR_ALIASES_CLAMP_CLASS,
   THREAT_ACTOR_DESCRIPTION_CLAMP_CLASS,
   THREAT_ACTOR_DESCRIPTION_TRUNCATE_MIN_CHARS,
+  THREAT_ACTOR_PAGE_CLASS,
   THREAT_ACTOR_TABLE_CLASS,
   buildThreatActorDescriptionModalState,
   formatThreatActorAliasesCell,
@@ -65,4 +69,15 @@ test('ThreatActorManagerPage wires clamp classes and description modal', () => {
   assert.match(mainJsx, /openEditModal\(actor\)/);
   assert.match(mainJsx, /buildThreatActorManagerQueryParams/);
   assert.match(mainJsx, /Show inactive/);
+});
+
+test('Actions column layout contract keeps View IOCs + Edit + Disable inside a constrained flex cell', () => {
+  assert.equal(THREAT_ACTOR_ACTIONS_COL_CLASS, 'ta-col-actions');
+  assert.equal(THREAT_ACTOR_ACTION_BUTTONS_CLASS, 'ta-action-buttons');
+  assert.ok(THREAT_ACTOR_ACTIONS_COL_WIDTH_PX >= 220);
+  assert.ok(mainJsx.includes(THREAT_ACTOR_PAGE_CLASS));
+  assert.ok(mainJsx.includes('width: ${THREAT_ACTOR_ACTIONS_COL_WIDTH_PX}px'));
+  assert.ok(mainJsx.includes('ta-col-iocs'));
+  assert.ok(mainJsx.includes('View IOCs'));
+  assert.ok(mainJsx.includes('threatActorDetailHref'));
 });

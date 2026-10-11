@@ -5,6 +5,11 @@ export const THREAT_ACTOR_TABLE_CLASS = 'threat-actors-table';
 export const THREAT_ACTOR_DESCRIPTION_CLAMP_CLASS = 'ta-clamp-description';
 export const THREAT_ACTOR_ALIASES_CLAMP_CLASS = 'ta-clamp-aliases';
 export const THREAT_ACTOR_DESCRIPTION_TRUNCATE_MIN_CHARS = 140;
+/** Actions column holds View IOCs + Edit + Disable/Enable (compact buttons + gaps). */
+export const THREAT_ACTOR_ACTIONS_COL_CLASS = 'ta-col-actions';
+export const THREAT_ACTOR_ACTION_BUTTONS_CLASS = 'ta-action-buttons';
+/** CSS width for `.ta-col-actions` — room for three btnCompact actions without spilling. */
+export const THREAT_ACTOR_ACTIONS_COL_WIDTH_PX = 240;
 
 /**
  * @param {string|null|undefined} description
