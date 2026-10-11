@@ -261,8 +261,15 @@ import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx
 import { IocMetadataCards, AttributionEntityBadges } from './components/iocDetails/IocMetadataCards.jsx';
 import {
   getAnalystThreatActorIdsFromSummary,
-  getAnalystMalwareFamilyIdsFromSummary
+  getAnalystMalwareFamilyIdsFromSummary,
+  getMalwareFamiliesFromSummary
 } from './lib/iocAttributionSummary.js';
+import {
+  MALWARE_FAMILY_PICKER_DEBOUNCE_MS,
+  buildMalwareFamilyPickerParams,
+  mergeMalwareFamilyLabels,
+  toMalwareFamilyPickerOptions
+} from './lib/malwareFamilyPicker.js';
 import talonHoundLogo from './assets/talonhound-logo.png';
 import { formatSidebarRoleLabel, userInitialsFromEmail } from './lib/sidebarAccount.js';
 import {
@@ -359,6 +366,7 @@ import {
   buildMalwareFamilyDescriptionModalState,
   formatMalwareFamilyAliasesCell,
   formatMalwareFamilyDescriptionCell,
+  formatMalwareFamilyReferenceLine,
   malwareFamilyDescriptionModalTitle
 } from './lib/malwareFamilyTableDisplay.js';
 import {
@@ -7651,10 +7659,19 @@ function SearchableMultiSelect({
   emptyOptionsLabel = 'No options available',
   noMatchLabel = 'No matches',
   inline = false,
-  searchInputRef = null
+  searchInputRef = null,
+  // Server-side search: options are already filtered for `query` by the caller.
+  onQueryChange = null,
+  serverFiltered = false,
+  loading = false,
+  listFooter = null
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+
+  useEffect(() => {
+    if (typeof onQueryChange === 'function') onQueryChange(query);
+  }, [query, onQueryChange]);
   const containerRef = useRef(null);
   const searchRef = useRef(null);
   const triggerRef = useRef(null);
@@ -7673,8 +7690,8 @@ function SearchableMultiSelect({
   }, [chipLabelFor, optionList]);
 
   const filtered = useMemo(
-    () => filterMultiSelectOptions(optionList, query, (o) => o.label),
-    [optionList, query]
+    () => (serverFiltered ? optionList : filterMultiSelectOptions(optionList, query, (o) => o.label)),
+    [optionList, query, serverFiltered]
   );
   const { chips, overflowCount } = summarizeMultiSelectChips(selected, labelFor, MULTI_SELECT_MAX_CHIPS);
   const showNoneRow = Boolean(noneOption) && !String(query || '').trim();
@@ -7831,8 +7848,11 @@ function SearchableMultiSelect({
       })}
       {!filtered.length ? (
         <div style={{ color: '#94a3b8', fontSize: 12, padding: '6px 4px' }}>
-          {optionList.length ? noMatchLabel : emptyOptionsLabel}
+          {loading ? 'Searching…' : (optionList.length || (serverFiltered && String(query || '').trim()) ? noMatchLabel : emptyOptionsLabel)}
         </div>
+      ) : null}
+      {filtered.length && listFooter ? (
+        <div style={{ color: '#94a3b8', fontSize: 12, padding: '6px 4px' }}>{listFooter}</div>
       ) : null}
     </div>
   );
@@ -7991,25 +8011,57 @@ function ThreatActorMultiSelect({
   );
 }
 
+/**
+ * Malware family picker backed by server-side catalog search (the catalog holds
+ * hundreds of MITRE ATT&CK families, so it is never preloaded). `selectedFamilies`
+ * ({ id, name }) supplies chip labels for the current selection.
+ */
 function MalwareFamilyMultiSelect({
   value,
   onChange,
-  options = [],
+  selectedFamilies = [],
   disabled = false,
   inline = false,
   searchInputRef = null
 }) {
   const selected = Array.isArray(value) ? value.map(String).filter(Boolean) : [];
-  const optionList = Array.isArray(options) ? options : [];
-  const pickerOptions = optionList.map((o) => {
-    const name = o.name || String(o.id);
-    const aliases = Array.isArray(o.aliases) ? o.aliases.map((a) => String(a || '').trim()).filter(Boolean) : [];
-    return {
-      value: String(o.id),
-      label: aliases.length ? `${name} (${aliases.join(', ')})` : name,
-      chipLabel: name
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [labels, setLabels] = useState(() => mergeMalwareFamilyLabels(new Map(), selectedFamilies));
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/malware-families', {
+          params: buildMalwareFamilyPickerParams(query),
+          signal: controller.signal
+        });
+        const items = Array.isArray(data?.malware_families) ? data.malware_families : [];
+        setResults(items);
+        setHasMore(Boolean(data?.has_more));
+        setLabels((prev) => mergeMalwareFamilyLabels(prev, items));
+        setLoadError('');
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setResults([]);
+        setHasMore(false);
+        setLoadError(apiErrorMessage(err, 'Failed to search malware families'));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }, query ? MALWARE_FAMILY_PICKER_DEBOUNCE_MS : 0);
+    return () => {
+      clearTimeout(t);
+      controller.abort();
     };
-  });
+  }, [query]);
+
+  const pickerOptions = useMemo(() => toMalwareFamilyPickerOptions(results), [results]);
 
   function toggle(id) {
     if (disabled) return;
@@ -8017,19 +8069,30 @@ function MalwareFamilyMultiSelect({
   }
 
   return (
-    <SearchableMultiSelect
-      selectedValues={selected}
-      options={pickerOptions}
-      onToggle={toggle}
-      disabled={disabled}
-      inline={inline}
-      searchInputRef={searchInputRef}
-      ariaLabel="Malware families"
-      placeholder="Select malware families…"
-      searchPlaceholder="Search malware families…"
-      emptyOptionsLabel="No malware families available — create them under Threat Intelligence → Malware Families"
-      chipLabelFor={(id) => pickerOptions.find((o) => o.value === String(id))?.chipLabel || String(id)}
-    />
+    <>
+      <SearchableMultiSelect
+        selectedValues={selected}
+        options={pickerOptions}
+        onToggle={toggle}
+        disabled={disabled}
+        inline={inline}
+        searchInputRef={searchInputRef}
+        onQueryChange={setQuery}
+        serverFiltered
+        loading={loading}
+        listFooter={hasMore ? `Showing the first ${pickerOptions.length} matches — type to narrow the search.` : null}
+        ariaLabel="Malware families"
+        placeholder="Select malware families…"
+        searchPlaceholder="Search by name, alias or ATT&CK ID…"
+        noMatchLabel="No matching malware families"
+        emptyOptionsLabel="No malware families available — create them under Threat Intelligence → Malware Families"
+        renderOptionMeta={(opt) => (opt.attackId ? (
+          <span style={{ marginLeft: 'auto', color: '#64748b', fontSize: 11, whiteSpace: 'nowrap' }}>{opt.attackId}</span>
+        ) : null)}
+        chipLabelFor={(id) => labels.get(String(id)) || pickerOptions.find((o) => o.value === String(id))?.chipLabel || String(id)}
+      />
+      {loadError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{loadError}</div> : null}
+    </>
   );
 }
 
@@ -9423,11 +9486,20 @@ function MalwareFamilyManagerPage() {
               ) : families.map((family) => {
                 const descriptionCell = formatMalwareFamilyDescriptionCell(family.description);
                 const aliasesCell = formatMalwareFamilyAliasesCell(family.aliases);
+                const referenceLine = formatMalwareFamilyReferenceLine(family);
                 return (
                 <tr key={family.id} className="malware-families-row" style={{ opacity: family.active ? 1 : 0.62 }}>
                   <td className="mf-col-name" style={ui.td}>
                     <div style={{ fontWeight: 600 }}>{family.name}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>{family.slug || family.name}</div>
+                    {referenceLine ? (
+                      <div className="mf-reference" style={{ fontSize: 11, color: '#64748b' }} title={referenceLine.title || undefined}>
+                        {referenceLine.url ? (
+                          <a href={referenceLine.url} target="_blank" rel="noopener noreferrer" style={{ color: '#64748b' }}>{referenceLine.label}</a>
+                        ) : referenceLine.label}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: '#64748b' }}>{family.slug || family.name}</div>
+                    )}
                   </td>
                   <td className="mf-col-aliases" style={ui.td}>
                     <span
@@ -16570,7 +16642,6 @@ function IOCDetailsPage() {
   const [confidenceError, setConfidenceError] = useState('');
   const { options: threatClassOptions, labelFor: threatClassLabelFor } = useThreatClassifications();
   const [threatActors, setThreatActors] = useState([]);
-  const [malwareFamilies, setMalwareFamilies] = useState([]);
   const [showThreatClassModal, setShowThreatClassModal] = useState(false);
   const [threatClassDraft, setThreatClassDraft] = useState([]);
   const [threatClassSaving, setThreatClassSaving] = useState(false);
@@ -16729,17 +16800,13 @@ function IOCDetailsPage() {
     let active = true;
     (async () => {
       try {
-        const [{ data: actorData }, { data: familyData }] = await Promise.all([
-          api.get('/threat-actors'),
-          api.get('/malware-families')
-        ]);
+        // Malware families are searched server-side by the editor; not preloaded.
+        const { data: actorData } = await api.get('/threat-actors');
         if (!active) return;
         setThreatActors(Array.isArray(actorData?.threat_actors) ? actorData.threat_actors : []);
-        setMalwareFamilies(Array.isArray(familyData?.malware_families) ? familyData.malware_families : []);
       } catch {
         if (!active) return;
         setThreatActors([]);
-        setMalwareFamilies([]);
       }
     })();
     return () => { active = false; };
@@ -18247,7 +18314,7 @@ function IOCDetailsPage() {
             <MalwareFamilyMultiSelect
               value={malwareFamilyDraft}
               onChange={setMalwareFamilyDraft}
-              options={malwareFamilies}
+              selectedFamilies={getMalwareFamiliesFromSummary(summary)}
               disabled={malwareFamilySaving}
               inline
               searchInputRef={malwareFamilySearchRef}

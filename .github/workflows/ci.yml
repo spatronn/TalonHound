@@ -87,7 +87,7 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard
+        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families
 
       - name: Lint installation.sh
         run: bash -n installation.sh
@@ -131,6 +131,12 @@ jobs:
         env:
           THREAT_LIBRARY_TAG_ITEST: '1'
         run: npm run test:threat-library-tags-integration
+
+      - name: Malware Families reference seed (real Postgres)
+        working-directory: backend
+        env:
+          MALWARE_FAMILY_SEED_ITEST: '1'
+        run: npm run test:malware-families-integration
 
       - name: Partition-aware backup restore smoke
         env:

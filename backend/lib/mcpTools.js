@@ -431,13 +431,16 @@ export function registerMcpTools(server, deps) {
       title: 'List malware families',
       description:
         'List the active TalonHound Malware Families catalog (canonical name, slug, aliases, description) — the same catalog the IOC Details malware-family picker uses. '
-        + 'Optional `query` = case-insensitive contains filter on name or alias. '
-        + `Bounded (max ${config.malwareFamilyListMax}); \`truncated\` = more families match, narrow the query. Requires an analyst/admin owner. `
+        + 'The catalog ships pre-populated with MITRE ATT&CK Enterprise malware (ATT&CK "malware" software only; ATT&CK tools are not included) plus analyst-created families; '
+        + '`references` carries official reference identities (source=mitre-attack, external_id e.g. S0367, url). A catalog entry is a known reference entity, NOT evidence that any IOC belongs to it. '
+        + 'Optional `query` = case-insensitive contains filter on name or alias, or an exact ATT&CK software id (e.g. "S0367"); results are relevance ordered (exact name/alias first). '
+        + `Bounded (max ${config.malwareFamilyListMax} per call); page with \`offset\` / \`next_offset\`; \`truncated\` = more families match; \`total_matches\` = all matching families. Requires an analyst/admin owner. `
         + 'Read-only: never creates catalog entries, never changes IOC associations, and never triggers external/paid enrichment. '
         + 'IOC associations (analyst vs AlienVault OTX source-reported provenance) are on get_ioc_context.malware_families.',
       inputSchema: {
-        query: z.string().max(100).optional().describe('Name or alias contains filter (case-insensitive)'),
-        limit: z.number().int().min(1).max(config.malwareFamilyListMax).optional()
+        query: z.string().max(100).optional().describe('Name or alias contains filter (case-insensitive), or exact ATT&CK id such as S0367'),
+        limit: z.number().int().min(1).max(config.malwareFamilyListMax).optional(),
+        offset: z.number().int().min(0).max(100000).optional().describe('Paging offset (use next_offset from the previous call)')
       },
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },

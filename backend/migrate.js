@@ -6,6 +6,10 @@ import pg from 'pg';
 import { listRunnableMigrationFiles } from './lib/migrationFiles.js';
 import { backfillThreatActorCatalogSources } from './lib/threatActors/catalogBackfill.js';
 import { backfillReportImportIdentity } from './lib/threatLibrary/importIdentity.js';
+import {
+  printMalwareFamilySeedSummary,
+  reconcileBundledMalwareFamilies
+} from './lib/malwareFamilies/seed.js';
 import { printBundledReconcileSummary, reconcileBundledThreatActors } from './lib/threatActors/seed.js';
 import {
   printBundledThreatClassificationSummary,
@@ -139,6 +143,10 @@ async function runMigrations() {
     console.log('[migrate] reconciling bundled threat classification taxonomy');
     const tcSeedResult = await reconcileBundledThreatClassifications(client, { dryRun: false });
     printBundledThreatClassificationSummary(tcSeedResult, { dryRun: false });
+
+    console.log('[migrate] reconciling bundled malware family reference catalog');
+    const mfSeedResult = await reconcileBundledMalwareFamilies(client);
+    printMalwareFamilySeedSummary(mfSeedResult);
   } catch (err) {
     console.error('[migrate] failed', err?.message || err);
     process.exit(1);

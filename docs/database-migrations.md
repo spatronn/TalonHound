@@ -51,6 +51,7 @@ Fresh installations apply the public forward migrations present in the repositor
 040_mcp_tags_write_scope.sql
 041_threat_report_ioc_sources.sql
 042_ioc_source_attributions.sql
+043_malware_family_reference_catalog.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.
@@ -66,7 +67,7 @@ Shipped migration files are **immutable upgrade history**:
 
 Migration identity is the **full filename** stored in `schema_migrations.name`. There are no checksums; already-applied files are skipped by exact name match.
 
-After SQL migrations complete, `npm run migrate` also reconciles the bundled Threat Actor catalog from `backend/seeds/threat-actors.json` (no Malpedia/network dependency). See [threat-actors-seed.md](./threat-actors-seed.md).
+After SQL migrations complete, `npm run migrate` also reconciles the bundled Threat Actor catalog from `backend/seeds/threat-actors.json` (no Malpedia/network dependency; see [threat-actors-seed.md](./threat-actors-seed.md)) and the bundled Malware Families reference catalog from `backend/seeds/malware-families-mitre-attack.json` (MITRE ATT&CK, no network dependency; see [malware-families-seed.md](./malware-families-seed.md)).
 
 ## Existing installations
 
