@@ -281,6 +281,31 @@ test('Create IOCs with nothing to create is informational: Close only, no OK, no
   assert.match(mainSrc, /\{state\.informational \? null : \(/, 'confirm host hides the confirm button');
 });
 
+test('Create IOCs page path is not aborted by runReview busyRef re-entry guard', () => {
+  // Regression: b636b64 added `busyRef.current === 'create_iocs'` inside createIocs(),
+  // but runReview always sets busyRef to the action before awaiting createIocs(), so
+  // every toolbar click returned immediately with no preview/confirm/API call.
+  const runReviewFn = pageSrc.slice(
+    pageSrc.indexOf('async function runReview(action)'),
+    pageSrc.indexOf('async function reviewAcrossPages(action)')
+  );
+  assert.match(runReviewFn, /busyRef\.current = action;/);
+  assert.match(runReviewFn, /if \(action === 'create_iocs'\) \{\s*await createIocs\(\);/);
+
+  const createFn = pageSrc.slice(
+    pageSrc.indexOf('async function createIocs()'),
+    pageSrc.indexOf('async function promoteToIoc()')
+  );
+  assert.match(createFn, /if \(createOp\?\.phase === 'processing'\) return;/);
+  assert.doesNotMatch(
+    createFn,
+    /busyRef\.current === ['"]create_iocs['"]/,
+    'createIocs must not treat the runReview busyRef as a duplicate click'
+  );
+  assert.match(createFn, /confirm: false/, 'preview request still sent');
+  assert.match(createFn, /confirm: true/, 'commit request still sent after confirm');
+});
+
 test('IOC Result cell renders the effective outcome and links only via the backend public id', () => {
   assert.match(pageSrc, /const resultTone = promotionOutcomeTone\(iocResultOutcome\(c\)\);/);
   assert.match(pageSrc, /const resultHref = iocResultLink\(c\);/);

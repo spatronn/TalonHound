@@ -1192,7 +1192,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
 
   async function createIocs() {
     if (!canWrite || !selected.size) return;
-    if (createOp?.phase === 'processing' || busyRef.current === 'create_iocs') return;
+    // Re-entry is owned by runReview (busyRef) before this is called. Do not
+    // treat busyRef === 'create_iocs' as a duplicate click here — that value is
+    // already set by the toolbar path and would abort every Create IOCs click.
+    if (createOp?.phase === 'processing') return;
     const { ids, excluded } = selectionForAction('create_iocs', selectedRows);
     if (!ids.length) return;
     setBusy('create_iocs');
