@@ -140,7 +140,10 @@ test('row click navigation is preserved', () => {
 // (`published_at` / `published_date` via formatPublicationDate). `Imported`
 // is created_at. They are never substituted for each other. `Type` stays off
 // the list (free text; still on the detail page).
-const LIST_COLUMNS = ['Report', 'Source', 'TLP', 'Entities', 'Indicators', 'Matched', 'Status', 'Published', 'Imported'];
+// "Matched IOCs" is the list column label (counts unique Indicators matched to
+// an existing global IOC). Keep this distinct from in-report Match cell labels
+// ("Matched · <type>") used on the candidate review table.
+const LIST_COLUMNS = ['Report', 'Source', 'TLP', 'Entities', 'Indicators', 'Matched IOCs', 'Status', 'Published', 'Imported'];
 
 test('report list columns: Published immediately before Imported, Type still absent, order fixed', () => {
   const thead = pageSrc.slice(pageSrc.indexOf('<thead>'), pageSrc.indexOf('</thead>'));
@@ -158,7 +161,8 @@ test('report list body renders Published from publication date and Imported from
   const rowStart = pageSrc.indexOf('items.map((row) => (');
   const rowEnd = pageSrc.indexOf('</tbody>', rowStart);
   const row = pageSrc.slice(rowStart, rowEnd);
-  const cells = row.match(/<td style=\{(?:ui\.td|\{ \.\.\.ui\.td[^}]*\})\}/g) || [];
+  // Allow multi-line <td … style={ui.td}> (Matched IOCs carries a title tooltip).
+  const cells = row.match(/<td(?:\s|\n)[\s\S]*?style=\{(?:ui\.td|\{ \.\.\.ui\.td[^}]*\})\}/g) || [];
   assert.equal(cells.length, LIST_COLUMNS.length, 'body cells must align with the header columns');
   assert.match(pageSrc, /import \{ formatPublicationDate, publicationDateTitle \} from '\.\/publicationDate\.js'/);
   assert.match(row, /\{formatPublicationDate\(row\) \|\| '—'\}/);
@@ -166,6 +170,8 @@ test('report list body renders Published from publication date and Imported from
   assert.doesNotMatch(row, /formatUserDateTime\(row\.published_at\)/);
   assert.doesNotMatch(row, /report_type/);
   assert.match(row, /\{row\.source_type \|\| '—'\}/);
+  assert.match(row, /title="Unique Indicators matched to an existing global IOC record"/);
+  assert.match(row, /\{row\.matched_count \?\? 0\}/);
   assert.match(row, /<td style=\{ui\.td\}>\{row\.created_at \? formatUserDateTime\(row\.created_at\) : '—'\}<\/td>\s*<\/tr>/);
 });
 

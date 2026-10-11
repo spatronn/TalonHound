@@ -62,6 +62,7 @@ const EXPECTED_ITEMS = {
     'Published Feeds',
     'IOC Sources',
     'Threat Actors',
+    'Malware Families',
     'Threat Classifications',
     'Tags',
     'Enrichment Providers',
@@ -83,6 +84,7 @@ const EXPECTED_ROUTES = {
   'Published Feeds': '/threat-intelligence/published-feeds',
   'IOC Sources': '/administration/ioc-sources',
   'Threat Actors': '/administration/threat-actors',
+  'Malware Families': '/administration/malware-families',
   'Threat Classifications': '/administration/threat-classifications',
   Tags: '/administration/tags',
   'Enrichment Providers': '/administration/enrichment-providers',
@@ -116,6 +118,23 @@ test('Enrichment Usage appears immediately below Enrichment Providers', () => {
   const usageIdx = ti.indexOf('Enrichment Usage');
   assert.ok(providersIdx >= 0, 'Enrichment Providers present');
   assert.equal(usageIdx, providersIdx + 1, 'Enrichment Usage must directly follow Enrichment Providers');
+});
+
+test('Malware Families appears immediately below Threat Actors and is not admin-gated', () => {
+  const ti = labelsInSection(navSrc, 'Threat Intelligence');
+  const actorsIdx = ti.indexOf('Threat Actors');
+  const familiesIdx = ti.indexOf('Malware Families');
+  assert.ok(actorsIdx >= 0, 'Threat Actors present');
+  assert.equal(familiesIdx, actorsIdx + 1, 'Malware Families must directly follow Threat Actors');
+  // Catalog is available to every authenticated role (not wrapped in {isAdmin ? …}).
+  assert.match(
+    navSrc,
+    /<Link to="\/administration\/malware-families"[\s\S]*?<span>Malware Families<\/span><\/Link>/
+  );
+  assert.doesNotMatch(
+    navSrc,
+    /\{isAdmin \? <Link to="\/administration\/malware-families"/
+  );
 });
 
 test('sidebar links keep prior routes', () => {
