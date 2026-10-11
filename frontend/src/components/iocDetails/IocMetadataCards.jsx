@@ -24,7 +24,12 @@ function entityTitle(entity) {
   return parts.join('\n');
 }
 
-export function AttributionEntityBadges({ entities, max = 8, emptyLabel = 'Not selected' }) {
+/**
+ * @param {{ hrefFor?: (entity) => string|null, reportedAsFor?: (entity) => string[], renderLink?: Function }} props
+ *   hrefFor: canonical catalog link (e.g. Malware Family → associated IOCs)
+ *   reportedAsFor: source labels that differ from the canonical name ("Reported as")
+ */
+export function AttributionEntityBadges({ entities, max = 8, emptyLabel = 'Not selected', hrefFor = null, reportedAsFor = null, renderLink = null }) {
   const list = Array.isArray(entities) ? entities.filter((e) => e?.name || e?.id) : [];
   if (!list.length) {
     return <span style={{ color: '#64748b', fontSize: 13, fontWeight: 500 }}>{emptyLabel}</span>;
@@ -55,7 +60,22 @@ export function AttributionEntityBadges({ entities, max = 8, emptyLabel = 'Not s
               maxWidth: '100%'
             }}
           >
-            <span style={{ wordBreak: 'break-word' }}>{entity.name || entity.id}</span>
+            {(() => {
+              const href = entity.id && typeof hrefFor === 'function' ? hrefFor(entity) : null;
+              const label = entity.name || entity.id;
+              if (href && typeof renderLink === 'function') {
+                return renderLink({ href, children: label, style: { wordBreak: 'break-word', color: 'inherit', textDecoration: 'underline', textDecorationColor: 'rgba(148,163,184,0.5)' } });
+              }
+              return <span style={{ wordBreak: 'break-word' }}>{label}</span>;
+            })()}
+            {(() => {
+              const reported = typeof reportedAsFor === 'function' ? reportedAsFor(entity) : [];
+              return reported.length ? (
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', lineHeight: 1.3, wordBreak: 'break-word' }}>
+                  Reported as: {reported.join(', ')}
+                </span>
+              ) : null;
+            })()}
             {hint ? (
               <span style={{ fontSize: 10, fontWeight: 600, color: isSourceOnly ? '#94a3b8' : '#a5b4fc', lineHeight: 1.3 }}>
                 {hint}

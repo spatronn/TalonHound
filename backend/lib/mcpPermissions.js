@@ -24,6 +24,8 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   list_tags: [API_SCOPE.MCP_IOC_READ],
   // Malware Families catalog discovery (active catalog for IOC picker / MCP).
   list_malware_families: [API_SCOPE.MCP_IOC_READ],
+  // Malware Family → IOC discovery (read-only reverse lookup).
+  list_iocs_by_malware_family: [API_SCOPE.MCP_IOC_READ],
   // Analyst (manual) IOC tag writes. Separate scope — never implied by read,
   // import or enrichment scopes.
   add_ioc_tags: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_TAGS_WRITE],
@@ -147,7 +149,7 @@ export function authorizeMcpTool(toolName, auth = {}) {
         message: 'Owner user is not permitted to read the tag catalog'
       };
     }
-  } else if (name === 'list_malware_families') {
+  } else if (name === 'list_malware_families' || name === 'list_iocs_by_malware_family') {
     if (!caps.malware_families_read) {
       return {
         ok: false,

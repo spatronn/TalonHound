@@ -6,6 +6,7 @@
  */
 
 import { normalizeTagSlug } from './tagHelpers.js';
+import { resolveMalwareFamilyLabelInDb } from './malwareFamilySourceResolution.js';
 
 export const ENTITY_KIND = Object.freeze({
   THREAT_ACTOR: 'threat_actor',
@@ -129,28 +130,9 @@ export async function resolveCatalogEntity(client, entityKind, label) {
   }
 
   if (entityKind === ENTITY_KIND.MALWARE_FAMILY) {
-    const { rows } = await client.query(
-      `SELECT id, name, slug, aliases, active
-       FROM malware_families
-       WHERE active IS DISTINCT FROM false
-         AND (
-           lower(name) = $1
-           OR EXISTS (
-             SELECT 1 FROM unnest(COALESCE(aliases, '{}'::text[])) a
-             WHERE lower(a) = $1
-           )
-         )
-       ORDER BY name ASC
-       LIMIT 5`,
-      [key]
-    );
-    if (rows.length === 1) {
-      return { status: RESOLUTION_STATUS.RESOLVED, entityId: rows[0].id, matches: rows };
-    }
-    if (rows.length > 1) {
-      return { status: RESOLUTION_STATUS.AMBIGUOUS, entityId: null, matches: rows };
-    }
-    return { status: RESOLUTION_STATUS.UNRESOLVED, entityId: null, matches: [] };
+    // Shared with the historical backfill (scripts/resolve-malware-family-source-labels.js).
+    const r = await resolveMalwareFamilyLabelInDb(client, label);
+    return { status: r.status, entityId: r.entityId, method: r.method, matches: r.candidates };
   }
 
   return { status: RESOLUTION_STATUS.UNRESOLVED, entityId: null, matches: [] };
@@ -185,10 +167,12 @@ export async function upsertSourceAttribution(client, {
 
   let resolvedEntityId = entityId;
   let resolvedStatus = resolutionStatus;
+  let resolvedMethod = null;
   if (resolvedStatus == null || (resolvedEntityId == null && resolvedStatus === RESOLUTION_STATUS.RESOLVED)) {
     const resolution = await resolveCatalogEntity(client, entityKind, label);
     resolvedEntityId = resolution.entityId;
     resolvedStatus = resolution.status;
+    resolvedMethod = resolution.method || null;
   }
 
   const metaJson = providerMetadata == null ? '{}' : JSON.stringify(providerMetadata);
@@ -198,13 +182,15 @@ export async function upsertSourceAttribution(client, {
        source_label, source_label_normalized, entity_id, resolution_status,
        feed_key, source_name, evidence_ref_type, evidence_ref_id,
        evidence_url, evidence_title, association_kind, assertion_status,
-       observed_at, first_ingested_at, last_ingested_at, is_backfill, provider_metadata
+       observed_at, first_ingested_at, last_ingested_at, is_backfill, provider_metadata,
+       resolution_method, resolved_at
      ) VALUES (
        $1, $2, $3,
        $4, $5, $6::uuid, $7,
        $8, $9, $10, $11,
        $12, $13, $14, 'current',
-       $15, NOW(), NOW(), $16, $17::jsonb
+       $15, NOW(), NOW(), $16, $17::jsonb,
+       $18, CASE WHEN $6::uuid IS NULL THEN NULL ELSE NOW() END
      )
      ON CONFLICT (ioc_id, ioc_observable_type, entity_kind, feed_key,
                   evidence_ref_type, evidence_ref_id, source_label_normalized)
@@ -212,6 +198,12 @@ export async function upsertSourceAttribution(client, {
        source_label = EXCLUDED.source_label,
        entity_id = EXCLUDED.entity_id,
        resolution_status = EXCLUDED.resolution_status,
+       resolution_method = EXCLUDED.resolution_method,
+       resolved_at = CASE
+         WHEN ioc_source_attributions.entity_id IS NOT DISTINCT FROM EXCLUDED.entity_id
+           THEN ioc_source_attributions.resolved_at
+         ELSE EXCLUDED.resolved_at
+       END,
        source_name = EXCLUDED.source_name,
        evidence_url = EXCLUDED.evidence_url,
        evidence_title = EXCLUDED.evidence_title,
@@ -266,7 +258,8 @@ export async function upsertSourceAttribution(client, {
       associationKind,
       observedAt,
       Boolean(isBackfill),
-      metaJson
+      metaJson,
+      resolvedEntityId ? resolvedMethod : null
     ]
   );
 

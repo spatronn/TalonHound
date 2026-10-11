@@ -40,6 +40,21 @@ import {
 import { getIocStatusCardPresentation } from './lib/iocStatusCard.js';
 import { iocDetailHref } from './lib/iocDetailLink.js';
 import {
+  DISCOVERY_ORIGIN_OPTIONS,
+  DISCOVERY_STATUS_OPTIONS,
+  DISCOVERY_TYPE_OPTIONS,
+  MALWARE_FAMILY_DISCOVERY_PAGE_SIZE,
+  buildDiscoveryQueryParams,
+  buildDiscoveryUrlSearchParams,
+  discoveryAttributionLabel,
+  formatAssociatedIocCount,
+  formatDiscoveryEvidence,
+  malwareFamilyDetailHref,
+  malwareFamilySourceLabelHref,
+  parseDiscoveryUrlState,
+  reportedAsLabels
+} from './lib/malwareFamilyDiscovery.js';
+import {
   summarizeCustomThreatFeeds,
   customFeedStatePresentation,
   customFeedLastResultPresentation,
@@ -2350,7 +2365,7 @@ function AppShell({ children }) {
             <Link to="/threat-intelligence/published-feeds" className={navLinkClass(isActive('/threat-intelligence/published-feeds'))}>{NavIcons.publishedFeeds}<span>Published Feeds</span></Link>
             {isAdmin ? <Link to="/administration/ioc-sources" className={navLinkClass(isActive('/administration/ioc-sources'))}>{NavIcons.iocSources}<span>IOC Sources</span></Link> : null}
             {isAdmin ? <Link to="/administration/threat-actors" className={navLinkClass(isActive('/administration/threat-actors'))}>{NavIcons.threatActors}<span>Threat Actors</span></Link> : null}
-            {isAdmin ? <Link to="/administration/malware-families" className={navLinkClass(isActive('/administration/malware-families'))}>{NavIcons.malwareFamilies}<span>Malware Families</span></Link> : null}
+            <Link to="/administration/malware-families" className={navLinkClass(isActive('/administration/malware-families') || location.pathname.startsWith('/threat-intelligence/malware-families'))}>{NavIcons.malwareFamilies}<span>Malware Families</span></Link>
             {isAdmin ? <Link to="/administration/threat-classifications" className={navLinkClass(isActive('/administration/threat-classifications'))}>{NavIcons.classifications}<span>Threat Classifications</span></Link> : null}
             <Link to="/administration/tags" className={navLinkClass(isActive('/administration/tags'))}>{NavIcons.tags}<span>Tags</span></Link>
             <Link to="/administration/enrichment-providers" className={navLinkClass(isActive('/administration/enrichment-providers'))}>{NavIcons.enrichmentProviders}<span>Enrichment Providers</span></Link>
@@ -7974,7 +7989,15 @@ function ThreatActorBadges({ actors, max = 8 }) {
 }
 
 function MalwareFamilyBadges({ families, max = 8 }) {
-  return <AttributionEntityBadges entities={families} max={max} />;
+  return (
+    <AttributionEntityBadges
+      entities={families}
+      max={max}
+      hrefFor={(entity) => malwareFamilyDetailHref(entity.id)}
+      reportedAsFor={reportedAsLabels}
+      renderLink={({ href, children, style }) => <Link to={href} style={style}>{children}</Link>}
+    />
+  );
 }
 
 function ThreatActorMultiSelect({
@@ -8138,7 +8161,6 @@ function TagManagerPage() {
   const tagNameRef = useRef(null);
 
   const load = useCallback(async () => {
-    if (!isAdmin) return;
     const seq = ++requestSeqRef.current;
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -8178,7 +8200,7 @@ function TagManagerPage() {
     } finally {
       if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [isAdmin, page, search, showInactive]);
+  }, [page, search, showInactive]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -9233,6 +9255,349 @@ function ThreatActorManagerPage() {
   );
 }
 
+/**
+ * Source-reported labels matching the catalog search that are NOT catalog
+ * families — so an unresolved OTX label never looks like "no related IOCs".
+ */
+function MalwareFamilySourceLabelMatches({ search }) {
+  const [labels, setLabels] = useState([]);
+  useEffect(() => {
+    const q = String(search || '').trim();
+    if (q.length < 2) {
+      setLabels([]);
+      return undefined;
+    }
+    const controller = new AbortController();
+    api.get('/malware-family-source-labels', { params: { q, limit: 8 }, signal: controller.signal })
+      .then(({ data }) => setLabels(Array.isArray(data?.source_labels) ? data.source_labels : []))
+      .catch(() => {
+        if (!controller.signal.aborted) setLabels([]);
+      });
+    return () => controller.abort();
+  }, [search]);
+
+  const unresolved = labels.filter((l) => l.resolution !== 'resolved');
+  if (!unresolved.length) return null;
+  return (
+    <div className="mf-source-label-matches" style={{ marginTop: 12, padding: '10px 12px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220' }}>
+      <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+        Source-reported labels not in the catalog
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {unresolved.map((l) => (
+          <Link
+            key={l.label_key}
+            to={malwareFamilySourceLabelHref(l.label)}
+            title={`${l.current_assertions} current source assertions · ${l.resolution}`}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, color: '#e2e8f0', background: '#1e293b', border: '1px solid #475569', textDecoration: 'none', maxWidth: '100%', overflowWrap: 'anywhere' }}
+          >
+            {l.label}
+            <span style={{ color: '#94a3b8', fontWeight: 500 }}>{Number(l.ioc_rows || 0).toLocaleString('en-US')} IOCs</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const MF_DISCOVERY_PILL = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  padding: '2px 8px',
+  borderRadius: 999,
+  fontSize: 11,
+  fontWeight: 700,
+  whiteSpace: 'nowrap'
+};
+
+function MalwareFamilyAttributionPill({ item }) {
+  const palette = item.attribution === 'source_reported'
+    ? { color: '#e2e8f0', background: '#1e293b', border: '1px solid #475569' }
+    : { color: '#c7d2fe', background: '#312e81', border: '1px solid #4338ca' };
+  return <span style={{ ...MF_DISCOVERY_PILL, ...palette }}>{discoveryAttributionLabel(item)}</span>;
+}
+
+function MalwareFamilyStat({ label, value, hint }) {
+  return (
+    <div title={hint || undefined} style={{ padding: '10px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220', minWidth: 120 }}>
+      <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 700, color: '#e2e8f0', fontVariantNumeric: 'tabular-nums' }}>{Number(value || 0).toLocaleString('en-US')}</div>
+    </div>
+  );
+}
+
+/**
+ * Malware Family → associated IOCs (mode "family"), or raw source-reported
+ * label → IOCs (mode "label"). Server-side paging/filtering; never preloads.
+ */
+function MalwareFamilyIocsPage({ mode = 'family' }) {
+  const ui = PUBLISHED_FEEDS_UI;
+  const { familyId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const label = mode === 'label' ? String(searchParams.get('label') || '').trim() : '';
+  const [state, setState] = useState(() => parseDiscoveryUrlState(searchParams));
+  const [searchInput, setSearchInput] = useState(state.q);
+  const [family, setFamily] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [items, setItems] = useState([]);
+  const [pagination, setPagination] = useState({ total: 0, has_more: false });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const seqRef = useRef(0);
+
+  const update = useCallback((patch) => {
+    setState((prev) => ({ ...prev, page: 1, ...patch }));
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = searchInput.trim();
+      setState((prev) => (prev.q === next ? prev : { ...prev, q: next, page: 1 }));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setSearchParams(buildDiscoveryUrlSearchParams(state, mode === 'label' ? { label } : {}), { replace: true });
+  }, [state, label, mode]);
+
+  // Family identity + counts (once per family / lifecycle).
+  useEffect(() => {
+    if (mode !== 'family' || !familyId) return undefined;
+    const controller = new AbortController();
+    api.get(`/malware-families/${encodeURIComponent(familyId)}`, { params: { lifecycle: state.lifecycle }, signal: controller.signal })
+      .then(({ data }) => {
+        setFamily(data?.malware_family || null);
+        setSummary(data?.summary || null);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setFamily(null);
+        setError(apiErrorMessage(err, 'Failed to load malware family'));
+      });
+    return () => controller.abort();
+  }, [mode, familyId, state.lifecycle]);
+
+  useEffect(() => {
+    if (mode === 'label' && !label) {
+      setLoading(false);
+      return undefined;
+    }
+    const seq = ++seqRef.current;
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    const params = buildDiscoveryQueryParams(state);
+    const request = mode === 'label'
+      ? api.get('/malware-family-source-labels/iocs', { params: { ...params, label }, signal: controller.signal })
+      : api.get(`/malware-families/${encodeURIComponent(familyId)}/iocs`, { params: { ...params, summary: 'false' }, signal: controller.signal });
+    request
+      .then(({ data }) => {
+        if (seq !== seqRef.current) return;
+        setItems(Array.isArray(data?.items) ? data.items : []);
+        setPagination(data?.pagination || { total: 0, has_more: false });
+        if (mode === 'label') setSummary(data?.summary || null);
+      })
+      .catch((err) => {
+        if (controller.signal.aborted || seq !== seqRef.current) return;
+        setItems([]);
+        setPagination({ total: 0, has_more: false });
+        setError(apiErrorMessage(err, 'Failed to load associated IOCs'));
+      })
+      .finally(() => {
+        if (seq === seqRef.current) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [mode, familyId, label, state]);
+
+  const title = mode === 'label' ? (label || 'Source label') : (family?.name || 'Malware Family');
+  const reference = family?.references?.[0] || null;
+  const total = Number(pagination?.total || 0);
+  const pageSize = MALWARE_FAMILY_DISCOVERY_PAGE_SIZE;
+  const from = total ? (state.page - 1) * pageSize + 1 : 0;
+  const to = Math.min(state.page * pageSize, total);
+  const byType = summary?.by_type ? Object.entries(summary.by_type) : [];
+  const filtersActive = state.origin !== 'all' || state.type || state.status !== 'all' || state.q;
+
+  return (
+    <AppShell>
+      <section style={ui.section} className="mf-discovery-page">
+        <div style={{ fontSize: 13, marginBottom: 8 }}>
+          <Link to="/administration/malware-families" style={{ color: '#93c5fd', textDecoration: 'none' }}>← Malware Families</Link>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 10 }}>
+          <h1 style={{ ...ui.pageTitle, overflowWrap: 'anywhere' }}>{title}</h1>
+          {mode === 'label' ? (
+            <span style={{ ...MF_DISCOVERY_PILL, color: '#fcd34d', background: 'rgba(120,53,15,0.25)', border: '1px solid #854d0e' }}>
+              Source-reported label · not a catalog family
+            </span>
+          ) : null}
+          {family && family.active === false ? (
+            <span style={{ ...MF_DISCOVERY_PILL, color: '#94a3b8', background: '#1e293b', border: '1px solid #475569' }}>Inactive</span>
+          ) : null}
+        </div>
+        {mode === 'family' && family ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6, fontSize: 13, color: '#94a3b8' }}>
+            {reference ? (
+              <div>
+                {reference.url
+                  ? <a href={reference.url} target="_blank" rel="noopener noreferrer" style={{ color: '#94a3b8' }}>{`${reference.source_name} · ${reference.external_id}`}</a>
+                  : `${reference.source_name} · ${reference.external_id}`}
+              </div>
+            ) : null}
+            {family.aliases?.length ? <div style={{ overflowWrap: 'anywhere' }}>Aliases: {family.aliases.join(', ')}</div> : null}
+          </div>
+        ) : null}
+        {mode === 'label' ? (
+          <div style={{ marginTop: 6, fontSize: 13, color: '#94a3b8', maxWidth: 760 }}>
+            IOCs whose source intelligence reports this malware family label. It does not match a catalog family, so these are source-reported only.
+          </div>
+        ) : null}
+
+        {summary ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 16 }}>
+            <MalwareFamilyStat label="Unique IOCs" value={summary.all_unique} hint="Analyst associations plus current source-reported assertions, deduplicated by IOC" />
+            {mode === 'family' ? <MalwareFamilyStat label="Analyst" value={summary.analyst_unique} hint="Unique IOCs with an analyst-managed association (may overlap with source-reported)" /> : null}
+            <MalwareFamilyStat label="Source-reported" value={summary.source_unique} hint="Unique IOCs with a current source assertion (may overlap with analyst)" />
+            <MalwareFamilyStat label="OTX Pulses" value={summary.otx_pulses} hint="Distinct AlienVault OTX Pulses supporting the source-reported associations" />
+            {byType.length ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, padding: '10px 14px', border: '1px solid #334155', borderRadius: 10, background: '#0b1220' }}>
+                {byType.map(([t, n]) => (
+                  <span key={t} style={{ ...MF_DISCOVERY_PILL, color: '#cbd5e1', background: '#1e293b', border: '1px solid #334155' }}>{t} {Number(n).toLocaleString('en-US')}</span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="mf-discovery-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 16 }}>
+          {mode === 'family' ? (
+            <div role="group" aria-label="Association origin" style={{ display: 'inline-flex', border: '1px solid #334155', borderRadius: 8, overflow: 'hidden' }}>
+              {DISCOVERY_ORIGIN_OPTIONS.map((o) => (
+                <button
+                  key={o.value}
+                  type="button"
+                  aria-pressed={state.origin === o.value}
+                  onClick={() => update({ origin: o.value })}
+                  style={{ ...ui.btnCompact, border: 'none', borderRadius: 0, background: state.origin === o.value ? '#1d4ed8' : 'transparent', color: state.origin === o.value ? '#fff' : '#cbd5e1' }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <select aria-label="IOC type" value={state.type} onChange={(e) => update({ type: e.target.value })} style={{ ...ui.input, width: 'auto' }}>
+            {DISCOVERY_TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <select aria-label="IOC status" value={state.status} onChange={(e) => update({ status: e.target.value })} style={{ ...ui.input, width: 'auto' }}>
+            {DISCOVERY_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <label style={ui.checkLabel} title="Withdrawn or stale source assertions only (never mixed into current results)">
+            <input
+              type="checkbox"
+              checked={state.lifecycle === 'historical'}
+              onChange={(e) => update({ lifecycle: e.target.checked ? 'historical' : 'current', origin: e.target.checked ? 'source' : state.origin })}
+            />
+            Historical evidence
+          </label>
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Filter IOC value…"
+            aria-label="Filter IOC value"
+            style={{ ...ui.input, flex: '1 1 200px', maxWidth: 320 }}
+          />
+        </div>
+
+        {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
+
+        <div className="mf-discovery-table-wrap" style={{ marginTop: 12, overflowX: 'auto' }}>
+          <table className="ioc-table mf-discovery-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={ui.th}>IOC</th>
+                <th style={ui.th}>Type</th>
+                <th style={ui.th}>Status</th>
+                <th className="mf-discovery-col-secondary" style={ui.th}>Confidence</th>
+                <th className="mf-discovery-col-secondary" style={ui.th}>Source</th>
+                <th style={ui.th}>Attribution</th>
+                <th className="mf-discovery-col-secondary" style={ui.th}>Evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading && !items.length ? (
+                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
+              ) : !items.length ? (
+                <tr><td colSpan={7} style={{ ...ui.td, padding: 0 }}>
+                  <EmptyState
+                    title={filtersActive ? 'No matching IOCs' : 'No associated IOCs'}
+                    description={filtersActive
+                      ? 'Try different filters.'
+                      : (mode === 'family'
+                        ? 'No analyst association or current source-reported assertion links an IOC to this family.'
+                        : 'No source assertion uses this label.')}
+                  />
+                </td></tr>
+              ) : items.map((item) => {
+                const row = item.ioc || {};
+                const status = String(row.lifecycle_status || item.status || 'active').toLowerCase();
+                const confidence = row.confidence_effective || item.confidence || null;
+                const sourceLabel = row.display_source || (item.source_names && item.source_names[0]) || '—';
+                const sourceExtra = Number(row.display_source_extra || 0);
+                const ev = formatDiscoveryEvidence(item, mode === 'family' ? family?.name : null);
+                const firstEvidence = item.evidence?.[0] || null;
+                return (
+                  <tr key={`${item.type}|${item.value}`}>
+                    <td style={{ ...ui.td, whiteSpace: 'normal', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.35 }}>
+                      <IocLink publicId={item.public_id}>{item.value}</IocLink>
+                    </td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{item.type}</td>
+                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>{iocStatusBadge(status)}</td>
+                    <td className="mf-discovery-col-secondary" style={ui.td}>
+                      {confidence ? <span style={confidenceBadgeStyle(confidence)}>{confidence}</span> : '—'}
+                    </td>
+                    <td className="mf-discovery-col-secondary" style={{ ...ui.td, overflowWrap: 'anywhere' }}>
+                      {sourceLabel}{sourceExtra > 0 ? <span style={{ color: '#94a3b8' }}> +{sourceExtra}</span> : null}
+                    </td>
+                    <td style={ui.td}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                        <MalwareFamilyAttributionPill item={item} />
+                        {ev.kinds.length ? <span style={{ fontSize: 11, color: '#94a3b8' }}>{ev.kinds.join(', ')}</span> : null}
+                      </div>
+                    </td>
+                    <td className="mf-discovery-col-secondary" style={{ ...ui.td, fontSize: 12, color: '#94a3b8', overflowWrap: 'anywhere', lineHeight: 1.4 }}>
+                      {ev.reportedAs.length ? <div>Reported as: <span style={{ color: '#e2e8f0' }}>{ev.reportedAs.join(', ')}</span></div> : null}
+                      {ev.referenceLabel ? <div>{ev.referenceLabel}</div> : null}
+                      {firstEvidence?.evidence_title ? (
+                        <div>
+                          {firstEvidence.evidence_url
+                            ? <a href={firstEvidence.evidence_url} target="_blank" rel="noopener noreferrer" style={{ color: '#93c5fd' }}>{firstEvidence.evidence_title}</a>
+                            : firstEvidence.evidence_title}
+                        </div>
+                      ) : null}
+                      {!ev.reportedAs.length && !ev.referenceLabel && !firstEvidence ? '—' : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {total > 0 ? (
+          <div style={{ marginTop: 14, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: 13 }}>
+            <div>{`Showing ${from}–${to} of ${total.toLocaleString('en-US')} unique IOCs`}{loading ? ' · Updating…' : ''}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={ui.btnCompact} disabled={state.page <= 1 || loading} onClick={() => setState((p) => ({ ...p, page: Math.max(1, p.page - 1) }))}>Previous</button>
+              <button type="button" style={ui.btnCompact} disabled={!pagination?.has_more || loading} onClick={() => setState((p) => ({ ...p, page: p.page + 1 }))}>Next</button>
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </AppShell>
+  );
+}
+
 function MalwareFamilyManagerPage() {
   const { isAdmin } = useSession();
   const requestConfirm = useAppConfirm();
@@ -9412,17 +9777,6 @@ function MalwareFamilyManagerPage() {
     }
   }
 
-  if (!isAdmin) {
-    return (
-      <AppShell>
-        <section style={ui.section}>
-          <h1 style={ui.pageTitle}>Malware Families</h1>
-          <p style={ui.pageSub}>Admin access required.</p>
-        </section>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
       <section style={ui.section} className={MALWARE_FAMILY_PAGE_CLASS}>
@@ -9442,7 +9796,7 @@ function MalwareFamilyManagerPage() {
               />
               Show inactive
             </label>
-            <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Malware Family</button>
+            {isAdmin ? <button type="button" style={ui.btnPrimary} onClick={openCreateModal}>Add Malware Family</button> : null}
           </div>
         </div>
 
@@ -9455,6 +9809,7 @@ function MalwareFamilyManagerPage() {
             aria-label="Search malware families"
           />
         </div>
+        <MalwareFamilySourceLabelMatches search={search} />
 
         {error ? <div style={{ ...ui.banner, marginTop: 12, borderColor: '#991b1b', color: '#fca5a5' }}>{error}</div> : null}
 
@@ -9465,6 +9820,7 @@ function MalwareFamilyManagerPage() {
                 <th className="mf-col-name" style={ui.th}>Name</th>
                 <th className="mf-col-aliases" style={ui.th}>Aliases</th>
                 <th className="mf-col-description" style={ui.th}>Description</th>
+                <th className="mf-col-iocs" style={ui.th} title="Unique IOCs: analyst associations plus current source-reported assertions (deduplicated)">IOCs</th>
                 <th className="mf-col-active" style={ui.th}>Active</th>
                 <th className="mf-col-created" style={ui.th}>Created At</th>
                 <th className="mf-col-actions" style={ui.th}>Actions</th>
@@ -9472,9 +9828,9 @@ function MalwareFamilyManagerPage() {
             </thead>
             <tbody>
               {loading && !families.length ? (
-                <tr><td colSpan={6} style={ui.td}>Loading…</td></tr>
+                <tr><td colSpan={7} style={ui.td}>Loading…</td></tr>
               ) : !families.length ? (
-                <tr><td colSpan={6} style={{ ...ui.td, padding: 0 }}>
+                <tr><td colSpan={7} style={{ ...ui.td, padding: 0 }}>
                   <EmptyState
                     title={search ? 'No matching malware families' : 'No malware families yet'}
                     description={search ? 'Try a different search term.' : 'Add a malware family to link them to IOCs.'}
@@ -9490,7 +9846,9 @@ function MalwareFamilyManagerPage() {
                 return (
                 <tr key={family.id} className="malware-families-row" style={{ opacity: family.active ? 1 : 0.62 }}>
                   <td className="mf-col-name" style={ui.td}>
-                    <div style={{ fontWeight: 600 }}>{family.name}</div>
+                    <div style={{ fontWeight: 600 }}>
+                      <Link to={malwareFamilyDetailHref(family.id)} style={{ color: '#e2e8f0', textDecoration: 'none' }}>{family.name}</Link>
+                    </div>
                     {referenceLine ? (
                       <div className="mf-reference" style={{ fontSize: 11, color: '#64748b' }} title={referenceLine.title || undefined}>
                         {referenceLine.url ? (
@@ -9532,16 +9890,32 @@ function MalwareFamilyManagerPage() {
                       </span>
                     )}
                   </td>
+                  <td className="mf-col-iocs" style={ui.td}>
+                    {Number(family.associated_iocs?.all_unique) > 0 ? (
+                      <Link
+                        to={malwareFamilyDetailHref(family.id)}
+                        title={`${family.associated_iocs.analyst_unique} analyst · ${family.associated_iocs.source_unique} source-reported (unique IOCs; may overlap)`}
+                        style={{ color: '#93c5fd', fontWeight: 600, textDecoration: 'none' }}
+                      >
+                        {formatAssociatedIocCount(family.associated_iocs)}
+                      </Link>
+                    ) : <span style={{ color: '#64748b' }}>0</span>}
+                  </td>
                   <td className="mf-col-active" style={ui.td}>{family.active ? 'Yes' : 'No'}</td>
                   <td className="mf-col-created" style={ui.td}>{formatUserDateTime(family.created_at)}</td>
                   <td className="mf-col-actions" style={ui.td}>
                     <div className="mf-action-buttons">
-                      <button type="button" style={ui.btnCompact} onClick={() => openEditModal(family)}>Edit</button>
-                      {family.active ? (
-                        <button type="button" style={ui.btnCompact} onClick={() => disableFamily(family).catch(() => {})}>Disable</button>
-                      ) : (
-                        <button type="button" style={ui.btnCompact} onClick={() => enableFamily(family).catch(() => {})}>Enable</button>
-                      )}
+                      <Link to={malwareFamilyDetailHref(family.id)} style={{ ...ui.btnCompact, textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>View IOCs</Link>
+                      {isAdmin ? (
+                        <>
+                          <button type="button" style={ui.btnCompact} onClick={() => openEditModal(family)}>Edit</button>
+                          {family.active ? (
+                            <button type="button" style={ui.btnCompact} onClick={() => disableFamily(family).catch(() => {})}>Disable</button>
+                          ) : (
+                            <button type="button" style={ui.btnCompact} onClick={() => enableFamily(family).catch(() => {})}>Enable</button>
+                          )}
+                        </>
+                      ) : null}
                     </div>
                   </td>
                 </tr>
@@ -19413,6 +19787,13 @@ function App() {
         .malware-families-page .malware-families-table .mf-col-name { width: 16%; min-width: 140px; }
         .malware-families-page .malware-families-table .mf-col-aliases { width: 20%; min-width: 160px; }
         .malware-families-page .malware-families-table .mf-col-description { width: auto; }
+        .malware-families-page .malware-families-table .mf-col-iocs { width: 76px; text-align: right; }
+        .mf-discovery-page .mf-discovery-table { min-width: 640px; }
+        .mf-discovery-page .mf-discovery-table tbody tr:hover { background: rgba(30,41,59,0.45); }
+        @media (max-width: 760px) {
+          .mf-discovery-page .mf-discovery-col-secondary { display: none; }
+          .mf-discovery-page .mf-discovery-table { min-width: 0; }
+        }
         .malware-families-page .malware-families-table .mf-col-active { width: 72px; }
         .malware-families-page .malware-families-table .mf-col-created { width: 160px; }
         .malware-families-page .malware-families-table .mf-col-actions { width: 150px; }
@@ -19832,6 +20213,8 @@ function App() {
           <Route path="/administration/threat-classifications" element={<Protected><ThreatClassificationManagerPage /></Protected>} />
           <Route path="/administration/threat-actors" element={<Protected><ThreatActorManagerPage /></Protected>} />
           <Route path="/administration/malware-families" element={<Protected><MalwareFamilyManagerPage /></Protected>} />
+          <Route path="/threat-intelligence/malware-families/source-label" element={<Protected><MalwareFamilyIocsPage mode="label" /></Protected>} />
+          <Route path="/threat-intelligence/malware-families/:familyId" element={<Protected><MalwareFamilyIocsPage mode="family" /></Protected>} />
           <Route path="/administration/ioc-sources" element={<Protected><IocSourcesPage /></Protected>} />
           <Route path="/administration/api-keys" element={<Protected><ApiKeysPage /></Protected>} />
           <Route path="/administration/enrichment-providers" element={<Protected><EnrichmentProvidersPage /></Protected>} />

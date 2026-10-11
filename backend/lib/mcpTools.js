@@ -17,7 +17,7 @@ import {
 import { getMcpConfig } from './mcpConfig.js';
 import { mcpListEnrichmentProviders, mcpEnrichIocs, mcpGetEnrichmentJob } from './mcpEnrichmentService.js';
 import { mcpListTags, mcpAddIocTags, mcpRemoveIocTags } from './mcpTagService.js';
-import { mcpListMalwareFamilies } from './mcpMalwareFamilyService.js';
+import { mcpListIocsByMalwareFamily, mcpListMalwareFamilies } from './mcpMalwareFamilyService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from './auditConstants.js';
 
 function toolText(obj) {
@@ -447,6 +447,44 @@ export function registerMcpTools(server, deps) {
     async (args) => {
       const ctx = ctxFrom();
       return withAuth('list_malware_families', ctx, () => mcpListMalwareFamilies(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'list_iocs_by_malware_family',
+    {
+      title: 'List IOCs by malware family',
+      description:
+        'Malware Family → IOC discovery: the unique IOCs TalonHound associates with one malware family, e.g. "which IOCs are associated with SpyEye?" or '
+        + '"Cobalt Strike-related IPs and domains reported by OTX". Identify the family with exactly one of: `malware_family_id` (catalog uuid, preferred — from list_malware_families), '
+        + '`malware_family` (exact canonical name, slug or alias — e.g. "Geodo" resolves to Emotet; ambiguous names are rejected with candidates, never fuzzy-matched), '
+        + 'or `source_label` (a raw source-reported label that is NOT in the catalog, e.g. an OTX Pulse malware_families value; if a name is not a catalog family but such a label exists, the error says so). '
+        + 'Associations combine analyst-managed links and CURRENT source-reported assertions (AlienVault OTX Pulse metadata). `attribution_origin` = all (default) | analyst | source; '
+        + '`association` = all | pulse_context (IOC belongs to a Pulse whose metadata names the family — context, NOT proof of a sample) | direct; '
+        + '`lifecycle` = current (default) | historical (withdrawn/stale source assertions only, never mixed into current). '
+        + '`observable_type` filters (ip, ipv6, domain, url, hash = md5/sha1/sha256, or a specific hash type). `status` = all (default) | active | expired | suppressed | disabled. '
+        + 'Results are deduplicated by IOC (type+value): one IOC in many Pulses counts once (`source_assertions` / `source_references` give the evidence volume). '
+        + '`summary` has all_unique / analyst_unique / source_unique (overlapping), pulse_context_unique, direct_unique, otx_pulses, by_type. '
+        + 'Each IOC item: id, public_id, value, type, status, confidence, last_seen_at, attribution (analyst | source_reported | mixed), association_kinds, reported_labels (as the source wrote them), source_names, evidence (≤3 assertions: pulse id/title/url). '
+        + 'Bounded: limit ≤ 100 (default 25), page with offset / next_offset. Read-only: never changes associations or the catalog and never triggers enrichment; use get_ioc_context for full IOC detail. Requires an analyst/admin owner.',
+      inputSchema: {
+        malware_family_id: z.string().max(64).optional().describe('Catalog malware family uuid (preferred)'),
+        malware_family: z.string().max(128).optional().describe('Exact canonical name, slug or alias (no fuzzy matching)'),
+        source_label: z.string().max(128).optional().describe('Raw source-reported malware family label (for labels not in the catalog)'),
+        observable_type: z.union([z.string().max(64), z.array(z.string().max(16)).max(10)]).optional()
+          .describe('ip | ipv6 | domain | url | hash | md5 | sha1 | sha256 (comma list or array)'),
+        attribution_origin: z.enum(['all', 'analyst', 'source']).optional(),
+        association: z.enum(['all', 'pulse_context', 'direct']).optional(),
+        lifecycle: z.enum(['current', 'historical']).optional(),
+        status: z.enum(['all', 'active', 'expired', 'suppressed', 'disabled']).optional(),
+        limit: z.number().int().min(1).max(100).optional(),
+        offset: z.number().int().min(0).max(10000).optional()
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('list_iocs_by_malware_family', ctx, () => mcpListIocsByMalwareFamily(deps.pool, args));
     }
   );
 
