@@ -125,22 +125,32 @@ async function resolvePulseMetadata(client, ctx, { apiKey, dryRun, fetchCache, s
   const snap = await loadPulseSnapshot(client, ctx.pulseId);
   if (snap) {
     stats.snapshotHits += 1;
-    return {
-      pulseId: snap.pulse_id,
-      pulseName: snap.pulse_name || ctx.pulseName,
-      pulseUrl: snap.pulse_url || ctx.pulseUrl,
-      adversary: normalizeOtxAdversary(snap.adversary || ctx.adversary),
-      malwareFamilies: normalizeOtxMalwareFamilies(
-        (snap.malware_families && snap.malware_families.length)
-          ? snap.malware_families
-          : ctx.malwareFamilies
-      ),
-      observedAt: snap.pulse_modified || snap.pulse_created || null,
-      fromSnapshot: true
-    };
+    const adversary = normalizeOtxAdversary(snap.adversary || ctx.adversary);
+    const malwareFamilies = normalizeOtxMalwareFamilies(
+      (snap.malware_families && snap.malware_families.length)
+        ? snap.malware_families
+        : ctx.malwareFamilies
+    );
+    // Snapshot without families but note also empty → still try API once if allowed.
+    if (malwareFamilies.length || !apiKey || dryRun) {
+      return {
+        pulseId: snap.pulse_id,
+        pulseName: snap.pulse_name || ctx.pulseName,
+        pulseUrl: snap.pulse_url || ctx.pulseUrl,
+        adversary,
+        malwareFamilies,
+        observedAt: snap.pulse_modified || snap.pulse_created || null,
+        fromSnapshot: true
+      };
+    }
   }
 
-  if (ctx.adversary.length || ctx.malwareFamilies.length) {
+  // Historical notes usually lack malware_families. Prefer a complete pulse fetch
+  // whenever families are missing, even if adversary was already parsed from the note.
+  const needsFamilyFetch = !(ctx.malwareFamilies?.length);
+  const hasNoteAttribution = Boolean(ctx.adversary.length || ctx.malwareFamilies.length);
+
+  if (!needsFamilyFetch && hasNoteAttribution) {
     stats.noteHits += 1;
     return {
       pulseId: ctx.pulseId,
@@ -154,7 +164,12 @@ async function resolvePulseMetadata(client, ctx, { apiKey, dryRun, fetchCache, s
   }
 
   if (fetchCache.has(ctx.pulseId)) {
-    return fetchCache.get(ctx.pulseId);
+    const cached = fetchCache.get(ctx.pulseId);
+    // Merge note adversary if API/cache omitted it.
+    if (!cached.adversary?.length && ctx.adversary.length) {
+      return { ...cached, adversary: ctx.adversary };
+    }
+    return cached;
   }
 
   if (dryRun) {
@@ -163,12 +178,16 @@ async function resolvePulseMetadata(client, ctx, { apiKey, dryRun, fetchCache, s
       pulseId: ctx.pulseId,
       pulseName: ctx.pulseName,
       pulseUrl: ctx.pulseUrl,
-      adversary: [],
-      malwareFamilies: [],
+      adversary: ctx.adversary,
+      malwareFamilies: ctx.malwareFamilies,
       observedAt: null,
-      unresolved: true
+      unresolved: !hasNoteAttribution
     };
     fetchCache.set(ctx.pulseId, placeholder);
+    if (hasNoteAttribution) {
+      stats.noteHits += 1;
+      stats.iocsWouldEnrichFamilies = (stats.iocsWouldEnrichFamilies || 0) + 1;
+    }
     return placeholder;
   }
 
@@ -178,10 +197,10 @@ async function resolvePulseMetadata(client, ctx, { apiKey, dryRun, fetchCache, s
       pulseId: ctx.pulseId,
       pulseName: ctx.pulseName,
       pulseUrl: ctx.pulseUrl,
-      adversary: [],
-      malwareFamilies: [],
+      adversary: ctx.adversary,
+      malwareFamilies: ctx.malwareFamilies,
       observedAt: null,
-      unresolved: true
+      unresolved: !hasNoteAttribution
     };
     fetchCache.set(ctx.pulseId, unresolved);
     return unresolved;
@@ -194,7 +213,7 @@ async function resolvePulseMetadata(client, ctx, { apiKey, dryRun, fetchCache, s
       pulseId: String(pulse?.id || ctx.pulseId),
       pulseName: String(pulse?.name || ctx.pulseName || '').trim() || null,
       pulseUrl: buildOtxPulseReferenceUrl(pulse?.id || ctx.pulseId),
-      adversary: normalizeOtxAdversary(pulse?.adversary),
+      adversary: normalizeOtxAdversary(pulse?.adversary?.length ? pulse.adversary : ctx.adversary),
       malwareFamilies: normalizeOtxMalwareFamilies(pulse?.malware_families),
       observedAt: parseOtxTimestamp(pulse?.modified) || parseOtxTimestamp(pulse?.created),
       fromApi: true
@@ -225,7 +244,7 @@ async function resolvePulseMetadata(client, ctx, { apiKey, dryRun, fetchCache, s
       adversary: ctx.adversary,
       malwareFamilies: ctx.malwareFamilies,
       observedAt: null,
-      unresolved: true
+      unresolved: !hasNoteAttribution
     };
     fetchCache.set(ctx.pulseId, unresolved);
     return unresolved;
