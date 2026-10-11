@@ -8161,6 +8161,7 @@ function TagManagerPage() {
   const tagNameRef = useRef(null);
 
   const load = useCallback(async () => {
+    if (!isAdmin) return;
     const seq = ++requestSeqRef.current;
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -8200,7 +8201,7 @@ function TagManagerPage() {
     } finally {
       if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [page, search, showInactive]);
+  }, [isAdmin, page, search, showInactive]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -9629,8 +9630,8 @@ function MalwareFamilyManagerPage() {
   const abortRef = useRef(null);
   const familyNameRef = useRef(null);
 
+  // Catalog is readable by every role (discovery entry point); writes stay admin-only.
   const load = useCallback(async () => {
-    if (!isAdmin) return;
     const seq = ++requestSeqRef.current;
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -9670,7 +9671,7 @@ function MalwareFamilyManagerPage() {
     } finally {
       if (seq === requestSeqRef.current) setLoading(false);
     }
-  }, [isAdmin, page, search, showInactive]);
+  }, [page, search, showInactive]);
 
   useEffect(() => {
     load().catch(() => {});
