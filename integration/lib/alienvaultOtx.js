@@ -157,6 +157,40 @@ export function normalizeOtxTags(raw) {
   return v.split(',').map((t) => t.trim()).filter(Boolean);
 }
 
+const MAX_OTX_LABEL_LENGTH = 128;
+const MAX_OTX_LABELS = 32;
+
+/** Normalize OTX adversary / malware_families labels (string, array, or objects). */
+export function normalizeOtxStructuredLabels(raw) {
+  if (raw == null) return [];
+  const items = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  const seen = new Set();
+  for (const item of items) {
+    let candidate = item;
+    if (typeof item === 'object' && item != null) {
+      candidate = item.name ?? item.value ?? item.adversary ?? item.malware_family ?? null;
+    }
+    let label = String(candidate ?? '').trim().replace(/\s+/g, ' ');
+    if (!label) continue;
+    if (label.length > MAX_OTX_LABEL_LENGTH) label = label.slice(0, MAX_OTX_LABEL_LENGTH);
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+    if (out.length >= MAX_OTX_LABELS) break;
+  }
+  return out;
+}
+
+export function normalizeOtxMalwareFamilies(raw) {
+  return normalizeOtxStructuredLabels(raw);
+}
+
+export function normalizeOtxAdversary(raw) {
+  return normalizeOtxStructuredLabels(raw);
+}
+
 export function parseOtxTimestamp(value) {
   let raw = String(value ?? '').trim();
   if (!raw) return null;
@@ -194,6 +228,10 @@ export function mapOtxPulseIndicator(pulse, indicator) {
 
   const pulseId = String(pulse?.id || '').trim() || null;
   const tags = normalizeOtxTags(pulse?.tags);
+  const adversaries = normalizeOtxAdversary(pulse?.adversary);
+  const malwareFamilies = normalizeOtxMalwareFamilies(
+    pulse?.malware_families ?? pulse?.malware_family ?? pulse?.malwareFamilies
+  );
   const pulseModified = parseOtxTimestamp(pulse?.modified);
   const pulseCreated = parseOtxTimestamp(pulse?.created);
   const indicatorCreated = parseOtxTimestamp(indicator?.created);
@@ -206,7 +244,10 @@ export function mapOtxPulseIndicator(pulse, indicator) {
       pulseName: String(pulse?.name || '').trim() || null,
       pulseAuthor: String(pulse?.author_name || '').trim() || null,
       pulseTlp: String(pulse?.tlp || '').trim() || null,
-      pulseAdversary: String(pulse?.adversary || '').trim() || null,
+      // Primary adversary string for note compatibility; full list in pulseAdversaries.
+      pulseAdversary: adversaries[0] || null,
+      pulseAdversaries: adversaries,
+      pulseMalwareFamilies: malwareFamilies,
       pulseTags: tags,
       pulseCreated,
       pulseModified,
@@ -222,12 +263,17 @@ export function mapOtxPulseIndicator(pulse, indicator) {
 
 /** Note string (pipe key=value) consumed by extractObservablesFromNote + evidence. */
 export function buildOtxNote(entry) {
+  const adversaries = entry.pulseAdversaries?.length
+    ? entry.pulseAdversaries
+    : (entry.pulseAdversary ? [entry.pulseAdversary] : []);
+  const families = entry.pulseMalwareFamilies || [];
   const parts = [
     'Auto-imported from AlienVault OTX (subscribed pulses)',
     entry.pulseId ? `pulse_id=${entry.pulseId}` : null,
     entry.pulseName ? `pulse_name=${entry.pulseName}` : null,
     entry.pulseAuthor ? `pulse_author=${entry.pulseAuthor}` : null,
-    entry.pulseAdversary ? `adversary=${entry.pulseAdversary}` : null,
+    adversaries[0] ? `adversary=${adversaries[0]}` : null,
+    families.length ? `malware_families=${families.join(',')}` : null,
     entry.pulseTlp ? `tlp=${entry.pulseTlp}` : null,
     entry.pulseTags?.length ? `tags=${entry.pulseTags.join(',')}` : null,
     entry.indicatorId ? `indicator_id=${entry.indicatorId}` : null,
@@ -239,6 +285,9 @@ export function buildOtxNote(entry) {
 
 /** Structured source-evidence metadata for the OTX pulse context. */
 export function buildOtxEvidenceMetadata(entry) {
+  const adversaries = entry.pulseAdversaries?.length
+    ? entry.pulseAdversaries
+    : (entry.pulseAdversary ? [entry.pulseAdversary] : []);
   return {
     provider: 'alienvault_otx',
     pulse_id: entry.pulseId,
@@ -248,6 +297,9 @@ export function buildOtxEvidenceMetadata(entry) {
     pulse_created: entry.pulseCreated ? entry.pulseCreated.toISOString() : null,
     pulse_tags: entry.pulseTags || [],
     pulse_tlp: entry.pulseTlp,
+    adversary: adversaries[0] || null,
+    adversaries,
+    malware_families: entry.pulseMalwareFamilies || [],
     indicator_type: entry.observableType,
     indicator_created: entry.indicatorCreated ? entry.indicatorCreated.toISOString() : null,
     otx_reference: entry.referenceUrl
@@ -266,6 +318,8 @@ export function buildOtxEvidenceMetadata(entry) {
  */
 export function collectOtxEntries(pulses) {
   const byKey = new Map();
+  /** Every supported (observable, pulse) association — preserves multi-pulse provenance. */
+  const associations = [];
   const unsupportedBreakdown = {};
   let fetchedIndicators = 0;
   let unsupportedIndicators = 0;
@@ -291,6 +345,21 @@ export function collectOtxEntries(pulses) {
         continue;
       }
       const entry = mapped.entry;
+      associations.push({
+        observable: entry.observable,
+        observableType: entry.observableType,
+        pulseId: entry.pulseId,
+        pulseName: entry.pulseName,
+        pulseAdversary: entry.pulseAdversary,
+        pulseAdversaries: entry.pulseAdversaries || [],
+        pulseMalwareFamilies: entry.pulseMalwareFamilies || [],
+        pulseModified: entry.pulseModified,
+        pulseCreated: entry.pulseCreated,
+        pulseAuthor: entry.pulseAuthor,
+        pulseTlp: entry.pulseTlp,
+        pulseTags: entry.pulseTags || [],
+        referenceUrl: entry.referenceUrl
+      });
       const key = `${entry.observableType}|${entry.observable}`;
       const prev = byKey.get(key);
       if (!prev) {
@@ -311,10 +380,70 @@ export function collectOtxEntries(pulses) {
 
   return {
     entries: [...byKey.values()],
+    associations,
     fetchedIndicators,
     unsupportedIndicators,
     unsupportedBreakdown
   };
+}
+
+/**
+ * Fetch a single pulse by id (structured metadata + indicators).
+ * GET /api/v1/pulses/{id}
+ */
+export async function fetchOtxPulseById({
+  apiKey,
+  pulseId,
+  apiBase = ALIENVAULT_OTX_API_BASE_DEFAULT,
+  signal,
+  fetchFn = fetch
+}) {
+  const key = String(apiKey || '').trim();
+  if (!key) throw new Error(ALIENVAULT_OTX_AUTH_REQUIRED_MSG);
+  const id = String(pulseId || '').trim();
+  if (!id) throw new Error('OTX pulse id is required');
+
+  const base = normalizeOtxApiBase(apiBase);
+  const requestUrl = `${base}/api/v1/pulses/${encodeURIComponent(id)}`;
+  const res = await fetchFn(requestUrl, {
+    method: 'GET',
+    headers: {
+      [OTX_API_KEY_HEADER]: key,
+      Accept: 'application/json'
+    },
+    signal
+  });
+
+  if (res.status === 401 || res.status === 403) {
+    const err = new Error(`AlienVault OTX API authentication failed (HTTP ${res.status})`);
+    err.statusCode = res.status;
+    throw err;
+  }
+  if (res.status === 404) {
+    const err = new Error(`AlienVault OTX pulse not found: ${id}`);
+    err.statusCode = 404;
+    throw err;
+  }
+  if (res.status === 429) {
+    const err = new Error('AlienVault OTX API rate limit exceeded (HTTP 429)');
+    err.statusCode = 429;
+    err.retryAfter = res.headers?.get?.('retry-after') || null;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(`AlienVault OTX API request failed (HTTP ${res.status})`);
+    err.statusCode = res.status;
+    throw err;
+  }
+
+  const text = await res.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`AlienVault OTX API returned invalid JSON (HTTP ${res.status})`);
+  }
+  return json;
 }
 
 export function buildOtxSubscribedUrl({ apiBase, modifiedSince, page, limit } = {}) {

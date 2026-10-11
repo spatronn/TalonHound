@@ -45,6 +45,12 @@ Fresh installations apply the public forward migrations present in the repositor
 034_threat_report_mitre_mappings.sql
 035_ioc_feed_evidence_classification_index.sql
 036_threat_library_job_modes.sql
+037_enrichment_jobs.sql
+038_mcp_enrichment_access_profile.sql
+039_mcp_analyst_enrichment_scope.sql
+040_mcp_tags_write_scope.sql
+041_threat_report_ioc_sources.sql
+042_ioc_source_attributions.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.

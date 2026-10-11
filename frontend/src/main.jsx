@@ -258,7 +258,12 @@ import { IocHeader } from './components/iocDetails/IocHeader.jsx';
 import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
 import { ActiveSourcesTable, IocSummaryStrip } from './components/iocDetails/ActiveSourcesTable.jsx';
 import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx';
-import { IocMetadataCards } from './components/iocDetails/IocMetadataCards.jsx';
+import { IocMetadataCards, AttributionEntityBadges } from './components/iocDetails/IocMetadataCards.jsx';
+import {
+  getAnalystThreatActorIdsFromSummary,
+  getAnalystMalwareFamilyIdsFromSummary,
+  getMalwareFamiliesFromSummary
+} from './lib/iocAttributionSummary.js';
 import talonHoundLogo from './assets/talonhound-logo.png';
 import { formatSidebarRoleLabel, userInitialsFromEmail } from './lib/sidebarAccount.js';
 import {
@@ -7908,7 +7913,7 @@ function ThreatClassificationMultiSelect({
 
 function getThreatActorsFromSummary(summary) {
   if (Array.isArray(summary?.threat_actors) && summary.threat_actors.length) {
-    return summary.threat_actors.filter((a) => a?.id);
+    return summary.threat_actors.filter((a) => a?.id || a?.name);
   }
   if (Array.isArray(summary?.threat_actor_ids) && summary.threat_actor_ids.length) {
     return summary.threat_actor_ids.map((id) => ({
@@ -7922,33 +7927,12 @@ function getThreatActorsFromSummary(summary) {
   return [];
 }
 
-function ThreatActorBadges({ actors, max = 5 }) {
-  const list = Array.isArray(actors) ? actors.filter((a) => a?.id) : [];
-  if (!list.length) {
-    return <span style={{ color: '#64748b', fontSize: 13, fontWeight: 500 }}>Not selected</span>;
-  }
-  const shown = list.slice(0, max);
-  return (
-    <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
-      {shown.map((a) => (
-        <span
-          key={a.id}
-          style={{
-            fontSize: 12,
-            padding: '2px 8px',
-            borderRadius: 999,
-            background: '#1e293b',
-            border: '1px solid #334155',
-            color: '#e2e8f0'
-          }}
-        >
-          {a.name || a.id}
-          {a.active === false ? ' (Inactive)' : ''}
-        </span>
-      ))}
-      {list.length > max ? <span style={{ color: '#94a3b8', fontSize: 12 }}>+{list.length - max}</span> : null}
-    </span>
-  );
+function ThreatActorBadges({ actors, max = 8 }) {
+  return <AttributionEntityBadges entities={actors} max={max} />;
+}
+
+function MalwareFamilyBadges({ families, max = 8 }) {
+  return <AttributionEntityBadges entities={families} max={max} />;
 }
 
 function ThreatActorMultiSelect({
@@ -16111,6 +16095,10 @@ function IOCDetailsPage() {
   const [threatActorSaving, setThreatActorSaving] = useState(false);
   const [threatActorError, setThreatActorError] = useState('');
   const threatActorSearchRef = useRef(null);
+  const [showMalwareFamilyModal, setShowMalwareFamilyModal] = useState(false);
+  const [malwareFamilyDraftNames, setMalwareFamilyDraftNames] = useState('');
+  const [malwareFamilySaving, setMalwareFamilySaving] = useState(false);
+  const [malwareFamilyError, setMalwareFamilyError] = useState('');
   const loadGuardRef = useRef(null);
   if (loadGuardRef.current === null) loadGuardRef.current = createLatestOnly();
 
@@ -16678,9 +16666,56 @@ function IOCDetailsPage() {
   }
 
   function openThreatActorEditor() {
-    setThreatActorDraft(getThreatActorsFromSummary(summary).map((a) => String(a.id)));
+    setThreatActorDraft(getAnalystThreatActorIdsFromSummary(summary));
     setThreatActorError('');
     setShowThreatActorModal(true);
+  }
+
+  function openMalwareFamilyEditor() {
+    const analystNames = getMalwareFamiliesFromSummary(summary)
+      .filter((f) => f.attribution === 'analyst' || f.attribution === 'mixed')
+      .map((f) => f.name)
+      .filter(Boolean);
+    const ids = getAnalystMalwareFamilyIdsFromSummary(summary);
+    const byIdNames = getMalwareFamiliesFromSummary(summary)
+      .filter((f) => f.id && ids.includes(String(f.id)))
+      .map((f) => f.name)
+      .filter(Boolean);
+    setMalwareFamilyDraftNames([...new Set([...analystNames, ...byIdNames])].join(', '));
+    setMalwareFamilyError('');
+    setShowMalwareFamilyModal(true);
+  }
+
+  async function submitMalwareFamilies() {
+    const iocId = Number(summary?.id);
+    const observableType = String(summary?.observable_type || '').trim();
+    if (!Number.isFinite(iocId) || !observableType) return;
+
+    const names = String(malwareFamilyDraftNames || '')
+      .split(/[,;\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    setMalwareFamilySaving(true);
+    setMalwareFamilyError('');
+    try {
+      const { data: patchData } = await api.patch(`/ioc/${iocId}/malware-families`, {
+        observable_type: observableType,
+        malware_family_names: names
+      });
+      if (!patchData?.success) {
+        setMalwareFamilyError(patchData?.error || 'Request failed');
+        return;
+      }
+      setShowMalwareFamilyModal(false);
+      setMalwareFamilyDraftNames('');
+      setActionToast('Malware families updated');
+      await load();
+    } catch (err) {
+      setMalwareFamilyError(apiErrorMessage(err, 'Failed to update malware families'));
+    } finally {
+      setMalwareFamilySaving(false);
+    }
   }
 
   async function submitThreatActor() {
@@ -17094,8 +17129,10 @@ function IOCDetailsPage() {
                   onEditConfidence={openConfidenceEditor}
                   onEditThreatClass={openThreatClassEditor}
                   onEditThreatActor={openThreatActorEditor}
+                  onEditMalwareFamily={openMalwareFamilyEditor}
                   ThreatClassificationBadges={ThreatClassificationBadges}
                   ThreatActorBadges={ThreatActorBadges}
+                  MalwareFamilyBadges={MalwareFamilyBadges}
                 />
 
                 <div style={{ padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#111827' }}>
@@ -17687,6 +17724,69 @@ function IOCDetailsPage() {
               searchInputRef={threatActorSearchRef}
             />
             {threatActorError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{threatActorError}</div> : null}
+            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>
+              Edits analyst-managed associations only. Source-reported actors from feeds remain visible on Overview and are not removed by clearing this list.
+            </div>
+          </div>
+        </ModalOverlay>
+      ) : null}
+
+      {showMalwareFamilyModal ? (
+        <ModalOverlay
+          title="Edit malware families"
+          size="md"
+          onClose={() => {
+            if (malwareFamilySaving) return;
+            setShowMalwareFamilyModal(false);
+            setMalwareFamilyDraftNames('');
+            setMalwareFamilyError('');
+          }}
+          footer={(
+            <>
+              <button
+                type="button"
+                data-modal-cancel
+                style={ui.btn}
+                onClick={() => {
+                  setShowMalwareFamilyModal(false);
+                  setMalwareFamilyDraftNames('');
+                  setMalwareFamilyError('');
+                }}
+                disabled={malwareFamilySaving}
+              >
+                Cancel
+              </button>
+              <button type="button" style={ui.btnPrimary} onClick={() => submitMalwareFamilies().catch(() => {})} disabled={malwareFamilySaving}>
+                {malwareFamilySaving ? 'Saving…' : 'Save'}
+              </button>
+            </>
+          )}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#cbd5e1' }}>
+              Analyst malware families (comma-separated)
+              <textarea
+                value={malwareFamilyDraftNames}
+                onChange={(e) => setMalwareFamilyDraftNames(e.target.value)}
+                rows={4}
+                disabled={malwareFamilySaving}
+                placeholder="e.g. GRAYRABBIT, RABBITFUR"
+                style={{
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: 8,
+                  border: '1px solid #475569',
+                  background: '#0f172a',
+                  color: '#e2e8f0',
+                  fontFamily: 'inherit',
+                  resize: 'vertical'
+                }}
+              />
+            </label>
+            {malwareFamilyError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{malwareFamilyError}</div> : null}
+            <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.45 }}>
+              Edits analyst-managed associations only. Source-reported families from AlienVault OTX pulses remain visible on Overview.
+            </div>
           </div>
         </ModalOverlay>
       ) : null}

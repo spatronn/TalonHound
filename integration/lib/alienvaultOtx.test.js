@@ -17,6 +17,8 @@ import {
   resolveOtxApiKey,
   parseOtxTimestamp,
   earlierDate,
+  normalizeOtxAdversary,
+  normalizeOtxMalwareFamilies,
   OTX_PAGE_LIMIT_MAX,
   ALIENVAULT_OTX_FEED_KEY
 } from './alienvaultOtx.js';
@@ -99,6 +101,8 @@ test('mapOtxPulseIndicator returns supported entry with pulse context', () => {
     name: 'Phishing Campaign',
     author_name: 'analyst1',
     tlp: 'white',
+    adversary: 'UNC3569',
+    malware_families: ['GRAYRABBIT', 'RABBITFUR'],
     tags: ['phishing', 'apt'],
     created: '2026-06-01T00:00:00Z',
     modified: '2026-06-10T12:00:00Z'
@@ -110,9 +114,19 @@ test('mapOtxPulseIndicator returns supported entry with pulse context', () => {
   assert.equal(out.entry.observableType, 'domain');
   assert.equal(out.entry.pulseId, 'pulse123');
   assert.equal(out.entry.pulseAuthor, 'analyst1');
+  assert.equal(out.entry.pulseAdversary, 'UNC3569');
+  assert.deepEqual(out.entry.pulseAdversaries, ['UNC3569']);
+  assert.deepEqual(out.entry.pulseMalwareFamilies, ['GRAYRABBIT', 'RABBITFUR']);
   assert.deepEqual(out.entry.pulseTags, ['phishing', 'apt']);
   assert.equal(out.entry.referenceUrl, 'https://otx.alienvault.com/pulse/pulse123');
   assert.equal(out.entry.indicatorId, '42');
+});
+
+test('normalizeOtxAdversary / malware families handle empty and array forms', () => {
+  assert.deepEqual(normalizeOtxAdversary(null), []);
+  assert.deepEqual(normalizeOtxAdversary(''), []);
+  assert.deepEqual(normalizeOtxAdversary(['A', 'a']), ['A']);
+  assert.deepEqual(normalizeOtxMalwareFamilies(['GRAYRABBIT', 'RABBITFUR']), ['GRAYRABBIT', 'RABBITFUR']);
 });
 
 test('mapOtxPulseIndicator flags unsupported with rawType', () => {
@@ -123,24 +137,36 @@ test('mapOtxPulseIndicator flags unsupported with rawType', () => {
 
 test('buildOtxNote embeds pulse metadata as key=value', () => {
   const { entry } = mapOtxPulseIndicator(
-    { id: 'p9', name: 'Camp', author_name: 'bob', tags: ['x'], modified: '2026-06-10T12:00:00Z' },
+    {
+      id: 'p9', name: 'Camp', author_name: 'bob', tags: ['x'],
+      adversary: 'UNC3569', malware_families: ['GRAYRABBIT', 'RABBITFUR'],
+      modified: '2026-06-10T12:00:00Z'
+    },
     { indicator: '1.2.3.4', type: 'IPv4' }
   );
   const note = buildOtxNote(entry);
   assert.match(note, /pulse_id=p9/);
   assert.match(note, /pulse_author=bob/);
+  assert.match(note, /adversary=UNC3569/);
+  assert.match(note, /malware_families=GRAYRABBIT,RABBITFUR/);
   assert.match(note, /reference=https:\/\/otx\.alienvault\.com\/pulse\/p9/);
 });
 
 test('buildOtxEvidenceMetadata includes provider + pulse fields', () => {
   const { entry } = mapOtxPulseIndicator(
-    { id: 'p9', name: 'Camp', author_name: 'bob', tlp: 'green', tags: ['x'], modified: '2026-06-10T12:00:00Z' },
+    {
+      id: 'p9', name: 'Camp', author_name: 'bob', tlp: 'green', tags: ['x'],
+      adversary: 'UNC3569', malware_families: ['GRAYRABBIT'],
+      modified: '2026-06-10T12:00:00Z'
+    },
     { indicator: '1.2.3.4', type: 'IPv4', created: '2026-06-05T00:00:00Z' }
   );
   const meta = buildOtxEvidenceMetadata(entry);
   assert.equal(meta.provider, 'alienvault_otx');
   assert.equal(meta.pulse_id, 'p9');
   assert.equal(meta.pulse_tlp, 'green');
+  assert.equal(meta.adversary, 'UNC3569');
+  assert.deepEqual(meta.malware_families, ['GRAYRABBIT']);
   assert.equal(meta.indicator_type, 'ip');
   assert.equal(meta.otx_reference, 'https://otx.alienvault.com/pulse/p9');
 });
@@ -260,18 +286,25 @@ test('collectOtxEntries dedupes same observable across pulses, keeping latest pu
   const pulses = [
     {
       id: 'old', name: 'Old', modified: '2026-06-01T00:00:00Z',
+      adversary: 'ActorOld', malware_families: ['FamOld'],
       indicators: [{ indicator: 'evil.com', type: 'domain' }]
     },
     {
       id: 'new', name: 'New', modified: '2026-06-20T00:00:00Z',
+      adversary: 'ActorNew', malware_families: ['FamNew'],
       indicators: [{ indicator: 'evil.com', type: 'domain' }, { indicator: '8.8.8.8', type: 'IPv4' }]
     }
   ];
-  const { entries, fetchedIndicators } = collectOtxEntries(pulses);
+  const { entries, associations, fetchedIndicators } = collectOtxEntries(pulses);
   assert.equal(fetchedIndicators, 3);
   assert.equal(entries.length, 2); // evil.com deduped
   const domain = entries.find((e) => e.observable === 'evil.com');
   assert.equal(domain.pulseId, 'new'); // latest pulse context wins
+  // Multi-pulse provenance preserved separately for attribution.
+  const domainAssocs = associations.filter((a) => a.observable === 'evil.com');
+  assert.equal(domainAssocs.length, 2);
+  assert.ok(domainAssocs.some((a) => a.pulseId === 'old' && a.pulseAdversary === 'ActorOld'));
+  assert.ok(domainAssocs.some((a) => a.pulseId === 'new' && a.pulseMalwareFamilies.includes('FamNew')));
 });
 
 // --- Source first-seen timestamp (regression: was import time, must be OTX source date) ---

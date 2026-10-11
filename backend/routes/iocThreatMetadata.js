@@ -24,7 +24,6 @@ import {
 import { resolveThreatActorById } from './threatActors.js';
 import {
   buildMultiThreatActorResponseFields,
-  emptyThreatActorResponseFields,
   fetchIocThreatActors,
   loadIocThreatActorDetails,
   parseThreatActorBody,
@@ -32,6 +31,18 @@ import {
   validateIocThreatActorIds,
   diffThreatActorIds
 } from '../lib/iocThreatActors.js';
+import {
+  emptyAttributionResponseFields,
+  fetchEffectiveIocAttributions,
+  loadEffectiveIocAttributions
+} from '../lib/iocSourceAttributions.js';
+import {
+  parseMalwareFamilyBody,
+  replaceIocMalwareFamilies,
+  validateIocMalwareFamilyIds,
+  diffMalwareFamilyIds,
+  ensureMalwareFamilyByName
+} from '../lib/iocMalwareFamilies.js';
 
 async function fetchIocRow(pool, iocId, observableType) {
   const { rows } = await pool.query(
@@ -49,32 +60,59 @@ function isThreatActorsTableMissing(err) {
   return String(err?.message || '').includes('ioc_threat_actors');
 }
 
-/** Junction first; fall back to legacy ioc_items.threat_actor_id. */
+/** Effective attributions (analyst ∪ source-reported) with provenance. */
 async function resolveThreatActorFields(pool, iocId, observableType, legacyRow = null) {
   try {
-    const fields = await fetchIocThreatActors(pool, iocId, observableType);
-    if (fields.threat_actor_ids?.length) return fields;
+    const fields = await fetchEffectiveIocAttributions(pool, iocId, observableType);
+    if (fields.threat_actors?.length || fields.malware_families?.length) return fields;
+    // Fall through for legacy single-column actor when junction/attributions empty.
+    if (!legacyRow?.threat_actor_id) return fields;
   } catch (err) {
-    if (!isThreatActorsTableMissing(err)) throw err;
+    if (!isThreatActorsTableMissing(err)
+      && !String(err?.message || '').includes('ioc_source_attributions')) {
+      throw err;
+    }
   }
   if (legacyRow?.threat_actor_id) {
     const actor = await resolveThreatActorById(pool, legacyRow.threat_actor_id);
     if (actor) {
-      return buildMultiThreatActorResponseFields([{
-        id: actor.id,
-        name: actor.name,
-        slug: actor.slug,
-        aliases: actor.aliases,
-        active: actor.active
-      }]);
+      return {
+        ...emptyAttributionResponseFields(),
+        ...buildMultiThreatActorResponseFields([{
+          id: actor.id,
+          name: actor.name,
+          slug: actor.slug,
+          aliases: actor.aliases,
+          active: actor.active
+        }]),
+        analyst_threat_actor_ids: [actor.id],
+        malware_families: [],
+        malware_family_ids: [],
+        analyst_malware_family_ids: []
+      };
     }
-    return buildMultiThreatActorResponseFields([{
-      id: legacyRow.threat_actor_id,
-      name: legacyRow.threat_actor_name || null,
-      active: true
-    }]);
+    return {
+      ...emptyAttributionResponseFields(),
+      ...buildMultiThreatActorResponseFields([{
+        id: legacyRow.threat_actor_id,
+        name: legacyRow.threat_actor_name || null,
+        active: true
+      }]),
+      analyst_threat_actor_ids: [legacyRow.threat_actor_id]
+    };
   }
-  return emptyThreatActorResponseFields();
+  return emptyAttributionResponseFields();
+}
+
+/** Analyst-only threat actor IDs for edit/no-op comparison. */
+async function loadAnalystThreatActorIds(pool, iocId, observableType) {
+  try {
+    const fields = await fetchIocThreatActors(pool, iocId, observableType);
+    return fields.threat_actor_ids || [];
+  } catch (err) {
+    if (!isThreatActorsTableMissing(err)) throw err;
+    return [];
+  }
 }
 
 function userLabel(req) {
@@ -290,7 +328,9 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
       if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
 
       const beforeFields = await resolveThreatActorFields(pool, iocId, observableType, prev);
-      const beforeIds = beforeFields.threat_actor_ids || [];
+      const beforeIds = beforeFields.analyst_threat_actor_ids?.length
+        ? beforeFields.analyst_threat_actor_ids
+        : await loadAnalystThreatActorIds(pool, iocId, observableType);
       const sortKey = (arr) => [...arr].map((x) => String(x).toLowerCase()).sort().join('|');
       if (sortKey(beforeIds) === sortKey(nextIds)) {
         return res.json({
@@ -321,9 +361,14 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
 
       invalidateDetailsCache(prev.public_id);
       const afterFields = await resolveThreatActorFields(pool, iocId, observableType);
-      const diff = diffThreatActorIds(beforeIds, afterFields.threat_actor_ids || []);
-      const beforeNames = (beforeFields.threat_actors || []).map((a) => a.name).filter(Boolean);
-      const afterNames = (afterFields.threat_actors || []).map((a) => a.name).filter(Boolean);
+      const afterAnalystIds = afterFields.analyst_threat_actor_ids || nextIds;
+      const diff = diffThreatActorIds(beforeIds, afterAnalystIds);
+      const beforeNames = (beforeFields.threat_actors || [])
+        .filter((a) => a.attribution === 'analyst' || a.attribution === 'mixed' || !a.attribution)
+        .map((a) => a.name).filter(Boolean);
+      const afterNames = (afterFields.threat_actors || [])
+        .filter((a) => a.attribution === 'analyst' || a.attribution === 'mixed')
+        .map((a) => a.name).filter(Boolean);
 
       await audit.auditSuccess({
         req,
@@ -373,24 +418,124 @@ export function registerIocThreatMetadataRoutes(app, pool, audit, opts = {}) {
   app.patch('/api/ioc/:id/threat-actor', (req, res) =>
     applyIocThreatActors(req, res, { auditAction: AUDIT_ACTION.IOC_THREAT_ACTOR_UPDATED })
   );
+
+  async function applyIocMalwareFamilies(req, res) {
+    const iocId = Number(req.params.id);
+    if (!Number.isFinite(iocId) || iocId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid IOC id' });
+    }
+    const observableType = String(req.body?.observable_type || req.query?.observable_type || '').trim();
+    if (!observableType) {
+      return res.status(400).json({ success: false, error: 'observable_type is required' });
+    }
+
+    const parsed = parseMalwareFamilyBody(req.body);
+    if (parsed === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'malware_family_ids (array), malware_families, or malware_family_names is required'
+      });
+    }
+
+    const ensuredIds = [];
+    for (const name of parsed.names || []) {
+      const row = await ensureMalwareFamilyByName(pool, name, { actor: userLabel(req) });
+      if (row?.id) ensuredIds.push(row.id);
+    }
+    const candidateIds = [...(parsed.ids || []), ...ensuredIds];
+    const check = await validateIocMalwareFamilyIds(pool, candidateIds, { requireActive: true });
+    if (!check.ok) return res.status(400).json({ success: false, error: check.error });
+    const nextIds = check.value;
+
+    try {
+      const prev = await fetchIocRow(pool, iocId, observableType);
+      if (!prev) return res.status(404).json({ success: false, error: 'IOC not found' });
+
+      const beforeFields = await resolveThreatActorFields(pool, iocId, observableType, prev);
+      const beforeIds = beforeFields.analyst_malware_family_ids || [];
+      const sortKey = (arr) => [...arr].map((x) => String(x).toLowerCase()).sort().join('|');
+      if (sortKey(beforeIds) === sortKey(nextIds)) {
+        return res.json({ success: true, public_id: prev.public_id, ...beforeFields });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await replaceIocMalwareFamilies(client, {
+          iocId,
+          observableType,
+          malwareFamilyIds: nextIds,
+          sourceType: 'analyst',
+          actor: userLabel(req),
+          manageTransaction: false
+        });
+        await client.query('COMMIT');
+      } catch (err) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+        throw err;
+      } finally {
+        client.release();
+      }
+
+      invalidateDetailsCache(prev.public_id);
+      const afterFields = await resolveThreatActorFields(pool, iocId, observableType);
+      const diff = diffMalwareFamilyIds(beforeIds, afterFields.analyst_malware_family_ids || nextIds);
+      const beforeNames = (beforeFields.malware_families || [])
+        .filter((f) => f.attribution === 'analyst' || f.attribution === 'mixed')
+        .map((f) => f.name).filter(Boolean);
+      const afterNames = (afterFields.malware_families || [])
+        .filter((f) => f.attribution === 'analyst' || f.attribution === 'mixed')
+        .map((f) => f.name).filter(Boolean);
+
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.IOC_MALWARE_FAMILIES_UPDATED,
+        entityType: AUDIT_ENTITY.IOC,
+        entityId: String(iocId),
+        entityDisplay: `${observableType} · ${prev.observable}`,
+        metadata: {
+          observable_type: observableType,
+          ioc_value: prev.observable,
+          old_malware_families: beforeNames,
+          new_malware_families: afterNames,
+          ...diff
+        },
+        before: { malware_family_ids: beforeIds, malware_families: beforeNames },
+        after: {
+          malware_family_ids: afterFields.analyst_malware_family_ids || nextIds,
+          malware_families: afterNames
+        }
+      });
+
+      return res.json({ success: true, public_id: prev.public_id, ...afterFields });
+    } catch (err) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  app.patch('/api/ioc/:id/malware-families', (req, res) => applyIocMalwareFamilies(req, res));
 }
 
 export async function buildThreatMetadataFields(pool, row) {
   if (!row) {
     return {
       ...buildMultiThreatClassificationResponseFields([]),
-      ...emptyThreatActorResponseFields()
+      ...emptyAttributionResponseFields()
     };
   }
   const actorFields = Number.isFinite(Number(row.id)) && row.observable_type
     ? await resolveThreatActorFields(pool, row.id, row.observable_type, row)
     : (row.threat_actor_id
-      ? buildMultiThreatActorResponseFields([{
-        id: row.threat_actor_id,
-        name: row.threat_actor_name || null,
-        active: true
-      }])
-      : emptyThreatActorResponseFields());
+      ? {
+        ...emptyAttributionResponseFields(),
+        ...buildMultiThreatActorResponseFields([{
+          id: row.threat_actor_id,
+          name: row.threat_actor_name || null,
+          active: true
+        }]),
+        analyst_threat_actor_ids: [row.threat_actor_id]
+      }
+      : emptyAttributionResponseFields());
 
   if (Number.isFinite(Number(row.id)) && row.observable_type) {
     try {
@@ -441,7 +586,15 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
   );
 
   const detailMap = await loadIocThreatClassificationDetails(pool, pairs);
-  const actorDetailMap = await loadIocThreatActorDetails(pool, pairs);
+  let attributionMap = new Map();
+  try {
+    attributionMap = await loadEffectiveIocAttributions(pool, pairs, { compact: true });
+  } catch (err) {
+    if (!String(err?.message || '').includes('ioc_source_attributions')) {
+      console.warn('[threat-metadata] attribution load failed:', err.message);
+    }
+    attributionMap = await loadIocThreatActorDetails(pool, pairs);
+  }
   for (const row of rows) {
     const key = `${Number(row.id)}|${String(row.observable_type)}`;
     let fields = detailMap.get(key);
@@ -449,15 +602,19 @@ export async function enrichItemsWithThreatMetadata(pool, items) {
       const slugs = normalizeIocThreatClassificationSlugs(row.threat_classification);
       fields = buildMultiThreatClassificationResponseFields(slugs.length ? slugs : []);
     }
-    let actorFields = actorDetailMap.get(key);
-    if (!actorFields?.threat_actor_ids?.length && row.threat_actor_id) {
-      actorFields = buildMultiThreatActorResponseFields([{
-        id: row.threat_actor_id,
-        name: row.threat_actor_name || null,
-        active: true
-      }]);
+    let actorFields = attributionMap.get(key);
+    if (!actorFields?.threat_actor_ids?.length && !actorFields?.threat_actors?.length && row.threat_actor_id) {
+      actorFields = {
+        ...emptyAttributionResponseFields(),
+        ...buildMultiThreatActorResponseFields([{
+          id: row.threat_actor_id,
+          name: row.threat_actor_name || null,
+          active: true
+        }]),
+        analyst_threat_actor_ids: [row.threat_actor_id]
+      };
     }
-    if (!actorFields) actorFields = emptyThreatActorResponseFields();
+    if (!actorFields) actorFields = emptyAttributionResponseFields();
     map.set(key, {
       ...fields,
       ...actorFields

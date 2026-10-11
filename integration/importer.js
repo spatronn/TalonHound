@@ -91,12 +91,18 @@ import {
   ALIENVAULT_OTX_AUTH_REQUIRED_MSG,
   ALIENVAULT_OTX_FEED_KEY,
   ALIENVAULT_OTX_SOURCE_NAME,
+  buildOtxEvidenceMetadata,
   buildOtxNote,
   collectOtxEntries,
   resolveOtxApiKey,
   sanitizeOtxErrorMessage,
   walkOtxSubscribedPulses
 } from './lib/alienvaultOtx.js';
+import {
+  applyOtxPulseAttributions,
+  resolveIocIdForObservable,
+  upsertOtxPulseSnapshot
+} from '../backend/lib/iocSourceAttributions.js';
 import {
   CERTPL_FEED_KEY,
   CERTPL_SOURCE_NAME,
@@ -168,7 +174,8 @@ async function storeFeedSourceEvidence(client, {
   sourceUrl = null,
   category = null,
   note = null,
-  confidence = null
+  confidence = null,
+  providerMetadata = null
 }) {
   await importSideEffect('feed_source_evidence', null, () => upsertFeedSourceEvidenceForObservable(client, {
     observable,
@@ -177,7 +184,8 @@ async function storeFeedSourceEvidence(client, {
     sourceUrl,
     category,
     note,
-    confidence
+    confidence,
+    providerMetadata
   }));
 }
 
@@ -1352,7 +1360,7 @@ export async function updateObservableBySourceOnImport(client, {
   return existing;
 }
 
-async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null, threatClassification = null, firstSeenAt = null }, suppressionStats = null, signal = null) {
+async function insertObservable(client, { observable, observableType, sourceName, sourceUrl, confidence, category, note, sourceConfidence = null, feedDefaultConfidence = null, threatClassification = null, firstSeenAt = null, providerMetadata = null }, suppressionStats = null, signal = null) {
   throwIfAborted(signal);
   // Suppressed IOCs are imported normally (IOC + membership are created/updated);
   // recomputeIocGlobalStatus keeps their effective status 'suppressed'. Import no
@@ -1408,7 +1416,8 @@ async function insertObservable(client, { observable, observableType, sourceName
         sourceUrl,
         category,
         note,
-        confidence: confFields.confidence
+        confidence: confFields.confidence,
+        providerMetadata
       });
       await maybeDualWriteFileArtifact(client, {
         observable,
@@ -1436,7 +1445,8 @@ async function insertObservable(client, { observable, observableType, sourceName
       sourceUrl,
       category,
       note,
-      confidence: confFields.confidence
+      confidence: confFields.confidence,
+      providerMetadata
     });
     await importSideEffect('duplicate_membership', null, () => syncMembershipAfterIocImport(client, {
       observable,
@@ -1471,7 +1481,8 @@ async function insertObservable(client, { observable, observableType, sourceName
     sourceUrl,
     category,
     note,
-    confidence: confFields.confidence
+    confidence: confFields.confidence,
+    providerMetadata
   });
   await importSideEffect('insert_membership', null, () => syncMembershipAfterIocImport(client, {
     observable,
@@ -2338,8 +2349,9 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
   const note = buildOtxNote(entry);
   const category = 'threat-intel';
   const sourceUrl = entry.referenceUrl || null;
+  const providerMetadata = buildOtxEvidenceMetadata(entry);
 
-  // Derive classification from pulse tags Ã¢â‚¬â€ take first tag that maps to a known slug.
+  // Derive classification from pulse tags — take first tag that maps to a known slug.
   // No blanket default: OTX is heterogeneous; null is correct for unrecognized pulses.
   let threatClassification = null;
   for (const tag of (entry.pulseTags || [])) {
@@ -2357,11 +2369,12 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     category,
     note,
     threatClassification,
-    // Real OTX source date (indicator.created, else pulse.created) Ã¢â€ â€™ first_seen_in_feed.
-    // Never the platform import time. Null when OTX gives no valid date Ã¢â€ â€™ membership
+    // Real OTX source date (indicator.created, else pulse.created) → first_seen_in_feed.
+    // Never the platform import time. Null when OTX gives no valid date → membership
     // falls back to import time (existing behavior). last_seen_in_feed stays at import
     // time (feed-confirmation), so we do NOT pass entry.lastSeen here.
-    firstSeenAt: entry.firstSeen || null
+    firstSeenAt: entry.firstSeen || null,
+    providerMetadata
   }, suppressionStats);
 
   if (insertResult === 'suppressed') {
@@ -2373,12 +2386,107 @@ async function upsertOtxObservable(client, entry, sourceName, suppressionStats, 
     return;
   }
   if (insertResult === 'unchanged') {
-    // Same-source content unchanged Ã¢â‚¬â€ not a reject.
+    // Same-source content unchanged — not a reject.
     metrics.noteUnchanged();
     return;
   }
-  // 'duplicate' Ã¢â‚¬â€ existing IOC from same/other source; membership + evidence already synced.
+  // 'duplicate' — existing IOC from same/other source; membership + evidence already synced.
   metrics.noteDuplicate();
+}
+
+/**
+ * Persist Pulse-level threat actor / malware family attributions for every
+ * (IOC, pulse) association in this run. Complete observation per association.
+ */
+async function applyOtxAssociationAttributions(client, associations, metrics) {
+  if (!associations?.length) return { applied: 0, actors: 0, families: 0, withdrawn: 0, skipped: 0 };
+
+  // Deduplicate identical (observable, pulse) pairs within the batch.
+  const seen = new Set();
+  const unique = [];
+  for (const a of associations) {
+    if (!a?.pulseId || !a?.observable || !a?.observableType) continue;
+    const key = `${a.observableType}|${a.observable}|${a.pulseId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(a);
+  }
+
+  // Snapshot unique pulses once.
+  const pulseSeen = new Set();
+  let applied = 0;
+  let actors = 0;
+  let families = 0;
+  let withdrawn = 0;
+  let skipped = 0;
+
+  for (const a of unique) {
+    if (!pulseSeen.has(a.pulseId)) {
+      pulseSeen.add(a.pulseId);
+      try {
+        await upsertOtxPulseSnapshot(client, {
+          pulseId: a.pulseId,
+          pulseName: a.pulseName,
+          adversary: a.pulseAdversaries?.length ? a.pulseAdversaries : a.pulseAdversary,
+          malwareFamilies: a.pulseMalwareFamilies || [],
+          tags: a.pulseTags || [],
+          tlp: a.pulseTlp,
+          authorName: a.pulseAuthor,
+          pulseCreated: a.pulseCreated,
+          pulseModified: a.pulseModified,
+          pulseUrl: a.referenceUrl,
+          isBackfill: false
+        });
+      } catch (err) {
+        if (!String(err?.message || '').includes('otx_pulse_snapshots')) {
+          console.warn('[alienvault-otx] pulse snapshot skipped:', err.message);
+        }
+      }
+    }
+
+    const ioc = await resolveIocIdForObservable(client, a.observable, a.observableType);
+    if (!ioc) {
+      skipped += 1;
+      continue;
+    }
+
+    try {
+      const result = await applyOtxPulseAttributions(client, {
+        iocId: ioc.id,
+        observableType: ioc.observable_type,
+        pulseId: a.pulseId,
+        pulseName: a.pulseName,
+        pulseUrl: a.referenceUrl,
+        adversary: a.pulseAdversaries?.length ? a.pulseAdversaries : a.pulseAdversary,
+        malwareFamilies: a.pulseMalwareFamilies || [],
+        observedAt: a.pulseModified || a.pulseCreated || null,
+        isBackfill: false,
+        completeObservation: true
+      });
+      applied += 1;
+      actors += result.actors;
+      families += result.families;
+      withdrawn += result.withdrawn;
+    } catch (err) {
+      // Attribution tables may be missing during rolling deploy — do not fail IOC import.
+      if (String(err?.message || '').includes('ioc_source_attributions')
+        || String(err?.message || '').includes('otx_pulse_snapshots')) {
+        skipped += 1;
+        continue;
+      }
+      console.warn('[alienvault-otx] attribution apply failed:', sanitizeOtxErrorMessage(err.message));
+      skipped += 1;
+    }
+  }
+
+  if (metrics && typeof metrics === 'object') {
+    metrics.attribution_associations = (metrics.attribution_associations || 0) + applied;
+    metrics.attribution_actors = (metrics.attribution_actors || 0) + actors;
+    metrics.attribution_families = (metrics.attribution_families || 0) + families;
+    metrics.attribution_withdrawn = (metrics.attribution_withdrawn || 0) + withdrawn;
+  }
+
+  return { applied, actors, families, withdrawn, skipped };
 }
 
 export async function runAlienvaultOtxImport(options = {}) {
@@ -2444,7 +2552,7 @@ export async function runAlienvaultOtxImport(options = {}) {
         onPulse: (pulse) => { pulses.push(pulse); }
       });
 
-      const { entries, fetchedIndicators, unsupportedIndicators, unsupportedBreakdown } =
+      const { entries, associations, fetchedIndicators, unsupportedIndicators, unsupportedBreakdown } =
         collectOtxEntries(pulses);
       metrics.noteSkipped(unsupportedIndicators);
 
@@ -2462,6 +2570,16 @@ export async function runAlienvaultOtxImport(options = {}) {
         }, { ...txMeta, batch: Math.floor(i / batchSize) + 1 });
       }
 
+      // Source attributions for every (IOC, pulse) association — independent of latest-wins note.
+      const assocBatchSize = Number(process.env.ALIENVAULT_OTX_ATTRIBUTION_BATCH_SIZE || 200);
+      for (let i = 0; i < associations.length; i += assocBatchSize) {
+        throwIfAborted(signal);
+        const batch = associations.slice(i, i + assocBatchSize);
+        await withPgTransaction(client, 'alienvault_otx_attribution_batch', async (tx) => {
+          await applyOtxAssociationAttributions(tx, batch, metrics);
+        }, { ...txMeta, attribution_batch: Math.floor(i / assocBatchSize) + 1 });
+      }
+
       // Advance cursor to run start (strictly-greater semantics on next run).
       const cursorAfter = startedAt.toISOString();
       const summary = {
@@ -2470,6 +2588,10 @@ export async function runAlienvaultOtxImport(options = {}) {
         pages: walkStats.pages,
         truncated: walkStats.truncated,
         fetched_indicators: fetchedIndicators,
+        attribution_associations: metrics.attribution_associations || 0,
+        attribution_actors: metrics.attribution_actors || 0,
+        attribution_families: metrics.attribution_families || 0,
+        attribution_withdrawn: metrics.attribution_withdrawn || 0,
         imported_iocs: metrics.records_inserted,
         updated_iocs: metrics.records_updated,
         duplicate_iocs: metrics.records_duplicate,
