@@ -1,11 +1,12 @@
 /**
  * Report title selection for HTML sources.
  *
- * Candidates, in order of preference:
- *   1. JSON-LD headline of an Article / BlogPosting / NewsArticle / Report
- *   2. og:title
- *   3. twitter:title
- *   4. <title>
+ * Candidates, in order of preference (the historical og:title > twitter:title
+ * > <title> order, so a correct stored title never changes):
+ *   1. og:title
+ *   2. twitter:title
+ *   3. <title>
+ *   4. JSON-LD headline of an Article / BlogPosting / NewsArticle / Report
  *   5. the article heading (first <h1> inside <article> / <main>)
  *
  * The first candidate wins unless it is a site-wide brand title. Some sites
@@ -43,8 +44,14 @@ function withoutComments(html) {
   return String(html || '').replace(/<!--[\s\S]*?-->/g, ' ');
 }
 
+/** Same cleaning the stored titles were produced with (entities, tags, trim). */
 function clean(text) {
-  return decodeEntities(stripTags(String(text || ''))).replace(/\s+/g, ' ').trim();
+  return decodeEntities(stripTags(String(text || ''))).trim();
+}
+
+/** Body text (headings, JSON-LD) also has its layout whitespace collapsed. */
+function collapse(text) {
+  return clean(text).replace(/\s+/g, ' ');
 }
 
 function norm(text) {
@@ -59,7 +66,8 @@ function metaContent(raw, attr, name) {
   const a = new RegExp(`${attr}=["']${name}["'][^>]*content=["']([^"']+)["']`, 'i');
   const b = new RegExp(`content=["']([^"']+)["'][^>]*${attr}=["']${name}["']`, 'i');
   const m = raw.match(a) || raw.match(b);
-  return m?.[1] ? clean(m[1]) : '';
+  // Attribute values: entity-decoded and trimmed, exactly as stored historically.
+  return m?.[1] ? decodeEntities(m[1]).trim() : '';
 }
 
 function tagText(node) {
@@ -147,7 +155,7 @@ function articleHeading(raw) {
   const roots = findElements(dom, (el) => tag(el) === 'article' || tag(el) === 'main');
   for (const root of roots) {
     const h1 = findElement(root, (el) => tag(el) === 'h1');
-    const text = clean(tagText(h1));
+    const text = collapse(tagText(h1));
     if (text) return text;
   }
   return '';
@@ -189,7 +197,7 @@ export function selectHtmlTitle(html, opts = {}) {
   const brands = siteBrandNames(raw, opts.url);
   const jsonLdHeadline = (() => {
     for (const item of jsonLdItems(raw)) {
-      if (jsonLdTypeMatches(item) && typeof item.headline === 'string' && clean(item.headline)) return clean(item.headline);
+      if (jsonLdTypeMatches(item) && typeof item.headline === 'string' && clean(item.headline)) return collapse(item.headline);
     }
     return '';
   })();
@@ -200,10 +208,10 @@ export function selectHtmlTitle(html, opts = {}) {
   const heading = articleHeading(raw);
 
   const candidates = [
-    { source: 'json_ld', value: jsonLdHeadline },
     { source: 'og_title', value: metaContent(raw, 'property', 'og:title') },
     { source: 'twitter_title', value: metaContent(raw, 'name', 'twitter:title') },
     { source: 'title_tag', value: titleTag },
+    { source: 'json_ld', value: jsonLdHeadline },
     { source: 'article_h1', value: heading }
   ].filter((c) => c.value);
 

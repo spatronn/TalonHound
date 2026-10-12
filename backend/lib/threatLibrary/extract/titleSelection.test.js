@@ -59,7 +59,17 @@ test('conflicting metadata: brand-only og:title loses to the article heading', (
   assert.equal(weak.title, 'New malware analysis: FooRAT');
 });
 
-test('JSON-LD headline of an article is preferred; publisher name becomes a site brand', () => {
+test('a correct og:title is never replaced by a different JSON-LD / <h1> headline (stored titles stay stable)', () => {
+  // Prod report 15 shape: both titles are article-specific, the historical og:title wins.
+  const html = `<script type="application/ld+json">{"@type":"NewsArticle","headline":"How Money Laundering, Scams, and Espionage Hide in a Web Full of Casino Garbage"}</script>
+    <meta property="og:title" content="Illegal Gambling Sites Reveal Three Types of Cybercrime">
+    <title>Illegal Gambling Sites Reveal Three Types of Cybercrime | Vendor</title>`;
+  assert.equal(pick(html).title, 'Illegal Gambling Sites Reveal Three Types of Cybercrime');
+  // Attribute values keep their historical cleaning (entities decoded, inner spacing kept).
+  assert.equal(pick('<meta property="og:title" content="A &amp; B  exploits">').title, 'A & B  exploits');
+});
+
+test('JSON-LD headline replaces brand-only titles; publisher name becomes a site brand', () => {
   const html = `<script type="application/ld+json">{"@context":"https://schema.org","@type":"BlogPosting","headline":"FooRAT returns with a new loader","publisher":{"@type":"Organization","name":"Acme Labs"}}</script>
     <meta property="og:title" content="Acme Labs"><title>Something | Acme Labs</title>`;
   const r = pick(html, 'https://acme.example/blog/x');
