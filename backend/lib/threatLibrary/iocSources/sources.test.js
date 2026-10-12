@@ -1,10 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  discoverIocSourcesFromHtml,
-  discoverIocSourcesFromText,
-  guessTypeFromUrl
-} from './discover.js';
+import { guessTypeFromUrl } from './sourceType.js';
 import { validateIocSourceUrl } from './fetchSafe.js';
 import { parseGitHubUrl, isEligibleIocFilePath, resolveGitHubCommitSha } from './github.js';
 import { bulkMatchCandidates } from '../iocMatch.js';
@@ -17,28 +13,6 @@ import {
   isLinkedOnlyIndicatorMember,
   countCandidateBuckets
 } from '../indicatorMembership.js';
-
-test('discovery finds GitHub IOC pack link and ignores nav noise', () => {
-  const html = `
-    <html><body><article>
-      <p>See the <a href="https://github.com/gendigitalinc/ioc/tree/master/WardenStealer">complete IOC list</a> on GitHub.</p>
-      <nav><a href="https://twitter.com/vendor">Twitter</a><a href="/about">About</a></nav>
-      <p>Also <a href="https://vendor.example/blog/post">related research</a>.</p>
-    </article></body></html>`;
-  const found = discoverIocSourcesFromHtml(html, {
-    reportUrl: 'https://www.gendigital.com/blog/insights/research/warden-stealer'
-  });
-  assert.equal(found.length, 1);
-  assert.match(found[0].canonical_url, /github\.com\/gendigitalinc\/ioc/);
-  assert.equal(found[0].discovery_method, 'auto');
-  assert.ok(found[0].discovery_evidence.matched_cues.length);
-});
-
-test('text discovery scores IOC appendix URLs', () => {
-  const text = 'Download IOCs: https://example.com/research/ioc/warden.csv for the full indicator dataset.';
-  const found = discoverIocSourcesFromText(text, { reportUrl: 'https://example.com/report' });
-  assert.ok(found.some((f) => f.canonical_url.includes('warden.csv')));
-});
 
 test('guessTypeFromUrl classifies github dir/file/pdf', () => {
   assert.equal(guessTypeFromUrl('https://github.com/org/ioc/tree/master/Pack'), 'github_dir');

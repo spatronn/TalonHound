@@ -6,7 +6,7 @@
 import { extractCandidatesFromDocument } from '../candidateExtraction.js';
 import { htmlToCanonicalDocument, plainTextToCanonicalDocument } from '../urlIngest.js';
 import { LINKED_SOURCE_IOC_ASSERTION } from './constants.js';
-import { guessTypeFromUrl } from './discover.js';
+import { guessTypeFromUrl } from './sourceType.js';
 
 /**
  * @param {string} contentType

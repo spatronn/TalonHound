@@ -88,6 +88,7 @@ export async function resolveGitHubCommitSha(parsed, deps = {}) {
   try {
     const fetched = await fetchIocSourceUrl(commitsUrl, {
       fetchImpl: deps.fetchImpl,
+      destinationGuard: deps.destinationGuard,
       headers: {
         Accept: 'application/vnd.github+json',
         'User-Agent': 'TalonHound-ThreatLibrary'
@@ -158,6 +159,7 @@ export async function enumerateGitHubIocSource(url, deps = {}) {
   try {
     listing = await fetchIocSourceUrl(apiUrl, {
       fetchImpl: deps.fetchImpl,
+      destinationGuard: deps.destinationGuard,
       headers: {
         Accept: 'application/vnd.github+json',
         'User-Agent': 'TalonHound-ThreatLibrary'

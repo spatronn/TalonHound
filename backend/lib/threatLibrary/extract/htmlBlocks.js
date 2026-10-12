@@ -437,27 +437,6 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
 }
 
 /**
- * Pick best title from HTML meta / tags.
- * @param {string} html
- * @param {string} [hint]
- */
-export function extractHtmlTitle(html, hint = '') {
-  const raw = String(html || '');
-  if (hint) return decodeEntities(stripTags(hint)).trim();
-  const og =
-    raw.match(/property=["']og:title["'][^>]*content=["']([^"']+)["']/i)
-    || raw.match(/content=["']([^"']+)["'][^>]*property=["']og:title["']/i);
-  if (og?.[1]) return decodeEntities(og[1]).trim();
-  const tw =
-    raw.match(/name=["']twitter:title["'][^>]*content=["']([^"']+)["']/i)
-    || raw.match(/content=["']([^"']+)["'][^>]*name=["']twitter:title["']/i);
-  if (tw?.[1]) return decodeEntities(tw[1]).trim();
-  const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  if (titleMatch) return decodeEntities(stripTags(titleMatch[1])).trim();
-  return '';
-}
-
-/**
  * @param {string} html
  */
 export function extractHtmlLanguage(html) {

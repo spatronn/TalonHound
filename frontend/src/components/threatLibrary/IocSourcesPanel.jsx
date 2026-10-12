@@ -13,6 +13,7 @@ import {
   lifecycleBadge,
   shortSourceTitle,
   sourceCardMeta,
+  sourceProvenanceLabel,
   sourceTypeLabel
 } from './iocSourcesUi.js';
 
@@ -134,6 +135,8 @@ export default function IocSourcesPanel({
       if (typeof onChanged === 'function') onChanged();
     } catch (err) {
       setError(err?.response?.data?.message || err.message || 'Action failed');
+      // A refused source can still be recorded (e.g. blocked as known malicious).
+      if (err?.response?.data?.source) await load();
     } finally {
       setBusy('');
     }
@@ -149,7 +152,7 @@ export default function IocSourcesPanel({
     });
   }
 
-  const discovered = items.filter((s) => isPendingLifecycle(s.lifecycle_status));
+  const pending = items.filter((s) => isPendingLifecycle(s.lifecycle_status));
   const attached = items.filter((s) => isAttachedLifecycle(s.lifecycle_status));
   const selectedBadge = selected ? lifecycleBadge(selected.lifecycle_status) : null;
 
@@ -159,7 +162,7 @@ export default function IocSourcesPanel({
         <div className="tl-ioc-sources__intro">
           <h2 className="tl-ioc-sources__title">IOC Sources</h2>
           <p className="tl-ioc-sources__lede">
-            External IOC datasets linked to this report. Approving a source authorizes extraction;
+            External IOC datasets an analyst added to this report. Approving a source authorizes extraction;
             it does not approve IOCs into inventory.
           </p>
         </div>
@@ -201,17 +204,17 @@ export default function IocSourcesPanel({
 
       {!loading && !items.length ? (
         <p style={ui.muted}>
-          No additional IOC sources discovered or added yet.
+          No IOC sources added yet.
         </p>
       ) : null}
 
       <div className="tl-ioc-sources__layout">
         <div className="tl-ioc-sources__list">
-          {discovered.length ? (
-            <section className="tl-ioc-sources__group" aria-label="Discovered or pending sources">
-              <h3 className="tl-ioc-sources__group-title">Discovered / pending</h3>
+          {pending.length ? (
+            <section className="tl-ioc-sources__group" aria-label="Pending sources">
+              <h3 className="tl-ioc-sources__group-title">Pending review</h3>
               <ul className="tl-ioc-source-cards">
-                {discovered.map((s) => (
+                {pending.map((s) => (
                   <li key={s.id}>
                     <SourceCard
                       source={s}
@@ -265,7 +268,7 @@ export default function IocSourcesPanel({
             <dl className="tl-ioc-source-meta">
               <div><dt>Status</dt><dd>{selected.lifecycle_status}</dd></div>
               <div><dt>Type</dt><dd>{sourceTypeLabel(selected.source_type)}</dd></div>
-              <div><dt>Discovery</dt><dd>{selected.discovery_method || '—'}</dd></div>
+              <div><dt>Added</dt><dd>{sourceProvenanceLabel(selected)}</dd></div>
               <div><dt>Inspection</dt><dd>{selected.inspection_status || '—'}</dd></div>
               <div><dt>Extraction</dt><dd>{selected.extraction_status || '—'}</dd></div>
               {selected.repo_revision ? (
@@ -281,7 +284,7 @@ export default function IocSourcesPanel({
 
             {selected.discovery_evidence?.link_text || selected.discovery_evidence?.surrounding_text ? (
               <div className="tl-ioc-source-drawer__block">
-                <h4 className="tl-ioc-source-drawer__h">Discovery evidence</h4>
+                <h4 className="tl-ioc-source-drawer__h">Legacy discovery evidence</h4>
                 {selected.discovery_evidence.link_text ? (
                   <p className="tl-ioc-source-drawer__body">Link text: {selected.discovery_evidence.link_text}</p>
                 ) : null}

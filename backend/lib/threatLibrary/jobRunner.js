@@ -14,6 +14,7 @@ import { runAnalysisPipeline } from './pipeline.js';
 import { inspectIocSource } from './iocSources/inspect.js';
 import { extractIocSource } from './iocSources/extract.js';
 import { getIocSourceByPublicId } from './iocSources/store.js';
+import { createIocSourceDestinationGuard } from './iocSources/destinationIntel.js';
 import { updateJob } from './store.js';
 
 /**
@@ -62,9 +63,15 @@ async function runIocSourceJob(pool, ctx, deps = {}) {
     progress: { source_public_id: sourcePublicId }
   });
 
+  // Every source fetch (submitted URL, GitHub API, raw files, redirects) is
+  // checked against TalonHound IOC intelligence before it is made.
+  const sourceDeps = {
+    ...deps,
+    destinationGuard: deps.destinationGuard || createIocSourceDestinationGuard(pool, source.report_id)
+  };
   const result = ctx.jobType === THREAT_LIBRARY_JOB_MODES.EXTRACT_IOC_SOURCE
-    ? await extractIocSource(pool, source, deps)
-    : await inspectIocSource(pool, source, deps);
+    ? await extractIocSource(pool, source, sourceDeps)
+    : await inspectIocSource(pool, source, sourceDeps);
 
   await updateJob(pool, ctx.jobId, {
     status: result.ok ? 'completed' : 'failed',

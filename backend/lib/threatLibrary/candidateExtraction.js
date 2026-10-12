@@ -128,8 +128,11 @@ export {
  * `observation` / candidate `source_observation` (sourceObservation.js).
  * Membership, typing and assessment are unchanged: classification still reads
  * the asserted cells only.
+ * v21: a value with no letter or digit (a lone "/" separator in a cell such as
+ * "T1497.001 / T1497.003", "./", "--") is never an observable: it is no longer
+ * typed as a relative path / Context Only candidate (candidateValue.js).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v20';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v21';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 

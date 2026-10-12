@@ -18,6 +18,9 @@ import {
   RESOLVED_TYPES
 } from './observableTypeResolver.js';
 
+/** Any letter or digit, in any script. */
+const HAS_ALPHANUMERIC_RE = /[\p{L}\p{N}]/u;
+
 /** RFC documentation / loopback only — not vendor safety allowlists. */
 const RFC_EXAMPLE_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'localhost', 'invalid', 'test']);
 
@@ -103,6 +106,9 @@ export function isPrivateOrReservedAddress(normalizedIp) {
 export function normalizeCandidateValue(raw, hintType = null) {
   const refanged = refangObservable(raw);
   if (!refanged) return { ok: false, error: 'empty' };
+  // Separators and punctuation ("/" between two technique ids, "./", "--")
+  // name nothing: an observable always carries a letter or digit.
+  if (!HAS_ALPHANUMERIC_RE.test(refanged)) return { ok: false, error: 'no_alphanumeric' };
 
   if (hintType === 'cve' || /^CVE-\d{4}-\d{4,7}$/i.test(refanged)) {
     return {

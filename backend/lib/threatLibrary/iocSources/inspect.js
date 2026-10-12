@@ -4,7 +4,7 @@
 
 import { pdfToCanonicalDocument } from '../pdfIngest.js';
 import { enumerateGitHubIocSource, parseGitHubUrl } from './github.js';
-import { fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fetchSafe.js';
+import { BLOCKING_FETCH_CODES, fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fetchSafe.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
 import {
   loadOriginalIndicatorKeys,
@@ -12,13 +12,27 @@ import {
   replaceSourceFiles,
   transitionSource
 } from './store.js';
-import { guessTypeFromUrl } from './discover.js';
+import { guessTypeFromUrl } from './sourceType.js';
 import { IOC_SOURCE_FETCH } from './constants.js';
+
+/**
+ * The submitted source URL itself must clear the destination guard before
+ * anything is fetched: GitHub sources are read through api.github.com /
+ * raw.githubusercontent.com, so the per-request guard alone would never see
+ * the URL the analyst entered.
+ * @param {object} source
+ * @param {{ destinationGuard?: Function }} deps
+ */
+export async function guardSourceUrl(source, deps) {
+  if (typeof deps?.destinationGuard !== 'function') return { ok: true };
+  const verdict = await deps.destinationGuard(source.canonical_url || source.original_url);
+  return verdict && verdict.ok === false ? verdict : { ok: true };
+}
 
 /**
  * @param {import('pg').Pool} pool
  * @param {object} source threat_report_ioc_sources row
- * @param {{ fetchImpl?: Function }} [deps]
+ * @param {{ fetchImpl?: Function, destinationGuard?: Function }} [deps]
  */
 export async function inspectIocSource(pool, source, deps = {}) {
   await transitionSource(pool, source, 'start_inspect');
@@ -30,6 +44,15 @@ export async function inspectIocSource(pool, source, deps = {}) {
       error_detail: policy.error || 'URL blocked by security policy'
     });
     return { ok: false, code: 'blocked_url' };
+  }
+
+  const verdict = await guardSourceUrl(source, deps);
+  if (!verdict.ok) {
+    await transitionSource(pool, source, 'block', {
+      error_code: verdict.code,
+      error_detail: verdict.reason
+    });
+    return { ok: false, code: verdict.code };
   }
 
   const gh = parseGitHubUrl(source.canonical_url || source.original_url);
@@ -54,6 +77,7 @@ export async function inspectIocSource(pool, source, deps = {}) {
         try {
           const fetched = await fetchIocSourceUrl(file.download_url, {
             fetchImpl: deps.fetchImpl,
+            destinationGuard: deps.destinationGuard,
             maxBytes: IOC_SOURCE_FETCH.GITHUB_MAX_FILE_BYTES
           });
           const parsed = await parseIocSourceContent({
@@ -122,7 +146,8 @@ export async function inspectIocSource(pool, source, deps = {}) {
 
     // Single URL document
     const fetched = await fetchIocSourceUrl(source.canonical_url || source.original_url, {
-      fetchImpl: deps.fetchImpl
+      fetchImpl: deps.fetchImpl,
+      destinationGuard: deps.destinationGuard
     });
     const format = guessTypeFromUrl(fetched.finalUrl) === 'unknown'
       ? null
@@ -174,7 +199,7 @@ export async function inspectIocSource(pool, source, deps = {}) {
     return { ok: true, source: updated, preview };
   } catch (err) {
     const pub = publicFetchError(err);
-    const action = pub.code === 'blocked_url' || pub.code === 'redirect_blocked' ? 'block' : 'fail_inspect';
+    const action = BLOCKING_FETCH_CODES.has(pub.code) ? 'block' : 'fail_inspect';
     await transitionSource(pool, source, action, {
       error_code: pub.code,
       error_detail: pub.message

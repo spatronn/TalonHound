@@ -10,11 +10,18 @@
  * free of `./ai/*` (extractionRefresh.test.js enforces it), and it never
  * regenerates AI-owned report data: entities, relationships, report tags,
  * summary, confidence, report type, TLP, ai_result, analysis chunks / run id.
- * The one exception is subtractive and deterministic: the vulnerability
- * grounding gate the pipeline applies to every model result
- * (vulnerabilityGrounding.js) is re-applied to the STORED summary and entity
- * links, so a CVE the source never mentions, or a CVE-product pairing the
- * source never states, is removed. Nothing is added or rewritten otherwise.
+ * The exceptions are subtractive and deterministic: the grounding gates the
+ * pipeline applies to every model result are re-applied to the STORED summary
+ * and entity links: vulnerabilityGrounding.js (a CVE the source never
+ * mentions, or a CVE-product pairing the source never states, is removed) and
+ * publisherEntityGrounding.js (the publisher's own name promoted to a
+ * campaign / threat actor the source never states is unlinked, and the
+ * summary clause asserting it is removed). Nothing is added or rewritten
+ * otherwise.
+ *
+ * The report title is document-derived, not AI-owned: a URL report re-selects
+ * it from its retained source HTML under the current title rules
+ * (extract/titleSelection.js); without retained HTML it is kept.
  *
  * State ownership on a surviving canonical identity (candidate_type,
  * normalized_value):
@@ -41,6 +48,7 @@ import {
   matchCandidateSet,
   mergeAiCandidateUpdates,
   rebuildDocumentFromRetainedSource,
+  reselectReportTitle,
   summarizeResolvedCandidates
 } from './extractionStages.js';
 import {
@@ -54,6 +62,7 @@ import {
   updateReportStatus
 } from './store.js';
 import { groundStoredVulnerabilities, VULNERABILITY_GROUNDING_VERSION } from './vulnerabilityGrounding.js';
+import { groundStoredPublisherEntities, PUBLISHER_ENTITY_GROUNDING_VERSION } from './publisherEntityGrounding.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import {
   preserveAnalystCandidates,
@@ -209,6 +218,32 @@ export async function applyStoredVulnerabilityGrounding(pool, report, document) 
 }
 
 /**
+ * Re-apply the publisher-entity gate to the stored model output of a report.
+ * Subtractive only: unlinks unsupported entities from THIS report (with this
+ * report's relationships that use them; the shared entity row stays) and
+ * returns the grounded summary when it changed (else null).
+ * @param {import('pg').Pool} pool
+ * @param {{ id: number, summary?: string|null, source_url?: string|null, source_name?: string|null }} report
+ * @param {object} document canonical document the refresh extracted from
+ */
+export async function applyStoredPublisherEntityGrounding(pool, report, document) {
+  const entities = await loadReportEntityLinks(pool, report.id);
+  const grounded = groundStoredPublisherEntities({ summary: report.summary ?? null, entities }, { report, document });
+  const removal = await removeReportEntityLinks(pool, report.id, grounded.entity_ids_removed);
+  return {
+    summary: grounded.summary_changed ? grounded.summary : null,
+    diagnostics: {
+      version: PUBLISHER_ENTITY_GROUNDING_VERSION,
+      entities_removed: grounded.entities_removed,
+      summary_changed: grounded.summary_changed,
+      summary_unresolved: grounded.summary_unresolved,
+      entity_links_removed: removal.links_removed,
+      relationships_removed: removal.relationships_removed
+    }
+  };
+}
+
+/**
  * Worker entry for `refresh_extraction` jobs.
  * @param {import('pg').Pool} pool
  * @param {{ reportId: number, jobId: number, restoreStatus?: object }} ctx
@@ -266,6 +301,8 @@ export async function runExtractionRefresh(pool, ctx) {
     }
 
     await applyPublicationDate(pool, report, { document, sourceHtml });
+    const titleUpdate = await reselectReportTitle(pool, report, { document, sourceHtml });
+    document = titleUpdate.document;
     const previousRows = await loadReportCandidateRows(pool, report.id);
 
     await setStage('matching');
@@ -273,6 +310,12 @@ export async function runExtractionRefresh(pool, ctx) {
     const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates);
     const outcome = resolveRefreshOutcomeStatus(restore, persisted);
     const grounding = await applyStoredVulnerabilityGrounding(pool, report, refreshed.document);
+    const publisherGrounding = await applyStoredPublisherEntityGrounding(
+      pool,
+      { ...report, summary: grounding.summary ?? report.summary },
+      refreshed.document
+    );
+    const groundedSummary = publisherGrounding.summary ?? grounding.summary;
 
     const result = {
       document_rebuilt: documentRebuilt,
@@ -283,6 +326,9 @@ export async function runExtractionRefresh(pool, ctx) {
       removed: persisted.removed.length,
       replayed_ai_decisions: refreshed.replayedAiDecisions,
       vulnerability_grounding: grounding.diagnostics,
+      publisher_entity_grounding: publisherGrounding.diagnostics,
+      title_changed: titleUpdate.changed,
+      ...(titleUpdate.changed ? { previous_title: titleUpdate.previous_title, title_source: titleUpdate.source } : {}),
       ai_invoked: false,
       review_relevant: outcome.review_relevant,
       reopened_for_review: outcome.reopened_for_review,
@@ -301,7 +347,8 @@ export async function runExtractionRefresh(pool, ctx) {
     await updateReportStatus(pool, report.id, {
       canonical_document: refreshed.document,
       candidate_summary: refreshed.summary,
-      ...(grounding.summary != null ? { summary: grounding.summary } : {}),
+      ...(titleUpdate.changed ? { title: titleUpdate.title } : {}),
+      ...(groundedSummary != null ? { summary: groundedSummary } : {}),
       analysis_status: outcome.analysis_status,
       import_status: outcome.import_status,
       analysis_progress: {

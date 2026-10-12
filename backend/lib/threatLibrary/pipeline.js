@@ -52,6 +52,7 @@ import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { preserveAnalystCandidates } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
 import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
+import { groundAiPublisherEntities } from './publisherEntityGrounding.js';
 
 // Deterministic stages live in extractionStages.js (shared with the
 // AI-free extraction refresh); re-exported for existing callers.
@@ -388,6 +389,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     let aiValue = null;
     let aiMeta = null;
     let vulnerabilityGrounding = null;
+    let publisherEntityGrounding = null;
     const progressGate = createProgressGate(async (progress) => {
       if (await isAnalysisCancelRequested(pool, report.id)) {
         abort.abort();
@@ -431,8 +433,12 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       // CVE ids / CVE-product pairings the source does not state are model
       // fabrications: removed before anything is persisted.
       const grounded = groundAiVulnerabilities(ai.value, document);
-      aiValue = grounded.value;
+      // The publisher / vendor of the source is not a campaign or threat
+      // actor unless the source says so: unsupported promotions are removed.
+      const publisherGrounded = groundAiPublisherEntities(grounded.value, { report, document });
+      aiValue = publisherGrounded.value;
       vulnerabilityGrounding = grounded.diagnostics;
+      publisherEntityGrounding = publisherGrounded.diagnostics;
       aiMeta = ai.meta || null;
       log.info('AI analysis completed', {
         reportId: report.id,
@@ -614,7 +620,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         prompt_chars_total: aiMeta?.prompt_chars_total ?? null,
         elapsed_ms: aiMeta?.elapsed_ms ?? null,
         synthesis: aiMeta?.synthesis ?? null,
-        vulnerability_grounding: vulnerabilityGrounding
+        vulnerability_grounding: vulnerabilityGrounding,
+        publisher_entity_grounding: publisherEntityGrounding
       },
       canonical_document: document,
       analysis_status: 'review_required',
@@ -644,14 +651,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       progress: { stage: 'review_required', summary }
     });
 
-    // Discover Additional IOC Source references (never fetch/attach).
-    try {
-      const { runIocSourceDiscoveryForReport } = await import('./iocSources/runDiscovery.js');
-      await runIocSourceDiscoveryForReport(pool, { ...report, canonical_document: document }, { logger: log });
-    } catch (err) {
-      log.warn('ioc source discovery failed (non-fatal)', { reportId: report.id, error: err.message });
-    }
-
+    // Additional IOC Sources are manual-only: analysis never creates
+    // threat_report_ioc_sources rows (iocSources/sourceType.js).
     log.info('matching complete', { reportId: report.id, ...summary });
     return { ok: true, summary };
   } catch (err) {

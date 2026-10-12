@@ -436,6 +436,8 @@ export function classifyPathLikeShape(refanged) {
   const v = String(refanged || '').trim();
   if (!v) return 'other';
   const head = v.split(/\s+/)[0];
+  // "/", "./", "../" alone are separators, not paths: a path names something.
+  if (!/[\p{L}\p{N}]/u.test(head)) return 'other';
   if (SCHEME_RE.test(head)) return 'absolute_url';
   if (WINDOWS_PATH_RE.test(head)) return 'file_path';
   if (UNIX_ABS_PATH_RE.test(head)) return 'file_path';

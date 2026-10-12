@@ -10,7 +10,8 @@
 
 import { pdfToCanonicalDocument, THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
 import { reextractStoredHtmlDocument } from './urlIngest.js';
-import { CURRENT_HTML_EXTRACTOR_VERSIONS } from './extract/extractHtml.js';
+import { CURRENT_HTML_EXTRACTOR_VERSIONS, titleMeta } from './extract/extractHtml.js';
+import { selectHtmlTitle } from './extract/titleSelection.js';
 import {
   extractCandidatesWithDiagnostics,
   summarizeCandidateSet,
@@ -113,6 +114,49 @@ export async function rebuildDocumentFromRetainedSource(pool, report) {
     return { document: pdf.document, sourceHtml: null };
   }
   return null;
+}
+
+/**
+ * Re-select the title of a URL report from its retained source HTML under the
+ * current title rules (extract/titleSelection.js). The stored document keeps
+ * its blocks; only its title / title provenance change. Never re-fetches;
+ * a report without retained HTML (or a non-URL / WeChat-adapter report) keeps
+ * its title. Non-fatal.
+ * @param {import('pg').Pool} pool
+ * @param {object} report
+ * @param {{ document: object, sourceHtml?: string|null }} input
+ * @returns {Promise<{ document: object, changed: boolean, title?: string, previous_title?: string|null, source?: string|null }>}
+ */
+export async function reselectReportTitle(pool, report, input) {
+  const document = input.document;
+  const unchanged = { document, changed: false };
+  if (report?.source_type !== 'url' || !hasUsableDocument(document)) return unchanged;
+  if (document.meta?.adapter && !['generic_html', 'structured_fallback'].includes(document.meta.adapter)) return unchanged;
+  try {
+    let html = input.sourceHtml || null;
+    if (!html) {
+      const retained = await loadRetainedHtmlArtifact(pool, report.id);
+      if (!retained?.storage_key) return unchanged;
+      html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
+    }
+    const selection = selectHtmlTitle(html, { url: report.source_url });
+    if (!selection.title) return unchanged;
+    const meta = { ...(document.meta || {}) };
+    delete meta.site_names;
+    delete meta.title_selection;
+    const next = { ...document, title: selection.title, meta: { ...meta, ...titleMeta(selection) } };
+    const changed = selection.title !== String(report.title || '') || selection.title !== String(document.title || '');
+    return {
+      document: next,
+      changed,
+      title: selection.title,
+      previous_title: report.title || null,
+      source: selection.source
+    };
+  } catch (err) {
+    log.warn('title re-selection failed (non-fatal)', { reportId: report.id, error: err.message });
+    return unchanged;
+  }
 }
 
 /**

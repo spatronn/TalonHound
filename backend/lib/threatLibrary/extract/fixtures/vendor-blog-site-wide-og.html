@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<!--
+  Regression fixture shaped like report 18651 (a sandbox vendor's malware
+  analysis blog post): the site puts one generic og:title / twitter:title on
+  every page, the <title> carries the article title, a "Blog." <h1> sits in
+  the page chrome and the article has its own <h1>. Prose is synthetic; the
+  indicator values are the publisher's published IOC appendix (23 values).
+  The header / footer social links (incl. a GitHub organisation page) are
+  ordinary site navigation, never IOC sources.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="description" content="Automated malware analysis with the vendor sandbox.">
+    <meta name="twitter:title" content="Hatching - Automated malware analysis solutions">
+    <meta property="og:title" content="Hatching - Automated malware analysis solutions">
+    <title>Triage Insights: WinLol, a Rust Dropper Chain Delivering a WebRTC Remote Desktop RAT</title>
+  </head>
+  <body>
+    <nav class="site-menu"><a href="/">Home</a><a href="/blog/">Blog</a><a href="/about/">About</a></nav>
+    <header class="site-nav">
+      <a href="https://twitter.com/hatching_io"><i class="icon-twitter"></i></a>
+      <a href="https://www.linkedin.com/company/hatching"><i class="icon-linkedin"></i></a>
+      <a href="https://www.github.com/hatching"><i class="icon-github"></i></a>
+    </header>
+    <section class="blog-article-head">
+      <h2>Triage Insights: WinLol, a Rust Dropper Chain Delivering a WebRTC Remote Desktop RAT</h2>
+      <h1>Blog.</h1>
+    </section>
+    <article class="blog-article">
+      <header class="blog-article-meta"><p>2026-10-08</p></header>
+      <section class="blog-article-body">
+        <h1>WinLol: A Multi-Stage Rust Dropper Delivering a WebRTC Remote Desktop RAT</h1>
+        <p>A four-stage toolkit: a Rust dropper, an in-memory downloader, a sideloaded version.dll inside a copied OneDrive.exe, and a Go remote desktop agent.</p>
+        <p>Every networked stage of the first sample talks to workinghardo[.]link (103.193.173[.]199) over HTTP.</p>
+        <p>The dropper requests /payload.txt as a kill switch before continuing.</p>
+        <h2>MITRE ATT&amp;CK Techniques</h2>
+        <table>
+          <thead><tr><th>ID</th><th>Technique</th></tr></thead>
+          <tbody>
+            <tr><td>T1497.001 / T1497.003</td><td>Virtualization/Sandbox Evasion: System Checks, Time Based Evasion</td></tr>
+            <tr><td>T1574.002</td><td>DLL Side-Loading</td></tr>
+          </tbody>
+        </table>
+        <h2>Conclusion</h2>
+        <p>Sign up at tria.ge for a free account.</p>
+        <h2>Indicators of Compromise (IOCs)</h2>
+        <h3>Stage 1: Rust Dropper</h3>
+        <table>
+          <thead><tr><th>SHA256</th><th>Triage submit</th></tr></thead>
+          <tbody>
+            <tr><td>1e82f3fa779038d208279eca1a420f168bb4b9be95ba521362e5658cd33840e7</td><td>261008-r5gfhs1t2n</td></tr>
+            <tr><td>5fff61dff1fe18f59ebabe729c5ff9c42de64911248fb424815755fc7e76d5a1</td><td>261002-q19e3a1tev</td></tr>
+            <tr><td>18868595393c5345e99ebe6dbfe60780aef388836b125696a3201f1a88e67c47</td><td>261008-r5f5raywhy</td></tr>
+            <tr><td>7de267b3b415386424cefb3cb935436462ec0490a624e886615513e80606b9b2</td><td>261008-r7thvshz4n</td></tr>
+            <tr><td>b967ebdcb56423fd2021ce01248769ebc073f7fd00eb14870e0f45cb345f9aee</td><td>261008-r5hzcaywh1</td></tr>
+            <tr><td>d3740b8d4744dea17e58e918485273980380c3595c31cb4b938c06bd4d1222a3</td><td>261008-r5jwmshz2r</td></tr>
+            <tr><td>f2e81dff1c3bb139f8865327180c4d45fce68cf44e4ec445c4df8b49158bed9d</td><td>261008-r5kg6shz3w</td></tr>
+            <tr><td>a1a91d9cd396186c4fde28e050f88aa68062b05195aaea091e7b3a1ca7539893</td><td>261008-r5hnksywhz</td></tr>
+            <tr><td>82400db6e1195da7dd6db5526f795362ca9f13ef7ed5d2dba8b730fba7663f78</td><td>261008-r5hctahz2l</td></tr>
+            <tr><td>e7ccdf128df08e131c910e904a0be711273a2f33a531e208ec531ca19b0d091e</td><td>261008-r83g6ahz7x</td></tr>
+          </tbody>
+        </table>
+        <h3>Stage 2: Downloader</h3>
+        <table>
+          <thead><tr><th>SHA256</th><th>Triage submit</th></tr></thead>
+          <tbody>
+            <tr><td>e7e640540ef158cf77b8d84e1b153cf0133d07cb70133f501ba306ae1e00586d</td><td>261002-q192lawdrf</td></tr>
+            <tr><td>3690c237facca095803acfd0b5e702643fcf7a22f3b16a7ac00d1bc2337d370b</td><td>261008-r5graa1t2p</td></tr>
+            <tr><td>713ec0de0e018e22642e280d02ca1516e05235fb99d72355abb1d7bca5737dd2</td><td>261008-r5graahz3v</td></tr>
+          </tbody>
+        </table>
+        <h3>Stage 3: version.dll Sideload Proxy</h3>
+        <table>
+          <thead><tr><th>SHA256</th><th>Triage submit</th></tr></thead>
+          <tbody>
+            <tr><td>593d05c817b5f41bd0cbdcfbd9729c6a875173303f700c4dd953046f9b2f6de7</td><td>260722-3ldq3asxbw (dropped file)</td></tr>
+            <tr><td>668c0851af5a3a1f685f3e632e4cce3f71aed73808deefe4c5b59bf40088d4fa</td><td>260728-y4zzssgq8s</td></tr>
+          </tbody>
+        </table>
+        <h3>Stage 4: Go Agent</h3>
+        <table>
+          <thead><tr><th>SHA256</th><th>Triage submit</th></tr></thead>
+          <tbody>
+            <tr><td>4eae9858ccc07ad60b3e5deb45d30e0439d0f30309ddc75097d1878e784b3aaf</td><td>260721-xzvc3sgr6s (dropped file)</td></tr>
+            <tr><td>c1dfd3712d6f927acf98a78f1b77367d0b57aefbcd6ea8a7120d61a2b8a76525</td><td>261005-n1awds1hqd</td></tr>
+            <tr><td>baa36514329766db2993e8435d92209f167b27725e54ca166239158bd100794f</td><td>261008-r5jkwahz2p</td></tr>
+          </tbody>
+        </table>
+        <h3>Network</h3>
+        <table>
+          <thead><tr><th>Indicator</th><th>Type</th></tr></thead>
+          <tbody>
+            <tr><td>workinghardo[.]link</td><td>Domain</td></tr>
+            <tr><td>havefunnn[.]win</td><td>Domain</td></tr>
+            <tr><td>103.193.173[.]199</td><td>IP</td></tr>
+            <tr><td>103.193.173[.]83</td><td>IP</td></tr>
+            <tr><td>47.108.192[.]193</td><td>IP</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </article>
+    <footer class="footer">
+      <a href="https://twitter.com/hatching_io"><i class="icon-twitter"></i></a>
+      <a href="https://www.github.com/hatching"><i class="icon-github"></i></a>
+      <p>Hatching International B.V., The Netherlands</p>
+    </footer>
+  </body>
+</html>

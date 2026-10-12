@@ -73,36 +73,3 @@ export const IOC_SOURCE_CONTENT_TYPES = Object.freeze([
   'application/yaml',
   'text/yaml'
 ]);
-
-/** Link-text / surrounding-text cues for automatic discovery (case-insensitive). */
-export const IOC_SOURCE_DISCOVERY_CUES = Object.freeze([
-  'complete ioc',
-  'full ioc',
-  'ioc list',
-  'iocs',
-  'indicators of compromise',
-  'additional indicators',
-  'additional ioc',
-  'supplementary indicators',
-  'download ioc',
-  'download indicators',
-  'ioc appendix',
-  'indicator appendix',
-  'ioc repository',
-  'ioc dataset',
-  'indicator dataset',
-  'host indicators',
-  'network indicators',
-  'sample hashes'
-]);
-
-export const IOC_SOURCE_DISCOVERY_URL_CUES = Object.freeze([
-  '/ioc/',
-  '/iocs/',
-  '/indicators/',
-  'ioc.',
-  'indicators.',
-  '.csv',
-  '.txt',
-  'github.com/'
-]);

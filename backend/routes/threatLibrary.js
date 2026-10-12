@@ -49,6 +49,7 @@ import {
   transitionSource
 } from '../lib/threatLibrary/iocSources/store.js';
 import { validateIocSourceUrl } from '../lib/threatLibrary/iocSources/fetchSafe.js';
+import { assessIocSourceDestination } from '../lib/threatLibrary/iocSources/destinationIntel.js';
 import { IOC_SOURCE_JOB_MODES } from '../lib/threatLibrary/iocSources/constants.js';
 import {
   getAiSettings,
@@ -1401,15 +1402,51 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
         const url = String(req.body?.url || '').trim();
+        // Known malicious infrastructure is checked first (it is the most
+        // specific reason) and is recorded, never contacted.
+        const intel = url ? await assessIocSourceDestination(pool, { url, reportId: report.id }) : { ok: true };
         const policy = validateIocSourceUrl(url);
-        if (!policy.ok) {
+        if (intel.ok && !policy.ok) {
           return res.status(400).json({ message: policy.error || 'Invalid URL', code: 'blocked_url' });
         }
         const actor = await actorOf(req);
-        const row = await createManualIocSource(pool, report.id, {
-          url,
-          requestedBy: actor?.public_id || null
-        });
+        let row;
+        try {
+          row = await createManualIocSource(pool, report.id, {
+            url,
+            requestedBy: actor?.public_id || null
+          });
+        } catch (err) {
+          if (intel.ok || err?.code !== 'invalid_url') throw err;
+          row = null; // refused below without a stored row
+        }
+        if (!intel.ok) {
+          const blocked = row
+            ? await transitionSource(pool, row, 'block', { error_code: intel.code, error_detail: intel.reason })
+            : null;
+          await writeAudit(req, {
+            action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_BLOCKED,
+            ...reportAuditEntity(report),
+            severity: AUDIT_SEVERITY.WARNING,
+            status: AUDIT_STATUS.FAILED,
+            metadata: {
+              ...reportAuditSnapshot(report),
+              source_public_id: row?.public_id || null,
+              canonical_url: row?.canonical_url || null,
+              submitted_url: url.slice(0, 2048),
+              discovery_method: row?.discovery_method || 'manual',
+              block_code: intel.code,
+              block_reason: intel.reason,
+              intel_matches: intel.matches,
+              initiated_by: initiatedBy(actor)
+            }
+          });
+          return res.status(422).json({
+            message: intel.reason,
+            code: intel.code,
+            source: row ? publicIocSource(blocked || row) : null
+          });
+        }
         await writeAudit(req, {
           action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_ADDED,
           ...reportAuditEntity(report),

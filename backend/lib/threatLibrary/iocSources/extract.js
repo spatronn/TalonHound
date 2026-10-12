@@ -11,6 +11,7 @@ import { IOC_SOURCE_FETCH, LINKED_SOURCE_IOC_ASSERTION } from './constants.js';
 import { fetchIocSourceUrl, publicFetchError } from './fetchSafe.js';
 import { enumerateGitHubIocSource, parseGitHubUrl, resolveGitHubCommitSha } from './github.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
+import { guardSourceUrl } from './inspect.js';
 import {
   listSourceFiles,
   loadOriginalIndicatorKeys,
@@ -50,10 +51,20 @@ function pinnedDownloadUrl(file, gh, repoRevision) {
 /**
  * @param {import('pg').Pool} pool
  * @param {object} source
- * @param {{ fetchImpl?: Function }} [deps]
+ * @param {{ fetchImpl?: Function, destinationGuard?: Function }} [deps]
  */
 export async function extractIocSource(pool, source, deps = {}) {
   await transitionSource(pool, source, 'start_extract');
+
+  // Intelligence can change between inspection and approval: re-check first.
+  const verdict = await guardSourceUrl(source, deps);
+  if (!verdict.ok) {
+    await transitionSource(pool, source, 'block', {
+      error_code: verdict.code,
+      error_detail: verdict.reason
+    });
+    return { ok: false, code: verdict.code };
+  }
 
   const priorRows = await loadReportCandidateRows(pool, source.report_id);
   const priorByKey = new Map(priorRows.map((r) => [`${r.candidate_type}\0${r.normalized_value}`, r]));
@@ -107,6 +118,7 @@ export async function extractIocSource(pool, source, deps = {}) {
       try {
         const fetched = await fetchIocSourceUrl(url, {
           fetchImpl: deps.fetchImpl,
+          destinationGuard: deps.destinationGuard,
           maxBytes: gh ? IOC_SOURCE_FETCH.GITHUB_MAX_FILE_BYTES : IOC_SOURCE_FETCH.MAX_BYTES
         });
         // When inspect stored sha256(content), refuse silent byte drift on the pinned URL.

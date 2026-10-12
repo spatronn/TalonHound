@@ -97,12 +97,22 @@ export function sourceCardMeta(source) {
     parts.push(`${Number(unique)} unique indicators`);
   }
 
-  const discovery = String(source?.discovery_method || '').toLowerCase();
-  if (discovery === 'manual' || discovery === 'auto') {
-    parts.push(discovery === 'manual' ? 'Added manually' : 'Auto-discovered');
-  }
+  const provenance = sourceProvenanceLabel(source);
+  if (provenance !== '—') parts.push(provenance);
 
   return parts.join(' · ');
+}
+
+/**
+ * How the source row was created. Sources are added manually by analysts;
+ * rows from the retired automatic discovery keep their own provenance.
+ * @param {{ discovery_method?: string }} source
+ */
+export function sourceProvenanceLabel(source) {
+  const discovery = String(source?.discovery_method || '').toLowerCase();
+  if (discovery === 'manual') return 'Added manually';
+  if (discovery === 'auto') return 'Auto-discovered (legacy)';
+  return '—';
 }
 
 export function isAttachedLifecycle(status) {

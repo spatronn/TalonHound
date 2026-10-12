@@ -19,13 +19,13 @@ import { assessDocumentQuality, meaningfulCharCount } from './quality.js';
 import {
   extractBlocksFromNode,
   extractHtmlLanguage,
-  extractHtmlTitle,
   findElement,
   findElements,
   parseHtml,
   HTML_BLOCKS_VERSION
 } from './htmlBlocks.js';
 import { extractWeixinDocument, WEIXIN_EXTRACTOR_VERSION } from './adapters/weixin.js';
+import { selectHtmlTitle } from './titleSelection.js';
 
 export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = HTML_BLOCKS_VERSION;
 export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v3';
@@ -41,13 +41,32 @@ export const CURRENT_HTML_EXTRACTOR_VERSIONS = Object.freeze([
 const tagOf = (el) => String(el?.name || '').toLowerCase();
 
 /**
+ * Provenance of the selected title, recorded only when it carries information
+ * (a declared site name, or a rejected site-wide brand title).
+ * @param {ReturnType<typeof selectHtmlTitle>} selection
+ */
+export function titleMeta(selection) {
+  const out = {};
+  if (selection.site_names?.length) out.site_names = selection.site_names.slice(0, 5);
+  if (selection.rejected?.length) {
+    out.title_selection = {
+      version: selection.version,
+      source: selection.source,
+      rejected: selection.rejected.slice(0, 4)
+    };
+  }
+  return out;
+}
+
+/**
  * Primary generic extractor (article → main → body).
  * @param {string} html
  * @param {{ url?: string, titleHint?: string }} [meta]
  */
 export function extractGenericArticleDocument(html, meta = {}) {
   const raw = String(html || '');
-  const title = extractHtmlTitle(raw, meta.titleHint);
+  const selection = selectHtmlTitle(raw, { url: meta.url, hint: meta.titleHint });
+  const title = selection.title;
   const dom = parseHtml(raw);
   const article = findElement(dom, (el) => tagOf(el) === 'article');
   const main = article ? null : findElement(dom, (el) => tagOf(el) === 'main');
@@ -67,7 +86,8 @@ export function extractGenericArticleDocument(html, meta = {}) {
     meta: {
       source_url: meta.url || null,
       extractor: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
-      adapter: 'generic_html'
+      adapter: 'generic_html',
+      ...titleMeta(selection)
     }
   });
 }
@@ -81,7 +101,8 @@ const CONTENT_ROOT_HINT_RE = /(article-body|post-content|entry-content|article_c
  */
 export function extractStructuredFallbackDocument(html, meta = {}) {
   const raw = String(html || '');
-  const title = extractHtmlTitle(raw, meta.titleHint);
+  const selection = selectHtmlTitle(raw, { url: meta.url, hint: meta.titleHint });
+  const title = selection.title;
   const dom = parseHtml(raw);
 
   const candidates = findElements(dom, (el) => {
@@ -120,7 +141,8 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
     meta: {
       source_url: meta.url || null,
       extractor: THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION,
-      adapter: 'structured_fallback'
+      adapter: 'structured_fallback',
+      ...titleMeta(selection)
     }
   });
 }

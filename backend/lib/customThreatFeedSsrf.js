@@ -18,12 +18,29 @@ FORBIDDEN_DESTINATIONS.addSubnet('169.254.0.0', 16, 'ipv4');   // link-local / m
 FORBIDDEN_DESTINATIONS.addSubnet('172.16.0.0', 12, 'ipv4');    // RFC1918
 FORBIDDEN_DESTINATIONS.addSubnet('192.168.0.0', 16, 'ipv4');   // RFC1918
 FORBIDDEN_DESTINATIONS.addSubnet('100.64.0.0', 10, 'ipv4');    // RFC6598 CGNAT / shared address space
+FORBIDDEN_DESTINATIONS.addSubnet('192.0.0.0', 24, 'ipv4');     // IETF protocol assignments
+FORBIDDEN_DESTINATIONS.addSubnet('192.0.2.0', 24, 'ipv4');     // TEST-NET-1
+FORBIDDEN_DESTINATIONS.addSubnet('192.88.99.0', 24, 'ipv4');   // 6to4 relay anycast
+FORBIDDEN_DESTINATIONS.addSubnet('198.18.0.0', 15, 'ipv4');    // benchmarking
+FORBIDDEN_DESTINATIONS.addSubnet('198.51.100.0', 24, 'ipv4');  // TEST-NET-2
+FORBIDDEN_DESTINATIONS.addSubnet('203.0.113.0', 24, 'ipv4');   // TEST-NET-3
 FORBIDDEN_DESTINATIONS.addSubnet('224.0.0.0', 4, 'ipv4');      // multicast
-FORBIDDEN_DESTINATIONS.addSubnet('240.0.0.0', 4, 'ipv4');      // reserved
+FORBIDDEN_DESTINATIONS.addSubnet('240.0.0.0', 4, 'ipv4');      // reserved + broadcast
 FORBIDDEN_DESTINATIONS.addSubnet('::', 128, 'ipv6');           // unspecified
 FORBIDDEN_DESTINATIONS.addSubnet('::1', 128, 'ipv6');          // loopback
+// IPv4-mapped (::ffff:0:0/96) addresses are checked against the IPv4 rules by
+// BlockList itself. Prefixes that embed or translate to an IPv4 destination
+// are refused outright: their IPv4 target is not checked by the rules above.
+FORBIDDEN_DESTINATIONS.addSubnet('::', 96, 'ipv6');            // IPv4-compatible (deprecated)
+FORBIDDEN_DESTINATIONS.addSubnet('64:ff9b::', 96, 'ipv6');     // NAT64 well-known prefix
+FORBIDDEN_DESTINATIONS.addSubnet('64:ff9b:1::', 48, 'ipv6');   // NAT64 local-use
+FORBIDDEN_DESTINATIONS.addSubnet('2002::', 16, 'ipv6');        // 6to4
+FORBIDDEN_DESTINATIONS.addSubnet('2001::', 32, 'ipv6');        // Teredo
+FORBIDDEN_DESTINATIONS.addSubnet('100::', 64, 'ipv6');         // discard-only
+FORBIDDEN_DESTINATIONS.addSubnet('2001:db8::', 32, 'ipv6');    // documentation
 FORBIDDEN_DESTINATIONS.addSubnet('fc00::', 7, 'ipv6');         // ULA
 FORBIDDEN_DESTINATIONS.addSubnet('fe80::', 10, 'ipv6');        // link-local
+FORBIDDEN_DESTINATIONS.addSubnet('fec0::', 10, 'ipv6');        // site-local (deprecated)
 FORBIDDEN_DESTINATIONS.addSubnet('ff00::', 8, 'ipv6');         // multicast
 
 /**
@@ -43,7 +60,8 @@ export function isForbiddenFeedDestinationIp(address) {
  * @param {string} hostname
  */
 export function normalizeFeedHostname(hostname) {
-  return String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '');
+  // A trailing dot is the same DNS name ("localhost." == "localhost").
+  return String(hostname || '').trim().toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '');
 }
 
 function isBlockedHostname(hostname) {
@@ -53,6 +71,9 @@ function isBlockedHostname(hostname) {
   if (host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
   if (host.endsWith('.local') || host.endsWith('.localhost')) return true;
   if (host.endsWith('.internal')) return true;
+  // Single-label names ("db", "redis", "backend") are internal service names
+  // resolved by a local / container resolver, never public destinations.
+  if (!isIP(host) && !host.includes('.')) return true;
   return false;
 }
 

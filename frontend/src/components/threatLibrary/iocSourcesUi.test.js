@@ -15,6 +15,7 @@ import {
   lifecycleBadge,
   shortSourceTitle,
   sourceCardMeta,
+  sourceProvenanceLabel,
   sourceTypeLabel,
   isAttachedLifecycle,
   isPendingLifecycle
@@ -115,4 +116,15 @@ test('IOC Sources panel uses Threat Library dark surface classes, not light fall
   assert.match(pageCss, /background:\s*#0f172a/);
   assert.doesNotMatch(pageCss, /\.tl-ioc-source-card[^{]*\{[^}]*background:\s*#fff/);
   assert.doesNotMatch(pageCss, /var\(--th-surface/);
+});
+
+test('IOC Sources are manual-only: provenance stays accurate, panel never promises discovery', () => {
+  assert.equal(sourceProvenanceLabel({ discovery_method: 'manual' }), 'Added manually');
+  // Rows from the retired automatic discovery keep their provenance; never relabelled manual.
+  assert.equal(sourceProvenanceLabel({ discovery_method: 'auto' }), 'Auto-discovered (legacy)');
+  assert.equal(sourceProvenanceLabel({}), '—');
+  assert.match(sourceCardMeta({ source_type: 'unknown', discovery_method: 'auto' }), /Auto-discovered \(legacy\)/);
+  assert.doesNotMatch(panelSrc, /discovered or added/i);
+  assert.doesNotMatch(panelSrc, /Discovered \/ pending/);
+  assert.match(panelSrc, /Add source URL/);
 });

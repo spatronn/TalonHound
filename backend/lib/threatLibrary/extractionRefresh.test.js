@@ -109,6 +109,8 @@ function createFakeDb({ report, iocCatalog = [] }) {
     }
     if (/SELECT cancel_requested_at FROM threat_reports/.test(s)) return { rows: [{ cancel_requested_at: null }] };
     if (/FROM threat_report_artifacts/.test(s)) return { rows: [] };
+    // No Additional IOC Source has extracted into this fixture report.
+    if (/FROM threat_report_candidate_source_links/.test(s)) return { rows: [] };
     if (/^UPDATE threat_library_jobs SET/.test(t)) {
       const job = db.jobs.find((j) => j.id === params[0]);
       if (job) {
@@ -958,4 +960,59 @@ test('a later analyst Context Only / Ignore of a created IOC identity survives r
   assert.equal(kept.assessment, 'suspicious');
   assert.equal(kept.is_ioc, true);
   assert.equal(kept.match_state, 'existing');
+});
+
+/** A document link the retired automatic discovery would have turned into an IOC Source row. */
+function withIocPackLink(db) {
+  const doc = db.report.canonical_document;
+  db.report.canonical_document = {
+    ...doc,
+    blocks: [...doc.blocks, { id: 'b-pack', type: 'paragraph', section: 'Indicators', text: 'Full IOC list: https://github.com/vendor/ioc/tree/main/pack and https://www.github.com/vendor' }]
+  };
+}
+
+test('IOC Sources are manual-only: retry, re-run AI and refresh never read or write IOC Source rows', async (t) => {
+  for (const jobType of ['retry', 'rerun_ai']) {
+    const { db, pool } = await seedAnalyzedReport({ previousContract: 'tl-candidates-v13' });
+    withIocPackLink(db);
+    db.jobs[0].job_type = jobType;
+    const { result } = await runAiJob(pool, jobType);
+    assert.equal(result.ok, true, `${jobType}: ${JSON.stringify(result)}`);
+    assert.deepEqual(db.sql.filter((q) => /threat_report_ioc_sources/.test(q)), [], `${jobType} touched IOC Sources`);
+  }
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport();
+  withIocPackLink(db);
+  assert.equal((await refresh(pool, deps)).ok, true);
+  assert.deepEqual(db.sql.filter((q) => /threat_report_ioc_sources/.test(q)), [], 'refresh touched IOC Sources');
+});
+
+test('refresh re-applies publisher-entity grounding: the publisher promoted to a campaign is unlinked, others kept, no AI', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport();
+  // SOURCE is research.example: its publisher identity is "research".
+  db.report.summary = "The report details SyntheticLoader, associated with the 'Research' campaign. It beacons over HTTPS.";
+  db.entities.push({ report_id: 77, entity_id: 9004, entity_type: 'campaign', name: 'Research', confidence: null });
+  db.entities.push({ report_id: 77, entity_id: 9005, entity_type: 'campaign', name: 'Operation Lantern', confidence: null });
+  db.relationships.push({ id: 3003, report_id: 77, subject_kind: 'entity', subject_entity_id: 9001, relationship_type: 'attributed_to', object_kind: 'entity', object_entity_id: 9004 });
+  const candidatesBefore = clone(db.candidates.map((c) => [c.id, c.review_status, c.assessment, c.role, c.match_state, c.matched_ioc_id]));
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true);
+  assert.equal(calls.analyze, 0);
+  assert.equal(db.report.summary, 'The report details SyntheticLoader. It beacons over HTTPS.');
+  assert.deepEqual(db.entities.map((e) => e.entity_id), [9001, 9002, 9005], 'only the publisher-named campaign link is removed');
+  assert.deepEqual(db.relationships.map((r) => r.id), [3001], 'only the relationship that used it is removed');
+  assert.deepEqual(clone(db.candidates.map((c) => [c.id, c.review_status, c.assessment, c.role, c.match_state, c.matched_ioc_id])), candidatesBefore);
+  const grounding = db.report.analysis_progress.last_refresh.publisher_entity_grounding;
+  assert.equal(grounding.entity_links_removed, 1);
+  assert.equal(grounding.relationships_removed, 1);
+  assert.equal(grounding.summary_changed, true);
+  assert.deepEqual(grounding.entities_removed.map((e) => e.name), ['Research']);
+  assert.equal(db.sql.some((q) => /DELETE FROM threat_entities/i.test(q)), false, 'the shared entity row is never deleted');
+
+  // Idempotent: a second refresh changes nothing further.
+  const again = await refresh(pool, deps);
+  assert.equal(again.ok, true);
+  assert.equal(db.report.analysis_progress.last_refresh.publisher_entity_grounding.entity_links_removed, 0);
+  assert.equal(db.report.summary, 'The report details SyntheticLoader. It beacons over HTTPS.');
 });
