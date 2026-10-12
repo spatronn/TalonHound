@@ -241,6 +241,16 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     return req.user || null;
   }
 
+  /**
+   * Persisted users.public_id of the initiating principal. resolveActor()
+   * returns it as `publicId`; reading `public_id` left IOC Source
+   * approved_by / dismissed_by / requested_by NULL even though the audit row
+   * named the analyst.
+   */
+  function actorPublicId(actor) {
+    return actor?.publicId || actor?.public_id || null;
+  }
+
   async function writeAudit(req, event) {
     if (typeof audit?.auditLog !== 'function') return;
     await audit.auditLog({ req, ...event });
@@ -263,7 +273,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     return queueThreatLibraryAnalysis(pool, queue, {
       reportId: report.id,
       jobType,
-      requestedBy: actor?.public_id || null,
+      requestedBy: actorPublicId(actor),
       jobPayload: { source_public_id: source.public_id },
       createJob,
       dispatch: {
@@ -1414,7 +1424,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         try {
           row = await createManualIocSource(pool, report.id, {
             url,
-            requestedBy: actor?.public_id || null
+            requestedBy: actorPublicId(actor)
           });
         } catch (err) {
           if (intel.ok || err?.code !== 'invalid_url') throw err;
@@ -1541,7 +1551,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           await setSelectedSourceFiles(pool, source.id, req.body.selected_paths);
         }
         const updated = await transitionSource(pool, source, 'approve', {
-          approved_by: actor?.public_id || null
+          approved_by: actorPublicId(actor)
         });
         await writeAudit(req, {
           action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_APPROVED,
@@ -1590,7 +1600,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (!report) return res.status(404).json({ message: 'Report not found' });
         const actor = await actorOf(req);
         const updated = await transitionSource(pool, source, 'dismiss', {
-          dismissed_by: actor?.public_id || null
+          dismissed_by: actorPublicId(actor)
         });
         await writeAudit(req, {
           action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_DISMISSED,

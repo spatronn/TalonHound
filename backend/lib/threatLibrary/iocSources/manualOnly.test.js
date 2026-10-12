@@ -74,3 +74,11 @@ test('the Add Source URL route stays the creation entry point and checks intelli
   assert.ok(intel > 0 && create > intel && blocked > create && queue > blocked, 'intel -> record -> blocked audit (return) -> queue');
   assert.match(block.slice(blocked, queue), /return res\.status\(422\)/, 'a blocked source is never queued for inspection');
 });
+
+test('IOC Source lifecycle stamps the analyst public id that resolveActor returns (publicId)', () => {
+  const routes = read(path.join(backendRoot, 'routes/threatLibrary.js'));
+  assert.doesNotMatch(routes, /(requestedBy|_by): actor\?\.public_id/, 'resolveActor exposes publicId, not public_id');
+  assert.match(routes, /approved_by: actorPublicId\(actor\)/);
+  assert.match(routes, /dismissed_by: actorPublicId\(actor\)/);
+  assert.match(routes, /function actorPublicId\(actor\) \{\s*return actor\?\.publicId \|\| actor\?\.public_id \|\| null;/);
+});
