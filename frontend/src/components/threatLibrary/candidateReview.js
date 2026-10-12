@@ -234,8 +234,11 @@ export function matchReviewFilter(candidate, filter) {
   }
   if (filter === 'new') return isUnionReviewIndicator(candidate) && state === 'new';
   if (filter === 'context_only') return state === 'context_only' || review === 'context_only' || candidate.assessment === 'context_only';
+  // Union Indicator still awaiting an analyst decision — same set as the
+  // backend review_progress pending count (reviewProgress.js) and the
+  // backend selection tab. match_state needs_review alone is a match bucket.
   if (filter === 'needs_review') {
-    return (state === 'needs_review' || review === 'pending') && isUnionReviewIndicator(candidate);
+    return review === 'pending' && isUnionReviewIndicator(candidate);
   }
   // Source-scoped filter: `source:<public_id>`
   if (String(filter || '').startsWith('source:')) {

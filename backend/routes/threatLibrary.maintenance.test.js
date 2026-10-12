@@ -38,6 +38,8 @@ function harness(reportPatch = {}, { jobs = [] } = {}) {
       if (/FROM threat_reports WHERE public_id/.test(s)) return { rows: state.report.deleted_at ? [] : [{ ...state.report }] };
       if (/FROM threat_reports r WHERE r\.id = \$1/.test(s)) return { rows: [{ indicator_count: 3, review_candidate_count: 2, matched_count: 1, entity_count: 0 }] };
       if (/FROM threat_report_tags/.test(s)) return { rows: [] };
+      // reviewProgress.loadReportReviewProgress (detail-only effective review progress)
+      if (/^WITH m AS \(/.test(t)) return { rows: [] };
       if (/^UPDATE threat_reports\s+SET analysis_status = 'pending'/.test(t)) {
         // claimReportForMaintenance: status predicate + no active job, atomically.
         const allowed = params[1];

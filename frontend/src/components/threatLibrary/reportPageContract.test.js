@@ -89,10 +89,13 @@ test('Threat Library report UI has no MITRE ATT&CK section, technique editing or
 test('overview metrics and report details come from the loaded rows, never hardcoded', () => {
   assert.match(pageSrc, /const metrics = useMemo\(\(\) => buildOverviewMetrics\(candidates, report\)/);
   assert.match(pageSrc, /\{metrics\.available \? \(/);
-  for (const id of ['metric-candidates', 'metric-new', 'metric-existing', 'metric-needs-review', 'metric-progress']) {
+  for (const id of ['metric-original', 'metric-new', 'metric-existing', 'metric-needs-review', 'metric-progress']) {
     assert.match(pageSrc, new RegExp(`testId="${id}"|data-testid="${id}"`));
   }
   assert.match(pageSrc, /`\$\{metrics\.reviewed\}\/\$\{metrics\.total\}`/);
+  // Progress is the backend review_progress; the page never derives it from rows.
+  assert.match(pageSrc, /metrics\.progressAvailable \? `\$\{metrics\.reviewed\}\/\$\{metrics\.total\}` : '—'/);
+  assert.doesNotMatch(pageSrc, /label="Candidates"/);
   assert.match(pageSrc, /className="tl-statstrip"/, 'compact strip, not KPI cards');
   assert.doesNotMatch(pageSrc, /className="tl-metrics"/);
   assert.match(pageSrc, /buildReportDetails\(report, \{/);

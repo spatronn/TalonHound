@@ -221,8 +221,11 @@ export function matchSelectionTab(candidate, tab) {
   if (tab === 'context_only') {
     return state === 'context_only' || review === 'context_only' || candidate?.assessment === 'context_only';
   }
+  // Needs Review = union Indicator still awaiting an analyst decision
+  // (reviewProgress.js pending). A low-confidence match bucket
+  // (match_state needs_review) is not pending once the analyst decided.
   if (tab === 'needs_review') {
-    return (state === 'needs_review' || review === 'pending') && isUnionReportIndicatorMember(candidate);
+    return review === 'pending' && isUnionReportIndicatorMember(candidate);
   }
   if (String(tab || '').startsWith('source:')) {
     const sourceId = String(tab).slice('source:'.length);

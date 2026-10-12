@@ -1827,11 +1827,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           <div role="tabpanel" id="tl-panel-overview" aria-labelledby="tl-tab-overview">
             {metrics.available ? (
               <div className="tl-statstrip" data-testid="overview-metrics">
-                <Stat label="Candidates" value={metrics.candidates} testId="metric-candidates" />
+                <Stat label="Original" value={metrics.original} testId="metric-original" />
+                {metrics.linkedOnly > 0 ? (
+                  <Stat label="Linked only" value={metrics.linkedOnly} testId="metric-linked-only" />
+                ) : null}
                 <Stat label="New" value={metrics.new} testId="metric-new" />
                 <Stat label="Existing" value={metrics.existing} testId="metric-existing" />
-                <Stat label="Needs review" value={metrics.needsReview} testId="metric-needs-review" />
-                <Stat label="Reviewed" value={`${metrics.reviewed}/${metrics.total}`} testId="metric-progress">
+                <Stat label="Needs review" value={metrics.progressAvailable ? metrics.needsReview : '—'} testId="metric-needs-review" />
+                <Stat
+                  label="Reviewed"
+                  value={metrics.progressAvailable ? `${metrics.reviewed}/${metrics.total}` : '—'}
+                  testId="metric-progress"
+                >
                   <span
                     className="tl-progress tl-progress--inline"
                     role="progressbar"

@@ -17,7 +17,8 @@ import {
   entityHasDetail,
   formatByteSize,
   groupEntitiesByType,
-  isOpenableSourceUrl
+  isOpenableSourceUrl,
+  readReviewProgress
 } from './reportOverview.js';
 
 let nextId = 1;
@@ -106,10 +107,24 @@ test('filter counts equal the row count each filter tab would show', () => {
   }
 });
 
-test('finalized report metrics: 25 candidates, 0 new, 25 existing, 0 needs review, 25/25 reviewed', () => {
-  const m = buildOverviewMetrics(finalizedCandidates, finalizedReport);
+function progress(total, reviewed, { original = total, linkedOnly = 0 } = {}) {
+  return {
+    contract: 'tl-review-progress-v1',
+    total,
+    reviewed,
+    pending: total - reviewed,
+    original: { total: original, reviewed: Math.min(reviewed, original), pending: 0 },
+    linked_only: { total: linkedOnly, reviewed: 0, pending: 0, decided_without_accepted_source: 0 },
+    overlap: 0
+  };
+}
+
+test('finalized report metrics: 25 original, 0 new, 25 existing, 0 needs review, 25/25 reviewed', () => {
+  const m = buildOverviewMetrics(finalizedCandidates, { ...finalizedReport, review_progress: progress(25, 25) });
   assert.equal(m.available, true);
-  assert.equal(m.candidates, 25);
+  assert.equal(m.progressAvailable, true);
+  assert.equal(m.original, 25);
+  assert.equal(m.linkedOnly, 0);
   assert.equal(m.new, 0);
   assert.equal(m.existing, 25);
   assert.equal(m.needsReview, 0);
@@ -120,10 +135,10 @@ test('finalized report metrics: 25 candidates, 0 new, 25 existing, 0 needs revie
   assert.equal(m.progressPct, 100);
 });
 
-test('review-ready report metrics: 20 candidates, 15 new, 5 existing, 20 need review, 0/20 reviewed', () => {
-  const m = buildOverviewMetrics(reviewCandidates, reviewReport);
+test('review-ready report metrics: 20 original, 15 new, 5 existing, 20 need review, 0/20 reviewed', () => {
+  const m = buildOverviewMetrics(reviewCandidates, { ...reviewReport, review_progress: progress(20, 0) });
   assert.equal(m.available, true);
-  assert.equal(m.candidates, 20);
+  assert.equal(m.original, 20);
   assert.equal(m.new, 15);
   assert.equal(m.existing, 5);
   assert.equal(m.needsReview, 20);
@@ -133,13 +148,56 @@ test('review-ready report metrics: 20 candidates, 15 new, 5 existing, 20 need re
   assert.equal(m.progressPct, 0);
 });
 
-test('partial review progress counts approved rows as reviewed', () => {
+test('progress numbers come from backend review_progress, not from candidate-row arithmetic', () => {
+  // Rows say 4 approved; the backend says 7 reviewed of 20 — the backend wins.
   const partial = reviewCandidates.map((c, i) => (i < 4 ? { ...c, review_status: 'approved' } : c));
-  const m = buildOverviewMetrics(partial, reviewReport);
+  const m = buildOverviewMetrics(partial, { ...reviewReport, review_progress: progress(20, 7) });
   assert.equal(m.total, 20);
-  assert.equal(m.needsReview, 16);
-  assert.equal(m.reviewed, 4);
-  assert.equal(m.progressPct, 20);
+  assert.equal(m.needsReview, 13);
+  assert.equal(m.reviewed, 7);
+  assert.equal(m.progressPct, 35);
+});
+
+test('Warden-shaped report: progress covers Original ∪ linked IOC Source Indicators (not 70/70)', () => {
+  // 70 original + 3148 linked-only (2 overlap counted once inside the 70), all reviewed.
+  const m = buildOverviewMetrics([], {
+    analysis_status: 'ready',
+    review_phase: 'finalized',
+    review_progress: progress(3218, 3218, { original: 70, linkedOnly: 3148 })
+  });
+  assert.equal(m.original, 70);
+  assert.equal(m.linkedOnly, 3148);
+  assert.equal(m.total, 3218);
+  assert.equal(m.reviewed, 3218);
+  assert.equal(m.needsReview, 0);
+  assert.equal(m.progressPct, 100);
+});
+
+test('unreviewed linked IOC Source keeps its Indicators pending', () => {
+  const m = buildOverviewMetrics([], {
+    analysis_status: 'ready',
+    review_phase: 'review_ready',
+    review_progress: progress(100, 70, { original: 70, linkedOnly: 30 })
+  });
+  assert.equal(m.total, 100);
+  assert.equal(m.reviewed, 70);
+  assert.equal(m.needsReview, 30);
+  assert.equal(m.progressPct, 70);
+});
+
+test('missing review_progress renders no progress instead of a client-side guess', () => {
+  const m = buildOverviewMetrics(finalizedCandidates, finalizedReport);
+  assert.equal(m.progressAvailable, false);
+  assert.equal(m.reviewed, null);
+  assert.equal(m.total, null);
+  assert.equal(m.needsReview, null);
+  assert.equal(m.original, 25, 'Original still reflects the loaded original Indicator rows');
+});
+
+test('review_progress is clamped so reviewed never exceeds total', () => {
+  assert.deepEqual(readReviewProgress({ review_progress: { total: 5, reviewed: 9 } }).reviewed, 5);
+  assert.equal(readReviewProgress({ review_progress: { total: 'x', reviewed: 1 } }), null);
+  assert.equal(readReviewProgress({}), null);
 });
 
 test('metrics are unavailable while the candidate set is preliminary or failed', () => {

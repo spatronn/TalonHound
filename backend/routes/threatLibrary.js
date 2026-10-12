@@ -207,6 +207,9 @@ function publicReport(row) {
     context_only_count: row.context_only_count ?? null,
     // Union Indicators with a matched global IOC (never exceeds total_unique).
     matched_count: row.matched_count,
+    // Effective Indicator review progress over the same union (tl-review-progress-v1):
+    // per-IOC analyst decision, linked-only rows additionally need an accepted source.
+    review_progress: row.review_progress ?? null,
     entity_count: row.entity_count,
     ioc_source_summary: row.ioc_source_summary || undefined,
     created_at: row.created_at,

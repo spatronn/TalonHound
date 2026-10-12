@@ -1127,3 +1127,31 @@ test('combined source and match filters stay independent of review scope', () =>
   assert.ok(MATCH_FILTERS.some((m) => m.id === 'existing'));
   assert.ok(REVIEW_FILTERS.some((f) => f.id === 'linked_only'));
 });
+
+test('Needs Review tab = union Indicator awaiting an analyst decision (review_status pending only)', () => {
+  const base = {
+    candidate_type: 'domain',
+    is_ioc: true,
+    assessment: 'unknown',
+    source_assertion: 'explicit_ioc',
+    has_original_document_occurrence: true,
+    evidence: { source_assertion: 'explicit_ioc', is_direct_source_observable: true }
+  };
+  const decidedLowConfidence = { ...base, normalized_value: 'a.example', review_status: 'approved', match_state: 'needs_review' };
+  const pendingLowConfidence = { ...base, normalized_value: 'b.example', review_status: 'pending', match_state: 'needs_review' };
+  const linkedPending = {
+    ...base,
+    normalized_value: 'c.example',
+    review_status: 'pending',
+    match_state: 'existing',
+    matched_ioc_id: 9,
+    source_assertion: 'linked_source_ioc',
+    has_original_document_occurrence: false,
+    sources: [{ id: 's1' }]
+  };
+  const contextPending = { ...base, normalized_value: 'd.example', review_status: 'pending', assessment: 'context_only', match_state: 'context_only' };
+  assert.equal(matchReviewFilter(decidedLowConfidence, 'needs_review'), false, 'a decided row is not awaiting review');
+  assert.equal(matchReviewFilter(pendingLowConfidence, 'needs_review'), true);
+  assert.equal(matchReviewFilter(linkedPending, 'needs_review'), true, 'matched_ioc_id is not a decision');
+  assert.equal(matchReviewFilter(contextPending, 'needs_review'), false);
+});

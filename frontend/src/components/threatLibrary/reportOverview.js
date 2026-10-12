@@ -29,33 +29,63 @@ export function buildReviewFilterCounts(candidates) {
 }
 
 /**
+ * Effective Indicator review progress from the backend (report.review_progress,
+ * tl-review-progress-v1). The backend is the source of truth: scope = Original ∪
+ * linked-source Indicators, one canonical identity once; reviewed = completed
+ * per-IOC analyst decision (linked-only rows also need an accepted IOC Source).
+ * Returns null when the API did not supply it — never re-derived client-side.
+ * @param {object|null} report
+ */
+export function readReviewProgress(report) {
+  const p = report?.review_progress;
+  if (!p || typeof p !== 'object') return null;
+  const total = Number(p.total);
+  const reviewed = Number(p.reviewed);
+  if (!Number.isFinite(total) || !Number.isFinite(reviewed) || total < 0) return null;
+  const safeReviewed = Math.min(Math.max(0, reviewed), total);
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    total,
+    reviewed: safeReviewed,
+    pending: total - safeReviewed,
+    original: num(p.original?.total),
+    linkedOnly: num(p.linked_only?.total)
+  };
+}
+
+/**
  * Overview metrics. `available` is false while the candidate set is still
  * moving (preparing / failed), in which case the numbers must not be shown as
  * report statistics.
  *
- * - candidates: rows in the analyst review set (same as the "Indicators" tab)
- * - new / existing / needsReview / contextOnly: same predicates as the filter tabs
- * - reviewed: review-set rows that are no longer pending (total - needsReview)
+ * Every card is scoped to the report's effective Indicator inventory
+ * (Original ∪ linked-source Indicators):
+ * - original: publisher-document Indicators ("Original" filter)
+ * - linkedOnly: Indicators contributed only by linked IOC Sources
+ * - new / existing: union Indicators by global IOC match (same predicates as the filter tabs)
+ * - needsReview / reviewed / total: backend review_progress (pending / reviewed / |union|);
+ *   Needs review equals the "Needs Review" tab (union ∧ review pending)
+ * Progress is null (rendered as "—") when the API omits review_progress.
  */
 export function buildOverviewMetrics(candidates, report) {
   const counts = buildReviewFilterCounts(candidates);
-  const total = counts.indicators || 0;
-  const needsReview = counts.needs_review || 0;
-  const reviewed = Math.max(0, total - needsReview);
+  const progress = readReviewProgress(report);
+  const original = progress ? progress.original : (counts.indicators || 0);
+  const linkedOnly = progress ? progress.linkedOnly : (counts.linked_only || 0);
   return {
     available: Boolean(report) && canShowReviewTable(report),
-    candidates: total,
+    progressAvailable: Boolean(progress),
+    original,
+    linkedOnly,
     new: counts.new || 0,
     existing: counts.existing || 0,
-    needsReview,
+    needsReview: progress ? progress.pending : null,
     contextOnly: counts.context_only || 0,
     all: counts.all || 0,
-    original: counts.indicators || 0,
-    totalUnique: counts.total_unique || counts.indicators || 0,
-    linkedOnly: counts.linked_only || 0,
-    reviewed,
-    total,
-    progressPct: total > 0 ? Math.round((reviewed / total) * 100) : 0
+    totalUnique: progress ? progress.total : (counts.total_unique || 0),
+    reviewed: progress ? progress.reviewed : null,
+    total: progress ? progress.total : null,
+    progressPct: progress && progress.total > 0 ? Math.round((progress.reviewed / progress.total) * 100) : 0
   };
 }
 

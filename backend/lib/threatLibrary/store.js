@@ -16,6 +16,7 @@ import {
 } from './indicatorMembership.js';
 import { buildReportListOrderBy, buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
 import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
+import { loadReportReviewProgress } from './reviewProgress.js';
 
 export async function getAiSettings(pool) {
   const { rows } = await pool.query(`SELECT * FROM threat_library_ai_settings WHERE id = 1`);
@@ -231,6 +232,11 @@ const REPORT_COUNT_COLUMNS = `
 /**
  * Attach raw / review / matched / entity counts to a report row (detail,
  * status polling, retry and finalize responses all use the same numbers).
+ *
+ * `review_progress` is the canonical effective Indicator review progress
+ * (reviewProgress.js, tl-review-progress-v1): scoped to the same Original ∪
+ * linked-source union as total_unique_indicator_count, one identity once.
+ * Detail-only — the report list does not carry it.
  * @param {import('pg').Pool} pool
  * @param {object|null} report
  */
@@ -240,7 +246,8 @@ export async function attachReportCounts(pool, report) {
     `SELECT ${REPORT_COUNT_COLUMNS} FROM threat_reports r WHERE r.id = $1`,
     [report.id]
   );
-  return { ...report, ...(rows[0] || {}) };
+  const review_progress = await loadReportReviewProgress(pool, report.id);
+  return { ...report, ...(rows[0] || {}), review_progress };
 }
 
 /**
