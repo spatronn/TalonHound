@@ -1,0 +1,25 @@
+{
+  "id": "control-mode-b-narrative",
+  "title": "Known-clean control: MODE B narrative report without an IOC appendix",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "known_clean", "mode_b", "narrative_only", "documentation_link"],
+  "source": { "kind": "html_file", "path": "control-mode-b-narrative.html", "url": "https://research.example/blog/fake-installer-stealer/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: the only operational assertion is the beacon domain; the Microsoft Learn URL documents a legitimate API",
+      "verified_by": "construction",
+      "verified_at": "2026-10-14",
+      "notes": "MODE B leaves narrative classification to the semantic layer, so the documentation URL is ai_dependent: the deterministic stage alone keeps it pending."
+    },
+    "indicators": [
+      { "type": "domain", "value": "c2-update.info" }
+    ],
+    "context_only": [
+      { "type": "url", "value": "https://learn.microsoft.com/en-us/windows/win32/api/wincred/", "ai_dependent": true }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

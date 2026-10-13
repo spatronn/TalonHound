@@ -247,7 +247,13 @@ export function extractReportCandidates(report, document) {
     sourceUrl,
     observationNotAfter: observationNotAfterFor(report)
   });
-  return { document: stamped, candidates: extracted.candidates, diagnostics: extracted.diagnostics };
+  return {
+    document: stamped,
+    candidates: extracted.candidates,
+    diagnostics: extracted.diagnostics,
+    // Zone-annotated view of `document` (never persisted; read-only consumers).
+    annotated: extracted.annotated
+  };
 }
 
 /**

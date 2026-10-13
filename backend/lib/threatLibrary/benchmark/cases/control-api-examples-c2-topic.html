@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><title>Backdoor hides command traffic in cloud collaboration APIs</title></head>
+<body>
+<article>
+<h1>Backdoor hides command traffic in cloud collaboration APIs</h1>
+<p>The backdoor authenticates against a cloud tenant controlled by the operators and exchanges tasks through calendar and mail objects.</p>
+<p><strong>Microsoft-hosted services for C2</strong></p>
+<p>The malware validates its access token with a request to the tenant endpoint:</p>
+<pre>GET https://graph.microsoft.com/v1.0/organization
+Authorization: Bearer &lt;token&gt;</pre>
+<p>Tasks are then read from the operator mailbox through https://graph.microsoft.com/v1.0/me/messages and results are uploaded as attachments.</p>
+<h2>Indicators of compromise</h2>
+<h3>Domains</h3>
+<ul>
+<li>tenant-sync-portal[.]com</li>
+<li>cdn-calendar-relay[.]net</li>
+</ul>
+<h3>Hashes</h3>
+<p>5f2b7c3a9d1e4f6a8b0c2d4e6f8a0b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a</p>
+<h2>Conclusion</h2>
+<p>Abuse of legitimate cloud APIs makes network blocking of the API hosts impractical; hunt for the operator tenant instead.</p>
+</article>
+</body>
+</html>

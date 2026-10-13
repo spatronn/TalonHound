@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><title>Sideloading chain abuses signed host binaries</title></head>
+<body>
+<article>
+<h1>Sideloading chain abuses signed host binaries</h1>
+<p>The operators deliver a ZIP archive that drops a legitimate signed executable next to a malicious DLL, so the trusted host process loads the attacker code.</p>
+<h2>Technical analysis</h2>
+<p>The archive contains the following legitimate components that the operators reuse as sideloading hosts:</p>
+<table>
+<thead><tr><th>Filename</th><th>MD5</th><th>Description</th></tr></thead>
+<tbody>
+<tr><td>RasTls.exe</td><td>62944e26b36b1dcace429ae26ba66164</td><td>Legitimate signed binary (Symantec)</td></tr>
+<tr><td>MsMpEng.exe</td><td>a1d4bcf17a1a2a1fbcd0f3c82dd2d2b1</td><td>Legitimate Microsoft Defender component</td></tr>
+<tr><td>vmtoolsd.exe</td><td>7ac2b7ee5c0b3eae4f2c6d0f4c9a9e11</td><td>Legitimate VMware Tools binary</td></tr>
+</tbody>
+</table>
+<p>The malicious DLL decrypts its payload from a sibling file and connects to its server over HTTPS.</p>
+<h2>Indicators of compromise</h2>
+<h3>Malicious DLLs</h3>
+<p>ef59aad625eebda8650aec5820d6ce69 RasTls.dll</p>
+<p>3b8a1c5d9e0f4a6b7c2d8e1f5a9b0c3d mpsvc.dll</p>
+<h3>Network</h3>
+<ul>
+<li>sync-telemetry[.]org</li>
+<li>198.51.100.44</li>
+</ul>
+<h2>Conclusion</h2>
+<p>Defenders should alert on signed binaries loading unsigned DLLs from user-writable paths.</p>
+</article>
+</body>
+</html>
