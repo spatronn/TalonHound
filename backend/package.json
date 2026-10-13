@@ -86,6 +86,7 @@
     "test:threat-library": "node --test lib/threatLibrary/*.test.js lib/threatLibrary/**/*.test.js routes/threatLibrary.test.js routes/threatLibrary.retry.test.js routes/threatLibrary.mitreRemoved.test.js routes/threatLibrary.maintenance.test.js",
     "test:threat-library-benchmark": "node --test lib/threatLibrary/benchmark/*.test.js",
     "benchmark:threat-library": "node scripts/threat-library-benchmark.js",
+    "scan:threat-library-quality": "node scripts/threat-library-quality-scan.js",
     "smoke:routes": "node scripts/smoke-routes.js"
   },
   "dependencies": {

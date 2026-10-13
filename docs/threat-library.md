@@ -195,6 +195,8 @@ Each warning has a stable code, severity, candidate identities, block ids, secti
 
 The record is stored in `analysis_progress.extraction_diagnostics.quality` and returned as `extraction_quality` on report payloads. MCP `get_threat_report` returns a summary (status, counts, codes). Reports imported before `tl-quality-v1` have `null` until their next refresh. The benchmark (`docs/threat-library-benchmark.md`) measures the detector's false warnings and detection rate.
 
+`npm run scan:threat-library-quality` (backend container) runs the same read-only preview over stored reports: a read-only DB session, no model, no network. It prints each report's quality status, the guard verdict a refresh would get and its Indicator diff. `--clean <ids>` counts warnings on analyst-verified reports as false warnings. Use it before any bulk refresh.
+
 ### Chunking / limits
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)
