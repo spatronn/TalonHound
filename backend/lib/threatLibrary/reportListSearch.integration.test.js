@@ -307,8 +307,8 @@ async function withFilterLibraryTx(fn) {
     );
     await client.query(
       `INSERT INTO threat_report_tags (report_id, tag_id)
-       SELECT id, $1 FROM threat_reports WHERE title IN ('F03', 'F06')
-       UNION ALL SELECT id, $2 FROM threat_reports WHERE title = 'F07'`,
+       SELECT id, $1::bigint FROM threat_reports WHERE title IN ('F03', 'F06')
+       UNION ALL SELECT id, $2::bigint FROM threat_reports WHERE title = 'F07'`,
       [tag.rows[0].id, off.rows[0].id]
     );
     await fn(client);
