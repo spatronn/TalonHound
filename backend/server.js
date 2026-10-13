@@ -293,7 +293,9 @@ import {
   resolveSurvivorArtifactIdForHash,
   loadProvenHashesForArtifact,
   loadLinkedIocsForArtifact,
-  describeSuppressionScope
+  describeSuppressionScope,
+  enrichSuppressionListRows,
+  resolveHashIdentityPreview
 } from './lib/iocSuppressionFileScope.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
@@ -5221,15 +5223,27 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
     const iocType = String(iocQ.rows[0].observable_type || '').trim();
     const artifactId = await resolveSurvivorArtifactIdForIoc(pool, iocId);
 
+    // Disable exactly one logical row: prefer the exact (value,type) match for
+    // this IOC, else a covering file-scoped suppression. Never wipe overlapping
+    // exact + file rows in one shot.
     const q = await pool.query(
       `UPDATE ioc_suppressions
        SET active = FALSE, updated_at = NOW()
-       WHERE active = TRUE
-         AND deleted_at IS NULL
-         AND (
-           (lower(ioc_value) = lower($1) AND lower(ioc_type) = lower($2))
-           OR ($3::uuid IS NOT NULL AND file_artifact_id = $3::uuid)
-         )
+       WHERE id = (
+         SELECT s.id
+         FROM ioc_suppressions s
+         WHERE s.active = TRUE
+           AND s.deleted_at IS NULL
+           AND (
+             (lower(s.ioc_value) = lower($1) AND lower(s.ioc_type) = lower($2))
+             OR ($3::uuid IS NOT NULL AND s.file_artifact_id = $3::uuid)
+           )
+         ORDER BY
+           CASE WHEN lower(s.ioc_value) = lower($1) AND lower(s.ioc_type) = lower($2) THEN 0 ELSE 1 END,
+           CASE WHEN s.file_artifact_id IS NOT NULL THEN 0 ELSE 1 END,
+           s.created_at DESC
+         LIMIT 1
+       )
        RETURNING *`,
       [iocValue, iocType, artifactId]
     );
@@ -5277,6 +5291,22 @@ app.post('/api/ioc-suppressions', async (req, res) => {
   return res.status(result.status).json(result.body);
 });
 
+/** Preview whether a hash resolves to a verified canonical file (for scope UI). */
+app.get('/api/ioc-suppressions/hash-identity-preview', async (req, res) => {
+  if (!canReadSuppression(req)) return res.status(403).json({ message: 'Forbidden' });
+  const iocType = String(req.query?.ioc_type || '').trim().toLowerCase();
+  const iocValue = String(req.query?.ioc_value || req.query?.value || '').trim();
+  if (!iocType || !iocValue) {
+    return res.status(400).json({ message: 'ioc_type and ioc_value are required' });
+  }
+  try {
+    const preview = await resolveHashIdentityPreview(pool, iocType, iocValue);
+    return res.json(preview);
+  } catch (err) {
+    return res.status(500).json({ message: 'Failed to resolve hash identity', detail: err.message });
+  }
+});
+
 app.get('/api/ioc-suppressions', async (req, res) => {
   if (!canReadSuppression(req)) return res.status(403).json({ message: 'Forbidden' });
   const page = Math.max(1, Number(req.query?.page || 1));
@@ -5285,19 +5315,67 @@ app.get('/api/ioc-suppressions', async (req, res) => {
   const search = String(req.query?.search || '').trim();
   const iocType = String(req.query?.ioc_type || '').trim().toLowerCase();
   const scope = String(req.query?.scope || '').trim().toLowerCase();
+  const identityScope = String(req.query?.identity_scope || req.query?.suppression_scope || '').trim().toLowerCase();
   const activeParam = String(req.query?.active || '').trim().toLowerCase();
   const expires = String(req.query?.expires || 'all').trim().toLowerCase();
   const statusFilter = normalizeSuppressionStatusFilter(req.query?.status || '');
   const createdBy = String(req.query?.created_by || '').trim();
+
+  // EXISTS: file-scoped row covers a proven hash matching the bind param (type or value LIKE).
+  const coveredHashExistsSql = (bindIdx, mode /* 'type' | 'value_like' */) => {
+    const match = mode === 'type'
+      ? `h.hash_type = $${bindIdx}`
+      : `h.normalized_hash_value LIKE $${bindIdx}`;
+    return `(
+      s.file_artifact_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM file_artifact_hashes h
+        JOIN file_artifacts fa ON fa.id = h.artifact_id
+        JOIN file_artifacts sfa ON sfa.id = s.file_artifact_id
+        WHERE ${match}
+          AND COALESCE(
+            CASE
+              WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                THEN fa.merged_into_artifact_id
+              ELSE fa.id
+            END,
+            fa.id
+          ) = COALESCE(
+            CASE
+              WHEN sfa.status = 'merged' AND sfa.merged_into_artifact_id IS NOT NULL
+                THEN sfa.merged_into_artifact_id
+              ELSE sfa.id
+            END,
+            sfa.id
+          )
+      )
+    )`;
+  };
 
   // Non-status filters shared by the list, count, and summary-stats queries so
   // the summary cards show true global counts (not page-level) for the current
   // search/type filters, independent of the selected status tab.
   const filterWhere = ['s.deleted_at IS NULL'];
   const filterParams = [];
-  if (search) { filterParams.push(`%${search.toLowerCase()}%`); filterWhere.push(`(lower(s.ioc_value) LIKE $${filterParams.length} OR lower(COALESCE(s.reason,'')) LIKE $${filterParams.length})`); }
-  if (iocType) { filterParams.push(iocType); filterWhere.push(`lower(s.ioc_type) = $${filterParams.length}`); }
+  if (search) {
+    filterParams.push(`%${search.toLowerCase()}%`);
+    const p = filterParams.length;
+    filterWhere.push(`(
+      lower(s.ioc_value) LIKE $${p}
+      OR lower(COALESCE(s.reason,'')) LIKE $${p}
+      OR ${coveredHashExistsSql(p, 'value_like')}
+    )`);
+  }
+  if (iocType) {
+    filterParams.push(iocType);
+    const p = filterParams.length;
+    filterWhere.push(`(lower(s.ioc_type) = $${p} OR ${coveredHashExistsSql(p, 'type')})`);
+  }
   if (scope && scope !== 'all') { filterParams.push(scope); filterWhere.push(`lower(s.scope) = $${filterParams.length}`); }
+  if (identityScope === 'file' || identityScope === 'exact') {
+    filterWhere.push(identityScope === 'file' ? 's.file_artifact_id IS NOT NULL' : 's.file_artifact_id IS NULL');
+  }
   if (createdBy) { filterParams.push(`%${createdBy.toLowerCase()}%`); filterWhere.push(`lower(COALESCE(s.created_by,'')) LIKE $${filterParams.length}`); }
 
   const where = [...filterWhere];
@@ -5336,7 +5414,7 @@ app.get('/api/ioc-suppressions', async (req, res) => {
     const countParams = params.slice(0, -2);
     const cq = await pool.query(`SELECT COUNT(*)::int AS total FROM ioc_suppressions s WHERE ${baseWhere}`, countParams);
 
-    // Global summary counts across the current non-status filters.
+    // Global summary counts across the current non-status filters (logical rows).
     const statsWhere = filterWhere.join(' AND ');
     const sq = await pool.query(
       `SELECT
@@ -5355,10 +5433,7 @@ app.get('/api/ioc-suppressions', async (req, res) => {
       expired: Number(statsRow.expired || 0),
       total: Number(statsRow.total || 0)
     };
-    const items = (q.rows || []).map((row) => ({
-      ...row,
-      suppression_scope: describeSuppressionScope(row)
-    }));
+    const items = await enrichSuppressionListRows(pool, q.rows || []);
     return res.json({ items, total: Number(cq.rows?.[0]?.total || 0), page, pageSize, stats });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC suppressions', detail: err.message });
@@ -5451,13 +5526,8 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
         fileArtifactId: after.file_artifact_id || before.file_artifact_id || null
       });
     }
-    return res.json({
-      item: {
-        ...after,
-        status: newStatus,
-        suppression_scope: describeSuppressionScope(after)
-      }
-    });
+    const [enriched] = await enrichSuppressionListRows(pool, [{ ...after, status: newStatus }]);
+    return res.json({ item: enriched || { ...after, status: newStatus, suppression_scope: describeSuppressionScope(after) } });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
   }

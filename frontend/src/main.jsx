@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -12726,6 +12726,73 @@ function SuppressionExpirationFields({ ui, preset, setPreset, customDate, setCus
   );
 }
 
+function suppressionIdentityScopeBadgeStyle(kind) {
+  if (kind === 'file') {
+    return {
+      display: 'inline-block',
+      padding: '2px 8px',
+      borderRadius: 999,
+      fontSize: 11,
+      fontWeight: 600,
+      color: '#93c5fd',
+      background: 'rgba(30,58,138,0.35)',
+      border: '1px solid #1d4ed8',
+      whiteSpace: 'nowrap'
+    };
+  }
+  return {
+    display: 'inline-block',
+    padding: '2px 8px',
+    borderRadius: 999,
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#cbd5e1',
+    background: 'rgba(51,65,85,0.45)',
+    border: '1px solid #475569',
+    whiteSpace: 'nowrap'
+  };
+}
+
+function SuppressionCoveredHashesList({ hashes, ui }) {
+  const list = Array.isArray(hashes) ? hashes : [];
+  if (!list.length) return <div style={{ color: '#64748b', fontSize: 12 }}>No covered hashes</div>;
+  return (
+    <div style={{ display: 'grid', gap: 6 }}>
+      {list.map((h) => {
+        const type = String(h.hash_type || h.ioc_type || '').toLowerCase();
+        const value = String(h.value || h.normalized_hash_value || '');
+        return (
+          <div
+            key={`${type}:${value}`}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '64px 1fr auto',
+              gap: 8,
+              alignItems: 'start',
+              fontSize: 12,
+              color: '#e2e8f0'
+            }}
+          >
+            <span style={{ color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>{type || '—'}</span>
+            <code style={{ ...ui.code, margin: 0, padding: '4px 6px', overflowWrap: 'anywhere', wordBreak: 'break-all', whiteSpace: 'normal' }}>{value}</code>
+            <button
+              type="button"
+              style={{ ...ui.linkBtn, fontSize: 11 }}
+              onClick={() => {
+                if (navigator?.clipboard?.writeText) {
+                  navigator.clipboard.writeText(value).catch(() => {});
+                }
+              }}
+            >
+              Copy
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function IOCSuppressionsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -12746,10 +12813,14 @@ function IOCSuppressionsPage() {
   const initialStatus = String(searchParams.get('status') || 'all');
   const [statusFilter, setStatusFilter] = useState(initialStatus === 'inactive' ? 'disabled' : initialStatus);
   const [createdBy, setCreatedBy] = useState(String(searchParams.get('created_by') || ''));
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
   const [showAdd, setShowAdd] = useState(false);
   const [addValue, setAddValue] = useState('');
   const [addType, setAddType] = useState('auto');
   const [addTypeTouched, setAddTypeTouched] = useState(false);
+  const [addHashScope, setAddHashScope] = useState('exact');
+  const [addIdentityPreview, setAddIdentityPreview] = useState(null);
+  const [addIdentityLoading, setAddIdentityLoading] = useState(false);
   const [addReason, setAddReason] = useState('');
   const [addPreset, setAddPreset] = useState('never');
   const [addCustomDate, setAddCustomDate] = useState('');
@@ -12768,6 +12839,12 @@ function IOCSuppressionsPage() {
   const [toast, setToast] = useState('');
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+  const resolvedAddType = (addTypeTouched && addType && addType !== 'auto')
+    ? addType
+    : (detectSuppressionTypeUI(addValue) || '');
+  const addIsHashType = ['md5', 'sha1', 'sha256'].includes(String(resolvedAddType).toLowerCase());
+  const addCanChooseFileScope = Boolean(addIsHashType && addIdentityPreview?.resolvable);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -12823,15 +12900,60 @@ function IOCSuppressionsPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
+  useEffect(() => {
+    if (!showAdd || !addIsHashType) {
+      setAddIdentityPreview(null);
+      setAddIdentityLoading(false);
+      return undefined;
+    }
+    const value = String(addValue || '').trim();
+    const type = String(resolvedAddType || '').trim().toLowerCase();
+    if (!value || !type) {
+      setAddIdentityPreview(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setAddIdentityLoading(true);
+      api.get('/ioc-suppressions/hash-identity-preview', { params: { ioc_type: type, ioc_value: value } })
+        .then(({ data }) => {
+          if (cancelled) return;
+          setAddIdentityPreview(data || { resolvable: false });
+          if (data?.resolvable) setAddHashScope((prev) => (prev === 'file' || prev === 'exact' ? prev : 'exact'));
+        })
+        .catch(() => {
+          if (!cancelled) setAddIdentityPreview({ resolvable: false });
+        })
+        .finally(() => {
+          if (!cancelled) setAddIdentityLoading(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [showAdd, addIsHashType, addValue, resolvedAddType]);
+
   function applyFilters() {
     setPage(1);
     setSearch(searchInput.trim());
+  }
+
+  function toggleExpanded(id) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function resetAddForm() {
     setAddValue('');
     setAddType('auto');
     setAddTypeTouched(false);
+    setAddHashScope('exact');
+    setAddIdentityPreview(null);
     setAddReason('');
     setAddPreset('never');
     setAddCustomDate('');
@@ -12848,6 +12970,8 @@ function IOCSuppressionsPage() {
     if (addTypeTouched && addType && addType !== 'auto') body.ioc_type = addType;
     const expiresAt = expiresAtFromPreset(addPreset, addCustomDate);
     if (expiresAt) body.expires_at = expiresAt;
+    if (addCanChooseFileScope) body.hash_scope = addHashScope === 'file' ? 'file' : 'exact';
+    else if (addIsHashType) body.hash_scope = 'exact';
     setAddSaving(true);
     setAddError('');
     try {
@@ -12968,12 +13092,15 @@ function IOCSuppressionsPage() {
             </div>
           ))}
         </div>
+        <div style={{ marginTop: -8, marginBottom: 16, fontSize: 12, color: '#64748b' }}>
+          Counters are logical suppression records (one file-level row covering multiple hashes counts as 1).
+        </div>
 
         <div style={{ ...ui.formPanel, marginBottom: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
             <div>
               <span style={ui.label}>Search IOC</span>
-              <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} placeholder="IOC value or reason" style={ui.input} />
+              <input value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && applyFilters()} placeholder="IOC value, covered hash, or reason" style={ui.input} />
             </div>
             <div>
               <span style={ui.label}>IOC Type</span>
@@ -13013,43 +13140,85 @@ function IOCSuppressionsPage() {
 
         {items.length ? (
           <div style={{ overflowX: 'auto', border: '1px solid #334155', borderRadius: 10 }}>
-            <table className="ioc-table published-feeds-table" width="100%" style={{ borderCollapse: 'collapse', minWidth: 900 }}>
+            <table className="ioc-table published-feeds-table" width="100%" style={{ borderCollapse: 'collapse', minWidth: 960, tableLayout: 'fixed' }}>
               <thead style={ui.thead}>
                 <tr>
-                  {['IOC', 'Type', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Actions'].map((h) => (
+                  {['IOC', 'Scope', 'Covered', 'Reason', 'Created by', 'Created at', 'Expires', 'Status', 'Actions'].map((h) => (
                     <th key={h} style={ui.th}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {items.map((item) => (
-                  <tr key={item.id} style={ui.tr}>
-                    <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.ioc_value}</td>
-                    <td style={ui.td}>{item.ioc_type}</td>
-                    <td style={{ ...ui.td, maxWidth: 260, overflowWrap: 'anywhere' }}>{item.reason}</td>
-                    <td style={ui.td}>{item.created_by || '—'}</td>
-                    <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
-                    <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
-                    <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{formatSuppressionStatusLabel(item.status)}</span></td>
-                    <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
-                      <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
-                      {isAdmin ? (
-                        <>
-                          {' · '}
-                          <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)}>Edit</button>
-                          {' · '}
-                          <button
-                            type="button"
-                            style={ui.linkBtn}
-                            onClick={() => { setDeleteItem(item); setDeleteError(''); }}
-                          >
-                            Delete
-                          </button>
-                        </>
+                {items.map((item) => {
+                  const scopeKind = item?.suppression_scope?.kind || (item.file_artifact_id ? 'file' : 'exact');
+                  const scopeLabel = item?.suppression_scope?.label
+                    || (scopeKind === 'file' ? 'File' : (['md5', 'sha1', 'sha256'].includes(String(item.ioc_type || '').toLowerCase()) ? 'Exact hash' : 'Exact observable'));
+                  const covered = Array.isArray(item.covered_hashes) ? item.covered_hashes : [];
+                  const coveredCount = Number(item.covered_hash_count ?? covered.length ?? 0);
+                  const expanded = expandedIds.has(item.id);
+                  const canExpand = scopeKind === 'file' || coveredCount > 1 || (scopeKind === 'exact' && ['md5', 'sha1', 'sha256'].includes(String(item.ioc_type || '').toLowerCase()));
+                  return (
+                    <Fragment key={item.id}>
+                      <tr style={ui.tr}>
+                        <td style={{ ...ui.td, maxWidth: 200, overflowWrap: 'anywhere', wordBreak: 'break-all' }}>
+                          <div style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 12 }}>{item.ioc_value}</div>
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{item.ioc_type}</div>
+                        </td>
+                        <td style={ui.td}>
+                          <span style={suppressionIdentityScopeBadgeStyle(scopeKind)}>{scopeLabel}</span>
+                        </td>
+                        <td style={ui.td}>
+                          {canExpand ? (
+                            <button
+                              type="button"
+                              style={ui.linkBtn}
+                              onClick={() => toggleExpanded(item.id)}
+                              aria-expanded={expanded}
+                            >
+                              {coveredCount} hash{coveredCount === 1 ? '' : 'es'}{expanded ? ' ▴' : ' ▾'}
+                            </button>
+                          ) : (
+                            <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
+                          )}
+                        </td>
+                        <td style={{ ...ui.td, maxWidth: 220, overflowWrap: 'anywhere' }}>{item.reason}</td>
+                        <td style={ui.td}>{item.created_by || '—'}</td>
+                        <td style={ui.td}>{formatUserDateTime(item.created_at)}</td>
+                        <td style={ui.td}>{item.expires_at ? formatUserDateTime(item.expires_at) : 'Never'}</td>
+                        <td style={ui.td}><span style={suppressionStatusBadgeStyle(item.status)}>{formatSuppressionStatusLabel(item.status)}</span></td>
+                        <td style={{ ...ui.td, whiteSpace: 'nowrap' }}>
+                          <button type="button" style={ui.linkBtn} onClick={() => resolveIocDetailsUrl(item).catch(() => {})}>View IOC</button>
+                          {isAdmin ? (
+                            <>
+                              {' · '}
+                              <button type="button" style={ui.linkBtn} onClick={() => openEdit(item)}>Edit</button>
+                              {' · '}
+                              <button
+                                type="button"
+                                style={ui.linkBtn}
+                                onClick={() => { setDeleteItem(item); setDeleteError(''); }}
+                              >
+                                Delete
+                              </button>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                      {expanded ? (
+                        <tr style={{ ...ui.tr, background: '#0b1220' }}>
+                          <td colSpan={9} style={{ ...ui.td, paddingTop: 8, paddingBottom: 12 }}>
+                            <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 8 }}>
+                              {scopeKind === 'file'
+                                ? 'Verified hashes covered by this file-level suppression (from canonical file identity):'
+                                : 'Effective coverage for this exact-hash suppression:'}
+                            </div>
+                            <SuppressionCoveredHashesList hashes={covered} ui={ui} />
+                          </td>
+                        </tr>
                       ) : null}
-                    </td>
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -13092,6 +13261,34 @@ function IOCSuppressionsPage() {
                 {SUPPRESSION_IOC_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
+            {addIsHashType ? (
+              <div>
+                <span style={ui.label}>Hash suppression scope</span>
+                {addIdentityLoading ? (
+                  <div style={{ fontSize: 12, color: '#94a3b8' }}>Checking canonical file identity…</div>
+                ) : addCanChooseFileScope ? (
+                  <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: '#e2e8f0', fontSize: 13 }}>
+                      <input type="radio" name="add-hash-scope" checked={addHashScope === 'file'} onChange={() => setAddHashScope('file')} disabled={addSaving} />
+                      <span>
+                        <strong>Entire file</strong> — suppress all {Number(addIdentityPreview.known_hash_count || 0)} verified known hashes for this canonical file.
+                      </span>
+                    </label>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: '#e2e8f0', fontSize: 13 }}>
+                      <input type="radio" name="add-hash-scope" checked={addHashScope === 'exact'} onChange={() => setAddHashScope('exact')} disabled={addSaving} />
+                      <span>
+                        <strong>This hash only</strong> — suppress only the entered {resolvedAddType.toUpperCase()}.
+                      </span>
+                    </label>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>Default is this hash only. File scope is never applied unless you select it.</div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, fontSize: 12, color: '#94a3b8' }}>
+                    No verified canonical file identity found — this will be an exact-hash suppression only.
+                  </div>
+                )}
+              </div>
+            ) : null}
             <div>
               <span style={ui.label}>Reason <span style={{ color: '#f87171' }}>*</span></span>
               <textarea value={addReason} onChange={(e) => setAddReason(e.target.value)} style={ui.textarea} disabled={addSaving} maxLength={500} placeholder="Why is this a false positive?" />
@@ -13117,6 +13314,22 @@ function IOCSuppressionsPage() {
             <div><span style={ui.label}>IOC</span><input readOnly value={editItem.ioc_value} style={ui.input} /></div>
             <div><span style={ui.label}>Type</span><input readOnly value={editItem.ioc_type} style={ui.input} /></div>
             <div>
+              <span style={ui.label}>Scope</span>
+              <input
+                readOnly
+                value={editItem?.suppression_scope?.label || (editItem.file_artifact_id ? 'File' : 'Exact')}
+                style={ui.input}
+              />
+              {editItem?.suppression_scope?.kind === 'file' || editItem.file_artifact_id ? (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>
+                    Covered hashes ({Number(editItem.covered_hash_count || (editItem.covered_hashes || []).length || 0)})
+                  </div>
+                  <SuppressionCoveredHashesList hashes={editItem.covered_hashes} ui={ui} />
+                </div>
+              ) : null}
+            </div>
+            <div>
               <span style={ui.label}>Reason</span>
               <textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} style={ui.textarea} disabled={!isAdmin || editSaving} />
             </div>
@@ -13133,7 +13346,10 @@ function IOCSuppressionsPage() {
                 <option value="disabled">Disabled</option>
               </select>
               <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
-                Enabled with a past expiration date shows as Expired until you extend expiration.
+                {editItem.file_artifact_id
+                  ? 'Disable/enable applies to this entire file-level suppression.'
+                  : 'Disable/enable applies only to this exact suppression.'}
+                {' '}Enabled with a past expiration date shows as Expired until you extend expiration.
               </div>
             </div>
             {editError ? <div style={{ color: '#fca5a5', fontSize: 13 }}>{editError}</div> : null}
@@ -13148,8 +13364,16 @@ function IOCSuppressionsPage() {
       {deleteItem ? (
         <ModalOverlay onClose={() => !deleteSaving && setDeleteItem(null)}>
           <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Delete suppression</h3>
-          <p style={ui.modalSub}>Permanently delete this suppression? This action cannot be undone.</p>
-          <div style={{ ...ui.code, marginBottom: 12 }}>{deleteItem.ioc_value} ({deleteItem.ioc_type})</div>
+          <p style={ui.modalSub}>
+            {deleteItem.file_artifact_id
+              ? 'Permanently delete this file-level suppression? All covered hashes from this logical row stop being suppressed by it (other overlapping suppressions are left alone).'
+              : 'Permanently delete this exact suppression? Other suppressions that still cover the same file are left alone.'}
+          </p>
+          <div style={{ ...ui.code, marginBottom: 12, overflowWrap: 'anywhere', wordBreak: 'break-all' }}>
+            {deleteItem.ioc_value} ({deleteItem.ioc_type})
+            {' · '}
+            {deleteItem?.suppression_scope?.label || (deleteItem.file_artifact_id ? 'File' : 'Exact')}
+          </div>
           {deleteError ? <div style={{ color: '#fca5a5', fontSize: 13, marginBottom: 10 }}>{deleteError}</div> : null}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <button type="button" style={ui.btn} onClick={() => setDeleteItem(null)} disabled={deleteSaving}>Cancel</button>
@@ -17257,6 +17481,7 @@ function IOCDetailsPage() {
   const tagDropdownRef = useRef(null);
   const [showSuppressModal, setShowSuppressModal] = useState(false);
   const [suppressReason, setSuppressReason] = useState('');
+  const [suppressHashScope, setSuppressHashScope] = useState('file');
   const [suppressPreset, setSuppressPreset] = useState('never');
   const [suppressCustomDate, setSuppressCustomDate] = useState('');
   const [suppressSaving, setSuppressSaving] = useState(false);
@@ -17511,13 +17736,20 @@ function IOCDetailsPage() {
     setSuppressSaving(true);
     setSuppressError('');
     try {
-      await api.post(`/ioc/${iocId}/suppress`, {
+      const obsType = String(summary?.observable_type || '').toLowerCase();
+      const canFileScope = ['md5', 'sha1', 'sha256'].includes(obsType)
+        && Array.isArray(data?.file_artifact?.known_hashes)
+        && data.file_artifact.known_hashes.length > 0;
+      const body = {
         scope: 'global',
         reason,
         expires_at: expiresAtFromPreset(suppressPreset, suppressCustomDate)
-      });
+      };
+      if (canFileScope) body.hash_scope = suppressHashScope === 'exact' ? 'exact' : 'file';
+      await api.post(`/ioc/${iocId}/suppress`, body);
       setShowSuppressModal(false);
       setSuppressReason('');
+      setSuppressHashScope('file');
       setSuppressPreset('never');
       setSuppressCustomDate('');
       setActionToast('IOC marked as false positive');
@@ -18193,7 +18425,7 @@ function IOCDetailsPage() {
           ui={ui}
           showMarkFalsePositive={Boolean(summary && !suppressionActive && isAdmin)}
           showDelete={Boolean(summary && isAdmin)}
-          onMarkFalsePositive={() => { setShowSuppressModal(true); setSuppressError(''); }}
+          onMarkFalsePositive={() => { setShowSuppressModal(true); setSuppressError(''); setSuppressHashScope('file'); }}
           onDelete={() => { setShowDeleteModal(true); setDeleteConfirmText(''); setDeleteError(''); }}
           onBack={() => navigate('/ioc')}
           onRefresh={() => load().catch(() => {})}
@@ -18248,17 +18480,24 @@ function IOCDetailsPage() {
                   <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '—'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Created at:</span> {formatUserDateTime(suppression.created_at)}</div>
                   <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {suppression.expires_at ? formatUserDateTime(suppression.expires_at) : 'Never'}</div>
-                  {suppression?.suppression_scope?.kind === 'file' ? (
-                    <div>
-                      <span style={{ color: '#94a3b8' }}>Scope:</span>{' '}
-                      File
-                      {Number(suppression.suppression_scope.known_hash_count) > 0
-                        ? ` · Known hashes: ${Number(suppression.suppression_scope.known_hash_count)}`
-                        : (Array.isArray(suppression.known_hashes) && suppression.known_hashes.length
-                          ? ` · Known hashes: ${suppression.known_hashes.length}`
-                          : '')}
-                    </div>
-                  ) : null}
+                  <div>
+                    <span style={{ color: '#94a3b8' }}>Scope:</span>{' '}
+                    {suppression?.suppression_scope?.kind === 'file'
+                      ? (
+                        <>
+                          File
+                          {Number(suppression.suppression_scope.known_hash_count) > 0
+                            ? ` · Known hashes: ${Number(suppression.suppression_scope.known_hash_count)}`
+                            : (Array.isArray(suppression.known_hashes) && suppression.known_hashes.length
+                              ? ` · Known hashes: ${suppression.known_hashes.length}`
+                              : '')}
+                        </>
+                      )
+                      : (suppression?.suppression_scope?.label
+                        || (['md5', 'sha1', 'sha256'].includes(String(suppression?.ioc_type || summary?.observable_type || '').toLowerCase())
+                          ? 'Exact hash'
+                          : 'Exact observable'))}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>
@@ -18684,13 +18923,35 @@ function IOCDetailsPage() {
         <ModalOverlay onClose={() => !suppressSaving && setShowSuppressModal(false)}>
           <h3 style={{ marginTop: 0, color: '#f1f5f9' }}>Mark IOC as False Positive</h3>
           <div style={{ display: 'grid', gap: 12 }}>
-            <div><span style={ui.label}>IOC value</span><input readOnly value={summary?.observable || ''} style={ui.input} /></div>
+            <div><span style={ui.label}>IOC value</span><input readOnly value={summary?.observable || ''} style={{ ...ui.input, overflowWrap: 'anywhere', wordBreak: 'break-all' }} /></div>
             <div><span style={ui.label}>IOC type</span><input readOnly value={summary?.observable_type || ''} style={ui.input} /></div>
             <div>
               <span style={ui.label}>Scope</span>
               <input readOnly value="Global suppression" style={ui.input} />
               <span style={ui.helper}>Source-specific suppression is not available in this phase.</span>
             </div>
+            {(['md5', 'sha1', 'sha256'].includes(String(summary?.observable_type || '').toLowerCase())
+              && Array.isArray(data?.file_artifact?.known_hashes)
+              && data.file_artifact.known_hashes.length > 0) ? (
+              <div>
+                <span style={ui.label}>Hash suppression scope</span>
+                <div style={{ display: 'grid', gap: 8, marginTop: 6 }}>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: '#e2e8f0', fontSize: 13 }}>
+                    <input type="radio" name="detail-hash-scope" checked={suppressHashScope === 'file'} onChange={() => setSuppressHashScope('file')} disabled={suppressSaving} />
+                    <span>
+                      <strong>Entire file</strong> — suppress all {data.file_artifact.known_hashes.length} verified known hashes for this canonical file
+                      (recommended when the whole binary is a false positive).
+                    </span>
+                  </label>
+                  <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', color: '#e2e8f0', fontSize: 13 }}>
+                    <input type="radio" name="detail-hash-scope" checked={suppressHashScope === 'exact'} onChange={() => setSuppressHashScope('exact')} disabled={suppressSaving} />
+                    <span>
+                      <strong>This hash only</strong> — suppress only this {String(summary.observable_type).toUpperCase()}.
+                    </span>
+                  </label>
+                </div>
+              </div>
+            ) : null}
             <div>
               <span style={ui.label}>Reason</span>
               <textarea value={suppressReason} onChange={(e) => setSuppressReason(e.target.value)} style={ui.textarea} placeholder="Why is this IOC a false positive?" disabled={suppressSaving} />

@@ -8,14 +8,16 @@ function makePoolMock({ existingActive = false, insertRow = null, iocRows = [] }
     queries.push({ sql: String(sql).replace(/\s+/g, ' ').trim(), params: [...(params || [])] });
     const norm = String(sql).replace(/\s+/g, ' ').trim();
     if (norm.startsWith('BEGIN') || norm.startsWith('COMMIT') || norm.startsWith('ROLLBACK')) return { rows: [] };
-    if (norm.includes('SELECT id FROM ioc_suppressions')) {
-      return existingActive ? { rows: [{ id: 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
+    if (norm.includes('FROM ioc_suppressions') && norm.includes('lower(ioc_value)')) {
+      return existingActive
+        ? { rows: [{ id: 1, file_artifact_id: null }], rowCount: 1 }
+        : { rows: [], rowCount: 0 };
     }
     if (norm.includes('INSERT INTO ioc_suppressions')) {
       const row = insertRow || {
         id: 42, ioc_value: params[0], ioc_type: params[1], scope: 'global',
         source_name: null, reason: params[2], created_by: params[3],
-        expires_at: params[4], active: true
+        expires_at: params[4], active: true, file_artifact_id: params[5] ?? null
       };
       return { rows: [row], rowCount: 1 };
     }

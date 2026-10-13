@@ -259,7 +259,7 @@ export function isFileHashSuppressionType(iocType) {
 
 /**
  * Describe suppression scope for API/UI.
- * @param {{ file_artifact_id?: string|null }} row
+ * @param {{ file_artifact_id?: string|null, ioc_type?: string }} row
  * @param {number} [knownHashCount]
  */
 export function describeSuppressionScope(row, knownHashCount = null) {
@@ -272,5 +272,132 @@ export function describeSuppressionScope(row, knownHashCount = null) {
     if (knownHashCount != null) out.known_hash_count = Number(knownHashCount);
     return out;
   }
-  return { kind: 'exact', label: 'Exact observable' };
+  const exactLabel = isExactFileHashIocType(row?.ioc_type) ? 'Exact hash' : 'Exact observable';
+  return { kind: 'exact', label: exactLabel };
+}
+
+/**
+ * Normalize analyst hash-scope preference for create APIs.
+ * @returns {'file'|'exact'|null} null when the field was omitted
+ */
+export function normalizeHashScopePreference(raw) {
+  if (raw == null || String(raw).trim() === '') return null;
+  const v = String(raw).trim().toLowerCase();
+  if (v === 'file' || v === 'entire_file' || v === 'canonical_file') return 'file';
+  if (v === 'exact' || v === 'exact_hash' || v === 'hash_only' || v === 'this_hash') return 'exact';
+  return null;
+}
+
+/**
+ * Batch-enrich list rows with covered hashes for file-scoped suppressions.
+ * Exact rows get a single-entry covered_hashes mirror of (ioc_type, ioc_value).
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {Array<object>} rows
+ * @returns {Promise<Array<object>>}
+ */
+export async function enrichSuppressionListRows(db, rows = []) {
+  if (!rows.length) return [];
+  const artifactIds = [
+    ...new Set(
+      rows
+        .map((r) => (r?.file_artifact_id ? String(r.file_artifact_id) : ''))
+        .filter(Boolean)
+    )
+  ];
+
+  /** @type {Map<string, Array<{ hash_type: string, value: string }>>} */
+  const hashesByArtifact = new Map();
+  if (artifactIds.length) {
+    try {
+      const { rows: hashRows } = await db.query(
+        `SELECT
+                COALESCE(
+                  CASE
+                    WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                      THEN fa.merged_into_artifact_id
+                    ELSE fa.id
+                  END,
+                  fa.id
+                ) AS artifact_id,
+                h.hash_type,
+                h.normalized_hash_value
+         FROM file_artifact_hashes h
+         JOIN file_artifacts fa ON fa.id = h.artifact_id
+         WHERE COALESCE(
+                 CASE
+                   WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                     THEN fa.merged_into_artifact_id
+                   ELSE fa.id
+                 END,
+                 fa.id
+               ) = ANY(
+                 SELECT COALESCE(
+                   CASE
+                     WHEN sfa.status = 'merged' AND sfa.merged_into_artifact_id IS NOT NULL
+                       THEN sfa.merged_into_artifact_id
+                     ELSE sfa.id
+                   END,
+                   sfa.id
+                 )
+                 FROM file_artifacts sfa
+                 WHERE sfa.id = ANY($1::uuid[])
+               )
+         GROUP BY 1, h.hash_type, h.normalized_hash_value
+         ORDER BY 1,
+           CASE h.hash_type WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END`,
+        [artifactIds]
+      );
+      for (const h of hashRows || []) {
+        const key = String(h.artifact_id);
+        const list = hashesByArtifact.get(key) || [];
+        list.push({ hash_type: h.hash_type, value: h.normalized_hash_value });
+        hashesByArtifact.set(key, list);
+      }
+    } catch (err) {
+      if (!isMissingArtifactSchema(err)) throw err;
+    }
+  }
+
+  return rows.map((row) => {
+    const artifactId = row?.file_artifact_id ? String(row.file_artifact_id) : null;
+    let covered = artifactId ? (hashesByArtifact.get(artifactId) || []) : [];
+    if (!artifactId && row?.ioc_value && row?.ioc_type) {
+      covered = [{ hash_type: String(row.ioc_type).toLowerCase(), value: String(row.ioc_value) }];
+    }
+    const scope = describeSuppressionScope(row, covered.length || null);
+    return {
+      ...row,
+      suppression_scope: scope,
+      covered_hashes: covered,
+      covered_hash_count: covered.length
+    };
+  });
+}
+
+/**
+ * Preview whether a hash uniquely resolves to a canonical file identity.
+ * Used by Add Suppression / Mark FP forms for explicit scope choice.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient} db
+ * @param {string} iocType
+ * @param {string} iocValue
+ */
+export async function resolveHashIdentityPreview(db, iocType, iocValue) {
+  const artifactId = await resolveSurvivorArtifactIdForHash(db, iocType, iocValue);
+  if (!artifactId) {
+    return {
+      resolvable: false,
+      file_artifact_id: null,
+      known_hashes: [],
+      known_hash_count: 0
+    };
+  }
+  const hashes = await loadProvenHashesForArtifact(db, artifactId);
+  return {
+    resolvable: true,
+    file_artifact_id: artifactId,
+    known_hashes: hashes.map((h) => ({ hash_type: h.hash_type, value: h.normalized_hash_value })),
+    known_hash_count: hashes.length
+  };
 }

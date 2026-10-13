@@ -14,7 +14,10 @@ import {
   buildSuppressionIndexWithFileScope,
   resolveSurvivorArtifactIdForHash,
   resolveSurvivorArtifactIdForIoc,
-  loadProvenHashesForArtifact
+  loadProvenHashesForArtifact,
+  enrichSuppressionListRows,
+  normalizeHashScopePreference,
+  resolveHashIdentityPreview
 } from './iocSuppressionFileScope.js';
 import {
   buildSuppressionIndex,
@@ -48,6 +51,10 @@ describe('iocSuppressionFileScope helpers', () => {
     assert.deepEqual(describeSuppressionScope({ file_artifact_id: null }), {
       kind: 'exact',
       label: 'Exact observable'
+    });
+    assert.deepEqual(describeSuppressionScope({ file_artifact_id: null, ioc_type: 'md5' }), {
+      kind: 'exact',
+      label: 'Exact hash'
     });
     assert.deepEqual(describeSuppressionScope({ file_artifact_id: 'a'.repeat(36) }, 3), {
       kind: 'file',
@@ -132,10 +139,13 @@ describe('createIocLinkedSuppression file scope', () => {
       if (s.includes('FROM ioc_items') && s.includes('WHERE id = $1') && s.includes('public_id')) {
         return { rows: [{ id: 10, observable: md5, observable_type: 'md5', public_id: crypto.randomUUID() }], rowCount: 1 };
       }
-      if (s.includes('file_artifact_ioc_links')) {
+      if (s.includes('file_artifact_ioc_links') && !s.includes('JOIN ioc_items')) {
         return { rows: [{ artifact_id: artifactId }], rowCount: 1 };
       }
-      if (s.includes('FROM ioc_suppressions') && s.includes('file_artifact_id')) {
+      if (s.includes('FROM ioc_suppressions') && s.includes('lower(ioc_value)') && s.includes('lower(ioc_type)')) {
+        return { rows: [], rowCount: 0 };
+      }
+      if (s.includes('FROM ioc_suppressions') && s.includes('file_artifact_id = $1')) {
         return { rows: [], rowCount: 0 };
       }
       if (s.includes('INSERT INTO ioc_suppressions')) {
@@ -214,7 +224,7 @@ describe('createIocLinkedSuppression file scope', () => {
         return { rows: [{ id: 7, observable: 'evil.example', observable_type: 'domain', public_id: crypto.randomUUID() }], rowCount: 1 };
       }
       if (s.includes('file_artifact_ioc_links')) return { rows: [], rowCount: 0 };
-      if (s.includes('FROM ioc_suppressions') && s.includes('file_artifact_id')) return { rows: [], rowCount: 0 };
+      if (s.includes('FROM ioc_suppressions') && s.includes('lower(ioc_value)')) return { rows: [], rowCount: 0 };
       if (s.includes('INSERT INTO ioc_suppressions')) {
         return {
           rows: [{
@@ -255,6 +265,55 @@ describe('createIocLinkedSuppression file scope', () => {
     assert.equal(res.body.suppression.suppression_scope.kind, 'exact');
   });
 
+  it('honors hash_scope=exact when a canonical file exists', async () => {
+    const artifactId = '22222222-2222-2222-2222-222222222222';
+    const md5 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const query = async (sql, params = []) => {
+      const s = String(sql).replace(/\s+/g, ' ').trim();
+      if (s.startsWith('BEGIN') || s.startsWith('COMMIT') || s.startsWith('ROLLBACK')) return { rows: [] };
+      if (s.includes('FROM ioc_items') && s.includes('public_id')) {
+        return { rows: [{ id: 10, observable: md5, observable_type: 'md5', public_id: crypto.randomUUID() }], rowCount: 1 };
+      }
+      if (s.includes('file_artifact_ioc_links') && !s.includes('JOIN ioc_items')) {
+        return { rows: [{ artifact_id: artifactId }], rowCount: 1 };
+      }
+      if (s.includes('FROM ioc_suppressions') && s.includes('lower(ioc_value)')) return { rows: [], rowCount: 0 };
+      if (s.includes('INSERT INTO ioc_suppressions')) {
+        assert.equal(params[5], null);
+        return {
+          rows: [{
+            id: 50, ioc_value: params[0], ioc_type: params[1], reason: params[2],
+            created_by: params[3], expires_at: params[4], active: true,
+            file_artifact_id: null, scope: 'global'
+          }],
+          rowCount: 1
+        };
+      }
+      if (s.includes('FROM ioc_items') && s.includes('lower(observable)')) {
+        return { rows: [{ id: 10, observable_type: 'md5' }], rowCount: 1 };
+      }
+      if (s.includes('FROM ioc_items') && s.includes('observable_type = $2')) {
+        return {
+          rows: [{
+            id: 10, observable: md5, observable_type: 'md5', status: 'active',
+            manual_status_override: false, manual_status: null, manual_expires_at: null,
+            expires_at: null, expired_at: null, expiration_reason: null
+          }],
+          rowCount: 1
+        };
+      }
+      if (s.includes('FROM ioc_suppressions')) return { rows: [{ '?column?': 1 }], rowCount: 1 };
+      if (s.includes("SET status = 'suppressed'")) return { rows: [], rowCount: 1 };
+      throw new Error(`Unexpected: ${s.slice(0, 140)}`);
+    };
+    const pool = { query, connect: async () => ({ query, release: () => {} }) };
+    const res = await createIocLinkedSuppression(pool, 10, { reason: 'exact only please', hash_scope: 'exact' });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.suppression.file_artifact_id, null);
+    assert.equal(res.body.suppression.suppression_scope.kind, 'exact');
+    assert.equal(res.body.suppression.covered_hash_count, 1);
+  });
+
   it('duplicate file-scoped suppression is idempotent (no second create audit)', async () => {
     const artifactId = '33333333-3333-3333-3333-333333333333';
     const md5 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -268,7 +327,7 @@ describe('createIocLinkedSuppression file scope', () => {
       if (s.includes('file_artifact_ioc_links') && !s.includes('JOIN ioc_items')) {
         return { rows: [{ artifact_id: artifactId }], rowCount: 1 };
       }
-      if (s.includes('SELECT * FROM ioc_suppressions') || (s.includes('FROM ioc_suppressions') && s.includes('file_artifact_id') && s.includes('ORDER BY'))) {
+      if (s.includes('FROM ioc_suppressions') && s.includes('lower(ioc_value)') && s.includes('lower(ioc_type)')) {
         return {
           rows: [{
             id: 1, ioc_value: md5, ioc_type: 'md5', file_artifact_id: artifactId,
@@ -317,19 +376,20 @@ describe('createIocLinkedSuppression file scope', () => {
   });
 });
 
-describe('createManualSuppression remains exact-only', () => {
+describe('createManualSuppression remains exact-only by default', () => {
   it('does not attach file_artifact_id even for hash values', async () => {
     const inserts = [];
     const query = async (sql, params = []) => {
       const s = String(sql).replace(/\s+/g, ' ').trim();
       if (s.startsWith('BEGIN') || s.startsWith('COMMIT') || s.startsWith('ROLLBACK')) return { rows: [] };
-      if (s.includes('SELECT id FROM ioc_suppressions')) return { rows: [], rowCount: 0 };
+      if (s.includes('FROM ioc_suppressions') && s.includes('lower(ioc_value)')) return { rows: [], rowCount: 0 };
       if (s.includes('INSERT INTO ioc_suppressions')) {
         inserts.push(params);
         return {
           rows: [{
             id: 1, ioc_value: params[0], ioc_type: params[1], scope: 'global',
-            reason: params[2], created_by: params[3], expires_at: params[4], active: true
+            reason: params[2], created_by: params[3], expires_at: params[4], active: true,
+            file_artifact_id: params[5] ?? null
           }],
           rowCount: 1
         };
@@ -344,8 +404,83 @@ describe('createManualSuppression remains exact-only', () => {
       reason: 'manual raw hash'
     });
     assert.equal(res.status, 201);
-    assert.equal(inserts[0].length, 5); // no file_artifact_id bind
+    assert.equal(inserts[0][5], null);
+    assert.equal(res.body.suppression.suppression_scope.kind, 'exact');
+    assert.equal(res.body.suppression.covered_hash_count, 1);
     assert.equal(res.body.suppression.ioc_type, 'md5');
+  });
+});
+
+describe('enrichSuppressionListRows + hash_scope helpers', () => {
+  it('normalizes hash_scope preference', () => {
+    assert.equal(normalizeHashScopePreference(undefined), null);
+    assert.equal(normalizeHashScopePreference('file'), 'file');
+    assert.equal(normalizeHashScopePreference('this_hash'), 'exact');
+    assert.equal(normalizeHashScopePreference('nope'), null);
+  });
+
+  it('enriches file rows with covered hashes; exact rows stay single-hash', async () => {
+    const artifactId = '55555555-5555-5555-5555-555555555555';
+    const md5 = '9a1dd1d96481d61934dcc2d568971d06';
+    const sha1 = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const sha256 = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const db = {
+      async query(sql) {
+        if (String(sql).includes('file_artifact_hashes')) {
+          return {
+            rows: [
+              { artifact_id: artifactId, hash_type: 'sha256', normalized_hash_value: sha256 },
+              { artifact_id: artifactId, hash_type: 'sha1', normalized_hash_value: sha1 },
+              { artifact_id: artifactId, hash_type: 'md5', normalized_hash_value: md5 }
+            ]
+          };
+        }
+        throw new Error('unexpected');
+      }
+    };
+    const enriched = await enrichSuppressionListRows(db, [
+      { id: 1, ioc_value: md5, ioc_type: 'md5', file_artifact_id: artifactId },
+      { id: 2, ioc_value: md5, ioc_type: 'md5', file_artifact_id: null },
+      { id: 3, ioc_value: '1.2.3.4', ioc_type: 'ip', file_artifact_id: null }
+    ]);
+    assert.equal(enriched[0].suppression_scope.kind, 'file');
+    assert.equal(enriched[0].covered_hash_count, 3);
+    assert.deepEqual(enriched[0].covered_hashes.map((h) => h.hash_type), ['sha256', 'sha1', 'md5']);
+    assert.equal(enriched[1].suppression_scope.kind, 'exact');
+    assert.equal(enriched[1].covered_hash_count, 1);
+    assert.equal(enriched[1].covered_hashes[0].hash_type, 'md5');
+    assert.equal(enriched[2].suppression_scope.label, 'Exact observable');
+    assert.equal(enriched[2].covered_hash_count, 1);
+  });
+
+  it('resolveHashIdentityPreview reports resolvable file identities', async () => {
+    const artifactId = '66666666-6666-6666-6666-666666666666';
+    const md5 = 'd98f568496512e4f98670c61c97cb07a';
+    const db = {
+      async query(sql, params = []) {
+        const s = String(sql);
+        if (s.includes('SELECT DISTINCT') && s.includes('file_artifact_hashes')) {
+          if (String(params[1] || '').toLowerCase() === md5) {
+            return { rows: [{ artifact_id: artifactId }] };
+          }
+          return { rows: [] };
+        }
+        if (s.includes('FROM file_artifact_hashes') && s.includes('GROUP BY')) {
+          return {
+            rows: [
+              { hash_type: 'md5', normalized_hash_value: md5 },
+              { hash_type: 'sha1', normalized_hash_value: '31052fe26b7e08e0e02137cf1d54c40d704378cd' }
+            ]
+          };
+        }
+        return { rows: [] };
+      }
+    };
+    const preview = await resolveHashIdentityPreview(db, 'md5', md5);
+    assert.equal(preview.resolvable, true);
+    assert.equal(preview.known_hash_count, 2);
+    const miss = await resolveHashIdentityPreview(db, 'md5', 'ffffffffffffffffffffffffffffffff');
+    assert.equal(miss.resolvable, false);
   });
 });
 
