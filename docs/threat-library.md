@@ -156,6 +156,45 @@ Retry on a `review_required` / finalized report is refused with `409 retry_not_a
 
 On completion a `review_required` report stays `review_required`. A finalized report (`ready`) stays finalized when the reconcile diff has no review-relevant change (added/removed canonical identity, or a change to assessment, role, review, match, IOC link, `is_ioc`, or source assertion). Occurrence and evidence metadata alone do not unfinalize it. A review-relevant change sets `review_required` and the job result reports `reopened_for_review`. A failed refresh returns the report to the status it had before the job (it never strands a report in `failed`) and records the error on the job and in `analysis_progress.last_refresh`. The worker log and the `threat_library.report.analysis.completed` audit event carry `job_type`, the extraction contract, added / updated / removed counts, `ai_invoked: false`, and `review_reopened` when a finalized report was sent back to review. Retry and Re-run AI persist candidates through the same reconciler, so a surviving canonical identity keeps its row id and analyst decisions (review, Context Only, Promote to IOC, Create-IOC outcome and IOC link).
 
+#### Membership guard (`tl-refresh-guard-v1`)
+
+Before reconciling, a refresh compares the report Indicator membership it would produce with the stored one (`refreshMembershipGuard.js`). The diff records:
+- added and removed Indicators, each removal with a reason code (`identity_left_document`, `publisher_assertion_lost`, `became_context_only`, `excluded_by_type_gate`, `mode_changed`, `membership_rule`)
+- newly Context Only rows
+- classification changes
+- analyst-reviewed rows that would be deleted
+- the MODE change
+- new extraction-quality warnings
+
+The diff is saved in `analysis_progress.last_refresh.membership_diff` and in the job progress.
+
+Material losses are protected. The **default policy `protect` blocks** a refresh that would:
+- remove an analyst-reviewed Indicator (`reviewed_indicator_removed`)
+- delete a reviewed or Create-IOC row (`reviewed_candidate_deleted`)
+- drop a publisher-asserted Indicator (`publisher_assertion_lost`)
+- remove at least 5 Indicators that are also at least 20% of the set (`bulk_membership_loss`)
+
+A blocked refresh writes nothing: no candidates and no publication date. The report keeps its status, and the job fails with `refresh_membership_loss_blocked` and a message naming the reasons.
+
+MODE changes, new quality warnings, additions and ordinary reclassification of pending rows are recorded but do not block.
+
+- **Preview:** `GET …/reports/:id/refresh-extraction/preview` returns the same diff and guard verdict and never writes.
+- **Explicit acceptance:** `POST …/refresh-extraction` with `{ "membership_changes": "accept", "reason": "…" }` (reason ≥ 8 characters) applies the previewed changes. The policy rides the job dispatch, and the refresh audit event records `membership_guard` with the decision, reasons, `accepted_reason` and the initiating analyst.
+- **CLI:** the maintenance CLI does the same with `refresh-extraction --apply --accept-membership-changes --reason "…"`, and its dry-run shows the verdict.
+
+#### Extraction quality warnings (`tl-quality-v1`)
+
+Every extraction (import, Retry, Re-run AI and Refresh) runs `extractionQuality.assessExtractionQuality`: deterministic, read-only checks over the zone-annotated document and the candidates. It never changes candidates, membership, MODE or review state. The checks cover:
+- row-shaped IOC values outside authoritative scope, adjacent to it (`warning`) or elsewhere (`info`)
+- an IOC appendix with zero or few hash Indicators
+- authoritative sections without Indicators
+- structural-completeness and explicit-table inconsistencies
+- suspicious Indicators: example, legitimate-marker, publisher-domain, email-only or missing-provenance
+
+Each warning has a stable code, severity, candidate identities, block ids, section context, evidence excerpts, an explanation and extractor versions. Thresholds live in `EXTRACTION_QUALITY_THRESHOLDS`.
+
+The record is stored in `analysis_progress.extraction_diagnostics.quality` and returned as `extraction_quality` on report payloads. MCP `get_threat_report` returns a summary (status, counts, codes). Reports imported before `tl-quality-v1` have `null` until their next refresh. The benchmark (`docs/threat-library-benchmark.md`) measures the detector's false warnings and detection rate.
+
 ### Chunking / limits
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)

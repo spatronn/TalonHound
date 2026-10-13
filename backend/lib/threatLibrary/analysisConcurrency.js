@@ -119,6 +119,10 @@ export function dispatchExtraFromJob(job) {
   if (dispatch.restoreStatus && typeof dispatch.restoreStatus === 'object') {
     extra.restoreStatus = dispatch.restoreStatus;
   }
+  // Refresh extraction: explicit membership-change acceptance (refreshMembershipGuard.js).
+  if (dispatch.membershipPolicy && typeof dispatch.membershipPolicy === 'object') {
+    extra.membershipPolicy = dispatch.membershipPolicy;
+  }
   return extra;
 }
 
@@ -262,6 +266,7 @@ export async function enqueueClaimedThreatLibraryJob(queue, job) {
       jobType: extra.jobType,
       newAnalysisRun: extra.newAnalysisRun === true,
       ...(extra.restoreStatus ? { restoreStatus: extra.restoreStatus } : {}),
+      ...(extra.membershipPolicy ? { membershipPolicy: extra.membershipPolicy } : {}),
       ...(extra.jobPayload ? { jobPayload: extra.jobPayload } : {})
     },
     getThreatLibraryJobOptions()

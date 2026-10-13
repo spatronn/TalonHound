@@ -318,9 +318,20 @@ function aiOwnedWrites(db) {
   return out;
 }
 
-async function refresh(pool, deps, restoreStatus = { analysis_status: 'review_required' }) {
-  return runThreatLibraryJob(pool, { reportId: 77, jobId: 41, jobType: 'refresh_extraction', restoreStatus }, deps);
+async function refresh(pool, deps, restoreStatus = { analysis_status: 'review_required' }, membershipPolicy = undefined) {
+  return runThreatLibraryJob(pool, { reportId: 77, jobId: 41, jobType: 'refresh_extraction', restoreStatus, membershipPolicy }, deps);
 }
+
+/**
+ * Explicit acceptance of the previewed membership changes. Removing a
+ * publisher-asserted Indicator or a reviewed row is a material loss that the
+ * membership guard blocks by default (refreshMembershipGuard.test.js).
+ */
+const ACCEPT_CHANGES = Object.freeze({
+  mode: 'accept',
+  reason: 'Reviewed refresh preview: the parser fix removes these rows on purpose.',
+  requested_by: '11111111-2222-4333-8444-555555555555'
+});
 
 test('job modes: explicit enum, unknown values rejected, only refresh is AI-free', () => {
   assert.equal(parseJobMode('refresh_extraction'), 'refresh_extraction');
@@ -552,8 +563,9 @@ test('5. removed deterministic candidate: no longer a report candidate; its rela
   const stale = db.candidates.find((c) => c.normalized_value === 'cs.append');
   stale.review_status = 'approved';
   db.relationships.push({ id: 3002, report_id: 77, subject_kind: 'entity', subject_entity_id: 9002, relationship_type: 'uses', object_kind: 'candidate', object_candidate_id: stale.id });
-  const result = await refresh(pool, deps);
+  const result = await refresh(pool, deps, undefined, ACCEPT_CHANGES);
   assert.equal(result.ok, true);
+  assert.equal(result.summary.membership_guard.decision, 'apply_accepted');
   assert.equal(calls.analyze, 0);
   assert.equal(result.summary.removed, 1);
   assert.equal(db.candidates.some((c) => c.normalized_value === 'cs.append'), false);
@@ -573,7 +585,7 @@ test('6. identity correction (technical_artifact → domain): corrected identity
   });
   const artifact = db.candidates.find((c) => c.candidate_type === 'technical_artifact');
   artifact.review_status = 'ignored';
-  const result = await refresh(pool, deps);
+  const result = await refresh(pool, deps, undefined, ACCEPT_CHANGES);
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(db.candidates.some((c) => c.candidate_type === 'technical_artifact'), false, 'old identity removed');
@@ -711,7 +723,7 @@ test('finalized + removed Indicator returns to review_required', async (t) => {
       candidate_type: 'domain', normalized_value: 'removed-indicator.example', original_value: 'removed-indicator.example', matched_ioc_id: null, portable_id: null
     }]
   });
-  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  const result = await refresh(pool, deps, { analysis_status: 'ready' }, ACCEPT_CHANGES);
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(result.summary.removed, 1);
@@ -730,7 +742,7 @@ test('finalized + identity correction returns to review_required and does not mo
   const artifact = db.candidates.find((c) => c.candidate_type === 'technical_artifact');
   artifact.review_status = 'ignored';
   artifact.promotion_outcome = 'created';
-  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  const result = await refresh(pool, deps, { analysis_status: 'ready' }, ACCEPT_CHANGES);
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(db.report.analysis_status, 'review_required');
@@ -1015,4 +1027,117 @@ test('refresh re-applies publisher-entity grounding: the publisher promoted to a
   assert.equal(again.ok, true);
   assert.equal(db.report.analysis_progress.last_refresh.publisher_entity_grounding.entity_links_removed, 0);
   assert.equal(db.report.summary, 'The report details SyntheticLoader. It beacons over HTTPS.');
+});
+
+// --- Membership guard (tl-refresh-guard-v1) at the worker boundary ---------
+
+const candidateWrites = (db) =>
+  db.calls.filter(({ sql }) => /^\s*(INSERT INTO|UPDATE|DELETE FROM) threat_report_candidates/i.test(sql)).map(({ sql }) => sql.trim().slice(0, 60));
+
+async function seedWithApprovedStaleIndicator(status = 'review_required') {
+  const seeded = await seedAnalyzedReport({
+    status,
+    previousContract: 'tl-candidates-v13',
+    mutate: (cands) => [...cands, {
+      ...cands.find((c) => c.normalized_value === 'relay-voxmail.com'),
+      candidate_type: 'domain', normalized_value: 'cs.append', original_value: 'cs.append', matched_ioc_id: null, portable_id: null
+    }]
+  });
+  seeded.db.candidates.find((c) => c.normalized_value === 'cs.append').review_status = 'approved';
+  return seeded;
+}
+
+test('guard: a material Indicator loss is blocked by default — nothing is written, the report keeps its status', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const before = clone(db.candidates);
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'refresh_membership_loss_blocked');
+  assert.equal(calls.analyze, 0);
+  assert.deepEqual(candidateWrites(db), [], 'no candidate INSERT / UPDATE / DELETE');
+  assert.equal(db.calls.some(({ sql }) => /SET\s+published_at/.test(sql)), false, 'no publication-date write');
+  assert.deepEqual(db.candidates, before, 'stored review set (incl. the approved row) unchanged');
+  assert.equal(db.report.analysis_status, 'review_required');
+  const last = db.report.analysis_progress.last_refresh;
+  assert.equal(last.blocked, true);
+  assert.equal(last.error_code, 'refresh_membership_loss_blocked');
+  assert.deepEqual(
+    last.membership_guard.reasons.filter((r) => r.material).map((r) => r.code).sort(),
+    ['publisher_assertion_lost', 'reviewed_candidate_deleted', 'reviewed_indicator_removed']
+  );
+  assert.deepEqual(last.membership_diff.removed_indicators.map((x) => [x.identity, x.reason_code, x.reviewed]), [
+    ['domain:cs.append', 'identity_left_document', true]
+  ]);
+  assert.equal(db.jobs[0].status, 'failed');
+  assert.equal(db.jobs[0].stage, 'membership_guard');
+  assert.equal(db.jobs[0].progress.failure_code, 'refresh_membership_loss_blocked');
+  assert.match(db.jobs[0].error_message, /Refresh blocked/);
+  assert.equal(result.summary.membership_guard.decision, 'block');
+});
+
+test('guard: a blocked refresh of a finalized report leaves it finalized', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator('ready');
+  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  assert.equal(result.ok, false);
+  assert.equal(db.report.analysis_status, 'ready');
+  assert.equal(db.report.import_status, 'ready');
+  assert.deepEqual(candidateWrites(db), []);
+});
+
+test('guard: explicit acceptance applies the refresh and records the decision for audit', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const result = await refresh(pool, deps, undefined, ACCEPT_CHANGES);
+  assert.equal(result.ok, true);
+  assert.equal(db.candidates.some((c) => c.normalized_value === 'cs.append'), false);
+  const g = db.report.analysis_progress.last_refresh.membership_guard;
+  assert.equal(g.decision, 'apply_accepted');
+  assert.equal(g.accepted_reason, ACCEPT_CHANGES.reason);
+  assert.equal(g.accepted_by, ACCEPT_CHANGES.requested_by);
+  assert.equal(db.jobs[0].progress.dispatch.membershipPolicy.mode, 'accept', 'policy survives a re-queue');
+  const { buildAnalysisAuditEvent } = await import('./audit.js');
+  const event = buildAnalysisAuditEvent({ report: db.report, job: { public_id: 'j', job_type: 'refresh_extraction' }, ok: true, summary: result.summary });
+  assert.equal(event.metadata.membership_guard.decision, 'apply_accepted');
+  assert.equal(event.metadata.membership_guard.accepted_reason, ACCEPT_CHANGES.reason);
+});
+
+test('guard: non-material changes (a new Indicator) apply without acceptance and the diff is recorded', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({ html: { withSecondNetworkIoc: false } });
+  db.report.canonical_document = buildDocument({ withSecondNetworkIoc: true });
+  db.report.canonical_document.meta = { ...db.report.canonical_document.meta };
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.membership_guard.decision, 'apply');
+  const diff = db.report.analysis_progress.last_refresh.membership_diff;
+  assert.ok(diff.added_indicators.includes('domain:inbox-notice-hub.net'), JSON.stringify(diff.added_indicators));
+  assert.equal(diff.counts.removed_indicators, 0);
+});
+
+test('guard preview: read-only verdict on the same diff the worker would apply', async (t) => {
+  noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const { previewExtractionRefresh } = await import('./extractionRefresh.js');
+  const preview = await previewExtractionRefresh(pool, clone(db.report));
+  assert.equal(preview.preview, true);
+  assert.equal(preview.ai_invoked, false);
+  assert.equal(preview.guard.decision, 'block');
+  assert.ok(preview.membership_diff.removed_indicators.some((x) => x.identity === 'domain:cs.append'));
+  assert.ok(preview.quality && preview.quality.version === 'tl-quality-v1');
+  const writes = db.calls.filter(({ sql }) => !/^\s*(SELECT|BEGIN|COMMIT|ROLLBACK)/i.test(sql));
+  assert.deepEqual(writes.map((w) => w.sql.trim().slice(0, 60)), [], 'preview never writes');
+});
+
+test('guard policy rides the dispatch: job progress → BullMQ payload → worker ctx', async () => {
+  const { dispatchExtraFromJob, enqueueClaimedThreatLibraryJob } = await import('./analysisConcurrency.js');
+  const policy = { mode: 'accept', reason: 'Reviewed preview, intended', requested_by: 'u' };
+  const job = { id: 5, report_id: 77, job_type: 'refresh_extraction', progress: { dispatch: { jobType: 'refresh_extraction', restoreStatus: { analysis_status: 'ready' }, membershipPolicy: policy } } };
+  assert.deepEqual(dispatchExtraFromJob(job).membershipPolicy, policy);
+  const added = [];
+  await enqueueClaimedThreatLibraryJob({ add: async (name, data) => { added.push({ name, data }); return { id: 1 }; } }, job);
+  assert.deepEqual(added[0].data.membershipPolicy, policy);
+  const plain = { ...job, progress: { dispatch: { jobType: 'refresh_extraction' } } };
+  assert.equal('membershipPolicy' in dispatchExtraFromJob(plain), false);
 });

@@ -38,6 +38,8 @@ function harness(reportPatch = {}, { jobs = [] } = {}) {
       if (/FROM threat_reports WHERE public_id/.test(s)) return { rows: state.report.deleted_at ? [] : [{ ...state.report }] };
       if (/FROM threat_reports r WHERE r\.id = \$1/.test(s)) return { rows: [{ indicator_count: 3, review_candidate_count: 2, matched_count: 1, entity_count: 0 }] };
       if (/FROM threat_report_tags/.test(s)) return { rows: [] };
+      // No retained source artifact (refresh preview of an outdated document).
+      if (/FROM threat_report_artifacts/.test(s)) return { rows: [] };
       // reviewProgress.loadReportReviewProgress (detail-only effective review progress)
       if (/^WITH m AS \(/.test(t)) return { rows: [] };
       if (/^UPDATE threat_reports\s+SET analysis_status = 'pending'/.test(t)) {
@@ -131,11 +133,11 @@ function harness(reportPatch = {}, { jobs = [] } = {}) {
     }
   });
   registerThreatLibraryRoutes(app, pool, null, { threatLibraryQueue: queue });
-  async function call(action, user = { id: 1, role: 'analyst' }) {
-    const handlers = routes.get(`POST /api/threat-library/reports/:publicId/${action}`);
+  async function call(action, user = { id: 1, role: 'analyst' }, body = {}, method = 'POST') {
+    const handlers = routes.get(`${method} /api/threat-library/reports/:publicId/${action}`);
     assert.ok(handlers, `${action} registered`);
     const res = { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
-    const req = { params: { publicId: PUBLIC_ID }, body: {}, query: {}, user };
+    const req = { params: { publicId: PUBLIC_ID }, body, query: {}, user };
     let i = 0;
     const next = async () => { const h = handlers[i++]; if (h) await h(req, res, next); };
     await next();
@@ -314,4 +316,51 @@ test('maintenance routes sit behind the global CSRF check (no exemption)', async
     csrfProtection({ method: 'POST', path, headers: { 'x-csrf-token': token }, cookies: { [CSRF_COOKIE_NAME]: token } }, res, () => { ok = true; });
     assert.equal(ok, true, `${action} with matching token`);
   }
+});
+
+// ------------------------------------------- Refresh membership guard policy
+
+test('refresh-extraction: default request carries no acceptance (protect policy)', async () => {
+  const h = harness();
+  const res = await h.call('refresh-extraction');
+  assert.equal(res.statusCode, 202);
+  assert.equal('membershipPolicy' in h.enqueued[0].data, false);
+});
+
+test('refresh-extraction: explicit acceptance with a reason rides the dispatch to the worker', async () => {
+  const h = harness();
+  const res = await h.call('refresh-extraction', { id: 1, role: 'analyst', publicId: 'analyst-pub-1' }, {
+    membership_changes: 'accept',
+    reason: 'Reviewed the preview: removed rows were parser false positives.'
+  });
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  const policy = h.enqueued[0].data.membershipPolicy;
+  assert.equal(policy.mode, 'accept');
+  assert.equal(policy.reason, 'Reviewed the preview: removed rows were parser false positives.');
+  assert.equal(policy.requested_by, 'analyst-pub-1');
+  assert.ok(policy.requested_at);
+  assert.equal(h.state.jobs[0].progress.dispatch.membershipPolicy.mode, 'accept');
+});
+
+test('refresh-extraction: acceptance without a reason / unknown policy → 400, no job, report untouched', async () => {
+  for (const body of [{ membership_changes: 'accept' }, { membership_changes: 'accept', reason: 'ok' }, { membership_changes: 'force' }]) {
+    const h = harness();
+    const res = await h.call('refresh-extraction', undefined, body);
+    assert.equal(res.statusCode, 400, JSON.stringify(body));
+    assert.equal(res.body.code, 'invalid_membership_policy');
+    assert.equal(h.state.jobs.length, 0);
+    assert.equal(h.state.report.analysis_status, 'review_required');
+  }
+});
+
+test('refresh-extraction preview: gated like the action, read-only, 409 without a refreshable document', async () => {
+  const h = harness({ analysis_status: 'failed', import_status: 'failed' });
+  const failed = await h.call('refresh-extraction/preview', undefined, {}, 'GET');
+  assert.equal(failed.statusCode, 409);
+  const outdated = harness();
+  const res = await outdated.call('refresh-extraction/preview', undefined, {}, 'GET');
+  assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'refresh_source_unavailable');
+  assert.equal(outdated.state.jobs.length, 0, 'preview never creates a job');
+  assert.equal(outdated.state.report.analysis_status, 'review_required', 'preview never claims the report');
 });

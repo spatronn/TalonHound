@@ -421,7 +421,10 @@ export function buildAnalysisAuditEvent({ report, job, ok, code, summary, initia
             review_relevant: summary?.review_relevant === true,
             ...(summary?.reopened_for_review === true
               ? { review_reopened: true, restored_status: 'review_required', prior_status: 'ready' }
-              : {})
+              : {}),
+            // Membership guard outcome (refreshMembershipGuard.js): blocked
+            // losses, or the explicit acceptance (reason + initiating analyst).
+            ...(summary?.membership_guard ? { membership_guard: summary.membership_guard } : {})
           }
         : {})
     }

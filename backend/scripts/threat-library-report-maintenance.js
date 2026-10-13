@@ -18,6 +18,13 @@
  *
  *   node scripts/threat-library-report-maintenance.js dismiss-source --report <uuid> --source <uuid> [--apply] [--reason "..."]
  *   node scripts/threat-library-report-maintenance.js refresh-extraction --report <uuid> [--apply]
+ *       [--accept-membership-changes --reason "..."]
+ *
+ *                       The dry-run includes the membership guard verdict
+ *                       (refreshMembershipGuard.js). A refresh whose diff is a
+ *                       material Indicator loss is blocked by the worker unless
+ *                       --accept-membership-changes is given with a reason
+ *                       (recorded in the job dispatch and the audit event).
  */
 
 import '../lib/ensure-db-password.js';
@@ -41,7 +48,16 @@ import {
   MAINTENANCE_ALLOWED_STATUSES,
   THREAT_LIBRARY_JOB_MODES
 } from '../lib/threatLibrary/jobModes.js';
-import { computeExtractionRefresh } from '../lib/threatLibrary/extractionRefresh.js';
+import {
+  computeExtractionRefresh,
+  guardExtractionRefresh,
+  membershipGuardSummary
+} from '../lib/threatLibrary/extractionRefresh.js';
+import {
+  REFRESH_GUARD_THRESHOLDS,
+  REFRESH_MEMBERSHIP_POLICIES,
+  compactRefreshMembershipDiff
+} from '../lib/threatLibrary/refreshMembershipGuard.js';
 import {
   hasUsableDocument,
   isDocumentContractCurrent,
@@ -70,6 +86,8 @@ export function parseArgs(argv) {
     report: opt('report'),
     source: opt('source'),
     reason: opt('reason') || 'Not an IOC dataset: ordinary site link (automatic IOC Source discovery retired)',
+    explicitReason: opt('reason'),
+    acceptMembershipChanges: rest.includes('--accept-membership-changes'),
     timeoutMs: Number(opt('timeout-ms') || 600_000)
   };
 }
@@ -152,7 +170,28 @@ async function dismissSource(pool, args) {
 const key = (c) => `${c.candidate_type}\u0000${c.normalized_value}`;
 const show = (k) => k.replace('\u0000', ':');
 
-async function planRefresh(pool, report) {
+/**
+ * Membership policy for a refresh run from CLI flags (protect unless the
+ * operator explicitly accepts with a reason).
+ */
+export function refreshMembershipPolicyFromArgs(args) {
+  if (!args.acceptMembershipChanges) return { ok: true, policy: null };
+  const reason = String(args.explicitReason || '').trim();
+  if (reason.length < REFRESH_GUARD_THRESHOLDS.acceptanceReasonMinChars) {
+    return { ok: false, code: 'acceptance_reason_missing' };
+  }
+  return {
+    ok: true,
+    policy: {
+      mode: REFRESH_MEMBERSHIP_POLICIES.ACCEPT,
+      reason,
+      requested_by: MAINTENANCE_ACTOR.actorUsername,
+      requested_at: new Date().toISOString()
+    }
+  };
+}
+
+async function planRefresh(pool, report, membershipPolicy = null) {
   let document = report.canonical_document;
   let documentRebuilt = false;
   if (!hasUsableDocument(document)) return { refusable: 'refresh_document_missing' };
@@ -178,8 +217,12 @@ async function planRefresh(pool, report) {
     { report, document: refreshed.document }
   );
   const analystRows = previousRows.filter((r) => r.review_status && r.review_status !== 'pending');
+  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy);
+  const compactDiff = compactRefreshMembershipDiff(diff);
   return {
     document_rebuilt: documentRebuilt,
+    membership_guard: membershipGuardSummary(guard, compactDiff),
+    membership_diff: compactDiff,
     title: { current: report.title, next: title.changed ? title.title : report.title, changed: title.changed, source: title.source || null },
     candidates: {
       before: previousRows.length,
@@ -224,7 +267,9 @@ async function refreshExtraction(pool, args) {
     [report.id]
   );
   if (active[0]) return { action: 'refused', code: 'analysis_already_running' };
-  const plan = await planRefresh(pool, report);
+  const policy = refreshMembershipPolicyFromArgs(args);
+  if (!policy.ok) return { action: 'refused', code: policy.code };
+  const plan = await planRefresh(pool, report, policy.policy);
   if (plan.refusable) return { action: 'refused', code: plan.refusable };
   if (!args.apply) return { action: 'would_refresh', plan };
 
@@ -248,7 +293,7 @@ async function refreshExtraction(pool, args) {
     let jobRow = null;
     try {
       jobRow = await createJob(pool, { reportId: report.id, jobType: mode, requestedBy: null });
-      await updateJob(pool, jobRow.id, { status: 'queued', stage: 'queued', progress: { ...progress, dispatch: { jobType: mode, restoreStatus } } });
+      await updateJob(pool, jobRow.id, { status: 'queued', stage: 'queued', progress: { ...progress, dispatch: { jobType: mode, restoreStatus, ...(policy.policy ? { membershipPolicy: policy.policy } : {}) } } });
       await dispatchQueuedThreatLibraryAnalyses(pool, { enqueue: (job) => enqueueClaimedThreatLibraryJob(queue, job) });
     } catch (err) {
       if (jobRow) await updateJob(pool, jobRow.id, { status: 'failed', stage: 'queued', error_message: 'dispatch_failed' }).catch(() => {});

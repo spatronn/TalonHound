@@ -19,14 +19,19 @@ import { updateJob } from './store.js';
 
 /**
  * @param {import('pg').Pool} pool
- * @param {{ reportId: number, jobId: number, jobType: string, sourceUrl?: string, resumeAnalysis?: boolean, newAnalysisRun?: boolean, restoreStatus?: object, jobPayload?: object }} ctx
+ * @param {{ reportId: number, jobId: number, jobType: string, sourceUrl?: string, resumeAnalysis?: boolean, newAnalysisRun?: boolean, restoreStatus?: object, membershipPolicy?: object, jobPayload?: object }} ctx
  * @param {{ analyzeThreatDocument?: Function, fetchImpl?: Function }} [deps] provider seam (tests)
  */
 export async function runThreatLibraryJob(pool, ctx, deps = {}) {
   const mode = parseJobMode(ctx?.jobType);
 
   if (mode === THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION) {
-    return runExtractionRefresh(pool, { reportId: ctx.reportId, jobId: ctx.jobId, restoreStatus: ctx.restoreStatus });
+    return runExtractionRefresh(pool, {
+      reportId: ctx.reportId,
+      jobId: ctx.jobId,
+      restoreStatus: ctx.restoreStatus,
+      membershipPolicy: ctx.membershipPolicy
+    });
   }
 
   if (isIocSourceJobMode(mode)) {

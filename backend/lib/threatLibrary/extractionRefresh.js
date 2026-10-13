@@ -69,6 +69,14 @@ import {
   requiresReviewAfterExtractionRefresh
 } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
+import { compactExtractionQuality, storedExtractionQuality } from './extractionQuality.js';
+import {
+  REFRESH_GUARD_DECISIONS,
+  buildRefreshMembershipDiff,
+  compactRefreshMembershipDiff,
+  evaluateRefreshMembershipGuard,
+  normalizeRefreshMembershipPolicy
+} from './refreshMembershipGuard.js';
 
 const log = createServiceLogger('threat-library');
 
@@ -244,9 +252,81 @@ export async function applyStoredPublisherEntityGrounding(pool, report, document
 }
 
 /**
+ * Canonical document a refresh extracts from: the stored one when its
+ * extractor contract is current, else a rebuild from the retained source
+ * (never a re-fetch). Reads only.
+ * @param {import('pg').Pool} pool
+ * @param {object} report
+ * @returns {Promise<{ document: object, sourceHtml: string|null, documentRebuilt: boolean }>}
+ */
+export async function prepareRefreshDocument(pool, report) {
+  const document = report.canonical_document;
+  if (!hasUsableDocument(document)) {
+    throw Object.assign(new Error('The report has no stored canonical document to refresh from.'), { code: 'refresh_document_missing' });
+  }
+  if (isDocumentContractCurrent(report, document)) return { document, sourceHtml: null, documentRebuilt: false };
+  let rebuilt = null;
+  try {
+    rebuilt = await rebuildDocumentFromRetainedSource(pool, report);
+  } catch (err) {
+    log.warn('retained source unusable for extraction refresh', { reportId: report.id, error: err.message });
+  }
+  if (!rebuilt) {
+    throw Object.assign(
+      new Error('The stored document predates the current extractor and no retained source is available; Refresh extraction never re-fetches the source.'),
+      { code: 'refresh_source_unavailable' }
+    );
+  }
+  return { document: rebuilt.document, sourceHtml: rebuilt.sourceHtml, documentRebuilt: true };
+}
+
+/**
+ * Membership diff + guard decision for a computed refresh (no writes).
+ * @param {object} report stored report row (its quality record is the "before")
+ * @param {object[]} previousRows persisted candidate rows
+ * @param {Awaited<ReturnType<typeof computeExtractionRefresh>>} refreshed
+ * @param {unknown} membershipPolicy
+ */
+export function guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy) {
+  const diff = buildRefreshMembershipDiff({
+    previousRows,
+    nextCandidates: refreshed.candidates,
+    previousQuality: storedExtractionQuality(report),
+    nextQuality: refreshed.diagnostics?.quality || null
+  });
+  return { diff, guard: evaluateRefreshMembershipGuard(diff, membershipPolicy) };
+}
+
+/**
+ * Read-only preview of a Refresh extraction: what the refresh would change in
+ * report Indicator membership and quality, and whether the guard would block
+ * it under the given policy. Never writes (no candidates, status, title,
+ * publication date or entity changes).
+ * @param {import('pg').Pool} pool
+ * @param {object} report
+ * @param {{ membershipPolicy?: unknown }} [opts]
+ */
+export async function previewExtractionRefresh(pool, report, opts = {}) {
+  const { document, documentRebuilt } = await prepareRefreshDocument(pool, report);
+  const previousRows = await loadReportCandidateRows(pool, report.id);
+  const refreshed = await computeExtractionRefresh(pool, { report, document, previousRows, documentRebuilt });
+  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, opts.membershipPolicy);
+  return {
+    preview: true,
+    extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+    document_rebuilt: documentRebuilt,
+    candidates: { before: previousRows.length, after: refreshed.candidates.length },
+    guard,
+    membership_diff: compactRefreshMembershipDiff(diff, 100),
+    quality: compactExtractionQuality(refreshed.diagnostics?.quality || null),
+    ai_invoked: false
+  };
+}
+
+/**
  * Worker entry for `refresh_extraction` jobs.
  * @param {import('pg').Pool} pool
- * @param {{ reportId: number, jobId: number, restoreStatus?: object }} ctx
+ * @param {{ reportId: number, jobId: number, restoreStatus?: object, membershipPolicy?: object }} ctx
  */
 export async function runExtractionRefresh(pool, ctx) {
   const report = await getReportById(pool, ctx.reportId);
@@ -254,9 +334,15 @@ export async function runExtractionRefresh(pool, ctx) {
 
   const startedAt = Date.now();
   const restore = resolveRefreshRestoreStatus(ctx.restoreStatus);
+  const membershipPolicy = normalizeRefreshMembershipPolicy(ctx.membershipPolicy);
   // The dispatch payload rides on every job progress write so a job re-queued
-  // after a worker crash still knows its mode and the status to restore.
-  const dispatch = { jobType: MODE, restoreStatus: restore };
+  // after a worker crash still knows its mode, the status to restore and the
+  // membership policy it was requested with.
+  const dispatch = {
+    jobType: MODE,
+    restoreStatus: restore,
+    ...(membershipPolicy.mode !== 'protect' ? { membershipPolicy } : {})
+  };
   const priorProgress = report.analysis_progress && typeof report.analysis_progress === 'object'
     ? { ...report.analysis_progress }
     : {};
@@ -276,37 +362,29 @@ export async function runExtractionRefresh(pool, ctx) {
   try {
     await setStage('extracting');
 
-    let document = report.canonical_document;
-    let sourceHtml = null;
-    let documentRebuilt = false;
-    if (!hasUsableDocument(document)) {
-      throw Object.assign(new Error('The report has no stored canonical document to refresh from.'), { code: 'refresh_document_missing' });
-    }
-    if (!isDocumentContractCurrent(report, document)) {
-      let rebuilt = null;
-      try {
-        rebuilt = await rebuildDocumentFromRetainedSource(pool, report);
-      } catch (err) {
-        log.warn('retained source unusable for extraction refresh', { reportId: report.id, error: err.message });
-      }
-      if (!rebuilt) {
-        throw Object.assign(
-          new Error('The stored document predates the current extractor and no retained source is available; Refresh extraction never re-fetches the source.'),
-          { code: 'refresh_source_unavailable' }
-        );
-      }
-      document = rebuilt.document;
-      sourceHtml = rebuilt.sourceHtml;
-      documentRebuilt = true;
-    }
+    const prepared = await prepareRefreshDocument(pool, report);
+    let document = prepared.document;
+    const { sourceHtml, documentRebuilt } = prepared;
 
-    await applyPublicationDate(pool, report, { document, sourceHtml });
     const titleUpdate = await reselectReportTitle(pool, report, { document, sourceHtml });
     document = titleUpdate.document;
     const previousRows = await loadReportCandidateRows(pool, report.id);
 
     await setStage('matching');
     const refreshed = await computeExtractionRefresh(pool, { report, document, previousRows, documentRebuilt });
+
+    // Membership guard: compare before / after Indicators BEFORE anything is
+    // written. A material unexpected loss is not applied unless the request
+    // explicitly accepted it (policy `accept` with a reason).
+    const { diff: membershipDiff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy);
+    const compactDiff = compactRefreshMembershipDiff(membershipDiff);
+    if (guard.decision === REFRESH_GUARD_DECISIONS.BLOCK) {
+      return await blockExtractionRefresh(pool, { report, ctx, restore, priorProgress, dispatch, guard, compactDiff, startedAt });
+    }
+
+    // Publication date is written only for an applied refresh (this run's
+    // extraction read the stored date; a blocked refresh writes nothing).
+    await applyPublicationDate(pool, report, { document, sourceHtml });
     const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates);
     const outcome = resolveRefreshOutcomeStatus(restore, persisted);
     const grounding = await applyStoredVulnerabilityGrounding(pool, report, refreshed.document);
@@ -333,7 +411,8 @@ export async function runExtractionRefresh(pool, ctx) {
       review_relevant: outcome.review_relevant,
       reopened_for_review: outcome.reopened_for_review,
       prior_status: outcome.prior_status,
-      restored_status: outcome.analysis_status
+      restored_status: outcome.analysis_status,
+      membership_guard: membershipGuardSummary(guard, compactDiff)
     };
     const lastRefresh = {
       job_id: ctx.jobId,
@@ -341,7 +420,8 @@ export async function runExtractionRefresh(pool, ctx) {
       extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
       ...result,
       added_identities: persisted.added.slice(0, 40),
-      removed_identities: persisted.removed.slice(0, 40)
+      removed_identities: persisted.removed.slice(0, 40),
+      membership_diff: compactDiff
     };
 
     await updateReportStatus(pool, report.id, {
@@ -431,4 +511,79 @@ export async function runExtractionRefresh(pool, ctx) {
     });
     return { ok: false, code, error: err?.message || 'Refresh extraction failed' };
   }
+}
+
+/** Compact guard outcome for job results, last_refresh and audit metadata. */
+export function membershipGuardSummary(guard, compactDiff) {
+  return {
+    version: guard.version,
+    decision: guard.decision,
+    policy: guard.policy,
+    material: guard.material,
+    reasons: guard.reasons.map((r) => ({ code: r.code, count: r.count, material: r.material })),
+    ...(guard.accepted ? { accepted_reason: guard.accepted.reason, accepted_by: guard.accepted.requested_by || null } : {}),
+    indicators_before: compactDiff?.indicators?.before ?? null,
+    indicators_after: compactDiff?.indicators?.after ?? null,
+    added_indicators: compactDiff?.counts?.added_indicators ?? 0,
+    removed_indicators: compactDiff?.counts?.removed_indicators ?? 0
+  };
+}
+
+export const REFRESH_BLOCKED_CODE = 'refresh_membership_loss_blocked';
+
+/**
+ * A blocked refresh writes nothing to the review set: the report returns to
+ * its prior status with the diff recorded on last_refresh, and the job fails
+ * with a dedicated code (the worker's audit event records the guard outcome).
+ */
+async function blockExtractionRefresh(pool, { report, ctx, restore, priorProgress, dispatch, guard, compactDiff, startedAt }) {
+  const summary = membershipGuardSummary(guard, compactDiff);
+  await restoreReportStatus(pool, report.id, restore, {
+    ...priorProgress,
+    stage: restore.analysis_status,
+    last_refresh: {
+      job_id: ctx.jobId,
+      blocked_at: new Date().toISOString(),
+      blocked: true,
+      extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+      error_code: REFRESH_BLOCKED_CODE,
+      membership_guard: summary,
+      membership_diff: compactDiff,
+      ai_invoked: false
+    }
+  });
+  await updateJob(pool, ctx.jobId, {
+    status: 'failed',
+    stage: 'membership_guard',
+    error_message: guard.message,
+    progress: {
+      stage: 'membership_guard',
+      mode: MODE,
+      dispatch,
+      failure_code: REFRESH_BLOCKED_CODE,
+      membership_guard: summary,
+      membership_diff: compactDiff
+    }
+  });
+  log.warn('extraction refresh blocked by membership guard', {
+    reportId: report.id,
+    jobId: ctx.jobId,
+    mode: MODE,
+    extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+    reasons: summary.reasons,
+    removed_indicators: summary.removed_indicators,
+    restored_status: restore.analysis_status,
+    elapsed_ms: Date.now() - startedAt
+  });
+  return {
+    ok: false,
+    code: REFRESH_BLOCKED_CODE,
+    error: guard.message,
+    summary: {
+      mode: MODE,
+      extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+      ai_invoked: false,
+      membership_guard: summary
+    }
+  };
 }

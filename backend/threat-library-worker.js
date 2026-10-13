@@ -124,6 +124,7 @@ const worker = new Worker(
         jobType: mode,
         newAnalysisRun: job.data?.newAnalysisRun === true,
         restoreStatus: job.data?.restoreStatus,
+        membershipPolicy: job.data?.membershipPolicy,
         jobPayload: job.data?.jobPayload
       });
       log.info('job finished', { bullmqJobId: job.id, reportId, mode, ok: result?.ok === true, code: result?.code });

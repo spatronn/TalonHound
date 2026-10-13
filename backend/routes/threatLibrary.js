@@ -83,6 +83,12 @@ import {
   MAINTENANCE_ALLOWED_STATUSES,
   evaluateMaintenanceAction
 } from '../lib/threatLibrary/jobModes.js';
+import { previewExtractionRefresh } from '../lib/threatLibrary/extractionRefresh.js';
+import {
+  REFRESH_GUARD_THRESHOLDS,
+  REFRESH_MEMBERSHIP_POLICIES
+} from '../lib/threatLibrary/refreshMembershipGuard.js';
+import { parseRequiredReason } from '../lib/reasonValidation.js';
 import { loadIocThreatContext } from '../lib/threatLibrary/iocThreatContext.js';
 import {
   loadReportTags,
@@ -163,6 +169,38 @@ export function publicCandidateEvidence(evidence) {
       occurrence_kind: o.occurrence_kind || null,
       asserted: o.asserted === true
     }))
+  };
+}
+
+/**
+ * Refresh extraction membership policy from a request body. The default is
+ * `protect` (material Indicator losses block the refresh). `accept` is an
+ * explicit, reasoned acceptance carried in the job dispatch and recorded in
+ * the refresh audit event.
+ * @param {object} body
+ * @param {string|null} requestedBy actor public id
+ * @returns {{ ok: true, policy: object|null } | { ok: false, message: string }}
+ */
+export function parseRefreshMembershipPolicy(body, requestedBy) {
+  const raw = body?.membership_changes;
+  if (raw == null || raw === '' || raw === REFRESH_MEMBERSHIP_POLICIES.PROTECT) return { ok: true, policy: null };
+  if (raw !== REFRESH_MEMBERSHIP_POLICIES.ACCEPT) {
+    return { ok: false, message: "membership_changes must be 'protect' or 'accept'" };
+  }
+  const reason = parseRequiredReason(body?.reason, {
+    field: 'reason',
+    minLength: REFRESH_GUARD_THRESHOLDS.acceptanceReasonMinChars,
+    maxLength: 2000
+  });
+  if (!reason.ok) return { ok: false, message: reason.message };
+  return {
+    ok: true,
+    policy: {
+      mode: REFRESH_MEMBERSHIP_POLICIES.ACCEPT,
+      reason: reason.reason,
+      requested_by: requestedBy || null,
+      requested_at: new Date().toISOString()
+    }
   };
 }
 
@@ -1109,6 +1147,13 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       });
     }
 
+    let membershipPolicy = null;
+    if (mode === THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION) {
+      const parsed = parseRefreshMembershipPolicy(req.body || {}, actorPublicId(await actorOf(req)));
+      if (!parsed.ok) return res.status(400).json({ message: parsed.message, code: 'invalid_membership_policy' });
+      membershipPolicy = parsed.policy;
+    }
+
     const restoreStatus = { analysis_status: report.analysis_status, import_status: report.import_status };
     const progress = { stage: 'pending', mode, requested_at: new Date().toISOString() };
     const claimed = await claimReportForMaintenance(pool, report.id, {
@@ -1122,7 +1167,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
 
     const dispatch = mode === THREAT_LIBRARY_JOB_MODES.RERUN_AI
       ? { jobType: mode, restoreStatus, sourceUrl: report.source_url || undefined, resumeAnalysis: true, newAnalysisRun: true }
-      : { jobType: mode, restoreStatus };
+      : { jobType: mode, restoreStatus, ...(membershipPolicy ? { membershipPolicy } : {}) };
     let jobRow = null;
     try {
       jobRow = await createJob(pool, {
@@ -1164,6 +1209,27 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         return await acceptMaintenanceJob(req, res, THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION);
       } catch (err) {
         return res.status(500).json({ message: 'Refresh extraction failed to start', detail: err.message });
+      }
+    }
+  );
+
+  // --- Refresh extraction preview: read-only membership diff + guard decision ---
+  app.get(
+    '/api/threat-library/reports/:publicId/refresh-extraction/preview',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const gate = evaluateMaintenanceAction(report, THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION);
+        if (!gate.ok) return res.status(gate.status).json({ message: gate.message, code: gate.code });
+        const preview = await previewExtractionRefresh(pool, report);
+        return res.json({ report_id: report.public_id, ...preview });
+      } catch (err) {
+        if (err?.code === 'refresh_document_missing' || err?.code === 'refresh_source_unavailable') {
+          return res.status(409).json({ message: err.message, code: err.code });
+        }
+        return res.status(500).json({ message: 'Refresh extraction preview failed', detail: err.message });
       }
     }
   );
