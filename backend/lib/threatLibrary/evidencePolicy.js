@@ -352,6 +352,16 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     }
   }
 
+  // Domains that exist only as the host part of an email address
+  // (intelreports@vendor.com, ops@gmail.com) are contact / account metadata,
+  // not threat observables — including contact blurbs inside an IOC appendix.
+  // Explicitly listed domains (standalone / table / list rows) are unaffected.
+  const occs = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
+  const onlyEmailDomain =
+    String(candidate.candidate_type || '').toLowerCase() === 'domain' &&
+    occs.length > 0 &&
+    occs.every((o) => String(o?.form || '') === 'email_domain');
+
   // Loopback / reserved addresses stay Context Only even when the publisher
   // listed them inside an IOC / C2 section. Publisher declaration does not
   // override fundamental network semantics (a loopback listener is not
@@ -360,7 +370,17 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   // some reports use those suffixes as stand-ins for real C2 names.
   const nonActionableLocalOrReserved =
     candidate.non_actionable_local === true || candidate.reserved_address === true;
-  if (!reportSource && nonActionableLocalOrReserved) {
+  if (onlyEmailDomain) {
+    candidate.assessment = 'context_only';
+    candidate.role = 'reference';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_email_domain';
+    candidate.source_assertion = SOURCE_ASSERTIONS.REFERENCE_ONLY;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.75;
+  } else if (!reportSource && nonActionableLocalOrReserved) {
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
       candidate.role = 'reference';

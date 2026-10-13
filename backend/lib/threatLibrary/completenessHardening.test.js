@@ -112,6 +112,8 @@ test('email addresses on their own <br> lines never assert their mail domain as 
     assert.ok(c, `${d} still discovered`);
     assert.equal(isExplicit(c), false, `${d} is the domain of an email address, not an asserted row`);
     assert.equal(c.occurrences.every((o) => o.form === 'email_domain' && o.asserted !== true), true);
+    assert.equal(c.assessment, 'context_only', `${d} contact/account domain is context-only`);
+    assert.equal(c.match_state, 'context_only');
   }
 });
 

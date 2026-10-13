@@ -1,5 +1,5 @@
 /**
- * Structural IOC scope hardening (tl-zones-v8 / tl-candidates-v25):
+ * Structural IOC scope hardening (tl-zones-v9 / tl-candidates-v25):
  *
  * Risk A — a bold/short paragraph that names C2 must face the same indicator-
  * content confirmation as a real HTML heading. Technical API examples alone
@@ -27,7 +27,7 @@ const RELAY = 'relay-node-17.net';
 const PATH_URL = 'https://example.test/callback';
 
 test('structural heading scope contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v8');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v9');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v25');
 });
 

@@ -13,6 +13,7 @@ import {
   classifyIndicatorHeading,
   classifySectionRole,
   isFilenameShapedToken,
+  isIndicatorRowShape,
   isIndicatorValueLine,
   isObservableListLine,
   zoneForSectionRole
@@ -51,8 +52,15 @@ import {
  * when the next content block is an indicator row — same "whatever its label"
  * rule nested real headings already had in v3. GROUP_LABEL_CONCEPT_RE remains
  * for real heading subgroup labels without a deeper hierarchy level.
+ * v9: publisher IOC appendix is a parent scope independent of child C2 /
+ * sample / operational subsections. Opening "OctLurk C2" may replace the
+ * active child zone, but leaving that child for a sibling "Loaders" /
+ * "Plugins" heading nested under the appendix restores explicit_ioc_section
+ * instead of dropping to report_body. Appendix ends only at a heading at or
+ * above the appendix level, or a deeper heading whose subtree has no
+ * publisher indicator content (related-article chrome).
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v8';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v9';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -274,6 +282,12 @@ const CIDR_IN_TEXT_RE =
 /**
  * Join a wrapped heading with the next same-page heading when a title split
  * across visual lines (e.g. "...Administering PurpleBravo" + "Infrastructure").
+ *
+ * Never merge a parent section label with a child subsection title: combining
+ * "Indicators of compromise" + "C2" would open c2_section and lose the
+ * publisher IOC appendix parent. Distinct heading levels, or a next heading
+ * that opens its own zone while this one already opens a different zone, stay
+ * separate.
  * @param {object[]} blocks
  * @param {number} index
  */
@@ -290,7 +304,23 @@ export function combinedHeadingText(blocks, index) {
     String(next.text || '').trim().length <= 40 &&
     !/[.!?。]$/.test(a)
   ) {
-    return `${a} ${collapseLetterSpacing(String(next.text || '').trim())}`.trim();
+    const thisLevel = Number.isInteger(b.level) ? b.level : null;
+    const nextLevel = Number.isInteger(next.level) ? next.level : null;
+    if (thisLevel != null && nextLevel != null && nextLevel !== thisLevel) return a;
+    const nextText = collapseLetterSpacing(String(next.text || '').trim());
+    const aloneZone = classifyHeadingText(a, { isHeading: true });
+    const nextZone = classifyHeadingText(nextText, { isHeading: true });
+    if (aloneZone === 'explicit_ioc_section') return a;
+    if (
+      aloneZone &&
+      nextZone &&
+      aloneZone !== nextZone &&
+      ZONE_OPENING_HEADINGS.has(aloneZone) &&
+      ZONE_OPENING_HEADINGS.has(nextZone)
+    ) {
+      return a;
+    }
+    return `${a} ${nextText}`.trim();
   }
   return a;
 }
@@ -338,8 +368,26 @@ export function isIndicatorStructureBlock(b) {
  */
 function isIndicatorRowBlock(b) {
   if (!b || b.layout === 'page_edge' || b.type === 'heading') return false;
-  const text = String(b.text || '');
+  const text = String(b.text || '').trim();
   if (b.layout === 'observable_row' || isObservableListLine(text) || isIndicatorValueLine(text)) return true;
+  // Annotated publisher rows ("<md5> oleasapi.dll") are indicator lines even
+  // when isIndicatorValueLine rejects the trailing filename token. Require the
+  // lead token itself to be an observable — never "GET https://…" API lines.
+  if (
+    (b.type === 'paragraph' || b.type === 'list_item' || b.type === 'list' || b.type === 'code') &&
+    text.length > 0 &&
+    text.length <= 160
+  ) {
+    const focus = text.split(/\s+/)[0]?.replace(/[.,;:)\]]+$/, '') || '';
+    const focusLooksObservable =
+      Boolean(focus) &&
+      (/^[a-f0-9]{32,64}$/i.test(focus) ||
+        /^(?:\d{1,3}\.){3}\d{1,3}$/.test(focus) ||
+        /\[\.]/.test(focus) ||
+        isIndicatorValueLine(focus) ||
+        isObservableOnlyLine(focus));
+    if (focusLooksObservable && isIndicatorRowShape(text, focus)) return true;
+  }
   if (b.type === 'list_item' || b.type === 'list' || (b.type === 'table' && !b.table)) {
     return text.length <= 160 && OBSERVABLE_IN_TEXT_RE.test(refangTextForExtraction(text));
   }
@@ -602,6 +650,14 @@ export function annotateDocumentZones(doc, opts = {}) {
   let currentTypeLabel = null;
   /** Heading that opened the current strong zone (scope ancestry for diagnostics + hierarchy). */
   let opening = { id: null, text: null, level: null, form: null };
+  /**
+   * Parent publisher-IOC appendix (explicit_ioc_section), retained while child
+   * C2 / sample / operational subsections open and close beneath it. Null when
+   * the active strong zone was opened without an appendix parent (standalone
+   * C2 heading, top-level sample table, …).
+   * @type {{ id: string|null, text: string|null, level: number|null, form: string|null, zone: DocumentZone, role: string|null }|null}
+   */
+  let appendixAnchor = null;
   /** Authoritative section closed by a deeper prose sub-heading (may resume). */
   let suspended = null;
   /** Software-version columns of the last table, carried across page-break chrome only. */
@@ -613,6 +669,35 @@ export function annotateDocumentZones(doc, opts = {}) {
   };
   /** True once the open strong section has shown at least one indicator row. */
   let sectionSawIndicatorContent = false;
+
+  const clearAppendixAnchor = () => {
+    appendixAnchor = null;
+  };
+
+  const clearStrongScope = () => {
+    suspended = null;
+    currentZone = 'report_body';
+    currentRole = null;
+    currentTypeLabel = null;
+    sectionSawIndicatorContent = false;
+    opening = { id: null, text: null, level: null, form: null };
+    clearAppendixAnchor();
+  };
+
+  /**
+   * Leaving a child strong zone (C2 / sample / …) while still nested under the
+   * publisher IOC appendix: restore the appendix when this heading's subtree
+   * still holds publisher indicator content. A deeper related-article / prose
+   * topic with no indicator rows ends the appendix.
+   */
+  const retainAppendixUnderHeading = (level, headingIndex) => {
+    if (!appendixAnchor) return false;
+    if (level == null || appendixAnchor.level == null || level <= appendixAnchor.level) return false;
+    return (
+      sectionOpensWithIndicatorContent(blocks, headingIndex, footerIds) ||
+      subtreeHasIndicatorStructure(blocks, headingIndex, footerIds)
+    );
+  };
 
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i];
@@ -674,6 +759,16 @@ export function annotateDocumentZones(doc, opts = {}) {
     }
 
     if (headingZone && ZONE_OPENING_HEADINGS.has(headingZone)) {
+      const level = Number.isInteger(b.level) ? b.level : null;
+      const openingStrong = STRONG_IOC_ZONES.has(headingZone);
+      const childUnderAppendix =
+        openingStrong &&
+        appendixAnchor != null &&
+        appendixAnchor.level != null &&
+        level != null &&
+        level > appendixAnchor.level &&
+        headingZone !== 'explicit_ioc_section';
+
       suspended = null;
       currentZone = headingZone;
       currentRole = headingRole;
@@ -684,11 +779,42 @@ export function annotateDocumentZones(doc, opts = {}) {
       opening = {
         id: b.id,
         text: headingText.slice(0, 160),
-        level: Number.isInteger(b.level) ? b.level : null,
+        level,
         form: indicatorHeading?.form || null
       };
       b.scope_opening_id = b.id;
-      trace({ block_id: b.id, decision: 'open', zone: headingZone, role: headingRole, heading: opening.text, level: opening.level, form: opening.form });
+
+      if (headingZone === 'explicit_ioc_section') {
+        // New / replacement appendix root.
+        appendixAnchor = {
+          id: opening.id,
+          text: opening.text,
+          level: opening.level,
+          form: opening.form,
+          zone: 'explicit_ioc_section',
+          role: headingRole
+        };
+      } else if (!childUnderAppendix && openingStrong) {
+        // Standalone strong section (C2 / sample / operational without an
+        // appendix parent) — no appendix to fall back to when it closes.
+        clearAppendixAnchor();
+      }
+      // childUnderAppendix: keep appendixAnchor; only the active child opening changes.
+
+      if (!openingStrong && (headingZone === 'reference_section' || headingZone === 'vendor_about' || headingZone === 'code')) {
+        clearAppendixAnchor();
+      }
+
+      trace({
+        block_id: b.id,
+        decision: 'open',
+        zone: headingZone,
+        role: headingRole,
+        heading: opening.text,
+        level: opening.level,
+        form: opening.form,
+        appendix_anchor: appendixAnchor?.id || null
+      });
     } else if (isRealHeading) {
       const inStrong = STRONG_IOC_ZONES.has(currentZone);
       // A title wrapped over two visual lines: the previous CONTENT block (a
@@ -755,21 +881,121 @@ export function annotateDocumentZones(doc, opts = {}) {
         b.section_role = currentRole;
         b.scope_opening_id = opening.id;
         trace({ block_id: b.id, decision: 'resumed', zone: currentZone, heading: headingText.slice(0, 120), level, opened_by: opening.id });
-      } else if (!wrappedContinuation && !typedContinuation && !subgroupContinuation && !hierarchyContinuation) {
-        if (inStrong) {
-          trace({ block_id: b.id, decision: 'reset', from_zone: currentZone, heading: headingText.slice(0, 120), level, opened_by: opening.id });
-          suspended =
-            level != null && opening.level != null && level > opening.level
-              ? { zone: currentZone, role: currentRole, opening, closerLevel: level }
-              : null;
-        } else if (suspended && (level == null || level <= suspended.opening.level)) {
-          suspended = null;
+      } else if (
+        // Child C2 (or sample/operational) scope must not paint Loaders /
+        // Plugins / Samples rows as explicit_c2. When a non-C2 sub-list
+        // continues under the appendix, restore the parent appendix zone
+        // first — typed network sub-lists ("Domains", "IPs") stay in C2.
+        appendixAnchor &&
+        currentZone !== appendixAnchor.zone &&
+        STRONG_IOC_ZONES.has(currentZone) &&
+        ((subgroupContinuation || hierarchyContinuation || wrappedContinuation) ||
+          (typedContinuation && labelHeading && labelHeading.semantics !== 'network'))
+      ) {
+        const fromZone = currentZone;
+        currentZone = appendixAnchor.zone;
+        currentRole = appendixAnchor.role;
+        opening = {
+          id: appendixAnchor.id,
+          text: appendixAnchor.text,
+          level: appendixAnchor.level,
+          form: appendixAnchor.form
+        };
+        suspended = null;
+        sectionSawIndicatorContent = true;
+        b.zone_reason = typedContinuation
+          ? 'typed_subheading'
+          : subgroupContinuation
+            ? 'subgroup_label'
+            : hierarchyContinuation
+              ? 'nested_indicator_subheading'
+              : wrappedContinuation
+                ? 'heading_continuation'
+                : 'appendix_scope_retained';
+        b.section_role = currentRole;
+        b.scope_opening_id = opening.id;
+        if (labelHeading) {
+          currentTypeLabel = labelHeading;
+          b.type_label_heading = labelHeading;
+        } else {
+          currentTypeLabel = null;
         }
-        currentZone = 'report_body';
-        currentRole = null;
-        sectionSawIndicatorContent = false;
-        opening = { id: null, text: null, level: null, form: null };
-        if (b.zone_reason !== 'indicator_heading_unconfirmed') b.zone_reason = 'heading_reset';
+        trace({
+          block_id: b.id,
+          decision: 'appendix_retained',
+          from_zone: fromZone,
+          zone: currentZone,
+          heading: headingText.slice(0, 120),
+          level,
+          opened_by: opening.id,
+          via: b.zone_reason
+        });
+      } else if (!wrappedContinuation && !typedContinuation && !subgroupContinuation && !hierarchyContinuation) {
+        const fallBackToAppendix = inStrong && retainAppendixUnderHeading(level, i);
+        if (fallBackToAppendix) {
+          // Child C2/sample scope ends; parent IOC appendix continues for
+          // Loaders / Plugins / Samples siblings that still list indicators.
+          const fromZone = currentZone;
+          currentZone = appendixAnchor.zone;
+          currentRole = appendixAnchor.role;
+          opening = {
+            id: appendixAnchor.id,
+            text: appendixAnchor.text,
+            level: appendixAnchor.level,
+            form: appendixAnchor.form
+          };
+          suspended = null;
+          currentTypeLabel = null;
+          sectionSawIndicatorContent = true;
+          b.zone_reason = 'appendix_scope_retained';
+          b.section_role = currentRole;
+          b.scope_opening_id = opening.id;
+          trace({
+            block_id: b.id,
+            decision: 'appendix_retained',
+            from_zone: fromZone,
+            zone: currentZone,
+            heading: headingText.slice(0, 120),
+            level,
+            opened_by: opening.id,
+            appendix_anchor: appendixAnchor.id
+          });
+        } else {
+          if (inStrong) {
+            trace({
+              block_id: b.id,
+              decision: 'reset',
+              from_zone: currentZone,
+              heading: headingText.slice(0, 120),
+              level,
+              opened_by: opening.id,
+              appendix_anchor: appendixAnchor?.id || null
+            });
+            suspended =
+              level != null && opening.level != null && level > opening.level
+                ? { zone: currentZone, role: currentRole, opening, closerLevel: level }
+                : null;
+          } else if (suspended && (level == null || level <= suspended.opening.level)) {
+            suspended = null;
+          }
+          // Full exit from the strong section (and any appendix parent).
+          if (!suspended) {
+            currentZone = 'report_body';
+            currentRole = null;
+            sectionSawIndicatorContent = false;
+            opening = { id: null, text: null, level: null, form: null };
+            clearAppendixAnchor();
+          } else {
+            // Deeper prose sub-topic suspends the child; appendix parent stays
+            // so a later sibling under the appendix can resume via existing
+            // resume logic or a later appendix_retained path after resume.
+            currentZone = 'report_body';
+            currentRole = null;
+            sectionSawIndicatorContent = false;
+            opening = { id: null, text: null, level: null, form: null };
+          }
+          if (b.zone_reason !== 'indicator_heading_unconfirmed') b.zone_reason = 'heading_reset';
+        }
       } else {
         b.zone_reason = typedContinuation
           ? 'typed_subheading'
@@ -809,22 +1035,53 @@ export function annotateDocumentZones(doc, opts = {}) {
       // ("IP Address First Seen Last Seen"), not a new topic boundary.
       const tableCaptionContinuation = Boolean(next) && next.type === 'table';
       if (!synthTyped && !synthSubgroup && !tableCaptionContinuation) {
-        trace({
-          block_id: b.id,
-          decision: 'reset',
-          from_zone: currentZone,
-          heading: headingText.slice(0, 120),
-          level: null,
-          opened_by: opening.id,
-          reason: 'synthetic_heading_boundary'
-        });
-        suspended = null;
-        currentZone = 'report_body';
-        currentRole = null;
-        currentTypeLabel = null;
-        sectionSawIndicatorContent = false;
-        opening = { id: null, text: null, level: null, form: null };
-        b.zone_reason = 'heading_reset';
+        // Synthetic labels have no DOM level; if a following real heading still
+        // opens publisher indicator content under the appendix, keep the
+        // appendix rather than discarding parent membership with the child C2.
+        let synthAppendixKeep = false;
+        if (appendixAnchor && next && next.type === 'heading') {
+          const nextIndex = blocks.findIndex((x, idx) => idx > i && x.id === next.id);
+          synthAppendixKeep =
+            nextIndex >= 0 && subtreeHasIndicatorStructure(blocks, nextIndex, footerIds);
+        }
+        if (synthAppendixKeep) {
+          const fromZone = currentZone;
+          currentZone = appendixAnchor.zone;
+          currentRole = appendixAnchor.role;
+          opening = {
+            id: appendixAnchor.id,
+            text: appendixAnchor.text,
+            level: appendixAnchor.level,
+            form: appendixAnchor.form
+          };
+          suspended = null;
+          currentTypeLabel = null;
+          sectionSawIndicatorContent = true;
+          b.zone_reason = 'appendix_scope_retained';
+          b.section_role = currentRole;
+          b.scope_opening_id = opening.id;
+          trace({
+            block_id: b.id,
+            decision: 'appendix_retained',
+            from_zone: fromZone,
+            zone: currentZone,
+            heading: headingText.slice(0, 120),
+            reason: 'synthetic_heading_appendix_retained',
+            opened_by: opening.id
+          });
+        } else {
+          trace({
+            block_id: b.id,
+            decision: 'reset',
+            from_zone: currentZone,
+            heading: headingText.slice(0, 120),
+            level: null,
+            opened_by: opening.id,
+            reason: 'synthetic_heading_boundary'
+          });
+          clearStrongScope();
+          b.zone_reason = 'heading_reset';
+        }
       } else if (synthLabel || tableCaptionContinuation || synthSubgroup) {
         if (synthLabel) {
           currentTypeLabel = synthLabel;
@@ -856,12 +1113,7 @@ export function annotateDocumentZones(doc, opts = {}) {
         reason: 'post_indicator_metadata_list',
         opened_by: opening.id
       });
-      suspended = null;
-      currentZone = 'report_body';
-      currentRole = null;
-      currentTypeLabel = null;
-      sectionSawIndicatorContent = false;
-      opening = { id: null, text: null, level: null, form: null };
+      clearStrongScope();
       b.zone_reason = 'post_indicator_metadata_list';
     }
 
