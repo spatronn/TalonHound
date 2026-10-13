@@ -2966,7 +2966,7 @@ registerPublishedFeedRoutes(app, pool, auditLogService);
 registerRouteModule('published_feeds');
 registerApiKeyRoutes(app, pool, auditLogService);
 registerRouteModule('api_keys');
-registerMcpRoutes(app, pool, auditLogService);
+registerMcpRoutes(app, pool, auditLogService, { threatLibraryQueue });
 registerAuditLogRoutes(app, pool);
 registerAuditRetentionRoutes(app, pool, { audit: auditLogService });
 registerRouteModule('audit_retention');

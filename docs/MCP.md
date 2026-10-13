@@ -16,8 +16,9 @@ Through MCP, a client can:
 - Bulk-check extracted IOCs from a threat report
 - List selectable IOC Sources
 - Import missing IOCs into an **existing** IOC Source (with optional dry-run)
+- Import a threat report into the Threat Library by URL (`threat_library_import_url`, the Import Intelligence → URL operation) and poll its processing state
 
-There are **no** MCP tools to delete IOCs, manage feeds, administer users, or trigger paid enrichment.
+There are **no** MCP tools to delete IOCs, manage feeds or administer users. External enrichment and report import run only through the explicit action tools described below.
 
 ## Architecture
 
@@ -71,7 +72,7 @@ MCP credentials are API keys stored in `published_feed_access_keys`, using dedic
 | Profile id | Label | Key prefix | Typical use |
 |------------|--------|------------|-------------|
 | `mcp_read` | MCP Read | `th_mcp_` | Lookup / search / context / bulk / list sources |
-| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs`, the enrichment action tools (`enrich_ioc` / `bulk_enrich_iocs`) and the tag tools (`add_ioc_tags` / `remove_ioc_tags`) |
+| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs`, the enrichment action tools (`enrich_ioc` / `bulk_enrich_iocs`), the tag tools (`add_ioc_tags` / `remove_ioc_tags`) and Threat Library URL import (`threat_library_import_url`) |
 
 All MCP profiles **require an owner user**. The owner’s TalonHound role is loaded on every request.
 
@@ -98,13 +99,16 @@ Create keys in the TalonHound UI under API key management (same place as publish
 | `mcp:enrichment:write` | `enrich_ioc`, `bulk_enrich_iocs` — triggers external, possibly paid providers (also needs `mcp:ioc:read` and an analyst/admin owner) |
 | `mcp:sources:read` | `list_ioc_sources` |
 | `mcp:tags:write` | `add_ioc_tags`, `remove_ioc_tags` — analyst (`manual`) tags only (also needs `mcp:ioc:read` and an analyst/admin owner) |
+| `mcp:threat_library:import` | `threat_library_import_url` — Threat Library Import Intelligence → URL (also needs `mcp:ioc:read` and an analyst/admin owner, the same roles as the UI import) |
+
+`get_threat_library_import_status` needs only `mcp:ioc:read`.
 
 Profile presets:
 
 - **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`
+- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`, `mcp:threat_library:import`
 
-**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
+**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`, and `046_mcp_threat_library_import_scope.sql` added `mcp:threat_library:import`. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
 
 ## Tools
 
@@ -126,6 +130,8 @@ Profile presets:
 | `list_iocs_by_malware_family` | `mcp:ioc:read` (analyst/admin owner) | Yes | Malware Family → IOC discovery. Exactly one of `malware_family_id` (preferred), `malware_family` (exact name / slug / alias / ATT&CK id such as `S0154`; ambiguous names are rejected with candidates, never fuzzy) or `source_label` (raw source-reported label that is not a catalog family; a name that is not in the catalog but exists as a source label returns `source_label_available`). Union of analyst associations and CURRENT source-reported assertions, deduplicated by IOC (type+value). Filters: `scope` all/direct/context/analyst (same as the UI; scopes overlap, a scope filter keeps all of a matching IOC's evidence), legacy `attribution_origin` all/analyst/source and `association` all/pulse_context/direct (ignored when `scope` is set), `lifecycle` current/historical, `observable_type` (ip, ipv6, domain, url, hash, md5, sha1, sha256), `status`. Returns `summary` (`scopes` {all, direct, context, analyst}; all_unique, analyst_unique, source_unique — overlapping — pulse_context_unique, direct_unique, otx_pulses, by_type) and `iocs` (value, type, status, confidence, relationship_scopes, attribution analyst/source_reported/mixed, association_kinds, reported_labels, ≤3 evidence assertions). `limit` ≤ 100, `offset` paging. Pulse context is not proof of a malware sample. Read-only. See [malware-family-ioc-discovery.md](./malware-family-ioc-discovery.md). |
 | `add_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Add 1–10 existing, enabled catalog tags to one IOC as analyst (`manual`) tags. All-or-nothing; never creates or re-enables catalog tags. See [Tags](#tags-action-tools). |
 | `remove_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Remove analyst tags from one IOC. Source/feed and Threat Library tags are never removed (`not_removable`). |
+| `threat_library_import_url` | `mcp:ioc:read` + `mcp:threat_library:import` | **No — action** | Import a public report URL into the Threat Library: the same operation as Import Intelligence → URL → Start Import. Returns `outcome` (`import_started` / `already_exists`), `report_id`, `job_id` and the persisted processing state. See [Threat Library URL import](#threat-library-url-import-action-tool). |
+| `get_threat_library_import_status` | `mcp:ioc:read` | Yes | Processing state of one report by `report_id`: `review_phase`, import/analysis status, `failure`, latest job, `ingestion_complete` / `ingestion_failed` / `readable_with_get_threat_report`. |
 
 There are no IOC/source delete, update-admin, feed, or user-management tools.
 
@@ -254,6 +260,73 @@ MCP enrich_ioc
 - **Idempotent:** an analyst tag that is already assigned is reported in `already_present`. The response includes the resulting effective `tags` / `tags_detail` (same shape as `get_ioc_context`).
 - **Identity:** `ioc_id` is the IOC public UUID (or numeric id) — never a raw value.
 
+## Threat Library URL import (action tool)
+
+`threat_library_import_url` is **Threat Library → Import Intelligence → URL → Start Import** over MCP. The tool and `POST /api/threat-library/import/url` call the same function, `importThreatLibraryUrl` in `backend/lib/threatLibrary/urlImportService.js`. The MCP handler only maps its outcome to a response and reads the persisted state back.
+
+```text
+MCP threat_library_import_url { url }
+  → authorization (mcp:ioc:read + mcp:threat_library:import ∩ analyst/admin owner)
+  → importThreatLibraryUrl  (same function as the UI route)
+      URL policy: http/https only, no embedded credentials, no localhost /
+      private / link-local / metadata / single-label hosts (validateThreatLibraryUrl)
+      → canonical URL identity → claimReportImport (advisory lock, duplicate check
+        BEFORE any report, job or queue entry)
+      → threat_reports row (source_url, source_url_canonical, created_by = owner)
+      → threat_library_jobs `analyze` job → analysis-slot dispatch → threat-library queue
+      → audit threat_library.report.imported.url (+ MCP key provenance)
+  → threat-library-worker (unchanged): SSRF-safe fetch with DNS pinning and per-hop
+    redirect validation → extraction → analysis → review_required
+```
+
+- **Input:** `{ "url": "https://…" }` only. There are no TLP, title, source, review or promotion parameters. The TLP defaults to the same value as a UI import.
+- **New report:** the tool returns `outcome: "import_started"`, `report_id`, `job_id`, `report` (with `review_phase: "preparing"` and import/analysis status) and `job` (`status`, `stage`, `dispatched_to_worker`).
+  - `dispatched_to_worker` is `false` while the job waits for an AI analysis slot. MCP and UI imports share the same `max_concurrent_report_analyses` budget.
+  - A queued job is not a finished import. `ingestion_complete` stays `false` until the worker reaches `review_ready` or `finalized`.
+- **Already in the library:** the tool returns `outcome: "already_exists"` with `already_imported: true`, `duplicate_reason: "url"`, the existing `report_id`, its current state and `latest_job`. Nothing is created, fetched or queued.
+  - The identity is the UI's canonical URL. The host is lower-cased; the default port, the fragment and one trailing slash are dropped; the query is kept verbatim.
+  - The identity is shared across channels: a report imported in the UI is a duplicate over MCP, and vice versa.
+  - Concurrent requests serialize on the same advisory lock, so they create exactly one report.
+- **Errors:**
+  - `INVALID_URL` carries the UI's policy message, for example "Private, loopback, and localhost URLs are not allowed". Nothing is written.
+  - `IMPORT_FAILED` carries a safe `reason` category, for example `queue_unavailable`. It is audited as `threat_library.report.import_failed`.
+  - `MISSING_SCOPE` and `RBAC_DENIED` are returned before any database access.
+- **Failures after acceptance** happen in the worker and are read with `get_threat_library_import_status`: `review_phase: "failed"`, `ingestion_failed: true`, `failure {stage, code, reason}`. Example failure codes:
+  - `redirect_blocked` / `destination_blocked`: unsafe redirect or DNS answer.
+  - `pdf_via_url_unsupported`: the URL serves a PDF. URL import does not ingest PDFs; upload the PDF in the UI instead.
+  - fetch or HTTP errors.
+
+  A re-import of a failed URL is still a duplicate, as in the UI. Retry is a UI action.
+- **What it never does:** approve IOC candidates, run Create IOCs, change review decisions, write IOCs, or mark a job complete. Review and Create IOCs stay analyst actions in the UI.
+
+Example automation flow (JSON-RPC over Streamable HTTP):
+
+```bash
+curl -sS https://talonhound.example.com/mcp \
+  -H 'Authorization: Bearer th_mcp_REPLACE_ME' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"threat_library_import_url","arguments":{"url":"https://vendor.example/research/apt-report"}}}'
+```
+
+```json
+{
+  "outcome": "import_started",
+  "already_imported": false,
+  "duplicate_reason": null,
+  "report_id": "6f1c…",
+  "job_id": "a2b9…",
+  "source_url": "https://vendor.example/research/apt-report",
+  "report": { "id": "6f1c…", "import_status": "processing", "analysis_status": "pending", "review_phase": "preparing", "failure": null, "…": "…" },
+  "job": { "id": "a2b9…", "job_type": "analyze", "status": "queued", "stage": "queued", "dispatched_to_worker": true, "…": "…" },
+  "ingestion_complete": false,
+  "ingestion_failed": false,
+  "readable_with_get_threat_report": false
+}
+```
+
+Then poll with `{"name":"get_threat_library_import_status","arguments":{"report_id":"6f1c…"}}`, at an interval of 15–30 s, until `ingestion_complete` or `ingestion_failed` is true. Then read the report with `get_threat_report`.
+
 ## Rate limits and batch sizes
 
 Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
@@ -276,6 +349,7 @@ Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
 | `add_ioc_tags` + `remove_ioc_tags` / minute | **30** | `MCP_RATE_LIMIT_TAG_WRITE_PER_MIN` (max 300) |
 | Tags per `add_ioc_tags` / `remove_ioc_tags` call | **10** | `MCP_TAG_WRITE_MAX` (hard max 25) |
 | `list_tags` max | **100** | `MCP_TAG_LIST_MAX` (max 200) |
+| `threat_library_import_url` / minute | **10** | `MCP_RATE_LIMIT_REPORT_IMPORT_PER_MIN` (max 60) |
 
 Exceeding limits returns HTTP **429**. Disable MCP entirely with `MCP_ENABLED=false`.
 
@@ -293,6 +367,7 @@ Successful (and many failed) MCP operations are written through the shared audit
 | Per-provider work | the provider's existing actions (`enrichment.virustotal.*`, `enrichment.ip.*`, `enrichment.abuseipdb.refresh`, `enrichment.rdap.*`, `enrichment.spamhaus_drop.refresh`) with `source = mcp`, API key id/name and the job id |
 | Enrichment job finished | action `enrichment.job.completed` (`job_status`, status summary) |
 | Tag added / removed (one per tag that actually changed) | the GUI's `ioc.tag.added` / `ioc.tag.removed`, with `source = mcp`, API key id/name and `tool` |
+| Threat Library URL import (new or duplicate) | the GUI's `threat_library.report.imported.url` (duplicates carry `already_imported: true`), with `source = mcp`, API key id/name and `tool`; failures `threat_library.report.import_failed`. Worker analysis events keep the owner as actor. |
 
 Audit metadata typically includes API key id/name, access profile, owner user id, tool name, and import counters (`submitted`, `created` / `would_create`, `invalid`, etc.).
 
@@ -406,7 +481,7 @@ Also disable or remove the owner user if the entire identity should lose access.
 - No feed administration or published-feed operations via MCP
 - No *implicit* enrichment: read tools only return stored enrichment; external providers run only through the explicit `enrich_ioc` / `bulk_enrich_iocs` action tools
 - Enrichment jobs run in the backend process; a backend restart marks in-flight jobs `interrupted` (request them again)
-- No threat-report file storage or long-running “report jobs”
+- Threat Library import over MCP is URL-only (no PDF / THIB upload); review, Create IOCs and Retry stay in the UI
 - Stateless Streamable HTTP only (no durable MCP sessions)
 - Batch sizes capped (default 100)
 - Import only into existing selectable IOC Sources

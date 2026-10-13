@@ -60,7 +60,7 @@ test('mcp_read scopes are read-only MCP', () => {
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), false);
 });
 
-test('mcp_analyst scopes include create, enrichment and tags', () => {
+test('mcp_analyst scopes include create, enrichment, tags and Threat Library URL import', () => {
   const scopes = scopesForAccessProfile(ACCESS_PROFILE.MCP_ANALYST);
   assert.deepEqual(scopes, [
     API_SCOPE.MCP_IOC_READ,
@@ -68,7 +68,8 @@ test('mcp_analyst scopes include create, enrichment and tags', () => {
     API_SCOPE.MCP_SOURCES_READ,
     API_SCOPE.MCP_ENRICHMENT_READ,
     API_SCOPE.MCP_ENRICHMENT_WRITE,
-    API_SCOPE.MCP_TAGS_WRITE
+    API_SCOPE.MCP_TAGS_WRITE,
+    API_SCOPE.MCP_THREAT_LIBRARY_IMPORT
   ]);
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), true);
 });
@@ -136,9 +137,27 @@ test('migration 040 admits mcp:tags:write and backfills it onto live MCP Analyst
   assert.match(stmt, /AND deleted_at IS NULL/);
   assert.match(stmt, /AND NOT \(scopes \? 'mcp:tags:write'\)/, 'idempotent');
   assert.doesNotMatch(stmt, /mcp_read|ioc_read|published_feed'|ioc_management/);
-  // Every scope the profile carries beyond the pre-040 MCP Analyst set is backfilled (039 + 040).
+  assert.ok(sql.includes(`'["mcp:tags:write"]'`), 'migration must backfill mcp:tags:write');
+});
+
+test('migration 046 admits mcp:threat_library:import and backfills it onto live MCP Analyst keys only', async () => {
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const sql = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '046_mcp_threat_library_import_scope.sql'), 'utf8');
+  const updates = sql.replace(/--[^\n]*/g, '').split(';').map((x) => x.trim()).filter((x) => x.startsWith('UPDATE'));
+  assert.equal(updates.length, 1);
+  const [stmt] = updates;
+  assert.match(stmt, /^UPDATE public\.published_feed_access_keys/);
+  assert.match(stmt, /WHERE key_type = 'mcp_analyst'/);
+  assert.match(stmt, /AND deleted_at IS NULL/);
+  assert.match(stmt, /AND NOT \(scopes \? 'mcp:threat_library:import'\)/, 'idempotent');
+  assert.doesNotMatch(stmt, /mcp_read|ioc_read|published_feed'|ioc_management/);
+  // Every scope the profile carries beyond the pre-039 MCP Analyst set is backfilled (039 + 040 + 046).
   const pre039 = ['mcp:ioc:read', 'mcp:ioc:create', 'mcp:sources:read', 'mcp:enrichment:read'];
   const added = scopesForAccessProfile('mcp_analyst').filter((x) => !pre039.includes(x));
-  assert.deepEqual(added, ['mcp:enrichment:write', 'mcp:tags:write']);
-  assert.ok(sql.includes(`'["mcp:tags:write"]'`), 'migration must backfill mcp:tags:write');
+  assert.deepEqual(added, ['mcp:enrichment:write', 'mcp:tags:write', 'mcp:threat_library:import']);
+  assert.ok(sql.includes(`'["mcp:threat_library:import"]'`), 'migration must backfill mcp:threat_library:import');
+  // MCP Read never carries it.
+  assert.ok(!scopesForAccessProfile('mcp_read').includes('mcp:threat_library:import'));
 });

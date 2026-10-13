@@ -40,7 +40,9 @@ export const MCP_DEFAULTS = Object.freeze({
   TAG_WRITE_MAX: 10,
   TAG_LIST_MAX: 100,
   MALWARE_FAMILY_LIST_MAX: 100,
-  RATE_LIMIT_TAG_WRITE_PER_MIN: 30
+  RATE_LIMIT_TAG_WRITE_PER_MIN: 30,
+  // threat_library_import_url: each new report = an outbound fetch + an AI analysis run.
+  RATE_LIMIT_REPORT_IMPORT_PER_MIN: 10
 });
 
 export function isMcpEnabled(env = process.env) {
@@ -88,6 +90,12 @@ export function getMcpConfig(env = process.env) {
       MCP_DEFAULTS.MALWARE_FAMILY_LIST_MAX,
       { min: 1, max: 200 }
     ),
-    rateLimitTagWritePerMin: intEnv(env, 'MCP_RATE_LIMIT_TAG_WRITE_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_TAG_WRITE_PER_MIN, { min: 1, max: 300 })
+    rateLimitTagWritePerMin: intEnv(env, 'MCP_RATE_LIMIT_TAG_WRITE_PER_MIN', MCP_DEFAULTS.RATE_LIMIT_TAG_WRITE_PER_MIN, { min: 1, max: 300 }),
+    rateLimitReportImportPerMin: intEnv(
+      env,
+      'MCP_RATE_LIMIT_REPORT_IMPORT_PER_MIN',
+      MCP_DEFAULTS.RATE_LIMIT_REPORT_IMPORT_PER_MIN,
+      { min: 1, max: 60 }
+    )
   });
 }

@@ -12,6 +12,11 @@ const routeSrc = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'threatLibrary.js'),
   'utf8'
 );
+// URL import operation shared by the route and the MCP tool threat_library_import_url.
+const urlImportSrc = readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'threatLibrary', 'urlImportService.js'),
+  'utf8'
+);
 
 test('AI settings routes are admin-gated', () => {
   assert.match(routeSrc, /\/api\/threat-library\/ai-settings[\s\S]*?requireRole\(ROLES\.ADMIN\)/);
@@ -116,7 +121,9 @@ test('every Threat Library audit call carries the request (actor, IP, request id
 });
 
 test('import, delete, source URL, THIB export and finalize use the audit builders', () => {
-  assert.match(routeSrc, /buildImportAuditEvent\(\{\s*sourceType: 'url'/);
+  assert.match(routeSrc, /importThreatLibraryUrl\(\s*\{ pool, queue, writeAudit: \(event\) => writeAudit\(req, event\), resolveActor: \(\) => actorOf\(req\) \}/);
+  assert.match(urlImportSrc, /buildImportAuditEvent\(\{\s*sourceType: 'url'/);
+  assert.match(urlImportSrc, /buildImportFailedAuditEvent\(\{\s*sourceType: 'url'/);
   assert.match(routeSrc, /buildImportAuditEvent\(\{\s*sourceType: 'pdf'/);
   assert.match(routeSrc, /buildImportAuditEvent\(\{\s*sourceType: 'thib'/);
   assert.match(routeSrc, /buildImportFailedAuditEvent/);
@@ -238,8 +245,10 @@ test('list and detail share publicReport so Published is the canonical publicati
 
 test('imports schedule through the shared concurrency dispatcher rather than starting AI immediately', () => {
   assert.match(routeSrc, /async function scheduleAnalysis\(/);
+  assert.match(routeSrc, /return scheduleThreatLibraryAnalysis\(pool, queue, jobRow, extra, progress\)/);
   assert.match(routeSrc, /dispatchQueuedThreatLibraryAnalyses/);
-  assert.match(routeSrc, /await scheduleAnalysis\(report\.id, jobRow, \{ sourceUrl: policy\.url, jobType: 'analyze' \}\)/);
+  assert.match(urlImportSrc, /export async function scheduleThreatLibraryAnalysis\([\s\S]*?dispatchQueuedThreatLibraryAnalyses/);
+  assert.match(urlImportSrc, /await scheduleThreatLibraryAnalysis\(pool, queue, jobRow, \{ sourceUrl: policy\.url, jobType: 'analyze' \}\)/);
   assert.match(routeSrc, /await scheduleAnalysis\(report\.id, jobRow, \{ jobType: 'analyze' \}\)/);
   assert.match(routeSrc, /max_concurrent_report_analyses/);
 });

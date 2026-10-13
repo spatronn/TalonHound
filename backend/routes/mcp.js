@@ -27,8 +27,9 @@ function clientKey(req) {
  * @param {import('express').Express} app
  * @param {import('pg').Pool} pool
  * @param {{ auditSuccess?: Function, auditFailure?: Function }} [audit]
+ * @param {{ threatLibraryQueue?: import('bullmq').Queue|null }} [deps]
  */
-export function registerMcpRoutes(app, pool, audit) {
+export function registerMcpRoutes(app, pool, audit, deps = {}) {
   registerRouteModule('mcp');
   const auth = authenticateMcp(pool);
   const limiter = createSlidingWindowRateLimit({ windowMs: 60_000 });
@@ -77,6 +78,11 @@ export function registerMcpRoutes(app, pool, audit) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP tag write rate limit exceeded', req);
       }
     }
+    if (method === 'tools/call' && toolName === 'threat_library_import_url') {
+      if (!limiter.check(`mcp:tl-import:${key}`, cfg.rateLimitReportImportPerMin)) {
+        return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP Threat Library import rate limit exceeded', req);
+      }
+    }
     if (method === 'tools/call' && toolName === 'bulk_lookup_iocs') {
       if (!limiter.check(`mcp:bulk:${key}`, cfg.rateLimitBulkPerMin)) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP bulk lookup rate limit exceeded', req);
@@ -100,7 +106,8 @@ export function registerMcpRoutes(app, pool, audit) {
     const server = createTalonHoundMcpServer({
       pool,
       audit,
-      getRequestContext: () => requestContext
+      getRequestContext: () => requestContext,
+      threatLibraryQueue: deps.threatLibraryQueue || null
     });
 
     const transport = new StreamableHTTPServerTransport({
@@ -137,6 +144,7 @@ export function registerMcpRoutes(app, pool, audit) {
         enrich_bulk_max: config.enrichBulkMax,
         enrich_max_operations: config.enrichMaxOperations,
         tag_write_max: config.tagWriteMax,
+        report_import_rate_limit_per_min: config.rateLimitReportImportPerMin,
         rate_limit_per_min: config.rateLimitPerMin
       },
       request_id: req.requestId || randomUUID()

@@ -10,7 +10,8 @@ import { readCanonicalVersion } from './productVersion.js';
  * @param {{
  *   pool: import('pg').Pool,
  *   audit?: object,
- *   getRequestContext: () => { req?: import('express').Request }
+ *   getRequestContext: () => { req?: import('express').Request },
+ *   threatLibraryQueue?: import('bullmq').Queue|null
  * }} deps
  */
 export function createTalonHoundMcpServer(deps) {
@@ -48,7 +49,11 @@ export function createTalonHoundMcpServer(deps) {
         + 'skip providers whose stored result is fresh unless force_refresh=true, and return a job_id — poll get_enrichment_job, then read results with get_ioc_context. '
         + 'Use list_enrichment_providers to discover provider ids; never enrich unbounded IOC sets (chunk deliberately). '
         + 'add_ioc_tags / remove_ioc_tags are ACTION tools (require mcp:tags:write) that change analyst tags on one IOC: only existing, enabled catalog tags (find them with list_tags) — '
-        + 'MCP never creates tags; source/feed and Threat Library tags are never removed.'
+        + 'MCP never creates tags; source/feed and Threat Library tags are never removed. '
+        + 'threat_library_import_url is an ACTION tool (requires mcp:threat_library:import) = Threat Library Import Intelligence → URL: '
+        + 'it queues a public report URL for the normal background fetch/extraction/analysis (duplicates return outcome already_exists with the existing report_id); '
+        + 'poll get_threat_library_import_status until ingestion_complete or ingestion_failed, then read it with get_threat_report. '
+        + 'Importing a report never approves IOC candidates or creates IOCs — review and Create IOCs stay analyst actions.'
     }
   );
 

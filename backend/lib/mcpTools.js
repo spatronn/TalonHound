@@ -3,7 +3,12 @@
  */
 
 import { z } from 'zod';
-import { authorizeMcpTool, MCP_ENRICHMENT_ACTION_TOOLS, MCP_TAG_ACTION_TOOLS } from './mcpPermissions.js';
+import {
+  authorizeMcpTool,
+  MCP_ENRICHMENT_ACTION_TOOLS,
+  MCP_TAG_ACTION_TOOLS,
+  MCP_THREAT_LIBRARY_ACTION_TOOLS
+} from './mcpPermissions.js';
 import {
   mcpLookupIoc,
   mcpSearchIocs,
@@ -18,6 +23,7 @@ import { getMcpConfig } from './mcpConfig.js';
 import { mcpListEnrichmentProviders, mcpEnrichIocs, mcpGetEnrichmentJob } from './mcpEnrichmentService.js';
 import { mcpListTags, mcpAddIocTags, mcpRemoveIocTags } from './mcpTagService.js';
 import { mcpListIocsByMalwareFamily, mcpListMalwareFamilies } from './mcpMalwareFamilyService.js';
+import { mcpThreatLibraryImportUrl, mcpGetThreatLibraryImportStatus } from './mcpThreatLibraryImportService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from './auditConstants.js';
 
 function toolText(obj) {
@@ -54,9 +60,11 @@ async function withAuth(toolName, ctx, handler) {
     if (outcome?.error) {
       return toolError(outcome.error.message, outcome.error.code || 'ERROR', outcome.error);
     }
-    // import_iocs, the enrichment action tools and the tag tools write their own dedicated audit events.
+    // import_iocs, the enrichment action tools, the tag tools and the Threat Library
+    // import tool write their own dedicated audit events.
     if (ctx.audit?.auditSuccess && ctx.req && toolName !== 'import_iocs'
-      && !MCP_ENRICHMENT_ACTION_TOOLS.includes(toolName) && !MCP_TAG_ACTION_TOOLS.includes(toolName)) {
+      && !MCP_ENRICHMENT_ACTION_TOOLS.includes(toolName) && !MCP_TAG_ACTION_TOOLS.includes(toolName)
+      && !MCP_THREAT_LIBRARY_ACTION_TOOLS.includes(toolName)) {
       const actor = mcpActorAuditFields(ctx.mcpAuth || ctx.req.mcpAuth, ctx.req.user);
       await ctx.audit.auditSuccess({
         req: ctx.req,
@@ -106,7 +114,7 @@ async function withAuth(toolName, ctx, handler) {
 
 /**
  * @param {import('@modelcontextprotocol/sdk/server/mcp.js').McpServer} server
- * @param {{ pool: import('pg').Pool, audit?: object, getRequestContext: () => object }} deps
+ * @param {{ pool: import('pg').Pool, audit?: object, getRequestContext: () => object, threatLibraryQueue?: import('bullmq').Queue|null }} deps
  */
 export function registerMcpTools(server, deps) {
   const config = getMcpConfig();
@@ -539,5 +547,53 @@ export function registerMcpTools(server, deps) {
       const ctx = ctxFrom();
       return withAuth('remove_ioc_tags', ctx, () => mcpRemoveIocTags(deps.pool, args, ctx));
     }
+  );
+
+  // ---------------------------------------------------------------------------
+  // Threat Library: URL import (action) and processing status (read).
+  // ---------------------------------------------------------------------------
+
+  server.registerTool(
+    'threat_library_import_url',
+    {
+      title: 'Import Threat Library report from URL',
+      description:
+        'ACTION: import a public threat-intelligence report into the TalonHound Threat Library by URL — the same operation as Threat Library → Import Intelligence → URL → Start Import. '
+        + 'Requires mcp:ioc:read + mcp:threat_library:import and an analyst/admin owner. `url` must be a public http(s) URL: localhost, private/link-local/metadata addresses, '
+        + 'single-label hosts, embedded credentials and non-http(s) schemes are rejected (INVALID_URL), and the background fetch re-checks every redirect hop with DNS pinning. '
+        + 'Duplicates use the UI identity (canonical URL): if the report is already in the library nothing is fetched or queued and `outcome` = `already_exists` with the existing `report_id`. '
+        + 'Otherwise `outcome` = `import_started`: a report and an analyze job are created and queued for the normal Threat Library worker (fetch → extraction → analysis); '
+        + 'the response carries report_id, job_id and the persisted processing state (`report.review_phase` preparing | review_ready | finalized | failed, import/analysis status, job status). '
+        + 'A queued job is NOT a finished import: poll get_threat_library_import_status until `ingestion_complete` or `ingestion_failed`, then read the report with get_threat_report. '
+        + 'URLs that serve a PDF are not ingested by URL import (the job fails with pdf_via_url_unsupported, as in the UI). '
+        + 'Never approves IOC candidates, never runs Create IOCs and never changes analyst review decisions — those stay analyst actions in the UI. Audited as the UI import events with MCP provenance.',
+      inputSchema: {
+        url: z.string().min(1).max(config.valueMaxChars).describe('Public http(s) URL of the threat report')
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('threat_library_import_url', ctx, () => mcpThreatLibraryImportUrl(deps.pool, args, ctx, {
+        threatLibraryQueue: deps.threatLibraryQueue || null
+      }));
+    }
+  );
+
+  server.registerTool(
+    'get_threat_library_import_status',
+    {
+      title: 'Get Threat Library import status',
+      description:
+        'Processing state of one Threat Library report (e.g. the report_id returned by threat_library_import_url): '
+        + '`report` (title, source_url, import_status, analysis_status, review_phase preparing | review_ready | finalized | failed, `failure` {stage, code, reason} when failed), '
+        + '`latest_job` (id, job_type, status, stage, dispatched_to_worker, error_message, created_at, finished_at), and flags `ingestion_complete` (analysis produced the reviewable set), '
+        + '`ingestion_failed` and `readable_with_get_threat_report`. Read-only: persisted status only; never re-fetches, retries or analyzes a report.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)')
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('get_threat_library_import_status', ctxFrom(), () => mcpGetThreatLibraryImportStatus(deps.pool, args))
   );
 }

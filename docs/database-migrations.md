@@ -54,6 +54,7 @@ Fresh installations apply the public forward migrations present in the repositor
 043_malware_family_reference_catalog.sql
 044_source_attribution_resolution.sql
 045_source_attribution_analyst_catalog_link.sql
+046_mcp_threat_library_import_scope.sql
 ```
 
 `002_first_run_setup.sql` adds Setup Wizard columns on top of the baseline. `003_reliability_retention.sql` adds retention/cleanup support indexes for operational history. Private-development migration history before this baseline is **not** part of the public repository.

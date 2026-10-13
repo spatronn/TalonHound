@@ -22,7 +22,11 @@ import { registerRouteModule } from '../lib/routeRegistry.js';
 import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY, TLP_VALUES } from '../lib/threatLibrary/constants.js';
 import { isValidTlp } from '../lib/threatLibrary/tlpPolicy.js';
 import { serializePublicationDate } from '../lib/threatLibrary/publicationDate.js';
-import { validateThreatLibraryUrl } from '../lib/threatLibrary/urlIngest.js';
+import {
+  URL_IMPORT_OUTCOMES,
+  importThreatLibraryUrl,
+  scheduleThreatLibraryAnalysis
+} from '../lib/threatLibrary/urlImportService.js';
 import { validatePdfBuffer, isAcceptablePdfUploadMeta } from '../lib/threatLibrary/pdfIngest.js';
 import { maskAiSettingsForClient } from '../lib/threatLibrary/ai/providers.js';
 import { exportThibBundle, validateThibBundle, previewThibImport } from '../lib/threatLibrary/thib/codec.js';
@@ -97,7 +101,6 @@ import { validateReportSourceUrl } from '../lib/threatLibrary/sourceUrl.js';
 import { parseReportListPageSize } from '../lib/threatLibrary/reportListQuery.js';
 import {
   IMPORT_DUPLICATE_MESSAGES,
-  canonicalizeReportUrl,
   claimReportImport
 } from '../lib/threatLibrary/importIdentity.js';
 import { resolveReportPhase, resolveCandidateState } from '../lib/threatLibrary/reportPhase.js';
@@ -292,21 +295,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
    * slots. Import HTTP returns without waiting for a slot.
    */
   async function scheduleAnalysis(reportId, jobRow, extra = {}, progress = null) {
-    if ((extra && Object.keys(extra).length) || progress) {
-      await updateJob(pool, jobRow.id, {
-        status: 'queued',
-        stage: 'queued',
-        progress: { ...(progress || {}), dispatch: extra }
-      });
-    }
-    if (!queue) {
-      const err = new Error('Threat Library queue unavailable');
-      err.code = 'queue_unavailable';
-      throw err;
-    }
-    return dispatchQueuedThreatLibraryAnalyses(pool, {
-      enqueue: (job) => enqueueClaimedThreatLibraryJob(queue, job)
-    });
+    return scheduleThreatLibraryAnalysis(pool, queue, jobRow, extra, progress);
   }
 
   async function dispatchQueuedAnalyses() {
@@ -557,60 +546,18 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   // --- URL import ---
   app.post('/api/threat-library/import/url', requireRole(ROLES.ADMIN, ROLES.ANALYST), async (req, res) => {
     try {
-      const url = String(req.body?.url || '').trim();
-      const policy = validateThreatLibraryUrl(url);
-      if (!policy.ok) return res.status(400).json({ message: policy.error });
-
-      const canonicalUrl = canonicalizeReportUrl(policy.url);
-      if (!canonicalUrl) return res.status(400).json({ message: 'URL must be a valid http or https URL' });
-
-      const actor = await actorOf(req);
-      // Duplicate check BEFORE any report row, job or queue entry exists: a
-      // URL already in the library is never fetched or analysed again.
-      const claim = await claimReportImport(pool, { kind: 'url', key: canonicalUrl }, (db) => createThreatReport(db, {
-        title: policy.parsed.hostname || 'URL report',
-        source_type: 'url',
-        source_url: policy.url,
-        source_url_canonical: canonicalUrl,
-        source_name: policy.parsed.hostname,
-        tlp: normalizeTlp(req.body?.tlp || 'clear'),
-        // A TLP supplied with the import request is an analyst assertion.
-        tlp_source: req.body?.tlp ? 'manual' : 'default',
-        created_by: actor?.publicId
-      }));
-      if (claim.duplicate) {
-        await writeAudit(req, buildImportAuditEvent({
-          sourceType: 'url',
-          report: claim.report,
-          user: actor,
-          details: { source_url: policy.url, host: policy.parsed.hostname, already_imported: true, duplicate_reason: 'url' }
-        }));
-        return res.status(200).json(await duplicateImportBody(claim.report, 'url'));
+      // Shared with the MCP tool threat_library_import_url (same policy,
+      // duplicate identity, report/job rows, dispatch and audit events).
+      const result = await importThreatLibraryUrl(
+        { pool, queue, writeAudit: (event) => writeAudit(req, event), resolveActor: () => actorOf(req) },
+        { url: req.body?.url, tlp: req.body?.tlp, principal: req.user }
+      );
+      if (result.outcome === URL_IMPORT_OUTCOMES.INVALID_URL) return res.status(400).json({ message: result.message });
+      if (result.outcome === URL_IMPORT_OUTCOMES.ALREADY_IMPORTED) {
+        return res.status(200).json(await duplicateImportBody(result.report, result.duplicateReason));
       }
-      const report = claim.report;
-      const jobRow = await createJob(pool, {
-        reportId: report.id,
-        jobType: 'analyze',
-        requestedBy: actor?.publicId
-      });
-      await scheduleAnalysis(report.id, jobRow, { sourceUrl: policy.url, jobType: 'analyze' });
-
-      await writeAudit(req, buildImportAuditEvent({
-        sourceType: 'url',
-        report,
-        user: actor,
-        jobPublicId: jobRow.public_id,
-        details: { source_url: policy.url, host: policy.parsed.hostname }
-      }));
-
-      return res.status(202).json({ already_imported: false, report: publicReport(report), job_id: jobRow.public_id });
+      return res.status(202).json({ already_imported: false, report: publicReport(result.report), job_id: result.job.public_id });
     } catch (err) {
-      await writeAudit(req, buildImportFailedAuditEvent({
-        sourceType: 'url',
-        user: req.user,
-        code: safeErrorCategory(err),
-        details: { host: (() => { try { return new URL(String(req.body?.url || '')).hostname; } catch { return null; } })() }
-      })).catch(() => {});
       return res.status(500).json({ message: 'URL import failed', detail: err.message });
     }
   });
