@@ -426,10 +426,10 @@ describe('iocSuppressionFileScope integration', dbOpts, () => {
       `INSERT INTO file_artifacts (status) VALUES ('active') RETURNING id`
     );
     artifactId = art.rows[0].id;
+    // Start with MD5+SHA1 only so test 11 can discover SHA256 later.
     for (const [type, value, primary] of [
       ['md5', md5, false],
-      ['sha1', sha1, false],
-      ['sha256', sha256, true]
+      ['sha1', sha1, true]
     ]) {
       await client.query(
         `INSERT INTO file_artifact_hashes (artifact_id, hash_type, normalized_hash_value, is_primary)
@@ -493,29 +493,42 @@ describe('iocSuppressionFileScope integration', dbOpts, () => {
   });
 
   it('11: later-discovered canonical hash inherits file suppression', async () => {
-    const later = crypto.createHash('sha256').update(`${mark}-later`).digest('hex');
-    // Attach a newly discovered hash to the already-suppressed artifact.
+    // Start a fresh artifact with only MD5 suppressed, then attach SHA256 later.
+    const lateMd5 = crypto.createHash('md5').update(`${mark}-late`).digest('hex');
+    const lateSha = crypto.createHash('sha256').update(`${mark}-late`).digest('hex');
+    const art = await client.query(`INSERT INTO file_artifacts (status) VALUES ('active') RETURNING id`);
+    const aid = art.rows[0].id;
     await client.query(
       `INSERT INTO file_artifact_hashes (artifact_id, hash_type, normalized_hash_value, is_primary)
-       VALUES ($1, 'sha256', $2, FALSE)
-       ON CONFLICT DO NOTHING`,
-      [artifactId, later]
+       VALUES ($1, 'md5', $2, TRUE)`,
+      [aid, lateMd5]
     );
-    // Unique on normalized_hash globally may reject — if so, skip attach and still
-    // prove current aliases remain covered.
-    const index = await fetchActiveSuppressionIndex(client, [
-      { iocValue: sha256, iocType: 'sha256' },
-      { iocValue: later, iocType: 'sha256' }
+    await client.query(
+      `INSERT INTO ioc_suppressions (ioc_value, ioc_type, scope, reason, active, file_artifact_id)
+       VALUES ($1, 'md5', 'global', $2, TRUE, $3::uuid)`,
+      [lateMd5, `${mark} late discovery`, aid]
+    );
+    let index = await fetchActiveSuppressionIndex(client, [
+      { iocValue: lateMd5, iocType: 'md5' },
+      { iocValue: lateSha, iocType: 'sha256' }
     ]);
-    assert.equal(Boolean(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' })?.suppressed), true);
-    // If the new hash landed on the artifact, it must inherit suppression.
-    const attached = await client.query(
-      `SELECT 1 FROM file_artifact_hashes WHERE artifact_id = $1 AND normalized_hash_value = $2`,
-      [artifactId, later]
+    assert.equal(Boolean(isPairSuppressed(index, { iocValue: lateMd5, iocType: 'md5' })?.suppressed), true);
+    assert.equal(Boolean(isPairSuppressed(index, { iocValue: lateSha, iocType: 'sha256' })?.suppressed), false);
+
+    await client.query(
+      `UPDATE file_artifact_hashes SET is_primary = FALSE
+       WHERE artifact_id = $1 AND hash_type = 'md5'`,
+      [aid]
     );
-    if (attached.rowCount) {
-      assert.equal(Boolean(isPairSuppressed(index, { iocValue: later, iocType: 'sha256' })?.suppressed), true);
-    }
+    await client.query(
+      `INSERT INTO file_artifact_hashes (artifact_id, hash_type, normalized_hash_value, is_primary)
+       VALUES ($1, 'sha256', $2, TRUE)`,
+      [aid, lateSha]
+    );
+    index = await fetchActiveSuppressionIndex(client, [
+      { iocValue: lateSha, iocType: 'sha256' }
+    ]);
+    assert.equal(Boolean(isPairSuppressed(index, { iocValue: lateSha, iocType: 'sha256' })?.suppressed), true);
   });
 
   it('12-14: disable then re-enable then delete file suppression', async () => {
