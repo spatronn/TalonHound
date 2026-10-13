@@ -75,3 +75,19 @@ test('no unexpected Indicator membership change against baseline.json', () => {
       'then refresh with `npm run benchmark:threat-library -- --write-baseline`'
   );
 });
+
+test('quality detector: no warning on exact cases, every failing case flagged', () => {
+  const q = run.aggregate.quality;
+  const flaggedExact = run.results
+    .filter((r) => r.metrics.indicators.fp === 0 && r.metrics.indicators.fn === 0)
+    .filter((r) => r.quality.counts.high + r.quality.counts.warning > 0)
+    .map((r) => ({ id: r.id, codes: r.quality.warnings.map((w) => w.code) }));
+  assert.deepEqual(flaggedExact, [], 'false quality warnings on cases that match ground truth');
+  const silentFailures = run.results
+    .filter((r) => r.metrics.indicators.fp !== 0 || r.metrics.indicators.fn !== 0)
+    .filter((r) => r.quality.counts.high + r.quality.counts.warning === 0)
+    .map((r) => r.id);
+  assert.deepEqual(silentFailures, [], 'failing cases the detector does not flag');
+  assert.equal(q.exact_cases_flagged, 0);
+  assert.equal(q.failing_cases_flagged, q.failing_cases);
+});

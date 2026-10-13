@@ -340,6 +340,16 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           degraded_candidates: structural.degraded_candidates
         });
       }
+      const quality = extracted.diagnostics?.quality || null;
+      if (quality && (quality.status === 'warning' || quality.status === 'high')) {
+        // Read-only extraction quality signals (extractionQuality.js); never reclassify.
+        log.warn('extraction quality warnings', {
+          reportId: report.id,
+          status: quality.status,
+          counts: quality.counts,
+          codes: [...new Set(quality.warnings.map((w) => w.code))]
+        });
+      }
       if (tables.inconsistent) {
         // Valid explicit rows that produced no candidate: an extractor bug, never a source problem.
         log.warn('explicit IOC extraction inconsistency', {

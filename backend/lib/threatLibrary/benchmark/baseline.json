@@ -6,6 +6,7 @@
     "type_resolver": "tl-type-resolver-v8",
     "html": "threat_library_html_v4",
     "pdf": "threat_library_pdf_v4",
+    "quality": "tl-quality-v1",
     "metrics": "tl-benchmark-metrics-v1"
   },
   "aggregate": {
@@ -29,7 +30,17 @@
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 1,
-    "unsupported_indicators": 0
+    "unsupported_indicators": 0,
+    "quality": {
+      "high": 10,
+      "warning": 10,
+      "info": 0,
+      "cases_flagged": 10,
+      "exact_cases": 33,
+      "exact_cases_flagged": 0,
+      "failing_cases": 10,
+      "failing_cases_flagged": 10
+    }
   },
   "cases": {
     "control-api-examples-c2-topic": {
@@ -46,7 +57,8 @@
       "sections_correct": 2,
       "sections_checked": 2,
       "assertions_correct": 3,
-      "assertions_checked": 3
+      "assertions_checked": 3,
+      "warning_codes": []
     },
     "control-legitimate-binaries": {
       "members": [
@@ -63,7 +75,8 @@
       "sections_correct": 3,
       "sections_checked": 3,
       "assertions_correct": 4,
-      "assertions_checked": 4
+      "assertions_checked": 4,
+      "warning_codes": []
     },
     "control-loopback-contact-narrative": {
       "members": [
@@ -79,7 +92,8 @@
       "sections_correct": 2,
       "sections_checked": 2,
       "assertions_correct": 3,
-      "assertions_checked": 3
+      "assertions_checked": 3,
+      "warning_codes": []
     },
     "control-mode-b-narrative": {
       "members": [
@@ -94,7 +108,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 0,
-      "assertions_checked": 0
+      "assertions_checked": 0,
+      "warning_codes": []
     },
     "pdf-kimsuky-360-appendix": {
       "members": [
@@ -116,7 +131,8 @@
       "sections_correct": 4,
       "sections_checked": 4,
       "assertions_correct": 9,
-      "assertions_checked": 9
+      "assertions_checked": 9,
+      "warning_codes": []
     },
     "pdf-pivotc2-socradar": {
       "members": [
@@ -145,7 +161,8 @@
       "sections_correct": 1,
       "sections_checked": 1,
       "assertions_correct": 16,
-      "assertions_checked": 16
+      "assertions_checked": 16,
+      "warning_codes": []
     },
     "layout/html_flat/table": {
       "members": [
@@ -164,7 +181,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_flat/hash_lines": {
       "members": [
@@ -183,7 +201,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_flat/hash_filename_lines": {
       "members": [
@@ -202,7 +221,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_flat/filename_hash_lines": {
       "members": [
@@ -221,7 +241,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_typed_subsections/table": {
       "members": [
@@ -240,7 +261,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_typed_subsections/hash_lines": {
       "members": [
@@ -259,7 +281,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_typed_subsections/hash_filename_lines": {
       "members": [
@@ -278,7 +301,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_typed_subsections/filename_hash_lines": {
       "members": [
@@ -297,7 +321,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_family_sibling/table": {
       "members": [
@@ -316,7 +341,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_family_sibling/hash_lines": {
       "members": [
@@ -335,7 +361,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_family_sibling/hash_filename_lines": {
       "members": [
@@ -354,7 +381,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_family_sibling/filename_hash_lines": {
       "members": [
@@ -369,7 +397,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/html_c2_then_loaders/table": {
       "members": [
@@ -388,7 +420,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_c2_then_loaders/hash_lines": {
       "members": [
@@ -407,7 +440,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_c2_then_loaders/hash_filename_lines": {
       "members": [
@@ -426,7 +460,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_c2_then_loaders/filename_hash_lines": {
       "members": [
@@ -441,7 +476,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/html_c2_then_nested_plugins/table": {
       "members": [
@@ -460,7 +499,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_c2_then_nested_plugins/hash_lines": {
       "members": [
@@ -479,7 +519,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_c2_then_nested_plugins/hash_filename_lines": {
       "members": [
@@ -498,7 +539,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_c2_then_nested_plugins/filename_hash_lines": {
       "members": [
@@ -513,7 +555,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/html_bold_subsections/table": {
       "members": [
@@ -532,7 +578,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_bold_subsections/hash_lines": {
       "members": [
@@ -551,7 +598,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_bold_subsections/hash_filename_lines": {
       "members": [
@@ -570,7 +618,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_bold_subsections/filename_hash_lines": {
       "members": [
@@ -585,7 +634,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/html_bold_appendix/table": {
       "members": [
@@ -604,7 +657,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_bold_appendix/hash_lines": {
       "members": [
@@ -623,7 +677,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_bold_appendix/hash_filename_lines": {
       "members": [
@@ -642,7 +697,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/html_bold_appendix/filename_hash_lines": {
       "members": [
@@ -657,7 +713,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/pdf_flat/table": {
       "members": [
@@ -676,7 +736,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/pdf_flat/hash_lines": {
       "members": [
@@ -695,7 +756,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/pdf_flat/filename_hash_lines": {
       "members": [
@@ -710,7 +772,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "authoritative_section_values_not_asserted"
+      ]
     },
     "layout/pdf_typed_subsections/table": {
       "members": [
@@ -725,7 +791,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/pdf_typed_subsections/hash_lines": {
       "members": [
@@ -744,7 +814,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/pdf_typed_subsections/filename_hash_lines": {
       "members": [
@@ -759,7 +830,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/pdf_c2_then_loaders/table": {
       "members": [
@@ -774,7 +849,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     },
     "layout/pdf_c2_then_loaders/hash_lines": {
       "members": [
@@ -793,7 +872,8 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 6,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": []
     },
     "layout/pdf_c2_then_loaders/filename_hash_lines": {
       "members": [
@@ -808,7 +888,11 @@
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 2,
-      "assertions_checked": 6
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
     }
   }
 }

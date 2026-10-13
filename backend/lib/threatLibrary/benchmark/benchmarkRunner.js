@@ -28,6 +28,7 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from '../candidateExtract
 import { THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from '../documentZones.js';
 import { TABLE_SEMANTICS_VERSION } from '../tableSemantics.js';
 import { OBSERVABLE_TYPE_RESOLVER_VERSION } from '../observableTypeResolver.js';
+import { EXTRACTION_QUALITY_VERSION } from '../extractionQuality.js';
 import {
   BENCHMARK_METRICS_VERSION,
   GROUND_TRUTH_CATEGORIES,
@@ -52,6 +53,7 @@ export function extractorVersions() {
     type_resolver: OBSERVABLE_TYPE_RESOLVER_VERSION,
     html: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
     pdf: PDF_LAYOUT_VERSION,
+    quality: EXTRACTION_QUALITY_VERSION,
     metrics: BENCHMARK_METRICS_VERSION
   };
 }
@@ -207,7 +209,37 @@ export function runBenchmarkCase(c) {
 export function runBenchmark(opts = {}) {
   const cases = (opts.cases || loadBenchmarkCases({ privateDir: opts.privateDir })).filter(opts.filter || (() => true));
   const results = cases.map((c) => runBenchmarkCase(c));
-  return { versions: extractorVersions(), aggregate: aggregateBenchmark(results), results };
+  return {
+    versions: extractorVersions(),
+    aggregate: { ...aggregateBenchmark(results), quality: aggregateQuality(results) },
+    results
+  };
+}
+
+/**
+ * Detector behaviour over the run: false warnings on exact cases, detection
+ * of failing cases (warning / high only; info is not a detection).
+ * @param {object[]} results
+ */
+export function aggregateQuality(results) {
+  const out = { high: 0, warning: 0, info: 0, cases_flagged: 0, exact_cases: 0, exact_cases_flagged: 0, failing_cases: 0, failing_cases_flagged: 0 };
+  for (const r of results) {
+    const counts = r.quality?.counts || { high: 0, warning: 0, info: 0 };
+    out.high += counts.high;
+    out.warning += counts.warning;
+    out.info += counts.info;
+    const flagged = counts.high + counts.warning > 0;
+    if (flagged) out.cases_flagged += 1;
+    const exact = r.metrics.indicators.fp === 0 && r.metrics.indicators.fn === 0;
+    if (exact) {
+      out.exact_cases += 1;
+      if (flagged) out.exact_cases_flagged += 1;
+    } else {
+      out.failing_cases += 1;
+      if (flagged) out.failing_cases_flagged += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -233,8 +265,9 @@ export function baselineFromRun(run) {
       ...(r.quality ? { warning_codes: [...new Set((r.quality.warnings || []).map((w) => w.code))].sort() } : {})
     };
   }
-  const { elapsed_ms: _ignored, ...aggregate } = aggregateBenchmark(run.results.filter((x) => !x.private));
-  return { versions: run.versions, aggregate, cases };
+  const committed = run.results.filter((x) => !x.private);
+  const { elapsed_ms: _ignored, ...aggregate } = aggregateBenchmark(committed);
+  return { versions: run.versions, aggregate: { ...aggregate, quality: aggregateQuality(committed) }, cases };
 }
 
 /**
