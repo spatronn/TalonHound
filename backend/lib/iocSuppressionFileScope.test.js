@@ -76,13 +76,11 @@ describe('iocSuppressionFileScope helpers', () => {
       file_artifact_id: artifactId
     }], { buildSuppressionIndex, makeSuppressionKey });
 
-    assert.equal(isPairSuppressed(index, { iocValue: md5, iocType: 'md5' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: sha1, iocType: 'sha1' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' }).suppressed, true);
-    assert.equal(
-      isPairSuppressed(index, { iocValue: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', iocType: 'md5' }).suppressed,
-      false
-    );
+    const hit = (v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
+    assert.equal(hit(md5, 'md5'), true);
+    assert.equal(hit(sha1, 'sha1'), true);
+    assert.equal(hit(sha256, 'sha256'), true);
+    assert.equal(hit('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'md5'), false);
   });
 
   it('does not expand exact-only suppressions via unrelated shared tags/sources', async () => {
@@ -98,8 +96,9 @@ describe('iocSuppressionFileScope helpers', () => {
       source_name: null,
       file_artifact_id: null
     }], { buildSuppressionIndex, makeSuppressionKey });
-    assert.equal(isPairSuppressed(index, { iocValue: '1.1.1.1', iocType: 'ip' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: '8.8.8.8', iocType: 'ip' }).suppressed, false);
+    const hit = (v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
+    assert.equal(hit('1.1.1.1', 'ip'), true);
+    assert.equal(hit('8.8.8.8', 'ip'), false);
   });
 });
 
@@ -370,8 +369,9 @@ describe('fetchActiveSuppressionIndex file alias coverage', () => {
     const index = await fetchActiveSuppressionIndex(client, [
       { iocValue: sha256, iocType: 'sha256' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: md5, iocType: 'md5' }).suppressed, true);
+    const hit = (v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
+    assert.equal(hit(sha256, 'sha256'), true);
+    assert.equal(hit(md5, 'md5'), true);
   });
 });
 
@@ -485,41 +485,52 @@ describe('iocSuppressionFileScope integration', dbOpts, () => {
       { iocValue: sha256, iocType: 'sha256' },
       { iocValue: otherMd5, iocType: 'md5' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: md5, iocType: 'md5' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: sha1, iocType: 'sha1' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: otherMd5, iocType: 'md5' }).suppressed, false);
+    const hit = (v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
+    assert.equal(hit(md5, 'md5'), true);
+    assert.equal(hit(sha1, 'sha1'), true);
+    assert.equal(hit(sha256, 'sha256'), true);
+    assert.equal(hit(otherMd5, 'md5'), false);
   });
 
   it('11: later-discovered canonical hash inherits file suppression', async () => {
-    const laterSha1 = crypto.createHash('sha1').update(`${mark}-later`).digest('hex');
-    // Simulate discovering another hash on the same artifact after suppression.
-    // Use a unique sha1 that wasn't present at suppress time — attach to same artifact.
-    // (sha1 already exists above; attach an extra identity via a new sha256 sibling would
-    // conflict uniqueness — instead verify index expand includes hashes added after row insert.)
     const later = crypto.createHash('sha256').update(`${mark}-later`).digest('hex');
-    // Replace: add nothing if unique constraint on hash globally — use a brand new hash type slot
-    // Actually sha256 already on artifact. Add nothing; prove expand loads current set.
+    // Attach a newly discovered hash to the already-suppressed artifact.
+    await client.query(
+      `INSERT INTO file_artifact_hashes (artifact_id, hash_type, normalized_hash_value, is_primary)
+       VALUES ($1, 'sha256', $2, FALSE)
+       ON CONFLICT DO NOTHING`,
+      [artifactId, later]
+    );
+    // Unique on normalized_hash globally may reject — if so, skip attach and still
+    // prove current aliases remain covered.
     const index = await fetchActiveSuppressionIndex(client, [
-      { iocValue: sha256, iocType: 'sha256' }
+      { iocValue: sha256, iocType: 'sha256' },
+      { iocValue: later, iocType: 'sha256' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' }).suppressed, true);
-    void laterSha1;
-    void later;
+    assert.equal(Boolean(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' })?.suppressed), true);
+    // If the new hash landed on the artifact, it must inherit suppression.
+    const attached = await client.query(
+      `SELECT 1 FROM file_artifact_hashes WHERE artifact_id = $1 AND normalized_hash_value = $2`,
+      [artifactId, later]
+    );
+    if (attached.rowCount) {
+      assert.equal(Boolean(isPairSuppressed(index, { iocValue: later, iocType: 'sha256' })?.suppressed), true);
+    }
   });
 
   it('12-14: disable then re-enable then delete file suppression', async () => {
+    const hit = (index, v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
     await client.query(`UPDATE ioc_suppressions SET active = FALSE WHERE id = $1`, [suppressionId]);
     let index = await fetchActiveSuppressionIndex(client, [
       { iocValue: sha256, iocType: 'sha256' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' }).suppressed, false);
+    assert.equal(hit(index, sha256, 'sha256'), false);
 
     await client.query(`UPDATE ioc_suppressions SET active = TRUE WHERE id = $1`, [suppressionId]);
     index = await fetchActiveSuppressionIndex(client, [
       { iocValue: sha1, iocType: 'sha1' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: sha1, iocType: 'sha1' }).suppressed, true);
+    assert.equal(hit(index, sha1, 'sha1'), true);
 
     await client.query(
       `UPDATE ioc_suppressions SET active = FALSE, deleted_at = NOW() WHERE id = $1`,
@@ -529,8 +540,8 @@ describe('iocSuppressionFileScope integration', dbOpts, () => {
       { iocValue: md5, iocType: 'md5' },
       { iocValue: sha256, iocType: 'sha256' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: md5, iocType: 'md5' }).suppressed, false);
-    assert.equal(isPairSuppressed(index, { iocValue: sha256, iocType: 'sha256' }).suppressed, false);
+    assert.equal(hit(index, md5, 'md5'), false);
+    assert.equal(hit(index, sha256, 'sha256'), false);
   });
 
   it('10: manual exact-only hash does not cover sibling aliases', async () => {
@@ -553,8 +564,9 @@ describe('iocSuppressionFileScope integration', dbOpts, () => {
       { iocValue: soloMd5, iocType: 'md5' },
       { iocValue: soloSha, iocType: 'sha256' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: soloMd5, iocType: 'md5' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: soloSha, iocType: 'sha256' }).suppressed, false);
+    const hit = (v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
+    assert.equal(hit(soloMd5, 'md5'), true);
+    assert.equal(hit(soloSha, 'sha256'), false);
   });
 
   it('17: non-file types stay exact-only', async () => {
@@ -567,7 +579,8 @@ describe('iocSuppressionFileScope integration', dbOpts, () => {
       { iocValue: '9.9.9.9', iocType: 'ip' },
       { iocValue: '8.8.8.8', iocType: 'ip' }
     ]);
-    assert.equal(isPairSuppressed(index, { iocValue: '9.9.9.9', iocType: 'ip' }).suppressed, true);
-    assert.equal(isPairSuppressed(index, { iocValue: '8.8.8.8', iocType: 'ip' }).suppressed, false);
+    const hit = (v, t) => Boolean(isPairSuppressed(index, { iocValue: v, iocType: t })?.suppressed);
+    assert.equal(hit('9.9.9.9', 'ip'), true);
+    assert.equal(hit('8.8.8.8', 'ip'), false);
   });
 });
