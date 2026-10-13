@@ -46,8 +46,13 @@ import {
  * non-indicator list (article tags / categories / related-topic chips) closes
  * the section — page metadata must not inherit IOC scope or a Domains type
  * label from the preceding appendix.
+ * v8: synthetic/bold subgroup labels inside an open IOC section (malware /
+ * tool family names such as "GoSerpent" above hash rows) continue the section
+ * when the next content block is an indicator row — same "whatever its label"
+ * rule nested real headings already had in v3. GROUP_LABEL_CONCEPT_RE remains
+ * for real heading subgroup labels without a deeper hierarchy level.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v7';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v8';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -789,13 +794,15 @@ export function annotateDocumentZones(doc, opts = {}) {
     ) {
       // A bold/short paragraph that looks like a heading but does not open a
       // zone is a section boundary unless it is a genuine per-type / subgroup
-      // list label with indicator content beneath (Invariant A/B).
+      // list label with indicator content beneath (Invariant A/B). Malware /
+      // tool family labels ("GoSerpent", "Stowaway") are not type vocabulary
+      // but still group indicator rows under the open appendix — same rule as
+      // hierarchyContinuation for nested real headings (v3).
       const synthLabel = typeLabelHeading(text);
       const synthTyped = isTypedSubheadingContinuation(synthLabel, b, blocks, i, opening, footerIds);
       const next = nextContentBlock(blocks, i, footerIds);
       const synthSubgroup =
         !synthTyped &&
-        GROUP_LABEL_CONCEPT_RE.test(collapseLetterSpacing(text)) &&
         Boolean(next) &&
         isIndicatorRowBlock(next);
       // A short line immediately above a table is a caption / recovered header
@@ -818,7 +825,7 @@ export function annotateDocumentZones(doc, opts = {}) {
         sectionSawIndicatorContent = false;
         opening = { id: null, text: null, level: null, form: null };
         b.zone_reason = 'heading_reset';
-      } else if (synthLabel || tableCaptionContinuation) {
+      } else if (synthLabel || tableCaptionContinuation || synthSubgroup) {
         if (synthLabel) {
           currentTypeLabel = synthLabel;
           b.type_label_heading = synthLabel;

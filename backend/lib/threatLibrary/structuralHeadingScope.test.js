@@ -1,5 +1,5 @@
 /**
- * Structural IOC scope hardening (tl-zones-v7 / tl-candidates-v25):
+ * Structural IOC scope hardening (tl-zones-v8 / tl-candidates-v25):
  *
  * Risk A — a bold/short paragraph that names C2 must face the same indicator-
  * content confirmation as a real HTML heading. Technical API examples alone
@@ -27,7 +27,7 @@ const RELAY = 'relay-node-17.net';
 const PATH_URL = 'https://example.test/callback';
 
 test('structural heading scope contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v7');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v8');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v25');
 });
 
@@ -264,4 +264,50 @@ test('annotated defanged IOC value lines do not terminate an IOC section', () =>
   assert.equal(zoneOf(zoned, /relay-node-17/), 'explicit_ioc_section');
   assert.equal(isMember(find(candidates, 'domain', 'osc-cdn.com')), true);
   assert.equal(isMember(find(candidates, 'domain', 'relay-node-17.net')), true);
+});
+
+test('bold malware-family labels under File hashes keep short hash groups as Indicators', () => {
+  // Securelist-shaped appendix: each family is a <strong> label + <br>-split
+  // hashes. Labels are not type vocabulary; short groups (1–2 hashes) must not
+  // lose publisher scope just because OBSERVABLE_LIST_MIN_ROWS recovery needs ≥3.
+  const H = {
+    a1: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    a2: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+    b1: 'cccccccccccccccccccccccccccccccc',
+    g1: 'dddddddddddddddddddddddddddddddd',
+    g2: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+    g3: 'ffffffffffffffffffffffffffffffff',
+    g4: '11111111111111111111111111111111',
+    d1: '22222222222222222222222222222222',
+    d2: '33333333333333333333333333333333'
+  };
+  const { zoned, candidates } = extract(`
+<h2>Indicators of compromise</h2>
+<h3>File hashes</h3>
+<p><strong>FamilyAlpha</strong><br>${H.a1}<br>${H.a2}</p>
+<p><strong>FamilyBeta</strong><br>${H.b1}</p>
+<p><strong>FamilyGamma</strong><br>${H.g1}<br>${H.g2}<br>${H.g3}<br>${H.g4}</p>
+<p><strong>FamilyDelta</strong><br>${H.d1}<br>${H.d2}</p>
+<h3>C2 IP addresses</h3>
+<p>203.0.113.10<br>203.0.113.11</p>`);
+  assert.equal(reasonOf(zoned, /^FamilyAlpha$/), 'subgroup_label');
+  assert.equal(reasonOf(zoned, /^FamilyBeta$/), 'subgroup_label');
+  assert.notEqual(reasonOf(zoned, /^FamilyAlpha$/), 'heading_reset');
+  assert.ok(!zoned.meta.scope_trace?.some((t) => t.reason === 'synthetic_heading_boundary' && /FamilyAlpha/.test(t.heading || '')));
+  for (const h of Object.values(H)) {
+    const row = find(candidates, 'md5', h);
+    assert.ok(row, `md5 ${h} extracted`);
+    assert.equal(isMember(row), true, `md5 ${h} is a report Indicator`);
+    assert.equal(String(row.source_assertion).startsWith('explicit_'), true, `md5 ${h} publisher assertion`);
+  }
+  assert.equal(isMember(find(candidates, 'ip', '203.0.113.10')), true);
+  assert.equal(isMember(find(candidates, 'ip', '203.0.113.11')), true);
+  assert.deepEqual(
+    memberKeys(candidates).sort(),
+    [
+      ...Object.values(H).map((h) => `md5:${h}`),
+      'ip:203.0.113.10',
+      'ip:203.0.113.11'
+    ].sort()
+  );
 });
