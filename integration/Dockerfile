@@ -29,6 +29,7 @@ RUN apk add --no-cache --virtual .build-deps python3 make g++ \
 COPY integration/ ./
 COPY VERSION /VERSION
 COPY backend/lib/ioc-suppression.js ./lib/ioc-suppression.js
+COPY backend/lib/iocSuppressionFileScope.js ./lib/iocSuppressionFileScope.js
 COPY backend/lib/importOptimizationContext.js ./lib/importOptimizationContext.js
 COPY backend/lib/iocExpiration.js ./lib/iocExpiration.js
 COPY backend/lib/iocSourceImportHistory.js ./lib/iocSourceImportHistory.js
