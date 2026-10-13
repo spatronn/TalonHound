@@ -461,6 +461,33 @@ export function assessExtractionQuality(input) {
 }
 
 /**
+ * Stored quality record of a report row (analysis_progress.extraction_diagnostics.quality),
+ * or null when the report predates tl-quality-v1 (filled by the next import / Refresh extraction).
+ * @param {{ analysis_progress?: object|null }|null|undefined} row
+ */
+export function storedExtractionQuality(row) {
+  const q = row?.analysis_progress?.extraction_diagnostics?.quality;
+  return q && typeof q === 'object' ? q : null;
+}
+
+/**
+ * Client summary without parser internals (status, counts, reason codes).
+ * @param {object|null|undefined} quality stored / computed quality record
+ */
+export function extractionQualitySummary(quality) {
+  if (!quality || typeof quality !== 'object') return null;
+  const warnings = Array.isArray(quality.warnings) ? quality.warnings : [];
+  return {
+    version: quality.version || null,
+    status: quality.status || 'clean',
+    mode: quality.mode || null,
+    counts: quality.counts || { high: 0, warning: 0, info: 0 },
+    codes: [...new Set(warnings.map((w) => w.code).filter(Boolean))],
+    warnings_total: quality.warnings_total ?? warnings.length
+  };
+}
+
+/**
  * Persistable, bounded copy for analysis_progress.extraction_diagnostics.
  * @param {ReturnType<typeof assessExtractionQuality>|null|undefined} quality
  */

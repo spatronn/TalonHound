@@ -22,6 +22,7 @@ import { registerRouteModule } from '../lib/routeRegistry.js';
 import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY, TLP_VALUES } from '../lib/threatLibrary/constants.js';
 import { isValidTlp } from '../lib/threatLibrary/tlpPolicy.js';
 import { serializePublicationDate } from '../lib/threatLibrary/publicationDate.js';
+import { storedExtractionQuality } from '../lib/threatLibrary/extractionQuality.js';
 import {
   URL_IMPORT_OUTCOMES,
   importThreatLibraryUrl,
@@ -194,6 +195,9 @@ function publicReport(row) {
     failure_code: row.failure_code || null,
     failure_details: row.failure_details || {},
     analysis_progress: row.analysis_progress || {},
+    // Read-only extraction quality warnings (extractionQuality.js); null until
+    // the report is imported or refreshed under tl-quality-v1.
+    extraction_quality: storedExtractionQuality(row),
     candidate_summary: row.candidate_summary || {},
     // Presentation phase derived from analysis_status (single source of truth).
     review_phase: resolveReportPhase(row),

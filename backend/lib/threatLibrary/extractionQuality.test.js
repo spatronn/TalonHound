@@ -232,3 +232,16 @@ plugin.dll ${hex('c')}</pre>`);
   assert.equal(many.warnings[0].candidate_count, 60);
   assert.equal(many.warnings[0].candidates.length, EXTRACTION_QUALITY_THRESHOLDS.maxListedCandidates);
 });
+
+test('stored quality accessors for report rows (REST extraction_quality, MCP summary)', async () => {
+  const { storedExtractionQuality, extractionQualitySummary } = await import('./extractionQuality.js');
+  assert.equal(storedExtractionQuality({ analysis_progress: {} }), null);
+  assert.equal(storedExtractionQuality(null), null);
+  const quality = { version: 'tl-quality-v1', status: 'warning', mode: 'A', counts: { high: 0, warning: 1, info: 0 }, warnings: [{ code: 'x' }, { code: 'x' }] };
+  const row = { analysis_progress: { extraction_diagnostics: { quality } } };
+  assert.equal(storedExtractionQuality(row), quality);
+  assert.deepEqual(extractionQualitySummary(quality), {
+    version: 'tl-quality-v1', status: 'warning', mode: 'A', counts: { high: 0, warning: 1, info: 0 }, codes: ['x'], warnings_total: 2
+  });
+  assert.equal(extractionQualitySummary(null), null);
+});
