@@ -21,7 +21,7 @@ function extract(html) {
 const resolve = (value, surroundingText, ctx = {}) => resolveDottedToken(value, { surroundingText, ...ctx });
 
 test('contract version bumped for the typing change', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v23');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v24');
 });
 
 test('deployable / server-page extensions are filename shapes, never DNS suffixes', () => {
@@ -51,8 +51,17 @@ test('domains keep their reading: URL authority, scheme-less URL host, DNS-shape
   assert.equal(resolve('evil-cdn.top', 'the loader beacons to https://evil-cdn.top/gate').kind, 'domain');
   assert.equal(resolve('evil-cdn.top', 'the implant sent requests to evil-cdn.top/gate.php').kind, 'domain');
   assert.equal(resolve('evil-cdn.com', 'payloads were staged under downloads/evil-cdn.com/ and fetched from the C2').kind, 'domain');
-  const declared = resolve('update.war', 'update.war', { typeLabel: 'Domain', declaredType: 'domain' });
+  const declared = resolve('update.war', 'update.war', {
+    typeLabel: 'Domain',
+    declaredType: 'domain',
+    form: 'table_row'
+  });
   assert.deepEqual([declared.kind, declared.reason], ['domain', 'declared_network_type']);
+  // Heading-inherited Domains labels do not promote file-extension tokens.
+  assert.equal(
+    resolve('update.war', 'update.war', { typeLabel: 'Domain', declaredType: 'domain', form: 'list_row' }).kind,
+    'technical_artifact'
+  );
 });
 
 test('one value never splits into a domain (body) and an artifact (File Name table); body path segments agree', () => {

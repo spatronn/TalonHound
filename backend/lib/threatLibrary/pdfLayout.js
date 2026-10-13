@@ -9,6 +9,7 @@
 
 import { refangTextForExtraction } from './defang.js';
 import { createTableBlock } from './canonicalDocument.js';
+import { FILE_EXT_HINT, hasDelegatedDnsSuffix } from './observableTypeResolver.js';
 
 /**
  * v3: multi-column regions are reconstructed as canonical `table` blocks
@@ -654,12 +655,39 @@ const OBSERVABLE_LINE_RE =
 /**
  * True when a line is a single indicator value (optionally with a bullet or
  * citation marker) — the shape of an IOC appendix row or a reference row.
+ * Filename-shaped dotted tokens (`Node.js`, `payload.js`) match the hostname
+ * regex but are not network IOC lines: a file-extension last label that is not
+ * a delegated DNS suffix never qualifies.
  * @param {string} text
  */
 export function isObservableOnlyLine(text) {
   const t = refangTextForExtraction(String(text || '').trim());
   if (!t || t.length > 400) return false;
-  return OBSERVABLE_LINE_RE.test(t);
+  if (!OBSERVABLE_LINE_RE.test(t)) return false;
+  const bare = t
+    .replace(/^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s*|[-•*·]\s*)/, '')
+    .trim()
+    .replace(/[.,;)\]。，；]+$/, '');
+  // URLs, IPs, CIDRs and hashes are network/hash IOC lines even when a path
+  // ends in a file extension (`…/uni.txt`). Only bare dotted tokens are gated.
+  if (
+    /^(?:https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|[0-9a-f:]+\/)/i.test(bare) ||
+    /^[a-f0-9]{32}$/i.test(bare) ||
+    /^[a-f0-9]{40}$/i.test(bare) ||
+    /^[a-f0-9]{64}$/i.test(bare) ||
+    bare.includes('/')
+  ) {
+    return true;
+  }
+  const labels = bare.toLowerCase().split('.').filter(Boolean);
+  if (
+    labels.length >= 2 &&
+    FILE_EXT_HINT.has(labels[labels.length - 1]) &&
+    !hasDelegatedDnsSuffix(bare)
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**

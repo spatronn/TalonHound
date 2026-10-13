@@ -23,7 +23,7 @@ import {
 import { normalizeCandidateValue } from './candidateValue.js';
 
 test('resolver has its own internal contract version', () => {
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v7');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v8');
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('technical_artifact'));
   assert.ok(NON_NETWORK_RESOLVED_TYPES.has('relative_path'));
 });
@@ -92,6 +92,26 @@ test('malware connects to c2.evil-example.com → domain; typed row Domain | c2.
   const typed = resolveDottedToken('c2.evil-example.com', { typeLabel: 'Domain', form: 'table_row' });
   assert.equal(typed.kind, 'domain');
   assert.equal(typed.reason, 'declared_network_type');
+});
+
+test('heading-inherited Domains label does not promote Node.js; Domain table cell still accepts unusual suffixes', () => {
+  const heading = resolveDottedToken('Node.js', {
+    typeLabel: 'Domains and IPs',
+    declaredType: 'domain',
+    form: 'list_row',
+    strongZone: true,
+    indicatorRow: true
+  });
+  assert.equal(heading.kind, 'technical_artifact');
+  assert.equal(heading.reason, 'file_extension');
+  const table = resolveDottedToken('payload.js', {
+    typeLabel: 'Domain',
+    declaredType: 'domain',
+    form: 'table_row',
+    strongZone: true
+  });
+  assert.equal(table.kind, 'domain');
+  assert.equal(table.reason, 'declared_network_type');
 });
 
 test('defanged Domain-table spellings pass the hostname-syntax gate', () => {

@@ -15,27 +15,36 @@
 
 import { collapseLetterSpacing, isObservableOnlyLine } from './pdfLayout.js';
 import { refangTextForExtraction } from './defang.js';
-import { FILE_EXT_HINT, suffixStrength, validateUrlCandidate } from './observableTypeResolver.js';
+import { FILE_EXT_HINT, hasDelegatedDnsSuffix, suffixStrength, validateUrlCandidate } from './observableTypeResolver.js';
 
 /**
  * True when a dotted token is a filename-shaped annotation (loader.exe,
  * wg-ca.crt), not a network observable suitable for a pure IOC list line.
+ * Publisher defanging (`[.]`) is refanged first so `example[.]com` and
+ * `198[.]51[.]100[.]20` are never misread as weak filename shapes.
  * @param {string} token
  */
-function isFilenameShapedToken(token) {
-  const t = String(token || '').replace(/[.,;)\]。，；]+$/, '').toLowerCase();
+export function isFilenameShapedToken(token) {
+  const t = refangTextForExtraction(String(token || ''))
+    .replace(/[.,;)\]。，；]+$/g, '')
+    .toLowerCase();
   if (!t) return false;
   // CIDR / IP:port are network tokens, never filesystem paths.
   if (/^(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?$/.test(t)) return false;
   if (/^[0-9a-f:]+\/\d{1,3}$/i.test(t)) return false;
-  if (t.includes('/') || t.includes('\\')) return true;
+  // Absolute and scheme-less network URLs contain "/" but are not filenames.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return false;
+  if (t.includes('/') || t.includes('\\')) {
+    if (isSchemeLessUrlToken(t)) return false;
+    return true;
+  }
   const labels = t.split('.').filter(Boolean);
   if (labels.length < 2) return false;
   const last = labels[labels.length - 1];
-  if (FILE_EXT_HINT.has(last)) return true;
+  if (FILE_EXT_HINT.has(last) && !hasDelegatedDnsSuffix(t)) return true;
   // Compound archives: name.tar.gz
   if (labels.length >= 3 && FILE_EXT_HINT.has(labels[labels.length - 2]) && FILE_EXT_HINT.has(last)) return true;
-  return suffixStrength(labels) === 'weak';
+  return suffixStrength(labels) === 'weak' && !hasDelegatedDnsSuffix(t);
 }
 
 export const INDICATOR_SCOPES = Object.freeze({
@@ -391,12 +400,17 @@ export function isSchemeLessUrlToken(token) {
 /**
  * A line that is one indicator value (optionally bulleted): the observable-only
  * line shapes, plus a scheme-less host/path URL value.
+ * Filename-shaped dotted tokens (`Node.js`, `loader.exe`) are never indicator
+ * value lines — they must not inherit a preceding "Domains" type label.
  * @param {string} text
  */
 export function isIndicatorValueLine(text) {
-  if (isObservableOnlyLine(text)) return true;
   const t = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
-  return isSchemeLessUrlToken(t);
+  if (!t) return false;
+  // Scheme-less host/path URLs contain "/" and would otherwise look like paths.
+  if (isSchemeLessUrlToken(t)) return true;
+  if (isFilenameShapedToken(t)) return false;
+  return isObservableOnlyLine(t);
 }
 
 /**

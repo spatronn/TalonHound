@@ -65,6 +65,8 @@ test('observable-only rows and wrapped URL joining', () => {
   assert.equal(isObservableOnlyLine('MD5 7479bedf5813a1527199f8958e898d19'), false);
   assert.equal(isObservableOnlyLine('C&C:'), false);
   assert.equal(isObservableOnlyLine('36[.]35[.]56[.]0/24'), true);
+  assert.equal(isObservableOnlyLine('Node.js'), false, 'runtime/technology names are not IOC lines');
+  assert.equal(isObservableOnlyLine('payload.js'), false, 'file-extension tokens are not IOC lines');
   assert.equal(
     joinWrappedUrl('[2]https://dev.to/x/north-korea-linked-hackers-use-github-as-c2-infrastructure-to-', 'attack-south-korea-47aa'),
     '[2]https://dev.to/x/north-korea-linked-hackers-use-github-as-c2-infrastructure-to-attack-south-korea-47aa'

@@ -46,8 +46,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * are filename shapes, never DNS TLDs — even on a curated indicator row.
  * v7: an RFC 8552 underscored label (`_msdcs`, `_dmarc`) under a delegated
  * suffix is a DNS service label, not a code-identifier underscore.
+ * v8: a heading-inherited network type label ("Domains and IPs") must not
+ * promote a non-delegated file-extension token (`Node.js`) to a domain;
+ * typed Domain *table* cells remain authoritative for unusual suffixes.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v7';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v8';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -644,7 +647,16 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   // 1. Source-typed labels are authoritative for the reading (not for validity).
   if (declaredArtifact) return out('technical_artifact', `${label.kind}_label`, true);
-  if (declaredNetwork) return out('domain', 'declared_network_type', true);
+  if (declaredNetwork) {
+    // Typed Domain *table* cells stay authoritative even for unusual suffixes
+    // (`archive-sync.war`). A heading-inherited "Domains" label must not turn a
+    // non-delegated file-extension token (`Node.js`) into a domain IOC.
+    const tableDeclared = ctx.form === 'table_row';
+    if (tableDeclared || !FILE_EXT_HINT.has(last) || hasDelegatedDnsSuffix(lower)) {
+      return out('domain', 'declared_network_type', true);
+    }
+    // else fall through — FILE_EXT / other rules decide
+  }
 
   // 2. Parser knowledge: exact URL host / URL path basename.
   if (basenames.has(lower)) return out('technical_artifact', 'url_path_basename');

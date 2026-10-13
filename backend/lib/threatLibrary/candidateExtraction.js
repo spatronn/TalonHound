@@ -37,9 +37,11 @@ import {
   lineContainingObservable
 } from './indicatorScope.js';
 import {
+  FILE_EXT_HINT,
   NON_NETWORK_RESOLVED_TYPES,
   RESOLVED_TYPES,
   buildTypeResolutionRecord,
+  hasDelegatedDnsSuffix,
   validateCanonicalIocValue,
   validateUrlCandidate
 } from './observableTypeResolver.js';
@@ -140,8 +142,12 @@ export {
  * v23: topic-label confirmation also applies to synthetic/bold C2 headings
  * (tl-zones-v6); sibling artifact type-labels such as "Receiving a command"
  * terminate the previous authoritative scope instead of continuing it.
+ * v24: post-IOC article tag lists close authoritative scope (tl-zones-v7);
+ * filename-shaped dotted tokens (`Node.js`) are not indicator lines and a
+ * heading-inherited Domains label cannot outvote FILE_EXT / non-delegated
+ * suffix readings across occurrences (tl-type-resolver-v8).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v23';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v24';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -777,17 +783,35 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       }
       const tableArtifact = tableArtifacts.get(String(id).toLowerCase()) || null;
       if (tableArtifact) artifactScore += READING_WEIGHT[tableArtifact.typing_reason] ?? READING_WEIGHT.file_label;
-      // A source-declared network type (typed Domain row / column) is never outvoted:
-      // explicit indicator tables stay complete.
-      const declaredNetwork = pending.occurrences.some((o) => o.typed.reason === 'declared_network_type');
+      // A source-declared network type from a typed Domain *table* cell is never
+      // outvoted: explicit indicator tables stay complete. Heading-inherited
+      // "Domains" labels only force domain for real delegated DNS suffixes —
+      // eight `Node.js` prose mentions must not become a domain because one tag
+      // inherited the preceding Domains sub-heading.
+      const declaredNetwork = pending.occurrences.some((o) => {
+        if (o.typed.reason !== 'declared_network_type') return false;
+        if (o.extra.form === OCCURRENCE_FORMS.TABLE_ROW) return true;
+        return hasDelegatedDnsSuffix(String(o.n.normalizedValue || ''));
+      });
       // Nor is a domain reading of the publisher's own indicator row for this
       // exact token: narrative code-shaped spellings of the same value elsewhere
       // (`iRM eViLhOsT[.]COM` in an obfuscated command) cannot demote a curated
       // IOC entry. Only the focused row's own domain reading counts — an
       // artifact reading of a row (file extension, code shape) never does.
-      const assertedRowNetwork = pending.occurrences.some(
-        (o) => o.typed.kind === 'domain' && o.typed.signals?.explicit_indicator_row === true
-      );
+      // File-extension tokens without a delegated DNS suffix never count as an
+      // asserted-row network reading (tag "Node.js" under Domains and IPs).
+      const assertedRowNetwork = pending.occurrences.some((o) => {
+        if (o.typed.kind !== 'domain' || o.typed.signals?.explicit_indicator_row !== true) return false;
+        const last = String(o.n.normalizedValue || '')
+          .toLowerCase()
+          .split('.')
+          .filter(Boolean)
+          .pop();
+        if (last && FILE_EXT_HINT.has(last) && !hasDelegatedDnsSuffix(String(o.n.normalizedValue || ''))) {
+          return false;
+        }
+        return true;
+      });
       const isDomain = declaredNetwork || assertedRowNetwork || domainScore > artifactScore;
       const winning = pending.occurrences
         .filter((o) => (o.typed.kind === 'domain') === isDomain)

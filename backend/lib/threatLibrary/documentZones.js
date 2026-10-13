@@ -12,6 +12,7 @@ import {
   INDICATOR_HEADING_FORMS,
   classifyIndicatorHeading,
   classifySectionRole,
+  isFilenameShapedToken,
   isIndicatorValueLine,
   isObservableListLine,
   zoneForSectionRole
@@ -41,8 +42,12 @@ import {
  * as real HTML headings (level-less headings use a section-scoped content
  * check); artifact type-label siblings such as "Receiving a command" close an
  * authoritative section instead of continuing it as a typed sub-heading.
+ * v7: after an authoritative section has shown indicator rows, a following
+ * non-indicator list (article tags / categories / related-topic chips) closes
+ * the section — page metadata must not inherit IOC scope or a Domains type
+ * label from the preceding appendix.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v6';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v7';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -283,6 +288,30 @@ export function combinedHeadingText(blocks, index) {
     return `${a} ${collapseLetterSpacing(String(next.text || '').trim())}`.trim();
   }
   return a;
+}
+
+/**
+ * Short list items that are article tags / categories / topic chips rather than
+ * publisher IOC rows. Bare filename-shaped tokens (`Node.js`) count as chrome;
+ * annotated indicator rows (`host – Decoy domain`) do not.
+ * @param {object} b
+ */
+export function isArticleMetadataListItem(b) {
+  if (!b || (b.type !== 'list' && b.type !== 'list_item')) return false;
+  const text = String(b.text || '').trim();
+  if (!text || text.length > 64) return false;
+  if (isIndicatorValueLine(text) || isObservableListLine(text)) return false;
+  const refanged = refangTextForExtraction(text);
+  if (/https?:\/\//i.test(refanged) || /\b[a-f0-9]{32,64}\b/i.test(refanged)) return false;
+  // A real host/IP (including defanged / annotated rows) keeps the IOC section
+  // open. Bare filename-shaped tokens (`Node.js`) and non-observable labels
+  // (article tags) close it.
+  const hostOrIp =
+    /\b(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3})\b/i.exec(
+      refanged
+    );
+  if (hostOrIp) return isFilenameShapedToken(hostOrIp[0]);
+  return true;
 }
 
 /**
@@ -577,6 +606,8 @@ export function annotateDocumentZones(doc, opts = {}) {
   const trace = (entry) => {
     if (scopeTrace.length < 120) scopeTrace.push(entry);
   };
+  /** True once the open strong section has shown at least one indicator row. */
+  let sectionSawIndicatorContent = false;
 
   for (let i = 0; i < blocks.length; i += 1) {
     const b = blocks[i];
@@ -642,6 +673,7 @@ export function annotateDocumentZones(doc, opts = {}) {
       currentZone = headingZone;
       currentRole = headingRole;
       currentTypeLabel = null;
+      sectionSawIndicatorContent = false;
       b.zone_reason = descriptiveForm ? 'heading_hint_descriptive' : 'heading_hint';
       b.section_role = headingRole;
       opening = {
@@ -730,6 +762,7 @@ export function annotateDocumentZones(doc, opts = {}) {
         }
         currentZone = 'report_body';
         currentRole = null;
+        sectionSawIndicatorContent = false;
         opening = { id: null, text: null, level: null, form: null };
         if (b.zone_reason !== 'indicator_heading_unconfirmed') b.zone_reason = 'heading_reset';
       } else {
@@ -782,6 +815,7 @@ export function annotateDocumentZones(doc, opts = {}) {
         currentZone = 'report_body';
         currentRole = null;
         currentTypeLabel = null;
+        sectionSawIndicatorContent = false;
         opening = { id: null, text: null, level: null, form: null };
         b.zone_reason = 'heading_reset';
       } else if (synthLabel || tableCaptionContinuation) {
@@ -795,12 +829,54 @@ export function annotateDocumentZones(doc, opts = {}) {
         trace({ block_id: b.id, decision: b.zone_reason, zone: currentZone, heading: headingText.slice(0, 120), opened_by: opening.id });
       }
     }
+
+    // Post-appendix chrome: once a strong section has shown indicator rows, a
+    // following article-tag / category list closes scope so metadata never
+    // inherits the Domains type label or explicit IOC assertion. Annotated IOC
+    // rows ("host – Decoy domain") stay inside the section.
+    if (
+      !isRealHeading &&
+      !pageEdge &&
+      !isRepeatedChrome &&
+      STRONG_IOC_ZONES.has(currentZone) &&
+      sectionSawIndicatorContent &&
+      isArticleMetadataListItem(b)
+    ) {
+      trace({
+        block_id: b.id,
+        decision: 'reset',
+        from_zone: currentZone,
+        reason: 'post_indicator_metadata_list',
+        opened_by: opening.id
+      });
+      suspended = null;
+      currentZone = 'report_body';
+      currentRole = null;
+      currentTypeLabel = null;
+      sectionSawIndicatorContent = false;
+      opening = { id: null, text: null, level: null, form: null };
+      b.zone_reason = 'post_indicator_metadata_list';
+    }
+
+    if (
+      !isRealHeading &&
+      !pageEdge &&
+      !isRepeatedChrome &&
+      STRONG_IOC_ZONES.has(currentZone) &&
+      (isIndicatorRowBlock(b) || isIndicatorValueLine(text) || isObservableListLine(text))
+    ) {
+      sectionSawIndicatorContent = true;
+    }
+
     if (!isRealHeading && !pageEdge && !isRepeatedChrome && opening.id && STRONG_IOC_ZONES.has(currentZone)) {
       b.scope_opening_id = opening.id;
     }
 
     /** @type {DocumentZone} */
     let zone = currentZone;
+    if (b.zone_reason === 'post_indicator_metadata_list') {
+      zone = 'source_metadata';
+    }
     if (pageEdge || isRepeatedChrome) {
       zone = 'header_footer';
       b.zone_reason = pageEdge ? 'page_edge' : 'repeated_block';
