@@ -137,8 +137,11 @@ export {
  * descriptive table (tl-zones-v5). Prose under such a technical-analysis
  * heading ("validates access through a GET request to <url>") is narrative,
  * so it no longer becomes an asserted narrative_assertion / explicit_c2.
+ * v23: topic-label confirmation also applies to synthetic/bold C2 headings
+ * (tl-zones-v6); sibling artifact type-labels such as "Receiving a command"
+ * terminate the previous authoritative scope instead of continuing it.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v22';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v23';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 

@@ -37,8 +37,12 @@ import {
  * listing, an HTTP request example or a descriptive table without an
  * indicator column no longer turns a technical-analysis topic into a C2 /
  * operational-infrastructure section.
+ * v6: topic-label confirmation applies to synthetic/bold headings the same way
+ * as real HTML headings (level-less headings use a section-scoped content
+ * check); artifact type-label siblings such as "Receiving a command" close an
+ * authoritative section instead of continuing it as a typed sub-heading.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v5';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v6';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -410,6 +414,97 @@ function isIndicatorContentBlock(b) {
 }
 
 /**
+ * Publisher indicator content in the immediate section after block i (until
+ * the next real heading). Used for level-less / synthetic topic headings that
+ * cannot use DOM subtree bounds.
+ * @param {object[]} blocks
+ * @param {number} i
+ * @param {Set<string>} chromeIds
+ */
+export function sectionHasIndicatorContent(blocks, i, chromeIds, limit = 80) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
+    const n = blocks[j];
+    if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
+    if (n.type === 'heading') return false;
+    seen += 1;
+    if (isIndicatorContentBlock(n)) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a C2 / operational topic heading is structurally confirmed as an
+ * authoritative section. Real headings with a known level use the subtree;
+ * synthetic/bold paragraphs and level-less PDF headings use the section walk
+ * with the same indicator-content predicate (Invariant A).
+ * @param {object} b
+ * @param {object[]} blocks
+ * @param {number} i
+ * @param {Set<string>} chromeIds
+ */
+function topicHeadingHasIndicatorContent(b, blocks, i, chromeIds) {
+  if (b.type === 'heading' && Number.isInteger(b.level)) {
+    return subtreeHasIndicatorStructure(blocks, i, chromeIds);
+  }
+  return sectionHasIndicatorContent(blocks, i, chromeIds);
+}
+
+/**
+ * A type-label heading continues an open authoritative section only when it is
+ * nested under that section (or levels are unknown) and it is a genuine
+ * per-type list label: network / declared types, or an artifact label whose
+ * own content starts with indicator rows. A sibling topic that merely matches
+ * an artifact vocabulary word ("Receiving a command") closes the section.
+ * @param {{ semantics: string, declared_type: string|null }|null} labelHeading
+ * @param {object} b
+ * @param {object[]} blocks
+ * @param {number} i
+ * @param {{ level: number|null }} opening
+ * @param {Set<string>} chromeIds
+ */
+function isTypedSubheadingContinuation(labelHeading, b, blocks, i, opening, chromeIds) {
+  if (!labelHeading) return false;
+  const level = Number.isInteger(b.level) ? b.level : null;
+  const networkOrDeclared = labelHeading.semantics === 'network' || Boolean(labelHeading.declared_type);
+  // Same-or-shallower than the current opening: network / declared type labels
+  // may still be sibling per-type lists ("Hash Values" / "IP Addresses" /
+  // "Domain" under one IOC heading, even when a prior type label opened a
+  // sample_table). Artifact vocabulary alone ("Receiving a command") is a
+  // topic boundary at that level, not a typed sub-list.
+  if (level != null && opening.level != null && level <= opening.level) {
+    return networkOrDeclared;
+  }
+  if (networkOrDeclared) return true;
+  return sectionOpensWithIndicatorContent(blocks, i, chromeIds);
+}
+
+/**
+ * Whether a non-heading block is label/title shaped (bold paragraph headings)
+ * rather than a short prose sentence. Used so synthetic heading open/close
+ * logic does not treat "The following servers were used:" as a section boundary.
+ * @param {string} text
+ */
+export function looksLikeLabelHeading(text) {
+  const t = String(text || '').trim();
+  if (!t || t.length > 72) return false;
+  if (/[.!?。]$/.test(t)) return false;
+  // Observable value rows — including defanged hosts with a parenthetical
+  // gloss ("osc-cdn[.]com (actor-used …)") — are never section titles.
+  if (/(?:\[\.\])|hxxps?:\/\//i.test(t)) return false;
+  if (/^(?:https?:\/\/|\d{1,3}(?:\.\d{1,3}){3})\S*/i.test(t)) return false;
+  if (/^[a-f0-9]{32,64}\b/i.test(t)) return false;
+  const lead = t.split(/\s+/)[0].replace(/[.,;:)\]].*$/, '');
+  if (lead && (isObservableOnlyLine(lead) || isIndicatorValueLine(lead))) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  // Trailing colon is a section label only when short ("C2:", "Network IOCs:").
+  if (/[:：]$/.test(t) && (t.length > 48 || words.length > 5)) return false;
+  // Determiner-led multi-word lines are sentences, not headings.
+  if (/^(?:the|a|an|this|these|those|we|they|it|our|their)\b/i.test(t) && words.length >= 4) return false;
+  return true;
+}
+
+/**
  * Structural confirmation over a heading's whole subtree (every block until a
  * heading at the same or a shallower level), so typed sub-headings ("C2 › IPs")
  * stay inside. Requires an integer level on heading i. Only publisher
@@ -498,14 +593,17 @@ export function annotateDocumentZones(doc, opts = {}) {
       !isRepeatedChrome &&
       b.type !== 'table' &&
       (b.type === 'heading' ||
-        (text.length > 0 &&
+        // Only prose/caption blocks may act as synthetic headings. List rows,
+        // code lines and other short content stay content even when brief.
+        ((b.type === 'paragraph' || b.type === 'caption') &&
+          text.length > 0 &&
           text.length <= 72 &&
-          !/[.!?。]$/.test(text) &&
           !/\b(?:hxxps?|https?):\/\//i.test(text) &&
           !/\b(?:\d{1,3}\.){3}\d{1,3}\b/.test(text) &&
           !/\b[a-f0-9]{32}\b/i.test(text) &&
           // A single observable value ("c2.evil.example") is a row, never a heading.
-          !isObservableOnlyLine(text)));
+          !isObservableOnlyLine(text) &&
+          looksLikeLabelHeading(text)));
     const headingText = isHeadingLike && b.type === 'heading' ? combinedHeadingText(blocks, i) : text;
     const indicatorHeading = isHeadingLike ? classifyIndicatorHeading(headingText) : null;
     const descriptiveForm = indicatorHeading?.form === INDICATOR_HEADING_FORMS.DESCRIPTIVE_SUFFIX;
@@ -524,16 +622,14 @@ export function annotateDocumentZones(doc, opts = {}) {
     }
 
     // "C2 infrastructure" / "Dead-drop C2 communication" name a topic as often
-    // as a list. With a known heading hierarchy such a heading opens an
-    // authoritative section only when its own subtree holds indicator
-    // structure; a prose-only topic is narrative, whatever the label says.
+    // as a list. Real headings, synthetic/bold paragraphs, and level-less PDF
+    // headings open an authoritative section only when their content holds
+    // publisher indicator structure; a prose-only topic is narrative.
     if (
       headingZone &&
       !descriptiveForm &&
       TOPIC_LABEL_ZONES.has(headingZone) &&
-      b.type === 'heading' &&
-      Number.isInteger(b.level) &&
-      !subtreeHasIndicatorStructure(blocks, i, footerIds)
+      !topicHeadingHasIndicatorContent(b, blocks, i, footerIds)
     ) {
       trace({ block_id: b.id, decision: 'topic_heading_unconfirmed', heading: headingText.slice(0, 120), zone: headingZone });
       b.zone_reason = 'indicator_heading_unconfirmed';
@@ -569,8 +665,10 @@ export function annotateDocumentZones(doc, opts = {}) {
         prev.type === 'heading' &&
         prev.page === b.page;
       // "Domain" / "IP Addresses" / "Hash Values" under an open IOC heading are
-      // per-type sub-lists of the same publisher-curated section.
-      const typedContinuation = Boolean(labelHeading) && inStrong;
+      // per-type sub-lists of the same publisher-curated section. Sibling
+      // artifact topics ("Receiving a command") are not.
+      const typedContinuation =
+        inStrong && isTypedSubheadingContinuation(labelHeading, b, blocks, i, opening, footerIds);
       // Any other short sub-label that groups rows inside the section (decoy /
       // supporting / per-campaign groups) inherits the section scope.
       const subgroupContinuation =
@@ -648,6 +746,54 @@ export function annotateDocumentZones(doc, opts = {}) {
       }
       currentTypeLabel = labelHeading;
       if (labelHeading) b.type_label_heading = labelHeading;
+    } else if (
+      isHeadingLike &&
+      !headingZone &&
+      STRONG_IOC_ZONES.has(currentZone) &&
+      // Only prose/caption synthetic headings close scope. List rows, code
+      // lines and table cells can be short and heading-shaped but are content.
+      (b.type === 'paragraph' || b.type === 'caption')
+    ) {
+      // A bold/short paragraph that looks like a heading but does not open a
+      // zone is a section boundary unless it is a genuine per-type / subgroup
+      // list label with indicator content beneath (Invariant A/B).
+      const synthLabel = typeLabelHeading(text);
+      const synthTyped = isTypedSubheadingContinuation(synthLabel, b, blocks, i, opening, footerIds);
+      const next = nextContentBlock(blocks, i, footerIds);
+      const synthSubgroup =
+        !synthTyped &&
+        GROUP_LABEL_CONCEPT_RE.test(collapseLetterSpacing(text)) &&
+        Boolean(next) &&
+        isIndicatorRowBlock(next);
+      // A short line immediately above a table is a caption / recovered header
+      // ("IP Address First Seen Last Seen"), not a new topic boundary.
+      const tableCaptionContinuation = Boolean(next) && next.type === 'table';
+      if (!synthTyped && !synthSubgroup && !tableCaptionContinuation) {
+        trace({
+          block_id: b.id,
+          decision: 'reset',
+          from_zone: currentZone,
+          heading: headingText.slice(0, 120),
+          level: null,
+          opened_by: opening.id,
+          reason: 'synthetic_heading_boundary'
+        });
+        suspended = null;
+        currentZone = 'report_body';
+        currentRole = null;
+        currentTypeLabel = null;
+        opening = { id: null, text: null, level: null, form: null };
+        b.zone_reason = 'heading_reset';
+      } else if (synthLabel || tableCaptionContinuation) {
+        if (synthLabel) {
+          currentTypeLabel = synthLabel;
+          b.type_label_heading = synthLabel;
+        }
+        b.zone_reason = synthTyped ? 'typed_subheading' : tableCaptionContinuation ? 'table_caption' : 'subgroup_label';
+        b.section_role = currentRole;
+        b.scope_opening_id = opening.id;
+        trace({ block_id: b.id, decision: b.zone_reason, zone: currentZone, heading: headingText.slice(0, 120), opened_by: opening.id });
+      }
     }
     if (!isRealHeading && !pageEdge && !isRepeatedChrome && opening.id && STRONG_IOC_ZONES.has(currentZone)) {
       b.scope_opening_id = opening.id;

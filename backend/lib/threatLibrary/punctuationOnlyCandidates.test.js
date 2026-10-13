@@ -1,5 +1,5 @@
 /**
- * tl-candidates-v21: a value with no letter or digit is never an observable.
+ * tl-candidates-v22: a value with no letter or digit is never an observable.
  * Report 18651's MITRE cell "T1497.001 / T1497.003" produced a Context Only
  * `relative_path "/"`; real paths, URL paths and indicators are unaffected.
  */
@@ -15,7 +15,7 @@ import { isReportIndicatorMember } from './indicatorMembership.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 
 test('contract bumped for the punctuation-only rule', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v22');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v23');
 });
 
 test('separators and punctuation fragments are rejected', () => {
