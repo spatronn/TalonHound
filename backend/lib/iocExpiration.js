@@ -373,17 +373,64 @@ export async function getFeedPolicy(client, feedId, observableType = 'all', opts
 }
 
 async function queryIocSuppressedFromDb(client, observable, observableType) {
-  const { rows } = await client.query(
-    `SELECT 1 FROM ioc_suppressions
-     WHERE lower(ioc_value) = lower($1)
-       AND lower(ioc_type) = lower($2)
-       AND active = TRUE
-       AND deleted_at IS NULL
-       AND (expires_at IS NULL OR expires_at > NOW())
-     LIMIT 1`,
-    [observable, observableType]
-  );
-  return rows.length > 0;
+  try {
+    const { rows } = await client.query(
+      `SELECT 1 FROM ioc_suppressions s
+       WHERE s.active = TRUE
+         AND s.deleted_at IS NULL
+         AND (s.expires_at IS NULL OR s.expires_at > NOW())
+         AND (
+           (lower(s.ioc_value) = lower($1) AND lower(s.ioc_type) = lower($2))
+           OR (
+             s.file_artifact_id IS NOT NULL
+             AND lower($2) IN ('md5', 'sha1', 'sha256')
+             AND EXISTS (
+               SELECT 1
+               FROM file_artifact_hashes h
+               JOIN file_artifacts fa ON fa.id = h.artifact_id
+               JOIN file_artifacts sfa ON sfa.id = s.file_artifact_id
+               WHERE h.hash_type = lower($2)
+                 AND h.normalized_hash_value = lower($1)
+                 AND COALESCE(
+                       CASE
+                         WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                           THEN fa.merged_into_artifact_id
+                         ELSE fa.id
+                       END,
+                       fa.id
+                     ) = COALESCE(
+                       CASE
+                         WHEN sfa.status = 'merged' AND sfa.merged_into_artifact_id IS NOT NULL
+                           THEN sfa.merged_into_artifact_id
+                         ELSE sfa.id
+                       END,
+                       sfa.id
+                     )
+             )
+           )
+         )
+       LIMIT 1`,
+      [observable, observableType]
+    );
+    return rows.length > 0;
+  } catch (err) {
+    // Pre-migration: column/tables missing → exact-only fallback.
+    if (err?.code === '42703' || err?.code === '42P01'
+      || String(err?.message || '').includes('file_artifact')) {
+      const { rows } = await client.query(
+        `SELECT 1 FROM ioc_suppressions
+         WHERE lower(ioc_value) = lower($1)
+           AND lower(ioc_type) = lower($2)
+           AND active = TRUE
+           AND deleted_at IS NULL
+           AND (expires_at IS NULL OR expires_at > NOW())
+         LIMIT 1`,
+        [observable, observableType]
+      );
+      return rows.length > 0;
+    }
+    throw err;
+  }
 }
 
 export async function isIocSuppressed(client, observable, observableType, opts = {}) {

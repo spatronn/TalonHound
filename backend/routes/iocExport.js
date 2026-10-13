@@ -67,8 +67,36 @@ export function registerIocExportRoutes(app, pool) {
         WHERE s.active = TRUE
           AND s.deleted_at IS NULL
           AND (s.expires_at IS NULL OR s.expires_at > NOW())
-          AND LOWER(s.ioc_value) = LOWER(i.observable)
-          AND LOWER(s.ioc_type) = LOWER(i.observable_type)
+          AND (
+            (LOWER(s.ioc_value) = LOWER(i.observable) AND LOWER(s.ioc_type) = LOWER(i.observable_type))
+            OR (
+              s.file_artifact_id IS NOT NULL
+              AND LOWER(i.observable_type) IN ('md5', 'sha1', 'sha256')
+              AND EXISTS (
+                SELECT 1
+                FROM file_artifact_hashes h
+                JOIN file_artifacts fa ON fa.id = h.artifact_id
+                JOIN file_artifacts sfa ON sfa.id = s.file_artifact_id
+                WHERE h.hash_type = LOWER(i.observable_type)
+                  AND h.normalized_hash_value = LOWER(i.observable)
+                  AND COALESCE(
+                        CASE
+                          WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                            THEN fa.merged_into_artifact_id
+                          ELSE fa.id
+                        END,
+                        fa.id
+                      ) = COALESCE(
+                        CASE
+                          WHEN sfa.status = 'merged' AND sfa.merged_into_artifact_id IS NOT NULL
+                            THEN sfa.merged_into_artifact_id
+                          ELSE sfa.id
+                        END,
+                        sfa.id
+                      )
+              )
+            )
+          )
       )`);
     } else if (!filters.include_expired) {
       where.push(`COALESCE(i.status, 'active') <> 'expired'`);
@@ -80,8 +108,36 @@ export function registerIocExportRoutes(app, pool) {
         WHERE s.active = TRUE
           AND s.deleted_at IS NULL
           AND (s.expires_at IS NULL OR s.expires_at > NOW())
-          AND LOWER(s.ioc_value) = LOWER(i.observable)
-          AND LOWER(s.ioc_type) = LOWER(i.observable_type)
+          AND (
+            (LOWER(s.ioc_value) = LOWER(i.observable) AND LOWER(s.ioc_type) = LOWER(i.observable_type))
+            OR (
+              s.file_artifact_id IS NOT NULL
+              AND LOWER(i.observable_type) IN ('md5', 'sha1', 'sha256')
+              AND EXISTS (
+                SELECT 1
+                FROM file_artifact_hashes h
+                JOIN file_artifacts fa ON fa.id = h.artifact_id
+                JOIN file_artifacts sfa ON sfa.id = s.file_artifact_id
+                WHERE h.hash_type = LOWER(i.observable_type)
+                  AND h.normalized_hash_value = LOWER(i.observable)
+                  AND COALESCE(
+                        CASE
+                          WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                            THEN fa.merged_into_artifact_id
+                          ELSE fa.id
+                        END,
+                        fa.id
+                      ) = COALESCE(
+                        CASE
+                          WHEN sfa.status = 'merged' AND sfa.merged_into_artifact_id IS NOT NULL
+                            THEN sfa.merged_into_artifact_id
+                          ELSE sfa.id
+                        END,
+                        sfa.id
+                      )
+              )
+            )
+          )
       )`);
     }
 

@@ -1,7 +1,16 @@
 /**
  * Active IOC suppression lookup (Phase-2 workers/import).
  * Fail-open on DB errors so ingestion/correlation is not blocked.
+ *
+ * Exact (type, value) matching remains the base. When suppressions carry
+ * file_artifact_id, fetchActiveSuppressionIndex also expands proven file-hash
+ * aliases of that canonical file (see iocSuppressionFileScope.js).
  */
+
+import {
+  buildSuppressionIndexWithFileScope,
+  isFileHashSuppressionType
+} from './iocSuppressionFileScope.js';
 
 export function makeSuppressionKey(iocValue, iocType) {
   const value = String(iocValue || '').trim().toLowerCase();
@@ -73,13 +82,15 @@ export async function fetchActiveSuppressionIndex(client, pairs = [], opts = {})
   const values = Array.from(uniq.values());
   const iocValues = values.map((x) => x.iocValue);
   const iocTypes = values.map((x) => x.iocType);
+  const hasFileHashPair = values.some((x) => isFileHashSuppressionType(x.iocType));
 
   try {
     const q = await client.query(
       `SELECT lower(ioc_value) AS ioc_value,
               lower(ioc_type) AS ioc_type,
               scope,
-              lower(source_name) AS source_name
+              lower(source_name) AS source_name,
+              file_artifact_id
        FROM ioc_suppressions
        WHERE active = TRUE
          AND deleted_at IS NULL
@@ -92,8 +103,85 @@ export async function fetchActiveSuppressionIndex(client, pairs = [], opts = {})
          )`,
       [iocValues, iocTypes]
     );
-    return buildSuppressionIndex(q.rows || []);
+    let rows = q.rows || [];
+
+    // File-scoped hits: active suppression whose artifact owns a requested hash.
+    if (hasFileHashPair) {
+      const aliasQ = await client.query(
+        `SELECT lower(s.ioc_value) AS ioc_value,
+                lower(s.ioc_type) AS ioc_type,
+                s.scope,
+                lower(s.source_name) AS source_name,
+                s.file_artifact_id
+         FROM ioc_suppressions s
+         WHERE s.active = TRUE
+           AND s.deleted_at IS NULL
+           AND (s.expires_at IS NULL OR s.expires_at > NOW())
+           AND s.file_artifact_id IS NOT NULL
+           AND EXISTS (
+             SELECT 1
+             FROM unnest($1::text[], $2::text[]) AS u(v, t)
+             JOIN file_artifact_hashes h
+               ON h.hash_type = lower(u.t)
+              AND h.normalized_hash_value = lower(u.v)
+             JOIN file_artifacts fa ON fa.id = h.artifact_id
+             JOIN file_artifacts sfa ON sfa.id = s.file_artifact_id
+             WHERE lower(u.t) IN ('md5', 'sha1', 'sha256')
+               AND COALESCE(
+                     CASE
+                       WHEN fa.status = 'merged' AND fa.merged_into_artifact_id IS NOT NULL
+                         THEN fa.merged_into_artifact_id
+                       ELSE fa.id
+                     END,
+                     fa.id
+                   ) = COALESCE(
+                     CASE
+                       WHEN sfa.status = 'merged' AND sfa.merged_into_artifact_id IS NOT NULL
+                         THEN sfa.merged_into_artifact_id
+                       ELSE sfa.id
+                     END,
+                     sfa.id
+                   )
+           )`,
+        [iocValues, iocTypes]
+      );
+      const seen = new Set(rows.map((r) => `${r.ioc_type}\t${r.ioc_value}\t${r.file_artifact_id || ''}`));
+      for (const r of aliasQ.rows || []) {
+        const k = `${r.ioc_type}\t${r.ioc_value}\t${r.file_artifact_id || ''}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        rows.push(r);
+      }
+    }
+
+    return buildSuppressionIndexWithFileScope(client, rows, { buildSuppressionIndex, makeSuppressionKey });
   } catch (err) {
+    // Older DBs without file_artifact_id: retry exact-only.
+    if (err?.code === '42703' || String(err?.message || '').includes('file_artifact_id')) {
+      try {
+        const q = await client.query(
+          `SELECT lower(ioc_value) AS ioc_value,
+                  lower(ioc_type) AS ioc_type,
+                  scope,
+                  lower(source_name) AS source_name
+           FROM ioc_suppressions
+           WHERE active = TRUE
+             AND deleted_at IS NULL
+             AND (expires_at IS NULL OR expires_at > NOW())
+             AND EXISTS (
+               SELECT 1
+               FROM unnest($1::text[], $2::text[]) AS u(v, t)
+               WHERE lower(ioc_value) = lower(u.v)
+                 AND lower(ioc_type) = lower(u.t)
+             )`,
+          [iocValues, iocTypes]
+        );
+        return buildSuppressionIndex(q.rows || []);
+      } catch (err2) {
+        console.error(`[${logTag}] suppression lookup failed (fail-open):`, err2?.message || err2);
+        return new Map();
+      }
+    }
     console.error(`[${logTag}] suppression lookup failed (fail-open):`, err?.message || err);
     return new Map();
   }

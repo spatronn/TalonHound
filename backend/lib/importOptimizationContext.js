@@ -3,7 +3,8 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { buildSuppressionIndex, isPairSuppressed } from './ioc-suppression.js';
+import { buildSuppressionIndex, isPairSuppressed, makeSuppressionKey } from './ioc-suppression.js';
+import { buildSuppressionIndexWithFileScope } from './iocSuppressionFileScope.js';
 
 const importContextStorage = new AsyncLocalStorage();
 
@@ -54,17 +55,39 @@ export function pickTypePolicyFromRows(rows, feedId, policyType) {
 }
 
 export async function loadActiveSuppressionIndex(client) {
-  const { rows } = await client.query(
-    `SELECT lower(ioc_value) AS ioc_value,
-            lower(ioc_type) AS ioc_type,
-            scope,
-            lower(source_name) AS source_name
-     FROM ioc_suppressions
-     WHERE active = TRUE
-       AND deleted_at IS NULL
-       AND (expires_at IS NULL OR expires_at > NOW())`
-  );
-  return buildSuppressionIndex(rows || []);
+  try {
+    const { rows } = await client.query(
+      `SELECT lower(ioc_value) AS ioc_value,
+              lower(ioc_type) AS ioc_type,
+              scope,
+              lower(source_name) AS source_name,
+              file_artifact_id
+       FROM ioc_suppressions
+       WHERE active = TRUE
+         AND deleted_at IS NULL
+         AND (expires_at IS NULL OR expires_at > NOW())`
+    );
+    return buildSuppressionIndexWithFileScope(client, rows || [], {
+      buildSuppressionIndex,
+      makeSuppressionKey
+    });
+  } catch (err) {
+    // Pre-migration DBs without file_artifact_id: exact-only index.
+    if (err?.code === '42703' || String(err?.message || '').includes('file_artifact_id')) {
+      const { rows } = await client.query(
+        `SELECT lower(ioc_value) AS ioc_value,
+                lower(ioc_type) AS ioc_type,
+                scope,
+                lower(source_name) AS source_name
+         FROM ioc_suppressions
+         WHERE active = TRUE
+           AND deleted_at IS NULL
+           AND (expires_at IS NULL OR expires_at > NOW())`
+      );
+      return buildSuppressionIndex(rows || []);
+    }
+    throw err;
+  }
 }
 
 export function isIocSuppressedFromIndex(index, observable, observableType) {

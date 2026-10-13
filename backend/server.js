@@ -287,6 +287,14 @@ import { loadThreatClassificationRegistry, buildThreatClassificationResponseFiel
 import { parseThreatClassificationFilterParam } from './lib/iocThreatClassifications.js';
 import { createManualIoc } from './lib/manualIocCreate.js';
 import { createManualSuppression } from './lib/manualSuppressionCreate.js';
+import { createIocLinkedSuppression } from './lib/iocLinkedSuppressionCreate.js';
+import {
+  resolveSurvivorArtifactIdForIoc,
+  resolveSurvivorArtifactIdForHash,
+  loadProvenHashesForArtifact,
+  loadLinkedIocsForArtifact,
+  describeSuppressionScope
+} from './lib/iocSuppressionFileScope.js';
 import { findActiveRunningJobForSource, recoverStaleRunningJobs } from './lib/integrationQueueRecovery.js';
 import { MANUAL_JOB_PRIORITY } from './lib/integrationQueueConfig.js';
 import { computeNextRunAt, computeNextWeeklyRunAt, buildRepeatableNextRunMap, buildHourlySlotMap, getSystemScheduleTimezone, isAllowedScheduleCron, isRunOnceSchedule, resolveNextRunAt } from './lib/integrationSchedule.js';
@@ -3103,19 +3111,40 @@ function isSuppressionActiveRow(row) {
 }
 
 /**
- * Recompute the effective status of every ioc_items row matching a suppression's
- * (value, type). Called after a suppression is created/enabled/disabled/deleted so
- * the IOC lifecycle status flips to/from 'suppressed' immediately (req #6/#7).
+ * Recompute the effective status of every ioc_items row matching a suppression.
+ * Exact (value, type) plus, when the suppression is file-scoped (or the value
+ * uniquely resolves to a file artifact), every linked alias IOC of that file.
  * Best-effort: failures are logged, never fatal to the suppression mutation.
  */
-async function recomputeIocsForSuppression(iocValue, iocType, actor = { actor_type: 'user', source: 'web' }) {
+async function recomputeIocsForSuppression(
+  iocValue,
+  iocType,
+  actor = { actor_type: 'user', source: 'web' },
+  opts = {}
+) {
   try {
+    const targets = new Map();
     const { rows } = await pool.query(
       `SELECT id, observable_type FROM ioc_items
        WHERE lower(observable) = lower($1) AND lower(observable_type) = lower($2)`,
       [iocValue, iocType]
     );
     for (const row of rows || []) {
+      targets.set(`${row.observable_type}\t${row.id}`, row);
+    }
+
+    let artifactId = opts.fileArtifactId ? String(opts.fileArtifactId) : null;
+    if (!artifactId) {
+      artifactId = await resolveSurvivorArtifactIdForHash(pool, iocType, iocValue);
+    }
+    if (artifactId) {
+      const linked = await loadLinkedIocsForArtifact(pool, artifactId);
+      for (const row of linked) {
+        targets.set(`${row.observable_type}\t${row.id}`, row);
+      }
+    }
+
+    for (const row of targets.values()) {
       await recomputeIocGlobalStatus(pool, row.id, row.observable_type, {
         audit: auditLogService,
         actor
@@ -5131,20 +5160,37 @@ app.get('/api/ioc/:id/suppression', async (req, res) => {
     if (!iocQ.rowCount) return res.status(404).json({ message: 'IOC not found' });
     const iocValue = String(iocQ.rows[0].observable || '').trim();
     const iocType = String(iocQ.rows[0].observable_type || '').trim();
+    const artifactId = await resolveSurvivorArtifactIdForIoc(pool, iocId);
     const supQ = await pool.query(
-      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at, deleted_at
-       FROM ioc_suppressions
-       WHERE lower(ioc_value) = lower($1)
-         AND lower(ioc_type) = lower($2)
-         AND active = TRUE
-         AND deleted_at IS NULL
-         AND (expires_at IS NULL OR expires_at > NOW())
-       ORDER BY created_at DESC
+      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at, deleted_at,
+              ioc_value, ioc_type, file_artifact_id
+       FROM ioc_suppressions s
+       WHERE s.active = TRUE
+         AND s.deleted_at IS NULL
+         AND (s.expires_at IS NULL OR s.expires_at > NOW())
+         AND (
+           (lower(s.ioc_value) = lower($1) AND lower(s.ioc_type) = lower($2))
+           OR ($3::uuid IS NOT NULL AND s.file_artifact_id = $3::uuid)
+         )
+       ORDER BY CASE WHEN s.file_artifact_id IS NOT NULL THEN 0 ELSE 1 END, s.created_at DESC
        LIMIT 1`,
-      [iocValue, iocType]
+      [iocValue, iocType, artifactId]
     );
     if (!supQ.rowCount) return res.json({ status: 'not_suppressed', suppression: null });
-    return res.json({ status: 'suppressed', suppression: supQ.rows[0] });
+    const row = supQ.rows[0];
+    const knownHashes = row.file_artifact_id
+      ? await loadProvenHashesForArtifact(pool, row.file_artifact_id)
+      : [];
+    return res.json({
+      status: 'suppressed',
+      suppression: {
+        ...row,
+        suppression_scope: describeSuppressionScope(row, knownHashes.length || null),
+        known_hashes: knownHashes.length
+          ? knownHashes.map((h) => ({ hash_type: h.hash_type, value: h.normalized_hash_value }))
+          : undefined
+      }
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch suppression', detail: err.message });
   }
@@ -5154,69 +5200,12 @@ app.post('/api/ioc/:id/suppress', async (req, res) => {
   if (!isAdminUser(req)) return res.status(403).json({ message: 'Forbidden' });
   const iocId = parsePositiveInt(req.params?.id);
   if (!iocId) return res.status(400).json({ message: 'Invalid IOC id' });
-  const scope = String(req.body?.scope || 'global').trim().toLowerCase();
-  const sourceName = req.body?.source_name == null ? null : String(req.body.source_name).trim();
-  const reason = String(req.body?.reason || '').trim();
-  const expiresAtRaw = req.body?.expires_at;
-  if (!reason) return res.status(400).json({ message: 'reason is required' });
-  if (scope !== 'global') return res.status(400).json({ message: 'Only global scope is supported in phase-1' });
-  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
-  if (expiresAtRaw && Number.isNaN(expiresAt.getTime())) return res.status(400).json({ message: 'Invalid expires_at' });
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const iocQ = await client.query('SELECT observable, observable_type FROM ioc_items WHERE id = $1 LIMIT 1', [iocId]);
-    if (!iocQ.rowCount) {
-      await client.query('ROLLBACK');
-      return res.status(404).json({ message: 'IOC not found' });
-    }
-    const iocValue = String(iocQ.rows[0].observable || '').trim();
-    const iocType = String(iocQ.rows[0].observable_type || '').trim();
-    const createdBy = String(req.user?.email || req.user?.username || '').trim() || null;
-
-    const upsertQ = await client.query(
-      `INSERT INTO ioc_suppressions (ioc_value, ioc_type, scope, source_name, reason, created_by, expires_at, active, updated_at)
-       VALUES ($1, $2, 'global', NULL, $3, $4, $5, TRUE, NOW())
-       ON CONFLICT (lower(ioc_value), lower(ioc_type), scope, COALESCE(lower(source_name), ''))
-         WHERE deleted_at IS NULL
-       DO UPDATE SET reason = EXCLUDED.reason,
-                     created_by = COALESCE(EXCLUDED.created_by, ioc_suppressions.created_by),
-                     expires_at = EXCLUDED.expires_at,
-                     active = TRUE,
-                     deleted_at = NULL,
-                     deleted_by = NULL,
-                     updated_at = NOW()
-       RETURNING *`,
-      [iocValue, iocType, reason, createdBy, expiresAt ? expiresAt.toISOString() : null]
-    );
-
-    await client.query('COMMIT');
-    const suppression = upsertQ.rows[0];
-    await auditLogService.auditSuccess({
-      req,
-      action: AUDIT_ACTION.IOC_SUPPRESSION_CREATED,
-      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
-      entityId: String(suppression.id),
-      entityDisplay: `${iocValue} (${iocType})`,
-      severity: AUDIT_SEVERITY.WARNING,
-      after: {
-        ioc_value: suppression.ioc_value,
-        ioc_type: suppression.ioc_type,
-        scope: suppression.scope,
-        reason: suppression.reason,
-        expires_at: suppression.expires_at
-      },
-      metadata: { ioc_id: iocId, created_by: createdBy }
-    }).catch((e) => console.warn('[audit] suppression create log failed', e?.message || e));
-    await recomputeIocsForSuppression(iocValue, iocType);
-    return res.json({ status: 'suppressed', suppression });
-  } catch (err) {
-    await client.query('ROLLBACK');
-    return res.status(500).json({ message: 'Failed to suppress IOC', detail: err.message });
-  } finally {
-    client.release();
-  }
+  const result = await createIocLinkedSuppression(pool, iocId, req.body || {}, {
+    req,
+    user: req.user,
+    audit: auditLogService
+  });
+  return res.status(result.status).json(result.body);
 });
 
 app.delete('/api/ioc/:id/suppress', async (req, res) => {
@@ -5230,16 +5219,19 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
     if (!iocQ.rowCount) return res.status(404).json({ message: 'IOC not found' });
     const iocValue = String(iocQ.rows[0].observable || '').trim();
     const iocType = String(iocQ.rows[0].observable_type || '').trim();
+    const artifactId = await resolveSurvivorArtifactIdForIoc(pool, iocId);
 
     const q = await pool.query(
       `UPDATE ioc_suppressions
        SET active = FALSE, updated_at = NOW()
-       WHERE lower(ioc_value) = lower($1)
-         AND lower(ioc_type) = lower($2)
-         AND active = TRUE
+       WHERE active = TRUE
          AND deleted_at IS NULL
+         AND (
+           (lower(ioc_value) = lower($1) AND lower(ioc_type) = lower($2))
+           OR ($3::uuid IS NOT NULL AND file_artifact_id = $3::uuid)
+         )
        RETURNING *`,
-      [iocValue, iocType]
+      [iocValue, iocType, artifactId]
     );
     for (const row of q.rows || []) {
       await auditLogService.auditSuccess({
@@ -5256,13 +5248,19 @@ app.delete('/api/ioc/:id/suppress', async (req, res) => {
           ioc_value: row.ioc_value,
           ioc_type: row.ioc_type,
           suppression_id: row.id,
+          file_artifact_id: row.file_artifact_id || null,
+          suppression_scope: row.file_artifact_id ? 'file' : 'exact',
           previous_status: 'active',
           new_status: 'disabled',
           reason: reasonCheck.reason
         }
       }).catch((e) => console.warn('[audit] suppression disable log failed', e?.message || e));
     }
-    if (q.rowCount) await recomputeIocsForSuppression(iocValue, iocType);
+    if (q.rowCount) {
+      await recomputeIocsForSuppression(iocValue, iocType, { actor_type: 'user', source: 'web' }, {
+        fileArtifactId: artifactId || q.rows[0]?.file_artifact_id || null
+      });
+    }
     return res.json({ ok: true, updated: q.rowCount || 0 });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to disable suppression', detail: err.message });
@@ -5357,7 +5355,11 @@ app.get('/api/ioc-suppressions', async (req, res) => {
       expired: Number(statsRow.expired || 0),
       total: Number(statsRow.total || 0)
     };
-    return res.json({ items: q.rows || [], total: Number(cq.rows?.[0]?.total || 0), page, pageSize, stats });
+    const items = (q.rows || []).map((row) => ({
+      ...row,
+      suppression_scope: describeSuppressionScope(row)
+    }));
+    return res.json({ items, total: Number(cq.rows?.[0]?.total || 0), page, pageSize, stats });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to fetch IOC suppressions', detail: err.message });
   }
@@ -5445,9 +5447,17 @@ app.patch('/api/ioc-suppressions/:id', async (req, res) => {
       }
     }).catch((e) => console.warn('[audit] suppression update log failed', e?.message || e));
     if (activeChanged || prevStatus !== newStatus) {
-      await recomputeIocsForSuppression(after.ioc_value, after.ioc_type);
+      await recomputeIocsForSuppression(after.ioc_value, after.ioc_type, { actor_type: 'user', source: 'web' }, {
+        fileArtifactId: after.file_artifact_id || before.file_artifact_id || null
+      });
     }
-    return res.json({ item: { ...after, status: newStatus } });
+    return res.json({
+      item: {
+        ...after,
+        status: newStatus,
+        suppression_scope: describeSuppressionScope(after)
+      }
+    });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to update suppression', detail: err.message });
   }
@@ -5496,12 +5506,16 @@ app.delete('/api/ioc-suppressions/:id', async (req, res) => {
         ioc_type: after.ioc_type,
         scope: after.scope,
         source_name: after.source_name,
+        file_artifact_id: after.file_artifact_id || null,
+        suppression_scope: after.file_artifact_id ? 'file' : 'exact',
         previous_status: computeSuppressionEffectiveStatus(before),
         new_status: 'deleted',
         reason: reasonCheck.reason
       }
     }).catch((e) => console.warn('[audit] suppression delete log failed', e?.message || e));
-    await recomputeIocsForSuppression(after.ioc_value, after.ioc_type);
+    await recomputeIocsForSuppression(after.ioc_value, after.ioc_type, { actor_type: 'user', source: 'web' }, {
+      fileArtifactId: after.file_artifact_id || null
+    });
     return res.json({ ok: true });
   } catch (err) {
     return res.status(500).json({ message: 'Failed to delete suppression', detail: err.message });
@@ -5899,22 +5913,6 @@ app.get('/api/ioc/details', async (req, res) => {
     summary.confidence_set = confidenceDetail?.confidence_set
       || [...new Set(rows.map((r) => r.confidence).filter(Boolean))];
 
-    const suppressionQ = await pool.query(
-      `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at,
-              ioc_value, ioc_type
-       FROM ioc_suppressions
-       WHERE lower(ioc_value) = lower($1)
-         AND lower(ioc_type) = lower($2)
-         AND active = TRUE
-         AND deleted_at IS NULL
-         AND (expires_at IS NULL OR expires_at > NOW())
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [observable, observableType]
-    );
-    let activeSuppression = suppressionQ.rowCount ? suppressionQ.rows[0] : null;
-    let artifactSuppressionHits = [];
-
     const fileArtifact = await buildFileArtifactDetailBlock(pool, requestedPublicId);
     if (fileArtifact?.known_hashes?.length) {
       // Enrich file_information with artifact known hashes (additive)
@@ -5925,24 +5923,48 @@ app.get('/api/ioc/details', async (req, res) => {
         if (h.hash_type === 'sha256' && !fi.sha256) fi.sha256 = h.value;
       }
       summary.file_information = fi;
+    }
 
-      // Aggregate suppressions across linked exact hashes (do not rewrite rows)
-      const vals = fileArtifact.known_hashes.map((h) => h.value);
-      const types = fileArtifact.known_hashes.map((h) => h.hash_type);
-      const aggSup = await pool.query(
+    let activeSuppression = null;
+    let artifactSuppressionHits = [];
+    const artifactIdForSuppression = fileArtifact?.artifact_id || null;
+    try {
+      const suppressionQ = await pool.query(
         `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at,
-                ioc_value, ioc_type
-         FROM ioc_suppressions
-         WHERE active = TRUE
-           AND deleted_at IS NULL
-           AND (expires_at IS NULL OR expires_at > NOW())
-           AND lower(ioc_value) = ANY($1::text[])
-           AND lower(ioc_type) = ANY($2::text[])`,
-        [vals.map((v) => String(v).toLowerCase()), types.map((t) => String(t).toLowerCase())]
+                ioc_value, ioc_type, file_artifact_id
+         FROM ioc_suppressions s
+         WHERE s.active = TRUE
+           AND s.deleted_at IS NULL
+           AND (s.expires_at IS NULL OR s.expires_at > NOW())
+           AND (
+             (lower(s.ioc_value) = lower($1) AND lower(s.ioc_type) = lower($2))
+             OR ($3::uuid IS NOT NULL AND s.file_artifact_id = $3::uuid)
+           )
+         ORDER BY CASE WHEN s.file_artifact_id IS NOT NULL THEN 0 ELSE 1 END, s.created_at DESC`,
+        [observable, observableType, artifactIdForSuppression]
       );
-      artifactSuppressionHits = aggSup.rows;
-      if (!activeSuppression && artifactSuppressionHits.length) {
-        activeSuppression = artifactSuppressionHits[0];
+      artifactSuppressionHits = suppressionQ.rows || [];
+      activeSuppression = artifactSuppressionHits[0] || null;
+    } catch (err) {
+      // Pre-migration fallback: exact (value,type) only.
+      if (err?.code === '42703' || String(err?.message || '').includes('file_artifact_id')) {
+        const suppressionQ = await pool.query(
+          `SELECT id, active, scope, source_name, reason, created_by, created_at, updated_at, expires_at,
+                  ioc_value, ioc_type
+           FROM ioc_suppressions
+           WHERE lower(ioc_value) = lower($1)
+             AND lower(ioc_type) = lower($2)
+             AND active = TRUE
+             AND deleted_at IS NULL
+             AND (expires_at IS NULL OR expires_at > NOW())
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [observable, observableType]
+        );
+        activeSuppression = suppressionQ.rowCount ? suppressionQ.rows[0] : null;
+        artifactSuppressionHits = activeSuppression ? [activeSuppression] : [];
+      } else {
+        throw err;
       }
     }
 
@@ -6007,7 +6029,17 @@ app.get('/api/ioc/details', async (req, res) => {
         ? {
             ...activeSuppression,
             active: true,
-            artifact_suppressions: artifactSuppressionHits.length ? artifactSuppressionHits : undefined
+            suppression_scope: describeSuppressionScope(
+              activeSuppression,
+              fileArtifact?.known_hashes?.length || null
+            ),
+            known_hashes: fileArtifact?.known_hashes?.length
+              ? fileArtifact.known_hashes.map((h) => ({
+                hash_type: h.hash_type,
+                value: h.value
+              }))
+              : undefined,
+            artifact_suppressions: artifactSuppressionHits.length > 1 ? artifactSuppressionHits : undefined
           }
         : { active: false },
       file_artifact: fileArtifact || null

@@ -18248,6 +18248,17 @@ function IOCDetailsPage() {
                   <div><span style={{ color: '#94a3b8' }}>Created by:</span> {suppression.created_by || '—'}</div>
                   <div><span style={{ color: '#94a3b8' }}>Created at:</span> {formatUserDateTime(suppression.created_at)}</div>
                   <div><span style={{ color: '#94a3b8' }}>Expires at:</span> {suppression.expires_at ? formatUserDateTime(suppression.expires_at) : 'Never'}</div>
+                  {suppression?.suppression_scope?.kind === 'file' ? (
+                    <div>
+                      <span style={{ color: '#94a3b8' }}>Scope:</span>{' '}
+                      File
+                      {Number(suppression.suppression_scope.known_hash_count) > 0
+                        ? ` · Known hashes: ${Number(suppression.suppression_scope.known_hash_count)}`
+                        : (Array.isArray(suppression.known_hashes) && suppression.known_hashes.length
+                          ? ` · Known hashes: ${suppression.known_hashes.length}`
+                          : '')}
+                    </div>
+                  ) : null}
                 </div>
                 <div style={{ display: 'flex', gap: 10, marginTop: 12, flexWrap: 'wrap' }}>
                   <button type="button" style={ui.btn} onClick={() => navigate(`/operations/ioc-suppressions?search=${encodeURIComponent(summary.observable || '')}`)}>Manage suppression</button>

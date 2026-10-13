@@ -5,7 +5,7 @@
 
 import { BULK_TRIAGE_MAX_ITEMS } from './rbac.js';
 import { ensureIocTagAssignment } from './tagCatalogService.js';
-import { createManualSuppression } from './manualSuppressionCreate.js';
+import { createIocLinkedSuppression } from './iocLinkedSuppressionCreate.js';
 import { parseRequiredReason } from './reasonValidation.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from './auditConstants.js';
 import { recomputeIocGlobalStatus } from './iocExpiration.js';
@@ -228,13 +228,11 @@ export async function bulkSuppress(pool, { iocIds, reason, expiresAt, user, req,
       results.push(resultRow(id, 'error', 'IOC not found'));
       continue;
     }
-    const created = await createManualSuppression(pool, {
-      ioc_value: ioc.observable,
-      ioc_type: ioc.observable_type,
+    const created = await createIocLinkedSuppression(pool, id, {
       reason: reasonCheck.reason,
       expires_at: expiresAt
     }, { req, user, audit: bulkAudit });
-    if (created.status === 409) {
+    if (created.status === 409 || created.body?.already_existed) {
       results.push(resultRow(id, 'skipped', 'Already suppressed'));
       continue;
     }

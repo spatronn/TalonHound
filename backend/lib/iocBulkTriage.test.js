@@ -202,13 +202,48 @@ test('bulkSuppress skips already-suppressed IOCs', async () => {
         }
       },
       {
-        match: (sql) => sql.includes('SELECT id FROM ioc_suppressions'),
+        match: (sql) => sql.includes('FROM ioc_items') && sql.includes('WHERE id = $1') && sql.includes('public_id'),
+        respond: (_sql, params) => {
+          const row = iocs.find((r) => Number(r.id) === Number(params[0]));
+          return row ? { rows: [row], rowCount: 1 } : { rows: [], rowCount: 0 };
+        }
+      },
+      {
+        match: (sql) => sql.includes('file_artifact_ioc_links'),
+        respond: () => ({ rows: [], rowCount: 0 })
+      },
+      {
+        match: (sql) => sql.includes('FROM ioc_suppressions')
+          && sql.includes('file_artifact_id')
+          && (sql.includes('SELECT * FROM ioc_suppressions') || sql.includes('SELECT id, file_artifact_id') || sql.includes('ORDER BY CASE WHEN file_artifact_id')),
         respond: () => {
           suppressLookups += 1;
           return suppressLookups === 1
             ? { rows: [], rowCount: 0 }
-            : { rows: [{ id: 1 }], rowCount: 1 };
+            : {
+              rows: [{
+                id: 1, ioc_value: '10.0.0.2', ioc_type: 'ip', file_artifact_id: null,
+                reason: 'old', active: true, scope: 'global', expires_at: null
+              }],
+              rowCount: 1
+            };
         }
+      },
+      {
+        match: (sql) => sql.startsWith('UPDATE ioc_suppressions') && sql.includes('SET reason'),
+        respond: (_sql, params) => ({
+          rows: [{
+            id: 1,
+            ioc_value: '10.0.0.2',
+            ioc_type: 'ip',
+            reason: params[1],
+            expires_at: params[3],
+            active: true,
+            file_artifact_id: null,
+            scope: 'global'
+          }],
+          rowCount: 1
+        })
       },
       {
         match: (sql) => sql.includes('INSERT INTO ioc_suppressions'),
@@ -219,29 +254,45 @@ test('bulkSuppress skips already-suppressed IOCs', async () => {
             ioc_type: params[1],
             reason: params[2],
             expires_at: params[4],
-            active: true
+            active: true,
+            file_artifact_id: params[5] || null
           }],
           rowCount: 1
         })
       },
       {
         match: (sql) => sql.includes('FROM ioc_items') && sql.includes('lower(observable)'),
-        respond: () => ({ rows: [{ id: 1, observable_type: 'ip' }], rowCount: 1 })
+        respond: (_sql, params) => {
+          const row = iocs.find((r) => String(r.observable) === String(params[0]));
+          return row
+            ? { rows: [{ id: row.id, observable_type: row.observable_type }], rowCount: 1 }
+            : { rows: [], rowCount: 0 };
+        }
       },
       {
         match: (sql) => sql.includes('FROM ioc_items') && sql.includes('observable_type = $2'),
-        respond: () => ({
-          rows: [{
-            id: 1, observable: '10.0.0.1', observable_type: 'ip', status: 'active',
-            manual_status_override: false, manual_status: null, manual_expires_at: null,
-            expires_at: null, expired_at: null, expiration_reason: null
-          }],
-          rowCount: 1
-        })
+        respond: (_sql, params) => {
+          const row = iocs.find((r) => Number(r.id) === Number(params[0]));
+          return {
+            rows: [{
+              id: row?.id || params[0],
+              observable: row?.observable || '10.0.0.1',
+              observable_type: row?.observable_type || 'ip',
+              status: 'active',
+              manual_status_override: false,
+              manual_status: null,
+              manual_expires_at: null,
+              expires_at: null,
+              expired_at: null,
+              expiration_reason: null
+            }],
+            rowCount: 1
+          };
+        }
       },
       {
-        match: (sql) => sql.includes('ioc_suppressions') && sql.includes('active = TRUE'),
-        respond: () => ({ rows: [{ id: 1 }], rowCount: 1 })
+        match: (sql) => sql.includes('FROM ioc_suppressions') && sql.includes('active = TRUE'),
+        respond: () => ({ rows: [{ '?column?': 1 }], rowCount: 1 })
       },
       {
         match: (sql) => sql.includes("SET status = 'suppressed'"),
