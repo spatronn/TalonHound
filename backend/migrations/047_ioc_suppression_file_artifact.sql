@@ -41,6 +41,7 @@ COMMENT ON COLUMN public.ioc_suppressions.file_artifact_id IS
   'When set, suppression applies to the canonical file artifact (all proven exact hashes). NULL = exact observable only.';
 
 -- Backfill uniquely-resolvable active hash suppressions.
+-- NOTE: Postgres has no MIN(uuid); pick the sole survivor via DISTINCT ON.
 WITH resolved AS (
   SELECT
     s.id AS suppression_id,
@@ -63,11 +64,19 @@ WITH resolved AS (
     AND (s.expires_at IS NULL OR s.expires_at > NOW())
     AND lower(s.ioc_type) IN ('md5', 'sha1', 'sha256')
 ),
-unique_resolved AS (
-  SELECT suppression_id, MIN(survivor_artifact_id) AS artifact_id
+unique_ids AS (
+  SELECT suppression_id
   FROM resolved
   GROUP BY suppression_id
   HAVING COUNT(DISTINCT survivor_artifact_id) = 1
+),
+unique_resolved AS (
+  SELECT DISTINCT ON (r.suppression_id)
+         r.suppression_id,
+         r.survivor_artifact_id AS artifact_id
+  FROM resolved r
+  JOIN unique_ids u ON u.suppression_id = r.suppression_id
+  ORDER BY r.suppression_id, r.survivor_artifact_id
 )
 UPDATE public.ioc_suppressions s
    SET file_artifact_id = u.artifact_id,
