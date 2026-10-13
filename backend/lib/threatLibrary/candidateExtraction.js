@@ -131,8 +131,14 @@ export {
  * v21: a value with no letter or digit (a lone "/" separator in a cell such as
  * "T1497.001 / T1497.003", "./", "--") is never an observable: it is no longer
  * typed as a relative path / Context Only candidate (candidateValue.js).
+ * v22: a C2 / operational topic heading is confirmed as an authoritative
+ * section only by publisher indicator content in its subtree (an indicator
+ * row or an IOC table), never by a code listing, HTTP request example or
+ * descriptive table (tl-zones-v5). Prose under such a technical-analysis
+ * heading ("validates access through a GET request to <url>") is narrative,
+ * so it no longer becomes an asserted narrative_assertion / explicit_c2.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v21';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v22';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 

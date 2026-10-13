@@ -118,7 +118,10 @@ test('curated IOC appendix: Indicators are exactly the publisher-declared identi
 
 test('curated IOC appendix: AI maliciousness on narrative values does not change membership', () => {
   const { candidates, document } = extract(`${NARRATIVE}${APPENDIX}`);
-  const narrative = candidates.filter((c) => c.ai_needed && !DECLARED.includes(keyOf(c)));
+  // Every non-declared network value, whether it goes to the model or is
+  // already Context Only ("Dead-drop C2 communication" is a prose topic whose
+  // only table is a descriptive Path/Purpose table, so it is narrative).
+  const narrative = candidates.filter((c) => c.is_ioc !== false && !DECLARED.includes(keyOf(c)));
   assert.ok(narrative.some((c) => c.normalized_value === 'graph.example-cloud.com'), 'narrative values stay extracted for analysis');
   const after = mergeAiCandidateUpdates(
     candidates,

@@ -32,8 +32,13 @@ import {
  * authoritative section only when its subtree holds indicator structure
  * (prose-only topics are narrative); a suspended section resumes only at a
  * sibling of the heading that closed it, never inside that sub-topic.
+ * v5: that subtree confirmation counts publisher indicator content only (an
+ * indicator row, or a structured table that reads as an IOC table): a code
+ * listing, an HTTP request example or a descriptive table without an
+ * indicator column no longer turns a technical-analysis topic into a C2 /
+ * operational-infrastructure section.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v4';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v5';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -390,9 +395,27 @@ export function sectionHasIndicatorStructure(blocks, i, chromeIds, limit = 80) {
 const TOPIC_LABEL_ZONES = new Set(['c2_section', 'operational_infrastructure']);
 
 /**
+ * A block that carries publisher indicator content itself: an indicator row
+ * (value line, list of values, short list item / unstructured table row with
+ * an observable) or a structured table that reads as an IOC table. A code
+ * listing, an HTTP request example or a descriptive table without an
+ * indicator column is technical content, not an indicator list — whatever
+ * observables its text happens to contain.
+ * @param {object} b
+ */
+function isIndicatorContentBlock(b) {
+  if (!b || b.type === 'heading' || b.layout === 'page_edge') return false;
+  if (b.type === 'table' && b.table) return interpretIocTable(b, {}).kind === 'ioc_table';
+  return isIndicatorRowBlock(b);
+}
+
+/**
  * Structural confirmation over a heading's whole subtree (every block until a
  * heading at the same or a shallower level), so typed sub-headings ("C2 › IPs")
- * stay inside. Requires an integer level on heading i.
+ * stay inside. Requires an integer level on heading i. Only publisher
+ * indicator content confirms (isIndicatorContentBlock): a topic heading that
+ * merely names C2 ("Outlook calendar events as a C2 channel") over prose, code
+ * listings and protocol tables stays narrative.
  * @param {object[]} blocks
  * @param {number} i heading index
  * @param {Set<string>} chromeIds
@@ -408,7 +431,7 @@ export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200) 
       continue;
     }
     seen += 1;
-    if (isIndicatorStructureBlock(n) || isIndicatorValueLine(String(n.text || ''))) return true;
+    if (isIndicatorContentBlock(n)) return true;
   }
   return false;
 }
@@ -423,13 +446,7 @@ export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200) 
  * @param {Set<string>} chromeIds
  */
 export function sectionOpensWithIndicatorContent(blocks, i, chromeIds) {
-  const next = nextContentBlock(blocks, i, chromeIds);
-  if (!next || next.type === 'heading') return false;
-  if (next.type === 'table' && next.table) {
-    const interp = interpretIocTable(next, {});
-    return interp.kind === 'ioc_table';
-  }
-  return isIndicatorRowBlock(next);
+  return isIndicatorContentBlock(nextContentBlock(blocks, i, chromeIds));
 }
 
 /**
