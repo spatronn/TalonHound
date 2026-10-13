@@ -146,8 +146,12 @@ export {
  * filename-shaped dotted tokens (`Node.js`) are not indicator lines and a
  * heading-inherited Domains label cannot outvote FILE_EXT / non-delegated
  * suffix readings across occurrences (tl-type-resolver-v8).
+ * v25: Filename|MD5 (file-name + hash) component inventories outside curated
+ * IOC / C2 / sample headings are not self-proving structural IOC tables
+ * (tl-table-v6). MODE A membership keeps formal IOC-appendix hashes and
+ * domains without promoting legitimate host-binary hashes from analysis tables.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v24';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v25';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 

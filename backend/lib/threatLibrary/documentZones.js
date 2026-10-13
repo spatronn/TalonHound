@@ -915,12 +915,25 @@ export function annotateDocumentZones(doc, opts = {}) {
         if (versions.header_row) b.version_header_row = true;
       }
       const negative = NEGATIVE_ZONES.has(zone);
-      const interpretation = interpretIocTable(b, { negativeZone: negative, versionColumns: versions.columns });
+      const inAuthoritativeScope = STRONG_IOC_ZONES.has(zone);
+      const interpretation = interpretIocTable(b, {
+        negativeZone: negative,
+        versionColumns: versions.columns,
+        inAuthoritativeScope
+      });
       b.ioc_table = interpretation;
       if (interpretation.kind === 'ioc_table' && interpretation.explicit && !negative) {
-        b.zone = 'explicit_ioc_section';
-        b.section = b.section === zone ? 'explicit_ioc_section' : b.section;
-        b.zone_reason = 'ioc_table';
+        // File-hash inventories that are already under a sample heading keep
+        // sample_table; only self-proving network/typed IOC tables open a new
+        // explicit_ioc_section from body text.
+        if (interpretation.file_hash_inventory && zone === 'sample_table') {
+          b.zone = 'sample_table';
+          b.zone_reason = 'file_hash_inventory';
+        } else {
+          b.zone = 'explicit_ioc_section';
+          b.section = b.section === zone ? 'explicit_ioc_section' : b.section;
+          b.zone_reason = 'ioc_table';
+        }
       }
     } else if (zone !== 'header_footer') {
       versionCarry = null;

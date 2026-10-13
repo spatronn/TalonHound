@@ -32,8 +32,12 @@ import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
  * column; a dotted value in a file-name column is a file name.
  * v5: a column labelled as a software version ("Versions Affected", "Build
  * Number") is never an indicator column, whatever its values look like.
+ * v6: Filename|MD5 (file-name + hash) component inventories outside an
+ * authoritative IOC / C2 / sample heading are not self-proving IOC tables —
+ * they stay non-explicit so MODE A membership requires the publisher's curated
+ * appendix (or a real sample/IOC heading).
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v5';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v6';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -91,6 +95,16 @@ const ENDPOINT_LABEL_RE = /(?:port|endpoint|socket|:\s*port|&\s*port|ve\s*port|�
 /** Table headings that describe victims / targets / fixed versions rather than adversary infrastructure. */
 const NEGATIVE_TABLE_CONTEXT_RE =
   /\b(?:victim|victims|target|targets|targeted|affected|impacted|patched|fixed|remediat|mitigat|hunting|scanned|customer|customers|internal|kurban|hedef|etkilenen|受害|目标|受影响|修复)\b/i;
+
+const HASH_DECLARED_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash']);
+
+/** Header labels that name a file / component column (not an IOC value column). */
+const FILE_NAME_HEADER_RE =
+  /^(?:file(?:\s*name)?s?|filenames?|path|filepath|file\s*path|sample(?:\s*name)?|module|component|artifact|artefact|dropped\s*file|dosya(?:\s*ad[ıi])?|dateiname|archivo|fichier|文件名|文件)$/;
+
+/** Heading / caption text that already curates samples or IOCs for this table. */
+const AUTHORITATIVE_TABLE_HEADING_RE =
+  /\b(?:iocs?|indicators?\s+of\s+compromise|compromise\s+indicators?|malicious\s+samples?|sample\s+hash(?:es)?|file\s+hash(?:es)?|md5|sha-?256|sha-?1|c2|c&c|command\s*(?:and|&)\s*control|operational\s+infrastructure)\b/i;
 
 /**
  * @param {string} s
@@ -441,6 +455,87 @@ function columnStats(rows, col) {
 const NETWORK_DECLARED_TYPES = new Set(['domain', 'url', 'ip', 'ipv6', 'email']);
 
 /**
+ * True when a column is a hash indicator column (MD5 / SHA header or declared).
+ * @param {{ header?: string|null, intent?: string, declared_type?: { type: string }|null }} col
+ */
+function columnIsHashIndicator(col) {
+  if (String(col?.intent || '') !== 'indicator') return false;
+  if (col.declared_type && HASH_DECLARED_TYPES.has(col.declared_type.type)) return true;
+  const declared = col.header ? parseDeclaredType(col.header) : null;
+  if (declared && HASH_DECLARED_TYPES.has(declared.type)) return true;
+  const norm = normalizeHeaderLabel(col.header || '');
+  return /^(?:md5|sha\s*-?\s*1|sha\s*-?\s*256|sha\s*-?\s*512|hash|hashes|file\s*hash(?:es)?)$/.test(norm);
+}
+
+/**
+ * True when a column is a file-name / component provenance column.
+ * @param {{ header?: string|null, intent?: string }} col
+ */
+function columnIsFileNameColumn(col) {
+  const norm = normalizeHeaderLabel(col?.header || '');
+  if (!norm) return false;
+  if (FILE_NAME_HEADER_RE.test(norm)) return true;
+  return String(col?.intent || '') === 'description' && /(?:file|name|path|module|component|artifact|artefact|sample|dosya)/.test(norm);
+}
+
+/**
+ * True when any indicator column carries network IOC types (IP / domain / URL).
+ * @param {{ intent?: string, declared_type?: { type: string }|null, header?: string|null }[]} columns
+ * @param {{ status: string, values: object[] }[]} rows
+ */
+function tableHasNetworkIndicatorColumn(columns, rows) {
+  for (const col of columns) {
+    if (String(col.intent || '') !== 'indicator') continue;
+    const declared = col.declared_type || (col.header ? parseDeclaredType(col.header) : null);
+    if (declared && NETWORK_DECLARED_TYPES.has(declared.type)) return true;
+    const values = rows
+      .filter((r) => r.status === 'valid')
+      .flatMap((r) => r.values.filter((v) => v.column_index === col.index && v.is_ioc !== false));
+    if (!values.length) continue;
+    const network = values.filter((v) => NETWORK_DECLARED_TYPES.has(String(v.candidate_type || '')));
+    if (network.length * 2 >= values.length) return true;
+  }
+  return false;
+}
+
+/**
+ * Filename|MD5 (or File|SHA-256) component inventory: hash column + file-name
+ * column, no type column, no network IOC column.
+ * @param {{ intent?: string, header?: string|null, declared_type?: { type: string }|null }[]} columns
+ * @param {{ status: string, values: object[] }[]} rows
+ * @param {object|null} typeCol
+ */
+export function isFileHashInventoryTable(columns, rows, typeCol = null) {
+  if (typeCol) return false;
+  const cols = Array.isArray(columns) ? columns : [];
+  if (!cols.some(columnIsHashIndicator)) return false;
+  if (!cols.some(columnIsFileNameColumn)) return false;
+  if (tableHasNetworkIndicatorColumn(cols, Array.isArray(rows) ? rows : [])) return false;
+  return true;
+}
+
+/**
+ * Publisher already curated this table via zone inheritance or an IOC/sample heading.
+ * @param {object} block
+ * @param {{ inAuthoritativeScope?: boolean, negativeZone?: boolean }} opts
+ */
+function tableInAuthoritativeScope(block, opts = {}) {
+  if (opts.inAuthoritativeScope === true) return true;
+  if (opts.negativeZone === true) return false;
+  const zone = String(block?.zone || '');
+  if (
+    zone === 'explicit_ioc_section' ||
+    zone === 'c2_section' ||
+    zone === 'sample_table' ||
+    zone === 'operational_infrastructure'
+  ) {
+    return true;
+  }
+  const heading = String(block?.section_heading || block?.table?.caption || '').trim();
+  return Boolean(heading) && heading.length <= 80 && AUTHORITATIVE_TABLE_HEADING_RE.test(heading);
+}
+
+/**
  * One table column holds one kind of value. In a column whose values are file
  * names (`b374.php`, `error.jsp`, `x.exe`), a name whose extension also happens
  * to be a ccTLD (`back.pl`, `tool.py`) is a file name too — never a domain
@@ -477,8 +572,9 @@ function applyFileNameColumnConsistency(rows, indicatorCols) {
 /**
  * Interpret a canonical table block.
  * @param {{ id?: string, table?: { headers?: string[]|null, rows?: string[][], caption?: string|null }, section_heading?: string|null, section?: string|null, zone?: string }} block
- * @param {{ negativeZone?: boolean, versionColumns?: number[] }} [opts] versionColumns:
- *   software-version columns (see tableVersionColumns) — never indicator columns
+ * @param {{ negativeZone?: boolean, versionColumns?: number[], inAuthoritativeScope?: boolean }} [opts]
+ *   versionColumns: software-version columns (see tableVersionColumns) — never indicator columns.
+ *   inAuthoritativeScope: caller already classified the surrounding section as curated.
  */
 export function interpretIocTable(block, opts = {}) {
   const table = block?.table || {};
@@ -684,16 +780,25 @@ export function interpretIocTable(block, opts = {}) {
   const structural = iocCols.length > 0 && (Boolean(typeCol) || headerLabelled);
   const headingText = String(block?.section_heading || block?.table?.caption || '');
   const negativeContext = NEGATIVE_TABLE_CONTEXT_RE.test(headingText) || opts.negativeZone === true;
+  const fileHashInventory = isFileHashInventoryTable(columns, result.rows, typeCol);
+  const inAuthoritativeScope = tableInAuthoritativeScope(block, opts);
+  // Filename|hash component inventories under technical-analysis headings are
+  // not publisher IOC appendices. They only assert when already inside an
+  // authoritative IOC / C2 / sample scope (or their own sample/IOC heading).
+  const selfProving = structural && !(fileHashInventory && !inAuthoritativeScope);
   result.kind = 'ioc_table';
-  result.explicit = structural && !negativeContext;
+  result.explicit = selfProving && !negativeContext;
   result.dense_observables = denseObservables;
+  result.file_hash_inventory = fileHashInventory;
   result.reason = !structural
     ? denseObservables
       ? 'dense_without_type_or_header'
       : 'weak_structure'
     : negativeContext
       ? 'negative_context'
-      : 'structural_ioc_table';
+      : fileHashInventory && !inAuthoritativeScope
+        ? 'file_hash_inventory_outside_ioc_scope'
+        : 'structural_ioc_table';
   result.declared_type_column = typeCol ? typeCol.index : null;
   result.indicator_columns = indicatorCols.map((c) => c.index);
   result.description_columns = descCols.map((c) => c.index);
