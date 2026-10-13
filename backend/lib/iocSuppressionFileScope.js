@@ -142,11 +142,14 @@ export async function resolveSurvivorArtifactIdForHash(db, iocType, iocValue) {
 export async function loadProvenHashesForArtifact(db, artifactId) {
   if (!artifactId) return [];
   try {
+    // GROUP BY (not SELECT DISTINCT + ORDER BY CASE): Postgres requires every
+    // ORDER BY expression to appear in a DISTINCT select list.
     const { rows } = await db.query(
-      `SELECT DISTINCT h.hash_type, h.normalized_hash_value
+      `SELECT h.hash_type, h.normalized_hash_value
        FROM file_artifact_hashes h
        JOIN file_artifacts fa ON fa.id = h.artifact_id
        WHERE ${SURVIVOR_ARTIFACT_ID_SQL_FA} = $1::uuid
+       GROUP BY h.hash_type, h.normalized_hash_value
        ORDER BY CASE h.hash_type WHEN 'sha256' THEN 0 WHEN 'sha1' THEN 1 WHEN 'md5' THEN 2 ELSE 9 END`,
       [artifactId]
     );

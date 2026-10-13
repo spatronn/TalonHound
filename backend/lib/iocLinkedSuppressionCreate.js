@@ -53,6 +53,12 @@ export async function createIocLinkedSuppression(pool, iocId, body = {}, opts = 
   const expiresAt = expCheck.expiresAt;
   const createdBy = String(opts.user?.email || opts.user?.username || '').trim() || null;
 
+  let inserted = null;
+  let alreadyExisted = false;
+  let artifactId = null;
+  let iocValue = '';
+  let iocType = '';
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -67,10 +73,10 @@ export async function createIocLinkedSuppression(pool, iocId, body = {}, opts = 
       return { status: 404, body: { message: 'IOC not found' } };
     }
     const ioc = iocQ.rows[0];
-    const iocValue = String(ioc.observable || '').trim();
-    const iocType = String(ioc.observable_type || '').trim();
+    iocValue = String(ioc.observable || '').trim();
+    iocType = String(ioc.observable_type || '').trim();
 
-    const artifactId = await resolveSurvivorArtifactIdForIoc(client, id);
+    artifactId = await resolveSurvivorArtifactIdForIoc(client, id);
 
     // Idempotent: if an active exact or same-file suppression already exists,
     // refresh reason/expiry/file_artifact_id on that row instead of 409.
@@ -88,8 +94,6 @@ export async function createIocLinkedSuppression(pool, iocId, body = {}, opts = 
       [iocValue, iocType, artifactId]
     );
 
-    let inserted;
-    let alreadyExisted = false;
     if (dupQ.rowCount) {
       alreadyExisted = true;
       const upd = await client.query(
@@ -165,61 +169,64 @@ export async function createIocLinkedSuppression(pool, iocId, body = {}, opts = 
     }
 
     await client.query('COMMIT');
-
-    const knownHashes = artifactId
-      ? await loadProvenHashesForArtifact(pool, artifactId)
-      : [];
-    const scopeInfo = describeSuppressionScope(inserted, knownHashes.length || null);
-
-    // Audit only the initial create — idempotent retries must not emit duplicate
-    // analyst "created" actions.
-    if (!alreadyExisted && opts.audit?.auditSuccess && opts.req) {
-      await opts.audit.auditSuccess({
-        req: opts.req,
-        action: AUDIT_ACTION.IOC_SUPPRESSION_CREATED,
-        entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
-        entityId: String(inserted.id),
-        entityDisplay: `${iocValue} (${iocType})`,
-        severity: AUDIT_SEVERITY.WARNING,
-        after: {
-          ioc_value: inserted.ioc_value,
-          ioc_type: inserted.ioc_type,
-          scope: inserted.scope,
-          reason: inserted.reason,
-          expires_at: inserted.expires_at,
-          file_artifact_id: inserted.file_artifact_id || null,
-          suppression_scope: scopeInfo.kind
-        },
-        metadata: {
-          ioc_id: id,
-          created_by: createdBy,
-          file_artifact_id: inserted.file_artifact_id || null,
-          suppression_scope: scopeInfo.kind,
-          known_hash_count: knownHashes.length || 0,
-          previous_status: null,
-          new_status: 'active'
-        }
-      }).catch((e) => console.warn('[audit] ioc-linked suppression create log failed', e?.message || e));
-    }
-
-    return {
-      status: 200,
-      body: {
-        status: 'suppressed',
-        already_existed: alreadyExisted,
-        suppression: {
-          ...inserted,
-          suppression_scope: scopeInfo,
-          known_hashes: knownHashes.length
-            ? knownHashes.map((h) => ({ hash_type: h.hash_type, value: h.normalized_hash_value }))
-            : undefined
-        }
-      }
-    };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     return { status: 500, body: { message: 'Failed to suppress IOC', detail: err.message } };
   } finally {
     client.release();
   }
+
+  // Post-commit enrichment for the API response. Failures here must not turn a
+  // successful suppress into a 500 (the row is already durable).
+  let knownHashes = [];
+  try {
+    knownHashes = artifactId ? await loadProvenHashesForArtifact(pool, artifactId) : [];
+  } catch (err) {
+    console.warn('[suppression] known-hash load after create failed', err?.message || err);
+  }
+  const scopeInfo = describeSuppressionScope(inserted, knownHashes.length || null);
+
+  if (!alreadyExisted && opts.audit?.auditSuccess && opts.req) {
+    await opts.audit.auditSuccess({
+      req: opts.req,
+      action: AUDIT_ACTION.IOC_SUPPRESSION_CREATED,
+      entityType: AUDIT_ENTITY.IOC_SUPPRESSION,
+      entityId: String(inserted.id),
+      entityDisplay: `${iocValue} (${iocType})`,
+      severity: AUDIT_SEVERITY.WARNING,
+      after: {
+        ioc_value: inserted.ioc_value,
+        ioc_type: inserted.ioc_type,
+        scope: inserted.scope,
+        reason: inserted.reason,
+        expires_at: inserted.expires_at,
+        file_artifact_id: inserted.file_artifact_id || null,
+        suppression_scope: scopeInfo.kind
+      },
+      metadata: {
+        ioc_id: id,
+        created_by: createdBy,
+        file_artifact_id: inserted.file_artifact_id || null,
+        suppression_scope: scopeInfo.kind,
+        known_hash_count: knownHashes.length || 0,
+        previous_status: null,
+        new_status: 'active'
+      }
+    }).catch((e) => console.warn('[audit] ioc-linked suppression create log failed', e?.message || e));
+  }
+
+  return {
+    status: 200,
+    body: {
+      status: 'suppressed',
+      already_existed: alreadyExisted,
+      suppression: {
+        ...inserted,
+        suppression_scope: scopeInfo,
+        known_hashes: knownHashes.length
+          ? knownHashes.map((h) => ({ hash_type: h.hash_type, value: h.normalized_hash_value }))
+          : undefined
+      }
+    }
+  };
 }

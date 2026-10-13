@@ -27,6 +27,23 @@ import { createManualSuppression } from './manualSuppressionCreate.js';
 import { assertFileArtifactDbTestAllowed } from './fileArtifacts/dbTestGuard.js';
 
 describe('iocSuppressionFileScope helpers', () => {
+  it('loadProvenHashesForArtifact SQL uses GROUP BY (not DISTINCT+ORDER BY CASE)', async () => {
+    // Regression: Postgres rejects SELECT DISTINCT ... ORDER BY CASE when the
+    // CASE expression is not in the select list — that turned a successful
+    // suppress COMMIT into a misleading 500 for the UI.
+    let sql = '';
+    const db = {
+      async query(text) {
+        sql = String(text);
+        return { rows: [{ hash_type: 'sha256', normalized_hash_value: 'aa'.repeat(32) }] };
+      }
+    };
+    const rows = await loadProvenHashesForArtifact(db, '11111111-1111-1111-1111-111111111111');
+    assert.equal(rows.length, 1);
+    assert.match(sql, /GROUP BY/i);
+    assert.doesNotMatch(sql, /SELECT\s+DISTINCT\b/i);
+  });
+
   it('describes exact vs file scope', () => {
     assert.deepEqual(describeSuppressionScope({ file_artifact_id: null }), {
       kind: 'exact',
