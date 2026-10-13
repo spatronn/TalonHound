@@ -103,16 +103,20 @@ test('search composes with sort; default state writes no sort/order params', () 
     page: 2,
     pageSize: 50,
     sort: 'published',
-    order: 'desc'
+    order: 'desc',
+    status: '',
+    tlp: '',
+    source: '',
+    imported: ''
   });
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 1 }).toString(), '');
   assert.equal(buildReportListUrlSearchParams({ sort: 'published', order: '' }).toString(), '');
   assert.equal(buildReportListUrlSearchParams({ sort: 'drop-table', order: 'desc' }).toString(), '');
   assert.deepEqual(parseReportListUrlState('sort=published'), {
-    search: '', page: 1, pageSize: 25, sort: '', order: ''
+    search: '', page: 1, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: ''
   });
   assert.deepEqual(parseReportListUrlState('sort=published;drop&order=desc'), {
-    search: '', page: 1, pageSize: 25, sort: '', order: ''
+    search: '', page: 1, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: ''
   });
   assert.deepEqual(parseReportListSortState('published', 'sideways'), { sort: '', order: '' });
 });

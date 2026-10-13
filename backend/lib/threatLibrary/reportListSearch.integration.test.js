@@ -269,6 +269,105 @@ test('filtered pagination pages over the 79 "Odd desk" rows with the filtered CO
   });
 });
 
+// --- Filters, status-tab counts and tag search ------------------------------
+
+async function withFilterLibraryTx(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM threat_reports');
+    // 12 reports covering every phase / TLP / source type and two import ages.
+    const rows = [
+      ['F01', 'url', 'clear', 'ready', 1],
+      ['F02', 'url', 'clear', 'skipped', 2],
+      ['F03', 'pdf', 'amber', 'ready', 3],
+      ['F04', 'pdf', 'amber', 'review_required', 4],
+      ['F05', 'url', 'green', 'review_required', 5],
+      ['F06', 'thib', 'red', 'failed', 6],
+      ['F07', 'url', 'clear', 'pending', 7],
+      ['F08', 'url', 'clear', 'analyzing', 8],
+      ['F09', 'pdf', 'amber_strict', 'matching', 9],
+      // Imported 40 days ago: outside 7d / 30d, inside 90d.
+      ['F10', 'url', 'clear', 'ready', 40 * 24 * 60],
+      ['F11', 'pdf', 'amber', 'failed', 40 * 24 * 60 + 1],
+      ['F12', 'url', 'green', 'ready', 40 * 24 * 60 + 2]
+    ];
+    for (const [title, sourceType, tlp, status, ageMinutes] of rows) {
+      await client.query(
+        `INSERT INTO threat_reports (title, source_type, source_name, tlp, analysis_status, created_at)
+         VALUES ($1, $2, 'Filter desk', $3, $4, NOW() - ($5::int * INTERVAL '1 minute'))`,
+        [title, sourceType, tlp, status, ageMinutes]
+      );
+    }
+    const tag = await client.query(
+      `INSERT INTO tags (name, slug, type, enabled) VALUES ('itest-kimsuky', 'itest-kimsuky', 'actor', TRUE) RETURNING id`
+    );
+    const off = await client.query(
+      `INSERT INTO tags (name, slug, type, enabled) VALUES ('itest-disabled', 'itest-disabled', 'context', FALSE) RETURNING id`
+    );
+    await client.query(
+      `INSERT INTO threat_report_tags (report_id, tag_id)
+       SELECT id, $1 FROM threat_reports WHERE title IN ('F03', 'F06')
+       UNION ALL SELECT id, $2 FROM threat_reports WHERE title = 'F07'`,
+      [tag.rows[0].id, off.rows[0].id]
+    );
+    await fn(client);
+  } finally {
+    await client.query('ROLLBACK').catch(() => {});
+    client.release();
+  }
+}
+
+test('status filter = report phase; phase counts cover the whole filtered set, not the page', opts, async () => {
+  await withFilterLibraryTx(async (client) => {
+    const all = await listThreatReports(client, { limit: 25 });
+    assert.equal(all.total, 12);
+    assert.deepEqual(all.phase_counts, { all: 12, preparing: 3, review_ready: 2, finalized: 5, failed: 2 });
+    const review = await listThreatReports(client, { limit: 25, status: 'review_ready' });
+    assert.equal(review.total, 2);
+    assert.deepEqual(titles(review).sort(), ['F04', 'F05']);
+    // Counts ignore the status filter itself so every tab keeps its number.
+    assert.deepEqual(review.phase_counts, all.phase_counts);
+    assert.deepEqual(titles(await listThreatReports(client, { status: 'finalized' })).sort(), ['F01', 'F02', 'F03', 'F10', 'F12']);
+    assert.deepEqual(titles(await listThreatReports(client, { status: 'preparing' })).sort(), ['F07', 'F08', 'F09']);
+    // A 2-row page still reports the library-wide counts.
+    const small = await listThreatReports(client, { limit: 25, offset: 0, status: 'failed' });
+    assert.equal(small.items.length, 2);
+    assert.equal(small.phase_counts.all, 12);
+  });
+});
+
+test('TLP, source and imported filters combine with each other, the status tab and pagination', opts, async () => {
+  await withFilterLibraryTx(async (client) => {
+    assert.deepEqual(titles(await listThreatReports(client, { tlp: 'amber' })).sort(), ['F03', 'F04', 'F11']);
+    assert.deepEqual(titles(await listThreatReports(client, { source: 'thib' })), ['F06']);
+    const recentPdf = await listThreatReports(client, { source: 'pdf', imported: '7d' });
+    assert.deepEqual(titles(recentPdf).sort(), ['F03', 'F04', 'F09']);
+    assert.deepEqual(recentPdf.phase_counts, { all: 3, preparing: 1, review_ready: 1, finalized: 1, failed: 0 });
+    const combo = await listThreatReports(client, { source: 'pdf', tlp: 'amber', status: 'finalized', imported: '30d' });
+    assert.deepEqual(titles(combo), ['F03']);
+    assert.equal((await listThreatReports(client, { imported: '90d' })).total, 12);
+    assert.equal((await listThreatReports(client, { imported: '30d' })).total, 9);
+    assert.equal((await listThreatReports(client, { imported: '24h' })).total, 9);
+    // Pagination runs over the filtered + status-filtered set, newest first.
+    const p1 = await listThreatReports(client, { limit: 25, offset: 0, source: 'url', status: 'finalized' });
+    assert.deepEqual(titles(p1), ['F01', 'F02', 'F10', 'F12']);
+    assert.equal(p1.total, 4);
+    // Junk filter values are ignored, never an error.
+    assert.equal((await listThreatReports(client, { tlp: "red' OR 1=1 --", status: 'bogus', source: 'x', imported: 'forever' })).total, 12);
+  });
+});
+
+test('search matches enabled report tag names shown as row chips, never disabled ones', opts, async () => {
+  await withFilterLibraryTx(async (client) => {
+    const r = await listThreatReports(client, { search: 'KIMSUKY' });
+    assert.deepEqual(titles(r).sort(), ['F03', 'F06']);
+    assert.equal(r.items.length, 2, 'EXISTS never duplicates a row');
+    assert.equal((await listThreatReports(client, { search: 'itest-disabled' })).total, 0);
+    assert.deepEqual(titles(await listThreatReports(client, { search: 'kimsuky', status: 'failed' })), ['F06']);
+  });
+});
+
 test.after(async () => {
   await pool.end().catch(() => {});
 });

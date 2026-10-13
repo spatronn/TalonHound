@@ -445,12 +445,20 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         // Library navigation search over stored report metadata only.
         search: req.query.search,
         sort: req.query.sort,
-        order: req.query.order
+        order: req.query.order,
+        // Whitelisted filters (status = report phase, tlp, source type, imported window).
+        status: req.query.status,
+        tlp: req.query.tlp,
+        source: req.query.source,
+        imported: req.query.imported
       });
       const tagsByReport = await loadReportTagsByReportIds(pool, result.items.map((r) => r.id));
       return res.json({
         items: result.items.map((r) => publicReport({ ...r, tags: tagsByReport.get(Number(r.id)) || [] })),
         total: result.total,
+        // Status-tab counts over the filtered set without the status filter.
+        phase_counts: result.phase_counts,
+        filters: result.filters,
         limit: result.limit,
         offset: result.offset
       });

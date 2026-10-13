@@ -114,7 +114,11 @@ function createPool(state) {
       return { rows: [{ id: state.artifacts.length }], rowCount: 1 };
     }
     // List endpoint (page + count) for the page-size tests.
-    if (/COUNT\(\*\)::int AS total FROM threat_reports r/.test(flat)) return { rows: [{ total: state.reports.length }] };
+    // One count statement: filtered total + status-tab phase counts.
+    if (/^SELECT COUNT\(\*\)::int AS total, COUNT\(\*\)::int AS phase_all, .* FROM threat_reports r WHERE/.test(flat)) {
+      const n = state.reports.length;
+      return { rows: [{ total: n, phase_all: n, phase_preparing: n, phase_review_ready: 0, phase_finalized: 0, phase_failed: 0 }] };
+    }
     if (/^SELECT r\.\*, .* FROM threat_reports r WHERE .* LIMIT \$\d+ OFFSET \$\d+$/.test(flat)) {
       const [limit, offset] = params.slice(-2);
       return { rows: state.reports.slice(offset, offset + limit) };

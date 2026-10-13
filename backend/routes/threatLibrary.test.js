@@ -169,13 +169,15 @@ test('THIB export uses the effective TLP and carries its provenance', () => {
 
 // --- Report-list search contract -----------------------------------------
 
-test('report list passes ?search= to the store and keeps the { items, total } response shape', () => {
+test('report list passes ?search= and the list filters to the store and keeps the { items, total } response shape', () => {
   const block = routeSrc.slice(routeSrc.indexOf("app.get('/api/threat-library/reports',"), routeSrc.indexOf("app.get('/api/threat-library/reports/:publicId'"));
   // limit is restricted to the UI page sizes (25 / 50) before it reaches the store.
-  assert.match(block, /listThreatReports\(pool, \{[\s\S]*?limit: parseReportListPageSize\(req\.query\.limit\),\s*offset: req\.query\.offset,[\s\S]*?search: req\.query\.search,\s*sort: req\.query\.sort,\s*order: req\.query\.order\s*\}\)/);
+  assert.match(block, /listThreatReports\(pool, \{[\s\S]*?limit: parseReportListPageSize\(req\.query\.limit\),\s*offset: req\.query\.offset,[\s\S]*?search: req\.query\.search,\s*sort: req\.query\.sort,\s*order: req\.query\.order,[\s\S]*?status: req\.query\.status,\s*tlp: req\.query\.tlp,\s*source: req\.query\.source,\s*imported: req\.query\.imported\s*\}\)/);
   // Report tags are batch-loaded once per page (no per-report query).
   assert.match(block, /const tagsByReport = await loadReportTagsByReportIds\(pool, result\.items\.map\(\(r\) => r\.id\)\);/);
   assert.match(block, /items: result\.items\.map\(\(r\) => publicReport\(\{ \.\.\.r, tags: tagsByReport\.get\(Number\(r\.id\)\) \|\| \[\] \}\)\),\s*total: result\.total/);
+  // Additive: status-tab counts + the filters the server actually applied.
+  assert.match(block, /phase_counts: result\.phase_counts,\s*filters: result\.filters,\s*limit: result\.limit,\s*offset: result\.offset/);
   // No string-built SQL and no provider / AI involvement on the list path.
   assert.doesNotMatch(block, /pool\.query|ILIKE|LIKE/);
   assert.doesNotMatch(block, /analyzeThreatDocument|runAnalysisPipeline|fetch\(/);

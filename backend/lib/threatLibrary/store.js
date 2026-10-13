@@ -14,7 +14,14 @@ import {
   linkedOnlyIndicatorMembershipSql,
   isContextOnlySql
 } from './indicatorMembership.js';
-import { buildReportListOrderBy, buildReportListWhere, parseReportListQuery } from './reportListQuery.js';
+import {
+  buildReportListCountSql,
+  buildReportListOrderBy,
+  buildReportListWhere,
+  parseReportListQuery,
+  reportListPhaseCounts,
+  reportListStatusSql
+} from './reportListQuery.js';
 import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
 import { loadReportReviewProgress } from './reviewProgress.js';
 
@@ -251,26 +258,35 @@ export async function attachReportCounts(pool, report) {
 }
 
 /**
- * Page of reports plus the total for the same filter. `search` is applied
- * before LIMIT/OFFSET so `total` always describes the filtered set.
+ * Page of reports plus the total for the same filter. `search` and the
+ * whitelisted filters are applied before LIMIT/OFFSET so `total` always
+ * describes the filtered set. `phase_counts` (status tabs) come from the same
+ * count statement over the filtered set without the status filter.
  */
-export async function listThreatReports(pool, { limit, offset, search, sort, order } = {}) {
-  const opts = parseReportListQuery({ limit, offset, search, sort, order });
-  const where = buildReportListWhere({ search: opts.search }, 1);
+export async function listThreatReports(pool, { limit, offset, search, sort, order, status, tlp, source, imported } = {}) {
+  const opts = parseReportListQuery({ limit, offset, search, sort, order, status, tlp, source, imported });
+  const where = buildReportListWhere(opts, 1);
+  const statusSql = reportListStatusSql(opts.status);
+  const pageWhere = statusSql ? `${where.sql} AND ${statusSql}` : where.sql;
   const orderBy = buildReportListOrderBy(opts);
   const { rows } = await pool.query(
     `SELECT r.*, ${REPORT_COUNT_COLUMNS}
      FROM threat_reports r
-     ${where.sql}
+     ${pageWhere}
      ${orderBy.sql}
      LIMIT $${where.nextParamIndex} OFFSET $${where.nextParamIndex + 1}`,
     [...where.params, opts.limit, opts.offset]
   );
-  const { rows: countRows } = await pool.query(
-    `SELECT COUNT(*)::int AS total FROM threat_reports r ${where.sql}`,
-    where.params
-  );
-  return { items: rows, total: countRows[0]?.total || 0, search: opts.search, limit: opts.limit, offset: opts.offset };
+  const { rows: countRows } = await pool.query(buildReportListCountSql(where.sql, opts.status), where.params);
+  return {
+    items: rows,
+    total: countRows[0]?.total || 0,
+    phase_counts: reportListPhaseCounts(countRows[0]),
+    search: opts.search,
+    filters: { status: opts.status, tlp: opts.tlp, source: opts.source, imported: opts.imported },
+    limit: opts.limit,
+    offset: opts.offset
+  };
 }
 
 export async function updateReportStatus(pool, reportId, patch) {

@@ -129,10 +129,10 @@ test('zero search results stay a valid page-1 "applied" outcome with total 0 (no
   const loader = createReportListLoader({ fetchPage });
   const p = loader.load({ search: 'zzz-nothing', page: 1 }); calls[0].resolve();
   const r = await p;
-  assert.deepEqual(r, { kind: 'applied', items: [], total: 0 });
+  assert.deepEqual(r, { kind: 'applied', items: [], total: 0, phaseCounts: null });
   // Even from a deep page the empty set clamps to page 1, once.
   const p3 = loader.load({ search: 'zzz-nothing', page: 3 }); calls[1].resolve();
-  assert.deepEqual(await p3, { kind: 'clamped', total: 0, page: 1 });
+  assert.deepEqual(await p3, { kind: 'clamped', total: 0, page: 1, phaseCounts: null });
 });
 
 test('Refresh re-issues the same search + page and applies fresh data', async () => {
@@ -188,7 +188,7 @@ test('rows per page: a 50-row load requests limit 50 and pages through 157 rows 
 
 test('rows per page: page 7 at 25/page is past the end at 50/page and clamps to page 4', async () => {
   const loader = createReportListLoader({ fetchPage: async (params) => serverPage(params) });
-  assert.deepEqual(await loader.load({ page: 7, pageSize: 50 }), { kind: 'clamped', total: 157, page: 4 });
+  assert.deepEqual(await loader.load({ page: 7, pageSize: 50 }), { kind: 'clamped', total: 157, page: 4, phaseCounts: null });
   const r = await loader.load({ page: 7, pageSize: 25 });
   assert.equal(r.kind, 'applied');
   assert.deepEqual(r.items.map((x) => x.id), ['rep-151', 'rep-152', 'rep-153', 'rep-154', 'rep-155', 'rep-156', 'rep-157']);
@@ -223,4 +223,29 @@ test('explicit sort is forwarded on the same request as search/pagination; defau
   await loader.load({ page: 1 });
   assert.deepEqual(requested[1], { limit: 25, offset: 0 });
   assert.equal('sort' in requested[1], false);
+});
+
+test('filters travel with the request only when set, and phase_counts come back normalised', async () => {
+  const seen = [];
+  const loader = createReportListLoader({
+    fetchPage: async (params) => {
+      seen.push(params);
+      return { items: [], total: 0, phase_counts: { all: 9, preparing: 1, review_ready: 2, finalized: 5, failed: 1 } };
+    }
+  });
+  const r = await loader.load({ page: 1, status: 'review_ready', tlp: 'AMBER', source: 'pdf', imported: '7d' });
+  assert.deepEqual(seen[0], { limit: 25, offset: 0, status: 'review_ready', tlp: 'amber', source: 'pdf', imported: '7d' });
+  assert.deepEqual(r.phaseCounts, { all: 9, preparing: 1, review_ready: 2, finalized: 5, failed: 1 });
+  await loader.load({ page: 1, status: 'bogus', tlp: '', source: null });
+  assert.deepEqual(seen[1], { limit: 25, offset: 0 }, 'junk / empty filters are never sent');
+});
+
+test('a filter change that shrinks the result set clamps the page and still reports phase counts', async () => {
+  const loader = createReportListLoader({
+    fetchPage: async () => ({ items: [], total: 30, phase_counts: { all: 157, preparing: 0, review_ready: 30, finalized: 127, failed: 0 } })
+  });
+  const r = await loader.load({ page: 5, status: 'review_ready' });
+  assert.equal(r.kind, 'clamped');
+  assert.equal(r.page, 2);
+  assert.equal(r.phaseCounts.review_ready, 30);
 });

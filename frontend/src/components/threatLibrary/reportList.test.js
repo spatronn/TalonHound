@@ -64,16 +64,16 @@ test('a search term is sent alongside pagination, trimmed', () => {
 // --- URL state ----------------------------------------------------------------
 
 test('URL seeds search and page; page=1 and blank search are omitted when serialising', () => {
-  assert.deepEqual(parseReportListUrlState(new URLSearchParams('search=iranian&page=2')), { search: 'iranian', page: 2, pageSize: 25, sort: '', order: '' });
-  assert.deepEqual(parseReportListUrlState('search=%20socradar%20'), { search: 'socradar', page: 1, pageSize: 25, sort: '', order: '' });
-  assert.deepEqual(parseReportListUrlState(new URLSearchParams('page=5')), { search: '', page: 5, pageSize: 25, sort: '', order: '' });
-  assert.deepEqual(parseReportListUrlState(null), { search: '', page: 1, pageSize: 25, sort: '', order: '' });
+  assert.deepEqual(parseReportListUrlState(new URLSearchParams('search=iranian&page=2')), { search: 'iranian', page: 2, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: '' });
+  assert.deepEqual(parseReportListUrlState('search=%20socradar%20'), { search: 'socradar', page: 1, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: '' });
+  assert.deepEqual(parseReportListUrlState(new URLSearchParams('page=5')), { search: '', page: 5, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: '' });
+  assert.deepEqual(parseReportListUrlState(null), { search: '', page: 1, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: '' });
   assert.equal(buildReportListUrlSearchParams({ search: 'threat_report', page: 3 }).toString(), 'search=threat_report&page=3');
   assert.equal(buildReportListUrlSearchParams({ search: 'threat_report', page: 1 }).toString(), 'search=threat_report');
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 2 }).toString(), 'page=2');
   assert.equal(buildReportListUrlSearchParams({ search: '', page: 1 }).toString(), '');
   const roundTrip = parseReportListUrlState(buildReportListUrlSearchParams({ search: 'cta-nk', page: 4 }));
-  assert.deepEqual(roundTrip, { search: 'cta-nk', page: 4, pageSize: 25, sort: '', order: '' });
+  assert.deepEqual(roundTrip, { search: 'cta-nk', page: 4, pageSize: 25, sort: '', order: '', status: '', tlp: '', source: '', imported: '' });
 });
 
 // --- rows per page (25 / 50) ------------------------------------------------------
@@ -101,7 +101,7 @@ test('URL carries ?limit= only for a non-default size and round-trips with searc
   assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 50 }).toString(), 'limit=50');
   assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 25 }).toString(), '', 'the default size is not written');
   assert.equal(buildReportListUrlSearchParams({ page: 1, pageSize: 999 }).toString(), '');
-  assert.deepEqual(parseReportListUrlState('search=apt&page=2&limit=50'), { search: 'apt', page: 2, pageSize: 50, sort: '', order: '' });
+  assert.deepEqual(parseReportListUrlState('search=apt&page=2&limit=50'), { search: 'apt', page: 2, pageSize: 50, sort: '', order: '', status: '', tlp: '', source: '', imported: '' });
   for (const q of ['limit=10', 'limit=100', 'limit=abc', 'limit=', 'limit=-50']) {
     assert.equal(parseReportListUrlState(q).pageSize, 25, q);
   }
@@ -194,7 +194,7 @@ test('empty-state: loading wins, then rows, then a positive total (out-of-range 
   const noMatch = describeReportListEmptyState({ loading: false, itemCount: 0, total: 0, search: 'zzz' });
   assert.equal(noMatch.kind, 'no_match');
   assert.equal(noMatch.message, 'No reports match your search.');
-  assert.equal(noMatch.hint, 'Try another title, source, or report type.');
+  assert.equal(noMatch.hint, 'Try another title, source, or tag.');
 
   const empty = describeReportListEmptyState({ loading: false, itemCount: 0, total: 0, search: '', canWrite: true });
   assert.equal(empty.kind, 'empty');
@@ -202,4 +202,94 @@ test('empty-state: loading wins, then rows, then a positive total (out-of-range 
   assert.equal(empty.hint, 'Use Import Intelligence to add the first one.');
   assert.equal(describeReportListEmptyState({ loading: false, itemCount: 0, search: '', canWrite: false }).hint, '');
   assert.equal(describeReportListEmptyState({ loading: false, itemCount: 0, search: '   ' }).kind, 'empty');
+});
+
+// --- Filters / status tabs / sort menu / pager (list modernisation) ---------
+
+test('filters round-trip through the URL and the API params; junk values are dropped', async () => {
+  const {
+    buildReportListQueryParams: q,
+    buildReportListUrlSearchParams: u,
+    parseReportListUrlState: parse,
+    hasActiveReportListFilters,
+    normalizeReportListFilters
+  } = await import('./reportList.js');
+  const url = u({ search: 'apt', page: 3, status: 'failed', tlp: 'amber_strict', source: 'thib', imported: '30d' });
+  assert.equal(url.toString(), 'search=apt&status=failed&tlp=amber_strict&source=thib&imported=30d&page=3');
+  assert.deepEqual(parse(url), {
+    search: 'apt', page: 3, pageSize: 25, sort: '', order: '', status: 'failed', tlp: 'amber_strict', source: 'thib', imported: '30d'
+  });
+  assert.deepEqual(q({ page: 2, status: 'preparing', imported: '24h' }), { limit: 25, offset: 25, status: 'preparing', imported: '24h' });
+  assert.deepEqual(normalizeReportListFilters({ status: 'ready', tlp: 'white', source: 'feed', imported: '1y' }), {
+    status: '', tlp: '', source: '', imported: ''
+  }, 'only real API values: "ready" is an analysis_status, not a phase filter');
+  assert.equal(parse('status=Review_Ready').status, 'review_ready');
+  assert.equal(hasActiveReportListFilters({}), false);
+  assert.equal(hasActiveReportListFilters({ search: '  ' }), false);
+  assert.equal(hasActiveReportListFilters({ search: 'x' }), true);
+  assert.equal(hasActiveReportListFilters({ tlp: 'red' }), true);
+});
+
+test('status tabs are the four report phases plus All, keyed to phase_counts', async () => {
+  const { REPORT_LIST_STATUS_TABS, normalizeReportListPhaseCounts } = await import('./reportList.js');
+  assert.deepEqual(REPORT_LIST_STATUS_TABS.map((t) => [t.value, t.label, t.countKey]), [
+    ['', 'All', 'all'],
+    ['finalized', 'Ready', 'finalized'],
+    ['review_ready', 'Needs Review', 'review_ready'],
+    ['preparing', 'Processing', 'preparing'],
+    ['failed', 'Failed', 'failed']
+  ]);
+  assert.equal(normalizeReportListPhaseCounts(undefined), null);
+  assert.equal(normalizeReportListPhaseCounts({ all: 3 }), null, 'partial counts are not shown');
+  assert.deepEqual(
+    normalizeReportListPhaseCounts({ all: '4', preparing: 1, review_ready: 1, finalized: 1, failed: 1 }),
+    { all: 4, preparing: 1, review_ready: 1, finalized: 1, failed: 1 }
+  );
+});
+
+test('sort menu mirrors the header sort state, including header-only combinations', async () => {
+  const { describeReportListSortMenu, parseReportListSortMenuValue, REPORT_LIST_SORT_PRESETS } = await import('./reportList.js');
+  assert.equal(describeReportListSortMenu('', '').value, '');
+  assert.equal(describeReportListSortMenu('', '').options.length, REPORT_LIST_SORT_PRESETS.length);
+  assert.equal(describeReportListSortMenu('indicators', 'desc').value, 'indicators:desc');
+  const custom = describeReportListSortMenu('source', 'asc');
+  assert.equal(custom.value, 'source:asc');
+  assert.deepEqual(custom.options.at(-1), { value: 'source:asc', label: 'Source ↑' });
+  assert.deepEqual(parseReportListSortMenuValue('published:desc'), { sort: 'published', order: 'desc' });
+  assert.deepEqual(parseReportListSortMenuValue(''), { sort: '', order: '' });
+  assert.deepEqual(parseReportListSortMenuValue('drop:table'), { sort: '', order: '' });
+  for (const preset of REPORT_LIST_SORT_PRESETS) {
+    assert.deepEqual(parseReportListSortMenuValue(preset.value), { sort: preset.sort, order: preset.order });
+  }
+});
+
+test('pager items: all pages up to 7, otherwise first/last/current±1 with gaps (never a 1-page gap)', async () => {
+  const { buildReportListPageItems: items } = await import('./reportList.js');
+  assert.deepEqual(items(1, 1), [1]);
+  assert.deepEqual(items(3, 7), [1, 2, 3, 4, 5, 6, 7]);
+  assert.deepEqual(items(1, 20), [1, 2, 3, 4, 5, 'gap-end', 20]);
+  assert.deepEqual(items(10, 20), [1, 'gap-start', 9, 10, 11, 'gap-end', 20]);
+  assert.deepEqual(items(20, 20), [1, 'gap-start', 16, 17, 18, 19, 20]);
+  assert.deepEqual(items(4, 9), [1, 2, 3, 4, 5, 'gap-end', 9]);
+  assert.deepEqual(items(6, 9), [1, 'gap-start', 5, 6, 7, 8, 9]);
+  assert.deepEqual(items(99, 9).at(-1), 9, 'out-of-range page clamps');
+  for (let last = 1; last <= 40; last += 1) {
+    for (let p = 1; p <= last; p += 1) {
+      const list = items(p, last);
+      assert.ok(list.length <= 7, `${p}/${last}`);
+      assert.ok(list.includes(p));
+    }
+  }
+});
+
+test('empty state: request error is never shown as an empty library; filters get filter copy', async () => {
+  const { describeReportListEmptyState: d, formatReportListShowingLabel: f } = await import('./reportList.js');
+  assert.equal(d({ error: 'Failed to load Threat Library' }).kind, 'error');
+  assert.equal(d({ error: 'x', itemCount: 3 }).kind, 'none');
+  const filtered = d({ filters: { tlp: 'red' } });
+  assert.equal(filtered.kind, 'no_match');
+  assert.equal(filtered.message, 'No reports match the current filters.');
+  assert.equal(d({ search: 'x' }).message, 'No reports match your search.');
+  assert.equal(d({}).kind, 'empty');
+  assert.equal(f({ from: 1, to: 2, total: 2, filtered: true }), 'Showing 1–2 of 2 reports matching your filters');
 });

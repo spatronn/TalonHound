@@ -1,94 +1,212 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api.js';
-import { formatUserDateTime } from '../../lib/formatDate.js';
 import ImportIntelligenceModal from './ImportIntelligenceModal.jsx';
-import { statusLabel } from './stages.js';
 import {
+  REPORT_LIST_IMPORTED_OPTIONS,
   REPORT_LIST_PAGE_SIZE,
   REPORT_LIST_PAGE_SIZE_OPTIONS,
   REPORT_LIST_SEARCH_DEBOUNCE_MS,
   REPORT_LIST_SEARCH_MAX_LENGTH,
+  REPORT_LIST_SOURCE_OPTIONS,
+  REPORT_LIST_STATUS_TABS,
+  REPORT_LIST_TLP_OPTIONS,
+  buildReportListPageItems,
   buildReportListUrlSearchParams,
   cycleReportListSort,
   describeReportListEmptyState,
   describeReportListPagination,
+  describeReportListSortMenu,
   formatReportListShowingLabel,
+  hasActiveReportListFilters,
   normalizeReportListSearch,
+  parseReportListSortMenuValue,
   parseReportListUrlState,
   reportListAriaSort,
   reportListSortMarker
 } from './reportList.js';
 import { createReportListLoader } from './reportListLoader.js';
-import { indicatorListCell, indicatorListCellTitle } from './reportPhase.js';
+import {
+  describeReportImported,
+  describeReportIntelligence,
+  describeReportListStatus,
+  describeReportSource,
+  splitReportListTags
+} from './reportListRow.js';
+import { ListIcons, sourceTypeIcon } from './reportListIcons.jsx';
 import { formatPublicationDate, publicationDateTitle } from './publicationDate.js';
-import { TlpBadge, isElevatedTlp } from './tlp.jsx';
-import { ui, badgeStyle } from './styles.js';
+import { isElevatedTlp, tlpColors, tlpDisplay } from './tlp.jsx';
+import { ui } from './styles.js';
+import './reportList.css';
 
-function sourceLabel(row) {
-  if (row.source_name) return row.source_name;
-  if (row.source_type === 'url') return row.source_url || 'URL';
-  if (row.source_type === 'pdf') return row.source_file_name || 'PDF';
-  if (row.source_type === 'thib') return 'THIB bundle';
-  return row.source_type || '—';
-}
+const REPORT_PATH = '/threat-intelligence/threat-library';
+const COLUMN_COUNT = 7;
 
-function statusColors(report) {
-  const a = String(report?.analysis_status || '').toLowerCase();
-  if (a === 'failed') return { border: '#7f1d1d', bg: 'rgba(220,38,38,0.14)', color: '#fca5a5' };
-  if (a === 'review_required') return { border: '#92400e', bg: 'rgba(217,119,6,0.14)', color: '#fcd34d' };
-  if (a === 'ready' || a === 'skipped') return { border: '#166534', bg: 'rgba(22,163,74,0.14)', color: '#86efac' };
-  return { border: '#0f766e', bg: 'rgba(15,118,110,0.18)', color: '#99f6e4' };
-}
-
-const searchInputStyle = { ...ui.input, padding: '8px 12px', fontSize: 13, minHeight: 36 };
-const srOnly = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' };
-const pagerBtn = { ...ui.btn, minHeight: 30, padding: '4px 10px', fontSize: 12 };
-const pageSizeSelect = { ...ui.select, width: 'auto', minHeight: 30, padding: '4px 8px', fontSize: 12 };
-const sortHeaderBtn = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 2,
-  width: '100%',
-  margin: 0,
-  padding: '10px 8px',
-  border: 'none',
-  background: 'transparent',
-  color: 'inherit',
-  font: 'inherit',
-  fontWeight: 600,
-  fontSize: 12,
-  lineHeight: 1.2,
-  textAlign: 'left',
-  whiteSpace: 'nowrap',
-  cursor: 'pointer',
-  borderRadius: 4
-};
-
-function SortableTh({ label, column, sort, order, onCycle }) {
+function SortButton({ label, column, sort, order, onCycle }) {
   const active = sort === column;
-  const ariaSort = reportListAriaSort(sort, order, column);
   const marker = reportListSortMarker(sort, order, column);
   return (
-    <th style={{ ...ui.th, padding: 0 }} aria-sort={ariaSort}>
-      <button
-        type="button"
-        style={{ ...sortHeaderBtn, color: active ? '#e2e8f0' : '#94a3b8' }}
-        onClick={() => onCycle(column)}
-        onMouseEnter={(e) => { e.currentTarget.style.color = '#e2e8f0'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = active ? '#e2e8f0' : '#94a3b8'; }}
-        onFocus={(e) => { e.currentTarget.style.outline = '1px solid #475569'; e.currentTarget.style.outlineOffset = '1px'; }}
-        onBlur={(e) => { e.currentTarget.style.outline = 'none'; }}
-        aria-label={
-          active
-            ? `${label}, sorted ${order === 'desc' ? 'descending' : 'ascending'}. Activate to cycle sort.`
-            : `Sort by ${label}`
-        }
-      >
-        {label}
-        {marker ? <span aria-hidden="true">{marker}</span> : null}
-      </button>
+    <button
+      type="button"
+      className={`tl-lib-th-btn${active ? ' is-active' : ''}`}
+      onClick={() => onCycle(column)}
+      aria-label={
+        active
+          ? `${label}, sorted ${order === 'desc' ? 'descending' : 'ascending'}. Activate to cycle sort.`
+          : `Sort by ${label}`
+      }
+    >
+      {label}
+      {marker ? <span aria-hidden="true">{marker}</span> : null}
+    </button>
+  );
+}
+
+function SortableTh({ label, column, sort, order, onCycle }) {
+  return (
+    <th scope="col" aria-sort={reportListAriaSort(sort, order, column)}>
+      <SortButton label={label} column={column} sort={sort} order={order} onCycle={onCycle} />
     </th>
+  );
+}
+
+/** Intelligence = Entities / Indicators / Matched, each still sortable on its own. */
+const INTEL_COLUMNS = [
+  { column: 'entities', label: 'Entities' },
+  { column: 'indicators', label: 'Indicators' },
+  { column: 'matched', label: 'Matched' }
+];
+
+function IntelligenceTh({ sort, order, onCycle }) {
+  const active = INTEL_COLUMNS.find((c) => c.column === sort);
+  return (
+    <th scope="col" aria-sort={active ? reportListAriaSort(sort, order, active.column) : 'none'}>
+      <span className="tl-lib-sr-only">Intelligence: </span>
+      <div className="tl-lib-intel-head">
+        {INTEL_COLUMNS.map((c) => (
+          <SortButton key={c.column} label={c.label} column={c.column} sort={sort} order={order} onCycle={onCycle} />
+        ))}
+      </div>
+    </th>
+  );
+}
+
+function FilterSelect({ id, label, value, options, onChange, className = '' }) {
+  return (
+    <label htmlFor={id} className={`tl-lib-filter${value ? ' is-active' : ''}${className ? ` ${className}` : ''}`}>
+      <span className="tl-lib-filter__caption" id={`${id}-label`}>{label}</span>
+      <select
+        id={id}
+        className="tl-lib-filter__select"
+        aria-labelledby={`${id}-label`}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((o) => (
+          <option key={o.value || 'all'} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/**
+ * Same colours and text as TlpBadge; the label may break after "+" so
+ * TLP:AMBER+STRICT wraps inside a narrow column instead of being clipped.
+ */
+function ListTlpBadge({ tlp, display }) {
+  const { border, bg, color } = tlpColors(tlp);
+  const [head, ...rest] = tlpDisplay(tlp, display).split('+');
+  return (
+    <span className="tl-lib-tlp-badge" style={{ borderColor: border, background: bg, color }}>
+      {head}
+      {rest.map((part, i) => <React.Fragment key={i}>+<wbr />{part}</React.Fragment>)}
+    </span>
+  );
+}
+
+function ReportRow({ row, onOpen }) {
+  const source = describeReportSource(row);
+  const status = describeReportListStatus(row);
+  const tags = splitReportListTags(row.tags);
+  const imported = describeReportImported(row);
+  const title = row.title || 'Untitled report';
+  return (
+    <tr className="tl-lib-row" onClick={(e) => onOpen(e, row)}>
+      <td>
+        <div className="tl-lib-report">
+          <span className="tl-lib-report__icon" title={source.typeLabel}>{sourceTypeIcon(source.type)}</span>
+          <div className="tl-lib-report__body">
+            <Link to={`${REPORT_PATH}/${row.id}`} className="tl-lib-report__title" title={title}>{title}</Link>
+            {tags.visible.length ? (
+              <ul className="tl-lib-tags" aria-label="Report tags">
+                {tags.visible.map((t, i) => (
+                  <li key={t.id} className="tl-lib-tag" data-tag-index={i} title={t.name}>{t.name}</li>
+                ))}
+                {/* One "+N" per visible-chip count; CSS shows the one matching the cell width. */}
+                {tags.overflow.map((o) => (
+                  <li key={o.shown} className="tl-lib-tag tl-lib-tag--more" data-tags-shown={o.shown} title={o.title}>
+                    +{o.count}
+                    <span className="tl-lib-sr-only"> more: {o.title}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </div>
+      </td>
+      <td>
+        <div className="tl-lib-source">
+          <span className="tl-lib-source__label" title={source.title}>{source.label}</span>
+          {source.href ? (
+            <a
+              href={source.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="tl-lib-source__link"
+              title={`Open source in a new tab: ${source.href}`}
+              aria-label={`Open source ${source.label} in a new tab`}
+            >
+              {ListIcons.external}
+            </a>
+          ) : null}
+        </div>
+        <div className="tl-lib-source__type">{source.typeLabel}</div>
+      </td>
+      <td>
+        <ListTlpBadge tlp={row.tlp} display={row.tlp_display} />
+        {isElevatedTlp(row.tlp) ? (
+          <div className="tl-lib-tlp-note" title="Elevated TLP — handle carefully">Handle carefully</div>
+        ) : null}
+      </td>
+      <td>
+        <div className="tl-lib-intel">
+          {describeReportIntelligence(row).map((m) => (
+            <div key={m.key} className={`tl-lib-metric${m.muted ? ' is-muted' : ''}`} title={m.title}>
+              <span className="tl-lib-metric__value">{m.value}</span>
+              <span className="tl-lib-metric__label">{m.label}</span>
+            </div>
+          ))}
+        </div>
+      </td>
+      <td>
+        <span className={`tl-lib-status-pill tl-lib-tone--${status.tone}`}>
+          <span className="tl-lib-status-pill__dot" aria-hidden="true" />
+          <span className="tl-lib-status-pill__text">{status.label}</span>
+        </span>
+      </td>
+      <td className="tl-lib-date" title={publicationDateTitle(row) || undefined}>
+        {formatPublicationDate(row) || '—'}
+      </td>
+      <td className="tl-lib-date" title={imported?.title}>
+        {imported ? (
+          <>
+            <div>{imported.date}</div>
+            <div className="tl-lib-muted">{imported.time}</div>
+          </>
+        ) : '—'}
+      </td>
+    </tr>
   );
 }
 
@@ -97,21 +215,28 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   // The URL is the single source of truth for the debounced search term, the
-  // page, the rows per page and the optional explicit sort
-  // (?search=&page=&limit=&sort=&order=), so reload, Back/Forward and shared
-  // links all land on the same list state and nothing can fight the router.
-  const { search, page, pageSize, sort, order } = useMemo(() => parseReportListUrlState(searchParams), [searchParams]);
+  // page, the rows per page, the optional explicit sort and the filters
+  // (?search=&status=&tlp=&source=&imported=&page=&limit=&sort=&order=), so
+  // reload, Back/Forward and shared links all land on the same list state and
+  // nothing can fight the router.
+  const { search, page, pageSize, sort, order, status, tlp, source, imported } = useMemo(
+    () => parseReportListUrlState(searchParams),
+    [searchParams]
+  );
+  const filters = useMemo(() => ({ status, tlp, source, imported }), [status, tlp, source, imported]);
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
+  // Status-tab counts from the API (whole filtered set); null = not reported.
+  const [phaseCounts, setPhaseCounts] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   // searchInput follows every keystroke; the URL `search` is its debounced,
   // trimmed form (same split as the threat-actor list).
   const [searchInput, setSearchInput] = useState(search);
-  // Overlapping list requests (search, page, Refresh) go through one loader:
-  // only the most recently issued response may land, and an out-of-range page
-  // is clamped to the last valid one instead of stranding the user.
+  // Overlapping list requests (search, filters, page, Refresh) go through one
+  // loader: only the most recently issued response may land, and an
+  // out-of-range page is clamped to the last valid one instead of stranding the user.
   const loaderRef = useRef(null);
   if (!loaderRef.current) {
     loaderRef.current = createReportListLoader({
@@ -134,25 +259,28 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
-    const result = await loaderRef.current.load({ search, page, pageSize, sort, order });
+    const result = await loaderRef.current.load({ search, page, pageSize, sort, order, ...filters });
     if (result.kind === 'stale') return;
     if (result.kind === 'clamped') {
-      // Result set shrank below this page (search narrowed, rows deleted):
-      // keep the loading placeholder and reload the last valid page.
+      // Result set shrank below this page (search / filter narrowed, rows
+      // deleted): keep the loading state and reload the last valid page.
       setTotal(result.total);
-      setListUrl({ search, page: result.page, pageSize, sort, order });
+      setPhaseCounts(result.phaseCounts);
+      setListUrl({ search, page: result.page, pageSize, sort, order, ...filters });
       return;
     }
     if (result.kind === 'error') {
       setError(result.message);
       setItems([]);
       setTotal(0);
+      setPhaseCounts(null);
     } else {
       setItems(result.items);
       setTotal(result.total);
+      setPhaseCounts(result.phaseCounts);
     }
     setLoading(false);
-  }, [search, page, pageSize, sort, order, setListUrl]);
+  }, [search, page, pageSize, sort, order, filters, setListUrl]);
 
   useEffect(() => {
     load().catch(() => {});
@@ -160,14 +288,15 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
 
   useEffect(() => () => loaderRef.current?.abort(), []);
 
-  // Debounced term -> URL. A new term (or clearing it) always starts from page 1.
+  // Debounced term -> URL. A new term (or clearing it) always starts from page 1
+  // and keeps the active filters and sort.
   useEffect(() => {
     const t = setTimeout(() => {
       const next = normalizeReportListSearch(searchInput);
-      if (next !== search) setListUrl({ search: next, page: 1, pageSize, sort, order });
+      if (next !== search) setListUrl({ search: next, page: 1, pageSize, sort, order, ...filters });
     }, REPORT_LIST_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [searchInput, search, pageSize, sort, order, setListUrl]);
+  }, [searchInput, search, pageSize, sort, order, filters, setListUrl]);
 
   // URL term changed underneath the field (Back/Forward, shared link): reflect it,
   // but leave the raw input alone while it already normalises to the same term.
@@ -175,26 +304,62 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
     setSearchInput((prev) => (normalizeReportListSearch(prev) === search ? prev : search));
   }, [search]);
 
-  // Canonicalise a hand-typed URL (page=1, padded search, junk page / limit)
-  // once; the serialised form of the parsed state is a fixed point, so this cannot loop.
+  // Canonicalise a hand-typed URL (page=1, padded search, junk page / limit /
+  // filter values) once; the serialised form of the parsed state is a fixed
+  // point, so this cannot loop.
   useEffect(() => {
-    setListUrl({ search, page, pageSize, sort, order });
-  }, [search, page, pageSize, sort, order, setListUrl]);
+    setListUrl({ search, page, pageSize, sort, order, ...filters });
+  }, [search, page, pageSize, sort, order, filters, setListUrl]);
 
-  const goToPage = (next) => setListUrl({ search, page: next, pageSize, sort, order });
+  const goToPage = (next) => setListUrl({ search, page: next, pageSize, sort, order, ...filters });
   // A new page size restarts at page 1 so the first visible row is never skipped.
-  const changePageSize = (next) => setListUrl({ search, page: 1, pageSize: next, sort, order });
+  const changePageSize = (next) => setListUrl({ search, page: 1, pageSize: next, sort, order, ...filters });
   const cycleSort = (column) => {
     const next = cycleReportListSort(sort, order, column);
-    setListUrl({ search, page: 1, pageSize, sort: next.sort, order: next.order });
+    setListUrl({ search, page: 1, pageSize, sort: next.sort, order: next.order, ...filters });
+  };
+  // The sort menu writes the same ?sort=&order= state the headers cycle.
+  const chooseSort = (value) => {
+    const next = parseReportListSortMenuValue(value);
+    setListUrl({ search, page: 1, pageSize, sort: next.sort, order: next.order, ...filters });
+  };
+  // Any filter change (toolbar or status tab) restarts at page 1.
+  const changeFilter = (key, value) => setListUrl({ search, page: 1, pageSize, sort, order, ...filters, [key]: value });
+  // Clear search + filters; rows per page and sort are view preferences and stay.
+  const clearFilters = () => {
+    setSearchInput('');
+    setListUrl({ search: '', page: 1, pageSize, sort, order });
   };
 
+  const filtered = Object.values(filters).some(Boolean);
+  const narrowing = hasActiveReportListFilters({ search, ...filters }) || normalizeReportListSearch(searchInput) !== '';
   const pagination = describeReportListPagination({ page, total, pageSize });
-  const emptyState = describeReportListEmptyState({ loading, itemCount: items.length, total, search, canWrite });
+  const pageItems = buildReportListPageItems(pagination.page, pagination.totalPages);
+  const sortMenu = describeReportListSortMenu(sort, order);
+  // Rows already on screen stay visible (dimmed) while the next request runs,
+  // so filtering / paging never flashes an empty table.
+  const showRows = items.length > 0;
+  const emptyState = describeReportListEmptyState({
+    loading: loading && !showRows,
+    itemCount: items.length,
+    total,
+    search,
+    canWrite,
+    error,
+    filters
+  });
+
+  function openReport(e, row) {
+    // Links / buttons inside the row handle themselves (incl. Ctrl/Cmd-click
+    // on the title); a text selection drag is not a click.
+    if (e.target instanceof Element && e.target.closest('a, button, input, select, label')) return;
+    if (typeof window !== 'undefined' && String(window.getSelection?.() || '').length > 0) return;
+    navigate(`${REPORT_PATH}/${row.id}`);
+  }
 
   function onImported(report) {
     if (report?.id) {
-      navigate(`/threat-intelligence/threat-library/${report.id}`);
+      navigate(`${REPORT_PATH}/${report.id}`);
       return;
     }
     load().catch(() => {});
@@ -202,57 +367,109 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
 
   return (
     <AppShell>
-      <section style={ui.section}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
-          <div>
+      <section style={ui.section} className="tl-lib">
+        <div className="tl-lib-header">
+          <div className="tl-lib-header__title">
             <h1 style={ui.pageTitle}>Threat Library</h1>
-            <p style={{ margin: '8px 0 0', fontSize: 13, color: '#94a3b8', maxWidth: 640, lineHeight: 1.5 }}>
+            <p className="tl-lib-header__subtitle">
               Import vendor reports and intelligence bundles, review extracted indicators, and promote matched IOCs.
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+          <div className="tl-lib-header__actions">
             {isAdmin ? (
-              <Link to="/threat-intelligence/threat-library/ai-settings" style={{ ...ui.btn, textDecoration: 'none' }}>
+              <Link to={`${REPORT_PATH}/ai-settings`} style={ui.btn} className="tl-lib-header__link">
+                {ListIcons.settings}
                 AI Settings
               </Link>
             ) : null}
-            <button type="button" style={ui.btn} onClick={() => load().catch(() => {})}>Refresh</button>
+            <button type="button" style={ui.btn} onClick={() => load().catch(() => {})}>
+              {ListIcons.refresh}
+              Refresh
+            </button>
             {canWrite ? (
               <button type="button" style={ui.btnPrimary} onClick={() => setImportOpen(true)}>
+                {ListIcons.upload}
                 Import Intelligence
               </button>
             ) : null}
           </div>
         </div>
 
-        {error ? <div style={{ ...ui.error, marginBottom: 12 }} role="alert">{error}</div> : null}
-
-        <div style={{ marginBottom: 12, maxWidth: 380 }}>
-          <label htmlFor="tl-report-search" style={srOnly}>Search reports</label>
-          <input
-            id="tl-report-search"
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') setSearchInput(''); }}
-            placeholder="Search reports..."
-            maxLength={REPORT_LIST_SEARCH_MAX_LENGTH}
-            autoComplete="off"
-            spellCheck={false}
-            style={searchInputStyle}
+        <div className="tl-lib-toolbar" role="search" aria-label="Search and filter reports">
+          <div className="tl-lib-search">
+            <label htmlFor="tl-report-search" className="tl-lib-sr-only">Search reports</label>
+            <span className="tl-lib-search__icon">{ListIcons.search}</span>
+            <input
+              id="tl-report-search"
+              type="search"
+              className="tl-lib-search__input"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Escape') setSearchInput(''); }}
+              placeholder="Search reports, titles, sources, tags..."
+              maxLength={REPORT_LIST_SEARCH_MAX_LENGTH}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <FilterSelect id="tl-filter-tlp" label="TLP" value={tlp} options={REPORT_LIST_TLP_OPTIONS} onChange={(v) => changeFilter('tlp', v)} />
+          <FilterSelect id="tl-filter-source" label="Source" value={source} options={REPORT_LIST_SOURCE_OPTIONS} onChange={(v) => changeFilter('source', v)} />
+          <FilterSelect id="tl-filter-imported" label="Imported" value={imported} options={REPORT_LIST_IMPORTED_OPTIONS} onChange={(v) => changeFilter('imported', v)} />
+          <FilterSelect
+            id="tl-report-sort"
+            label="Sort"
+            value={sortMenu.value}
+            options={sortMenu.options}
+            onChange={chooseSort}
+            className="tl-lib-filter--sort"
           />
         </div>
 
-        <div style={{ overflowX: 'auto' }}>
-          <table width="100%" cellPadding="0" style={{ borderCollapse: 'collapse', fontSize: 13, background: 'transparent' }}>
+        <div className="tl-lib-statusbar">
+          <div className="tl-lib-status-tabs" role="group" aria-label="Filter by status">
+            {REPORT_LIST_STATUS_TABS.map((tab) => {
+              const count = phaseCounts ? phaseCounts[tab.countKey] : null;
+              return (
+                <button
+                  key={tab.countKey}
+                  type="button"
+                  className={`tl-lib-status-tab tl-lib-tone--${tab.tone}`}
+                  aria-pressed={status === tab.value}
+                  aria-label={count != null ? `${tab.label}, ${count.toLocaleString('en-US')} reports` : tab.label}
+                  title={tab.title}
+                  onClick={() => changeFilter('status', tab.value)}
+                >
+                  <span className="tl-lib-status-tab__dot" aria-hidden="true" />
+                  {tab.label}
+                  {count != null ? (
+                    <span className="tl-lib-status-tab__count" aria-hidden="true">{count.toLocaleString('en-US')}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+          {narrowing ? (
+            <button type="button" className="tl-lib-clear" onClick={clearFilters}>Clear filters</button>
+          ) : null}
+        </div>
+
+        <div className={`tl-lib-table-wrap${loading && showRows ? ' is-updating' : ''}`} aria-busy={loading}>
+          <table className="tl-lib-table">
+            <colgroup>
+              <col className="tl-lib-col--report" />
+              <col className="tl-lib-col--source" />
+              <col className="tl-lib-col--tlp" />
+              <col className="tl-lib-col--intel" />
+              <col className="tl-lib-col--status" />
+              <col className="tl-lib-col--published" />
+              <col className="tl-lib-col--imported" />
+            </colgroup>
             <thead>
-              <tr style={ui.thead}>
+              <tr>
                 <SortableTh label="Report" column="report" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Source" column="source" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="TLP" column="tlp" sort={sort} order={order} onCycle={cycleSort} />
-                <SortableTh label="Entities" column="entities" sort={sort} order={order} onCycle={cycleSort} />
-                <SortableTh label="Indicators" column="indicators" sort={sort} order={order} onCycle={cycleSort} />
-                <SortableTh label="Matched IOCs" column="matched" sort={sort} order={order} onCycle={cycleSort} />
+                <IntelligenceTh sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Status" column="status" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Published" column="published" sort={sort} order={order} onCycle={cycleSort} />
                 <SortableTh label="Imported" column="imported" sort={sort} order={order} onCycle={cycleSort} />
@@ -260,63 +477,53 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
             </thead>
             <tbody>
               {emptyState.kind === 'loading' ? (
-                <tr style={ui.tr}><td colSpan={9} style={ui.td}>Loading…</td></tr>
+                <tr>
+                  <td colSpan={COLUMN_COUNT} className="tl-lib-placeholder" data-testid="report-list-loading">
+                    <span className="tl-lib-spinner" aria-hidden="true" />
+                    Loading reports…
+                  </td>
+                </tr>
               ) : emptyState.kind !== 'none' ? (
-                <tr style={ui.tr}>
-                  <td colSpan={9} style={{ ...ui.td, color: '#94a3b8' }} data-testid={`report-list-${emptyState.kind}`}>
-                    {emptyState.message}{emptyState.hint ? ` ${emptyState.hint}` : ''}
+                <tr>
+                  <td
+                    colSpan={COLUMN_COUNT}
+                    className={`tl-lib-placeholder tl-lib-placeholder--${emptyState.kind}`}
+                    data-testid={`report-list-${emptyState.kind}`}
+                    role={emptyState.kind === 'error' ? 'alert' : undefined}
+                  >
+                    <div className="tl-lib-placeholder__title">{emptyState.message}</div>
+                    {emptyState.kind === 'error' ? <div className="tl-lib-placeholder__hint">{error}</div> : null}
+                    {emptyState.hint ? <div className="tl-lib-placeholder__hint">{emptyState.hint}</div> : null}
+                    {emptyState.kind === 'no_match' ? (
+                      <div className="tl-lib-placeholder__actions">
+                        <button type="button" onClick={clearFilters}>Clear filters</button>
+                      </div>
+                    ) : null}
+                    {emptyState.kind === 'error' ? (
+                      <div className="tl-lib-placeholder__actions">
+                        <button type="button" onClick={() => load().catch(() => {})}>Try again</button>
+                      </div>
+                    ) : null}
                   </td>
                 </tr>
               ) : items.map((row) => (
-                <tr
-                  key={row.id}
-                  style={{ ...ui.tr, cursor: 'pointer' }}
-                  onClick={() => navigate(`/threat-intelligence/threat-library/${row.id}`)}
-                >
-                  <td style={ui.td}>
-                    <div style={{ fontWeight: 600, color: '#f1f5f9' }}>{row.title || 'Untitled report'}</div>
-                    {isElevatedTlp(row.tlp) ? (
-                      <div style={{ fontSize: 11, color: '#fcd34d', marginTop: 4 }}>Elevated TLP — handle carefully</div>
-                    ) : null}
-                  </td>
-                  <td style={ui.td}>
-                    <div>{sourceLabel(row)}</div>
-                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{row.source_type || '—'}</div>
-                  </td>
-                  <td style={ui.td}><TlpBadge tlp={row.tlp} display={row.tlp_display} /></td>
-                  <td style={ui.td}>{row.entity_count ?? 0}</td>
-                  <td style={ui.td} title={indicatorListCellTitle(row)}>{indicatorListCell(row)}</td>
-                  <td
-                    style={ui.td}
-                    title="Unique Indicators matched to an existing global IOC record"
-                  >
-                    {row.matched_count ?? 0}
-                  </td>
-                  <td style={ui.td}>
-                    <span style={badgeStyle(statusColors(row))}>{statusLabel(row)}</span>
-                  </td>
-                  <td style={ui.td} title={publicationDateTitle(row) || undefined}>
-                    {formatPublicationDate(row) || '—'}
-                  </td>
-                  <td style={ui.td}>{row.created_at ? formatUserDateTime(row.created_at) : '—'}</td>
-                </tr>
+                <ReportRow key={row.id} row={row} onOpen={openReport} />
               ))}
             </tbody>
           </table>
         </div>
 
         {total > 0 ? (
-          <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: '#64748b' }}>
-            <div>
-              {formatReportListShowingLabel({ from: pagination.from, to: pagination.to, total, search })}
-              {loading ? ' \u00b7 Updating\u2026' : ''}
+          <div className="tl-lib-footer">
+            <div aria-live="polite">
+              {formatReportListShowingLabel({ from: pagination.from, to: pagination.to, total, search, filtered })}
+              {loading ? ' · Updating…' : ''}
             </div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label htmlFor="tl-report-page-size" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <div className="tl-lib-footer__pager">
+              <label htmlFor="tl-report-page-size" className="tl-lib-footer__size">
                 Rows per page
                 <select
                   id="tl-report-page-size"
-                  style={pageSizeSelect}
                   value={pageSize}
                   onChange={(e) => changePageSize(Number(e.target.value))}
                 >
@@ -325,23 +532,42 @@ export default function ThreatLibraryPage({ AppShell, useSession }) {
                   ))}
                 </select>
               </label>
-              <button
-                type="button"
-                style={pagerBtn}
-                disabled={!pagination.hasPrevious || loading}
-                onClick={() => goToPage(Math.max(1, page - 1))}
-              >
-                Previous
-              </button>
-              <span style={{ color: '#e2e8f0', fontWeight: 600 }}>{pagination.pageLabel}</span>
-              <button
-                type="button"
-                style={pagerBtn}
-                disabled={!pagination.hasNext || loading}
-                onClick={() => goToPage(page + 1)}
-              >
-                Next
-              </button>
+              <nav className="tl-lib-pager" aria-label="Report list pages">
+                <span className="tl-lib-sr-only">{pagination.pageLabel}</span>
+                <button
+                  type="button"
+                  className="tl-lib-pager__btn"
+                  aria-label="Previous page"
+                  disabled={!pagination.hasPrevious || loading}
+                  onClick={() => goToPage(Math.max(1, page - 1))}
+                >
+                  {ListIcons.chevronLeft}
+                </button>
+                {pageItems.map((item) => (typeof item === 'number' ? (
+                  <button
+                    key={item}
+                    type="button"
+                    className="tl-lib-pager__btn"
+                    aria-label={`Page ${item}`}
+                    aria-current={item === pagination.page ? 'page' : undefined}
+                    disabled={loading && item !== pagination.page}
+                    onClick={() => { if (item !== pagination.page) goToPage(item); }}
+                  >
+                    {item}
+                  </button>
+                ) : (
+                  <span key={item} className="tl-lib-pager__gap" aria-hidden="true">…</span>
+                )))}
+                <button
+                  type="button"
+                  className="tl-lib-pager__btn"
+                  aria-label="Next page"
+                  disabled={!pagination.hasNext || loading}
+                  onClick={() => goToPage(page + 1)}
+                >
+                  {ListIcons.chevronRight}
+                </button>
+              </nav>
             </div>
           </div>
         ) : null}

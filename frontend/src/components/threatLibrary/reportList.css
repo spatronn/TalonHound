@@ -1,0 +1,890 @@
+/*
+ * Threat Library report list (library page) layout.
+ *
+ * Scoped to `.tl-lib` so nothing leaks into the report page (reportPage.css)
+ * or the rest of the shell. The global dark theme in main.jsx forces table /
+ * link / form colours with !important element selectors; the overrides below
+ * use !important with a class-qualified (higher specificity) selector, which
+ * is the only way to win against them.
+ *
+ * Responsive behaviour is driven by the section's own width (container
+ * queries), never by the viewport: the fixed 260px sidebar means a 1280px
+ * viewport leaves ~920px for this page.
+ */
+
+.tl-lib {
+  position: relative;
+  container-type: inline-size;
+  container-name: tl-lib;
+  min-width: 0;
+}
+
+.tl-lib-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Header ------------------------------------------------------------ */
+
+.tl-lib-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.tl-lib-header__title {
+  min-width: 0;
+  flex: 1 1 360px;
+}
+
+.tl-lib-header__subtitle {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #94a3b8;
+  max-width: 640px;
+}
+
+.tl-lib-header__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 0 1 auto;
+}
+
+.tl-lib a.tl-lib-header__link {
+  color: #e2e8f0 !important;
+  text-decoration: none;
+}
+
+.tl-lib-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  display: block;
+}
+
+/* --- Toolbar: search + filters ----------------------------------------- */
+
+.tl-lib-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: stretch;
+  margin-bottom: 12px;
+}
+
+.tl-lib-search {
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0b1220;
+  box-sizing: border-box;
+}
+
+.tl-lib .tl-lib-search:focus-within,
+.tl-lib .tl-lib-filter:focus-within {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.45);
+}
+
+.tl-lib-search__icon {
+  position: absolute;
+  left: 12px;
+  color: #64748b;
+  pointer-events: none;
+}
+
+.tl-lib .tl-lib-search__input {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px 0 36px;
+  border: none !important;
+  outline: none;
+  background: transparent !important;
+  color: #e2e8f0 !important;
+  font: inherit;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+.tl-lib .tl-lib-search__input::placeholder {
+  color: #64748b;
+}
+
+/* The whole box is the <select> (full-size tap target); the caption is an
+   overlay above the value. */
+.tl-lib-filter {
+  position: relative;
+  flex: 0 1 132px;
+  min-width: 112px;
+  display: block;
+  min-height: 44px;
+  padding: 0;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  background: #0b1220;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.tl-lib-filter--sort {
+  flex-basis: 164px;
+}
+
+.tl-lib-filter__caption {
+  position: absolute;
+  top: 5px;
+  left: 10px;
+  pointer-events: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  line-height: 1.2;
+}
+
+.tl-lib .tl-lib-filter__select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  margin: 0;
+  padding: 17px 6px 3px 8px;
+  border-radius: 8px;
+  border: none !important;
+  outline: none;
+  background: transparent !important;
+  color: #e2e8f0 !important;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+
+.tl-lib .tl-lib-filter__select option {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+.tl-lib-filter.is-active {
+  border-color: #2563eb;
+}
+
+/* --- Status quick filters -------------------------------------------- */
+
+.tl-lib-statusbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.tl-lib-status-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tl-lib .tl-lib-status-tab {
+  min-height: 32px;
+  padding: 4px 6px 4px 10px;
+  gap: 7px;
+  border-radius: 8px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tl-lib .tl-lib-status-tab:hover:not(:disabled) {
+  background: #172033;
+  border-color: #475569;
+  color: #f1f5f9;
+}
+
+.tl-lib .tl-lib-status-tab[aria-pressed='true'] {
+  background: rgba(37, 99, 235, 0.16);
+  border-color: #2563eb;
+  color: #f1f5f9;
+}
+
+.tl-lib-status-tab__dot,
+.tl-lib-status-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #64748b;
+}
+
+.tl-lib-status-tab__count {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.tl-lib-status-tab[aria-pressed='true'] .tl-lib-status-tab__count {
+  background: rgba(147, 197, 253, 0.18);
+  color: #dbeafe;
+}
+
+.tl-lib .tl-lib-clear {
+  min-height: 30px;
+  padding: 4px 10px;
+  font-size: 12px;
+  border-color: transparent;
+  background: transparent;
+  color: #93c5fd;
+}
+
+.tl-lib .tl-lib-clear:hover:not(:disabled) {
+  background: rgba(147, 197, 253, 0.1);
+  border-color: transparent;
+  color: #bfdbfe;
+}
+
+/* Tone colours shared by the quick filters and the row status pills. */
+.tl-lib-tone--all .tl-lib-status-tab__dot { background: #94a3b8; }
+.tl-lib-tone--ready .tl-lib-status-tab__dot,
+.tl-lib-tone--ready .tl-lib-status-pill__dot { background: #22c55e; }
+.tl-lib-tone--review .tl-lib-status-tab__dot,
+.tl-lib-tone--review .tl-lib-status-pill__dot { background: #f59e0b; }
+.tl-lib-tone--processing .tl-lib-status-tab__dot,
+.tl-lib-tone--processing .tl-lib-status-pill__dot { background: #3b82f6; }
+.tl-lib-tone--failed .tl-lib-status-tab__dot,
+.tl-lib-tone--failed .tl-lib-status-pill__dot { background: #ef4444; }
+
+/* --- Table ------------------------------------------------------------ */
+
+.tl-lib .tl-lib-table-wrap {
+  /* Containing block for the visually-hidden (absolute) helpers in cells:
+     without it they escape the horizontal scroller and widen the page. */
+  position: relative;
+  border: 1px solid #1e293b !important;
+  border-radius: 10px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.tl-lib-table-wrap.is-updating .tl-lib-table tbody {
+  opacity: 0.55;
+  transition: opacity 120ms ease;
+}
+
+.tl-lib .tl-lib-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: transparent !important;
+}
+
+.tl-lib .tl-lib-table thead tr {
+  background: #0f172a !important;
+}
+
+.tl-lib .tl-lib-table th,
+.tl-lib .tl-lib-table td {
+  border-right: none !important;
+  border-left: none !important;
+  border-top: none !important;
+}
+
+.tl-lib .tl-lib-table th {
+  padding: 0;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #334155 !important;
+  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.tl-lib .tl-lib-th-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  min-height: 38px;
+  margin: 0;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tl-lib .tl-lib-th-btn:hover:not(:disabled) {
+  background: rgba(148, 163, 184, 0.06);
+  border-color: transparent;
+  color: #e2e8f0;
+}
+
+.tl-lib .tl-lib-th-btn:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.7);
+  outline-offset: -2px;
+}
+
+.tl-lib .tl-lib-th-btn.is-active {
+  color: #e2e8f0;
+}
+
+.tl-lib-intel-head {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  padding: 0 4px;
+}
+
+.tl-lib .tl-lib-intel-head .tl-lib-th-btn {
+  justify-content: center;
+  padding: 8px 2px;
+  font-size: 11.5px;
+}
+
+.tl-lib .tl-lib-table tbody tr {
+  background: #111827 !important;
+}
+
+.tl-lib .tl-lib-table tbody tr.tl-lib-row {
+  cursor: pointer;
+}
+
+.tl-lib .tl-lib-table tbody tr.tl-lib-row:hover,
+.tl-lib .tl-lib-table tbody tr.tl-lib-row:focus-within {
+  background: #152033 !important;
+}
+
+.tl-lib .tl-lib-table td {
+  padding: 10px;
+  vertical-align: middle;
+  color: #e2e8f0;
+  border-bottom: 1px solid #1e293b !important;
+  overflow: hidden;
+}
+
+.tl-lib .tl-lib-table tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+/*
+ * Column tiers by section width. Base fits a 1280px laptop (~920px); wider
+ * content columns give the fixed columns more room so Source / Status stop
+ * truncating, and Report keeps everything else.
+ */
+.tl-lib-col--source { width: 108px; }
+.tl-lib-col--tlp { width: 104px; }
+.tl-lib-col--intel { width: 188px; }
+.tl-lib-col--status { width: 118px; }
+.tl-lib-col--published { width: 88px; }
+.tl-lib-col--imported { width: 88px; }
+
+@container tl-lib (min-width: 1060px) {
+  .tl-lib-col--source { width: 140px; }
+  .tl-lib-col--tlp { width: 108px; }
+  .tl-lib-col--intel { width: 188px; }
+  .tl-lib-col--status { width: 136px; }
+  .tl-lib-col--published { width: 92px; }
+  .tl-lib-col--imported { width: 92px; }
+}
+
+/* Narrowest tier: the source-type tile yields its width to the title (the
+   type is still printed under the source). */
+@container tl-lib (max-width: 1059px) {
+  .tl-lib .tl-lib-report__icon { display: none; }
+
+  .tl-lib .tl-lib-table td { padding-left: 8px; padding-right: 8px; }
+
+  .tl-lib .tl-lib-th-btn { padding-left: 8px; padding-right: 8px; }
+
+}
+
+@container tl-lib (min-width: 1400px) {
+  .tl-lib-col--source { width: 210px; }
+  .tl-lib-col--tlp { width: 152px; }
+  .tl-lib-col--intel { width: 216px; }
+  .tl-lib-col--status { width: 160px; }
+  .tl-lib-col--published { width: 104px; }
+  .tl-lib-col--imported { width: 104px; }
+}
+
+/* Report cell: type icon, title link, optional TLP note, tag chips. */
+.tl-lib-report {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tl-lib-report__icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid #263244;
+  background: #0f172a;
+  color: #94a3b8;
+}
+
+.tl-lib-report__body {
+  min-width: 0;
+  flex: 1 1 auto;
+  container-type: inline-size;
+  container-name: tl-lib-report;
+}
+
+.tl-lib a.tl-lib-report__title {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f1f5f9 !important;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.35;
+  text-decoration: none;
+  border-radius: 3px;
+}
+
+.tl-lib a.tl-lib-report__title:hover {
+  color: #ffffff !important;
+  text-decoration: underline;
+  text-decoration-color: #475569;
+  text-underline-offset: 3px;
+}
+
+.tl-lib a.tl-lib-report__title:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.7);
+  outline-offset: 2px;
+}
+
+.tl-lib-tlp-note {
+  margin-top: 3px;
+  font-size: 10.5px;
+  white-space: nowrap;
+  color: #fcd34d;
+  line-height: 1.3;
+  cursor: help;
+}
+
+.tl-lib-tags {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 4px;
+  margin: 5px 0 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+
+.tl-lib-tag {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid #2a3a52;
+  background: rgba(30, 41, 59, 0.7);
+  color: #cbd5e1;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tl-lib-tag--more {
+  color: #94a3b8;
+  background: transparent;
+  cursor: help;
+}
+
+/*
+ * Visible chip count follows the Report cell width so tags stay on one line
+ * (uniform row height). Exactly one "+N" entry is shown: the one whose
+ * data-tags-shown matches the chips left visible.
+ */
+.tl-lib-tag--more { display: none; }
+.tl-lib-tag--more[data-tags-shown='3'] { display: block; }
+
+@container tl-lib-report (max-width: 340px) {
+  .tl-lib-tag[data-tag-index='2'],
+  .tl-lib-tag--more[data-tags-shown='3'] { display: none; }
+  .tl-lib-tag--more[data-tags-shown='2'] { display: block; }
+  .tl-lib-tag { max-width: 112px; }
+}
+
+@container tl-lib-report (max-width: 230px) {
+  .tl-lib-tag[data-tag-index='1'],
+  .tl-lib-tag--more[data-tags-shown='2'] { display: none; }
+  .tl-lib-tag--more[data-tags-shown='1'] { display: block; }
+  .tl-lib-tag { max-width: 140px; }
+}
+
+/* Source cell. */
+.tl-lib-source {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tl-lib-source__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e2e8f0;
+}
+
+.tl-lib a.tl-lib-source__link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: #94a3b8 !important;
+}
+
+.tl-lib a.tl-lib-source__link:hover {
+  color: #93c5fd !important;
+  background: rgba(147, 197, 253, 0.1);
+}
+
+.tl-lib a.tl-lib-source__link:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.7);
+  outline-offset: 1px;
+}
+
+.tl-lib-source__type,
+.tl-lib-muted {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+/* TLP badge: may break after "+" (TLP:AMBER+STRICT) instead of clipping. */
+.tl-lib-tlp-badge {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+  box-sizing: border-box;
+  white-space: normal;
+}
+
+/* Intelligence metrics: three equal, centred columns. */
+.tl-lib .tl-lib-intel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid #1a2436 !important;
+}
+
+.tl-lib-metric {
+  min-width: 0;
+  padding: 4px 1px;
+  text-align: center;
+  cursor: default;
+}
+
+.tl-lib .tl-lib-metric + .tl-lib-metric {
+  border-left: 1px solid #1a2436 !important;
+}
+
+.tl-lib-metric__value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-lib-metric__label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: #64748b;
+}
+
+.tl-lib-metric.is-muted .tl-lib-metric__value {
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+/* Status pill (text label + dot; never colour alone). */
+.tl-lib-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #334155;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  box-sizing: border-box;
+}
+
+.tl-lib-status-pill__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.tl-lib-status-pill.tl-lib-tone--ready { border-color: rgba(34, 197, 94, 0.4); background: rgba(22, 163, 74, 0.12); color: #86efac; }
+.tl-lib-status-pill.tl-lib-tone--review { border-color: rgba(245, 158, 11, 0.45); background: rgba(217, 119, 6, 0.12); color: #fcd34d; }
+.tl-lib-status-pill.tl-lib-tone--processing { border-color: rgba(59, 130, 246, 0.45); background: rgba(37, 99, 235, 0.12); color: #93c5fd; }
+.tl-lib-status-pill.tl-lib-tone--failed { border-color: rgba(239, 68, 68, 0.45); background: rgba(220, 38, 38, 0.12); color: #fca5a5; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .tl-lib-status-pill.tl-lib-tone--processing .tl-lib-status-pill__dot {
+    animation: tl-lib-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+@keyframes tl-lib-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.tl-lib-date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Placeholder rows (loading / empty / error). */
+.tl-lib .tl-lib-table td.tl-lib-placeholder {
+  padding: 28px 16px;
+  text-align: center;
+  color: #94a3b8;
+  white-space: normal;
+}
+
+.tl-lib-placeholder__title {
+  color: #e2e8f0;
+  font-weight: 600;
+  font-size: 13.5px;
+}
+
+.tl-lib-placeholder__hint {
+  margin-top: 4px;
+  font-size: 12.5px;
+}
+
+.tl-lib-placeholder__actions {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tl-lib-placeholder--error .tl-lib-placeholder__title {
+  color: #fca5a5;
+}
+
+.tl-lib-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border-radius: 999px;
+  border: 2px solid #334155;
+  border-top-color: #93c5fd;
+  animation: tl-lib-spin 0.8s linear infinite;
+}
+
+@keyframes tl-lib-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* --- Footer / pagination ---------------------------------------------- */
+
+.tl-lib-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: #94a3b8;
+}
+
+.tl-lib-footer__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.tl-lib-footer__size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.tl-lib .tl-lib-footer__size select {
+  min-height: 30px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.tl-lib-pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tl-lib .tl-lib-pager__btn {
+  min-width: 30px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #0f172a;
+  color: #cbd5e1;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-lib .tl-lib-pager__btn[aria-current='page'] {
+  background: #2563eb;
+  border-color: #3b82f6;
+  color: #ffffff;
+  opacity: 1;
+}
+
+.tl-lib-pager__gap {
+  min-width: 18px;
+  text-align: center;
+  color: #64748b;
+}
+
+/* --- Responsive (container width, not viewport) ------------------------ */
+
+/*
+ * The table fits a 1280px laptop (content ~920px). Below that, it scrolls
+ * horizontally inside its own bordered region; the page never does.
+ */
+@container tl-lib (max-width: 919px) {
+  .tl-lib .tl-lib-table-wrap {
+    overflow-x: auto;
+  }
+
+  .tl-lib .tl-lib-table {
+    min-width: 900px;
+  }
+}
+
+@supports not (container-type: inline-size) {
+  @media (max-width: 1280px) {
+    .tl-lib .tl-lib-table-wrap {
+      overflow-x: auto;
+    }
+
+    .tl-lib .tl-lib-table {
+      min-width: 900px;
+    }
+  }
+}
+
+@container tl-lib (max-width: 720px) {
+  .tl-lib-search {
+    flex-basis: 100%;
+  }
+
+  .tl-lib-filter,
+  .tl-lib-filter--sort {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
+  }
+
+  .tl-lib-header__actions {
+    justify-content: flex-start;
+  }
+
+  .tl-lib-footer {
+    justify-content: center;
+  }
+
+  .tl-lib-footer__pager {
+    justify-content: center;
+  }
+}
+
+@container tl-lib (max-width: 420px) {
+  .tl-lib .tl-lib-status-tab {
+    padding: 4px 6px 4px 8px;
+    font-size: 12.5px;
+  }
+
+  .tl-lib-header__actions > * {
+    flex: 1 1 auto;
+  }
+}

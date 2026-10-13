@@ -118,7 +118,7 @@ test('TEST J — unsupported order cannot alter or inject SQL', () => {
   assert.equal(buildReportListOrderBy({ sort: 'published', order: 'ASCENDING' }).sql, REPORT_LIST_DEFAULT_ORDER_SQL);
   assert.equal(buildReportListOrderBy({ sort: 'published', order: true }).sql, REPORT_LIST_DEFAULT_ORDER_SQL);
   assert.deepEqual(parseReportListQuery({ sort: 'published' }), {
-    limit: 50, offset: 0, search: '', sort: null, order: null
+    limit: 50, offset: 0, search: '', sort: null, order: null, status: null, tlp: null, source: null, imported: null
   });
 });
 
