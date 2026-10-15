@@ -578,7 +578,7 @@ export function assessExtractionQuality(input) {
   // one or two values fall out (below orphanRunMinValues) but the heading text
   // still names Indicators / C2 / samples.
   const APPENDIX_HEADING_RE =
-    /\b(?:indicators?\s+of\s+compromise|indicators?|iocs?|compromise\s+indicators?|c2|c&c|command\s*(?:and|&)\s*control|samples?|hashes?|md5|sha-?1|sha-?256)\b/i;
+    /\b(?:indicators?\s+of\s+compromise|indicators?|iocs?|compromise\s+indicators?|c2s?|c&c|command\s*(?:and|&)\s*control|samples?|hashes?|md5|sha-?1|sha-?256)\b/i;
   if (modeA) {
     const byHeading = new Map();
     for (const c of candidates) {
@@ -624,6 +624,16 @@ export function assessExtractionQuality(input) {
   if (hasHeadedAppendix) {
     for (const b of blocks) {
       if (b.type !== 'table' || !b.table || isChrome(b)) continue;
+      // Tables already inside the publisher's headed IOC / C2 / sample appendix
+      // are not "body" tables. operational_infrastructure stays eligible — it can
+      // grant exclusive Indicators outside the headed appendix.
+      if (
+        b.zone === 'explicit_ioc_section' ||
+        b.zone === 'c2_section' ||
+        b.zone === 'sample_table'
+      ) {
+        continue;
+      }
       const headerText = (b.table.headers || []).map((c) => String(c || '')).join(' ');
       const looksIocHeader =
         /\b(?:md5|sha-?1|sha-?256|sha-?512|domain|domains|url|urls|ip|ips|ipv4|ipv6|c2|indicator|hash|hashes|host|hosts)\b/i.test(

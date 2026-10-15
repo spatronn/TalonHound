@@ -141,7 +141,7 @@ const HEADING_HINTS = Object.freeze({
   ],
   c2_section: [
     /\bc\s*&\s*c\b/i,
-    /\bc2\b/i,
+    /\bc2s?\b/i,
     /command\s*(and|&)\s*control/i,
     /c&c/i,
     // Label-like CJK C2 headings only — "远控" alone also names RAT malware in titles.
@@ -564,17 +564,21 @@ function topicHeadingHasIndicatorContent(b, blocks, i, chromeIds) {
  * @param {{ level: number|null }} opening
  * @param {Set<string>} chromeIds
  */
+/** Same-level sibling headings that are pure per-type IOC list labels. */
+const PURE_TYPE_LIST_HEADING_RE =
+  /^(?:(?:list\s+of\s+|observed\s+|extracted\s+)?)?(?:domains?|ip(?:v[46])?(?:\s+addresses?)?|urls?|hosts?(?:names?)?|emails?|hashes?|hash\s+values?|md5|sha-?1|sha-?256|sha-?512|file\s+hashes?|samples?|filenames?|mutex(?:es)?|c2s?(?:\s+servers?)?)(?:\s*\([^)]*\))?$/i;
+
 function isTypedSubheadingContinuation(labelHeading, b, blocks, i, opening, chromeIds) {
   if (!labelHeading) return false;
   const level = Number.isInteger(b.level) ? b.level : null;
   const networkOrDeclared = labelHeading.semantics === 'network' || Boolean(labelHeading.declared_type);
-  // Same-or-shallower than the current opening: network / declared type labels
-  // may still be sibling per-type lists ("Hash Values" / "IP Addresses" /
-  // "Domain" under one IOC heading, even when a prior type label opened a
-  // sample_table). Artifact vocabulary alone ("Receiving a command") is a
-  // topic boundary at that level, not a typed sub-list.
+  // Same-or-shallower than the current opening: only pure per-type list labels
+  // continue ("Hash Values" / "IP Addresses" / "Domain"). Compound sibling
+  // topics ("Related infrastructure", "Additional findings") close the appendix
+  // even when they mention network vocabulary.
   if (level != null && opening.level != null && level <= opening.level) {
-    return networkOrDeclared;
+    const text = String(b.text || labelHeading.label || '').trim();
+    return networkOrDeclared && PURE_TYPE_LIST_HEADING_RE.test(text);
   }
   if (networkOrDeclared) return true;
   return sectionOpensWithIndicatorContent(blocks, i, chromeIds);

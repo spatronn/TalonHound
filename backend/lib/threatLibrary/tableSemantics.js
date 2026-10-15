@@ -109,7 +109,7 @@ const FILE_NAME_HEADER_RE =
 
 /** Heading / caption text that already curates samples or IOCs for this table. */
 const AUTHORITATIVE_TABLE_HEADING_RE =
-  /\b(?:iocs?|indicators?\s+of\s+compromise|compromise\s+indicators?|malicious\s+samples?|sample\s+hash(?:es)?|file\s+hash(?:es)?|md5|sha-?256|sha-?1|c2|c&c|command\s*(?:and|&)\s*control|operational\s+infrastructure)\b/i;
+  /\b(?:iocs?|indicators?\s+of\s+compromise|compromise\s+indicators?|malicious\s+samples?|sample\s+hash(?:es)?|file\s+hash(?:es)?|md5|sha-?256|sha-?1|c2s?|c&c|command\s*(?:and|&)\s*control|operational\s+infrastructure)\b/i;
 
 /**
  * @param {string} s
