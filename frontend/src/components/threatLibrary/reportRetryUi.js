@@ -4,6 +4,7 @@
  */
 
 import { isProcessingStatus } from './stages.js';
+import { describeBlockedRefresh } from './refreshPreviewUi.js';
 
 /**
  * Apply an authoritative Retry API response onto local report/job state.
@@ -101,6 +102,9 @@ export function shouldIgnoreStaleFailedPoll(currentReport, polledReport, opts = 
  * Visibility mirrors the backend guards in lib/threatLibrary/jobModes.js.
  */
 
+/** Job failure code of a refresh the membership guard refused (backend extractionRefresh.js). */
+export const REFRESH_BLOCKED_CODE = 'refresh_membership_loss_blocked';
+
 export const MAINTENANCE_MODES = Object.freeze({
   REFRESH_EXTRACTION: 'refresh_extraction',
   RERUN_AI: 'rerun_ai'
@@ -164,6 +168,10 @@ function plural(n, word) {
 export function describeMaintenanceOutcome(job) {
   if (!job || job.job_type !== MAINTENANCE_MODES.REFRESH_EXTRACTION) return null;
   const status = String(job.status || '').toLowerCase();
+  if (status === 'failed' && job.progress?.failure_code === REFRESH_BLOCKED_CODE) {
+    // The membership guard refused the refresh: nothing was written.
+    return { error: describeBlockedRefresh(job) };
+  }
   if (status === 'failed') {
     return { error: `Refresh extraction failed: ${job.error_message || 'unknown error'}. The report was not changed.` };
   }

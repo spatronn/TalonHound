@@ -1476,3 +1476,208 @@
     padding: 12px;
   }
 }
+
+/* -------------------------------------------------------------------------
+ * Extraction quality (Overview) + Refresh extraction preview dialog.
+ * Same dark tokens as the rest of the report page.
+ * ------------------------------------------------------------------------- */
+
+.tl-quality__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+
+.tl-quality__headline {
+  min-width: 0;
+}
+
+.tl-quality__toggle {
+  margin-left: auto;
+}
+
+.tl-quality__disclaimer {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.tl-quality__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.tl-quality__item {
+  border: 1px solid #1e293b;
+  border-left-width: 3px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #0f172a;
+}
+
+.tl-quality__item--high {
+  border-left-color: #dc2626;
+}
+
+.tl-quality__item--warning {
+  border-left-color: #d97706;
+}
+
+.tl-quality__item--info {
+  border-left-color: #2563eb;
+}
+
+.tl-quality__item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.tl-quality__title {
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.tl-quality__why,
+.tl-quality__context {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+
+.tl-quality__context {
+  color: #cbd5e1;
+}
+
+.tl-quality__values {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.tl-quality__values li,
+.tl-refresh__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+
+.tl-quality__type {
+  flex: 0 0 auto;
+  min-width: 56px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tl-quality__value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #e2e8f0;
+  font-size: 12px;
+}
+
+.tl-quality__more {
+  color: #64748b;
+}
+
+.tl-quality-chip {
+  min-height: 22px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #92400e;
+  background: rgba(217, 119, 6, 0.14);
+  color: #fcd34d;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tl-quality-chip[data-tone='danger'] {
+  border-color: #7f1d1d;
+  background: rgba(220, 38, 38, 0.14);
+  color: #fca5a5;
+}
+
+.tl-refresh__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.tl-refresh__counts {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.tl-refresh__headline {
+  margin: 8px 0 2px;
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.5;
+}
+
+.tl-refresh__advisory {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.tl-refresh__advisory ul {
+  margin: 2px 0 0;
+  padding-left: 18px;
+}
+
+.tl-refresh__advisory-label {
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.tl-refresh__group {
+  margin-top: 14px;
+}
+
+.tl-refresh__group-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+.tl-refresh__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.tl-refresh__reason {
+  color: #94a3b8;
+}
+
+.tl-refresh__accept {
+  margin-top: 16px;
+}

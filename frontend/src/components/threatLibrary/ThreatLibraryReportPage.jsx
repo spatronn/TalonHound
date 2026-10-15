@@ -18,12 +18,14 @@ import {
   isRefreshExtractionInProgress,
   MAINTENANCE_MODES,
   processingSectionTitle,
-  REFRESH_EXTRACTION_CONFIRM,
   RERUN_AI_CONFIRM,
   shouldIgnoreStaleFailedPoll,
   shouldShowFailedPanel,
   shouldShowProcessingPanel
 } from './reportRetryUi.js';
+import RefreshPreviewModal from './RefreshPreviewModal.jsx';
+import ExtractionQualitySection from './ExtractionQualitySection.jsx';
+import { describeQualityChip } from './extractionQualityUi.js';
 import {
   PRIMARY_REVIEW_VIEWS,
   SOURCE_FILTERS,
@@ -558,6 +560,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [retryAcceptedUpdatedAt, setRetryAcceptedUpdatedAt] = useState(null);
   // Maintenance job (refresh_extraction / rerun_ai) whose outcome is still to be reported.
   const [pendingMaintenance, setPendingMaintenance] = useState('');
+  // Refresh extraction preview dialog: { open, loading, error, data }.
+  const [refreshPreview, setRefreshPreview] = useState({ open: false, loading: false, error: '', data: null });
   const [stickyOffset, setStickyOffset] = useState(0);
   const bulkBarRef = useRef(null);
   // Overlapping detail fetches: only the most recently issued response may land.
@@ -1448,19 +1452,50 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   }
 
   /**
-   * Refresh extraction (deterministic, no AI) / Re-run AI analysis. Each asks
-   * for confirmation with text that states whether AI runs.
+   * Refresh extraction opens a read-only preview first (RefreshPreviewModal):
+   * the analyst sees the Indicator changes before anything runs, and protected
+   * changes need an explicit, reasoned acceptance bound to that preview.
    */
-  async function runMaintenance(mode) {
+  async function openRefreshPreview() {
+    if (!canWrite || busy || isProcessingStatus(report)) return;
+    setRefreshPreview({ open: true, loading: true, error: '', data: null });
+    try {
+      const { data } = await api.get(`/threat-library/reports/${reportId}/refresh-extraction/preview`);
+      setRefreshPreview({ open: true, loading: false, error: '', data });
+    } catch (err) {
+      setRefreshPreview({
+        open: true,
+        loading: false,
+        error: err?.response?.data?.message || 'The refresh preview could not be computed.',
+        data: null
+      });
+    }
+  }
+
+  function closeRefreshPreview() {
+    if (busy === MAINTENANCE_MODES.REFRESH_EXTRACTION) return;
+    setRefreshPreview({ open: false, loading: false, error: '', data: null });
+  }
+
+  /**
+   * Refresh extraction (deterministic, no AI) / Re-run AI analysis. Re-run AI
+   * asks for confirmation; Refresh runs from its preview with `body` (an
+   * acceptance only when the preview was protected). The server re-evaluates
+   * the membership guard when the job runs. Errors are re-thrown for the
+   * preview dialog when `fromPreview`.
+   */
+  async function runMaintenance(mode, body = undefined, { fromPreview = false } = {}) {
     if (!canWrite || busy || isProcessingStatus(report)) return;
     const refresh = mode === MAINTENANCE_MODES.REFRESH_EXTRACTION;
-    const ok = await requestConfirm(refresh ? REFRESH_EXTRACTION_CONFIRM : RERUN_AI_CONFIRM);
-    if (!ok) return;
+    if (!refresh) {
+      const ok = await requestConfirm(RERUN_AI_CONFIRM);
+      if (!ok) return;
+    }
     setBusy(mode);
     setError('');
     try {
       const path = refresh ? 'refresh-extraction' : 'rerun-ai';
-      const { data } = await api.post(`/threat-library/reports/${reportId}/${path}`);
+      const { data } = await api.post(`/threat-library/reports/${reportId}/${path}`, body);
       if (data?.report) setReport((prev) => mergeReportPayload(prev, data.report));
       if (data?.job) setJob(data.job);
       // The candidate set is being rebuilt: previous rows are no longer current.
@@ -1469,12 +1504,16 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       setOpenCandidateId(null);
       setPendingMaintenance(mode);
       setFeedback(describeMaintenanceAccepted(mode));
+      if (refresh) setRefreshPreview({ open: false, loading: false, error: '', data: null });
       await loadStatus().catch(() => {});
     } catch (err) {
       const data = err?.response?.data;
       if (data?.code === 'analysis_already_running' && data?.report) {
         setReport((prev) => mergeReportPayload(prev, data.report));
         setFeedback('Analysis is already running. Showing live progress.');
+        if (refresh) setRefreshPreview({ open: false, loading: false, error: '', data: null });
+      } else if (fromPreview) {
+        throw err;
       } else {
         setError(data?.message || (refresh ? 'Refresh extraction failed' : 'Re-run AI analysis failed'));
       }
@@ -1655,9 +1694,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       error: createOp.error
     });
   }, [createOp, createElapsedMs]);
+  const qualityChip = describeQualityChip(report?.extraction_quality);
   const overflowItems = [
     canShowRefreshExtraction(report, { busy: Boolean(busy), canWrite })
-      ? { id: 'refresh-extraction', label: 'Refresh extraction', disabled: Boolean(busy), onSelect: () => runMaintenance(MAINTENANCE_MODES.REFRESH_EXTRACTION).catch(() => {}) }
+      ? { id: 'refresh-extraction', label: 'Refresh extraction', disabled: Boolean(busy), onSelect: () => openRefreshPreview().catch(() => {}) }
       : null,
     canShowRerunAi(report, { busy: Boolean(busy), canWrite })
       ? { id: 'rerun-ai', label: 'Re-run AI analysis', disabled: Boolean(busy), onSelect: () => runMaintenance(MAINTENANCE_MODES.RERUN_AI).catch(() => {}) }
@@ -1722,6 +1762,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 <span style={badgeStyle({ border: '#334155', bg: '#1e293b', color: '#cbd5e1' })} data-testid="report-status">
                   {statusLabel(report)}
                 </span>
+                {qualityChip ? (
+                  <button
+                    type="button"
+                    className="tl-quality-chip"
+                    data-testid="report-quality-chip"
+                    data-tone={qualityChip.tone}
+                    title={qualityChip.title}
+                    onClick={() => setView(REPORT_VIEWS.OVERVIEW)}
+                  >
+                    {qualityChip.label}
+                  </button>
+                ) : null}
                 {report.report_type ? (
                   <span style={{ fontSize: 12, color: '#94a3b8' }}>{humanizeEnum(report.report_type)}</span>
                 ) : null}
@@ -1870,6 +1922,10 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                 <DetailList items={reportDetails} testId="report-details" className="tl-dl--info" />
               </div>
             </div>
+            <ExtractionQualitySection
+              key={`${report.extraction_quality?.version || 'none'}:${report.extraction_quality?.status || 'none'}:${report.extraction_quality?.warnings_total ?? 0}`}
+              quality={report.extraction_quality}
+            />
             {(Array.isArray(report.tags) && report.tags.length) || canWrite ? (
               <section className="tl-intel" data-testid="overview-tags">
                 <h2 className="tl-heading">Tags</h2>
@@ -2322,6 +2378,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         position={drawerPosition}
         onNavigate={navigateDrawer}
       />
+
+      {report && canWrite ? (
+        <RefreshPreviewModal
+          open={refreshPreview.open}
+          loading={refreshPreview.loading}
+          error={refreshPreview.error}
+          preview={refreshPreview.data}
+          busy={busy}
+          onClose={closeRefreshPreview}
+          onSubmit={(body) => runMaintenance(MAINTENANCE_MODES.REFRESH_EXTRACTION, body, { fromPreview: true })}
+        />
+      ) : null}
 
       {report && canEditTlp({ canWrite, report }) ? (
         <TlpEditModal

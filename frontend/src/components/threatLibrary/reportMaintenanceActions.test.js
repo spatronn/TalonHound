@@ -117,9 +117,13 @@ test('a running refresh does not pretend AI or a fetch ran', () => {
 test('page wiring: overflow menu items, confirmations, endpoints; Retry stays the failed-state button', () => {
   assert.match(pageSrc, /canShowRefreshExtraction\(report, \{ busy: Boolean\(busy\), canWrite \}\)\s*\?\s*\{ id: 'refresh-extraction', label: 'Refresh extraction'/);
   assert.match(pageSrc, /canShowRerunAi\(report, \{ busy: Boolean\(busy\), canWrite \}\)\s*\?\s*\{ id: 'rerun-ai', label: 'Re-run AI analysis'/);
-  assert.match(pageSrc, /requestConfirm\(refresh \? REFRESH_EXTRACTION_CONFIRM : RERUN_AI_CONFIRM\)/);
+  // Refresh opens the read-only preview first; Re-run AI keeps its confirmation.
+  assert.match(pageSrc, /label: 'Refresh extraction', disabled: Boolean\(busy\), onSelect: \(\) => openRefreshPreview\(\)/);
+  assert.match(pageSrc, /api\.get\(`\/threat-library\/reports\/\$\{reportId\}\/refresh-extraction\/preview`\)/);
+  assert.match(pageSrc, /if \(!refresh\) \{\s*const ok = await requestConfirm\(RERUN_AI_CONFIRM\);/);
   assert.match(pageSrc, /const path = refresh \? 'refresh-extraction' : 'rerun-ai';/);
-  assert.match(pageSrc, /api\.post\(`\/threat-library\/reports\/\$\{reportId\}\/\$\{path\}`\)/);
+  assert.match(pageSrc, /api\.post\(`\/threat-library\/reports\/\$\{reportId\}\/\$\{path\}`, body\)/);
+  assert.match(pageSrc, /onSubmit=\{\(body\) => runMaintenance\(MAINTENANCE_MODES\.REFRESH_EXTRACTION, body, \{ fromPreview: true \}\)\}/);
   assert.match(pageSrc, /\{canShowRetryButton\(report, \{ busy: Boolean\(busy\), canWrite \}\) \? \(/);
   // Maintenance actions live in the overflow menu, not as extra header buttons.
   const header = pageSrc.slice(pageSrc.indexOf('<div className="tl-report-header__actions">'), pageSrc.indexOf('<ReportActionsMenu items={overflowItems}'));

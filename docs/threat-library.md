@@ -178,9 +178,11 @@ A blocked refresh writes nothing: no candidates and no publication date. The rep
 
 MODE changes, new quality warnings, additions and ordinary reclassification of pending rows are recorded but do not block.
 
-- **Preview:** `GET …/reports/:id/refresh-extraction/preview` returns the same diff and guard verdict and never writes.
-- **Explicit acceptance:** `POST …/refresh-extraction` with `{ "membership_changes": "accept", "reason": "…" }` (reason ≥ 8 characters) applies the previewed changes. The policy rides the job dispatch, and the refresh audit event records `membership_guard` with the decision, reasons, `accepted_reason` and the initiating analyst.
-- **CLI:** the maintenance CLI does the same with `refresh-extraction --apply --accept-membership-changes --reason "…"`, and its dry-run shows the verdict.
+- **Preview:** `GET …/reports/:id/refresh-extraction/preview` returns the same diff and guard verdict and never writes. The UI's **Refresh extraction** action opens this preview first.
+- **Explicit acceptance:** `POST …/refresh-extraction` with `{ "membership_changes": "accept", "reason": "…", "preview_fingerprint": "<membership_diff.material_fingerprint>" }` (reason ≥ 8 characters) applies the previewed changes. The policy rides the job dispatch, and the refresh audit event records `membership_guard` with the decision, reasons, `accepted_reason`, `accepted_preview_fingerprint` and the initiating analyst.
+- **Stale previews:** the fingerprint covers every Indicator that leaves the original set (identity, reason, row outcome) and every reviewed row that would be deleted; additions do not change it. The worker recomputes the diff when the job runs. A missing fingerprint is refused (`preview_fingerprint_missing`), and so is one that no longer matches the losses (`preview_stale`). An acceptance therefore never authorizes a materially different refresh.
+- **Linked IOC Sources:** a row that leaves the original document but has IOC Source provenance is kept with its analyst state (`original_occurrence_cleared`, still in the union inventory). It is not counted as a deleted reviewed row. A publisher-asserted Indicator that leaves the original document stays a material loss either way. Removed and deleted entries carry the matched IOC id; refresh never deletes the global IOC record.
+- **CLI:** the maintenance CLI does the same with `refresh-extraction --apply --accept-membership-changes --reason "…" [--preview-fingerprint <from a dry-run>]`, and its dry-run shows the verdict and fingerprint.
 
 #### Extraction quality warnings (`tl-quality-v1`)
 
@@ -193,7 +195,7 @@ Every extraction (import, Retry, Re-run AI and Refresh) runs `extractionQuality.
 
 Each warning has a stable code, severity, candidate identities, block ids, section context, evidence excerpts, an explanation and extractor versions. Thresholds live in `EXTRACTION_QUALITY_THRESHOLDS`.
 
-The record is stored in `analysis_progress.extraction_diagnostics.quality` and returned as `extraction_quality` on report payloads. MCP `get_threat_report` returns a summary (status, counts, codes). Reports imported before `tl-quality-v1` have `null` until their next refresh. The benchmark (`docs/threat-library-benchmark.md`) measures the detector's false warnings and detection rate.
+The record is stored in `analysis_progress.extraction_diagnostics.quality` and returned as `extraction_quality` on report payloads. The report page shows it as **Overview → Extraction quality** (status, analyst wording per reason code, section context and affected values; no block ids, zones or versions), plus a header chip when something needs review. Warnings are labelled as automatic signals, not confirmed errors. MCP `get_threat_report` returns a summary (status, counts, codes). Reports imported before `tl-quality-v1` have `null` until their next refresh. The benchmark (`docs/threat-library-benchmark.md`) measures the detector's false warnings and detection rate.
 
 `npm run scan:threat-library-quality` (backend container) runs the same read-only preview over stored reports: a read-only DB session, no model, no network. It prints each report's quality status, the guard verdict a refresh would get and its Indicator diff. `--clean <ids>` counts warnings on analyst-verified reports as false warnings. Use it before any bulk refresh.
 
