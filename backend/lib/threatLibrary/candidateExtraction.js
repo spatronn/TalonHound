@@ -150,8 +150,14 @@ export {
  * IOC / C2 / sample headings are not self-proving structural IOC tables
  * (tl-table-v6). MODE A membership keeps formal IOC-appendix hashes and
  * domains without promoting legitimate host-binary hashes from analysis tables.
+ * v26: nested HTML headings inside list items keep heading semantics
+ * (threat_library_html_v5); filename-first annotated rows continue appendix
+ * scope (tl-zones-v10); body Domain/IP/MD5 tables and legitimate-service
+ * lists no longer self-prove without type column / authoritative caption /
+ * headed scope (tl-table-v7); PDF headings carry inferred levels and
+ * filename/hash lines stay as rows (threat_library_pdf_v5).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v25';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v26';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -1252,6 +1258,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
+      // Truncated publisher hostname: "online-driver.kro.k" (from "kro[.]k")
+      // matches DOMAIN_RE as the prefix "...kro" because a 1-char final label
+      // cannot be a TLD. Do not invent a shorter complete domain from that.
+      if (/^\.[a-z0-9](?![a-z0-9-])/i.test(text.slice(end))) continue;
       // `user@host.example`: the host is the address's domain (same
       // no-over-derivation rule as a URL host). Email is not a candidate type,
       // so the domain stays a candidate but never a structural row assertion.

@@ -370,6 +370,13 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   // some reports use those suffixes as stand-ins for real C2 names.
   const nonActionableLocalOrReserved =
     candidate.non_actionable_local === true || candidate.reserved_address === true;
+  // Unlabelled body lists whose lead-in names legitimate / shared services
+  // (documentZones demoteLegitimateServiceListDiscovery). Values stay visible
+  // as candidates but must not become Indicators in MODE B either.
+  const onlyLegitimateServiceList =
+    occs.length > 0 &&
+    occs.every((o) => String(o?.zone_reason || '') === 'legitimate_service_list') &&
+    !summary.hasStrong;
   if (onlyEmailDomain) {
     candidate.assessment = 'context_only';
     candidate.role = 'reference';
@@ -380,6 +387,16 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = 'deterministic';
     if (candidate.confidence == null) candidate.confidence = 0.75;
+  } else if (onlyLegitimateServiceList) {
+    candidate.assessment = 'context_only';
+    candidate.role = 'legitimate_service';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_legitimate_service_list';
+    candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
   } else if (!reportSource && nonActionableLocalOrReserved) {
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {

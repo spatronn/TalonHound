@@ -36,8 +36,13 @@ import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
  * authoritative IOC / C2 / sample heading are not self-proving IOC tables —
  * they stay non-explicit so MODE A membership requires the publisher's curated
  * appendix (or a real sample/IOC heading).
+ * v7: outside headed IOC / C2 / sample scope, a table self-proves only when it
+ * declares a type column or sits under an authoritative IOC caption — not
+ * merely because headers look like Domain / IP / MD5. Infrastructure-lookup
+ * tables (First seen / ASN / registrar) and file-hash inventories never
+ * self-prove from body analysis context alone.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v6';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v7';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -514,6 +519,28 @@ export function isFileHashInventoryTable(columns, rows, typeCol = null) {
   return true;
 }
 
+/** Header labels that describe lookup / WHOIS / resolution attributes, not IOC assertions. */
+const INFRASTRUCTURE_LOOKUP_HEADER_RE =
+  /^(?:first\s*seen|last\s*seen|asn|as\s*number|org(?:anization)?|registrar|country|geo|location|owner|isp|network\s*name|whois|hosting|provider|size|filesize|file\s*size|bytes)$/i;
+
+/**
+ * Domain|IP|First seen|ASN (and similar) body tables: resolution / enrichment
+ * attributes around observables, not a publisher IOC appendix by themselves.
+ * @param {{ header?: string|null, intent?: string }[]} columns
+ * @param {object|null} typeCol
+ */
+export function isInfrastructureLookupTable(columns, typeCol = null) {
+  if (typeCol) return false;
+  const cols = Array.isArray(columns) ? columns : [];
+  const lookupCols = cols.filter((c) => INFRASTRUCTURE_LOOKUP_HEADER_RE.test(normalizeHeaderLabel(c.header || '')));
+  if (!lookupCols.length) return false;
+  const hasNetworkHeader = cols.some((c) => {
+    const h = normalizeHeaderLabel(c.header || '');
+    return /^(?:domain|host|hostname|url|ip|ipv4|ipv6|address|c2|indicator|observable|hash|md5|sha\s*-?\s*1|sha\s*-?\s*256)$/i.test(h);
+  });
+  return hasNetworkHeader;
+}
+
 /**
  * Publisher already curated this table via zone inheritance or an IOC/sample heading.
  * @param {object} block
@@ -781,24 +808,33 @@ export function interpretIocTable(block, opts = {}) {
   const headingText = String(block?.section_heading || block?.table?.caption || '');
   const negativeContext = NEGATIVE_TABLE_CONTEXT_RE.test(headingText) || opts.negativeZone === true;
   const fileHashInventory = isFileHashInventoryTable(columns, result.rows, typeCol);
+  const infrastructureLookup = isInfrastructureLookupTable(columns, typeCol);
   const inAuthoritativeScope = tableInAuthoritativeScope(block, opts);
-  // Filename|hash component inventories under technical-analysis headings are
-  // not publisher IOC appendices. They only assert when already inside an
-  // authoritative IOC / C2 / sample scope (or their own sample/IOC heading).
-  const selfProving = structural && !(fileHashInventory && !inAuthoritativeScope);
+  const authoritativeCaption = AUTHORITATIVE_TABLE_HEADING_RE.test(headingText);
+  // Outside curated IOC / C2 / sample scope, column headers alone are not
+  // enough: require a declared type column or an authoritative caption.
+  // File-hash inventories and Domain|IP|ASN-style lookup tables never
+  // self-prove from body analysis context.
+  const blockedOutsideScope = fileHashInventory || infrastructureLookup || !(Boolean(typeCol) || authoritativeCaption);
+  const selfProving = structural && (inAuthoritativeScope || !blockedOutsideScope);
   result.kind = 'ioc_table';
   result.explicit = selfProving && !negativeContext;
   result.dense_observables = denseObservables;
   result.file_hash_inventory = fileHashInventory;
+  result.infrastructure_lookup = infrastructureLookup;
   result.reason = !structural
     ? denseObservables
       ? 'dense_without_type_or_header'
       : 'weak_structure'
     : negativeContext
       ? 'negative_context'
-      : fileHashInventory && !inAuthoritativeScope
+      : !inAuthoritativeScope && fileHashInventory
         ? 'file_hash_inventory_outside_ioc_scope'
-        : 'structural_ioc_table';
+        : !inAuthoritativeScope && infrastructureLookup
+          ? 'infrastructure_lookup_outside_ioc_scope'
+          : !inAuthoritativeScope && blockedOutsideScope
+            ? 'header_labelled_outside_ioc_scope'
+            : 'structural_ioc_table';
   result.declared_type_column = typeCol ? typeCol.index : null;
   result.indicator_columns = indicatorCols.map((c) => c.index);
   result.description_columns = descCols.map((c) => c.index);

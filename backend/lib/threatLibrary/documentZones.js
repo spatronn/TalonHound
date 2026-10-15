@@ -12,6 +12,7 @@ import {
   INDICATOR_HEADING_FORMS,
   classifyIndicatorHeading,
   classifySectionRole,
+  isAnnotatedIndicatorRowLine,
   isFilenameShapedToken,
   isIndicatorRowShape,
   isIndicatorValueLine,
@@ -59,8 +60,14 @@ import {
  * instead of dropping to report_body. Appendix ends only at a heading at or
  * above the appendix level, or a deeper heading whose subtree has no
  * publisher indicator content (related-article chrome).
+ * v10: filename-first annotated IOC rows ("loader.exe &lt;hash&gt;") count as
+ * indicator content for scope continuation (aligned with isIndicatorRowShape);
+ * unlabelled observable-list discovery does not promote runs whose lead-in
+ * describes legitimate / shared services; body IOC-looking tables no longer
+ * self-prove solely from column headers when outside headed appendix scope
+ * (tl-table-v7).
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v9';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v10';
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -370,23 +377,14 @@ function isIndicatorRowBlock(b) {
   if (!b || b.layout === 'page_edge' || b.type === 'heading') return false;
   const text = String(b.text || '').trim();
   if (b.layout === 'observable_row' || isObservableListLine(text) || isIndicatorValueLine(text)) return true;
-  // Annotated publisher rows ("<md5> oleasapi.dll") are indicator lines even
-  // when isIndicatorValueLine rejects the trailing filename token. Require the
-  // lead token itself to be an observable — never "GET https://…" API lines.
+  // Annotated publisher rows on either side of the value ("<md5> oleasapi.dll"
+  // or "loader.exe <md5>") are indicator lines. Match isIndicatorRowShape so
+  // filename-first rows keep appendix scope when a sibling sub-heading follows.
   if (
     (b.type === 'paragraph' || b.type === 'list_item' || b.type === 'list' || b.type === 'code') &&
-    text.length > 0 &&
-    text.length <= 160
+    isAnnotatedIndicatorRowLine(text)
   ) {
-    const focus = text.split(/\s+/)[0]?.replace(/[.,;:)\]]+$/, '') || '';
-    const focusLooksObservable =
-      Boolean(focus) &&
-      (/^[a-f0-9]{32,64}$/i.test(focus) ||
-        /^(?:\d{1,3}\.){3}\d{1,3}$/.test(focus) ||
-        /\[\.]/.test(focus) ||
-        isIndicatorValueLine(focus) ||
-        isObservableOnlyLine(focus));
-    if (focusLooksObservable && isIndicatorRowShape(text, focus)) return true;
+    return true;
   }
   if (b.type === 'list_item' || b.type === 'list' || (b.type === 'table' && !b.table)) {
     return text.length <= 160 && OBSERVABLE_IN_TEXT_RE.test(refangTextForExtraction(text));
@@ -489,9 +487,24 @@ const TOPIC_LABEL_ZONES = new Set(['c2_section', 'operational_infrastructure']);
  * observables its text happens to contain.
  * @param {object} b
  */
-function isIndicatorContentBlock(b) {
+/**
+ * @param {object} b
+ * @param {{ underAuthoritativeTopic?: boolean }} [opts]
+ *   underAuthoritativeTopic: the caller is confirming a C2 / operational /
+ *   IOC topic label. IOC-shaped tables (including Domain|IP|First seen) may
+ *   confirm that label. Without this flag, only self-proving tables confirm —
+ *   otherwise a body analysis grid would open a C2 section that then marks
+ *   the same grid authoritative (circular promotion).
+ */
+function isIndicatorContentBlock(b, opts = {}) {
   if (!b || b.type === 'heading' || b.layout === 'page_edge') return false;
-  if (b.type === 'table' && b.table) return interpretIocTable(b, {}).kind === 'ioc_table';
+  if (b.type === 'table' && b.table) {
+    const underTopic = opts.underAuthoritativeTopic === true;
+    const interp = interpretIocTable(b, { inAuthoritativeScope: underTopic });
+    if (interp.kind !== 'ioc_table') return false;
+    if (underTopic) return true;
+    return interp.explicit === true;
+  }
   return isIndicatorRowBlock(b);
 }
 
@@ -502,15 +515,17 @@ function isIndicatorContentBlock(b) {
  * @param {object[]} blocks
  * @param {number} i
  * @param {Set<string>} chromeIds
+ * @param {number} [limit]
+ * @param {{ underAuthoritativeTopic?: boolean }} [opts]
  */
-export function sectionHasIndicatorContent(blocks, i, chromeIds, limit = 80) {
+export function sectionHasIndicatorContent(blocks, i, chromeIds, limit = 80, opts = {}) {
   let seen = 0;
   for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
     const n = blocks[j];
     if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
     if (n.type === 'heading') return false;
     seen += 1;
-    if (isIndicatorContentBlock(n)) return true;
+    if (isIndicatorContentBlock(n, opts)) return true;
   }
   return false;
 }
@@ -526,10 +541,11 @@ export function sectionHasIndicatorContent(blocks, i, chromeIds, limit = 80) {
  * @param {Set<string>} chromeIds
  */
 function topicHeadingHasIndicatorContent(b, blocks, i, chromeIds) {
+  const opts = { underAuthoritativeTopic: true };
   if (b.type === 'heading' && Number.isInteger(b.level)) {
-    return subtreeHasIndicatorStructure(blocks, i, chromeIds);
+    return subtreeHasIndicatorStructure(blocks, i, chromeIds, 200, opts);
   }
-  return sectionHasIndicatorContent(blocks, i, chromeIds);
+  return sectionHasIndicatorContent(blocks, i, chromeIds, 80, opts);
 }
 
 /**
@@ -571,6 +587,9 @@ export function looksLikeLabelHeading(text) {
   const t = String(text || '').trim();
   if (!t || t.length > 72) return false;
   if (/[.!?。]$/.test(t)) return false;
+  // Figure / table captions are body chrome, never C2 / IOC section openers —
+  // even when the caption text mentions "C2" or "Indicators".
+  if (/^\[?\s*(?:figure|table|fig\.?|tab\.?|image|diagram)\s*[\d\-]/i.test(t)) return false;
   // Observable value rows — including defanged hosts with a parenthetical
   // gloss ("osc-cdn[.]com (actor-used …)") — are never section titles.
   if (/(?:\[\.\])|hxxps?:\/\//i.test(t)) return false;
@@ -597,7 +616,7 @@ export function looksLikeLabelHeading(text) {
  * @param {number} i heading index
  * @param {Set<string>} chromeIds
  */
-export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200) {
+export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200, opts = {}) {
   const level = blocks[i].level;
   let seen = 0;
   for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
@@ -608,7 +627,7 @@ export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200) 
       continue;
     }
     seen += 1;
-    if (isIndicatorContentBlock(n)) return true;
+    if (isIndicatorContentBlock(n, opts)) return true;
   }
   return false;
 }
@@ -693,9 +712,13 @@ export function annotateDocumentZones(doc, opts = {}) {
   const retainAppendixUnderHeading = (level, headingIndex) => {
     if (!appendixAnchor) return false;
     if (level == null || appendixAnchor.level == null || level <= appendixAnchor.level) return false;
+    // Already inside a publisher IOC appendix: Filename|MD5 inventories under
+    // "Loaders" / "Plugins" siblings confirm continuation even when those
+    // tables would not self-prove in body analysis context.
+    const opts = { underAuthoritativeTopic: true };
     return (
-      sectionOpensWithIndicatorContent(blocks, headingIndex, footerIds) ||
-      subtreeHasIndicatorStructure(blocks, headingIndex, footerIds)
+      isIndicatorContentBlock(nextContentBlock(blocks, headingIndex, footerIds), opts) ||
+      subtreeHasIndicatorStructure(blocks, headingIndex, footerIds, 200, opts)
     );
   };
 
@@ -1202,6 +1225,7 @@ export function annotateDocumentZones(doc, opts = {}) {
   // Discovery fallback: unlabelled lists in body text. Rows already inside an
   // authoritative section are untouched (inheritance never depends on run length).
   applyObservableListZones(blocks);
+  demoteLegitimateServiceListDiscovery(blocks);
   applyCidrParagraphZones(blocks);
 
   return {
@@ -1216,6 +1240,52 @@ export function annotateDocumentZones(doc, opts = {}) {
       source_host: opts.sourceHost || doc.meta?.source_host || null
     }
   };
+}
+
+/**
+ * Lead-in prose that names shared / legitimate services. An unlabelled domain
+ * list after such a sentence must not become an authoritative IOC section.
+ */
+const LEGITIMATE_SERVICE_LEADIN_RE =
+  /\b(?:legitimate|benign|trusted|reputable|popular|known[- ]good|shared\s+(?:cloud\s+)?(?:service|services|infrastructure|platform|platforms)|third[- ]party\s+service|review\s+traffic|monitor(?:ing)?\s+traffic|allow\s*list|allowlist|white\s*list|whitelist)\b/i;
+
+/**
+ * When structural list discovery promoted a run whose immediately preceding
+ * content describes legitimate / shared services, demote those blocks back to
+ * report_body. Does not invent benign labels — values stay extractable as
+ * candidates without MODE A authority.
+ * @param {object[]} blocks
+ */
+export function demoteLegitimateServiceListDiscovery(blocks) {
+  let runStart = -1;
+  const demoteRun = (from, to, leadIn) => {
+    if (from < 0 || to < from) return;
+    if (!LEGITIMATE_SERVICE_LEADIN_RE.test(String(leadIn || ''))) return;
+    for (let i = from; i <= to; i += 1) {
+      const b = blocks[i];
+      if (b?.zone_reason === 'observable_list' && (b.zone === 'explicit_ioc_section' || b.zone === 'report_body')) {
+        b.zone = 'report_body';
+        b.section = b.section === 'explicit_ioc_section' ? 'report_body' : b.section;
+        b.zone_reason = 'legitimate_service_list';
+      }
+    }
+  };
+  for (let i = 0; i < (blocks || []).length; i += 1) {
+    const b = blocks[i];
+    if (b?.zone_reason === 'observable_list') {
+      if (runStart < 0) runStart = i;
+      continue;
+    }
+    if (runStart >= 0) {
+      const prev = previousContentBlock(blocks, runStart, new Set());
+      demoteRun(runStart, i - 1, prev?.text);
+      runStart = -1;
+    }
+  }
+  if (runStart >= 0) {
+    const prev = previousContentBlock(blocks, runStart, new Set());
+    demoteRun(runStart, blocks.length - 1, prev?.text);
+  }
 }
 
 /**
