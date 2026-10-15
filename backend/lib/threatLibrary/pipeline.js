@@ -50,6 +50,7 @@ import {
 } from './extractionStages.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { preserveAnalystCandidates } from './candidateAnalystState.js';
+import { preserveStoredIocLinks } from './iocMatch.js';
 import { createServiceLogger } from '../appLogger.js';
 import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
 import { groundAiPublisherEntities } from './publisherEntityGrounding.js';
@@ -547,7 +548,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     const matched = await matchCandidateSet(pool, candidates);
     const summary = matched.summary;
 
-    const resolved = preserveAnalystCandidates(matched.candidates, previousRows);
+    const linked = await preserveStoredIocLinks(pool, matched.candidates, previousRows);
+    const resolved = preserveAnalystCandidates(linked.candidates, previousRows);
     const savedCandidates = (await reconcileReportCandidates(pool, report.id, resolved)).rows;
 
     // Clear prior entity links/relationships for this report before re-applying (idempotent finalize)

@@ -12,9 +12,11 @@
  *                          replay of the stored one). This module does not
  *                          call a model.
  *   analyst                re-applied here and wins where it conflicts:
- *                          review_status, the Context Only decision, the
- *                          Context Only → IOC promotion, and a Create-IOC
- *                          outcome that must not be demoted back to non-IOC
+ *                          review_status, the Context Only decision and the
+ *                          Context Only → IOC promotion (promote_to_ioc)
+ *   global IOC             history only: a Create-IOC outcome keeps the
+ *                          review decision and the IOC link, never the
+ *                          Indicator membership (a contract fix may demote it)
  *
  * Row id, public id, portable id and promotion_outcome / promotion_detail /
  * promoted_at are kept by reconcileReportCandidates (it updates the surviving
@@ -104,24 +106,21 @@ export function applyAnalystState(candidate, prior) {
       candidate.policy_decision = 'analyst_promoted_from_context_only';
     }
   }
-  // Create-IOC / link outcome. The catalog match is the linkage; this stops a
-  // new extraction or AI pass from demoting that identity back to non-IOC and
-  // making the stored outcome look reset. It does not freeze an AI assessment
-  // that is still an IOC, and it never overrides a LATER analyst exclusion
-  // (Context Only / Ignore / Reject of the created identity): that decision
-  // stands, exactly as the review action left it.
+  // Create-IOC / link outcome is review HISTORY, not publisher membership.
+  // Creating (or linking) a global IOC records that an analyst approved the
+  // identity under the extraction contract of that time; it is not evidence
+  // that the publisher still asserts it. The current deterministic reading
+  // (is_ioc, assessment, role, match_state, source assertion) therefore
+  // stands, so a contract fix can move a created identity out of the
+  // Indicators set. That move is a protected loss for the refresh guard
+  // (reviewed + IOC-linked → admin acceptance), and the global IOC record and
+  // its link are kept (iocMatch.preserveStoredIocLinks; promotion_outcome is
+  // never rewritten by reconcile). Only the explicit single-row override
+  // above (promote_to_ioc, evidence.promoted_from) re-classifies a row.
+  // An outcome recorded on a still-pending row keeps its implied approval,
+  // unless a later analyst exclusion (Context Only / Ignore / Reject) stands.
   if (CREATED_IOC_OUTCOMES.has(String(prior.promotion_outcome || '')) && !ANALYST_EXCLUSION_REVIEWS.has(review)) {
-    if (isContextOnlyCandidate(candidate) || candidate.is_ioc === false) {
-      candidate.is_ioc = true;
-      if (!candidate.assessment || candidate.assessment === 'context_only' || candidate.assessment === 'invalid') {
-        candidate.assessment = 'suspicious';
-      }
-      if (['reference', 'legitimate_service', 'hosting_platform'].includes(String(candidate.role))) {
-        candidate.role = 'unknown';
-      }
-      candidate.match_state = candidate.matched_ioc_id != null ? 'existing' : 'new';
-      if (candidate.review_status === 'pending') candidate.review_status = 'approved';
-    }
+    if (candidate.review_status === 'pending') candidate.review_status = 'approved';
   }
   return candidate;
 }

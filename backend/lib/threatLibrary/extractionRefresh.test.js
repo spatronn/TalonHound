@@ -1000,11 +1000,15 @@ test('a later analyst Context Only / Ignore of a created IOC identity survives r
     assert.equal(c.review_status, review);
     assert.equal(c.assessment, 'context_only', `${review}: extraction reading kept, not forced back to suspicious`);
   }
-  // Unchanged: an approved created identity a new extraction reads as context is kept as an IOC.
-  const kept = applyAnalystState({ ...fresh(), assessment: 'context_only', match_state: 'context_only', role: 'reference' }, { review_status: 'approved', promotion_outcome: 'created', evidence: {} });
-  assert.equal(kept.assessment, 'suspicious');
-  assert.equal(kept.is_ioc, true);
-  assert.equal(kept.match_state, 'existing');
+  // P1 hotfix: a Create-IOC outcome is review history, not publisher membership.
+  // An approved created identity the current extraction reads as context stays
+  // context (the refresh guard protects the loss); the decision is kept.
+  const demoted = applyAnalystState({ ...fresh(), assessment: 'context_only', match_state: 'context_only', role: 'reference' }, { review_status: 'approved', promotion_outcome: 'created', evidence: {} });
+  assert.equal(demoted.assessment, 'context_only');
+  assert.equal(demoted.match_state, 'context_only');
+  assert.equal(demoted.role, 'reference');
+  assert.equal(demoted.review_status, 'approved');
+  assert.equal(demoted.matched_ioc_id, 3445485, 'the global IOC link is not touched');
 });
 
 /** A document link the retired automatic discovery would have turned into an IOC Source row. */

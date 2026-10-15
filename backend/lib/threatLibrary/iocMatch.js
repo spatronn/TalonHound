@@ -82,3 +82,59 @@ export async function bulkMatchCandidates(pool, candidates) {
     }
   };
 }
+
+/**
+ * Keep the stored global-IOC link of identities the catalog lookup skipped.
+ *
+ * bulkMatchCandidates only looks up candidates that are still IOC-typed
+ * (is_ioc !== false). When a contract fix re-reads a previously matched or
+ * created identity as non-IOC (an incomplete URL prefix, a provider service),
+ * the lookup is skipped and the row would be written back with
+ * matched_ioc_id = NULL: the global IOC would silently lose its link to this
+ * report. The link is a fact about the identity, not a membership claim, so
+ * it is carried over when the stored IOC record still exists. A lookup that
+ * RAN and missed is a real catalog change and is left as matched (the refresh
+ * guard reports it as an IOC link change).
+ *
+ * Reads only. Returns new candidate objects (inputs are not mutated).
+ * @param {import('pg').Pool|import('pg').PoolClient} pool
+ * @param {object[]} candidates matched candidates (matchCandidateSet output)
+ * @param {object[]} previousRows persisted rows of the report
+ * @returns {Promise<{ candidates: object[], preserved: { identity: string, matched_ioc_id: number }[] }>}
+ */
+export async function preserveStoredIocLinks(pool, candidates, previousRows) {
+  const priorByKey = new Map((previousRows || []).map((r) => [`${r.candidate_type}\0${r.normalized_value}`, r]));
+  const pending = [];
+  for (const c of candidates || []) {
+    if (c.matched_ioc_id != null) continue;
+    const prior = priorByKey.get(`${c.candidate_type}\0${c.normalized_value}`);
+    if (prior?.matched_ioc_id == null) continue;
+    const lookedUp = c.is_ioc !== false && MATCHABLE_IOC_TYPES.has(String(c.candidate_type || '').toLowerCase());
+    if (lookedUp) continue;
+    pending.push({ c, prior });
+  }
+  if (!pending.length) return { candidates: candidates || [], preserved: [] };
+  const ids = [...new Set(pending.map((p) => Number(p.prior.matched_ioc_id)).filter(Number.isFinite))];
+  const { rows } = await pool.query(`SELECT id, observable_type FROM ioc_items WHERE id = ANY($1::bigint[])`, [ids]);
+  const live = new Map(rows.map((r) => [String(r.id), r]));
+  const carried = new Map();
+  const preserved = [];
+  for (const { c, prior } of pending) {
+    const hit = live.get(String(Number(prior.matched_ioc_id)));
+    if (!hit) continue;
+    const matchedIocId = Number(hit.id);
+    carried.set(c, {
+      ...c,
+      matched_ioc_id: matchedIocId,
+      matched_ioc_observable_type: prior.matched_ioc_observable_type || hit.observable_type || null,
+      match_state: deriveMatchState({
+        assessment: c.assessment,
+        confidence: c.confidence,
+        matchedIocId,
+        valid: c.assessment !== 'invalid'
+      })
+    });
+    preserved.push({ identity: `${c.candidate_type}:${c.normalized_value}`, matched_ioc_id: matchedIocId });
+  }
+  return { candidates: (candidates || []).map((c) => carried.get(c) || c), preserved };
+}

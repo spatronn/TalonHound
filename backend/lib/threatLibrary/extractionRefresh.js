@@ -71,6 +71,7 @@ import {
 } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
 import { compactExtractionQuality, storedExtractionQuality } from './extractionQuality.js';
+import { preserveStoredIocLinks } from './iocMatch.js';
 import {
   REFRESH_GUARD_DECISIONS,
   buildRefreshMembershipDiff,
@@ -191,13 +192,17 @@ export async function computeExtractionRefresh(pool, { report, document, previou
   const replay = aiReplayUpdatesFromRows(previousRows, { documentRebuilt });
   const merged = mergeAiCandidateUpdates(extracted.candidates, { candidate_updates: replay }, { document: extracted.document });
   const matched = await matchCandidateSet(pool, merged);
-  const candidates = preserveAnalystCandidates(matched.candidates, previousRows);
+  // Deterministic publisher reading (extraction + AI replay + catalog match),
+  // with the stored global-IOC links of identities the lookup skipped kept.
+  const linked = await preserveStoredIocLinks(pool, matched.candidates, previousRows);
+  const candidates = preserveAnalystCandidates(linked.candidates, previousRows);
   return {
     document: extracted.document,
     diagnostics: extracted.diagnostics,
     candidates,
     summary: summarizeResolvedCandidates(candidates),
-    replayedAiDecisions: replay.length
+    replayedAiDecisions: replay.length,
+    iocLinksPreserved: linked.preserved
   };
 }
 
