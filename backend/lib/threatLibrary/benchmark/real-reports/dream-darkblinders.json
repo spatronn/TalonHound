@@ -1,0 +1,563 @@
+{
+  "id": "real-dream-darkblinders",
+  "title": "DarkBlinders: Active Espionage Campaign | Dream Research",
+  "publisher": "Dream Research",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "dream_research"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "87934c2c50ffd9f0fa996c81e341ef06c47450f0a104dfceff456ff4a6251088",
+    "url": "https://dreamgroup.com/blog/darkblinders-inside-an-active-espionage-campaign",
+    "talonhound_report_id": "af83b64e-87c8-4724-973b-53c0f3bd7e4f",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 143-256 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "Segment 142 is a caveat naming shared platforms (GitHub / Cloudflare) - not indicators. Exact api.github.com repo URLs and the workers.dev hostname ARE listed.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "gcc-sg.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gcc-sg.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mfakuwait.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mofakuwait.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mfakuwait.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mfakuwait.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "krgcloud.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "moelcloud.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "korektell.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "msonedrive.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vision-cloud.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gsecurity.help",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "secure-googe.help",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "googedrive.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cdn-gdrive.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cdndrive.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "drivegooge.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "drive-googe.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "drive-g.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "drive-go.cam",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ukcentral.team",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "meetcloud.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "meetgooge.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "googemeet.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "accountmeetgooge.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "meetgooge.cam",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "meet-goo.cam",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "meetlogin.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "meetonline.cam",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "stark-meet.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "stark-meet.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "stark-meet.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "starkmeet.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "artcyberspacetraining.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "optionbmitfilterport.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "artwavecollective.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "astravioncapital.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "lifeinmotionnow.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "g-prx.itugegape524.workers.dev",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://gcc-sg.cloud/owa/auth/logon.aspx?replaceCurrent=1&url=/owa/&reason=0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://mfakuwait.org/owa/auth/logon.aspx?replaceCurrent=1&url=/owa/&reason=0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://mfakuwait.online/owa/auth/logon.aspx?replaceCurrent=1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://mfakuwait.website/owa/auth/logon.aspx?replaceCurrent=1&url=/owa/&reason=0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://cdndrive.online/drive/file/d/1JpH3ySmJpvX6TyGnF7C-S8qYiaoxyC5O/view",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://drive-g.cloud/drive/file/d/15EMLDq9hpNXyZdu7RIZokPWLSdDC0y_0/view",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://krgcloud.online/drive/file/d/1JpH3ySmJpvX6TyGnF7C-S8qYiaoxyC5O/view?ref=3yh3q5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://moelcloud.online/drive/file/d/1JpH3ySmJpvX6TyGnF7C-S8qYiaoxyC5O/view?ref=3yh3q5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://stark-meet.com/wp-content/uploads/2025/08/StarkMeet.zip",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://starkmeet.com/download",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://api.github.com/repos/PeakyBlindersTeam/myLic",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://api.github.com/repos/PeakyBlindersTeam/myLic/contents/cd8c5ffad5278fa0/cd8c5ffad5278fa0Lic.txt",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://api.github.com/repos/PeakyBlindersTeam/myLic/contents/cd8c5ffad5278fa0/cd8c5ffad5278fa0Inf.txt",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://g-prx.itugegape524.workers.dev/rate_limit",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://g-prx.itugegape524.workers.dev/repos/PeakyBlindersTeam/myLic/contents/cd8c5ffad5278fa0/cd8c5ffad5278fa0Lic.txt",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://g-prx.itugegape524.workers.dev/repos/PeakyBlindersTeam/myLic/contents/cd8c5ffad5278fa0/cd8c5ffad5278fa0Inf.txt",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://g-prx.itugegape524.workers.dev/search/issues?q=20260825+repo:Microsoft/vscode+type:issue",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://194.62.249.114/8001",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://api.github.com/repos/PeakyBlindersTeam/myCode",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "194.62.249.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "194.62.249.114",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "194.62.249.53",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "89.125.209.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.17.71.148",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "77.223.215.140",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "052702d652286482863a70eaa37e4fc894f40c8b08dccf245ced46916e7f419f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "06d68dcb8088546cb40fb3d7e87d6a593cbdf4cc1e43017604faf786ad6dbd41",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "0702d54b03bf601019b6ad039f76ecc49b5b3e564119dfd60aebd742c8e90300",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "0c9869b4aa7dde55936ab8726c442368b722eb69b785ef5c8e24938a01fdee89",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "11d1d570b5db7639d56a40621045e96c33b3d1ec3ae49e63c2ff07b9865844d4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "13216e9942e15a48228005092f4e5ff8b7382d4ec73673f88c6d7b6c103cbce0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "1421fc1d0c06bf410b16f2cc44d49988c30cd64edf4dd08dd23ac64b28b5c641",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "1d1754948c42a85f4b613dfe3de8cfb100d334da956244e4b58f5ea9d6463fed",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "22beddd7fd5d6df6104fc4987ca892b6772c2b832ad31731f71d4de2e9d32c2b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "39da663f083fad0ad8dcaac90b0760d166e2aa911f90a3c311a8121badc16020",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3ab16d953c71738788ef2f39b62cf47284750e98aada273187954536e1ee1c83",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3f1961c951c105f289e64a8933c7d1ee34d71f1964999c01e97f2d944dfdc33c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3f76edab26d08b1517a15bde8ca82e94d48b4cbedd005eb11c950cfd6d9a8982",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3fd810a3aa0039993393741b32287c367a9a5037a41e826906440887cdd3ed13",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3fde5576233852cb9fdc0d6c2c4956a8eaa0857c2bbd86c388d7b4e10f11b0e8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "415eb0d0055bc113df2da361b35c4de65ff55d5cddea3b637660b3ad19848ebd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "482c32947763a613199c43f7b4760f33",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "48e6a4196bff405b8b8ef80dcba599b93cb0428f3e587da90be6020e2337c83e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "53f35e49eb9b271fd8cbcd3daacb525328dbf159a03dbd1c7adebe0363daa402",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "6ec2c97eeddf741a2f8dcd7b4c720c7f5a3f7afe5205ca1cf1e62d9199333e4b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "770646093df203013b190ef0b0baa9dd2f6834534970a57ac5dc4be9b22ad28e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "824b36b9af74655a2c53b73959c144028b1f8ccc7c45ef17455d020b74cd0a51",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "85c119297f42f09f9414e138b8f137a3e2dac1ee56fb6ae79c4c5044bc87bd80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "87bd8af14932f132bb3df9a6b8c17748c3e114432e217816a88ba35ec9a381f4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "8875a41ead3b17eb8538466bfecb211a52d7ee56fa6e496b4407bdb0caa51dc5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "8c68119ebef2ec4be1d57f867ecc1e3606f819bd6278d35a95c6d9b789ac0bfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9ceb74f9ca2b0e9e1f0e579bfbb5d3d376667165eff9b8cda616b1c4a74236b9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9d4b61dae9e00940305c6ad7d862713025c07f27ecb5f89e59bcbd3fbcf17965",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9d84672c95bfa4f2a3756053d21fd3b72508f51c7856837bd489f5edf283be10",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "aa7d4bf74edacba06da7e9d414c0649599fb0e7b118f7c3ddcec09eb3f720c82",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c9178fef804f2d6a525c1af0a8ba49a5ec692bfaabd6043e5f0094fe93a31e82",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "aae2a7860f2e46019c38c1e7a50bc3b8f8104577acf750221c2cf23e6b376328",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ac91ba73040ed42fb4eda1459bb8098e2f80970f2028da80c4e2f01e281cc223",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b24a0c29134800dad72021e22d5ead99fa941722526807f29c131f6fbffa5fe2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c039da6d430f78fc2a405c8ae945d2114518a63d73857145bb244ab651e41f84",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "d8a4d54808c4705f472222c8a6ac5fd0622eb9bda7a2f07e12d712ea8b495d8e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "dbd31b5d891d789e5cebbf0744a57b17c2f9a4fe50b79f64956e40dbb5fcaa9e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e325ba0f93dfdeeb8c35e159c54f9d4e796905056506f6d627f4d66f15fb9988",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f2c54434e2eecca203c2114c0651e5d7a90fc2681117240686d084f016f9e2b6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

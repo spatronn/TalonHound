@@ -1,0 +1,33 @@
+{
+  "id": "control-loopback-contact-narrative",
+  "title": "Known-clean control: loopback listener, publisher contact email and a narrative hash around a MODE A appendix",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "known_clean", "loopback", "publisher_contact", "narrative_hash", "mode_a"],
+  "source": { "kind": "html_file", "path": "control-loopback-contact-narrative.html", "url": "https://research.example/blog/local-proxy-implant/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: the publisher appendix asserts one domain, one IP:port and one sample; the loopback listener and the contact email domain are context; the staging hash appears only in narrative prose",
+      "verified_by": "construction",
+      "verified_at": "2026-10-14"
+    },
+    "indicators": [
+      { "type": "domain", "value": "relay-upstream.info", "assertion": "explicit" },
+      { "type": "ip", "value": "192.0.2.155", "assertion": "explicit" },
+      { "type": "md5", "value": "d41c8f3a6b2e9d0c7f5a1b3e8c4d6f2a", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "vendor-research.example" }
+    ],
+    "excluded_legitimate": [
+      { "type": "ip", "value": "127.0.0.1" }
+    ],
+    "not_indicators": [
+      { "type": "md5", "value": "9c1e7a3b5d2f4e6a8c0b1d3f5a7e9c2b" }
+    ],
+    "sections": [
+      { "heading": "C2", "expected": "authoritative" },
+      { "heading": "Samples", "expected": "authoritative" }
+    ]
+  }
+}

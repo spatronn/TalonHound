@@ -1,0 +1,942 @@
+{
+  "versions": {
+    "candidates": "tl-candidates-v25",
+    "zones": "tl-zones-v9",
+    "tables": "tl-table-v6",
+    "type_resolver": "tl-type-resolver-v8",
+    "html": "threat_library_html_v4",
+    "pdf": "threat_library_pdf_v4",
+    "quality": "tl-quality-v3",
+    "metrics": "tl-benchmark-metrics-v2"
+  },
+  "aggregate": {
+    "cases": 43,
+    "cases_exact": 33,
+    "indicators": {
+      "expected": 258,
+      "tp": 218,
+      "fp": 0,
+      "fn": 40,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 40,
+      "precision": 1,
+      "recall": 0.845,
+      "f1": 0.916
+    },
+    "candidate_extraction_recall": 1,
+    "context_only_accuracy": 1,
+    "legitimate_exclusion_accuracy": 1,
+    "assertion_accuracy": 0.8444,
+    "section_accuracy": 1,
+    "non_indicators_promoted": 0,
+    "ai_dependent_entries": 1,
+    "unsupported_indicators": 0,
+    "quality": {
+      "high": 10,
+      "warning": 10,
+      "info": 0,
+      "cases_flagged": 10,
+      "exact_cases": 33,
+      "exact_cases_flagged": 0,
+      "failing_cases": 10,
+      "failing_cases_flagged": 10
+    }
+  },
+  "cases": {
+    "control-api-examples-c2-topic": {
+      "members": [
+        "domain:cdn-calendar-relay.net",
+        "domain:tenant-sync-portal.com",
+        "sha256:5f2b7c3a9d1e4f6a8b0c2d4e6f8a0b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 3,
+      "assertions_checked": 3,
+      "warning_codes": []
+    },
+    "control-legitimate-binaries": {
+      "members": [
+        "domain:sync-telemetry.org",
+        "ip:198.51.100.44",
+        "md5:3b8a1c5d9e0f4a6b7c2d8e1f5a9b0c3d",
+        "md5:ef59aad625eebda8650aec5820d6ce69"
+      ],
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 3,
+      "sections_checked": 3,
+      "assertions_correct": 4,
+      "assertions_checked": 4,
+      "warning_codes": []
+    },
+    "control-loopback-contact-narrative": {
+      "members": [
+        "domain:relay-upstream.info",
+        "ip:192.0.2.155",
+        "md5:d41c8f3a6b2e9d0c7f5a1b3e8c4d6f2a"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 3,
+      "assertions_checked": 3,
+      "warning_codes": []
+    },
+    "control-mode-b-narrative": {
+      "members": [
+        "domain:c2-update.info",
+        "url:https://learn.microsoft.com/en-us/windows/win32/api/wincred/"
+      ],
+      "tp": 1,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 0,
+      "assertions_checked": 0,
+      "warning_codes": []
+    },
+    "pdf-kimsuky-360-appendix": {
+      "members": [
+        "ip:107.172.249.140",
+        "md5:04272144d33668f99f7cf2255289e351",
+        "md5:3c64c75c9e6a3da7fbc766deb2081219",
+        "md5:7479bedf5813a1527199f8958e898d19",
+        "md5:9ae48e0ce0dfcac0245237fa220dd52d",
+        "url:http://217.60.36.94/unicorn/mort.php",
+        "url:http://217.60.36.94/unicorn/uni.txt",
+        "url:http://38.180.204.13/unicorn/mort.php",
+        "url:http://38.180.204.13/unicorn/uni.txt"
+      ],
+      "tp": 9,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 4,
+      "sections_checked": 4,
+      "assertions_correct": 9,
+      "assertions_checked": 9,
+      "warning_codes": []
+    },
+    "pdf-pivotc2-socradar": {
+      "members": [
+        "ip:146.103.99.177",
+        "ip:45.138.16.182",
+        "ip:46.151.29.58",
+        "ip:89.217.174.207",
+        "sha256:005e6014fb8fd47249691756f5af3b3d53bfae82df88a71277e53e13fe94cb9f",
+        "sha256:08fa6abac9c132deff4f120a7fcfe5bf17c797b87dbbc3f261d5cf0c077c0a2e",
+        "sha256:1bf2c5976f2abbe147ae7be140ed69af2c25092f563786400aecd0231229be19",
+        "sha256:2d338ffc8cc80293575c6800c059e33eb41e967907c20ba7687b2231c50837db",
+        "sha256:550f99193f9e90d93b70af1ab050a2d44f1830259ea165568dafc518e761c589",
+        "sha256:a9bea5f89984d47dd60216b0a0b064e8c7e8057e0c10509faa4a2d8d641eb73b",
+        "sha256:c25a27b506fbae62010caf2abff699df5c94d29f056fa7ccfb5f3170d917c8cb",
+        "sha256:cc7f0660d56405cbdff157033d3e35305f063e62efaff6501d11e6a34e7bd151",
+        "sha256:d4911736986cf8affb29106fb8e8b74e00e52d5f762dce9025f2cfe431cf2140",
+        "sha256:d99fa14f5e7dfe17e437f167f3f9550ebeda496960710dde81d41748bd7749e4",
+        "sha256:eb4d8aab4e687839c5478a7a3819b0a7a857555ed50fc159c026e99764a0c8a0",
+        "sha256:fe7da807a2b37a2bbd8c27830a9acc0d86ad8128f38489c493873c7e410c0408"
+      ],
+      "tp": 16,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 1,
+      "sections_checked": 1,
+      "assertions_correct": 16,
+      "assertions_checked": 16,
+      "warning_codes": []
+    },
+    "layout/html_flat/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_flat/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_flat/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_flat/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_typed_subsections/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_typed_subsections/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_typed_subsections/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_typed_subsections/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_family_sibling/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_family_sibling/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_family_sibling/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_family_sibling/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/html_c2_then_loaders/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_c2_then_loaders/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_c2_then_loaders/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_c2_then_loaders/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/html_c2_then_nested_plugins/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_c2_then_nested_plugins/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_c2_then_nested_plugins/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_c2_then_nested_plugins/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/html_bold_subsections/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_bold_subsections/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_bold_subsections/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_bold_subsections/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/html_bold_appendix/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_bold_appendix/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_bold_appendix/hash_filename_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/html_bold_appendix/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_flat/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_flat/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_flat/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "authoritative_section_values_not_asserted"
+      ]
+    },
+    "layout/pdf_typed_subsections/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_typed_subsections/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_typed_subsections/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_c2_then_loaders/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_c2_then_loaders/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_c2_then_loaders/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    }
+  }
+}

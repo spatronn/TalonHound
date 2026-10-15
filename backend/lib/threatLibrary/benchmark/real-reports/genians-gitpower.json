@@ -1,0 +1,928 @@
+{
+  "id": "real-genians-gitpower",
+  "title": "Kimsuky’s Operation GitPower Targeting Ukraine Behind the Front Lines of Russia’s War",
+  "publisher": "Genians",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "genians"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "56547f67db1711a651a51a8972c58bbc3fd332307c9a09c8daa16aabd4e586f1",
+    "url": "https://www.genians.co.kr/en/blog/threat_intelligence/operation-gitpower",
+    "talonhound_report_id": "2a34bdea-dd53-4549-b45d-55c32510738a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 399-588 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "05cec01db363488e6762097095d7b7fc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "05e65662d55327febf5d4aaeca54f982",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0919c2a84a1c76d6f5268dd5ffd7b5e7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0933fda33f46d2b31e023bf322a11d41",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0a0fe8a557eff10b3b32528347b9d988",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0ae92755dafc510efdc9f68e817b683a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0c89cc9118b863488f5ba240bfe396f6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "14c8b93304700e27b479596024ef19cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1f5416894b604ed6ef1f839414865eee",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1f873bc5c6d5ff0ae0f228dbf26220ba",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1f8ad760e1feee7cecfe1bfadde93d4e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "2062dde8114d57b0108e92371e29b3ed",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "2364f22dfe4d2018619cfba2b510f290",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "24b12630d402e4ce40d05e0623e56933",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "26642b9800192440621a70383595dea2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "28210832c13d806e87cb8f1449cf8c5f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "28fb9e179c3aac449b7e4d760f6b8b7d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "2a100b8de6099b06449e3084b689c32d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "2e36880877f32eac56ae4502ad057b2e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "2f407d8e3dee54e0c4f776e5db55ae86",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "324352a61a343969a93386466d232684",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "337edcca9ef27cfe1a76f4cffa676026",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "33cd80a0b3059c23eadcf263ddbb330f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "348150ce9f3c49283c16d9b37e6dc354",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "353311ea9b82724aa862477cae44cd39",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "380d5a157077b7c8bdfe7c6d9628fe6d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "382bb72f7f42f27b04d1fedd6d633a82",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "3d3f6897f57f4a7b94f83278e795dc18",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "40b48810400a825858946aae9ff5b50d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "4f5694f61b4c244cc2269c3a5eb8a7c7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5282b7aa97f45feeff73ba87d0523e53",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "567a2aedd00fa97f03fc852b1d949596",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "57025a7f9d9d2ef4930dec189bdd0bd0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5a0923427b2fcb5070510753e4f0c0d0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5dd387acef74a14a63dbc883aadee854",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5fa367e38148de7e19abe789451a7a38",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "620bc65bb86962f633a37586e17da9f3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "6896f9c3f24f2fdc7966f753ad3ce723",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "76ed1e64d1c9ea3e4b91f7ed7b2f59f2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "77b9a8309e9f80ca442c629396cc3f6e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "78bf053eea23b86e42a658245d8de904",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7a6e1e578342864c1bb07c83b4e677e3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7e76b71247c995359a7642fe62f3b28f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7f1b4583fec9db44e85b458df4e55669",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8445ffdacfed1fc9951e62ea054ee1c3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "85fcd85d24e1b391cbf0c22b0c8a362a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "896a859812f181286542a0041a549156",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8d73beff15a0467b9bc2b74f6abed75d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "90449413823f31c89f2bd12b5a1ae5d5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "93587de64c445e7fe20351f24c4a97d4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9b33a10f7637c7ce9e5e8aa1ed7303dd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9c2d0cace5c703afa9f3862d19073c6d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9d3b0832e1759d29d2651f3a2d34d781",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9f14d0c51795489bbb8d1853fb7e269d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a0f8c686d57c746bcd97e21dc8fa2159",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a49a2676174f1d7c5e8647e4fc7316de",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a80dd39ce35e712fde43b51f6a5ac22a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a86861abef9de0148a560614a5830a19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ae2a710e1940b5a7c3d8c7da754a4bdc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ae2fb368e8f33de4b5382dc3296c7076",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b52d4d43ddbd8a2b34808e45bd1d4504",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b64e08e12d90ee33c4409204a1ea509b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b65049b275769947fce9d332de39ad58",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b7db9fe60ce4a2372ee7d4665ae859ba",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "bc903979c2ef367f15424d651eb1730d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "bf95687e8f040d9b656e2702eca30ff6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "bfb0591fb5c58b5ef751c9994cb86fbd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "c6017291b89dc20b4b333b6e5d1e92c2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ca3e297df21d63fabbcac343dd2740c9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d915752f0dfe5d2ca3388cc711840d31",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d9ebfcce15a1a2c39c22aea092d6fb11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "da44fa987f5a1967b8691254419d8e52",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "dc5a698e0f74b79da77592145a669f51",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "dcbb6683e1f5c826d0f65dc68999fe52",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "e5b1e7b3f3ab24239f2cd1cbce806228",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ea02654da967a66ba0bda85f8578562a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "eb9d0c1e252a2b08ddfdeb7dc458032a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ed02d851d07f38d9bb04a0d2e464cf10",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f547cad15814b06c7876c63609da5b8f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f549fc826acf79521d6a0c8aa63095e0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f5f5da0dac34841451c5328871d0d77b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f6786ff62fdfdc46cfb84ff7cc2a580a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f6f00417b925bf42090a89f8668fb554",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f85016e8cc6b509a9fba1ccd1dc88da1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "fa87911771a52e3c1ffb1c39da59540c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.150.109.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "85.155.224.59",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.153.65.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "111.92.246.145",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "169.197.85.174",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "195.250.24.113",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "argeninese.dothome.co.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "argentinese.medianewsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bbcnews04.dothome.co.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bwer5t6kl.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cfr556yujk.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cmieqf7yjs.sportsontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "d18i529.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dh06ls9kg.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dofamini.com.ua",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "doput5rg.myartsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "edcv89ik.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ej7ieb9bn.myartsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ezms1ez.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fo27axr8z.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fqw345rdxc.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gp098ujm.scienceontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gstcg9g.mywebcommunity.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gy678ikjm.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "h4s7hlkpo.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hcdse34r.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hnvg5lco.mywebcommunity.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "idr45tgb.myartsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "jkio954rt.medianewsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "jklo8yghj.scienceontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ke45tyghnj.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ki876tgvb.mypressonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kovalenko.dothome.co.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mailsecurity.serveirc.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mf3goke.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "minecrafter.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "msx2z9wy9.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mykolapalinchak.medianewsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "nimdm8cx87.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ny6r3kijc.mypressonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "oh8e6hd7ip.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "oy51g1vt.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "oz9ffohqb.mywebcommunity.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "p1o2i3u4y5t6r7e8w9q0.medianewsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pokijhgcfsdfghnj.mywebcommunity.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "qvck223mxo9.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "qweasdzxc.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rty789ijnh.medianewsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sclmu1lnils.scienceontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "se4567yuhn.sportsontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "security-zooma.serveirc.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "security-profile.serveirc.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "svpiwsw.mypressonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "t1b2a3vy.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tgg7ujhn.myartsonline.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vyt01cq8o1.atwebpages.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "w346yjkiu.onlinewebshop.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "w50dleqwo0d.getenjoyment.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wersdfxcv.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "xv57j3d.scienceontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "yrfghjk652u.mygamesonline.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "yyjybdrq4.scienceontheweb.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zvwb1ep7i.onlinewebshop.net",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "babiest26@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "baras6600@daum.net"
+      },
+      {
+        "type": "email",
+        "value": "baras6600@hotmail.com"
+      },
+      {
+        "type": "email",
+        "value": "baras6600@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "choemiyang@hotmail.com"
+      },
+      {
+        "type": "email",
+        "value": "davidmaximy@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "davidmaximy@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "dustinharrise91@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "hazama09093@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "info.seclab.noreply@gmail.com"
+      },
+      {
+        "type": "email",
+        "value": "jamejacky55@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "jamestony88@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "jamjack2026@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "jsykukbang18@kakao.com"
+      },
+      {
+        "type": "email",
+        "value": "kcscon@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "ken0723@kakao.com"
+      },
+      {
+        "type": "email",
+        "value": "killer05121@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "leomsoite@gmail.com"
+      },
+      {
+        "type": "email",
+        "value": "montry111@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "murayamasi26@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "nemotom@outlook.kr"
+      },
+      {
+        "type": "email",
+        "value": "omski00@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "payuser2026@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "pooh04211@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "skmotern2003@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "srahnn21@gmail.com"
+      },
+      {
+        "type": "email",
+        "value": "sven5500@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "sven5500@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "taini7700@daum.net"
+      },
+      {
+        "type": "email",
+        "value": "taini7700@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "taini7700@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "urusa4400@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "void0824@proton.me"
+      },
+      {
+        "type": "email",
+        "value": "xufeng.wangsui@hotmail.com"
+      },
+      {
+        "type": "email",
+        "value": "yaosiyaosi26@hotmail.com"
+      },
+      {
+        "type": "email",
+        "value": "youth3920@outlook.com"
+      },
+      {
+        "type": "email",
+        "value": "zhejiong.hangjou@hotmail.com"
+      }
+    ]
+  }
+}

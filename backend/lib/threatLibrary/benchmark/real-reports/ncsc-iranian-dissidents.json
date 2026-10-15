@@ -1,0 +1,64 @@
+{
+  "id": "real-ncsc-iranian-dissidents",
+  "title": "Iranian cyber targeting of dissidents, activists and journalists",
+  "publisher": "NCSC",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "ncsc",
+    "control",
+    "legit_services"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "f17347ae5bac242064a76df5d64e9845e1b9a67c1677a3339f29da19b71caf19",
+    "url": "https://www.ncsc.gov.uk/news/iranian-cyber-targeting-of-dissidents-activists-and-journalists",
+    "talonhound_report_id": "eb8f8199-a6a6-480a-8bd2-a9c9959a8dba",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public ncsc.gov.uk news alert (published 15 September 2026, co-authored with the FBI and AIVD); no TLP marking in the publication. TalonHound TLP:AMBER at import was an analyst setting, not a publisher classification.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments  of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "Advisory lists legitimate services to review traffic to; publisher declares no IOC values.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "domain",
+        "value": "api.telegram.org"
+      },
+      {
+        "type": "domain",
+        "value": "backblazeb2.com"
+      },
+      {
+        "type": "domain",
+        "value": "vultrobjects.com"
+      },
+      {
+        "type": "domain",
+        "value": "storjshare.io"
+      },
+      {
+        "type": "domain",
+        "value": "iproyal.com"
+      },
+      {
+        "type": "domain",
+        "value": "lightningproxies.net"
+      }
+    ],
+    "not_indicators": [],
+    "sections": []
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "id": "pdf-kimsuky-360-appendix",
+  "title": "360 Advanced Threat Research — APT-C-55 (Kimsuky) attack chain (browser-print PDF, CJK)",
+  "publisher": "360 Advanced Threat Research Institute",
+  "format": "pdf",
+  "language": "zh",
+  "tags": ["pdf", "cjk", "level_less_headings", "unstructured_appendix", "sample_table", "c2_section", "defanged", "references"],
+  "source": {
+    "kind": "pdf_items",
+    "path": "../../fixtures/kimsuky-appendix-pdf-items.json",
+    "pages_key": "pages"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Labeled from the publisher text of the 附录 IOC appendix in the fixture (pages 16-17): the MD5 list and the C&C list; not from TalonHound output",
+      "verified_by": "manual reading of the fixture text items (2026-10-14 benchmark bootstrap)",
+      "verified_at": "2026-10-14",
+      "notes": "7479bedf… is listed twice in the MD5 list (one identity). 107[.]172[.]249[.]140[:]443 asserts the IP. The repeated mp.weixin.qq.com/s/9ilhH… line is the browser-print page footer, not an IOC. [1]-[3] under 参考链接 are references."
+    },
+    "indicators": [
+      { "type": "md5", "value": "04272144d33668f99f7cf2255289e351", "assertion": "explicit" },
+      { "type": "md5", "value": "3c64c75c9e6a3da7fbc766deb2081219", "assertion": "explicit" },
+      { "type": "md5", "value": "7479bedf5813a1527199f8958e898d19", "assertion": "explicit" },
+      { "type": "md5", "value": "9ae48e0ce0dfcac0245237fa220dd52d", "assertion": "explicit" },
+      { "type": "url", "value": "http://217.60.36.94/unicorn/uni.txt", "assertion": "explicit" },
+      { "type": "url", "value": "http://217.60.36.94/unicorn/mort.php", "assertion": "explicit" },
+      { "type": "url", "value": "http://38.180.204.13/unicorn/mort.php", "assertion": "explicit" },
+      { "type": "url", "value": "http://38.180.204.13/unicorn/uni.txt", "assertion": "explicit" },
+      { "type": "ip", "value": "107.172.249.140", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "url", "value": "https://mp.weixin.qq.com/s/Ibz3FeA7twg-VCujA3cV_g" },
+      { "type": "url", "value": "https://dev.to/excalibra/north-korea-linked-hackers-use-github-as-c2-infrastructure-to-attack-south-korea-47aa" },
+      { "type": "url", "value": "https://www.fortinet.com/fr/blog/threat-research/dprk-related-campaigns-with-lnk-and-github-c2" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "总结", "expected": "narrative", "until": "附录 IOC" },
+      { "heading": "MD5", "expected": "authoritative" },
+      { "heading": "C&C:", "expected": "authoritative", "until": "参考链接" },
+      { "heading": "参考链接", "expected": "excluded", "until": "360高级威胁研究院" }
+    ]
+  }
+}

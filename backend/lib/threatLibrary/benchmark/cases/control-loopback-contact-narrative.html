@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><title>Proxy implant tunnels through a local listener</title></head>
+<body>
+<article>
+<h1>Proxy implant tunnels through a local listener</h1>
+<p>The implant opens a local SOCKS listener and relays operator traffic to its upstream server. During staging the dropper wrote a second-stage sample with MD5 9c1e7a3b5d2f4e6a8c0b1d3f5a7e9c2b to the temp directory.</p>
+<h2>Indicators of compromise</h2>
+<p>Additional IoCs are available to customers of our threat intelligence portal; contact intel-reports@vendor-research.example for access.</p>
+<h3>C2</h3>
+<ul>
+<li>relay-upstream[.]info</li>
+<li>192.0.2.155:8443</li>
+<li>127.0.0.1:1080 (local SOCKS listener)</li>
+</ul>
+<h3>Samples</h3>
+<p>d41c8f3a6b2e9d0c7f5a1b3e8c4d6f2a implant.dll</p>
+<h2>Conclusion</h2>
+<p>Block the upstream relay and hunt for unexpected local listeners on workstations.</p>
+</article>
+</body>
+</html>

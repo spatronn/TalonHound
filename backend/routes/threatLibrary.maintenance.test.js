@@ -12,7 +12,7 @@ import { registerThreatLibraryRoutes } from './threatLibrary.js';
 
 const PUBLIC_ID = '11111111-2222-4333-8444-555555555555';
 
-function harness(reportPatch = {}, { jobs = [] } = {}) {
+function harness(reportPatch = {}, { jobs = [], audit = null, preview = null } = {}) {
   const state = {
     report: {
       id: 7,
@@ -38,6 +38,8 @@ function harness(reportPatch = {}, { jobs = [] } = {}) {
       if (/FROM threat_reports WHERE public_id/.test(s)) return { rows: state.report.deleted_at ? [] : [{ ...state.report }] };
       if (/FROM threat_reports r WHERE r\.id = \$1/.test(s)) return { rows: [{ indicator_count: 3, review_candidate_count: 2, matched_count: 1, entity_count: 0 }] };
       if (/FROM threat_report_tags/.test(s)) return { rows: [] };
+      // No retained source artifact (refresh preview of an outdated document).
+      if (/FROM threat_report_artifacts/.test(s)) return { rows: [] };
       // reviewProgress.loadReportReviewProgress (detail-only effective review progress)
       if (/^WITH m AS \(/.test(t)) return { rows: [] };
       if (/^UPDATE threat_reports\s+SET analysis_status = 'pending'/.test(t)) {
@@ -130,18 +132,22 @@ function harness(reportPatch = {}, { jobs = [] } = {}) {
       routes.set(`${String(method).toUpperCase()} ${routePath}`, handlers);
     }
   });
-  registerThreatLibraryRoutes(app, pool, null, { threatLibraryQueue: queue });
-  async function call(action, user = { id: 1, role: 'analyst' }) {
-    const handlers = routes.get(`POST /api/threat-library/reports/:publicId/${action}`);
+  const previews = [];
+  const previewExtractionRefresh = preview
+    ? async (_pool, report) => { previews.push(report.id); return preview; }
+    : undefined;
+  registerThreatLibraryRoutes(app, pool, audit, { threatLibraryQueue: queue, ...(previewExtractionRefresh ? { previewExtractionRefresh } : {}) });
+  async function call(action, user = { id: 1, role: 'analyst' }, body = {}, method = 'POST') {
+    const handlers = routes.get(`${method} /api/threat-library/reports/:publicId/${action}`);
     assert.ok(handlers, `${action} registered`);
     const res = { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
-    const req = { params: { publicId: PUBLIC_ID }, body: {}, query: {}, user };
+    const req = { params: { publicId: PUBLIC_ID }, body, query: {}, user };
     let i = 0;
     const next = async () => { const h = handlers[i++]; if (h) await h(req, res, next); };
     await next();
     return res;
   }
-  return { state, enqueued, call, routes };
+  return { state, enqueued, call, routes, previews };
 }
 
 // ---------------------------------------------------------------- Refresh
@@ -314,4 +320,164 @@ test('maintenance routes sit behind the global CSRF check (no exemption)', async
     csrfProtection({ method: 'POST', path, headers: { 'x-csrf-token': token }, cookies: { [CSRF_COOKIE_NAME]: token } }, res, () => { ok = true; });
     assert.equal(ok, true, `${action} with matching token`);
   }
+});
+
+// ------------------------------------------- Refresh membership guard policy
+
+test('refresh-extraction: default request carries no acceptance (protect policy)', async () => {
+  const h = harness();
+  const res = await h.call('refresh-extraction');
+  assert.equal(res.statusCode, 202);
+  assert.equal('membershipPolicy' in h.enqueued[0].data, false);
+});
+
+test('refresh-extraction: explicit acceptance with a reason rides the dispatch to the worker', async () => {
+  const h = harness();
+  const res = await h.call('refresh-extraction', { id: 1, role: 'analyst', publicId: 'analyst-pub-1' }, {
+    membership_changes: 'accept',
+    reason: 'Reviewed the preview: removed rows were parser false positives.',
+    preview_fingerprint: 'a'.repeat(64)
+  });
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  const policy = h.enqueued[0].data.membershipPolicy;
+  assert.equal(policy.mode, 'accept');
+  assert.equal(policy.reason, 'Reviewed the preview: removed rows were parser false positives.');
+  assert.equal(policy.requested_by, 'analyst-pub-1');
+  assert.equal(policy.preview_fingerprint, 'a'.repeat(64));
+  assert.ok(policy.requested_at);
+  assert.equal(h.state.jobs[0].progress.dispatch.membershipPolicy.mode, 'accept');
+});
+
+test('refresh-extraction: an explicit acceptance is audited when it is queued (actor, reason, fingerprint, job)', async () => {
+  const events = [];
+  const audit = { auditLog: async (e) => { events.push(e); }, resolveActor: async (req) => ({ ...req.user, email: 'analyst@example.test' }) };
+  const h = harness({}, { audit });
+  const res = await h.call('refresh-extraction', { id: 1, role: 'analyst', publicId: 'analyst-pub-1' }, {
+    membership_changes: 'accept',
+    reason: 'Reviewed the preview: removed rows were parser false positives.',
+    preview_fingerprint: 'b'.repeat(64)
+  });
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  const ev = events.find((e) => e.action === 'threat_library.refresh_extraction.acceptance_requested');
+  assert.ok(ev, JSON.stringify(events.map((e) => e.action)));
+  assert.equal(ev.severity, 'warning');
+  assert.equal(ev.metadata.membership_changes, 'accept');
+  assert.equal(ev.metadata.acceptance_reason, 'Reviewed the preview: removed rows were parser false positives.');
+  assert.equal(ev.metadata.preview_fingerprint, 'b'.repeat(64));
+  assert.equal(ev.metadata.job_public_id, res.body.job_id);
+  assert.ok(ev.metadata.initiated_by);
+
+  // A protected (default) refresh is not an acceptance: no such event.
+  const plain = [];
+  const h2 = harness({}, { audit: { auditLog: async (e) => { plain.push(e); } } });
+  assert.equal((await h2.call('refresh-extraction')).statusCode, 202);
+  assert.equal(plain.some((e) => e.action === 'threat_library.refresh_extraction.acceptance_requested'), false);
+});
+
+test('refresh-extraction: acceptance without a reason / unknown policy → 400, no job, report untouched', async () => {
+  const reason = 'Reviewed the preview: removed rows were parser false positives.';
+  for (const body of [
+    { membership_changes: 'accept' },
+    { membership_changes: 'accept', reason: 'ok', preview_fingerprint: 'a'.repeat(64) },
+    { membership_changes: 'accept', reason },
+    { membership_changes: 'accept', reason, preview_fingerprint: 'not-a-fingerprint' },
+    { membership_changes: 'force' }
+  ]) {
+    const h = harness();
+    const res = await h.call('refresh-extraction', undefined, body);
+    assert.equal(res.statusCode, 400, JSON.stringify(body));
+    assert.equal(res.body.code, 'invalid_membership_policy');
+    assert.equal(h.state.jobs.length, 0);
+    assert.equal(h.state.report.analysis_status, 'review_required');
+  }
+});
+
+test('refresh-extraction preview: gated like the action, read-only, 409 without a refreshable document', async () => {
+  const h = harness({ analysis_status: 'failed', import_status: 'failed' });
+  const failed = await h.call('refresh-extraction/preview', undefined, {}, 'GET');
+  assert.equal(failed.statusCode, 409);
+  const outdated = harness();
+  const res = await outdated.call('refresh-extraction/preview', undefined, {}, 'GET');
+  assert.equal(res.statusCode, 409, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'refresh_source_unavailable');
+  assert.equal(outdated.state.jobs.length, 0, 'preview never creates a job');
+  assert.equal(outdated.state.report.analysis_status, 'review_required', 'preview never claims the report');
+});
+
+// ---------------------------------------------------------------- RBAC (route)
+
+const ADMIN_ONLY_PREVIEW = Object.freeze({
+  guard: {
+    decision: 'block',
+    material: true,
+    authorization: { required_role: 'admin', categories: [{ code: 'reviewed_indicator_removed', count: 1 }] }
+  }
+});
+const ANALYST_PREVIEW = Object.freeze({
+  guard: { decision: 'block', material: true, authorization: { required_role: 'analyst', categories: [] } }
+});
+const acceptBody = (extra = {}) => ({
+  membership_changes: 'accept',
+  reason: 'Reviewed the preview: removed rows were parser false positives.',
+  preview_fingerprint: 'c'.repeat(64),
+  ...extra
+});
+
+test('RBAC: an analyst accepting admin-only losses gets 403 before anything is claimed or queued; the denial is audited', async () => {
+  const events = [];
+  const audit = { auditLog: async (e) => { events.push(e); }, resolveActor: async (req) => ({ ...req.user }) };
+  const h = harness({}, { audit, preview: ADMIN_ONLY_PREVIEW });
+  const statusBefore = h.state.report.analysis_status;
+  const res = await h.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' }, acceptBody());
+  assert.equal(res.statusCode, 403, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'refresh_acceptance_requires_admin');
+  assert.equal(res.body.authorization.required_role, 'admin');
+  assert.equal(h.enqueued.length, 0, 'nothing queued');
+  assert.equal(h.state.jobs.length, 0, 'no job row');
+  assert.equal(h.state.report.analysis_status, statusBefore, 'report not claimed');
+  const denied = events.find((e) => e.action === 'threat_library.refresh_extraction.acceptance_requested');
+  assert.ok(denied, JSON.stringify(events.map((e) => e.action)));
+  assert.equal(denied.status, 'failed');
+  assert.equal(denied.metadata.result, 'denied_requires_admin');
+  assert.equal(denied.metadata.requester_role, 'analyst');
+});
+
+test('RBAC: role-claim injection in the request body never elevates the requester', async () => {
+  const h = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  const res = await h.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' }, acceptBody({
+    role: 'admin',
+    requested_by_role: 'admin',
+    acceptor_role: 'admin',
+    requested_by: '11111111-2222-4333-8444-555555555555'
+  }));
+  assert.equal(res.statusCode, 403);
+  assert.equal(h.enqueued.length, 0);
+});
+
+test('RBAC: an admin acceptance is queued without a route-side preview; the worker re-checks the current role', async () => {
+  const h = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  const res = await h.call('refresh-extraction', { id: 1, role: 'admin', publicId: 'admin-pub-1' }, acceptBody({ requested_by: 'someone-else' }));
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  assert.equal(h.previews.length, 0);
+  const policy = h.enqueued[0].data.membershipPolicy;
+  assert.equal(policy.requested_by, 'admin-pub-1', 'requested_by is the session principal, never the body');
+  assert.equal('acceptor_role' in policy || 'requested_by_role' in policy, false, 'no role claim rides the dispatch');
+});
+
+test('RBAC: analyst workflows are unaffected — protected refresh, preview, and analyst-level acceptance', async () => {
+  const plain = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  assert.equal((await plain.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' })).statusCode, 202);
+  assert.equal(plain.previews.length, 0, 'a protected refresh needs no authorization preview');
+
+  const limited = harness({}, { preview: ANALYST_PREVIEW });
+  const res = await limited.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' }, acceptBody());
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  assert.equal(limited.enqueued[0].data.membershipPolicy.mode, 'accept');
+});
+
+test('RBAC: readonly cannot reach refresh or its preview at all', async () => {
+  const h = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  assert.equal((await h.call('refresh-extraction', { id: 3, role: 'readonly' }, acceptBody())).statusCode, 403);
+  assert.equal((await h.call('refresh-extraction/preview', { id: 3, role: 'readonly' }, {}, 'GET')).statusCode, 403);
+  assert.equal(h.enqueued.length, 0);
 });

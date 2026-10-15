@@ -66,6 +66,14 @@ function createFakeDb({ report, iocCatalog = [] }) {
     relationships: [],
     reportTags: [],
     chunks: [],
+    sourceLinks: [],
+    // users.public_id → { role, status } (acceptor role lookup of an explicit acceptance)
+    users: new Map([
+      ['11111111-2222-4333-8444-555555555555', { role: 'admin', status: 'active' }],
+      ['22222222-2222-4333-8444-555555555555', { role: 'analyst', status: 'active' }],
+      ['33333333-2222-4333-8444-555555555555', { role: 'admin', status: 'disabled' }],
+      ['44444444-2222-4333-8444-555555555555', { role: 'readonly', status: 'active' }]
+    ]),
     jobs: [{ id: 41, report_id: report.id, job_type: 'refresh_extraction', status: 'running', progress: {} }],
     sql: [],
     calls: [],
@@ -108,9 +116,24 @@ function createFakeDb({ report, iocCatalog = [] }) {
       return { rows: [], rowCount: 1 };
     }
     if (/SELECT cancel_requested_at FROM threat_reports/.test(s)) return { rows: [{ cancel_requested_at: null }] };
+    if (/SELECT role, status FROM users WHERE public_id = \$1::uuid/.test(s)) {
+      const u = db.users.get(String(params[0]));
+      return { rows: u ? [{ ...u }] : [] };
+    }
     if (/FROM threat_report_artifacts/.test(s)) return { rows: [] };
-    // No Additional IOC Source has extracted into this fixture report.
-    if (/FROM threat_report_candidate_source_links/.test(s)) return { rows: [] };
+    // Linked IOC Source provenance (db.sourceLinks = candidate ids); empty by default.
+    if (/SELECT DISTINCT candidate_id FROM threat_report_candidate_source_links/.test(s)) {
+      const ids = new Set(params[0].map(String));
+      return { rows: [...new Set(db.sourceLinks)].filter((id) => ids.has(String(id))).map((id) => ({ candidate_id: id })) };
+    }
+    if (/FROM threat_report_candidate_source_links/.test(s)) {
+      return { rows: db.sourceLinks.includes(params[0]) ? [{ '?column?': 1 }] : [] };
+    }
+    if (/^UPDATE threat_report_candidates\s+SET has_original_document_occurrence = false/.test(t)) {
+      const row = db.candidates.find((c) => c.id === params[0]);
+      row.has_original_document_occurrence = false;
+      return { rows: [clone(row)] };
+    }
     if (/^UPDATE threat_library_jobs SET/.test(t)) {
       const job = db.jobs.find((j) => j.id === params[0]);
       if (job) {
@@ -318,8 +341,29 @@ function aiOwnedWrites(db) {
   return out;
 }
 
-async function refresh(pool, deps, restoreStatus = { analysis_status: 'review_required' }) {
-  return runThreatLibraryJob(pool, { reportId: 77, jobId: 41, jobType: 'refresh_extraction', restoreStatus }, deps);
+async function refresh(pool, deps, restoreStatus = { analysis_status: 'review_required' }, membershipPolicy = undefined) {
+  return runThreatLibraryJob(pool, { reportId: 77, jobId: 41, jobType: 'refresh_extraction', restoreStatus, membershipPolicy }, deps);
+}
+
+/**
+ * Explicit acceptance of the previewed membership changes. Removing a
+ * publisher-asserted Indicator or a reviewed row is a material loss that the
+ * membership guard blocks by default (refreshMembershipGuard.test.js). The
+ * acceptance names the fingerprint of the preview it was given for.
+ */
+const ACCEPT_CHANGES = Object.freeze({
+  mode: 'accept',
+  reason: 'Reviewed refresh preview: the parser fix removes these rows on purpose.',
+  requested_by: '11111111-2222-4333-8444-555555555555'
+});
+
+/** Acceptance bound to a fresh read-only preview of the seeded report. */
+async function acceptPreview(db, pool) {
+  const { previewExtractionRefresh: preview } = await import('./extractionRefresh.js');
+  const p = await preview(pool, clone(db.report));
+  db.calls.length = 0;
+  db.sql.length = 0;
+  return { ...ACCEPT_CHANGES, preview_fingerprint: p.membership_diff.material_fingerprint };
 }
 
 test('job modes: explicit enum, unknown values rejected, only refresh is AI-free', () => {
@@ -552,8 +596,9 @@ test('5. removed deterministic candidate: no longer a report candidate; its rela
   const stale = db.candidates.find((c) => c.normalized_value === 'cs.append');
   stale.review_status = 'approved';
   db.relationships.push({ id: 3002, report_id: 77, subject_kind: 'entity', subject_entity_id: 9002, relationship_type: 'uses', object_kind: 'candidate', object_candidate_id: stale.id });
-  const result = await refresh(pool, deps);
+  const result = await refresh(pool, deps, undefined, await acceptPreview(db, pool));
   assert.equal(result.ok, true);
+  assert.equal(result.summary.membership_guard.decision, 'apply_accepted');
   assert.equal(calls.analyze, 0);
   assert.equal(result.summary.removed, 1);
   assert.equal(db.candidates.some((c) => c.normalized_value === 'cs.append'), false);
@@ -573,7 +618,7 @@ test('6. identity correction (technical_artifact → domain): corrected identity
   });
   const artifact = db.candidates.find((c) => c.candidate_type === 'technical_artifact');
   artifact.review_status = 'ignored';
-  const result = await refresh(pool, deps);
+  const result = await refresh(pool, deps, undefined, await acceptPreview(db, pool));
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(db.candidates.some((c) => c.candidate_type === 'technical_artifact'), false, 'old identity removed');
@@ -711,7 +756,7 @@ test('finalized + removed Indicator returns to review_required', async (t) => {
       candidate_type: 'domain', normalized_value: 'removed-indicator.example', original_value: 'removed-indicator.example', matched_ioc_id: null, portable_id: null
     }]
   });
-  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  const result = await refresh(pool, deps, { analysis_status: 'ready' }, await acceptPreview(db, pool));
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(result.summary.removed, 1);
@@ -730,7 +775,7 @@ test('finalized + identity correction returns to review_required and does not mo
   const artifact = db.candidates.find((c) => c.candidate_type === 'technical_artifact');
   artifact.review_status = 'ignored';
   artifact.promotion_outcome = 'created';
-  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  const result = await refresh(pool, deps, { analysis_status: 'ready' }, await acceptPreview(db, pool));
   assert.equal(result.ok, true);
   assert.equal(calls.analyze, 0);
   assert.equal(db.report.analysis_status, 'review_required');
@@ -1015,4 +1060,257 @@ test('refresh re-applies publisher-entity grounding: the publisher promoted to a
   assert.equal(again.ok, true);
   assert.equal(db.report.analysis_progress.last_refresh.publisher_entity_grounding.entity_links_removed, 0);
   assert.equal(db.report.summary, 'The report details SyntheticLoader. It beacons over HTTPS.');
+});
+
+// --- Membership guard (tl-refresh-guard-v1) at the worker boundary ---------
+
+const candidateWrites = (db) =>
+  db.calls.filter(({ sql }) => /^\s*(INSERT INTO|UPDATE|DELETE FROM) threat_report_candidates/i.test(sql)).map(({ sql }) => sql.trim().slice(0, 60));
+
+async function seedWithApprovedStaleIndicator(status = 'review_required') {
+  const seeded = await seedAnalyzedReport({
+    status,
+    previousContract: 'tl-candidates-v13',
+    mutate: (cands) => [...cands, {
+      ...cands.find((c) => c.normalized_value === 'relay-voxmail.com'),
+      candidate_type: 'domain', normalized_value: 'cs.append', original_value: 'cs.append', matched_ioc_id: null, portable_id: null
+    }]
+  });
+  seeded.db.candidates.find((c) => c.normalized_value === 'cs.append').review_status = 'approved';
+  return seeded;
+}
+
+test('guard: a material Indicator loss is blocked by default — nothing is written, the report keeps its status', async (t) => {
+  const { calls, deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const before = clone(db.candidates);
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'refresh_membership_loss_blocked');
+  assert.equal(calls.analyze, 0);
+  assert.deepEqual(candidateWrites(db), [], 'no candidate INSERT / UPDATE / DELETE');
+  assert.equal(db.calls.some(({ sql }) => /SET\s+published_at/.test(sql)), false, 'no publication-date write');
+  assert.deepEqual(db.candidates, before, 'stored review set (incl. the approved row) unchanged');
+  assert.equal(db.report.analysis_status, 'review_required');
+  const last = db.report.analysis_progress.last_refresh;
+  assert.equal(last.blocked, true);
+  assert.equal(last.error_code, 'refresh_membership_loss_blocked');
+  assert.deepEqual(
+    last.membership_guard.reasons.filter((r) => r.material).map((r) => r.code).sort(),
+    ['publisher_assertion_lost', 'reviewed_candidate_deleted', 'reviewed_indicator_removed']
+  );
+  assert.deepEqual(last.membership_diff.removed_indicators.map((x) => [x.identity, x.reason_code, x.reviewed]), [
+    ['domain:cs.append', 'identity_left_document', true]
+  ]);
+  assert.equal(db.jobs[0].status, 'failed');
+  assert.equal(db.jobs[0].stage, 'membership_guard');
+  assert.equal(db.jobs[0].progress.failure_code, 'refresh_membership_loss_blocked');
+  assert.match(db.jobs[0].error_message, /Refresh blocked/);
+  assert.equal(result.summary.membership_guard.decision, 'block');
+});
+
+test('guard: a blocked refresh of a finalized report leaves it finalized', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator('ready');
+  const result = await refresh(pool, deps, { analysis_status: 'ready' });
+  assert.equal(result.ok, false);
+  assert.equal(db.report.analysis_status, 'ready');
+  assert.equal(db.report.import_status, 'ready');
+  assert.deepEqual(candidateWrites(db), []);
+});
+
+test('guard: explicit acceptance applies the refresh and records the decision for audit', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const accept = await acceptPreview(db, pool);
+  const result = await refresh(pool, deps, undefined, accept);
+  assert.equal(result.ok, true);
+  assert.equal(db.candidates.some((c) => c.normalized_value === 'cs.append'), false);
+  const g = db.report.analysis_progress.last_refresh.membership_guard;
+  assert.equal(g.decision, 'apply_accepted');
+  assert.equal(g.accepted_reason, ACCEPT_CHANGES.reason);
+  assert.equal(g.accepted_by, ACCEPT_CHANGES.requested_by);
+  assert.equal(g.accepted_preview_fingerprint, accept.preview_fingerprint);
+  assert.equal(db.jobs[0].progress.dispatch.membershipPolicy.mode, 'accept', 'policy survives a re-queue');
+  const { buildAnalysisAuditEvent } = await import('./audit.js');
+  const event = buildAnalysisAuditEvent({ report: db.report, job: { public_id: 'j', job_type: 'refresh_extraction' }, ok: true, summary: result.summary });
+  assert.equal(event.metadata.membership_guard.decision, 'apply_accepted');
+  assert.equal(event.metadata.membership_guard.accepted_reason, ACCEPT_CHANGES.reason);
+});
+
+test('guard: non-material changes (a new Indicator) apply without acceptance and the diff is recorded', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({ html: { withSecondNetworkIoc: false } });
+  db.report.canonical_document = buildDocument({ withSecondNetworkIoc: true });
+  db.report.canonical_document.meta = { ...db.report.canonical_document.meta };
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.membership_guard.decision, 'apply');
+  const diff = db.report.analysis_progress.last_refresh.membership_diff;
+  assert.ok(diff.added_indicators.includes('domain:inbox-notice-hub.net'), JSON.stringify(diff.added_indicators));
+  assert.equal(diff.counts.removed_indicators, 0);
+});
+
+test('guard preview: read-only verdict on the same diff the worker would apply', async (t) => {
+  noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const { previewExtractionRefresh } = await import('./extractionRefresh.js');
+  const preview = await previewExtractionRefresh(pool, clone(db.report));
+  assert.equal(preview.preview, true);
+  assert.equal(preview.ai_invoked, false);
+  assert.equal(preview.guard.decision, 'block');
+  assert.ok(preview.membership_diff.removed_indicators.some((x) => x.identity === 'domain:cs.append'));
+  assert.match(String(preview.quality?.version), /^tl-quality-v\d+$/);
+  const writes = db.calls.filter(({ sql }) => !/^\s*(SELECT|BEGIN|COMMIT|ROLLBACK)/i.test(sql));
+  assert.deepEqual(writes.map((w) => w.sql.trim().slice(0, 60)), [], 'preview never writes');
+});
+
+test('guard policy rides the dispatch: job progress → BullMQ payload → worker ctx', async () => {
+  const { dispatchExtraFromJob, enqueueClaimedThreatLibraryJob } = await import('./analysisConcurrency.js');
+  const policy = { mode: 'accept', reason: 'Reviewed preview, intended', requested_by: 'u' };
+  const job = { id: 5, report_id: 77, job_type: 'refresh_extraction', progress: { dispatch: { jobType: 'refresh_extraction', restoreStatus: { analysis_status: 'ready' }, membershipPolicy: policy } } };
+  assert.deepEqual(dispatchExtraFromJob(job).membershipPolicy, policy);
+  const added = [];
+  await enqueueClaimedThreatLibraryJob({ add: async (name, data) => { added.push({ name, data }); return { id: 1 }; } }, job);
+  assert.deepEqual(added[0].data.membershipPolicy, policy);
+  const plain = { ...job, progress: { dispatch: { jobType: 'refresh_extraction' } } };
+  assert.equal('membershipPolicy' in dispatchExtraFromJob(plain), false);
+});
+
+test('guard at execution time: a preview accepted before the report changed cannot authorize the new losses', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const accepted = await acceptPreview(db, pool);
+  // After the preview, an analyst approves another row that the refresh will also drop.
+  const extra = clone(db.candidates.find((c) => c.normalized_value === 'cs.append'));
+  db.candidates.push({ ...extra, id: 9999, public_id: crypto.randomUUID(), normalized_value: 'cs.prepend', original_value: 'cs.prepend', review_status: 'approved' });
+  const before = clone(db.candidates);
+  const result = await refresh(pool, deps, undefined, accepted);
+  assert.equal(result.ok, false);
+  assert.equal(result.code, 'refresh_membership_loss_blocked');
+  assert.ok(result.summary.membership_guard.reasons.some((r) => r.code === 'preview_stale'));
+  assert.deepEqual(candidateWrites(db), [], 'nothing applied');
+  assert.deepEqual(db.candidates, before);
+});
+
+function seedWithReviewedNarrativeRow() {
+  return seedAnalyzedReport({
+    mutate: (cands) => [...cands, {
+      ...cands.find((c) => c.normalized_value === AI_DOMAIN),
+      normalized_value: 'linked-only-now.example', original_value: 'linked-only-now.example', matched_ioc_id: null, portable_id: null
+    }]
+  });
+}
+
+test('linked-source preservation end-to-end: a reviewed row that leaves the document but has IOC Source provenance is kept, not deleted', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithReviewedNarrativeRow();
+  const row = db.candidates.find((c) => c.normalized_value === 'linked-only-now.example');
+  row.review_status = 'approved';
+  db.sourceLinks.push(row.id);
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true, JSON.stringify(result.summary?.membership_guard));
+  const kept = db.candidates.find((c) => c.id === row.id);
+  assert.ok(kept, 'row kept (original-document flag cleared, not deleted)');
+  assert.equal(kept.has_original_document_occurrence, false);
+  assert.equal(kept.review_status, 'approved', 'analyst decision kept');
+  assert.equal(db.report.analysis_progress.last_refresh.membership_diff.counts.reviewed_candidates_deleted, 0);
+});
+
+test('the same reviewed row without IOC Source provenance is a real deletion and is blocked', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithReviewedNarrativeRow();
+  db.candidates.find((c) => c.normalized_value === 'linked-only-now.example').review_status = 'approved';
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, false);
+  assert.ok(result.summary.membership_guard.reasons.some((r) => r.code === 'reviewed_candidate_deleted'));
+  assert.ok(db.candidates.some((c) => c.normalized_value === 'linked-only-now.example'), 'not deleted');
+});
+
+test('candidateSnapshotDrift: any added, removed or changed protected row state is drift; identical snapshots are not', async () => {
+  const { candidateSnapshotDrift } = await import('./extractionRefresh.js');
+  const t = new Date('2026-10-15T10:00:00.000Z');
+  const row = (id, patch = {}) => ({
+    id, candidate_type: 'domain', normalized_value: `v${id}.example`, review_status: 'pending', assessment: 'malicious',
+    role: 'c2', is_ioc: true, source_assertion: 'explicit_ioc', match_state: 'new', matched_ioc_id: null,
+    promotion_outcome: null, has_original_document_occurrence: true, updated_at: t, evidence: { x: 1 }, ...patch
+  });
+  const snap = [row(1), row(2)];
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { evidence: { y: 2 } })]), [], 'non-protected columns are not drift');
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { review_status: 'approved' })]), ['2']);
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { updated_at: new Date(t.getTime() + 1) })]), ['2']);
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1)]), ['2'], 'deleted row');
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2), row(3)]), ['3'], 'added row');
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { matched_ioc_id: '42', promotion_outcome: 'created' })]), ['2'], 'Create IOCs');
+});
+
+// ---------------------------------------------------------------- RBAC (worker)
+
+test('RBAC (worker): an admin-only acceptance from a non-admin principal is refused at execution; nothing is written', async (t) => {
+  const cases = [
+    ['analyst', '22222222-2222-4333-8444-555555555555', {}, 'acceptance_requires_admin'],
+    ['disabled admin', '33333333-2222-4333-8444-555555555555', {}, 'acceptance_not_authorized'],
+    ['readonly', '44444444-2222-4333-8444-555555555555', {}, 'acceptance_not_authorized'],
+    ['unknown user', '99999999-2222-4333-8444-555555555555', {}, 'acceptance_not_authorized'],
+    ['non-uuid requester', 'admin', {}, 'acceptance_not_authorized'],
+    // Privilege escalation: role claims riding the dispatch payload are ignored.
+    ['forged role fields', '22222222-2222-4333-8444-555555555555', { requested_by_role: 'admin', acceptor_role: 'admin', role: 'admin' }, 'acceptance_requires_admin']
+  ];
+  for (const [label, requestedBy, forged, code] of cases) {
+    const { deps } = noAiSpies(t);
+    const { db, pool } = await seedWithApprovedStaleIndicator();
+    const accept = await acceptPreview(db, pool);
+    const before = JSON.stringify(db.candidates);
+    const result = await refresh(pool, deps, undefined, { ...accept, ...forged, requested_by: requestedBy });
+    assert.equal(result.ok, false, label);
+    assert.equal(result.code, 'refresh_membership_loss_blocked', label);
+    const g = result.summary.membership_guard;
+    assert.ok(g.reasons.some((r) => r.code === code), `${label}: ${JSON.stringify(g.reasons)}`);
+    assert.equal(g.authorization.required_role, 'admin', label);
+    assert.equal(JSON.stringify(db.candidates), before, `${label}: no candidate written`);
+    assert.equal(db.candidates.some((c) => c.normalized_value === 'cs.append'), true, `${label}: reviewed row kept`);
+  }
+});
+
+test('RBAC (worker): the same acceptance from an active admin or the maintenance CLI applies and records the role', async (t) => {
+  const { MAINTENANCE_CLI_ACTOR } = await import('./extractionRefresh.js');
+  for (const [requestedBy, role] of [['11111111-2222-4333-8444-555555555555', 'admin'], [MAINTENANCE_CLI_ACTOR, 'system']]) {
+    const { deps } = noAiSpies(t);
+    const { db, pool } = await seedWithApprovedStaleIndicator();
+    const accept = await acceptPreview(db, pool);
+    const result = await refresh(pool, deps, undefined, { ...accept, requested_by: requestedBy });
+    assert.equal(result.ok, true, role);
+    const g = db.report.analysis_progress.last_refresh.membership_guard;
+    assert.equal(g.decision, 'apply_accepted');
+    assert.equal(g.accepted_by_role, role);
+    assert.equal(g.authorization.required_role, 'admin');
+  }
+});
+
+test('RBAC (worker): the role is read when the job runs — an admin demoted after queueing no longer authorizes', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const accept = await acceptPreview(db, pool);
+  db.users.set(accept.requested_by, { role: 'analyst', status: 'active' });
+  const result = await refresh(pool, deps, undefined, accept);
+  assert.equal(result.ok, false);
+  assert.ok(result.summary.membership_guard.reasons.some((r) => r.code === 'acceptance_requires_admin'));
+});
+
+test('RBAC (worker): a protected refresh (no acceptance) is unchanged for every role — no role lookup', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({ html: { withSecondNetworkIoc: false } });
+  db.report.canonical_document = buildDocument({ withSecondNetworkIoc: true });
+  db.report.canonical_document.meta = { ...db.report.canonical_document.meta };
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.membership_guard.decision, 'apply');
+  assert.equal(db.sql.some((q) => /FROM users/.test(q)), false);
+});
+
+test('the CLI actor constant matches the maintenance script operator', async () => {
+  const { MAINTENANCE_CLI_ACTOR } = await import('./extractionRefresh.js');
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../scripts/threat-library-report-maintenance.js', import.meta.url), 'utf8');
+  assert.ok(src.includes(`actorUsername: '${MAINTENANCE_CLI_ACTOR}'`));
 });

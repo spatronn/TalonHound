@@ -1,0 +1,30 @@
+{
+  "id": "control-api-examples-c2-topic",
+  "title": "Known-clean control: bold C2 topic heading over technical API examples (GoSerpent class)",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "known_clean", "synthetic_bold_heading", "technical_api_examples", "c2_topic", "mode_a"],
+  "source": { "kind": "html_file", "path": "control-api-examples-c2-topic.html", "url": "https://research.example/blog/cloud-api-c2/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: the publisher IOC appendix lists two domains and one SHA-256; the Graph API URLs are technical request examples of a legitimate service",
+      "verified_by": "construction",
+      "verified_at": "2026-10-14"
+    },
+    "indicators": [
+      { "type": "domain", "value": "tenant-sync-portal.com", "assertion": "explicit" },
+      { "type": "domain", "value": "cdn-calendar-relay.net", "assertion": "explicit" },
+      { "type": "sha256", "value": "5f2b7c3a9d1e4f6a8b0c2d4e6f8a0b1c3d5e7f9a1b3c5d7e9f1a3b5c7d9e1f3a", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      { "type": "url", "value": "https://graph.microsoft.com/v1.0/organization" },
+      { "type": "url", "value": "https://graph.microsoft.com/v1.0/me/messages" }
+    ],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "Domains", "expected": "authoritative" },
+      { "heading": "Hashes", "expected": "authoritative" }
+    ]
+  }
+}

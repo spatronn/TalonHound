@@ -225,3 +225,30 @@ test('serializeThreatReport ignores a stray mitre_attack on the snapshot (histor
   assert.equal('mitre_attack' in out, false);
   assert.doesNotMatch(JSON.stringify(out), /T1566/);
 });
+
+test('serializeThreatReport: extraction_quality is a summary (status / counts / codes), never warning internals', () => {
+  assert.equal(serializeThreatReport(snapshot()).extraction_quality, null, 'reports predating tl-quality-v1');
+  const quality = {
+    version: 'tl-quality-v1',
+    mode: 'A',
+    status: 'high',
+    counts: { high: 1, warning: 1, info: 0 },
+    warnings_total: 2,
+    warnings: [
+      { code: 'appendix_without_hash_indicators', severity: 'high', explanation: 'secret explanation', block_ids: ['b9'], evidence: [{ text: 'FULL BODY' }] },
+      { code: 'indicator_rows_adjacent_to_authoritative_scope', severity: 'warning', explanation: 'x', block_ids: ['b9'] }
+    ]
+  };
+  const out = serializeThreatReport(snapshot({ report: reportRow({ analysis_progress: { extraction_diagnostics: { quality } } }) }));
+  assert.deepEqual(out.extraction_quality, {
+    version: 'tl-quality-v1',
+    status: 'high',
+    mode: 'A',
+    counts: { high: 1, warning: 1, info: 0 },
+    codes: ['appendix_without_hash_indicators', 'indicator_rows_adjacent_to_authoritative_scope'],
+    warnings_total: 2
+  });
+  assert.equal(JSON.stringify(out).includes('FULL BODY'), false);
+  assert.equal(JSON.stringify(out).includes('secret'), false);
+  assert.equal(out.counts.indicators, 1, 'quality never changes membership counts');
+});

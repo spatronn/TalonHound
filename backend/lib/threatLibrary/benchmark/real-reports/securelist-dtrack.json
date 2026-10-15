@@ -1,0 +1,80 @@
+{
+  "id": "real-securelist-dtrack",
+  "title": "Dtrack expands its operations to Europe and Latin America",
+  "publisher": "Securelist",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "securelist"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "cae42518067d78ef5dcf257f1a691cdb3e7016d00b0d3f7b7ae4e7fdfe4a2a92",
+    "url": "https://securelist.com/dtrack-targeting-europe-latin-america/107798/",
+    "talonhound_report_id": "1da83d01-3a96-4b0d-970f-b9640f9d327a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 212-246 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "pinkgoat.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "purewatertokyo.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "purplebear.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "salmonrabbit.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1a74c8d8b74ca2411c1d3d22373a6769",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "67f4dad1a94ed8a47283c2c0c05a7594",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "kaspersky.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "intelreports@kaspersky.com",
+        "label": "context_only"
+      }
+    ]
+  }
+}

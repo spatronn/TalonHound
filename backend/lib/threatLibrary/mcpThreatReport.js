@@ -20,6 +20,7 @@ import { serializePublicationDate } from './publicationDate.js';
 import { TLP_DISPLAY } from './constants.js';
 import { resolveReportPhase } from './reportPhase.js';
 import { countCandidateBuckets } from './indicatorMembership.js';
+import { extractionQualitySummary, storedExtractionQuality } from './extractionQuality.js';
 import {
   serializeThreatContextEntity,
   serializeThreatContextRelationship,
@@ -148,6 +149,10 @@ export function serializeThreatReport(snapshot, page = {}) {
       entities: entities.length,
       relationships: relationships.length
     },
+    // Read-only extraction quality signal (status / counts / reason codes):
+    // a warning means the Indicators set may be incomplete or include a
+    // suspicious row; it never changes membership. null for older reports.
+    extraction_quality: extractionQualitySummary(storedExtractionQuality(r)),
     // Paged candidate roster (All), not the Indicators membership filter.
     indicators: {
       total: candidates.length,

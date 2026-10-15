@@ -415,7 +415,7 @@ function relatedValuesFromDescription(description) {
 /**
  * @param {import('./canonicalDocument.js').CanonicalDocument} doc
  * @param {{ sourceUrl?: string|null }} [opts]
- * @returns {{ candidates: object[], diagnostics: object }}
+ * @returns {{ candidates: object[], diagnostics: object, annotated: object }}
  */
 export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const sourceUrl = opts.sourceUrl || doc.meta?.source_url || doc.meta?.sourceUrl || null;
@@ -1331,7 +1331,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   diagnostics.document_scope = documentScope;
   diagnostics.scope = buildScopeDiagnostics(annotated, out);
 
-  return { candidates: out, diagnostics };
+  // `annotated` is the zone-annotated document the candidates were read from
+  // (read-only consumers: quality assessment, benchmark scoring).
+  return { candidates: out, diagnostics, annotated };
 }
 
 /**

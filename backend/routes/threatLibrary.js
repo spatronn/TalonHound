@@ -3,7 +3,7 @@
  */
 
 import multer from 'multer';
-import { requireRole, ROLES } from '../lib/rbac.js';
+import { isAdminRole, requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from '../lib/auditConstants.js';
 import {
   buildDeleteAuditEvent,
@@ -22,6 +22,7 @@ import { registerRouteModule } from '../lib/routeRegistry.js';
 import { PDF_MAX_BYTES, THIB_MAX_BYTES, normalizeTlp, TLP_DISPLAY, TLP_VALUES } from '../lib/threatLibrary/constants.js';
 import { isValidTlp } from '../lib/threatLibrary/tlpPolicy.js';
 import { serializePublicationDate } from '../lib/threatLibrary/publicationDate.js';
+import { storedExtractionQuality } from '../lib/threatLibrary/extractionQuality.js';
 import {
   URL_IMPORT_OUTCOMES,
   importThreatLibraryUrl,
@@ -82,6 +83,12 @@ import {
   MAINTENANCE_ALLOWED_STATUSES,
   evaluateMaintenanceAction
 } from '../lib/threatLibrary/jobModes.js';
+import { previewExtractionRefresh } from '../lib/threatLibrary/extractionRefresh.js';
+import {
+  REFRESH_GUARD_THRESHOLDS,
+  REFRESH_MEMBERSHIP_POLICIES
+} from '../lib/threatLibrary/refreshMembershipGuard.js';
+import { parseRequiredReason } from '../lib/reasonValidation.js';
 import { loadIocThreatContext } from '../lib/threatLibrary/iocThreatContext.js';
 import {
   loadReportTags,
@@ -165,6 +172,45 @@ export function publicCandidateEvidence(evidence) {
   };
 }
 
+/**
+ * Refresh extraction membership policy from a request body. The default is
+ * `protect` (material Indicator losses block the refresh). `accept` is an
+ * explicit, reasoned acceptance carried in the job dispatch and recorded in
+ * the refresh audit event.
+ * @param {object} body
+ * @param {string|null} requestedBy actor public id
+ * @returns {{ ok: true, policy: object|null } | { ok: false, message: string }}
+ */
+export function parseRefreshMembershipPolicy(body, requestedBy) {
+  const raw = body?.membership_changes;
+  if (raw == null || raw === '' || raw === REFRESH_MEMBERSHIP_POLICIES.PROTECT) return { ok: true, policy: null };
+  if (raw !== REFRESH_MEMBERSHIP_POLICIES.ACCEPT) {
+    return { ok: false, message: "membership_changes must be 'protect' or 'accept'" };
+  }
+  const reason = parseRequiredReason(body?.reason, {
+    field: 'reason',
+    minLength: REFRESH_GUARD_THRESHOLDS.acceptanceReasonMinChars,
+    maxLength: 2000
+  });
+  if (!reason.ok) return { ok: false, message: reason.message };
+  // The acceptance is bound to the preview the analyst reviewed; the worker
+  // re-evaluates the guard and refuses it when the losses no longer match.
+  const fingerprint = String(body?.preview_fingerprint || '');
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
+    return { ok: false, message: 'preview_fingerprint (from GET …/refresh-extraction/preview) is required to accept membership changes' };
+  }
+  return {
+    ok: true,
+    policy: {
+      mode: REFRESH_MEMBERSHIP_POLICIES.ACCEPT,
+      reason: reason.reason,
+      preview_fingerprint: fingerprint,
+      requested_by: requestedBy || null,
+      requested_at: new Date().toISOString()
+    }
+  };
+}
+
 function publicReport(row) {
   if (!row) return null;
   return {
@@ -194,6 +240,9 @@ function publicReport(row) {
     failure_code: row.failure_code || null,
     failure_details: row.failure_details || {},
     analysis_progress: row.analysis_progress || {},
+    // Read-only extraction quality warnings (extractionQuality.js); null until
+    // the report is imported or refreshed under tl-quality-v1.
+    extraction_quality: storedExtractionQuality(row),
     candidate_summary: row.candidate_summary || {},
     // Presentation phase derived from analysis_status (single source of truth).
     review_phase: resolveReportPhase(row),
@@ -1105,6 +1154,46 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       });
     }
 
+    let membershipPolicy = null;
+    if (mode === THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION) {
+      const parsed = parseRefreshMembershipPolicy(req.body || {}, actorPublicId(await actorOf(req)));
+      if (!parsed.ok) return res.status(400).json({ message: parsed.message, code: 'invalid_membership_policy' });
+      membershipPolicy = parsed.policy;
+      // Admin-only losses (reviewed / publisher-asserted / IOC-linked) are
+      // refused for a non-admin before anything is claimed or queued. The
+      // worker enforces the same rule again from the requester's current role.
+      if (membershipPolicy && !isAdminRole(req.user?.role)) {
+        let preview = null;
+        try {
+          preview = await (deps.previewExtractionRefresh || previewExtractionRefresh)(pool, report);
+        } catch {
+          preview = null; // nothing to refresh from: the worker reports it; it still enforces the role
+        }
+        const authorization = preview?.guard?.authorization || null;
+        if (authorization?.required_role === 'admin') {
+          await writeAudit(req, {
+            action: AUDIT_ACTION.THREAT_LIBRARY_REFRESH_ACCEPTANCE_REQUESTED,
+            ...reportAuditEntity(report),
+            severity: AUDIT_SEVERITY.WARNING,
+            status: AUDIT_STATUS.FAILED,
+            metadata: {
+              ...reportAuditSnapshot(report),
+              result: 'denied_requires_admin',
+              requester_role: req.user?.role || null,
+              authorization,
+              preview_fingerprint: membershipPolicy.preview_fingerprint,
+              initiated_by: initiatedBy(await actorOf(req))
+            }
+          }).catch(() => {});
+          return res.status(403).json({
+            message: 'Accepting these Indicator losses requires an admin. A protected refresh (without acceptance) is still available.',
+            code: 'refresh_acceptance_requires_admin',
+            authorization
+          });
+        }
+      }
+    }
+
     const restoreStatus = { analysis_status: report.analysis_status, import_status: report.import_status };
     const progress = { stage: 'pending', mode, requested_at: new Date().toISOString() };
     const claimed = await claimReportForMaintenance(pool, report.id, {
@@ -1118,7 +1207,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
 
     const dispatch = mode === THREAT_LIBRARY_JOB_MODES.RERUN_AI
       ? { jobType: mode, restoreStatus, sourceUrl: report.source_url || undefined, resumeAnalysis: true, newAnalysisRun: true }
-      : { jobType: mode, restoreStatus };
+      : { jobType: mode, restoreStatus, ...(membershipPolicy ? { membershipPolicy } : {}) };
     let jobRow = null;
     try {
       jobRow = await createJob(pool, {
@@ -1134,6 +1223,25 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       }
       await restoreReportStatus(pool, report.id, restoreStatus, report.analysis_progress || {}).catch(() => {});
       throw err;
+    }
+    if (membershipPolicy) {
+      // The explicit acceptance is recorded when it is requested, not only
+      // when the worker applies or refuses it (the outcome event follows).
+      await writeAudit(req, {
+        action: AUDIT_ACTION.THREAT_LIBRARY_REFRESH_ACCEPTANCE_REQUESTED,
+        ...reportAuditEntity(report),
+        severity: AUDIT_SEVERITY.WARNING,
+        status: AUDIT_STATUS.SUCCESS,
+        metadata: {
+          ...reportAuditSnapshot(report),
+          job_public_id: jobRow.public_id,
+          membership_changes: membershipPolicy.mode,
+          requester_role: req.user?.role || null,
+          acceptance_reason: membershipPolicy.reason,
+          preview_fingerprint: membershipPolicy.preview_fingerprint,
+          initiated_by: initiatedBy(await actorOf(req))
+        }
+      }).catch(() => {});
     }
     return res.status(202).json({
       report: publicReport(await reportWithDetail(claimed)),
@@ -1160,6 +1268,27 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         return await acceptMaintenanceJob(req, res, THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION);
       } catch (err) {
         return res.status(500).json({ message: 'Refresh extraction failed to start', detail: err.message });
+      }
+    }
+  );
+
+  // --- Refresh extraction preview: read-only membership diff + guard decision ---
+  app.get(
+    '/api/threat-library/reports/:publicId/refresh-extraction/preview',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const gate = evaluateMaintenanceAction(report, THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION);
+        if (!gate.ok) return res.status(gate.status).json({ message: gate.message, code: gate.code });
+        const preview = await previewExtractionRefresh(pool, report);
+        return res.json({ report_id: report.public_id, ...preview });
+      } catch (err) {
+        if (err?.code === 'refresh_document_missing' || err?.code === 'refresh_source_unavailable') {
+          return res.status(409).json({ message: err.message, code: err.code });
+        }
+        return res.status(500).json({ message: 'Refresh extraction preview failed', detail: err.message });
       }
     }
   );

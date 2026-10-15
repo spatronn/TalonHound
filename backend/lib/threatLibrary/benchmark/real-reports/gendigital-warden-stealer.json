@@ -1,0 +1,388 @@
+{
+  "id": "real-gendigital-warden-stealer",
+  "title": "Warden Stealer: The Rapid Rise of an Infostealer with an Appetite for AI Agent Data",
+  "publisher": "Gen Digital",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "gen_digital"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "097846079491e484c0d9a19b15639ebe1b6d8789f52e08d12047f61f0de52f4a",
+    "url": "https://www.gendigital.com/blog/insights/research/warden-stealer-rust-infostealer-analysis",
+    "talonhound_report_id": "780c85c5-8a7f-49f0-8703-6c4d152a196d",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 147-228 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "006510ce1da2b7410376f0788c19e55616eb4bcc30072d25b7d0871dc32aa11c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "0d727a4ef1178e767afdd0080ba1ebda0f24ac52b639f0501021affd8f88d26a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "63959ef6309cd01b5d3c7262a3a41394dca2db2dc74bd030a517b7e23a2c3fef",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "77c8266935bc040c992ab70abd402bd203b9c12e7548c80b84fd21308c250f0e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "77cc246272f2af21b64bbc6c6173d57affee97eb0ccf747d89492d06d4c52865",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "abcc49cd8a9b08a18ad9e516ec13350e01a05f04f1c5e025080e1c0e3b4bec36",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b855f6883391e25f1a91692bef76771065b4b0436a014de5b25aa9d0de6238e4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "dd1c3b2bfe32b41902ffe875e568f52f44f0900209b9cb447c9ae4444a5dce4e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ea9debbe4b3d11bf6c986af63a94e13ceb2a1cbc167a642697fcabc9e8a50439",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ff85bb43e546fac541443006878828c47958c1d55dfa32c529651bfcc12832f1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "04beeb716a79661ea770138558dbdebccb493bf6b4b1ec37f19b9c028dea98d5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "159b472e0e0bdc05933da64032761cbd042b6cc5dc4e1cd11d5ef7af5180b972",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3d0794fca8ae2ca80eee463b11557d696c48c8ddf17f5e2917cc33fbf0596842",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "51bc797e783b6a765e174736ff12a711a243099f4e19739388e5bce1548a448d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "5b6ec081f385d91273a79c6645cd0f932539dc267863e5d243657a8ccb5ca351",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "6e47d6da0e2ab2226ee033e75c7b9b41e4e908d6f71b47d0ce7477a492fb418e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a396ccfb5547f04cef4be18ed076bb2c62c571268306d201b6177188f05723f1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "cc1f2ae885d317e6c520ea6d219370630c1c7a8fe600b89d0d78fdee28174ff4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e62b24142e7244573cf37cef55b175fbba6a43ac4592d30f8b061dda8866c9b3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "fea9538084b70e9681fd8104b9319792c4d8c2701ae145ec31dc26e7526f2ae0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "backtoblack7.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "berff3788.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bobroviysmex.shop",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bomboclat.rest",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "brodyagup.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "culture-shock.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "diseazhjw.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dojaekrt.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dojaekrt.forum",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dojaekrt.trade",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "erifytrtr1.vip",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ggresp.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hotelcalifornia.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hroffice.work",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "incoming.rent",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "jgkawdq.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kaiangelsystems.rest",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kaifdlyaw.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kaliop-weda.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "konradkerz40000.work",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "library2000.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "luqiuid91.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "macfilecloud8.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "matie-bal.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "modicontools.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "nextlanding.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "nweenwew234.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "patduggan.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pianolovers.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "piska-sosidka-govno.asia",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "plainhorizon.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "publisher99.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rabbids-sixseven.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "recap-check.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rocks56.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rrrrrrrfffff.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "russianaltushkawantdickinside.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sfgiantslive.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "skibidiclipper.pw",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "skibidiproliv.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "skibidistealer.team",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "systemformating.rest",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "verifytrtr.vip",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vlad-nazarenko2004.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "web03-azureupdate.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "webex-028ue2.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wosback.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zalupka.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zolotoy.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zxcwork.com",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

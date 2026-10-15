@@ -1,0 +1,33 @@
+{
+  "id": "control-legitimate-binaries",
+  "title": "Known-clean control: legitimate host binaries in an analysis table, malicious DLLs in the appendix",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "known_clean", "legitimate_binaries", "file_hash_inventory", "mode_a", "hash_filename_lines"],
+  "source": { "kind": "html_file", "path": "control-legitimate-binaries.html", "url": "https://research.example/blog/sideloading-signed-hosts/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: the publisher appendix lists two malicious DLL hashes and two network values; the analysis table names legitimate signed binaries",
+      "verified_by": "construction",
+      "verified_at": "2026-10-14"
+    },
+    "indicators": [
+      { "type": "md5", "value": "ef59aad625eebda8650aec5820d6ce69", "assertion": "explicit" },
+      { "type": "md5", "value": "3b8a1c5d9e0f4a6b7c2d8e1f5a9b0c3d", "assertion": "explicit" },
+      { "type": "domain", "value": "sync-telemetry.org", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.44", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      { "type": "md5", "value": "62944e26b36b1dcace429ae26ba66164" },
+      { "type": "md5", "value": "a1d4bcf17a1a2a1fbcd0f3c82dd2d2b1" },
+      { "type": "md5", "value": "7ac2b7ee5c0b3eae4f2c6d0f4c9a9e11" }
+    ],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "Technical analysis", "expected": "narrative" },
+      { "heading": "Malicious DLLs", "expected": "authoritative" },
+      { "heading": "Network", "expected": "authoritative" }
+    ]
+  }
+}

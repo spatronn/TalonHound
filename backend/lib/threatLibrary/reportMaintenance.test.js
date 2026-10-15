@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dismissPreconditions, parseArgs } from '../../scripts/threat-library-report-maintenance.js';
+import { dismissPreconditions, parseArgs, refreshMembershipPolicyFromArgs } from '../../scripts/threat-library-report-maintenance.js';
 
 const pending = {
   report_id: 18651,
@@ -30,4 +30,20 @@ test('arguments: dry-run unless --apply', () => {
   assert.equal(a.apply, false);
   assert.equal(a.source, 's');
   assert.equal(parseArgs(['refresh-extraction', '--report', 'r', '--apply']).apply, true);
+});
+
+test('refresh membership policy: protect unless --accept-membership-changes with an explicit reason', () => {
+  assert.deepEqual(refreshMembershipPolicyFromArgs(parseArgs(['refresh-extraction', '--report', 'r', '--apply'])), { ok: true, policy: null });
+  assert.deepEqual(
+    refreshMembershipPolicyFromArgs(parseArgs(['refresh-extraction', '--report', 'r', '--apply', '--accept-membership-changes'])),
+    { ok: false, code: 'acceptance_reason_missing' },
+    'the dismiss default reason never counts as an acceptance reason'
+  );
+  const accepted = refreshMembershipPolicyFromArgs(parseArgs([
+    'refresh-extraction', '--report', 'r', '--apply', '--accept-membership-changes', '--reason', 'Parser fix reviewed in preview'
+  ]));
+  assert.equal(accepted.ok, true);
+  assert.equal(accepted.policy.mode, 'accept');
+  assert.equal(accepted.policy.reason, 'Parser fix reviewed in preview');
+  assert.equal(accepted.policy.requested_by, 'system:threat-library-maintenance');
 });

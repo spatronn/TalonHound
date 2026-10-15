@@ -156,6 +156,70 @@ Retry on a `review_required` / finalized report is refused with `409 retry_not_a
 
 On completion a `review_required` report stays `review_required`. A finalized report (`ready`) stays finalized when the reconcile diff has no review-relevant change (added/removed canonical identity, or a change to assessment, role, review, match, IOC link, `is_ioc`, or source assertion). Occurrence and evidence metadata alone do not unfinalize it. A review-relevant change sets `review_required` and the job result reports `reopened_for_review`. A failed refresh returns the report to the status it had before the job (it never strands a report in `failed`) and records the error on the job and in `analysis_progress.last_refresh`. The worker log and the `threat_library.report.analysis.completed` audit event carry `job_type`, the extraction contract, added / updated / removed counts, `ai_invoked: false`, and `review_reopened` when a finalized report was sent back to review. Retry and Re-run AI persist candidates through the same reconciler, so a surviving canonical identity keeps its row id and analyst decisions (review, Context Only, Promote to IOC, Create-IOC outcome and IOC link).
 
+#### Membership guard (`tl-refresh-guard-v1`)
+
+Before reconciling, a refresh compares the report Indicator membership it would produce with the stored one (`refreshMembershipGuard.js`). The diff records:
+- added and removed Indicators, each removal with a reason code (`identity_left_document`, `publisher_assertion_lost`, `became_context_only`, `excluded_by_type_gate`, `mode_changed`, `membership_rule`)
+- newly Context Only rows
+- classification changes
+- analyst-reviewed rows that would be deleted
+- the MODE change
+- new extraction-quality warnings
+
+The diff is saved in `analysis_progress.last_refresh.membership_diff` and in the job progress.
+
+Material losses are protected. The **default policy `protect` blocks** a refresh that would:
+- remove an analyst-reviewed Indicator (`reviewed_indicator_removed`)
+- delete a reviewed or Create-IOC row (`reviewed_candidate_deleted`)
+- drop a publisher-asserted Indicator (`publisher_assertion_lost`)
+- remove at least 5 Indicators that are also at least 20% of the set (`bulk_membership_loss`)
+
+A blocked refresh writes nothing: no candidates and no publication date. The report keeps its status, and the job fails with `refresh_membership_loss_blocked` and a message naming the reasons.
+
+MODE changes, new quality warnings, additions and ordinary reclassification of pending rows are recorded but do not block.
+
+- **Preview:** `GET …/reports/:id/refresh-extraction/preview` returns the same diff and guard verdict and never writes. The UI's **Refresh extraction** action opens this preview first.
+- **Explicit acceptance:** `POST …/refresh-extraction` with `{ "membership_changes": "accept", "reason": "…", "preview_fingerprint": "<membership_diff.material_fingerprint>" }` (reason ≥ 8 characters) applies the previewed changes. The policy rides the job dispatch, and the refresh audit event records `membership_guard` with the decision, reasons, `accepted_reason`, `accepted_preview_fingerprint` and the initiating analyst.
+- **Stale previews:** the fingerprint covers every Indicator that leaves the original set (identity, reason, row outcome) and every reviewed row that would be deleted; additions do not change it. The worker recomputes the diff when the job runs. A missing fingerprint is refused (`preview_fingerprint_missing`), and so is one that no longer matches the losses (`preview_stale`). An acceptance therefore never authorizes a materially different refresh.
+- **Concurrent changes (time of use):** the guard first runs on rows read outside the write transaction. Inside the reconcile transaction, after every candidate row of the report is locked (`SELECT … FOR UPDATE`), the refresh checks two things before writing:
+  - The locked rows must equal that snapshot: review state, assessment, role, IOC flag, assertion, match, promotion outcome, original-document flag and `updated_at`, with no row added or removed. A review, Create IOCs, promotion or IOC Source change committed in between aborts the refresh with `refresh_candidates_changed_concurrently`. Nothing is written and the report returns to its prior status; run Refresh extraction again.
+  - The guard runs again against the locked rows and the current IOC Source links. A block there, for example an accepted preview whose losses changed because a link disappeared, is an ordinary blocked refresh.
+
+  The publication date is written only after this guarded save. A review issued while the locks are held waits and then applies to the committed set. No new lock is taken: these are the same per-report candidate row locks the save already used. `refreshGuardConcurrency.integration.test.js` races a second connection at both points on real Postgres.
+- **Who may accept (RBAC):** running Refresh extraction, viewing its preview, and refreshes with no material loss stay Analyst + Admin. Accepting a material loss depends on what is lost:
+
+  | Lost by the accepted refresh | Accept as |
+  |---|---|
+  | Analyst-reviewed Indicator (any review decision or Create IOCs outcome), including one a linked IOC Source keeps | Admin |
+  | Publisher-asserted Indicator (explicit IOC / C2 / operational row) | Admin |
+  | Reviewed candidate row deleted | Admin |
+  | Candidate tied to a global IOC (`matched_ioc_id` or created) leaving the Indicators or deleted | Admin |
+  | Only unreviewed, non-publisher-asserted, IOC-free candidates (for example a bulk loss of model-only rows) | Analyst or Admin |
+
+  The preview reports this as `guard.authorization` (`required_role`, `categories`). The rule is enforced at two points, and the preview fingerprint, reason requirement and transaction checks are unchanged:
+  1. **Route:** a non-admin acceptance of admin-only losses gets `403 refresh_acceptance_requires_admin` before the report is claimed. The denial is audited (`…acceptance_requested`, status failed, `result: denied_requires_admin`).
+  2. **Worker:** when the job runs, and again under the row locks, the worker resolves the acceptor's current role from `users` (active users only). The maintenance CLI operator resolves as `system`, which is admin-equivalent. An unresolvable principal is never admin (`acceptance_not_authorized`), so a demoted admin, a passive account or a role claim in the request or dispatch payload cannot authorize. A refused acceptance is an ordinary blocked refresh with nothing written.
+
+  The dialog shows an analyst why an admin is needed instead of offering the acceptance. A protected refresh is unchanged for every role.
+- **Acceptance audit:** queueing an explicit acceptance writes `threat_library.refresh_extraction.acceptance_requested` with the actor, reason, preview fingerprint and job. The worker's outcome event follows, recording whether the acceptance was applied, refused as stale or blocked, with the resulting membership diff counts.
+- **Linked IOC Sources:** a row that leaves the original document but has IOC Source provenance is kept with its analyst state (`original_occurrence_cleared`, still in the union inventory). It is not counted as a deleted reviewed row. A publisher-asserted Indicator that leaves the original document stays a material loss either way. Removed and deleted entries carry the matched IOC id; refresh never deletes the global IOC record.
+- **CLI:** the maintenance CLI does the same with `refresh-extraction --apply --accept-membership-changes --reason "…" [--preview-fingerprint <from a dry-run>]`, and its dry-run shows the verdict and fingerprint.
+
+#### Extraction quality warnings (`tl-quality-v1`)
+
+Every extraction (import, Retry, Re-run AI and Refresh) runs `extractionQuality.assessExtractionQuality`: deterministic, read-only checks over the zone-annotated document and the candidates. It never changes candidates, membership, MODE or review state. The checks cover:
+- row-shaped IOC values outside authoritative scope, adjacent to it (`warning`) or elsewhere (`info`)
+- an IOC appendix with zero or few hash Indicators
+- authoritative sections without Indicators
+- structural-completeness and explicit-table inconsistencies
+- suspicious Indicators: example, legitimate-marker, publisher-domain, email-only or missing-provenance
+
+Each warning has a stable code, severity, candidate identities, block ids, section context, evidence excerpts, an explanation and extractor versions. Thresholds live in `EXTRACTION_QUALITY_THRESHOLDS`.
+
+The record is stored in `analysis_progress.extraction_diagnostics.quality` and returned as `extraction_quality` on report payloads. The report page shows it as **Overview → Extraction quality** (status, analyst wording per reason code, section context and affected values; no block ids, zones or versions), plus a header chip when something needs review. Warnings are labelled as automatic signals, not confirmed errors. MCP `get_threat_report` returns a summary (status, counts, codes). Reports imported before `tl-quality-v1` have `null` until their next refresh. The benchmark (`docs/threat-library-benchmark.md`) measures the detector's false warnings and detection rate.
+
+`npm run scan:threat-library-quality` (backend container) runs the same read-only preview over stored reports: a read-only DB session, no model, no network. It prints each report's quality status, the guard verdict a refresh would get and its Indicator diff. `--clean <ids>` counts warnings on analyst-verified reports as false warnings. Use it before any bulk refresh.
+
 ### Chunking / limits
 
 - `max_input_chars` is the **per-request / per-chunk** budget (not “take first N and discard the rest”)

@@ -1,0 +1,115 @@
+{
+  "id": "real-securelist-cav3rn",
+  "title": "New Project CAV3RN .NET Native AOT communication module",
+  "publisher": "Securelist",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "securelist"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "54be9ae74c6275586d00bf1b116109afe15268aa32440b24614606b8674113ff",
+    "url": "https://securelist.com/project-cav3rn-cyberespionage-framework-using-outlook-and-dns/120757/",
+    "talonhound_report_id": "2016f315-c615-44f7-bed8-d4fdd1bc29ef",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 301-356 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "caf021dda726b8ba049c2aa395e505a1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "c092b02fbc0fdf7ee9608dd016673806",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "29b2b8c5d99f05bfcdd0d8d976eb5678",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cloudlanecdn.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns1.cloudlanecdn.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns2.cloudlanecdn.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns3.cloudlanecdn.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns4.cloudlanecdn.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "google.com.ayalon-print.co.il",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "clipeditskill.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "accesslinkssl.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.126.237.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.172.108.205",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "kaspersky.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "intelreports@kaspersky.com",
+        "label": "context_only"
+      }
+    ]
+  }
+}

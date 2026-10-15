@@ -1,0 +1,53 @@
+{
+  "id": "real-fortiguard-evooo1bot",
+  "title": "Multi-Functional Linux Botnet “Evooo1Bot” | FortiGuard Labs",
+  "publisher": "FortiGuard Labs",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "fortiguard_labs"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "b0b23fe9f075ad64b925f664bf416623db4e24a4ca7811e74ab6f0eb3ada300a",
+    "url": "https://www.fortinet.com/blog/threat-research/multi-functional-linux-botnet-evooo1bot",
+    "talonhound_report_id": "d557c8fc-0ed4-4e98-9abc-64434770830a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 145-151 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "91.92.40.118",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f13cb360768363d3424e2192c7805b8c8015eb8706dbbbcdead6aed8cf390109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "4c0886349e9d348569fffe1b7a31e474d514508bf0cd6f1e5dd99c2a73525e4d",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

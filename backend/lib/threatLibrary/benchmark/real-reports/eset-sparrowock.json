@@ -1,0 +1,153 @@
+{
+  "id": "real-eset-sparrowock",
+  "title": "Beware the SparroWock: The backdoor that bites, the commands that catch",
+  "publisher": "ESET",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "eset"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "a5cd5679ba42c5c044c7ed0b93be9ea6c50a56028e28ce9e9b605a91f9bc7270",
+    "url": "https://www.welivesecurity.com/en/eset-research/beware-sparrowock-backdoor-bites-commands-catch/",
+    "talonhound_report_id": "60c2ca86-1561-4ed8-88b3-1242555ac03e",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 170-198 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "agent.hup/.isf/.asw are file names; Latitude.sh is the hosting provider column.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "sha1",
+        "value": "3209689e509205ccdb7e49062b7b407ddc23cac1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha1",
+        "value": "52c6646759cf6037bb17466203631c4bd794532f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha1",
+        "value": "99e7070b5af24a0fe1e6febe5954b03cb385e91f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha1",
+        "value": "44f0a22b143b79fa760bf31e14c8fff714c8a2a1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha1",
+        "value": "9aa9ff61bc63ccab9074fe837f39c980ca9ddc8c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.54.57.17",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.197.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.209.106",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.224.51",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.224.235",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.241.65",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.241.127",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.60.241.193",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "77.111.101.40",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "91.148.134.115",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "130.94.101.82",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "140.99.164.199",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.104.87.228",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.104.90.203",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.238.92.2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.238.105.53",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.238.110.120",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.238.121.164",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

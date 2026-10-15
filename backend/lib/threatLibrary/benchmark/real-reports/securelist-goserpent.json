@@ -1,0 +1,160 @@
+{
+  "id": "real-securelist-goserpent",
+  "title": "GoSerpent backdoor attacks in Southeast Asia",
+  "publisher": "Securelist",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "securelist"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "2f6cf28eae63e8c43ce0dac388da7ebef81d226698463e0cae1889026e95033c",
+    "url": "https://securelist.com/goserpent-backdoor-in-southeast-asia/120687/",
+    "talonhound_report_id": "91344d8a-c7a6-4b19-a0f1-69437bad783e",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 266-335 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "ebffd5a76aaa690bcdb922f82e0bacc5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "dc506ff7bb72735444fb3703a6bee6d8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d6e86bf8a90e9b632add5fa495f97fbc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "cb6c4c70a3b171fa3404b8e1a3382116",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "64e9d1950e42bc98486dfd9919463d1c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "cbbb6d483737ea3566726e51752dff40",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7f223ee0716ce2ad56f55d3744419449",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "19f8befcb035f52bf70094e6b4f5779a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "846ef7c1c7323849b2a778c5e4cda162",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d08a059e8b815e3b891505bc8777fc28",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "93a1569d5d5ab2c4761fedf84f83709e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "152.32.160.239",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.220.194.108",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.220.214.132",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.220.209.155",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.220.193.189",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "101.36.104.87",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.48.6.46",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.138.13.30",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.80.22.58",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "152.32.222.113",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "43.106.30.226",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "kaspersky.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "intelreports@kaspersky.com",
+        "label": "context_only"
+      }
+    ]
+  }
+}

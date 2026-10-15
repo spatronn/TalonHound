@@ -247,6 +247,8 @@ export const AUDIT_ACTION = Object.freeze({
   THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED: 'threat_library.ioc_source.inspect_queued',
   THREAT_LIBRARY_IOC_SOURCE_EXTRACT_QUEUED: 'threat_library.ioc_source.extract_queued',
   THREAT_LIBRARY_IOC_SOURCE_BLOCKED: 'threat_library.ioc_source.blocked',
+  /** A Refresh extraction was queued with an explicit acceptance of guarded membership losses. */
+  THREAT_LIBRARY_REFRESH_ACCEPTANCE_REQUESTED: 'threat_library.refresh_extraction.acceptance_requested',
 });
 
 export const AUDIT_ENTITY = Object.freeze({
@@ -476,6 +478,7 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED]: 'Threat Library › IOC Source Inspect Queued',
   [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_EXTRACT_QUEUED]: 'Threat Library › IOC Source Extract Queued',
   [AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_BLOCKED]: 'Threat Library › IOC Source Blocked',
+  [AUDIT_ACTION.THREAT_LIBRARY_REFRESH_ACCEPTANCE_REQUESTED]: 'Threat Library › Refresh Membership Changes Accepted',
   // Legacy action names written before the Threat Library audit model existed.
   // Historical rows are never rewritten; they only get a readable label.
   'threat_library.import.pdf': 'Threat Library › Report Imported (PDF)',

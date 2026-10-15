@@ -18,6 +18,7 @@ import {
   THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
 } from './candidateExtraction.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
+import { assessExtractionQuality, compactExtractionQuality } from './extractionQuality.js';
 import { hostnameFromUrl } from './candidateTyping.js';
 import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOccurrence.js';
 import { bulkMatchCandidates } from './iocMatch.js';
@@ -247,7 +248,21 @@ export function extractReportCandidates(report, document) {
     sourceUrl,
     observationNotAfter: observationNotAfterFor(report)
   });
-  return { document: stamped, candidates: extracted.candidates, diagnostics: extracted.diagnostics };
+  // Read-only quality warnings over this extraction (never alters candidates).
+  extracted.diagnostics.quality = assessExtractionQuality({
+    blocks: extracted.annotated?.blocks || [],
+    candidates: extracted.candidates,
+    diagnostics: extracted.diagnostics,
+    sourceHost,
+    zonesVersion: extracted.annotated?.meta?.zones_version || null
+  });
+  return {
+    document: stamped,
+    candidates: extracted.candidates,
+    diagnostics: extracted.diagnostics,
+    // Zone-annotated view of `document` (never persisted; read-only consumers).
+    annotated: extracted.annotated
+  };
 }
 
 /**
@@ -398,6 +413,7 @@ export function compactExtractionDiagnostics(diagnostics) {
           candidates: (diagnostics.scope.candidates || []).slice(0, 80)
         }
       : undefined,
+    quality: diagnostics.quality ? compactExtractionQuality(diagnostics.quality) : undefined,
     structural_completeness: diagnostics.structural_completeness
       ? {
           warning: diagnostics.structural_completeness.warning === true,

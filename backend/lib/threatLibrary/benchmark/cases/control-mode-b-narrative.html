@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><title>Credential stealer spreads through fake installer ads</title></head>
+<body>
+<article>
+<h1>Credential stealer spreads through fake installer ads</h1>
+<p>Search advertisements lead victims to a fake download portal that serves a trojanized installer. After installation the stealer beacons to c2-update[.]info over HTTPS and exfiltrates browser credentials.</p>
+<p>The installer abuses the Windows Credential Manager API, documented at https://learn.microsoft.com/en-us/windows/win32/api/wincred/, to enumerate stored secrets.</p>
+<h2>Recommendations</h2>
+<p>Restrict software installation to managed catalogs and monitor for credential-store enumeration.</p>
+</article>
+</body>
+</html>
