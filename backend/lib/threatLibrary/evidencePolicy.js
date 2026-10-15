@@ -282,6 +282,15 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     ? candidate.occurrences.length
     : candidate.occurrence_count || 0;
 
+  // Gate 0 — incomplete URL path prefixes of a longer sibling URL in the same
+  // document (bare "http://host/t/" next to "http://host/t/a779ab").
+  if (candidate.incomplete_url_prefix === true || evidenceRecord(candidate).incomplete_url_prefix === true) {
+    return excludeFromIoc(candidate, summary, {
+      role: 'reference',
+      policy: 'ioc_excluded_incomplete_url_prefix'
+    });
+  }
+
   // Gate 1 — non-network artifacts (mutex / code / config identifiers, relative
   // paths, filenames) never promote as IOC, whatever zone or AI says.
   const nonNetworkType =
@@ -370,6 +379,13 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   // some reports use those suffixes as stand-ins for real C2 names.
   const nonActionableLocalOrReserved =
     candidate.non_actionable_local === true || candidate.reserved_address === true;
+  // Unlabelled body lists whose lead-in names legitimate / shared services
+  // (documentZones demoteLegitimateServiceListDiscovery). Values stay visible
+  // as candidates but must not become Indicators in MODE B either.
+  const onlyLegitimateServiceList =
+    occs.length > 0 &&
+    occs.every((o) => String(o?.zone_reason || '') === 'legitimate_service_list') &&
+    !summary.hasStrong;
   if (onlyEmailDomain) {
     candidate.assessment = 'context_only';
     candidate.role = 'reference';
@@ -380,6 +396,16 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.ai_needed = false;
     candidate.decision_source = 'deterministic';
     if (candidate.confidence == null) candidate.confidence = 0.75;
+  } else if (onlyLegitimateServiceList) {
+    candidate.assessment = 'context_only';
+    candidate.role = 'legitimate_service';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_legitimate_service_list';
+    candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
   } else if (!reportSource && nonActionableLocalOrReserved) {
     candidate.assessment = 'context_only';
     if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
@@ -450,6 +476,21 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.match_state = 'context_only';
     candidate.policy_decision = 'context_only_provider_service';
     candidate.source_assertion = SOURCE_ASSERTIONS.PROVIDER_SERVICE;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
+  } else if (relation === SOURCE_RELATIONS.REFERENCE && !explicit) {
+    // Reporting / contact / bibliography relations (and excluded-zone chrome)
+    // stay Context Only in both MODE A and MODE B — demoting a false IOC list
+    // must not promote agency complaint portals as Indicators.
+    candidate.assessment = 'context_only';
+    if (!candidate.role || candidate.role === 'unknown' || MALICIOUS_ROLES.has(String(candidate.role))) {
+      candidate.role = 'reference';
+    }
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = 'context_only_reference_relation';
+    candidate.source_assertion = SOURCE_ASSERTIONS.REFERENCE_ONLY;
     candidate.evidence_strength = 'none';
     candidate.ai_needed = false;
     candidate.decision_source = 'deterministic';

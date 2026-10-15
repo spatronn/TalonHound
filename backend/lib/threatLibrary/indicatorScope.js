@@ -125,7 +125,14 @@ const OPERATIONAL_INFRA_RE =
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 
 const REFERENCE_INTENT_RE =
-  /^(?:references?|bibliography|quellen|kaynaklar|referanslar|références|referencias)\b|参考链接|参考文献|相关链接/i;
+  /^(?:references?|bibliography|contact|contacts|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|参考链接|参考文献|相关链接|联系方式/i;
+
+/**
+ * Surrounding prose that names a reporting / law-enforcement contact channel
+ * rather than attacker infrastructure (agency complaint portals, "report to").
+ */
+const REPORTING_CONTACT_RE =
+  /\b(?:please\s+report|report\s+(?:significant\s+)?(?:cyber\s+)?(?:security\s+)?incidents?\s+to|file\s+a\s+complaint|report(?:ing)?\s+(?:this|the)\s+(?:incident|compromise|activity)|contact\s+(?:the\s+)?(?:general\s+intelligence|local\s+law|your\s+it|national\s+cyber)|monitored\s+24(?:\s*\/\s*|\s*)?7|internet\s+crime\s+complaint\s+center)\b/i;
 
 /**
  * Indicator concept at the head of a heading, then a separator or the end:
@@ -414,6 +421,39 @@ export function isIndicatorValueLine(text) {
 }
 
 /**
+ * A short publisher IOC row that pairs one observable with a filename or short
+ * annotation on either side ("loader.exe &lt;md5&gt;", "&lt;md5&gt; oleasapi.dll").
+ * Shared by zone scope continuation and PDF line assembly so filename-first
+ * rows are never treated as narrative while hash-first rows remain rows.
+ * @param {string} text
+ */
+export function isAnnotatedIndicatorRowLine(text) {
+  const raw = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
+  if (!raw || raw.length > 160) return false;
+  // HTTP request / API examples are technical prose, not publisher IOC rows.
+  if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(raw)) return false;
+  if (isObservableListLine(raw) || isIndicatorValueLine(raw)) return true;
+  const t = refangTextForExtraction(raw);
+  const tokens = t.split(/\s+/).filter(Boolean);
+  if (tokens.length < 1 || tokens.length > 6) return false;
+  for (const tok of tokens) {
+    const clean = tok.replace(/[.,;:)\]。，；]+$/g, '');
+    if (!clean) continue;
+    const looksObservable =
+      /^[a-f0-9]{32}$/i.test(clean) ||
+      /^[a-f0-9]{40}$/i.test(clean) ||
+      /^[a-f0-9]{64}$/i.test(clean) ||
+      /^(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?:\/(?:3[0-2]|[12]?\d))?$/.test(clean) ||
+      /\[\.]/.test(tok) ||
+      isSchemeLessUrlToken(clean) ||
+      isIndicatorValueLine(clean) ||
+      isObservableOnlyLine(clean);
+    if (looksObservable && isIndicatorRowShape(t, clean)) return true;
+  }
+  return false;
+}
+
+/**
  * A line made only of observables ("36.35.56.0/24 36.49.207.0/24", a <pre>
  * block of hashes, "a.example, b.example"): a publisher list whose layout
  * did not split one value per row. Structural, like a list.
@@ -692,6 +732,11 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   if (describesBenignComponent(full)) {
     return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: false };
   }
+  // "Report incidents to …" / "file a complaint at …" — agency contact chrome,
+  // never an Indicator (MODE A and MODE B).
+  if (REPORTING_CONTACT_RE.test(text) || REPORTING_CONTACT_RE.test(full)) {
+    return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'reporting_contact', authoritative: false, structural_row: false };
+  }
   if (CONTEXT_RELATION_RE.test(text)) {
     return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'contextual', authoritative, structural_row: false };
   }
@@ -744,7 +789,6 @@ export function strongestSourceRelation(candidate) {
     [SOURCE_RELATIONS.CONTEXTUAL]: 1,
     [SOURCE_RELATIONS.REFERENCE]: 0
   };
-  let best = SOURCE_RELATIONS.CONTEXTUAL;
   const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
   if (!occ.length) {
     return classifySourceRelation(candidate.evidence_text || '', {
@@ -754,11 +798,19 @@ export function strongestSourceRelation(candidate) {
       original: candidate.original_value
     });
   }
+  // Seed below REFERENCE (0) so a reporting-contact / bibliography-only
+  // occurrence is not masked by a CONTEXTUAL default (NCSC agency chrome).
+  let best = null;
+  let bestRank = -1;
   for (const o of occ) {
     const rel = o.source_relation || relationDetailForOccurrence(candidate, o).relation;
-    if ((rank[rel] || 0) > (rank[best] || 0)) best = rel;
+    const rk = rank[rel] ?? 0;
+    if (rk > bestRank) {
+      best = rel;
+      bestRank = rk;
+    }
   }
-  return best;
+  return best || SOURCE_RELATIONS.CONTEXTUAL;
 }
 
 /**

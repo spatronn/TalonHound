@@ -1,37 +1,5 @@
 {
-  "description": "Indicators the extractor currently promotes on real-report labels although the publisher does not assert them (recorded, NOT accepted). A fix removes its entries; realReports.test.js fails on any FP not listed here and on a listed FP that no longer occurs. Diagnosed on tl-candidates-v25 / tl-zones-v9 (2026-10-15).",
-  "causes": {
-    "unlabelled_list_discovery": "documentZones.applyObservableListZones turns a run of observable-only body rows into explicit_ioc_section (MODE A authority) without a publisher heading and without reading the lead-in sentence; here the advisory names the services as legitimate ones to review traffic to.",
-    "body_table_header_discovery": "A body table whose header looks like an IOC table (looksLikeIocTableHeader) becomes explicit_ioc_section outside the publisher's headed IOC section; columns that are lookup attributes (resolution IPs) or triaged look-alike samples become Indicators.",
-    "bare_url_prefix_in_ioc_block": "A bare URL prefix line inside the publisher IOC pre block is kept as a URL Indicator."
-  },
-  "cases": {
-    "real-ncsc-iranian-dissidents": {
-      "cause": "unlabelled_list_discovery",
-      "identities": [
-        "domain:api.telegram.org",
-        "domain:backblazeb2.com",
-        "domain:iproyal.com",
-        "domain:lightningproxies.net",
-        "domain:storjshare.io",
-        "domain:vultrobjects.com"
-      ]
-    },
-    "real-securelist-dtrack": {
-      "cause": "body_table_header_discovery",
-      "identities": ["ip:52.128.23.153", "ip:58.158.177.102", "ip:64.190.63.111"]
-    },
-    "real-huntress-openclaw-ghostsocks": {
-      "cause": "body_table_header_discovery",
-      "identities": [
-        "sha256:0b6ed577b993fd81e14f9abbef710e881629b8521580f3a127b2184685af7e05",
-        "sha256:249058ce8dc6e74cff9fb84d4d32c82e371265b40d02bb70b7955dceea008139",
-        "sha256:b73bd2e4cb16e9036aa7125587c5b3289e17e62f8831de1f9709896797435b82"
-      ]
-    },
-    "real-raven-citrix-0day": {
-      "cause": "bare_url_prefix_in_ioc_block",
-      "identities": ["url:http://213.209.159.55:443/t/"]
-    }
-  }
+  "description": "Indicators the extractor currently promotes on real-report labels although the publisher does not assert them (recorded, NOT accepted). A fix removes its entries; realReports.test.js fails on any FP not listed here and on a listed FP that no longer occurs. P1 gate (tl-candidates-v27): NCSC advisory chrome and Raven bare URL prefix retired; registry empty when precision is clean.",
+  "causes": {},
+  "cases": {}
 }

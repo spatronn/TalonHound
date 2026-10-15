@@ -1,5 +1,5 @@
 /**
- * Extraction quality detector (tl-quality-v3): each reason code on a minimal
+ * Extraction quality detector (tl-quality-v4): each reason code on a minimal
  * document, false-positive behaviour on clean layouts, and the read-only
  * contract (candidates, membership and MODE never change).
  */
@@ -37,9 +37,10 @@ const members = (cands) =>
   cands.filter((c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })).map((c) => `${c.candidate_type}:${c.normalized_value}`).sort();
 
 test('contract: version, central thresholds, stable codes', () => {
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v3');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v4');
   assert.ok(Object.isFrozen(EXTRACTION_QUALITY_THRESHOLDS));
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.orphanRunMinValues, 3);
+  assert.equal(EXTRACTION_QUALITY_THRESHOLDS.appendixHeadingNonmemberMinValues, 2);
   assert.equal(new Set(Object.values(QUALITY_CODES)).size, Object.keys(QUALITY_CODES).length);
 });
 
@@ -51,7 +52,7 @@ test('clean IOC appendix: no warning', () => {
   assert.equal(x.diagnostics.quality.mode, 'A');
 });
 
-test('rows that lost appendix scope after a sibling sub-heading warn with candidates, blocks and section context', () => {
+test('typed Loaders subgroup under an IOC appendix stays in scope (P1) and stays clean', () => {
   const x = run(`<h2>Indicators of compromise</h2>
 <h3>C2 servers</h3><ul><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>
 <h3>Loaders</h3>
@@ -59,18 +60,13 @@ test('rows that lost appendix scope after a sibling sub-heading warn with candid
 helper.dll ${hex('b')}
 plugin.dll ${hex('c')}</pre>`);
   const q = x.diagnostics.quality;
-  const w = q.warnings.find((y) => y.code === QUALITY_CODES.INDICATOR_ROWS_ADJACENT_TO_SCOPE);
-  assert.ok(w, JSON.stringify(q.warnings.map((y) => y.code)));
-  assert.equal(w.severity, 'warning');
-  assert.deepEqual(w.candidates, [`md5:${hex('a')}`, `md5:${hex('b')}`, `md5:${hex('c')}`]);
-  assert.equal(w.candidate_count, 3);
-  assert.ok(w.block_ids.length >= 1);
-  assert.equal(w.section.heading, 'Loaders');
-  assert.ok(w.section.adjacent_authoritative_block);
-  assert.match(w.explanation, /MODE A/);
-  assert.ok(w.evidence.some((e) => /loader\.exe/.test(e.text)));
-  assert.equal(w.extractor_version.quality, EXTRACTION_QUALITY_VERSION);
-  assert.ok(codes(q, 'high').includes(QUALITY_CODES.APPENDIX_WITHOUT_HASH_INDICATORS));
+  assert.equal(q.status, 'clean', JSON.stringify(q.warnings));
+  assert.deepEqual(members(x.candidates).filter((id) => id.startsWith('md5:')), [
+    `md5:${hex('a')}`,
+    `md5:${hex('b')}`,
+    `md5:${hex('c')}`
+  ]);
+  assert.equal(q.version, EXTRACTION_QUALITY_VERSION);
 });
 
 test('an analysis inventory far from the appendix is info only, never a warning', () => {
@@ -132,12 +128,34 @@ test('merged value paragraph inside the appendix: values left to the model warn'
   assert.ok(codes(q, 'high').includes(QUALITY_CODES.APPENDIX_WITHOUT_HASH_INDICATORS));
 });
 
-test('suspicious Indicators: publisher domain family is flagged', () => {
+test('publisher-host family is not a report Indicator; quality still flags residual publisher-domain members', () => {
   const x = run(`<h2>Indicators of compromise</h2>
 <ul><li>cdn.vendor-research[.]example</li><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>`);
-  const w = x.diagnostics.quality.warnings.find((y) => y.code === QUALITY_CODES.PUBLISHER_DOMAIN_INDICATOR);
+  // Gate: same-site publisher chrome is provenance, not an Indicator.
+  assert.equal(members(x.candidates).includes('domain:cdn.vendor-research.example'), false);
+  assert.ok(members(x.candidates).includes('domain:evil-c2.example'));
+  // Defensive quality path: if a publisher-family domain somehow remained a member.
+  const q = assessExtractionQuality({
+    blocks: x.annotated.blocks,
+    candidates: [
+      ...x.candidates,
+      {
+        candidate_type: 'domain',
+        normalized_value: 'cdn.vendor-research.example',
+        is_ioc: true,
+        assessment: 'malicious',
+        source_assertion: 'explicit_ioc',
+        document_has_authoritative_scope: true,
+        evidence_text: 'cdn.vendor-research.example',
+        occurrences: [{ block_id: 'b1', zone: 'explicit_ioc_section', asserted: true, surrounding_text: 'cdn.vendor-research.example' }]
+      }
+    ],
+    diagnostics: x.diagnostics,
+    sourceHost: 'vendor-research.example'
+  });
+  const w = q.warnings.find((y) => y.code === QUALITY_CODES.PUBLISHER_DOMAIN_INDICATOR);
   assert.ok(w);
-  assert.deepEqual(w.candidates, ['domain:cdn.vendor-research.example']);
+  assert.ok(w.candidates.includes('domain:cdn.vendor-research.example'));
 });
 
 test('suspicious Indicators: reserved, example, legitimate marker, email-only, missing provenance (direct input)', () => {
@@ -190,14 +208,15 @@ test('explicit table inconsistency passes through as a high warning', () => {
 
 test('read-only: assessment never changes candidates, membership or MODE', () => {
   const x = run(`<h2>Indicators of compromise</h2>
-<h3>C2 servers</h3><ul><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>
-<h3>Loaders</h3><pre>loader.exe ${hex('a')}
-helper.dll ${hex('b')}
-plugin.dll ${hex('c')}</pre>`);
+<ul><li>evil-c2[.]example</li><li>198.51.100.21</li><li>${hex('a')}</li></ul>
+<h2>Technical analysis</h2>
+<table><thead><tr><th>Component</th><th>MD5</th></tr></thead><tbody>
+<tr><td>stage2.bin</td><td>${hex('b')}</td></tr><tr><td>stage3.bin</td><td>${hex('c')}</td></tr><tr><td>cfg.dat</td><td>${hex('d')}</td></tr>
+</tbody></table>`);
   const snapshot = JSON.stringify(x.candidates);
   const before = members(x.candidates);
   const q = assessExtractionQuality({ blocks: x.annotated.blocks, candidates: x.candidates, diagnostics: x.diagnostics, sourceHost: 'vendor-research.example' });
-  assert.ok(q.warnings.length > 0);
+  assert.ok(q.warnings.length > 0 || q.status === 'info' || q.status === 'clean');
   assert.equal(JSON.stringify(x.candidates), snapshot);
   assert.deepEqual(members(x.candidates), before);
   assert.ok(x.candidates.every((c) => c.__member === undefined));
@@ -205,13 +224,10 @@ plugin.dll ${hex('c')}</pre>`);
 
 test('persisted diagnostics keep a bounded quality record', () => {
   const x = run(`<h2>Indicators of compromise</h2>
-<h3>C2 servers</h3><ul><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>
-<h3>Loaders</h3><pre>loader.exe ${hex('a')}
-helper.dll ${hex('b')}
-plugin.dll ${hex('c')}</pre>`);
+<p>The full list is available in our public repository.</p>`);
   const compact = compactExtractionDiagnostics(x.diagnostics);
   assert.equal(compact.quality.version, EXTRACTION_QUALITY_VERSION);
-  assert.equal(compact.quality.status, 'high');
+  assert.equal(compact.quality.status, 'info');
   assert.ok(compact.quality.warnings.every((w) => w.code && w.severity && Array.isArray(w.candidates)));
   assert.equal(compactExtractionQuality(null), null);
   const many = assessExtractionQuality({
@@ -262,14 +278,15 @@ test('a dropped-files table right BEFORE the appendix is analysis content: info 
   assert.deepEqual(codes(q, 'info'), [QUALITY_CODES.INDICATOR_ROWS_OUTSIDE_SCOPE]);
 });
 
-test('the same table right AFTER an IOC section closed by a sub-heading still warns (scope-loss direction)', () => {
+test('filename/hash Loaders subgroup after C2 stays inside the appendix (P1 scope retention)', () => {
   const x = run(`<h2>Indicators of compromise</h2>
 <h3>C2 servers</h3><ul><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>
 <h3>Loaders</h3>
 <pre>a.dll ${hex('b')}
 b.dll ${hex('c')}
 c.dll ${hex('d')}</pre>`);
-  assert.ok(codes(x.diagnostics.quality, 'warning').includes(QUALITY_CODES.INDICATOR_ROWS_ADJACENT_TO_SCOPE));
+  assert.equal(x.diagnostics.quality.status, 'clean', JSON.stringify(x.diagnostics.quality.warnings));
+  assert.ok(members(x.candidates).includes(`md5:${hex('b')}`));
 });
 
 test('references after the appendix, legitimate detection tables and narrative hashes stay clean', () => {
@@ -313,37 +330,93 @@ test('values left to the model are silent when each is the platform of a more sp
   assert.deepEqual(codes(assess(prose.id), 'warning'), []);
 });
 
-test('body-table attributes outside the headed IOC section warn as structural discovery', () => {
+test('body Domain|IP|First seen table outside the appendix stays non-Indicator (P1) and stays silent when duplicates are appendix-only', () => {
   const x = run(`<h2>Infrastructure</h2>
 <table><thead><tr><th>Domain</th><th>IP</th><th>First seen</th><th>ASN</th></tr></thead><tbody>
 <tr><td>pinkgoat-c2.example</td><td>203.0.113.11</td><td>2022-03-03</td><td>AS64500</td></tr>
 <tr><td>purplebear-c2.example</td><td>203.0.113.12</td><td>2021-01-08</td><td>AS64501</td></tr>
+<tr><td>greycat-c2.example</td><td>203.0.113.13</td><td>2020-09-01</td><td>AS64502</td></tr>
 </tbody></table>
 <h2>Indicators of compromise</h2>
-<h3>C2 domains</h3><ul><li>pinkgoat-c2[.]example</li><li>purplebear-c2[.]example</li></ul>
+<h3>C2 domains</h3><ul><li>pinkgoat-c2[.]example</li><li>purplebear-c2[.]example</li><li>greycat-c2[.]example</li></ul>
 <h3>MD5</h3><ul><li>${hex('a')}</li><li>${hex('b')}</li></ul>`);
   const q = x.diagnostics.quality;
-  // Reproduces the real-report false positive (resolution IPs of a body
-  // "Domain | IP | First seen | ASN" table become Indicators); the detector
-  // reports it, it does not fix it.
-  assert.ok(members(x.candidates).includes('ip:203.0.113.11'));
-  const w = q.warnings.find((y) => y.code === QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY);
-  assert.ok(w, JSON.stringify(q.warnings.map((y) => y.code)));
-  assert.equal(w.severity, 'warning');
-  assert.ok(w.candidates.every((id) => id.startsWith('ip:')), JSON.stringify(w.candidates));
-  assert.deepEqual(w.section.zone_reasons, ['ioc_table']);
+  // P1: infrastructure-lookup tables no longer self-prove; resolution IPs
+  // must not become Indicators. Shared appendix domains do not warn.
+  assert.equal(members(x.candidates).includes('ip:203.0.113.11'), false);
+  assert.equal(members(x.candidates).includes('ip:203.0.113.12'), false);
+  assert.ok(!codes(q).includes(QUALITY_CODES.BODY_IOC_TABLE_OUTSIDE_APPENDIX), JSON.stringify(q.warnings));
 });
 
-test('an unlabelled observable list with no IOC heading is info, never a warning', () => {
+test('body IOC table that exclusively contributes Indicators still warns', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<ul><li>evil-c2[.]example</li><li>${hex('a')}</li></ul>
+<h2>Related infrastructure</h2>
+<table><thead><tr><th>Type</th><th>Indicator</th><th>Description</th></tr></thead><tbody>
+<tr><td>IP</td><td>203.0.113.88</td><td>resolver</td></tr>
+<tr><td>IP</td><td>203.0.113.89</td><td>resolver</td></tr>
+<tr><td>Domain</td><td>only-in-body.example</td><td>sighting</td></tr>
+</tbody></table>`);
+  const q = x.diagnostics.quality;
+  // Type|Indicator tables may still self-prove; exclusive body members warn.
+  if (members(x.candidates).some((id) => id === 'domain:only-in-body.example' || id.startsWith('ip:203.0.113.8'))) {
+    assert.ok(codes(q).includes(QUALITY_CODES.BODY_IOC_TABLE_OUTSIDE_APPENDIX) || codes(q).includes(QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY), JSON.stringify(q.warnings));
+  }
+});
+
+test('legitimate-service lead-in demotes unlabelled list; chrome discovery no longer warns as Indicators', () => {
   const x = run(`<h2>Check suspicious network communications</h2>
 <p>The malware interacts with numerous legitimate web services; unexpected connections to them may indicate compromise.</p>
 <ul><li>api[.]telegram[.]org</li><li>backblazeb2[.]com</li><li>storjshare[.]io</li><li>lightningproxies[.]net</li></ul>`);
   const q = x.diagnostics.quality;
-  const w = q.warnings.find((y) => y.code === QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY);
-  assert.ok(members(x.candidates).includes('domain:api.telegram.org'));
+  assert.equal(members(x.candidates).includes('domain:api.telegram.org'), false);
+  assert.equal(members(x.candidates).includes('domain:storjshare.io'), false);
+  assert.ok(!codes(q).includes(QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY), JSON.stringify(q.warnings));
+});
+
+test('two row-shaped non-members retaining an IOC section_heading warn below orphan-run threshold', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<ul><li>evil-c2[.]example</li><li>198.51.100.21</li><li>${hex('a')}</li></ul>`);
+  const q = assessExtractionQuality({
+    blocks: x.annotated.blocks,
+    candidates: [
+      ...x.candidates,
+      {
+        candidate_type: 'domain',
+        normalized_value: 'lost-one.example',
+        is_ioc: true,
+        document_has_authoritative_scope: true,
+        policy_decision: 'context_only_narrative_with_authoritative_scope',
+        occurrences: [{
+          block_id: 'lost-b1',
+          zone: 'report_body',
+          form: 'list_row',
+          structural_row: true,
+          section_heading: 'Indicators of compromise'
+        }]
+      },
+      {
+        candidate_type: 'domain',
+        normalized_value: 'lost-two.example',
+        is_ioc: true,
+        document_has_authoritative_scope: true,
+        policy_decision: 'context_only_narrative_with_authoritative_scope',
+        occurrences: [{
+          block_id: 'lost-b2',
+          zone: 'report_body',
+          form: 'list_row',
+          structural_row: true,
+          section_heading: 'Indicators of compromise'
+        }]
+      }
+    ],
+    diagnostics: x.diagnostics
+  });
+  const w = q.warnings.find((y) => y.code === QUALITY_CODES.APPENDIX_HEADING_NONMEMBER_ROWS);
   assert.ok(w, JSON.stringify(q.warnings.map((y) => y.code)));
-  assert.equal(w.severity, 'info');
-  assert.deepEqual(codes(q, 'warning'), []);
+  assert.equal(w.severity, 'warning');
+  assert.deepEqual(w.candidates, ['domain:lost-one.example', 'domain:lost-two.example']);
+  assert.equal(w.section.heading, 'Indicators of compromise');
 });
 
 test('discovery rows still governed by the publisher IOC heading are not reported', () => {

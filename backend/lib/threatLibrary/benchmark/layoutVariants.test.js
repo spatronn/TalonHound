@@ -31,7 +31,8 @@ test('variant grid covers every required layout family', () => {
   const structures = new Set(VARIANTS.map((v) => v.split('/')[0]));
   for (const s of [
     'html_typed_subsections', 'html_c2_then_loaders', 'html_c2_then_nested_plugins',
-    'html_bold_subsections', 'html_bold_appendix', 'pdf_typed_subsections', 'pdf_c2_then_loaders'
+    'html_bold_subsections', 'html_bold_appendix', 'pdf_typed_subsections', 'pdf_c2_then_loaders',
+    'pdf_legacy_typed_subsections', 'pdf_legacy_c2_then_loaders', 'pdf_legacy_flat'
   ]) assert.ok(structures.has(s), s);
   const reprs = new Set(VARIANTS.map((v) => v.split('/')[1]));
   for (const r of ['table', 'hash_lines', 'hash_filename_lines', 'filename_hash_lines']) assert.ok(reprs.has(r), r);

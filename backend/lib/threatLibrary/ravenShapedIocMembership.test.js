@@ -129,7 +129,7 @@ function members(cands) {
 }
 
 test('contract versions for credential/config typing', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v25');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v27');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v8');
   assert.ok(FILE_EXT_HINT.has('conf'));
 });

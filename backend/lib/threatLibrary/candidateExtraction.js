@@ -150,10 +150,55 @@ export {
  * IOC / C2 / sample headings are not self-proving structural IOC tables
  * (tl-table-v6). MODE A membership keeps formal IOC-appendix hashes and
  * domains without promoting legitimate host-binary hashes from analysis tables.
+ * v26: nested HTML headings inside list items keep heading semantics
+ * (threat_library_html_v5); filename-first annotated rows continue appendix
+ * scope (tl-zones-v10); body Domain/IP/MD5 tables and legitimate-service
+ * lists no longer self-prove without type column / authoritative caption /
+ * headed scope (tl-table-v7); PDF headings carry inferred levels and
+ * filename/hash lines stay as rows (threat_library_pdf_v5).
+ * v27: publisher-host family + reporting-contact relation demote advisory
+ * chrome; incomplete URL path prefixes that are strict prefixes of sibling
+ * URL Indicators are excluded (tl-candidates-v27).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v25';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v27';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
+
+/** Same site family: exact host or subdomain (www. stripped). */
+function samePublisherHostFamily(a, b) {
+  const na = String(a || '')
+    .toLowerCase()
+    .replace(/^www\./, '');
+  const nb = String(b || '')
+    .toLowerCase()
+    .replace(/^www\./, '');
+  if (!na || !nb) return false;
+  return na === nb || na.endsWith(`.${nb}`) || nb.endsWith(`.${na}`);
+}
+
+/**
+ * Mark URL candidates that are incomplete path prefixes of a longer sibling
+ * URL in the same document (e.g. http://host:443/t/ vs …/t/a779ab).
+ * @param {Map<string, object>} byKey
+ */
+function markIncompleteUrlPrefixes(byKey) {
+  const urls = [...byKey.values()].filter((e) => e.candidate_type === 'url' && e.normalized_value);
+  for (const a of urls) {
+    const av = String(a.normalized_value);
+    if (!av.endsWith('/')) continue;
+    let pathname = '';
+    try {
+      pathname = new URL(av).pathname || '';
+    } catch {
+      continue;
+    }
+    if (!pathname || pathname === '/') continue;
+    const longer = urls.some(
+      (b) => b !== a && String(b.normalized_value).startsWith(av) && String(b.normalized_value).length > av.length
+    );
+    if (longer) a.incomplete_url_prefix = true;
+  }
+}
 
 /** Cell texts of every canonical table block (publisher date-order evidence). */
 function* tableCellTexts(blocks) {
@@ -596,12 +641,18 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (n.likelyContextOnly && !n.reservedAddress && !n.nonActionableLocal) entry.rfc_example = true;
       if (n.reservedAddress) entry.reserved_address = true;
       if (n.nonActionableLocal) entry.non_actionable_local = true;
-      // Report's own source URL / host is provenance, never a finding.
-      if (
-        (candidateType === 'domain' && sourceHost && normalizedValue === sourceHost) ||
-        (candidateType === 'url' && normalizedSourceUrl && normalizedValue === normalizedSourceUrl)
-      ) {
+      // Report's own source URL / host (and same-site subdomains) are provenance,
+      // never findings — e.g. report.ncsc.gov.uk on an ncsc.gov.uk advisory.
+      if (candidateType === 'domain' && sourceHost && samePublisherHostFamily(normalizedValue, sourceHost)) {
         entry.is_report_source = true;
+      } else if (candidateType === 'url') {
+        const urlHost = hostnameFromUrl(normalizedValue);
+        if (
+          (normalizedSourceUrl && normalizedValue === normalizedSourceUrl) ||
+          (sourceHost && urlHost && samePublisherHostFamily(urlHost, sourceHost))
+        ) {
+          entry.is_report_source = true;
+        }
       }
       byKey.set(key, entry);
     }
@@ -1252,6 +1303,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const start = m.index;
       const end = start + m[0].length;
       if (insideAnySpan(urlSpans, start, end)) continue;
+      // Truncated publisher hostname: "online-driver.kro.k" (from "kro[.]k")
+      // matches DOMAIN_RE as the prefix "...kro" because a 1-char final label
+      // cannot be a TLD. Do not invent a shorter complete domain from that.
+      if (/^\.[a-z0-9](?![a-z0-9-])/i.test(text.slice(end))) continue;
       // `user@host.example`: the host is the address's domain (same
       // no-over-derivation rule as a URL host). Email is not a candidate type,
       // so the domain stays a candidate but never a structural row assertion.
@@ -1272,6 +1327,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // the publisher wrote (no scheme is invented). When both http and https
   // spellings exist the scheme is ambiguous and the value stays as written.
   foldSchemeLessUrlAliases();
+
+  // Incomplete path prefixes of sibling URLs (…/t/ when …/t/abc exists).
+  markIncompleteUrlPrefixes(byKey);
 
   // Finalize: evidence policy + parser-derived host cross references
   const out = [];

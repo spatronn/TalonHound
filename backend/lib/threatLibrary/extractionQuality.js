@@ -30,8 +30,13 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
  * warn when each is a parent platform of a more specific Indicator; new
  * check 6 reports Indicators whose only authority is structural discovery (an
  * IOC-shaped body table header or an unlabelled observable list).
+ * v4 (P1 structural reliability): check 7 flags row-shaped non-members whose
+ * section heading still names an IOC / C2 appendix (premature scope close /
+ * nested-heading loss) even when the orphan-run length is below the v3
+ * threshold; check 8 flags IOC-looking body tables that sit outside every
+ * headed appendix (authority risk even when membership was correctly withheld).
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v3';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v4';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -57,6 +62,16 @@ export const QUALITY_CODES = Object.freeze({
   EXPLICIT_TABLE_ROWS_DROPPED: 'explicit_table_rows_dropped',
   /** Indicators whose only authority is structural discovery (body table header / unlabelled list). */
   INDICATORS_FROM_STRUCTURAL_DISCOVERY: 'indicators_from_structural_discovery',
+  /**
+   * Row-shaped values under an IOC/C2 section heading but outside authoritative
+   * zones (premature appendix close, nested list heading loss, metadata mis-zone).
+   */
+  APPENDIX_HEADING_NONMEMBER_ROWS: 'appendix_heading_nonmember_rows',
+  /**
+   * An IOC-looking body table outside every headed appendix — structural
+   * authority risk even when the values correctly stayed non-Indicators.
+   */
+  BODY_IOC_TABLE_OUTSIDE_APPENDIX: 'body_ioc_table_outside_appendix',
   /** Reserved / loopback identity is a report Indicator (membership gates should prevent it). */
   RESERVED_INDICATOR: 'reserved_or_loopback_indicator',
   /** RFC documentation / example identity is a report Indicator. */
@@ -78,6 +93,10 @@ export const QUALITY_CODES = Object.freeze({
 export const EXTRACTION_QUALITY_THRESHOLDS = Object.freeze({
   /** Distinct row-shaped IOC identities in one run outside authoritative scope before it is reported. */
   orphanRunMinValues: 3,
+  /** Distinct non-member rows under an IOC/C2 heading (check 7) before warning. */
+  appendixHeadingNonmemberMinValues: 2,
+  /** Distinct IOC-typed cells in a body table (check 8) before reporting. */
+  bodyIocTableMinValues: 3,
   /** Content blocks allowed between a preceding authoritative block and an orphan run for "adjacent". */
   adjacentScopeMaxGapBlocks: 2,
   /** Non-observable words a block may carry and still read as a merged value list. */
@@ -552,6 +571,100 @@ export function assessExtractionQuality(input) {
       section: { zone_reasons: reasons, headed_indicators: headedMembers },
       evidence: evidenceFor(blockIds)
     });
+  }
+
+  // --- 7. Row-shaped non-members still under an IOC / C2 section heading ---
+  // Catches premature appendix closure and nested-list heading loss where only
+  // one or two values fall out (below orphanRunMinValues) but the heading text
+  // still names Indicators / C2 / samples.
+  const APPENDIX_HEADING_RE =
+    /\b(?:indicators?\s+of\s+compromise|indicators?|iocs?|compromise\s+indicators?|c2s?|c&c|command\s*(?:and|&)\s*control|samples?|hashes?|md5|sha-?1|sha-?256)\b/i;
+  if (modeA) {
+    const byHeading = new Map();
+    for (const c of candidates) {
+      if (!isScopeDependentNonMember(c)) continue;
+      for (const o of c.occurrences || []) {
+        if (!o.block_id || !rowLike(o)) continue;
+        const z = String(o.zone || '');
+        if (STRONG_IOC_ZONES.has(z) || NEGATIVE_ZONES.has(z) || z === 'header_footer') continue;
+        const heading = String(o.section_heading || blockById.get(o.block_id)?.section_heading || '').trim();
+        if (!heading || !APPENDIX_HEADING_RE.test(heading)) continue;
+        if (!byHeading.has(heading)) byHeading.set(heading, { ids: new Set(), blocks: new Set() });
+        byHeading.get(heading).ids.add(identity(c));
+        byHeading.get(heading).blocks.add(o.block_id);
+      }
+    }
+    for (const [heading, group] of byHeading) {
+      if (group.ids.size < T.appendixHeadingNonmemberMinValues) continue;
+      const blockIds = [...group.blocks];
+      push({
+        code: QUALITY_CODES.APPENDIX_HEADING_NONMEMBER_ROWS,
+        severity: 'warning',
+        explanation:
+          `${group.ids.size} row-shaped IOC values sit under section heading "${heading}" but are outside every ` +
+          'authoritative zone, so MODE A excludes them from Indicators. Nested list headings or a sibling ' +
+          'sub-heading may have closed the publisher appendix early.',
+        candidates: [...group.ids].sort(),
+        block_ids: blockIds,
+        section: { heading, zone: null },
+        evidence: evidenceFor(blockIds)
+      });
+    }
+  }
+
+  // --- 8. Body tables that still grant Indicator membership outside a headed
+  // appendix opener (structural discovery / residual self-proving). Analysis
+  // tables that correctly withheld membership stay silent — P1 already demotes
+  // Domain|IP|First seen style grids; warning only when Indicators remain.
+  const hasHeadedAppendix = blocks.some(
+    (b) =>
+      (b.zone === 'explicit_ioc_section' || b.zone === 'sample_table' || b.zone === 'c2_section') &&
+      (b.scope_opening_id === b.id || b.type === 'heading')
+  );
+  if (hasHeadedAppendix) {
+    for (const b of blocks) {
+      if (b.type !== 'table' || !b.table || isChrome(b)) continue;
+      // Tables already inside the publisher's headed IOC / C2 / sample appendix
+      // are not "body" tables. operational_infrastructure stays eligible — it can
+      // grant exclusive Indicators outside the headed appendix.
+      if (
+        b.zone === 'explicit_ioc_section' ||
+        b.zone === 'c2_section' ||
+        b.zone === 'sample_table'
+      ) {
+        continue;
+      }
+      const headerText = (b.table.headers || []).map((c) => String(c || '')).join(' ');
+      const looksIocHeader =
+        /\b(?:md5|sha-?1|sha-?256|sha-?512|domain|domains|url|urls|ip|ips|ipv4|ipv6|c2|indicator|hash|hashes|host|hosts)\b/i.test(
+          headerText
+        );
+      if (!looksIocHeader) continue;
+      const inTable = [...(iocByBlock.get(b.id) || [])];
+      // Only identities whose Indicator membership depends on this body table
+      // (every strong occurrence is this block, or the block is non-strong and
+      // still the sole occurrence). Shared appendix duplicates do not count.
+      const exclusiveMembers = inTable.filter((c) => {
+        if (!c.__member) return false;
+        const strong = (c.occurrences || []).filter((o) => STRONG_IOC_ZONES.has(String(o.zone || '')) && o.block_id);
+        if (strong.length) return strong.every((o) => o.block_id === b.id);
+        const all = (c.occurrences || []).filter((o) => o.block_id);
+        return all.length > 0 && all.every((o) => o.block_id === b.id);
+      });
+      if (!exclusiveMembers.length) continue;
+      push({
+        code: QUALITY_CODES.BODY_IOC_TABLE_OUTSIDE_APPENDIX,
+        severity: 'warning',
+        explanation:
+          `Body table under "${b.section_heading || 'unlabelled analysis'}" contributed ` +
+          `${exclusiveMembers.length} Indicator(s) that do not also appear under the headed appendix — ` +
+          'verify they are publisher-asserted, not analysis attributes.',
+        candidates: exclusiveMembers.map(identity).sort(),
+        block_ids: [b.id],
+        section: { heading: b.section_heading || null, zone: b.zone || null, zone_reason: b.zone_reason || null },
+        evidence: evidenceFor([b.id])
+      });
+    }
   }
 
   warnings.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.code.localeCompare(b.code));

@@ -1,5 +1,5 @@
 /**
- * PDF IOC appendix tables (threat_library_pdf_v4 / tl-table-v4 /
+ * PDF IOC appendix tables (threat_library_pdf_v5 / tl-table-v4 /
  * tl-type-resolver-v7 / tl-candidates-v17).
  *
  * A government-advisory style PDF sets text size in the text matrix with
@@ -243,8 +243,19 @@ test('labelled hash cells: inline type labels are labels, the Hashes column is t
   const parsed = parseIndicatorCell(cell, { type: 'hash', endpoint: false });
   assert.deepEqual(parsed.values.map((v) => v.candidate_type).sort(), ['md5', 'sha256']);
   assert.equal(parsed.rejected.length, 0);
-  const interp = interpretIocTable({ id: 't', table: { headers: ['Name', 'Hashes'], rows: [['b374.php', cell], ['error.jsp', `MD5: ${md5('y')} SHA-256: ${sha256('y')}`]] } });
-  assert.equal(interp.explicit, true);
+  const outside = interpretIocTable({ id: 't', table: { headers: ['Name', 'Hashes'], rows: [['b374.php', cell], ['error.jsp', `MD5: ${md5('y')} SHA-256: ${sha256('y')}`]] } });
+  assert.equal(outside.explicit, false, 'Name|Hashes inventory does not self-prove outside IOC scope');
+  assert.ok(outside.columns.find((c) => c.header === 'Hashes').intent === 'indicator');
+  const interp = interpretIocTable(
+    {
+      id: 't',
+      zone: 'sample_table',
+      section_heading: 'Samples',
+      table: { headers: ['Name', 'Hashes'], rows: [['b374.php', cell], ['error.jsp', `MD5: ${md5('y')} SHA-256: ${sha256('y')}`]] }
+    },
+    { inAuthoritativeScope: true }
+  );
+  assert.equal(interp.explicit, true, 'same inventory is explicit inside sample/IOC scope');
   assert.ok(interp.columns.find((c) => c.header === 'Hashes').intent === 'indicator');
 });
 

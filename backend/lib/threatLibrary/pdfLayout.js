@@ -20,8 +20,12 @@ import { FILE_EXT_HINT, hasDelegatedDnsSuffix } from './observableTypeResolver.j
  * table rows are told from wrapped lines by prose pitch and bimodal row gaps,
  * a cell straddling two columns splits at its gutter, pdf.js phantom spaces
  * are not overlays, and a digest wrapped inside a labelled cell re-joins.
+ * v5: structural headings carry an inferred `level` (numbering depth / relative
+ * font height) so appendix hierarchy rules work for PDF the same way as HTML;
+ * "filename hash" inventory lines stay as observable rows instead of merging
+ * into narrative paragraphs.
  */
-export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v4';
+export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v5';
 
 /** Fraction of page height (top/bottom) treated as printed header/footer band. */
 const PAGE_EDGE_FRACTION = 0.055;
@@ -767,6 +771,51 @@ export function isStructuralHeading(line, ctx) {
 }
 
 /**
+ * Infer a heading level for PDF structural headings so zone hierarchy
+ * (sibling vs nested appendix continuation) has a rank to compare. Prefers
+ * explicit numbering ("8. …", "3.2 …"); otherwise uses relative font height.
+ * Always returns an integer 1–6 (never null) for structural headings.
+ * @param {PdfLine} line
+ * @param {{ bodyHeight: number }} ctx
+ */
+export function inferPdfHeadingLevel(line, ctx) {
+  const text = String(line?.text || '').trim();
+  const numbered = text.match(/^(\d{1,2}(?:\.\d{1,2}){0,3})(?:[.、)．]\s*|\s+)/);
+  if (numbered) {
+    const depth = numbered[1].split('.').length;
+    return Math.min(6, Math.max(1, depth + 1));
+  }
+  const body = ctx?.bodyHeight > 0 ? ctx.bodyHeight : 0;
+  const h = Number(line?.height) || 0;
+  if (body > 0 && h > 0) {
+    const ratio = h / body;
+    if (ratio >= 1.55) return 1;
+    if (ratio >= 1.35) return 2;
+    if (ratio >= 1.2) return 3;
+    if (ratio >= 1.1) return 4;
+  }
+  return 3;
+}
+
+/**
+ * A short "filename HASH" / "HASH filename" inventory line. Kept local to
+ * avoid a pdfLayout ↔ indicatorScope import cycle; mirrors the annotated-row
+ * contract used by documentZones for HTML.
+ * @param {string} text
+ */
+export function isFilenameHashRowLine(text) {
+  const t = refangTextForExtraction(String(text || '').trim()).replace(/^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s*|[-•*·]\s*)/, '').trim();
+  if (!t || t.length > 160) return false;
+  const hash = t.match(/\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b/);
+  if (!hash) return false;
+  const rest = t.replace(hash[0], ' ').replace(/\s+/g, ' ').trim();
+  if (!rest) return true;
+  if (rest.split(/\s+/).length > 4) return false;
+  if (/[.!?。]$/.test(rest) && rest.split(/\s+/).length > 2) return false;
+  return true;
+}
+
+/**
  * Join a URL wrapped across two visual lines (browser print output).
  * @param {string} current
  * @param {string} next
@@ -870,7 +919,7 @@ export function linesToBlocks(lines, ctx) {
       mk('paragraph', line.text, { layout: 'page_edge' });
       continue;
     }
-    if (isObservableOnlyLine(line.text)) {
+    if (isObservableOnlyLine(line.text) || isFilenameHashRowLine(line.text)) {
       flushPara();
       mk('list_item', line.text, {
         layout: 'observable_row',
@@ -880,7 +929,10 @@ export function linesToBlocks(lines, ctx) {
     }
     if (isStructuralHeading(line, ctx)) {
       flushPara();
-      mk('heading', line.text, { section: line.text.slice(0, 200) });
+      mk('heading', line.text, {
+        section: line.text.slice(0, 200),
+        level: inferPdfHeadingLevel(line, ctx)
+      });
       continue;
     }
     // Paragraph break on a vertical gap clearly larger than the line pitch
