@@ -1149,7 +1149,7 @@ test('guard preview: read-only verdict on the same diff the worker would apply',
   assert.equal(preview.ai_invoked, false);
   assert.equal(preview.guard.decision, 'block');
   assert.ok(preview.membership_diff.removed_indicators.some((x) => x.identity === 'domain:cs.append'));
-  assert.ok(preview.quality && preview.quality.version === 'tl-quality-v1');
+  assert.match(String(preview.quality?.version), /^tl-quality-v\d+$/);
   const writes = db.calls.filter(({ sql }) => !/^\s*(SELECT|BEGIN|COMMIT|ROLLBACK)/i.test(sql));
   assert.deepEqual(writes.map((w) => w.sql.trim().slice(0, 60)), [], 'preview never writes');
 });

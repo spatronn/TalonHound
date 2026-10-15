@@ -19,14 +19,19 @@ import { isReportIndicatorMember } from './indicatorMembership.js';
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES, THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from './documentZones.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 
-/** Bump when a check, a reason code or a threshold changes. */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v1';
+/**
+ * Bump when a check, a reason code or a threshold changes.
+ * v2: "adjacent" rows are rows right AFTER an authoritative section (the
+ * direction scope loss pushes them); rows that only precede an appendix are
+ * analysis content and report as info.
+ */
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v2';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
 
 export const QUALITY_CODES = Object.freeze({
-  /** Row-shaped IOC values right after / before an authoritative section, but outside it (MODE A). */
+  /** Row-shaped IOC values right after an authoritative section, but outside it (MODE A). */
   INDICATOR_ROWS_ADJACENT_TO_SCOPE: 'indicator_rows_adjacent_to_authoritative_scope',
   /** Row-shaped IOC values elsewhere outside every authoritative section (MODE A). */
   INDICATOR_ROWS_OUTSIDE_SCOPE: 'indicator_rows_outside_authoritative_scope',
@@ -65,7 +70,7 @@ export const QUALITY_CODES = Object.freeze({
 export const EXTRACTION_QUALITY_THRESHOLDS = Object.freeze({
   /** Distinct row-shaped IOC identities in one run outside authoritative scope before it is reported. */
   orphanRunMinValues: 3,
-  /** Content blocks allowed between an authoritative block and an orphan run for "adjacent". */
+  /** Content blocks allowed between a preceding authoritative block and an orphan run for "adjacent". */
   adjacentScopeMaxGapBlocks: 2,
   /** Non-observable words a block may carry and still read as a merged value list. */
   denseBlockMaxProseTokens: 2,
@@ -254,9 +259,12 @@ export function assessExtractionQuality(input) {
     };
     for (const r of runs) {
       if (r.ids.size < T.orphanRunMinValues) continue;
+      // Scope loss pushes rows out AFTER an authoritative section (a heading
+      // closes the section going forward), so only an authoritative block
+      // right before the run makes it "adjacent". Rows that merely precede an
+      // appendix are ordinary analysis content (reported as info).
       const before = authoritativeNear(r.start, -1);
-      const after = authoritativeNear(r.end, 1);
-      const near = before || after;
+      const near = before;
       if (near) for (const id of r.blocks) adjacentRunBlocks.add(id);
       const first = blocks[r.start];
       const heading = first.section_heading || null;
@@ -264,7 +272,7 @@ export function assessExtractionQuality(input) {
         code: near ? QUALITY_CODES.INDICATOR_ROWS_ADJACENT_TO_SCOPE : QUALITY_CODES.INDICATOR_ROWS_OUTSIDE_SCOPE,
         severity: near ? 'warning' : 'info',
         explanation: near
-          ? `${r.ids.size} row-shaped IOC values under "${heading || 'an unlabelled section'}" sit right ${before ? 'after' : 'before'} ` +
+          ? `${r.ids.size} row-shaped IOC values under "${heading || 'an unlabelled section'}" sit right after ` +
             `an authoritative section ("${near.block.section_heading || near.block.zone}") but are outside it, so MODE A ` +
             'excludes them from Indicators. A sub-heading may have closed the publisher IOC appendix.'
           : `${r.ids.size} row-shaped IOC values under "${heading || 'an unlabelled section'}" are outside every authoritative ` +

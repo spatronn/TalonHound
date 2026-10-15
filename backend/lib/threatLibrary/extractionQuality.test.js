@@ -1,5 +1,5 @@
 /**
- * Extraction quality detector (tl-quality-v1): each reason code on a minimal
+ * Extraction quality detector (tl-quality-v2): each reason code on a minimal
  * document, false-positive behaviour on clean layouts, and the read-only
  * contract (candidates, membership and MODE never change).
  */
@@ -37,7 +37,7 @@ const members = (cands) =>
   cands.filter((c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })).map((c) => `${c.candidate_type}:${c.normalized_value}`).sort();
 
 test('contract: version, central thresholds, stable codes', () => {
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v1');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v2');
   assert.ok(Object.isFrozen(EXTRACTION_QUALITY_THRESHOLDS));
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.orphanRunMinValues, 3);
   assert.equal(new Set(Object.values(QUALITY_CODES)).size, Object.keys(QUALITY_CODES).length);
@@ -69,7 +69,7 @@ plugin.dll ${hex('c')}</pre>`);
   assert.ok(w.section.adjacent_authoritative_block);
   assert.match(w.explanation, /MODE A/);
   assert.ok(w.evidence.some((e) => /loader\.exe/.test(e.text)));
-  assert.equal(w.extractor_version.quality, 'tl-quality-v1');
+  assert.equal(w.extractor_version.quality, EXTRACTION_QUALITY_VERSION);
   assert.ok(codes(q, 'high').includes(QUALITY_CODES.APPENDIX_WITHOUT_HASH_INDICATORS));
 });
 
@@ -210,7 +210,7 @@ test('persisted diagnostics keep a bounded quality record', () => {
 helper.dll ${hex('b')}
 plugin.dll ${hex('c')}</pre>`);
   const compact = compactExtractionDiagnostics(x.diagnostics);
-  assert.equal(compact.quality.version, 'tl-quality-v1');
+  assert.equal(compact.quality.version, EXTRACTION_QUALITY_VERSION);
   assert.equal(compact.quality.status, 'high');
   assert.ok(compact.quality.warnings.every((w) => w.code && w.severity && Array.isArray(w.candidates)));
   assert.equal(compactExtractionQuality(null), null);
@@ -244,4 +244,42 @@ test('stored quality accessors for report rows (REST extraction_quality, MCP sum
     version: 'tl-quality-v1', status: 'warning', mode: 'A', counts: { high: 0, warning: 1, info: 0 }, codes: ['x'], warnings_total: 2
   });
   assert.equal(extractionQualitySummary(null), null);
+});
+
+// --- False-positive-prone layouts (measured 2026-10-15; not threshold tuning) --
+
+test('a dropped-files table right BEFORE the appendix is analysis content: info only', () => {
+  const x = run(`<h2>Technical analysis</h2>
+<p>The installer dropped these files.</p>
+<table><thead><tr><th>Filename</th><th>MD5</th></tr></thead><tbody>
+<tr><td>a.dll</td><td>${hex('b')}</td></tr><tr><td>b.dll</td><td>${hex('c')}</td></tr><tr><td>c.dll</td><td>${hex('d')}</td></tr>
+</tbody></table>
+<h2>Indicators of compromise</h2>
+<ul><li>evil-c2[.]example</li><li>198.51.100.21</li><li>${hex('a')}</li></ul>`);
+  const q = x.diagnostics.quality;
+  assert.deepEqual(codes(q, 'warning'), []);
+  assert.deepEqual(codes(q, 'high'), []);
+  assert.deepEqual(codes(q, 'info'), [QUALITY_CODES.INDICATOR_ROWS_OUTSIDE_SCOPE]);
+});
+
+test('the same table right AFTER an IOC section closed by a sub-heading still warns (scope-loss direction)', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<h3>C2 servers</h3><ul><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>
+<h3>Loaders</h3>
+<pre>a.dll ${hex('b')}
+b.dll ${hex('c')}
+c.dll ${hex('d')}</pre>`);
+  assert.ok(codes(x.diagnostics.quality, 'warning').includes(QUALITY_CODES.INDICATOR_ROWS_ADJACENT_TO_SCOPE));
+});
+
+test('references after the appendix, legitimate detection tables and narrative hashes stay clean', () => {
+  const appendix = `<h2>Indicators of compromise</h2><ul><li>evil-c2[.]example</li><li>198.51.100.21</li><li>${hex('a')}</li></ul>`;
+  for (const inner of [
+    `${appendix}<h2>References</h2><ul><li>https://vendor.example/a</li><li>https://vendor.example/b</li><li>https://vendor.example/c</li></ul>`,
+    `${appendix}<h2>Detection opportunities</h2><table><tr><th>File</th><th>SHA256</th><th>Note</th></tr>${['1', '2', '3']
+      .map((c, i) => `<tr><td>tool${i}.exe</td><td>${c.repeat(64)}</td><td>Legitimate Windows binary</td></tr>`).join('')}</table>`,
+    `${appendix}<h2>Analysis</h2><p>Samples ${hex('e')}, ${hex('f')} and ${hex('0')} share code with older variants.</p>`
+  ]) {
+    assert.equal(run(inner).diagnostics.quality.status, 'clean');
+  }
 });

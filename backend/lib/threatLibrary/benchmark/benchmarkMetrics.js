@@ -19,7 +19,7 @@ import { NEGATIVE_ZONES, STRONG_IOC_ZONES } from '../documentZones.js';
 import { refangTextForExtraction } from '../defang.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
 
-export const BENCHMARK_METRICS_VERSION = 'tl-benchmark-metrics-v1';
+export const BENCHMARK_METRICS_VERSION = 'tl-benchmark-metrics-v2';
 
 const EXPLICIT_ASSERTIONS = new Set([
   SOURCE_ASSERTIONS.EXPLICIT_IOC,
@@ -69,8 +69,8 @@ function f1(precision, recall) {
   return Math.round(((2 * precision * recall) / (precision + recall)) * 10000) / 10000;
 }
 
-function candidateSummary(c) {
-  if (!c) return { extracted: false };
+function candidateSummary(c, mistypedAs = null) {
+  if (!c) return mistypedAs ? { extracted: false, mistyped_as: mistypedAs } : { extracted: false };
   return {
     extracted: true,
     member: c.__member,
@@ -204,12 +204,27 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
     ...expectedNonIndicators.keys(),
     ...aiDependentIds
   ]);
+  // A labeled value that exists only under another candidate type (an MD5
+  // typed as an artifact, a domain read as a file name) is a TYPING failure,
+  // not a missing extraction.
+  const typesByValue = new Map();
+  for (const c of byId.values()) {
+    const v = String(c.normalized_value || '').toLowerCase();
+    if (!typesByValue.has(v)) typesByValue.set(v, []);
+    typesByValue.get(v).push(c.candidate_type);
+  }
+  const mistypedAs = (id) => {
+    if (byId.has(id)) return null;
+    const i = id.indexOf(':');
+    const types = typesByValue.get(id.slice(i + 1).toLowerCase()) || [];
+    return types.length ? types.slice().sort().join(',') : null;
+  };
   const notExtracted = [...labeled].filter((id) => !byId.has(id)).sort();
 
   const tp = [...expectedIndicators.keys()].filter((id) => memberIds.has(id)).sort();
   const fnIds = [...expectedIndicators.keys()].filter((id) => !memberIds.has(id)).sort();
   const fpIds = [...scoredMemberIds].filter((id) => !expectedIndicators.has(id)).sort();
-  const falseNegatives = fnIds.map((id) => ({ id, ...candidateSummary(byId.get(id)) }));
+  const falseNegatives = fnIds.map((id) => ({ id, ...candidateSummary(byId.get(id), mistypedAs(id)) }));
   const falsePositives = fpIds.map((id) => ({
     id,
     labeled_as: expectedContext.has(id)
@@ -253,7 +268,8 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
       labeled: labeled.size,
       extracted: labeled.size - notExtracted.length,
       recall: ratio(labeled.size - notExtracted.length, labeled.size),
-      not_extracted: notExtracted
+      not_extracted: notExtracted,
+      mistyped: notExtracted.filter((id) => mistypedAs(id)).map((id) => ({ id, extracted_as: mistypedAs(id) }))
     },
     indicators: {
       expected: expectedIndicators.size,
@@ -261,7 +277,9 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
       tp: tp.length,
       fp: fpIds.length,
       fn: fnIds.length,
-      fn_not_extracted: falseNegatives.filter((x) => !x.extracted).length,
+      // FN split: never extracted / extracted under another type / extracted but not a member.
+      fn_not_extracted: falseNegatives.filter((x) => !x.extracted && !x.mistyped_as).length,
+      fn_mistyped: falseNegatives.filter((x) => !x.extracted && x.mistyped_as).length,
       fn_not_member: falseNegatives.filter((x) => x.extracted).length,
       precision,
       recall,
@@ -327,6 +345,7 @@ export function aggregateBenchmark(results) {
       fp,
       fn,
       fn_not_extracted: sum((m) => m.indicators.fn_not_extracted),
+      fn_mistyped: sum((m) => m.indicators.fn_mistyped),
       fn_not_member: sum((m) => m.indicators.fn_not_member),
       precision,
       recall,

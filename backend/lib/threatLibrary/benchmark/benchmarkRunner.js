@@ -257,6 +257,7 @@ export function baselineFromRun(run) {
       fp: m.indicators.fp,
       fn: m.indicators.fn,
       fn_not_extracted: m.indicators.fn_not_extracted,
+      fn_mistyped: m.indicators.fn_mistyped,
       fn_not_member: m.indicators.fn_not_member,
       sections_correct: m.sections.correct,
       sections_checked: m.sections.checked,

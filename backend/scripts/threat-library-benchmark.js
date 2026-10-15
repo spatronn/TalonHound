@@ -52,7 +52,7 @@ function printTable(run, comparison) {
   console.log(
     `Indicators: precision ${pct(a.indicators.precision)}  recall ${pct(a.indicators.recall)}  F1 ${pct(a.indicators.f1)}  ` +
       `TP ${a.indicators.tp}  FP ${a.indicators.fp}  FN ${a.indicators.fn} ` +
-      `(not extracted ${a.indicators.fn_not_extracted}, extracted but not member ${a.indicators.fn_not_member})`
+      `(not extracted ${a.indicators.fn_not_extracted}, wrong type ${a.indicators.fn_mistyped}, extracted but not member ${a.indicators.fn_not_member})`
   );
   console.log(
     `candidate extraction recall ${pct(a.candidate_extraction_recall)}  context-only ${pct(a.context_only_accuracy)}  ` +
@@ -74,7 +74,7 @@ function printTable(run, comparison) {
     console.log(
       `${exact ? 'ok  ' : 'FAIL'} ${r.id.padEnd(58)} ${String(m.tp).padStart(3)}/${String(m.expected).padEnd(3)} ` +
         `fp ${String(m.fp).padStart(2)} fn ${String(m.fn).padStart(2)}` +
-        `${m.fn ? ` (x${m.fn_not_extracted}/m${m.fn_not_member})` : ''}` +
+        `${m.fn ? ` (x${m.fn_not_extracted}/t${m.fn_mistyped}/m${m.fn_not_member})` : ''}` +
         `${codes.length ? `  ⚠ ${codes.join(',')}` : ''}` +
         `${known ? `  [known: ${known.cause}]` : ''}`
     );

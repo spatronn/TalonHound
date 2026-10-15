@@ -50,7 +50,7 @@ Retained publisher HTML/PDF usually cannot be committed. Put cases in the same f
 ## Metrics
 
 - Candidate extraction recall: was the labeled value extracted at all, in any state.
-- Indicator precision, recall and F1. False negatives are split into **not extracted** and **extracted but not a member**, because they have different causes.
+- Indicator precision, recall and F1. False negatives are split into **not extracted**, **wrong type** (the value exists only under another candidate type, such as an MD5 read as an artifact) and **extracted but not a member**, because they have different causes and fixes.
 - Context Only accuracy, legitimate exclusion accuracy, non-indicator promotions.
 - Assertion accuracy and section (structural scope) accuracy.
 - Unsupported Indicators: a member whose value does not occur in the source text.
@@ -65,3 +65,21 @@ npm run benchmark:threat-library -- --write-baseline
 ```
 
 `knownFailures.js` records cases that still fail, with a diagnosed cause. Their expectations stay strict. They run as `todo`, and a ratchet test fails once one starts passing, so a fix retires its entry.
+
+## Detector validation notes
+
+Thresholds and rules live in `EXTRACTION_QUALITY_THRESHOLDS`. Several were chosen or refined after looking at the synthetic failures, so the synthetic detection rate is optimistic until real reports are scored:
+
+| Rule | Basis | Check |
+|---|---|---|
+| ≥ 3 row values per run | Same as `OBSERVABLE_LIST_MIN_ROWS` in `documentZones.js` | — |
+| Observable-dense block | Added after two merged-PDF failures went undetected | Negative tests: narrative hash paragraphs |
+| Appendix-hash check counts only appendix or adjacent rows | Added after a unit test showed a false warning on a distant analysis inventory | — |
+| "Adjacent" means rows **after** an authoritative section (`tl-quality-v2`) | Scope loss pushes rows forward; a dropped-files table right before an appendix was a measured false warning | Rows after a closing sub-heading still warn |
+
+Measured layouts (`extractionQuality.test.js`):
+- **Clean:** references after the appendix, legitimate detection tables, narrative hash paragraphs.
+- **Info:** a dropped-files table before or far from the appendix.
+- **Warning (known, possibly false):** vendor URLs written as prose inside the appendix (`authoritative_section_values_not_asserted`, the pre-existing structural-completeness signal).
+
+Measure real false-warning rates with `npm run scan:threat-library-quality -- --clean <verified ids>` before relying on severities.

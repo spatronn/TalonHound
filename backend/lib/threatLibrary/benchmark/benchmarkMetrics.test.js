@@ -280,3 +280,32 @@ test('baseline comparison classifies membership changes against ground truth', (
   );
   assert.equal(cmp.regression_count, 2);
 });
+
+test('a value extracted under another type is a typing failure, not a missing extraction', () => {
+  const m = scoreBenchmarkCase({
+    groundTruth: {
+      indicators: [
+        { type: 'domain', value: 'loader.cfg.example' },
+        { type: 'md5', value: H1 },
+        { type: 'md5', value: H2 }
+      ]
+    },
+    candidates: [
+      { ...cand('technical_artifact', 'loader.cfg.example'), is_ioc: false, assessment: 'context_only', match_state: 'context_only', source_assertion: 'non_ioc' },
+      narrative('md5', H1)
+    ]
+  });
+  assert.equal(m.indicators.fn, 3);
+  assert.equal(m.indicators.fn_mistyped, 1);
+  assert.equal(m.indicators.fn_not_extracted, 1, `md5:${H2} is genuinely absent`);
+  assert.equal(m.indicators.fn_not_member, 1);
+  const mistyped = m.indicators.false_negatives.find((x) => x.id === 'domain:loader.cfg.example');
+  assert.equal(mistyped.extracted, false);
+  assert.equal(mistyped.mistyped_as, 'technical_artifact');
+  assert.deepEqual(m.candidate_extraction.mistyped, [{ id: 'domain:loader.cfg.example', extracted_as: 'technical_artifact' }]);
+  const agg = aggregateBenchmark([{ id: 'x', metrics: m }]);
+  assert.deepEqual(
+    [agg.indicators.fn_not_extracted, agg.indicators.fn_mistyped, agg.indicators.fn_not_member],
+    [1, 1, 1]
+  );
+});
