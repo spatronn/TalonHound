@@ -65,6 +65,14 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Indicators taken from a table or list without an IOC heading',
     why: 'These Indicators come only from a table or list that looked like an IOC list, not from the publisher’s IOC section. Check they are not lookup results, look-alike samples or services the report calls legitimate.'
   },
+  appendix_heading_nonmember_rows: {
+    title: 'IOC-section heading with rows left out',
+    why: 'Values under an Indicators or C2 heading were not kept inside that section, so they are not Indicators. A nested list heading or sibling sub-heading may have closed the section early.'
+  },
+  body_ioc_table_outside_appendix: {
+    title: 'Body table contributed Indicators outside the IOC section',
+    why: 'An analysis table that looks like an IOC inventory produced Indicators that do not also appear under the publisher’s headed IOC section. Confirm they are publisher-asserted, not lookup attributes.'
+  },
   reserved_or_loopback_indicator: {
     title: 'Reserved or local address is an Indicator',
     why: 'Private, reserved or loopback addresses are not attacker infrastructure.'
