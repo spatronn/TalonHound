@@ -1,5 +1,5 @@
 /**
- * Publisher IOC appendix parent scope (tl-zones-v9):
+ * Publisher IOC appendix parent scope (tl-zones-v10):
  *
  * Child C2 / sample subsections may open and close independently, but the
  * parent "Indicators of compromise" appendix must survive sibling headings
@@ -24,8 +24,8 @@ import { SOURCE_ASSERTIONS } from './evidencePolicy.js';
 const SOURCE = 'https://research.example/blog/appendix-parent-scope/';
 
 test('appendix parent scope contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v9');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v25');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v10');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v26');
 });
 
 function htmlDoc(inner) {

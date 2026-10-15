@@ -7,38 +7,30 @@
  * must also retire its entry here and refresh the baseline.
  *
  * Causes were diagnosed on main 7757c5d (tl-zones-v9 / tl-candidates-v25).
+ * P1 (tl-zones-v10 / tl-candidates-v26) retired the five HTML filename-first
+ * row-scope failures via isAnnotatedIndicatorRowLine alignment.
  */
 
 export const KNOWN_FAILURE_CAUSES = Object.freeze({
-  filename_hash_row_not_scope_content: {
-    summary: 'A "<filename> <hash>" line (filename first) is not indicator content for scope continuation',
-    detail:
-      'documentZones.isIndicatorRowBlock rejects "loader.exe <md5>" lines while indicatorScope.isIndicatorRowShape ' +
-      'accepts them, so a sibling sub-heading over such lines closes the IOC appendix and the hashes fall to ' +
-      'body_mention (ai_needed_prose_sample_hash). Inside an already-open appendix the same lines are asserted rows.'
-  },
   levelless_pdf_sibling_heading: {
     summary: 'A level-less PDF sub-heading over a Filename|MD5 table closes the IOC appendix',
     detail:
       'pdfLayout emits headings without a level, so hierarchy continuation never applies; a structured table is not ' +
       'an indicator row block for the subgroup rule, and a file-hash inventory outside authoritative scope is not ' +
-      'self-proving (tl-table-v6). The table rows become body_mention.'
+      'self-proving (tl-table-v6). The table rows become body_mention. P1 adds inferPdfHeadingLevel; remaining ' +
+      'failures need measured confirmation that font/numbering ranks match publisher nesting on these fixtures.'
   },
   pdf_merged_filename_hash_lines: {
     summary: 'PDF "filename hash" lines merge into one paragraph that reads as narrative',
     detail:
       'pdfLayout.linesToBlocks merges consecutive non-observable-only lines into one paragraph; inside the appendix ' +
-      'the paragraph is narrative (relation marker none) → ai_needed_authoritative_narrative, never an assertion.'
+      'the paragraph is narrative (relation marker none) → ai_needed_authoritative_narrative, never an assertion. ' +
+      'P1 emits isFilenameHashRowLine as observable_row; remaining failures are fixture geometry that still merges.'
   }
 });
 
 /** case id → cause (keys of KNOWN_FAILURE_CAUSES). */
 export const KNOWN_BENCHMARK_FAILURES = Object.freeze({
-  'layout/html_family_sibling/filename_hash_lines': 'filename_hash_row_not_scope_content',
-  'layout/html_c2_then_loaders/filename_hash_lines': 'filename_hash_row_not_scope_content',
-  'layout/html_c2_then_nested_plugins/filename_hash_lines': 'filename_hash_row_not_scope_content',
-  'layout/html_bold_subsections/filename_hash_lines': 'filename_hash_row_not_scope_content',
-  'layout/html_bold_appendix/filename_hash_lines': 'filename_hash_row_not_scope_content',
   'layout/pdf_typed_subsections/table': 'levelless_pdf_sibling_heading',
   'layout/pdf_c2_then_loaders/table': 'levelless_pdf_sibling_heading',
   'layout/pdf_flat/filename_hash_lines': 'pdf_merged_filename_hash_lines',

@@ -1,5 +1,5 @@
 /**
- * PDF IOC appendix tables (threat_library_pdf_v4 / tl-table-v4 /
+ * PDF IOC appendix tables (threat_library_pdf_v5 / tl-table-v4 /
  * tl-type-resolver-v7 / tl-candidates-v17).
  *
  * A government-advisory style PDF sets text size in the text matrix with

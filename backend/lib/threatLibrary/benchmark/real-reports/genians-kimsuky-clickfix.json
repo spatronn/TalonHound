@@ -1,0 +1,357 @@
+{
+  "id": "real-genians-kimsuky-clickfix",
+  "title": "Analysis of the threat case of kimsuky group using ClickFix",
+  "publisher": "Genians",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "genians",
+    "p1"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "775ec09a4d758c45f2c214e6446ba3c74278d8457e0a069b9dbf93e83a179044",
+    "url": "https://www.genians.co.kr/en/blog/threat_intelligence/suky-castle",
+    "talonhound_report_id": "6dceb77c-6164-4f90-9fe8-a318d1abf0d6",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-16"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC appendix \"8. Indicator of Compromise\" read from retained HTML outline (MD5 / C2 subsections); values reviewed one by one; TalonHound classifications not used as labels. Body tables 3-3 and 3-4 recorded as not_indicators.",
+      "verified_by": "manual review of the publisher text (2026-10-16)",
+      "verified_at": "2026-10-16",
+      "notes": "Publisher lists cyber.lecture.site.online-driver.kro[.]k with a truncated TLD; recorded under unsupported_source_values, not reconstructed. Nested <ul><li><h3>C2</h3> headings are structural.",
+      "coverage_note": "P1 independently verified case added to the real-report corpus."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "56233bac07f4f9c43585e485e70b6169",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a523bf5dca0f2a4ace0cf766d9225343",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ad6104a503b46bf6ea505fe8b3182970",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "bf795a376233032d05766a396b3d6e08",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ca13c54987293ae7efc22b14e1153c1e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d10208c32fbbb5cacbd2097fc0dcd444",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "fc4c319d7940ad1b7c0477469420bd11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "fcde319b752cacec40ffba130067de0d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8c33e8439844c315b7b3f21b0c1633aa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8ff155a2962c77e9da05bd0476af36be",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "12bfe00206b2e83c7ff79b657d3c56df",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "89a725b08ab0e8885fc03b543638be96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "627b856884604880a5c009ebf7173efb",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "913fe4236ca5e34879d2a3228da6b9c6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "3297e3606d6466bc7f741a4df2b9e96a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0a9c22079c898fc112e67ce1caff8f54",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.online.check-computer.kro.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "online.lecture-site.kro.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "account-profile.servepics.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "accounts-porfile.serveirc.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cafe24.pro",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cukumam.shop",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bikaro.store",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "naunsae.store",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kida.plusdocs.kro.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "konamo.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mspro.kro.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "msprovider.menews.o-r.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "raedom.store",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "secure.drive.polices.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "securedrive-overseas-state.bit-albania.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "securedrive.fin-tech.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "securedrive.privatedns.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "securedrive.servehttp.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "temuco.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tenelbox.store",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "androcl.csproject.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "login.androclesproject.o-r.kr",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "1.223.129.234",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.149.98.247",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.149.98.248",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "106.243.157.158",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.74.194.45",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "115.92.4.123",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.193.69.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.194.228.184",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "121.179.161.231",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "157.7.184.11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "162.0.229.227",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "172.86.111.75",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.179.30.213",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.170.73.245",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.180.157.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "65.254.248.151",
+        "assertion": "explicit"
+      }
+    ],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "nid.naver.rkfd.com",
+        "note": "Table 3-3 Threat Infrastructure Information only"
+      },
+      {
+        "type": "domain",
+        "value": "e-securedrive.assembly.twoon.co.kr",
+        "note": "Table 3-3 Threat Infrastructure Information only"
+      },
+      {
+        "type": "domain",
+        "value": "securedrivelog.register.im",
+        "note": "Table 3-3 Threat Infrastructure Information only"
+      },
+      {
+        "type": "md5",
+        "value": "40ce5cf6be259120d179f51993aec854",
+        "note": "Table 3-4 Related Variant Information only"
+      },
+      {
+        "type": "url",
+        "value": "androcl.csproject.org/happy_0320/d.php?newpa=comline&&wpn=jeffrey",
+        "note": "Table 3-4 Related Variant Information only"
+      },
+      {
+        "type": "url",
+        "value": "103.149.98.247/vs/t1/d.php?newpa=comline&wpn=soofer",
+        "note": "Table 3-4 Related Variant Information only"
+      },
+      {
+        "type": "url",
+        "value": "103.149.98.247/vs/tt/d.php?newpa=comline&wpn=soofer",
+        "note": "Table 3-4 Related Variant Information only"
+      },
+      {
+        "type": "url",
+        "value": "103.149.98.247/vs/tA/d.php?newpa=comline&wpn=aaa",
+        "note": "Table 3-4 Related Variant Information only"
+      }
+    ],
+    "unsupported_source_values": [
+      {
+        "type": "domain",
+        "value": "cyber.lecture.site.online-driver.kro[.]k",
+        "reason": "truncated_publisher_tld",
+        "note": "Publisher wrote an incomplete defanged TLD (e.g. kro[.]k); not reconstructed."
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": []
+  }
+}

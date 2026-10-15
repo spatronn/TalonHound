@@ -1,6 +1,6 @@
 /**
  * Filename|MD5 component inventories in technical-analysis sections must not
- * become self-proving publisher IOC tables (tl-table-v6 / tl-candidates-v25).
+ * become self-proving publisher IOC tables (tl-table-v7 / tl-candidates-v26).
  * Formal IOC appendices, sample-hash headings, typed IOC tables, and network
  * Indicator tables remain asserted.
  */
@@ -22,9 +22,9 @@ import {
 } from './tableSemantics.js';
 import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 
-assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v9');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v25');
-assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v6');
+assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v10');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v26');
+assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v7');
 assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v8');
 
 const LEGIT_EXE = 'd98f568496512e4f98670c61c97cb07a';
