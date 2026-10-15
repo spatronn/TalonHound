@@ -42,7 +42,31 @@ const STRUCTURES = Object.freeze({
   html_bold_appendix: { format: 'html', description: 'bold IOC appendix › bold Network › bold Samples', appendix: 'strong', network: ['strong', 'Network'], samples: ['strong', 'Samples'] },
   pdf_flat: { format: 'pdf', description: 'PDF IOC heading with inferred level, no sub-headings', network: null, samples: null },
   pdf_typed_subsections: { format: 'pdf', description: 'PDF IOCs › Network › Samples (inferred levels)', network: 'Network', samples: 'Samples' },
-  pdf_c2_then_loaders: { format: 'pdf', description: 'PDF IOCs › C2 servers › Loaders (inferred levels)', network: 'C2 servers', samples: 'Loaders' }
+  pdf_c2_then_loaders: { format: 'pdf', description: 'PDF IOCs › C2 servers › Loaders (inferred levels)', network: 'C2 servers', samples: 'Loaders' },
+  // Degraded pre-v5 shapes retained as regression evidence (knownFailures): level-less
+  // headings and filename/hash lines merged into one narrative paragraph — geometry
+  // pdfLayout could not recover. These are NOT the production pdf_v5 emission path.
+  pdf_legacy_typed_subsections: {
+    format: 'pdf',
+    description: 'legacy degraded: level-less PDF IOCs › Network › Samples',
+    network: 'Network',
+    samples: 'Samples',
+    degraded: true
+  },
+  pdf_legacy_c2_then_loaders: {
+    format: 'pdf',
+    description: 'legacy degraded: level-less PDF IOCs › C2 servers › Loaders',
+    network: 'C2 servers',
+    samples: 'Loaders',
+    degraded: true
+  },
+  pdf_legacy_flat: {
+    format: 'pdf',
+    description: 'legacy degraded: level-less PDF IOC heading, merged sample lines',
+    network: null,
+    samples: null,
+    degraded: true
+  }
 });
 
 /** How the sample inventory is written. */
@@ -97,14 +121,21 @@ ${htmlSamples(repr, iocSet.samples)}
 }
 
 /**
- * PDF-style canonical blocks shaped like pdfLayout v5 output: headings carry
- * inferred `level`, observable-only and filename/hash inventory lines are
- * `observable_row` list items (not merged narrative paragraphs).
+ * PDF-style canonical blocks.
+ * - Normal path: pdf_v5 shape (inferred heading levels; filename/hash as rows).
+ * - Degraded path (`structure.degraded`): pre-v5 residual geometry — level-less
+ *   headings and filename/hash lines merged into one narrative paragraph. Used
+ *   only to keep known-failure evidence; production pdfLayout must not emit this.
  */
 function pdfVariant(structure, repr, iocSet) {
+  const degraded = structure.degraded === true;
   let n = 0;
   const id = () => `p1-b${String(++n).padStart(2, '0')}`;
-  const heading = (text, level) => ({ id: id(), type: 'heading', text, page: 1, section: text, level });
+  const heading = (text, level) => {
+    const b = { id: id(), type: 'heading', text, page: 1, section: text };
+    if (!degraded && level != null) b.level = level;
+    return b;
+  };
   const paragraph = (text) => ({ id: id(), type: 'paragraph', text, page: 1, section: null });
   const row = (text) => ({ id: id(), type: 'list_item', text, page: 1, section: null, layout: 'observable_row' });
   const blocks = [
@@ -124,8 +155,10 @@ function pdfVariant(structure, repr, iocSet) {
     }));
   } else if (repr === 'hash_lines') {
     for (const s of iocSet.samples) blocks.push(row(s.value));
+  } else if (degraded) {
+    // Pre-v5 residual: one merged paragraph that reads as narrative, not rows.
+    blocks.push(paragraph(iocSet.samples.map((s) => `${s.file} ${s.value}`).join(' ')));
   } else {
-    // filename_hash_lines: one observable row per line (pdf_v5 isFilenameHashRowLine).
     for (const s of iocSet.samples) blocks.push(row(`${s.file} ${s.value}`));
   }
   blocks.push(heading('Conclusion', 2), paragraph('The actor continues to evolve its toolset and infrastructure.'));
@@ -133,7 +166,7 @@ function pdfVariant(structure, repr, iocSet) {
     title: 'Layout variant',
     language: 'en',
     blocks,
-    meta: { extractor: PDF_LAYOUT_VERSION, adapter: 'pdf' }
+    meta: { extractor: PDF_LAYOUT_VERSION, adapter: 'pdf', ...(degraded ? { layout_degraded: true } : {}) }
   });
 }
 

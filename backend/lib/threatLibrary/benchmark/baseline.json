@@ -1,46 +1,46 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v25",
-    "zones": "tl-zones-v9",
-    "tables": "tl-table-v6",
+    "candidates": "tl-candidates-v27",
+    "zones": "tl-zones-v10",
+    "tables": "tl-table-v7",
     "type_resolver": "tl-type-resolver-v8",
-    "html": "threat_library_html_v4",
-    "pdf": "threat_library_pdf_v4",
-    "quality": "tl-quality-v3",
+    "html": "threat_library_html_v5",
+    "pdf": "threat_library_pdf_v5",
+    "quality": "tl-quality-v4",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 43,
-    "cases_exact": 33,
+    "cases": 52,
+    "cases_exact": 47,
     "indicators": {
-      "expected": 258,
-      "tp": 218,
+      "expected": 312,
+      "tp": 292,
       "fp": 0,
-      "fn": 40,
+      "fn": 20,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 40,
+      "fn_not_member": 20,
       "precision": 1,
-      "recall": 0.845,
-      "f1": 0.916
+      "recall": 0.9359,
+      "f1": 0.9669
     },
     "candidate_extraction_recall": 1,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.8444,
+    "assertion_accuracy": 0.9357,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 1,
     "unsupported_indicators": 0,
     "quality": {
-      "high": 10,
-      "warning": 10,
+      "high": 5,
+      "warning": 7,
       "info": 0,
-      "cases_flagged": 10,
-      "exact_cases": 33,
+      "cases_flagged": 5,
+      "exact_cases": 47,
       "exact_cases_flagged": 0,
-      "failing_cases": 10,
-      "failing_cases_flagged": 10
+      "failing_cases": 5,
+      "failing_cases_flagged": 5
     }
   },
   "cases": {
@@ -405,22 +405,23 @@
     "layout/html_family_sibling/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/html_c2_then_loaders/table": {
       "members": [
@@ -488,22 +489,23 @@
     "layout/html_c2_then_loaders/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/html_c2_then_nested_plugins/table": {
       "members": [
@@ -571,22 +573,23 @@
     "layout/html_c2_then_nested_plugins/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/html_bold_subsections/table": {
       "members": [
@@ -654,22 +657,23 @@
     "layout/html_bold_subsections/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/html_bold_appendix/table": {
       "members": [
@@ -737,22 +741,23 @@
     "layout/html_bold_appendix/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/pdf_flat/table": {
       "members": [
@@ -799,42 +804,44 @@
     "layout/pdf_flat/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "authoritative_section_values_not_asserted"
-      ]
+      "warning_codes": []
     },
     "layout/pdf_typed_subsections/table": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/pdf_typed_subsections/hash_lines": {
       "members": [
@@ -860,42 +867,44 @@
     "layout/pdf_typed_subsections/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/pdf_c2_then_loaders/table": {
       "members": [
         "domain:update-relay.net",
-        "ip:203.0.113.77"
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
       ],
-      "tp": 2,
+      "tp": 6,
       "fp": 0,
-      "fn": 4,
+      "fn": 0,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 4,
+      "fn_not_member": 0,
       "sections_correct": 0,
       "sections_checked": 0,
-      "assertions_correct": 2,
+      "assertions_correct": 6,
       "assertions_checked": 6,
-      "warning_codes": [
-        "appendix_without_hash_indicators",
-        "indicator_rows_adjacent_to_authoritative_scope"
-      ]
+      "warning_codes": []
     },
     "layout/pdf_c2_then_loaders/hash_lines": {
       "members": [
@@ -921,6 +930,90 @@
     "layout/pdf_c2_then_loaders/filename_hash_lines": {
       "members": [
         "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_legacy_typed_subsections/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_heading_nonmember_rows",
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_legacy_typed_subsections/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_legacy_typed_subsections/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_heading_nonmember_rows",
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_legacy_c2_then_loaders/table": {
+      "members": [
+        "domain:update-relay.net",
         "ip:203.0.113.77"
       ],
       "tp": 2,
@@ -936,6 +1029,109 @@
       "warning_codes": [
         "appendix_without_hash_indicators",
         "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_legacy_c2_then_loaders/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_legacy_c2_then_loaders/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "indicator_rows_adjacent_to_authoritative_scope"
+      ]
+    },
+    "layout/pdf_legacy_flat/table": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_legacy_flat/hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77",
+        "md5:382cbe8c4ac13314d133d92804884fdd",
+        "md5:a90e6bf0d74e2757fecf1c97a170d1e5",
+        "md5:d4ba5d63ff680bf74681781ee841307e",
+        "md5:ecce20ad53e6cae55bb69a0a4ba73641"
+      ],
+      "tp": 6,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 6,
+      "assertions_checked": 6,
+      "warning_codes": []
+    },
+    "layout/pdf_legacy_flat/filename_hash_lines": {
+      "members": [
+        "domain:update-relay.net",
+        "ip:203.0.113.77"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 4,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 4,
+      "sections_correct": 0,
+      "sections_checked": 0,
+      "assertions_correct": 2,
+      "assertions_checked": 6,
+      "warning_codes": [
+        "appendix_without_hash_indicators",
+        "authoritative_section_values_not_asserted"
       ]
     }
   }

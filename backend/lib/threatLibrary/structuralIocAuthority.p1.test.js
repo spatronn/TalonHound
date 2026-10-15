@@ -253,6 +253,46 @@ http://203.0.113.55:443/t/ae7427</pre>
   assert.equal(member(find(cands, 'url', 'http://203.0.113.55:443/t/ae7427')), true);
 });
 
+test('independently asserted directory URL without a longer sibling stays an Indicator', () => {
+  const html = `<article>
+<h2>Indicators of compromise</h2>
+<ul>
+<li>http://203.0.113.88/payload/</li>
+<li>http://203.0.113.88/gate.php</li>
+<li>evil-c2[.]example</li>
+</ul>
+</article>`;
+  const r = extractCanonicalDocumentFromHtml(html, {
+    url: 'https://research.example/dir-url',
+    finalUrl: 'https://research.example/dir-url',
+    httpStatus: 200
+  });
+  assert.equal(r.ok, true);
+  const cands = extractCandidatesFromDocument(annotateDocumentZones(r.document));
+  assert.equal(member(find(cands, 'url', 'http://203.0.113.88/payload/')), true, 'standalone directory URL');
+  assert.equal(member(find(cands, 'url', 'http://203.0.113.88/gate.php')), true);
+  assert.equal(member(find(cands, 'domain', 'evil-c2.example')), true);
+});
+
+test('root URL with trailing slash is not treated as an incomplete path prefix', () => {
+  const html = `<article>
+<h2>Indicators of compromise</h2>
+<ul>
+<li>http://malware-drop.example/</li>
+<li>http://malware-drop.example/stage2.bin</li>
+</ul>
+</article>`;
+  const r = extractCanonicalDocumentFromHtml(html, {
+    url: 'https://research.example/root-url',
+    finalUrl: 'https://research.example/root-url',
+    httpStatus: 200
+  });
+  assert.equal(r.ok, true);
+  const cands = extractCandidatesFromDocument(annotateDocumentZones(r.document));
+  assert.equal(member(find(cands, 'url', 'http://malware-drop.example/')), true, 'root path kept');
+  assert.equal(member(find(cands, 'url', 'http://malware-drop.example/stage2.bin')), true);
+});
+
 test('body Threat Infrastructure table values are not Indicators when appendix exists', () => {
   const html = `<article>
 <h2>3. Analysis</h2>

@@ -120,7 +120,7 @@ test('dense headerless IP grid is not a self-proving explicit IOC table', () => 
   assert.equal(interp.reason, 'dense_without_type_or_header');
 });
 
-test('typed / header-labelled tables still self-prove without an IOC heading', () => {
+test('typed tables self-prove without an IOC heading; header-labelled alone does not (tl-table-v7)', () => {
   const typed = interpretIocTable({
     id: 'typed',
     table: {
@@ -142,7 +142,23 @@ test('typed / header-labelled tables still self-prove without an IOC heading', (
       ]
     }
   });
-  assert.equal(labelled.explicit, true, 'header-labelled indicator column still proves the table');
+  assert.equal(labelled.explicit, false, 'header labels alone are not enough outside IOC scope');
+  assert.equal(labelled.reason, 'header_labelled_outside_ioc_scope');
+  const labelledInScope = interpretIocTable(
+    {
+      id: 'labelled-scoped',
+      zone: 'explicit_ioc_section',
+      table: {
+        headers: ['Indicator', 'Description'],
+        rows: [
+          [defangIp(HOST_A), 'download source'],
+          [defangIp(HOST_B), 'download source']
+        ]
+      }
+    },
+    { inAuthoritativeScope: true }
+  );
+  assert.equal(labelledInScope.explicit, true, 'same header-labelled table proves inside IOC scope');
 });
 
 test('zone annotate: narrative dense IP table stays report_body; IOC Hosts/Files stay authoritative', () => {

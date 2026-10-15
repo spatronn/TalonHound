@@ -9,9 +9,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   collapseLetterSpacing,
+  inferPdfHeadingLevel,
+  isFilenameHashRowLine,
   itemsToLines,
   isObservableOnlyLine,
   joinWrappedUrl,
+  linesToBlocks,
   pagesToBlocks,
   plainTextToBlocks,
   PDF_LAYOUT_VERSION
@@ -125,4 +128,48 @@ test('checked-in browser print PDF still extracts under the v3 layout path', asy
   assert.equal(r.document.meta.layout_mode, 'geometry');
   assert.ok(r.document.blocks.length >= 1);
   assert.equal(r.requiresOcr, false);
+});
+
+test('pdf_v5: heading levels are inferred; filename/hash lines stay as observable rows (production path)', () => {
+  const md5a = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const md5b = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  assert.equal(inferPdfHeadingLevel({ text: '8. Indicators of Compromise', height: 14 }, { bodyHeight: 10 }), 2);
+  assert.equal(inferPdfHeadingLevel({ text: '3.2 Loaders', height: 12 }, { bodyHeight: 10 }), 3);
+  assert.equal(isFilenameHashRowLine(`loader.exe ${md5a}`), true);
+  assert.equal(isFilenameHashRowLine(`helper.dll ${md5b}`), true);
+  assert.equal(isFilenameHashRowLine(`The dropper wrote ${md5a} to disk before beaconing.`), false);
+
+  const bodyHeight = 10;
+  const mk = (text, y, height, fontName = 'Helvetica') => ({
+    text,
+    x: 50,
+    y,
+    height,
+    fontName,
+    pageEdge: false,
+    itemCount: 1
+  });
+  const lines = [
+    mk('Indicators of Compromise', 700, 16, 'Helvetica-Bold'),
+    mk('C2 servers', 680, 12, 'Helvetica-Bold'),
+    mk('update-relay[.]net', 660, 10),
+    mk('203.0.113.77', 645, 10),
+    mk('Loaders', 620, 12, 'Helvetica-Bold'),
+    mk(`loader.exe ${md5a}`, 600, 10, 'Courier'),
+    mk(`helper.dll ${md5b}`, 585, 10, 'Courier')
+  ];
+  const { blocks } = linesToBlocks(lines, { pageNum: 1, startIdx: 1, bodyFonts: new Set(['Helvetica']), bodyHeight, prosePitch: 15 });
+  const ioc = blocks.find((b) => b.text === 'Indicators of Compromise');
+  const loaders = blocks.find((b) => b.text === 'Loaders');
+  const rowA = blocks.find((b) => b.text === `loader.exe ${md5a}`);
+  const rowB = blocks.find((b) => b.text === `helper.dll ${md5b}`);
+  assert.equal(ioc?.type, 'heading');
+  assert.ok(Number.isInteger(ioc?.level), 'IOC heading carries inferred level');
+  assert.equal(loaders?.type, 'heading');
+  assert.ok(Number.isInteger(loaders?.level), 'Loaders heading carries inferred level');
+  assert.equal(rowA?.type, 'list_item');
+  assert.equal(rowA?.layout, 'observable_row');
+  assert.equal(rowB?.layout, 'observable_row');
+  assert.equal(blocks.some((b) => b.type === 'paragraph' && String(b.text).includes(md5a) && String(b.text).includes(md5b)), false,
+    'filename/hash lines must not merge into one narrative paragraph');
 });
