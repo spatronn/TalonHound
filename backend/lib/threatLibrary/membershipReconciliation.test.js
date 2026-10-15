@@ -26,6 +26,11 @@ import {
   compactRefreshMembershipDiff,
   evaluateRefreshMembershipGuard
 } from './refreshMembershipGuard.js';
+import {
+  QUALITY_CODES,
+  assessReplayMembershipDivergence,
+  withReplayMembershipDivergence
+} from './extractionQuality.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { isContextOnlyCandidate, isReportIndicatorMember } from './indicatorMembership.js';
 
@@ -298,4 +303,52 @@ test('end to end (pure): the Raven and NCSC shapes now leave membership as prote
   assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
   assert.equal(verdict.authorization.required_role, 'admin');
   assert.equal(final.every((x) => x.review_status === 'approved'), true);
+});
+
+// --- 4. Quality check 9: replay divergence -----------------------------------------
+
+test('quality check 9: no divergence = no warning; explicit overrides are notes; anything else warns', () => {
+  const det = [explicitRow('domain', 'a.example'), providerService('svc.example')];
+  assert.equal(assessReplayMembershipDivergence({ deterministic: det, final: det, previousRows: [] }), null);
+
+  const promotedPrior = { candidate_type: 'domain', normalized_value: 'svc.example', review_status: 'approved', evidence: { promoted_from: { assessment: 'context_only' } } };
+  const promotedFinal = [det[0], { ...providerService('svc.example'), assessment: 'suspicious', match_state: 'new', role: 'unknown' }];
+  const note = assessReplayMembershipDivergence({ deterministic: det, final: promotedFinal, previousRows: [promotedPrior] });
+  assert.equal(note.code, QUALITY_CODES.ANALYST_STATE_MEMBERSHIP_DIVERGENCE);
+  assert.equal(note.severity, 'info');
+  assert.deepEqual(note.divergence, { added_by_replay: 1, removed_by_replay: 0, causes: { analyst_promotion: 1, analyst_exclusion: 0, unexplained: 0 } });
+
+  const excludedPrior = { candidate_type: 'domain', normalized_value: 'a.example', review_status: 'context_only', evidence: {} };
+  const excluded = assessReplayMembershipDivergence({
+    deterministic: det,
+    final: [{ ...det[0], assessment: 'context_only', match_state: 'context_only', review_status: 'context_only' }, det[1]],
+    previousRows: [excludedPrior]
+  });
+  assert.equal(excluded.severity, 'info');
+  assert.equal(excluded.divergence.causes.analyst_exclusion, 1);
+
+  const unexplained = assessReplayMembershipDivergence({
+    deterministic: det,
+    final: [det[0], { ...providerService('svc.example'), assessment: 'suspicious', match_state: 'existing' }],
+    previousRows: [{ candidate_type: 'domain', normalized_value: 'svc.example', review_status: 'approved', promotion_outcome: 'created', evidence: {} }]
+  });
+  assert.equal(unexplained.severity, 'warning');
+  assert.deepEqual(unexplained.candidates, ['domain:svc.example']);
+});
+
+test('withReplayMembershipDivergence merges additively and recomputes status / counts', () => {
+  const base = { version: 'tl-quality-v5', mode: 'B', status: 'clean', counts: { high: 0, warning: 0, info: 0 }, warnings: [], warnings_total: 0, extractor_versions: { quality: 'tl-quality-v5' } };
+  const det = [providerService('svc.example')];
+  assert.equal(withReplayMembershipDivergence(base, { deterministic: det, final: det }), base);
+  const merged = withReplayMembershipDivergence(base, {
+    deterministic: det,
+    final: [{ ...det[0], assessment: 'suspicious', match_state: 'existing' }],
+    previousRows: [{ candidate_type: 'domain', normalized_value: 'svc.example', review_status: 'approved', evidence: {} }]
+  });
+  assert.equal(merged.status, 'warning');
+  assert.deepEqual(merged.counts, { high: 0, warning: 1, info: 0 });
+  assert.equal(merged.warnings_total, 1);
+  assert.equal(merged.warnings[0].code, 'analyst_state_membership_divergence');
+  assert.equal(base.warnings.length, 0, 'input not mutated');
+  assert.equal(withReplayMembershipDivergence(null, { deterministic: det, final: det }), null);
 });

@@ -70,7 +70,7 @@ import {
   requiresReviewAfterExtractionRefresh
 } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
-import { compactExtractionQuality, storedExtractionQuality } from './extractionQuality.js';
+import { compactExtractionQuality, storedExtractionQuality, withReplayMembershipDivergence } from './extractionQuality.js';
 import { preserveStoredIocLinks } from './iocMatch.js';
 import {
   REFRESH_GUARD_DECISIONS,
@@ -196,9 +196,16 @@ export async function computeExtractionRefresh(pool, { report, document, previou
   // with the stored global-IOC links of identities the lookup skipped kept.
   const linked = await preserveStoredIocLinks(pool, matched.candidates, previousRows);
   const candidates = preserveAnalystCandidates(linked.candidates, previousRows);
+  // Where replayed analyst state moves membership away from the deterministic
+  // reading, quality says so (an explicit override is a note; anything else warns).
+  const quality = withReplayMembershipDivergence(extracted.diagnostics?.quality || null, {
+    deterministic: linked.candidates,
+    final: candidates,
+    previousRows
+  });
   return {
     document: extracted.document,
-    diagnostics: extracted.diagnostics,
+    diagnostics: quality ? { ...extracted.diagnostics, quality } : extracted.diagnostics,
     candidates,
     summary: summarizeResolvedCandidates(candidates),
     replayedAiDecisions: replay.length,
