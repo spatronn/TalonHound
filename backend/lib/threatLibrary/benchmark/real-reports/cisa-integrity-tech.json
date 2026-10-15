@@ -1,0 +1,4018 @@
+{
+  "id": "real-cisa-integrity-tech",
+  "title": "chinese-government-linked-cyber-threat-actors-combine-automated-and-hands-on-hacking-tools-to-steal-sensitive-data",
+  "publisher": "CISA",
+  "format": "pdf",
+  "tags": [
+    "real_report",
+    "private",
+    "cisa",
+    "pdf",
+    "large_appendix"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "pdf_canonical",
+    "sha256": "cdf963b10ac63cc917c83d44c31405605de83f9b6f74e734a6daa7b00dc37676",
+    "reference": {
+      "publisher": "CISA",
+      "title": "chinese-government-linked-cyber-threat-actors-combine-automated-and-hands-on-hacking-tools-to-steal-sensitive-data"
+    },
+    "talonhound_report_id": "bc112cbf-8931-4564-bc24-ab46d316fcf5"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 632-1759 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "PDF wraps hyphen-spaced hostnames and 64-hex hashes across lines; the line-based labeler fragments them. 25 joined values were each verified against the wrapped source lines (e.g. segments 647/650/690/692 secshow, 1623/1683/1706/1726/1737/1744 hashes); the 17 fragments are excluded.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "cktime.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "067.cz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "1421.client.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "1421.cloud.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "1421.support.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "20656.hus1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "20656.hus3.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "22852.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "22852.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "22852.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "23175.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "23175.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "24280.hus1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "2637596418.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "28394.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "28394.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "28394.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "28733.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "28733.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "30773.hus2.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "30773.hus3.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "35584.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "35584.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "35584.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "39583.b.alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "3w.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "44673.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "44673.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "47298.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "47298.client.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "47298.cloud.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "47298.support.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "50669.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "51640.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "51943.hus1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "51943.hus3.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "60928.hus1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "74788.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "74788.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "77692.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "77692.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "77692.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "82262.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "82262.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "85005.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "85005.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "85005.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "88783.hus1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "90174.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "90174.careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "96976.careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "96976.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "96cee.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "98aiblog.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "a.alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "a.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "admin.dellme.ml",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "arforcex.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "asean.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "az.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "b.alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bailbonding.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bbs.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "blog.98aiblog.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bsnl.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "careers.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "careers.trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cch.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "check.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "checkapi.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "checkinfo.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "chr0mail.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "client.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cloud.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "csrfproxy.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dasxcyb.ga",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dellme.ml",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dns.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dns361.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dsdsei.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "eck.giize.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "eg.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "etechhosting.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fcchk.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "findfindx.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fukua.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gate.sinica.edu.tw.checkapi.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "googles.ddns.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "h.secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "h5.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "halloween.checkapi.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "helpuself.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hgiga.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "honey1314520.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hook.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hus1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hus3.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hw1.ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ica.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "im.arforcex.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "imap.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "info.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "integritytoch.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "javacheck.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "javaupdate.giize.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "just.checkapi.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kk.dasxcyb.ga",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "leicc009.ga",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "live.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ls.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "m.secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ma.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mail.bailbonding.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mail.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "masaplus.club",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "microscan.me",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mitt.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ms.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "msedge.store",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mx.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "natcloudservice.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "nikoes.gq",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "np.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns1.alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns1.honey1314520.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns1.nikoes.gq",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ns2.nikoes.gq",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "payment.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ptps.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "puc.checkapi.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "purple76.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pw.sexytube0.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pw2.sexytube0.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "random.cktime.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "s3crts.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "scallpay.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "search.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "secretr.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "senate.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "server.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sexytube0.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "shifuj.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "shop.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "shopify.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "smtp.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "streescans.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "supper.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "support.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "t.checkinfo.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "teyan.microscan.me",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tj.twimg.co.uk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "traffic.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "trendmicro.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tsedws.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "txt.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "update.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "upgrate.checkapi.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "upl.natcloudservice.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "v3.streescans.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vnpt.sexytube0.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vpn21.arforcex.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vpn328433596.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vpn614174689.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vpn677190427.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vpn718535264.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vpn823494147.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wanfang.accesscam.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "webdisk.bailbonding.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "webmail.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "well.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ws.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wss.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.chr0mail.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.cktime.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.dns361.tk",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.feeee.io",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.javacheck.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.leicc009.ga",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.msedge.store",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.mx.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.purple76.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.smtp.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.sofeter.ml",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.studiocloud.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.www.smtp.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "www.www.sunmoon.website",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "xassxxdns.alitagotest.cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ximmd.sexytube0.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zerogravity1986.softether.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "1.34.140.5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "2.58.242.74",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "5.188.34.134",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "5.188.230.69",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.219.119.5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "14.1.98.160",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "14.128.33.8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "14.1.98.223",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "27.154.215.126",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "27.154.105.36",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "27.149.115.78",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "27.149.79.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "31.232.221.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.10.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.188.119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.186.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.206.121",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.117",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.122",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.159",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.178",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.205",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.206",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.226",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.200.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.51",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.198.68",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.249.156.69",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "36.112.10.99",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "39.72.220.221",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "42.73.98.232",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.123.189.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.32.140.182",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.32.232.146",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.123.142",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.116.190",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.131.69.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.169.12",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.77.195.169",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.32.61.246",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.77.231.209",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.37.168",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.59.121",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.77.11.47",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.32.84.223",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.62.217",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.48.36",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.43.37",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.66.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.243.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.17.9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.77.28.77",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.194.89",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.76.37.85",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.95.62",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.63.94.71",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.77.86.70",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "49.93.136.14",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "49.93.184.194",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "59.120.144.153",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "59.124.120.178",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "59.120.167.25",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "59.125.128.54",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "59.120.58.176",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.250.199.112",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.250.146.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.251.155.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.248.152.204",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "59.120.82.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.184.242.224",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.251.205.37",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.220.43.193",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.251.58.145",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.248.1.64",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.251.201.8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.248.88.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.248.110.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.249.239.86",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.220.112.137",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.220.84.41",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.247.165.27",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "60.220.84.63",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.220.35.15",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.221.55.4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.222.245.73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.219.118.99",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "61.216.74.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.176.38.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "65.20.97.251",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.103.188",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.42.109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.40.189",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.36.236",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.60.242",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.77.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "77.111.226.5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.141.221.241",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.141.238.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "84.17.57.40",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "89.187.163.216",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.179.189.106",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.179.235.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.179.186.251",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "98.159.37.4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.107.198.117",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.16.231.220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.16.231.254",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.233.253.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.25.254.210",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.149.200.44",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.179.45.203",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.73.160.232",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.77.211.193",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.106.230.88",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.172.80.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.238.149.146",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.238.182.153",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.238.152.209",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.51.145.98",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.73.162.99",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.156.231.98",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "106.53.181.231",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "106.122.171.92",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "108.61.181.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "108.61.177.81",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "110.42.10.148",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "110.85.170.125",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "111.203.153.245",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "110.74.172.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "111.55.138.141",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "111.55.137.40",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "111.203.153.95",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.145.154",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.143.161",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.160",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.54.132.162",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.187",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.218",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.231",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.234",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.238",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.26.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.66.108.16",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.29",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.142",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.143",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.188",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.189",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.20",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.206",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.217",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.234",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.65",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.37",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.80.50.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.51.44.57",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "112.5.168.93",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "113.76.136.171",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.246.237.111",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.255.70.18",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.255.70.20",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.255.70.30",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.246.93.103",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.246.94.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.35.122.83",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.246.94.154",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.246.92.58",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "114.246.92.71",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "117.133.51.176",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "117.61.244.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "117.56.214.246",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "117.132.198.70",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "117.92.127.132",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "117.130.201.90",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.163.217.199",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.163.197.241",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.163.31.226",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.163.104.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.163.142.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.163.3.76",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "119.116.159.217",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "119.13.79.145",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.233.10.212",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.100",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.42.128.165",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.103",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.100",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.106",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.105",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.110",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.114",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.114",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.112",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.121",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.122",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.120",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.127",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.130",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.127",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.13",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.133",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.134",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.131",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.141",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.142",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.41.125.225",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.148",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.152",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.152",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.153",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.157",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.37.162.246",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.166",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.172",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.169",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.175",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.175",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.179",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.178",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.18",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.181",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.185",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.180",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.179",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.186",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.187",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.190",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.189",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.41.244.15",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.192",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.200",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.195",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.20",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.196",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.202",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.202",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.207",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.210",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.213",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.213",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.212",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.215",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.215",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.214",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.221",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.230",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.228",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.23",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.231",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.234",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.237",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.232",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.233",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.238",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.237",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.233",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.237",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.245",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.242",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.24",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.248",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.247",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.247",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.248",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.25",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.254",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.28",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.30",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.32",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.33",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.43",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.47",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.48",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.48",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.52",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.53",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.54",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.54",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.56",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.57",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.58",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.253.6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.63",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.65",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.65",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.69",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.255.74",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.250.76",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.41.222.74",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.84",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.90",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.91",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.91",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.91",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.92",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.254.94",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.248.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.251.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.249.98",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.36.252.98",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "121.207.60.123",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "122.116.33.118",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "122.232.149.231",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "122.201.241.230",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "122.116.159.52",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "122.116.102.93",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.121.157.240",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.51.237.194",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.252.121.7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.252.122.7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.12.90.227",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.60.61.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.126.158.130",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.126.139.199",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.127.17.171",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.127.220.223",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.150.135.3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "123.51.223.96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.64.22.13",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.126.141.74",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.127.78.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.127.72.52",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.147.106",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.140.168",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.1.220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.196.157",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.219.145",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.228.239.13",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.218.2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "124.64.23.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.229.172.48",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.227.136.60",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "137.220.34.137",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "137.220.39.222",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "137.220.43.47",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "137.220.36.87",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "138.199.62.148",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "139.180.137.219",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "139.180.217.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "139.180.158.51",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "139.84.174.129",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "140.82.27.163",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "140.82.50.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "141.164.41.128",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "140.82.48.6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "141.164.55.227",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "141.164.56.93",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.202.26.205",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.34.171.162",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.202.33.164",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.202.62.109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.202.91.107",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.202.94.216",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.202.98.41",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "147.139.133.246",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.132.137",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.132.161",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.201.146",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.188.184",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.248.34.100",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.149.29",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.252.19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.248.38.179",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.248.39.202",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.248.44.191",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.248.51.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.72.106",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "155.138.155.170",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "155.138.136.190",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "155.138.151.225",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "155.138.133.56",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "156.146.45.152",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "156.146.45.194",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "158.247.197.28",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "159.138.152.61",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "162.14.178.86",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "167.172.33.16",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "167.179.87.215",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "167.179.97.121",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "171.120.88.137",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "178.62.208.162",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "180.122.149.177",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "182.34.19.234",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.240.139.216",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.253.28.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.253.29.110",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.253.28.121",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.250.213.20",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.253.29.189",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.250.213.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.253.29.66",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.253.28.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.250.213.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.250.213.83",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "183.166.90.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.216.118.71",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.135.73.192",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.213.82.239",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.213.82.243",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.213.82.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.213.82.65",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "190.92.241.15",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "191.232.188.144",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "193.42.24.68",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "193.42.25.73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "198.13.38.211",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "202.182.109.151",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "202.101.145.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "202.182.106.31",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "202.39.151.239",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "202.99.19.250",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "202.99.19.254",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "203.74.126.20",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "203.69.36.122",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.246.118.144",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.246.117.149",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.246.114.173",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.68.131",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.122.69",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.67.146",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.246.108.64",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.246.127.64",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.73.238",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.92.220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.4.96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "208.72.154.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.242.152.155",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.242.38.241",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.243.225.41",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.66.220.39",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.242.76.32",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "210.71.166.50",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.144.116",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.104.187",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.21.19.11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.22.143.228",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.115.60",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.154.60",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.100.78",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.100.79",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.99.103.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.21.61.46",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.75.185.37",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.99.103.243",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.107.28.16",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.107.28.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.107.28.23",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.78.84.17",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.20.91.77",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.99.100.90",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.99.100.91",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "211.99.98.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.128.149.106",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.128.128.238",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "218.26.159.254",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "218.5.173.137",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "218.5.157.171",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "218.66.163.188",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "219.143.179.250",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.128.108.164",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.130.153.127",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.130.176.23",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.128.125.3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.130.254.251",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "219.92.229.53",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.162.9.150",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "220.250.44.62",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.143.112",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.136.12",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.138.123",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.143.122",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.143.184",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.136.192",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.216.116.238",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.137.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.139.248",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.216.208.188",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.142.26",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "221.218.141.96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "222.92.153.125",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.104.40.128",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.104.41.13",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.104.40.142",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.104.40.204",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.27.34.132",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.104.55.183",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "223.104.39.82",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "48ca18a25424a0f52276290b619a7a83",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "72c6af6a4be99e31c4a7a0aa4f01750792788e7f6f9749243a9f2c47c14a708f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "38f5ff8169423e2c756848c02e8cac3b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "456586ababa08f70216c4459f4d6375676166ebfddd98a33b447ceb5099e8dc5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d61326c4e6d24aa9b67e2b7a3ef7cedf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2f5c406eb64ad8902c8e30610d43fd3efc05a14cdb8fb158818953eaf3dc6a81",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f8de2e99dc7523d2c83d1a48e844c5ff",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "5782ff2c835c88cc1ee521d2e8c523cfad73db3f9a29c93b40c4223f0338ade9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5b5a2c7fa705d8b1eb04da5db900b0d7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "0e6fecb2d369b0eae63731616a3daada52036634885ab1b85b115af6bc5bcb86",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "655cd134976d3e80c521708aa8be418b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "36f3b7645609ef40444dbc68f01d26c543d67689eda4937272ea5cfa4df1b522",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "dae8f50ea44225fae3ba1f160b42bfdc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "670fa10a2ddde21fd594c4fef86b554d864089ed2de7153b472e921c623403ae",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "fdece34bc084f1e252aeae274650eb8d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "645f6f2667af01a94d04a9d7a71916a13d9426835d636b4ceee2e25ccb34e525",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "596b990b0b389d906a8f4384837c1878",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a73eca669fe80628dbbd2c7d9bb14c8f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a14844e982f172d0f23910558c3f390a9d4c45dc32db825c2af7cf0ed8631db2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "be121e707f817aa9392c55af1e7ec2aa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "add7dd142e4f7e2873bc8f7b7fb6308063608e0b49a773dea93abad4047f1489",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7ce68f0dd85355ba2897a68521167e56",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e7e727458f573dded05537baddac2867d2801db1c3c74410398d063dfd6f6575",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f82694de2f19e1bff333c27bb7eb7a56",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "8e1b56ef51ba70aa4c4cfd4430820f20875b354588d5d723ba4d3940ea6c924b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1933c314041415939331fce183939547",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "46e59172c40c95d83c3a6f24f801fc2265653c8b575b66a726463e2a4eebd7f2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8829f6f1cc5fc0aab2f6e71bfd7dc53d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "752b14c6e6936991d51fcd5ebf40d303e657c2372893604f96044848ad9a5f24",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "cf903e4a1629aa0582fd0363b5786676",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "7b9efc7ef8957411cdd22582ce4bfb3a5f76d9c91cdb7e36bf85c9785a2480e9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f01a9a2d1e31332ed36c1a4d2839f412",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c9d5dc956841e000bfd8762e2f0b48b66c79b79500e894b4efa7fb9ba17e4e9e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ef713447f18f5b7ee16af4ac37ec4133",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2fbcb1995c458e5affd5fb8f1f979a08ddce21714a2e413aa3d5dc44f9f245fe",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8dcc4f9ccc6b6adf7eeeb3f51c95afad",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "33790218d5871af646feef5be29e0596d4703a45ce675c1eb2ca00140b3a1bde",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b04375cca637f0702bf27feaff22a92d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "bcacc7ca999980d26c186ef791242fb5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2ecb51d7fa3bc3fa7ad7df64c6d0cd1f4ff2b37ed6839d3cff529fb08af49fb0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1b8e29b6b7972fb124425aaa257f8f6d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "efb0437e6a6a0f07169952f1a8b734299ec9a8b1faadbed811fe017f2cf54976",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "4f61b9ab907f351bb40b37b10f4974d0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "8b869a5edaff74ff18bca3658a519a19771e66d00ff7849af7a142dd6fc8da85",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "6d57c42dee8bd7789969e2dd28671162",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "776807750280daad05348f931a33e4ef",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c4503db6ece93eddf4511e787607cb14606a1df9f526f1e39992497119437cec",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a973c0ab904c1b74655a906b99b76850",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b1552703ff0035f197c22cdb3a514bb6aa45ec98de3ef5409faab0978f18c35e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f62cbbbdf35c7790909c26c7c5fbce05",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a05cdf6afcbb107961307f59cbab5e4f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "86f1cfa6a2e0a8cb6fc1fbee28472308e6467932f8658a6a4885e29ed8c34a67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7d5a182f70bed0e4fa2f8615aba070de",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1bcaef76b2063f1b80b0fa0d277ec9c5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "4d33bfb75e27fefaa72526899604d557",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "644decbc6ce8c52382f4755fa6fc2cb4d89a0e7ec0e574c11b398a6f2eed04b1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "fc6e8ca41cf4f6100177352660e520b4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "67db57a1f957031b78f29aa91e2e87780eae3835290259eff846d8f14afb794b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "154-119-131-252-103-58-216-162-36.m.secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "2-12-44-140-78-81-211-109-241.h.secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "54-2-32-236-208-2-40-107-38.h.secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "66-37-178-96-110-2-40-107-38.h.secshow.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "_msdcs.cktime.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bj-hk.hmbcloud.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bj-jp.hmbcloud.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dc-29465b27aa45.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dc-4fe9871cb224.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dc-582fc0f46da9.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dc-843d98722400.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dc-bb503834b7dc.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dc-c11a983d7f83.96html.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gz-hk.hmbcloud.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "iplc-hk.hmbcloud.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "one.hmbiplc-01.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pdc._msdcs.cktime.ooguy.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sh-jp.hmbcloud.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "szxcm-hkg01.iepl.node.cm",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "4d488f21269b18e37aaca93ac2a61707c9b611e506cdb3b287277746e94636b5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "804a53be802378a8ec4c94602fd3d6584e0d472d83148e8a42c731950fec415d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "8a592e22c51311d482272ec5aba0103c9cd0cfd78e5b5ba75dfa8f1c56926672",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9dc85f9569a15eaf51c7d34254767ea30dd67b2178cec4cc7125288b9544fe00",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c7f86a4623db5c90273cea041d43207849c5c6b0060c370b2095f13871b1366d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e93244080a749b521f63476343ce3c81cc8c1b672fa0d9e67359aee37544c784",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "id": "real-hatching-winlol",
+  "title": "Triage Insights: WinLol, a Rust Dropper Chain Delivering a WebRTC Remote Desktop RAT",
+  "publisher": "Hatching",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "hatching"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "ebc0c7add603c2d5db28321c4a31182e11420ee0d60705fccb014d3ce503f99c",
+    "url": "https://hatching.io/blog/triage-insights-ep5-short/",
+    "talonhound_report_id": "09f76062-19a0-4378-b616-383786ba95b8"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 176-209 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "1e82f3fa779038d208279eca1a420f168bb4b9be95ba521362e5658cd33840e7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "5fff61dff1fe18f59ebabe729c5ff9c42de64911248fb424815755fc7e76d5a1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "18868595393c5345e99ebe6dbfe60780aef388836b125696a3201f1a88e67c47",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "7de267b3b415386424cefb3cb935436462ec0490a624e886615513e80606b9b2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b967ebdcb56423fd2021ce01248769ebc073f7fd00eb14870e0f45cb345f9aee",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "d3740b8d4744dea17e58e918485273980380c3595c31cb4b938c06bd4d1222a3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f2e81dff1c3bb139f8865327180c4d45fce68cf44e4ec445c4df8b49158bed9d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a1a91d9cd396186c4fde28e050f88aa68062b05195aaea091e7b3a1ca7539893",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "82400db6e1195da7dd6db5526f795362ca9f13ef7ed5d2dba8b730fba7663f78",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e7ccdf128df08e131c910e904a0be711273a2f33a531e208ec531ca19b0d091e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e7e640540ef158cf77b8d84e1b153cf0133d07cb70133f501ba306ae1e00586d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3690c237facca095803acfd0b5e702643fcf7a22f3b16a7ac00d1bc2337d370b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "713ec0de0e018e22642e280d02ca1516e05235fb99d72355abb1d7bca5737dd2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "593d05c817b5f41bd0cbdcfbd9729c6a875173303f700c4dd953046f9b2f6de7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "668c0851af5a3a1f685f3e632e4cce3f71aed73808deefe4c5b59bf40088d4fa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "4eae9858ccc07ad60b3e5deb45d30e0439d0f30309ddc75097d1878e784b3aaf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c1dfd3712d6f927acf98a78f1b77367d0b57aefbcd6ea8a7120d61a2b8a76525",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "baa36514329766db2993e8435d92209f167b27725e54ca166239158bd100794f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "workinghardo.link",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "havefunnn.win",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.193.173.199",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.193.173.83",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.108.192.193",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

@@ -1,0 +1,290 @@
+{
+  "id": "real-securelist-mirage-kitten",
+  "title": "Mirage Kitten switches to Node.js and JavaScript malware",
+  "publisher": "Securelist",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "securelist"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "2906e4a68197528e765e552c802e3e93e91f13d33f4051486c28047b2f09bebc",
+    "url": "https://securelist.com/mirage-kitten-new-backdoors-noderabbit-pollcat/121244/",
+    "talonhound_report_id": "f8ea1c96-6fa9-4e5f-a556-a5bf56b87872"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 395-447 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "cbaaf0900a13f28e380f49adecec932c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1ea83e4e4592b01e4acab63eb867bee5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "366515822d5ac1cc500711ef57a2e32e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "cf449f1992c2819e62ac44a0b06ac2e7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "e95a4366686e3f786ea3c056fab5b0da",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "de5af16a3757ef700b01dc34d67079ae",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "be086789568441d0d7e4679aee51f566",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "e259c5edf158aac4cfe14f77ddd0b196",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "291ac3abe73c5158e59a437b75d5f0aa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0962f56d7ec69f4f2a0162dcbe22116b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "795e053a990a1569ffdcb57f48f6d085",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "oracle-challenge.s3.us-east-1.amazonaws.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "naturalapplication.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "retaildemo.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tubitak.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rgbteller.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wslwebui.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "plugplay.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "crossdwm.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wdisystem.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wslmenus.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dnshnsdev.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hpjumpsrv.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "storview.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "healthcomfsdpower.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "visitfinancedentists.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kyrasey-f8hfexa5cqamh7fk.westeurope-01.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "greenyjsgfd.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "helptellerbls.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "timedrv.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "userwellgtfs.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hecowime-aqdphyd4bbdef6es.westeurope-01.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "msmanagementgrp.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "msmanagementgrpmedia.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "lifespotify.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gamebarapp.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gamebarappinformation.azurewebsites.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sahi-finance.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "healthful-hub.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "neumedicahealthcare.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "optimumhealthcredit.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "healthfullyrecipes.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "refreshhealthandwellness.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "healthvitalitycare.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "aceofspadesmanagement.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "glmediaagency.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "digimediaskill.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "healthyweightplan.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mens-health-online.com",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "kaspersky.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "intelreports@kaspersky.com",
+        "label": "context_only"
+      }
+    ]
+  }
+}

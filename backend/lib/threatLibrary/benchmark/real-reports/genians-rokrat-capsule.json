@@ -1,0 +1,69 @@
+{
+  "id": "real-genians-rokrat-capsule",
+  "title": "Operation Capsule Vault: RokRAT Attack Chain Analysis Using EMBED_PAYLOAD_v2",
+  "publisher": "Genians",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "genians",
+    "paragraph_ioc_heading"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "cb44dee49d6386fbd3a7af44fe758cd1a58c67c8e49974393dc6df3fcd1276ba",
+    "url": "https://www.genians.co.kr/en/blog/threat_intelligence/rokrat_capsule_vault",
+    "talonhound_report_id": "1bb818bc-6206-4f83-903e-c35d99f21e4b"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 241-250 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "\"5. IoC (Indicator of Compromise)\" is a <p>, not a heading element.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "e5c9bb3938f2a24e755ee39073fc3aca",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "5.180.208.57",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "5.180.208.60",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "89.147.101.197",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "89.187.161.220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "160.238.37.95",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "160.238.37.100",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

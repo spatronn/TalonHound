@@ -12,11 +12,18 @@
  *   pdf_items   pdf.js text items (the existing fixture format) → pdfLayout
  *   canonical   a stored canonical document JSON
  *   layout_variant  generated metamorphic variant (layoutVariants.js)
+ *   private_source  a real publisher source kept OUT of the repository and
+ *                   addressed by its sha256 in a private source store
  *
- * Committed cases live in ./cases. Private cases (retained publisher HTML that
- * must not be committed) use the same format in TL_BENCHMARK_PRIVATE_DIR.
+ * Committed cases live in ./cases. Real-report labels live in ./real-reports:
+ * committed ground truth (publisher IOC identities, source reference, sha256,
+ * rationale) without the source content. They run only when a private source
+ * store is configured (TL_BENCHMARK_SOURCE_DIR / --source-dir); a label whose
+ * source is not in the store is reported as unavailable, never as a failure.
+ * Fully private cases (any kind) can still use TL_BENCHMARK_PRIVATE_DIR.
  */
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,8 +48,10 @@ import { buildLayoutVariant, layoutVariantGroundTruth, listLayoutVariantIds } fr
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const BENCHMARK_CASES_DIR = path.join(here, 'cases');
 export const BENCHMARK_BASELINE_PATH = path.join(here, 'baseline.json');
+export const REAL_REPORT_LABELS_DIR = path.join(here, 'real-reports');
 
-const CASE_KINDS = new Set(['html_file', 'pdf_items', 'canonical', 'layout_variant']);
+const CASE_KINDS = new Set(['html_file', 'pdf_items', 'canonical', 'layout_variant', 'private_source']);
+const PRIVATE_SOURCE_FORMATS = Object.freeze({ html: '.html', pdf_canonical: '.canonical.json' });
 
 /** Extractor contract versions a benchmark run was produced under. */
 export function extractorVersions() {
@@ -69,6 +78,17 @@ export function validateBenchmarkCase(c, origin = 'case') {
   else {
     if (!/^[a-z0-9][a-z0-9._/-]{2,120}$/.test(String(c.id || ''))) problems.push('id must be a lowercase slug');
     if (!CASE_KINDS.has(c.source?.kind)) problems.push(`source.kind must be one of ${[...CASE_KINDS].join(', ')}`);
+    if (c.source?.kind === 'private_source') {
+      if (!/^[a-f0-9]{64}$/.test(String(c.source.sha256 || ''))) problems.push('private_source.sha256 must be the hex sha256 of the retained source');
+      if (!PRIVATE_SOURCE_FORMATS[c.source.format]) problems.push(`private_source.format must be one of ${Object.keys(PRIVATE_SOURCE_FORMATS).join(', ')}`);
+      if (c.source.format === 'html' && !/^https?:\/\//.test(String(c.source.url || ''))) {
+        problems.push('private_source.url (the public publisher URL) is required for HTML');
+      }
+      if (!c.source.url && !c.source.reference) problems.push('private_source needs a url or a reference (publisher, title)');
+      for (const k of ['path', 'html', 'text', 'blocks', 'document', 'content']) {
+        if (k in c.source) problems.push(`private_source must not carry source content or a path (${k})`);
+      }
+    }
     const gt = c.ground_truth;
     if (!gt || typeof gt !== 'object') problems.push('ground_truth is required');
     else {
@@ -103,7 +123,8 @@ export function loadCaseDirectory(dir) {
   if (!dir || !fs.existsSync(dir)) return [];
   return fs
     .readdirSync(dir)
-    .filter((f) => f.endsWith('.json'))
+    // known-*.json are registers (e.g. real-reports/known-false-positives.json), not cases.
+    .filter((f) => f.endsWith('.json') && !f.startsWith('known-'))
     .sort()
     .map((f) => {
       const file = path.join(dir, f);
@@ -133,10 +154,12 @@ export function layoutVariantCases() {
  */
 export function loadBenchmarkCases(opts = {}) {
   const privateDir = opts.privateDir === undefined ? process.env.TL_BENCHMARK_PRIVATE_DIR || null : opts.privateDir;
+  const sourceDir = opts.sourceDir === undefined ? process.env.TL_BENCHMARK_SOURCE_DIR || null : opts.sourceDir;
   const cases = [
     ...loadCaseDirectory(BENCHMARK_CASES_DIR),
     ...(opts.includeLayoutVariants === false ? [] : layoutVariantCases()),
-    ...loadCaseDirectory(privateDir).map((c) => ({ ...c, private: true }))
+    ...loadCaseDirectory(privateDir).map((c) => ({ ...c, private: true })),
+    ...(sourceDir ? loadRealReportLabels().map((c) => ({ ...c, private: true, __sourceDir: sourceDir })) : [])
   ];
   const ids = new Set();
   for (const c of cases) {
@@ -146,6 +169,25 @@ export function loadBenchmarkCases(opts = {}) {
   return cases;
 }
 
+/** Committed real-report label cases (ground truth only, no source content). */
+export function loadRealReportLabels(dir = REAL_REPORT_LABELS_DIR) {
+  return loadCaseDirectory(dir).map((c) => {
+    if (c.source?.kind !== 'private_source') throw new Error(`real-report label ${c.id} must use source.kind private_source`);
+    return c;
+  });
+}
+
+function privateSourceFile(c) {
+  const src = c.source || {};
+  return path.join(c.__sourceDir || '', `${src.sha256}${PRIVATE_SOURCE_FORMATS[src.format] || ''}`);
+}
+
+/** Whether a case's source can be materialized (private sources need the store). */
+export function caseSourceAvailable(c) {
+  if (c?.source?.kind !== 'private_source') return true;
+  return Boolean(c.__sourceDir) && fs.existsSync(privateSourceFile(c));
+}
+
 /**
  * Canonical document + report context for a case.
  * @param {object} c
@@ -153,6 +195,24 @@ export function loadBenchmarkCases(opts = {}) {
 export function materializeCase(c) {
   const src = c.source || {};
   const resolve = (p) => path.resolve(c.__dir || BENCHMARK_CASES_DIR, p);
+  if (src.kind === 'private_source') {
+    if (!caseSourceAvailable(c)) {
+      throw Object.assign(new Error(`benchmark case ${c.id}: private source ${src.sha256} is not in the source store`), { code: 'benchmark_source_unavailable' });
+    }
+    const raw = fs.readFileSync(privateSourceFile(c));
+    if (src.format === 'html') {
+      const digest = crypto.createHash('sha256').update(raw).digest('hex');
+      if (digest !== src.sha256) throw new Error(`benchmark case ${c.id}: source store file does not match sha256 ${src.sha256}`);
+      const r = extractCanonicalDocumentFromHtml(raw.toString('utf8'), { url: src.url, finalUrl: src.url, httpStatus: 200 });
+      if (!r.ok) throw new Error(`benchmark case ${c.id}: HTML extraction failed (${r.code})`);
+      return { document: r.document, report: { source_type: 'url', source_url: src.url, published_at: c.published_at || null } };
+    }
+    // PDF: the store keeps the production ingester's canonical document of the
+    // PDF whose bytes hash to sha256 (scripts/threat-library-benchmark-sources.js).
+    const stored = JSON.parse(raw.toString('utf8'));
+    if (stored.source_sha256 !== src.sha256) throw new Error(`benchmark case ${c.id}: canonical store entry is not of PDF ${src.sha256}`);
+    return { document: stored.document, report: { source_type: 'pdf', source_url: null, published_at: c.published_at || null } };
+  }
   if (src.kind === 'layout_variant') {
     const v = buildLayoutVariant(src.variant);
     return { document: v.document, report: { source_type: v.format === 'pdf' ? 'pdf' : 'url', source_url: v.sourceUrl } };
@@ -207,12 +267,16 @@ export function runBenchmarkCase(c) {
  * @param {{ cases?: object[], privateDir?: string|null, filter?: (c: object) => boolean }} [opts]
  */
 export function runBenchmark(opts = {}) {
-  const cases = (opts.cases || loadBenchmarkCases({ privateDir: opts.privateDir })).filter(opts.filter || (() => true));
+  const all = (opts.cases || loadBenchmarkCases({ privateDir: opts.privateDir, sourceDir: opts.sourceDir })).filter(opts.filter || (() => true));
+  // A real-report label whose source is not in the store is skipped and
+  // listed, never scored as a failure (and never silently dropped).
+  const cases = all.filter(caseSourceAvailable);
   const results = cases.map((c) => runBenchmarkCase(c));
   return {
     versions: extractorVersions(),
     aggregate: { ...aggregateBenchmark(results), quality: aggregateQuality(results) },
-    results
+    results,
+    unavailable: all.filter((c) => !caseSourceAvailable(c)).map((c) => c.id)
   };
 }
 

@@ -1,0 +1,153 @@
+{
+  "id": "real-fortiguard-clingstun",
+  "title": "ClingSTUN Linux Backdoor Abuses Public STUN Infrastructure | FortiGuard Labs",
+  "publisher": "FortiGuard Labs",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "fortiguard_labs"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "f75c03503917ced332d259f68c988fd0b20eacc1672a9242b8195949d3867b04",
+    "url": "https://www.fortinet.com/blog/threat-research/clingstun-linux-backdoor-abuses-public-stun-infrastructure",
+    "talonhound_report_id": "d71a3009-2dee-4a38-9849-08a89cf209f7"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 138-166 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "124.163.212.119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "222.223.152.97",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "118.145.196.225",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "dc892f5013edb0aa1e61e808511387373d8d120348b5be0929621d21e6e9946a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a297eddfa7abea8d411afc0f150f8f6f30e470a77204de87e3b0815fa9bb8a84",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "4fbd61cb9181ebbc4fe9a6e59d3c346dc00001da48d66bd890556fc6fad22b07",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "121f2050e3c891b29565fd73451fff7ae60199c86eb8d79ec1eb1d9844578487",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "48f9b72ce72ab7087794650d6eef10135345088384fbde1482f1c74a02b80302",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e6e113783356446aef66e5296db45b244f318292af7cebc2a9bd76f095a95c4c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c1d8e2829ea63b9dc1cf2c3421a5093406adad4d6622e238376e78e908e0e6e8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "48962b3893f2c8261e32e6b95ea7d463d145a529a8b2a6c987dd979454405c73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "76692a23abe718b93e63edefd743971ec627c0cdf3778f856bd5ec88003deaa2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ec199c78c11040fd3127887222fd75a85e5797bf96aa691a117fdd83dd663d81",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c0d8ffebfba969b1c1ca76bd9623bb623e9f95155c8ceca77d8fcc521435a497",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f49f45303cbfccee14ff193ac9608f860e6d616f08c0ecbef1ec44f7c863d7ec",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9391c6ad17aced1142607c0c623b18d86a7697cc483d204ffac94093e26b8068",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e4d12208789f36efc5a1ff765088fed95d6bb5972d1a804a4536fd42366797d4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "284e5ec8748f99fd1b8c331b699a5fe5fd4448bbaae0347a940f427f931c4d14",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "6581bf37184bb2db899b9893064d39dd314ea691adf3281cc0aa7e0a31e5138a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "10d83c1748895361e07320f68d44d427b43cadd2cbffe0ab5e607ab03aec83da",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2ed54e0f988a62039abed88f6394eb1e3d5ed931f0183556055417fb08844ecf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b90640b392827b4f2d280f6cf67860862953331917d42df23e1653a92f2f98ad",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "dfba6008a2c828a9cb62342aec53006ae05a60cb8d4c41c3fa216fd727e8c6a3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "5c4e263546fb21f8fe8732789a5b6583eaa8ae11ebeef099462a7c9bf50e022d",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

@@ -30,13 +30,14 @@ import {
 import { knownFailureFor } from '../lib/threatLibrary/benchmark/knownFailures.js';
 
 function parseArgs(argv) {
-  const args = { json: false, writeBaseline: false, casePrefix: null, privateDir: undefined };
+  const args = { json: false, writeBaseline: false, casePrefix: null, privateDir: undefined, sourceDir: undefined };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--json') args.json = true;
     else if (a === '--write-baseline') args.writeBaseline = true;
     else if (a === '--case') args.casePrefix = argv[++i] || null;
     else if (a === '--private-dir') args.privateDir = argv[++i] || null;
+    else if (a === '--source-dir') args.sourceDir = argv[++i] || null;
     else if (a === '--help' || a === '-h') args.help = true;
     else throw new Error(`unknown argument: ${a}`);
   }
@@ -79,6 +80,9 @@ function printTable(run, comparison) {
         `${known ? `  [known: ${known.cause}]` : ''}`
     );
   }
+  if (run.unavailable?.length) {
+    console.log(`\nunavailable (source not in the private store, not scored): ${run.unavailable.join(', ')}`);
+  }
   console.log('');
   if (!comparison) {
     console.log('No baseline found (run with --write-baseline after review).');
@@ -104,10 +108,10 @@ function printTable(run, comparison) {
 
 const args = parseArgs(process.argv.slice(2));
 if (args.help) {
-  console.log('usage: node scripts/threat-library-benchmark.js [--json] [--case <prefix>] [--private-dir <dir>] [--write-baseline]');
+  console.log('usage: node scripts/threat-library-benchmark.js [--json] [--case <prefix>] [--private-dir <dir>] [--source-dir <private source store>] [--write-baseline]');
   process.exit(0);
 }
-const cases = loadBenchmarkCases({ privateDir: args.privateDir });
+const cases = loadBenchmarkCases({ privateDir: args.privateDir, sourceDir: args.sourceDir });
 const selected = args.casePrefix ? cases.filter((c) => c.id.startsWith(args.casePrefix)) : cases;
 const run = runBenchmark({ cases: selected });
 const baseline = args.casePrefix ? null : readBaseline();

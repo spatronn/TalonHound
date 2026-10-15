@@ -1,0 +1,100 @@
+{
+  "id": "real-securelist-strikeshark",
+  "title": "StrikeShark: a new campaign involving a custom SharkLoader and Cobalt Strike Beacon",
+  "publisher": "Securelist",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "securelist"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "e2fb039e6089bf56e80f8fca9f484745f36b6645b575123f9510d3d2bbd0c053",
+    "url": "https://securelist.com/strikeshark-campaign/120326/",
+    "talonhound_report_id": "1b5da9f4-693c-486c-a3dc-cf2cea681d87"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 376-426 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "DscCoreR.mui / SyncRes.dat are DLL names in the loader description, not domains.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "md5",
+        "value": "c559cc68986933200fd5d9e4388e2f58",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b3352b42432dedc4a519f011dc8b5d5a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "24fcebdeecba65004fdb0923763d74fd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9c872a0d5d5a38950e8b9ac9b488be3f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "aa3086be652c8b20b0b29b2730d57119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a514d1bb62d7916475946fe7c07ac0aa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9cbd560f820c95d7c38342cd558cb5c6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect-microsoft.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ms-record.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ms-record.top",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ms-tray.top",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "kaspersky.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "intelreports@kaspersky.com",
+        "label": "context_only"
+      }
+    ]
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "id": "real-zscaler-vidar-vm",
+  "title": "Vidar Virtual Machine-Based String Obfuscation | ThreatLabz",
+  "publisher": "Zscaler ThreatLabz",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "zscaler_threatlabz"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "cb1c8e811ece31be58406280d744e9f9197edc75ca77346ebdefc3cec02ecab2",
+    "url": "https://www.zscaler.com/blogs/security-research/vidar-adds-virtual-machine-and-custom-stream-ciphers-string-obfuscation",
+    "talonhound_report_id": "2b4f9fbe-c97c-4d2c-a4b3-d7cfc4488444"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 177-182 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "1628bb03db87f67661349e169d73ee14ed490bdbf22abfbda08ccc9ebe237974",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "625a381981fc2d4c25c981d98b1d66bb2cf5da2dde2f590add0673a857d5b074",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2d43d592630ad1e012da63ef7279f95dd4a8e94964e12ca2f996051875574fa6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "979048a749d8f28d877c7068b1b336ecd1e349869dfb1d7c68118f90e4099bc4",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

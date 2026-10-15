@@ -18,7 +18,8 @@ import {
 } from './benchmarkRunner.js';
 import { knownFailureFor } from './knownFailures.js';
 
-const cases = loadBenchmarkCases({ privateDir: null });
+// Public cases only: real-report labels are scored in realReports.test.js.
+const cases = loadBenchmarkCases({ privateDir: null, sourceDir: null });
 const run = runBenchmark({ cases });
 const byId = new Map(run.results.map((r) => [r.id, r]));
 

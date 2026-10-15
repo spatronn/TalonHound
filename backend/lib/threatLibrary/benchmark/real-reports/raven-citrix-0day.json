@@ -1,0 +1,1124 @@
+{
+  "id": "real-raven-citrix-0day",
+  "title": "CITRIX 0-DAY EXPLOITS: CVE-2026–88771 & CVE-2026–88772 IN THE WILD",
+  "publisher": "The Raven File",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "the_raven_file",
+    "pre_block_iocs"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "304f02cc57d920f7336d239669a0ef4ac863941d4596ad072d36724712deea56",
+    "url": "https://theravenfile.com/2026/10/06/citrix-0-day-exploits-cve-2026-88771-cve-2026-88772-in-the-wild/",
+    "talonhound_report_id": "d0d74e05-8b6a-4662-86d0-319b30e99011"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 196-468 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "pre-block IOC dump; file names / config artifacts and a bare URL prefix excluded. 072874... is a SLAPSHOT auth token, not an MD5.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "213.209.159.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.62.49.154",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "37.19.221.171",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.42.100.63",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "154.217.251.226",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "176.65.148.54",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "81.94.239.8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "100.24.104.167",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "54.152.53.242",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "52.0.15.140",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "15.204.172.7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "94.183.174.99",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "151.240.53.133",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "82.167.14.7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "46.151.182.18",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "173.231.39.244",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "165.227.201.112",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "132.243.166.140",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.156.46.162",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "51.158.203.95",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "142.93.205.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "159.65.104.231",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "182.101.54.57",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "38.134.148.238",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "91.92.47.105",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "159.26.103.184",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "167.148.88.236",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "16.59.141.234",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "170.205.31.28",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "31.56.197.137",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.225.103.14",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "159.203.33.46",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.143",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.128.114.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "130.12.182.7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "146.70.184.249",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "156.146.51.66",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.102.228.88",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.61.144.161",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "5.83.144.60",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "146.70.195.85",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "130.94.20.222",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "198.13.159.233",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "193.29.56.109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.97.62.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.94.85.67",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "172.247.44.85",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "130.94.106.141",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.203.21.233",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.120",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.131",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "151.243.141.81",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.136",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.125",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "87.224.84.82",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.127",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.122",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.234.140.116",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.177.93.71",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "189.24.123.161",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "165.22.104.177",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "85.117.117.248",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.58.71",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.234.111.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "46.150.68.55",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "137.220.53.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "197.52.9.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.63.246.50",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.249.89.172",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "120.28.233.211",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "180.242.113.168",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "88.180.103.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "194.28.195.90",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "178.66.43.241",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.209.15.246",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "31.13.192.160",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.203.50.26",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.143.167.96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "94.190.77.195",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.170.55.89",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "73.43.85.7",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "58.187.56.89",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "72.73.231.73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "68.46.140.222",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "178.218.40.232",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "113.137.102.68",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "191.37.30.194",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "93.177.60.233",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.229.84.239",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "49.36.107.103",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "153.75.82.220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.76.92.109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.210.119.74",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.234.74.48",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.243.125.255",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.242.254.3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.132.230.45",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.217.173.25",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.76.63.52",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.210.67.91",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.218.41.110",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.243.139.40",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.239.205.29",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.218.219.56",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.76.102.1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "44.226.128.41",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "8.218.169.8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "44.252.255.141",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "4.246.63.96",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "85.203.46.191",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.132.164.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "125.122.56.47",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.76.132.65",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "92.118.204.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "54.70.59.128",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "103.102.247.73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "107.172.221.57",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "144.126.221.237",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "172.98.178.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.243.41.247",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "188.221.198.9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "196.19.179.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.39.15.23",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.111.102.223",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "88.218.105.254",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "91.199.84.112",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.61.136.143",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "205.169.39.13",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.245.184.164",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.227.183.84",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.133.231.123",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "71.196.248.170",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "62.82.13.78",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "205.169.39.147",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "205.169.39.44",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "77.83.199.39",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "139.180.152.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "205.169.39.14",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "205.169.39.139",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "34.122.147.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "72.50.211.109",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "66.167.145.88",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "177.227.194.214",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "187.156.184.230",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "187.156.191.208",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "187.156.201.239",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.248.244.66",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.47.24.217",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "138.68.21.29",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "80.240.22.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "157.230.43.185",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "68.183.141.155",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "162.243.100.252",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "151.101.193.135",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "155.138.236.14",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "207.148.6.33",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.135.96.136",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.28.29.221",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "89.36.231.206",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "79.133.42.141",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "85.11.187.35",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "78.128.113.10",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "62.133.62.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "31.56.197.72",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "149.104.78.141",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b048b13c80e231549c537887da0e5aa5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "3f2214b27ca355e034add0d9f6692b32",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "e33b306b06c08f9d3d7223215f25b2cf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "fc6370a116a027e97d6df2621fa371f2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "27ac25984b50f6df6afc6997334b9505",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a7fe433d8982d52cabb09c8b5c9386a9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1c0f12288170e28d1beb30062c41ee6d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b5345968ad216e196f4ab8c1d2f458ce",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "84036e61c5d7ad0e4b76b582110901f3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "0915e74a43b18bb7bca2cca226f2e118",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d81e80b7ed52d48575373e7aa7a7ac25",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ff2a8ebbcf069033cce505353e5d0118",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "3f1e522d94f311936337892368acc6e8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ba4fb54383a9ed7c84624886ce0d352c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "59a926eeed450532a2f7c49412434409",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "047cf08ab81daba675816d85013a3438",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8414c74e881b10a760c5c3eb797ec3c8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "df2f93ccc44711e299748af2bca30c8c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9d9df92216b8c2b6f13d324883febfe8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5e8e6e69871896b6894a37865e7ee52e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1c2b6c8d6310af7b2cf8a681b29f7ea4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "976fdea475236b15a0622e6751c47089",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "979296a73a71092bb83ca07439d2e3aa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/a779ab",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/ae7427",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/a718e4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/861cd3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/1f0a10",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/818f74",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/906b4f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/db6c6c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/324d58",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/29a04f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/bad2ad",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/6f3c3e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/274124",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/9c3166",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/3b6d2f.sh",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/62cd78.sh",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/471d83.sh",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:80/t/274124a83e2174cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:80/t/125b42e2f03297d3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://213.209.159.55:443/t/5e028d5f3daed211",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://130.94.20.222:8888/c/b3a54bea3bfaa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://entretiensol.com:443/api/v1/install/dl_d3giforcdfgc5hqurluy.ctzlc5tkt3w6p5flcmnq?download_tl",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://entretiensol.com:443/api/v1/install/dl_3wrbowpypfk26nypk6fj.erlcdi3xomfglunnik66?download_tls=insecure",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://entretiensol.com/v1/artifacts/$OS/$ARCH/latest",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.27.143.20",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.141.21.130",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "entretiensol.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "e4d909c290d0fb1ca068ffaddf22cbd0",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "md5",
+        "value": "072874c28950cf7befd319d17e9709e7"
+      }
+    ],
+    "sections": []
+  }
+}

@@ -89,7 +89,7 @@ Measure real false-warning rates with `npm run scan:threat-library-quality -- --
 
 ## Real-report validation (2026-10-15, tl-candidates-v25 / tl-zones-v9 / tl-quality-v3)
 
-Ground truth for 26 retained production sources was labelled independently of TalonHound. A line-based labeler with its own refang and regexes read only the publisher's IOC section; section ranges were chosen by a human from the outline, and no TalonHound zone, scope, typing or classification was used. These are private `--private-dir` cases, not committed.
+Ground truth for 26 retained production sources was labelled independently of TalonHound. A line-based labeler with its own refang and regexes read only the publisher's IOC section; section ranges were chosen by a human from the outline, and no TalonHound zone, scope, typing or classification was used. The labels are committed as `lib/threatLibrary/benchmark/real-reports/` (see below); the sources are not.
 
 - **Corpus:** 24 HTML and 2 PDF reports.
 - **Publishers:** Securelist (7), FortiGuard (3), Genians (2), SOCRadar (2), Huntress, Hatching, Cisco Talos, Gen Digital, Infoblox, ESET, Zscaler, ReliaQuest, Dream Research, The Raven File, Recorded Future Insikt, CISA.
@@ -110,3 +110,30 @@ Ground truth for 26 retained production sources was labelled independently of Ta
   - **Raven (1):** a bare URL prefix inside the IOC block.
 - **Detector:** v3 flags the NCSC, DTrack and Huntress FPs with `indicators_from_structural_discovery`; NCSC is info, the other two are warnings. The production read-only scan (42 reports) has 2 warnings, both real FPs; v2 had 3 warnings, all false.
 - **Masked scope loss:** in GitPower and RokRAT, a sub-heading ("C2", or a `<p>` "5. IoC" heading) closes the appendix. The rows survive only because the observable-list fallback re-opens them. Changing discovery to fix the FPs above would expose this scope loss, so the two must be fixed together.
+
+### Reproducing the real-report results
+
+The labels and the publisher content are kept apart:
+
+| | Where | Contents |
+|---|---|---|
+| Labels (committed) | `lib/threatLibrary/benchmark/real-reports/*.json` | Publisher IOC identities, `context_only` / `excluded_legitimate` / `not_indicators`, the labelling rationale, the public source URL (or publisher + title for PDFs), the TalonHound report id and the **sha256** of the retained source. Publisher-listed values of a type TalonHound does not extract (email) sit in `unsupported_type_indicators` and are not scored. |
+| Known false positives (committed) | `real-reports/known-false-positives.json` | The 13 promoted non-Indicators with their cause. |
+| Source store (private, never committed) | Any directory, passed as `TL_BENCHMARK_SOURCE_DIR` or `--source-dir` | `<sha256>.html` (retained HTML, re-hashed on read) and `<sha256>.canonical.json` (the production PDF ingester's canonical document of the PDF with that hash). |
+
+To build or extend a store from retained sources, run this; it refuses a path inside the repository:
+
+```
+node scripts/threat-library-benchmark-sources.js <store-dir> <retained file>...
+```
+
+To score:
+
+```
+npm run benchmark:threat-library -- --source-dir <store-dir>
+TL_BENCHMARK_SOURCE_DIR=<store-dir> npm run test:threat-library-benchmark
+```
+
+`realReports.test.js` always validates the labels: each must be a reference with provenance and must carry no markup or source content. With a store, it scores every available label and ratchets the result. It fails on any false negative and on any false positive not listed in `known-false-positives.json`. It also fails when a listed false positive no longer occurs, so a fix must retire its entry. A label whose source is missing from the store is reported as unavailable, never as a pass or a failure. CI runs the validation always and the scoring only where a store is mounted, for example from a secret volume.
+
+The sample is a convenience sample of 26 sources already retained in production: 24 HTML and 2 PDF, with 7 from one publisher. It is regression evidence, not a measure of real-world coverage.

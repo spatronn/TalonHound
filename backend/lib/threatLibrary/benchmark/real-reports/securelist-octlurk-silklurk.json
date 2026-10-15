@@ -1,0 +1,286 @@
+{
+  "id": "real-securelist-octlurk-silklurk",
+  "title": "OctLurk and SilkLurk: new Backdoors in Central Asia",
+  "publisher": "Securelist",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "securelist"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "f39d32dd084d91fce1bf2f1aa47d35d3b5cf7f4f3bdcaccf6883e1053e3b5398",
+    "url": "https://securelist.com/octlurk-silklurk-backdoors-central-asia/120840/",
+    "talonhound_report_id": "1e28ec9d-bdb0-48c6-889b-a164f2a528b9"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 467-538 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "IOC section \"Indicators of Compromise\" through \"Archive utilities\"; File paths subsections (539+) hold paths only. kaspersky.com is the publisher contact (Context Only).",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "dns.multitoconference.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tj.tajikistandip.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fm01.clouddevicemetrics.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "confbase.mdpsupport.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "digital.leroymerling.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "api2.annoyingremote.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "about.blsouqs.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ssl.blsouqs.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.138.157.165",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dns.ssentialserv.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "154.196.162.76",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tyhbgtyuj.gleeze.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.179.210.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wedfcvbn.gleeze.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.77.136.228",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rgnojb.casacam.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "95.179.141.26",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ctyuhjerf.kozow.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.32.152.50",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.11.39.138",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "195.86.120.2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "uyhvfredc.accesscam.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "154.196.187.73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.61.149.112",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gycudore.kozow.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.7.198.130",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "082d49ef9f14e6811d68c7e0e82e5069",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "f4578e869a735cfad691f927bae3e638",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "7c2f64461bb519c6cbf1fc687675514c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "8269d6ba1b6842f9152c90cf7add9b93",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "3c9a1ba8e0c7475706adc6376e9d7b7c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "ef59aad625eebda8650aec5820d6ce69",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a0cc7accc79abb0287aaba825d0351f0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a56cce62930a6bee80d679b4c495a340",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "1415a78b75de7db4ba3d1e61d7db4501",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "a4d550a3ba0cd073fe3839b99d98a7a8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "32a5985543433a4f60da2fafd873b927",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "2a571f6cee42a17d873f4c942649813f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "37dc84e4bcad92fa28f1e7778d088283",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "cf903e4a1629aa0582fd0363b5786676",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "6ecf84fb18f6747ed08d7598364d853a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "b874123a80fc4f40e06872b9cb54ebc6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "45cf5916fab4272a1313c26e67aa9220",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "4e6d5c4770d5a822d7fcce6a74f7ad73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "5e26df131ff0a679a0a2699b723b46e3",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "18dc8bff47cc282508354771d0c8cf8c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "9a1dd1d96481d61934dcc2d568971d06",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "kaspersky.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [
+      {
+        "heading": "Indicators of Compromise",
+        "expected": "authoritative",
+        "until": "File paths"
+      }
+    ],
+    "unsupported_type_indicators": [
+      {
+        "type": "email",
+        "value": "intelreports@kaspersky.com",
+        "label": "context_only"
+      }
+    ]
+  }
+}

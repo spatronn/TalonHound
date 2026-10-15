@@ -1,0 +1,153 @@
+{
+  "id": "real-infoblox-gambling-peckbirdy",
+  "title": "Illegal Gambling Sites Reveal Three Types of Cybercrime",
+  "publisher": "Infoblox",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "infoblox"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "ed8cac92c3762c40f1b84c6ce95c6c492f3d59a5627ad97b7f9f7b2827638f2e",
+    "url": "https://www.infoblox.com/blog/threat-intelligence/how-money-laundering-scams-and-espionage-hide-in-a-web-full-of-casino-garbage/",
+    "talonhound_report_id": "173ef4c4-860b-4c44-aad1-1d65af5a61c8"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 344-393 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": null,
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "11170011.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "puqxr.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "80074.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "11168833.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "312zym001.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "am125.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "843470.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "1862.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zzyud.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zenplay77-x.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dollycasino.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dragobet.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "appcasino.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "summer138.fit",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "storebet77.support",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "realz.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vip311.cc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cache-cdn.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cache-mcp.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mcp-source.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "asg78.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "githubassets.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "157.185.143.150",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "146.103.91.133",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}

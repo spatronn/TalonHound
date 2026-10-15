@@ -1,0 +1,48 @@
+{
+  "id": "real-reliaquest-ai-agents",
+  "title": "How AI Agents Turned One Exposed Endpoint into a Server Takeover | Threat Spotlight",
+  "publisher": "ReliaQuest",
+  "format": "html",
+  "tags": [
+    "real_report",
+    "private",
+    "reliaquest"
+  ],
+  "source": {
+    "kind": "private_source",
+    "format": "html",
+    "sha256": "7b9f39e4171071562b350f1adea7699bdf1eb616ebd7993845ad550d6e1fa886",
+    "url": "https://reliaquest.com/blog/threat-spotlight-how-ai-agents-turned-one-exposed-endpoint-into-a-server-takeover/",
+    "talonhound_report_id": "3e8412d4-1dfe-4e2a-84fa-d71a15c4e66d"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Publisher IOC section read manually (segments 182-192 of the retained source); values reviewed one by one; TalonHound classifications not used. Independent line-based labeler (own refang + regexes, no TalonHound zone/scope/typing/classification code); section range chosen by a human from the outline; values reviewed one by one.",
+      "verified_by": "manual review of the publisher text (2026-10-15)",
+      "verified_at": "2026-10-15",
+      "notes": "File-path rows (ps.b64 -> ps.exe) are host artifacts, not network/hash indicators.",
+      "coverage_note": "One of 26 retained production sources labelled on 2026-10-15; a convenience sample, not a representative real-world coverage claim."
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "204.194.55.189",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "204.194.54.240",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "94.177.131.113",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": []
+  }
+}
