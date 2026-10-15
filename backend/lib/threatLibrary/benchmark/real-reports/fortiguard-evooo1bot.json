@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "b0b23fe9f075ad64b925f664bf416623db4e24a4ca7811e74ab6f0eb3ada300a",
     "url": "https://www.fortinet.com/blog/threat-research/multi-functional-linux-botnet-evooo1bot",
-    "talonhound_report_id": "d557c8fc-0ed4-4e98-9abc-64434770830a"
+    "talonhound_report_id": "d557c8fc-0ed4-4e98-9abc-64434770830a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

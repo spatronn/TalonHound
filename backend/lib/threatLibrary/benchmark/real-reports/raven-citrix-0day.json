@@ -14,7 +14,12 @@
     "format": "html",
     "sha256": "304f02cc57d920f7336d239669a0ef4ac863941d4596ad072d36724712deea56",
     "url": "https://theravenfile.com/2026/10/06/citrix-0-day-exploits-cve-2026-88771-cve-2026-88772-in-the-wild/",
-    "talonhound_report_id": "d0d74e05-8b6a-4662-86d0-319b30e99011"
+    "talonhound_report_id": "d0d74e05-8b6a-4662-86d0-319b30e99011",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

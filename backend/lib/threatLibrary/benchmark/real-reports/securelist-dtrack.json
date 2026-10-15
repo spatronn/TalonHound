@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "cae42518067d78ef5dcf257f1a691cdb3e7016d00b0d3f7b7ae4e7fdfe4a2a92",
     "url": "https://securelist.com/dtrack-targeting-europe-latin-america/107798/",
-    "talonhound_report_id": "1da83d01-3a96-4b0d-970f-b9640f9d327a"
+    "talonhound_report_id": "1da83d01-3a96-4b0d-970f-b9640f9d327a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

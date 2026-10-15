@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "2906e4a68197528e765e552c802e3e93e91f13d33f4051486c28047b2f09bebc",
     "url": "https://securelist.com/mirage-kitten-new-backdoors-noderabbit-pollcat/121244/",
-    "talonhound_report_id": "f8ea1c96-6fa9-4e5f-a556-a5bf56b87872"
+    "talonhound_report_id": "f8ea1c96-6fa9-4e5f-a556-a5bf56b87872",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

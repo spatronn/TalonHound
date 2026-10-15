@@ -15,7 +15,12 @@
     "format": "html",
     "sha256": "f17347ae5bac242064a76df5d64e9845e1b9a67c1677a3339f29da19b71caf19",
     "url": "https://www.ncsc.gov.uk/news/iranian-cyber-targeting-of-dissidents-activists-and-journalists",
-    "talonhound_report_id": "eb8f8199-a6a6-480a-8bd2-a9c9959a8dba"
+    "talonhound_report_id": "eb8f8199-a6a6-480a-8bd2-a9c9959a8dba",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public ncsc.gov.uk news alert (published 15 September 2026, co-authored with the FBI and AIVD); no TLP marking in the publication. TalonHound TLP:AMBER at import was an analyst setting, not a publisher classification.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

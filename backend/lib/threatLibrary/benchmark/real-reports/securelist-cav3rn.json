@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "54be9ae74c6275586d00bf1b116109afe15268aa32440b24614606b8674113ff",
     "url": "https://securelist.com/project-cav3rn-cyberespionage-framework-using-outlook-and-dns/120757/",
-    "talonhound_report_id": "2016f315-c615-44f7-bed8-d4fdd1bc29ef"
+    "talonhound_report_id": "2016f315-c615-44f7-bed8-d4fdd1bc29ef",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "7b9f39e4171071562b350f1adea7699bdf1eb616ebd7993845ad550d6e1fa886",
     "url": "https://reliaquest.com/blog/threat-spotlight-how-ai-agents-turned-one-exposed-endpoint-into-a-server-takeover/",
-    "talonhound_report_id": "3e8412d4-1dfe-4e2a-84fa-d71a15c4e66d"
+    "talonhound_report_id": "3e8412d4-1dfe-4e2a-84fa-d71a15c4e66d",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "2f6cf28eae63e8c43ce0dac388da7ebef81d226698463e0cae1889026e95033c",
     "url": "https://securelist.com/goserpent-backdoor-in-southeast-asia/120687/",
-    "talonhound_report_id": "91344d8a-c7a6-4b19-a0f1-69437bad783e"
+    "talonhound_report_id": "91344d8a-c7a6-4b19-a0f1-69437bad783e",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

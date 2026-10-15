@@ -14,7 +14,12 @@
     "format": "html",
     "sha256": "cb44dee49d6386fbd3a7af44fe758cd1a58c67c8e49974393dc6df3fcd1276ba",
     "url": "https://www.genians.co.kr/en/blog/threat_intelligence/rokrat_capsule_vault",
-    "talonhound_report_id": "1bb818bc-6206-4f83-903e-c35d99f21e4b"
+    "talonhound_report_id": "1bb818bc-6206-4f83-903e-c35d99f21e4b",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

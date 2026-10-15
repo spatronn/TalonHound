@@ -118,6 +118,7 @@ The labels and the publisher content are kept apart:
 | | Where | Contents |
 |---|---|---|
 | Labels (committed) | `lib/threatLibrary/benchmark/real-reports/*.json` | Publisher IOC identities, `context_only` / `excluded_legitimate` / `not_indicators`, the labelling rationale, the public source URL (or publisher + title for PDFs), the TalonHound report id and the **sha256** of the retained source. Publisher-listed values of a type TalonHound does not extract (email) sit in `unsupported_type_indicators` and are not scored. |
+| Distribution basis (committed, per label) | `source.distribution` | Why the label may be in the repository: `public_web_publication` (public publisher page) or `tlp_clear_marking` (the document itself says TLP:CLEAR). TalonHound's TLP field is editable and is not evidence. A source whose public release cannot be verified from the publisher stays a private label (`TL_BENCHMARK_PRIVATE_DIR`): the Recorded Future Insikt PurpleBravo PDF (an upload with no publisher URL; only secondary listings) is held back until its distribution is confirmed. |
 | Known false positives (committed) | `real-reports/known-false-positives.json` | The 13 promoted non-Indicators with their cause. |
 | Source store (private, never committed) | Any directory, passed as `TL_BENCHMARK_SOURCE_DIR` or `--source-dir` | `<sha256>.html` (retained HTML, re-hashed on read) and `<sha256>.canonical.json` (the production PDF ingester's canonical document of the PDF with that hash). |
 
@@ -136,4 +137,4 @@ TL_BENCHMARK_SOURCE_DIR=<store-dir> npm run test:threat-library-benchmark
 
 `realReports.test.js` always validates the labels: each must be a reference with provenance and must carry no markup or source content. With a store, it scores every available label and ratchets the result. It fails on any false negative and on any false positive not listed in `known-false-positives.json`. It also fails when a listed false positive no longer occurs, so a fix must retire its entry. A label whose source is missing from the store is reported as unavailable, never as a pass or a failure. CI runs the validation always and the scoring only where a store is mounted, for example from a secret volume.
 
-The sample is a convenience sample of 26 sources already retained in production: 24 HTML and 2 PDF, with 7 from one publisher. It is regression evidence, not a measure of real-world coverage.
+The sample is a convenience sample of 26 sources already retained in production: 24 HTML and 2 PDF, with 7 from one publisher. 25 labels are committed and 1 is held private. It is regression evidence, not a measure of real-world coverage.

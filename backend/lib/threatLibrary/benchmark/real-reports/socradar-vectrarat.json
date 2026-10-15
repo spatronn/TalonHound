@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "e634464c698af0d0e89a4ed83f92eb25d3cb233a35cd942fe8eb644efce83852",
     "url": "https://socradar.io/blog/vectrarat-undocumented-stack-maas/?utm_campaign=27596841-LeadGen_Organic-Social_Global_1025&utm_content=385809571&utm_medium=social&utm_source=twitter&hss_channel=tw-996059954489552896",
-    "talonhound_report_id": "ac060cd7-a7d1-476b-8767-b7cee2f35322"
+    "talonhound_report_id": "ac060cd7-a7d1-476b-8767-b7cee2f35322",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

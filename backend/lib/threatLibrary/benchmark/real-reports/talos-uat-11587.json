@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "85eb5c7dcf711dd3f47e15805e049332266d32f4c1f3691ef09f552b6820adad",
     "url": "https://blog.talosintelligence.com/china-nexus-uat-11587-targets-government-and-policy-organizations-across-asia-with-antino-backdoor/",
-    "talonhound_report_id": "9636f5b2-b310-4363-a314-2a91ae555228"
+    "talonhound_report_id": "9636f5b2-b310-4363-a314-2a91ae555228",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

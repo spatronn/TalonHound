@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "e2fb039e6089bf56e80f8fca9f484745f36b6645b575123f9510d3d2bbd0c053",
     "url": "https://securelist.com/strikeshark-campaign/120326/",
-    "talonhound_report_id": "1b5da9f4-693c-486c-a3dc-cf2cea681d87"
+    "talonhound_report_id": "1b5da9f4-693c-486c-a3dc-cf2cea681d87",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

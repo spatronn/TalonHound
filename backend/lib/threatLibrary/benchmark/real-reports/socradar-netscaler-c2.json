@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "7deba634eb90c6f635d9df068367ee4114f009aca0d76a26a728093e106f695e",
     "url": "https://socradar.io/blog/netscaler-c2-cve-2026-88771-exploitation/",
-    "talonhound_report_id": "5d5acaf7-e972-4f1b-892b-c10684edaeb3"
+    "talonhound_report_id": "5d5acaf7-e972-4f1b-892b-c10684edaeb3",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

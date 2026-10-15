@@ -37,6 +37,10 @@ test('real-report labels: valid, referenced, provenance-bearing and free of sour
     shas.add(c.source.sha256);
     assert.ok(c.source.url || c.source.reference, `${c.id}: public reference`);
     assert.ok(c.publisher, `${c.id}: publisher`);
+    // Repository distribution must rest on the publisher's own release, never
+    // on TalonHound's editable TLP field.
+    assert.ok(['public_web_publication', 'tlp_clear_marking'].includes(c.source.distribution?.basis), `${c.id}: distribution basis`);
+    assert.ok(c.source.distribution.evidence && c.source.distribution.verified_at, `${c.id}: distribution evidence`);
     assert.ok(c.ground_truth.provenance.method && c.ground_truth.provenance.verified_at, `${c.id}: provenance`);
     assert.ok(c.ground_truth.provenance.coverage_note, `${c.id}: coverage note`);
     const file = path.join(REAL_REPORT_LABELS_DIR, `${c.id.replace(/^real-/, '')}.json`);

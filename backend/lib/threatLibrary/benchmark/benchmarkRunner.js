@@ -158,7 +158,8 @@ export function loadBenchmarkCases(opts = {}) {
   const cases = [
     ...loadCaseDirectory(BENCHMARK_CASES_DIR),
     ...(opts.includeLayoutVariants === false ? [] : layoutVariantCases()),
-    ...loadCaseDirectory(privateDir).map((c) => ({ ...c, private: true })),
+    // Private labels (e.g. a source whose distribution is unconfirmed) resolve from the same store.
+    ...loadCaseDirectory(privateDir).map((c) => ({ ...c, private: true, ...(sourceDir ? { __sourceDir: sourceDir } : {}) })),
     ...(sourceDir ? loadRealReportLabels().map((c) => ({ ...c, private: true, __sourceDir: sourceDir })) : [])
   ];
   const ids = new Set();

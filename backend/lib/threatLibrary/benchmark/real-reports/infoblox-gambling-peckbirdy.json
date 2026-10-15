@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "ed8cac92c3762c40f1b84c6ce95c6c492f3d59a5627ad97b7f9f7b2827638f2e",
     "url": "https://www.infoblox.com/blog/threat-intelligence/how-money-laundering-scams-and-espionage-hide-in-a-web-full-of-casino-garbage/",
-    "talonhound_report_id": "173ef4c4-860b-4c44-aad1-1d65af5a61c8"
+    "talonhound_report_id": "173ef4c4-860b-4c44-aad1-1d65af5a61c8",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

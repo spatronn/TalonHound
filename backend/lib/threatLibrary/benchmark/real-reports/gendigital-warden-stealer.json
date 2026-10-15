@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "097846079491e484c0d9a19b15639ebe1b6d8789f52e08d12047f61f0de52f4a",
     "url": "https://www.gendigital.com/blog/insights/research/warden-stealer-rust-infostealer-analysis",
-    "talonhound_report_id": "780c85c5-8a7f-49f0-8703-6c4d152a196d"
+    "talonhound_report_id": "780c85c5-8a7f-49f0-8703-6c4d152a196d",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

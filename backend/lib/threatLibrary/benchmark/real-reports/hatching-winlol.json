@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "ebc0c7add603c2d5db28321c4a31182e11420ee0d60705fccb014d3ce503f99c",
     "url": "https://hatching.io/blog/triage-insights-ep5-short/",
-    "talonhound_report_id": "09f76062-19a0-4378-b616-383786ba95b8"
+    "talonhound_report_id": "09f76062-19a0-4378-b616-383786ba95b8",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

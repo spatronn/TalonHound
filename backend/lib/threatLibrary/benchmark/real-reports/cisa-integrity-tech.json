@@ -18,7 +18,12 @@
       "publisher": "CISA",
       "title": "chinese-government-linked-cyber-threat-actors-combine-automated-and-hands-on-hacking-tools-to-steal-sensitive-data"
     },
-    "talonhound_report_id": "bc112cbf-8931-4564-bc24-ab46d316fcf5"
+    "talonhound_report_id": "bc112cbf-8931-4564-bc24-ab46d316fcf5",
+    "distribution": {
+      "basis": "tlp_clear_marking",
+      "evidence": "The advisory states it is distributed as TLP:CLEAR (disclosure is not limited); public copy at https://www.cyber.gov.au/advisory/chinese-government-linked-cyber-threat-actors-combine-automated-and-hands-on-hacking-tools-to-steal-sensitive-data",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

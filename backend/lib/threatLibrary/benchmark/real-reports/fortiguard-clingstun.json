@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "f75c03503917ced332d259f68c988fd0b20eacc1672a9242b8195949d3867b04",
     "url": "https://www.fortinet.com/blog/threat-research/clingstun-linux-backdoor-abuses-public-stun-infrastructure",
-    "talonhound_report_id": "d71a3009-2dee-4a38-9849-08a89cf209f7"
+    "talonhound_report_id": "d71a3009-2dee-4a38-9849-08a89cf209f7",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

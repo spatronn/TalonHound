@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "87934c2c50ffd9f0fa996c81e341ef06c47450f0a104dfceff456ff4a6251088",
     "url": "https://dreamgroup.com/blog/darkblinders-inside-an-active-espionage-campaign",
-    "talonhound_report_id": "af83b64e-87c8-4724-973b-53c0f3bd7e4f"
+    "talonhound_report_id": "af83b64e-87c8-4724-973b-53c0f3bd7e4f",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

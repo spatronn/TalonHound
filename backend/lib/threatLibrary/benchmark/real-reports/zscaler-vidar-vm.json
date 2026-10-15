@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "cb1c8e811ece31be58406280d744e9f9197edc75ca77346ebdefc3cec02ecab2",
     "url": "https://www.zscaler.com/blogs/security-research/vidar-adds-virtual-machine-and-custom-stream-ciphers-string-obfuscation",
-    "talonhound_report_id": "2b4f9fbe-c97c-4d2c-a4b3-d7cfc4488444"
+    "talonhound_report_id": "2b4f9fbe-c97c-4d2c-a4b3-d7cfc4488444",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

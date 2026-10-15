@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "a5cd5679ba42c5c044c7ed0b93be9ea6c50a56028e28ce9e9b605a91f9bc7270",
     "url": "https://www.welivesecurity.com/en/eset-research/beware-sparrowock-backdoor-bites-commands-catch/",
-    "talonhound_report_id": "60c2ca86-1561-4ed8-88b3-1242555ac03e"
+    "talonhound_report_id": "60c2ca86-1561-4ed8-88b3-1242555ac03e",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

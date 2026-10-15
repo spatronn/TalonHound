@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "b5cce78332b7c2233a4b510500084a985ae507f311ed9b381ec99175c8920fa1",
     "url": "https://www.fortinet.com/blog/threat-research/casbaneiro-a-banking-trojan-with-distributed-data-receiving-servers",
-    "talonhound_report_id": "2a8810f5-7ee1-4105-906c-3872c2030c79"
+    "talonhound_report_id": "2a8810f5-7ee1-4105-906c-3872c2030c79",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

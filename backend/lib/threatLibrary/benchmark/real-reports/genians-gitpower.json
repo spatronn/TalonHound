@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "56547f67db1711a651a51a8972c58bbc3fd332307c9a09c8daa16aabd4e586f1",
     "url": "https://www.genians.co.kr/en/blog/threat_intelligence/operation-gitpower",
-    "talonhound_report_id": "2a34bdea-dd53-4549-b45d-55c32510738a"
+    "talonhound_report_id": "2a34bdea-dd53-4549-b45d-55c32510738a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

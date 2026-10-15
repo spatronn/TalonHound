@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "b04715a2e55949f240d68bc82149042191c0c4419e0fedc0be4c9a81401b659a",
     "url": "https://www.huntress.com/blog/openclaw-github-ghostsocks-infostealer",
-    "talonhound_report_id": "3b051325-2300-46bd-b3d6-c8965952fd9c"
+    "talonhound_report_id": "3b051325-2300-46bd-b3d6-c8965952fd9c",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {

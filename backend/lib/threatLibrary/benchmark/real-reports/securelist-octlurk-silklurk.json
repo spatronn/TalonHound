@@ -13,7 +13,12 @@
     "format": "html",
     "sha256": "f39d32dd084d91fce1bf2f1aa47d35d3b5cf7f4f3bdcaccf6883e1053e3b5398",
     "url": "https://securelist.com/octlurk-silklurk-backdoors-central-asia/120840/",
-    "talonhound_report_id": "1e28ec9d-bdb0-48c6-889b-a164f2a528b9"
+    "talonhound_report_id": "1e28ec9d-bdb0-48c6-889b-a164f2a528b9",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+      "verified_at": "2026-10-15"
+    }
   },
   "ground_truth": {
     "provenance": {
