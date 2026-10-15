@@ -165,3 +165,27 @@ test('RBAC: a refresh refused for missing admin rights says so', () => {
   const job = { job_type: 'refresh_extraction', status: 'failed', progress: { failure_code: 'refresh_membership_loss_blocked', membership_guard: { reasons: [{ code: 'acceptance_requires_admin' }] } } };
   assert.match(describeMaintenanceOutcome(job).error, /requires an admin/);
 });
+
+test('global IOC link changes are listed as protected rows and need an admin (counts alone would not show them)', () => {
+  const base = preview({ decision: 'block', reasons: [{ code: 'ioc_link_changed', count: 2, material: true }], counts: { ioc_link_changes: 2 } });
+  base.guard.authorization = { required_role: 'admin', categories: [{ code: 'ioc_link_changed', count: 2 }] };
+  base.membership_diff.ioc_link_changes = [
+    { identity: 'url:http://203.0.113.50:443/t/', from_ioc_id: 3561785, to_ioc_id: null, change: 'cleared', reviewed: true, review_status: 'approved' },
+    { identity: 'domain:relay.example', from_ioc_id: 77, to_ioc_id: 78, change: 'moved', reviewed: false, review_status: 'pending' }
+  ];
+  const m = describeRefreshPreview(base, { isAdmin: false });
+  assert.equal(m.indicatorsLine, 'Indicators 26 → 26');
+  assert.deepEqual(m.blockingReasons.map((r) => r.title), ['Global IOC links would change']);
+  assert.deepEqual(m.iocLinks.map((l) => [l.identity, l.reason, l.protected]), [
+    ['url:http://203.0.113.50:443/t/', 'Link to IOC #3561785 would be cleared', true],
+    ['domain:relay.example', 'Linked to IOC #78 instead of #77', true]
+  ]);
+  assert.ok(m.iocLinks[0].badges.some((b) => b.label === 'Reviewed · approved'));
+  assert.ok(m.iocLinks.every((l) => l.badges.some((b) => b.label === 'IOC record kept')));
+  assert.equal(m.counts.iocLinkChanges, 2);
+  assert.equal(m.requiresAdmin, true);
+  assert.equal(m.canAccept, false);
+  assert.match(m.adminNotice, /change global IOC links/);
+  assert.equal(buildRefreshRequestBody(m, 'a long enough reason'), null, 'a non-admin cannot send the acceptance');
+  assert.deepEqual(describeRefreshPreview(preview()).iocLinks, [], 'older previews without the list still render');
+});

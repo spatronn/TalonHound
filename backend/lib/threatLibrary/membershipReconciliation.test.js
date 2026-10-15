@@ -17,6 +17,15 @@ import assert from 'node:assert/strict';
 import { candidateColumns } from './store.js';
 import { applyAnalystState, preserveAnalystCandidates } from './candidateAnalystState.js';
 import { preserveStoredIocLinks } from './iocMatch.js';
+import {
+  ADMIN_ACCEPTANCE_CATEGORIES,
+  REFRESH_GUARD_DECISIONS,
+  REFRESH_GUARD_REASONS,
+  REFRESH_GUARD_VERSION,
+  buildRefreshMembershipDiff,
+  compactRefreshMembershipDiff,
+  evaluateRefreshMembershipGuard
+} from './refreshMembershipGuard.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { isContextOnlyCandidate, isReportIndicatorMember } from './indicatorMembership.js';
 
@@ -203,4 +212,90 @@ test('a deleted IOC record is not resurrected, a lookup that ran and missed is n
   const nonePool = fakePool([1]);
   await preserveStoredIocLinks(nonePool, [explicitRow('ip', '198.51.100.9', { matched_ioc_id: 1 })], [createdRow(explicitRow('ip', '198.51.100.9'), { matched_ioc_id: 1 })]);
   assert.equal(nonePool.calls.length, 0);
+});
+
+// --- 3. Guard: IOC link changes are protected --------------------------------------
+
+function guard(previousRows, nextCandidates, policy, acceptorRole = 'admin') {
+  const diff = buildRefreshMembershipDiff({ previousRows, nextCandidates });
+  return { diff, verdict: evaluateRefreshMembershipGuard(diff, policy, { acceptorRole }) };
+}
+const reasons = (v) => v.reasons.map((r) => r.code).sort();
+
+test('guard version is v2', () => {
+  assert.equal(REFRESH_GUARD_VERSION, 'tl-refresh-guard-v2');
+});
+
+test('a cleared IOC link on an unchanged Indicator is a material, admin-only change (counts unchanged)', () => {
+  const c = explicitRow('domain', 'c2.example', { review_status: 'approved' });
+  const prior = { ...candidateColumns({ ...c, matched_ioc_id: 77, match_state: 'existing' }), id: '1', promotion_outcome: 'created' };
+  const { diff, verdict } = guard([prior], [{ ...c, matched_ioc_id: null }]);
+  assert.deepEqual(diff.indicators, { before: 1, after: 1 });
+  assert.equal(diff.counts.ioc_link_changes, 1);
+  assert.deepEqual(diff.ioc_link_changes[0], {
+    identity: 'domain:c2.example', from_ioc_id: 77, to_ioc_id: null, change: 'cleared', reviewed: true,
+    review_status: 'approved', promotion_outcome: 'created', member_before: true, member_after: true
+  });
+  assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.deepEqual(reasons(verdict), [REFRESH_GUARD_REASONS.IOC_LINK_CHANGED]);
+  assert.equal(verdict.authorization.required_role, 'admin');
+  assert.ok(verdict.authorization.categories.some((x) => x.code === ADMIN_ACCEPTANCE_CATEGORIES.IOC_LINK_CHANGED));
+  assert.equal(compactRefreshMembershipDiff(diff).ioc_link_changes[0].from_ioc_id, 77);
+});
+
+test('a moved IOC link is protected; the fingerprint binds the exact link change', () => {
+  const c = explicitRow('domain', 'c2.example');
+  const prior = { ...candidateColumns({ ...c, matched_ioc_id: 77 }), id: '1' };
+  const moved = guard([prior], [{ ...c, matched_ioc_id: 78 }]);
+  const cleared = guard([prior], [{ ...c, matched_ioc_id: null }]);
+  const same = guard([prior], [{ ...c, matched_ioc_id: 77 }]);
+  assert.equal(moved.diff.ioc_link_changes[0].change, 'moved');
+  assert.notEqual(moved.diff.material_fingerprint, cleared.diff.material_fingerprint);
+  assert.notEqual(moved.diff.material_fingerprint, same.diff.material_fingerprint);
+  assert.equal(same.verdict.decision, REFRESH_GUARD_DECISIONS.APPLY);
+});
+
+test('harmless metadata (match_state, evidence) on a kept link does not block', () => {
+  const c = explicitRow('domain', 'c2.example', { review_status: 'approved' });
+  const prior = { ...candidateColumns({ ...c, matched_ioc_id: 77, match_state: 'existing' }), id: '1', promotion_outcome: 'created' };
+  const { diff, verdict } = guard([prior], [{ ...c, matched_ioc_id: 77, match_state: 'existing', evidence_text: 'new excerpt' }]);
+  assert.equal(diff.counts.ioc_link_changes, 0);
+  assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.APPLY);
+});
+
+test('acceptance of an IOC link change: analyst denied, admin with the preview fingerprint accepted, stale refused', () => {
+  const c = explicitRow('domain', 'c2.example');
+  const prior = { ...candidateColumns({ ...c, matched_ioc_id: 77 }), id: '1' };
+  const next = [{ ...c, matched_ioc_id: null }];
+  const { diff } = guard([prior], next);
+  const accept = { mode: 'accept', reason: 'Reviewed the preview: link change expected', preview_fingerprint: diff.material_fingerprint };
+  assert.ok(reasons(guard([prior], next, accept, 'analyst').verdict).includes(REFRESH_GUARD_REASONS.ACCEPTANCE_REQUIRES_ADMIN));
+  assert.equal(guard([prior], next, accept, 'analyst').verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.equal(guard([prior], next, accept, 'admin').verdict.decision, REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED);
+  const stale = { ...accept, preview_fingerprint: 'f'.repeat(64) };
+  assert.ok(reasons(guard([prior], next, stale, 'admin').verdict).includes(REFRESH_GUARD_REASONS.PREVIEW_STALE));
+});
+
+test('end to end (pure): the Raven and NCSC shapes now leave membership as protected, reviewed, IOC-linked losses with links kept', async () => {
+  const ravenPrior = createdRow(incompletePrefix('http://213.209.159.55:443/t/'));
+  const ncscPrior = createdRow(providerService('iproyal.com'), { id: '2346', matched_ioc_id: 3445489 });
+  const prev = [ravenPrior, ncscPrior];
+  const matched = [
+    { ...incompletePrefix('http://213.209.159.55:443/t/'), matched_ioc_id: null },
+    { ...providerService('iproyal.com'), matched_ioc_id: 3445489 }
+  ];
+  const linked = await preserveStoredIocLinks(fakePool([3561785, 3445489]), matched, prev);
+  const final = preserveAnalystCandidates(linked.candidates, prev);
+  const { diff, verdict } = guard(prev, final);
+  assert.deepEqual(diff.indicators, { before: 2, after: 0 });
+  assert.equal(diff.counts.ioc_link_changes, 0, 'no global IOC link lost');
+  assert.equal(diff.counts.removed_reviewed_indicators, 2);
+  assert.equal(diff.counts.ioc_linked_losses, 2);
+  assert.deepEqual(diff.removed_indicators.map((r) => [r.identity, r.reason_code, r.row_outcome, r.matched_ioc_id]), [
+    ['domain:iproyal.com', 'publisher_assertion_lost', 'kept', 3445489],
+    ['url:http://213.209.159.55:443/t/', 'publisher_assertion_lost', 'kept', 3561785]
+  ]);
+  assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.equal(verdict.authorization.required_role, 'admin');
+  assert.equal(final.every((x) => x.review_status === 'approved'), true);
 });

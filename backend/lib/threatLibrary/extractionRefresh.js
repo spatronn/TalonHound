@@ -669,9 +669,23 @@ export function membershipGuardSummary(guard, compactDiff) {
     indicators_before: compactDiff?.indicators?.before ?? null,
     indicators_after: compactDiff?.indicators?.after ?? null,
     added_indicators: compactDiff?.counts?.added_indicators ?? 0,
-    removed_indicators: compactDiff?.counts?.removed_indicators ?? 0
+    removed_indicators: compactDiff?.counts?.removed_indicators ?? 0,
+    ioc_link_changes: compactDiff?.counts?.ioc_link_changes ?? 0,
+    // Affected identities (bounded) so the audit trail names what an
+    // acceptance covered, not only how many rows.
+    affected: {
+      removed_indicators: (compactDiff?.removed_indicators || []).slice(0, AUDIT_IDENTITY_LIMIT).map((r) => r.identity),
+      reviewed_candidates_deleted: (compactDiff?.reviewed_candidates_deleted || []).slice(0, AUDIT_IDENTITY_LIMIT).map((r) => r.identity),
+      ioc_link_changes: (compactDiff?.ioc_link_changes || []).slice(0, AUDIT_IDENTITY_LIMIT).map((r) => ({
+        identity: r.identity,
+        from_ioc_id: r.from_ioc_id,
+        to_ioc_id: r.to_ioc_id ?? null
+      }))
+    }
   };
 }
+
+const AUDIT_IDENTITY_LIMIT = 40;
 
 export const REFRESH_BLOCKED_CODE = 'refresh_membership_loss_blocked';
 

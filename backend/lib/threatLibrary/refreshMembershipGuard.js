@@ -1,11 +1,15 @@
 /**
- * Refresh extraction membership guard (tl-refresh-guard-v1).
+ * Refresh extraction membership guard (tl-refresh-guard-v2).
  *
  * Before a Refresh extraction reconciles a new candidate set, the report
  * Indicator membership it would produce is compared with the stored one. The
  * diff (added / removed Indicators, newly Context Only rows, classification
  * changes with reason codes, analyst-reviewed rows that would be deleted, MODE
  * change, new quality warnings) is recorded with every refresh.
+ *
+ * v2: a change of a stored global-IOC link (matched_ioc_id cleared or moved
+ * to another IOC on a surviving row) is a protected, admin-only change and
+ * part of the material fingerprint, even when Indicator counts are unchanged.
  *
  * Material unexpected losses are PROTECTED: the refresh is not applied unless
  * the request carries an explicit, audited acceptance (policy `accept` with a
@@ -18,7 +22,7 @@ import crypto from 'node:crypto';
 import { candidateColumns } from './store.js';
 import { isContextOnlyCandidate, isReportIndicatorMember, passesIndicatorTypeGates } from './indicatorMembership.js';
 
-export const REFRESH_GUARD_VERSION = 'tl-refresh-guard-v1';
+export const REFRESH_GUARD_VERSION = 'tl-refresh-guard-v2';
 
 export const REFRESH_MEMBERSHIP_POLICIES = Object.freeze({
   /** Default: material membership losses block the refresh. */
@@ -39,6 +43,8 @@ export const REFRESH_GUARD_REASONS = Object.freeze({
   REVIEWED_CANDIDATE_DELETED: 'reviewed_candidate_deleted',
   PUBLISHER_ASSERTION_LOST: 'publisher_assertion_lost',
   BULK_MEMBERSHIP_LOSS: 'bulk_membership_loss',
+  /** A surviving row's global-IOC link would be cleared or point at another IOC. */
+  IOC_LINK_CHANGED: 'ioc_link_changed',
   MEMBERSHIP_MODE_CHANGED: 'membership_mode_changed',
   NEW_QUALITY_WARNINGS: 'new_quality_warnings',
   ACCEPTANCE_REASON_MISSING: 'acceptance_reason_missing',
@@ -65,7 +71,8 @@ export const ADMIN_ACCEPTANCE_CATEGORIES = Object.freeze({
   REVIEWED_INDICATOR_REMOVED: 'reviewed_indicator_removed',
   PUBLISHER_ASSERTED_REMOVED: 'publisher_asserted_indicator_removed',
   REVIEWED_CANDIDATE_DELETED: 'reviewed_candidate_deleted',
-  IOC_LINKED_CANDIDATE_REMOVED: 'ioc_linked_candidate_removed'
+  IOC_LINKED_CANDIDATE_REMOVED: 'ioc_linked_candidate_removed',
+  IOC_LINK_CHANGED: 'ioc_link_changed'
 });
 
 /**
@@ -85,7 +92,8 @@ const MATERIAL_REASONS = new Set([
   REFRESH_GUARD_REASONS.REVIEWED_INDICATOR_REMOVED,
   REFRESH_GUARD_REASONS.REVIEWED_CANDIDATE_DELETED,
   REFRESH_GUARD_REASONS.PUBLISHER_ASSERTION_LOST,
-  REFRESH_GUARD_REASONS.BULK_MEMBERSHIP_LOSS
+  REFRESH_GUARD_REASONS.BULK_MEMBERSHIP_LOSS,
+  REFRESH_GUARD_REASONS.IOC_LINK_CHANGED
 ]);
 
 export const REFRESH_GUARD_THRESHOLDS = Object.freeze({
@@ -153,12 +161,14 @@ function documentMode(states) {
  * preview the analyst reviewed; the worker recomputes it at execution time and
  * refuses the acceptance when the losses differ (a stale preview never
  * authorizes a materially different refresh). Additions do not change it.
- * @param {{ removed: object[], reviewedDeleted: object[] }} parts full (unbounded) lists
+ * Every global-IOC link change on a surviving row is part of it too.
+ * @param {{ removed: object[], reviewedDeleted: object[], iocLinkChanges?: object[] }} parts full (unbounded) lists
  */
-export function materialFingerprint({ removed, reviewedDeleted }) {
+export function materialFingerprint({ removed, reviewedDeleted, iocLinkChanges = [] }) {
   const lines = [
     ...removed.map((r) => `removed|${r.identity}|${r.reason_code}|${r.row_outcome}|${r.reviewed ? 1 : 0}`),
-    ...reviewedDeleted.map((r) => `deleted|${r.identity}|${r.review_status}|${r.promotion_outcome || ''}`)
+    ...reviewedDeleted.map((r) => `deleted|${r.identity}|${r.review_status}|${r.promotion_outcome || ''}`),
+    ...iocLinkChanges.map((r) => `ioc_link|${r.identity}|${r.from_ioc_id}|${r.to_ioc_id ?? ''}`)
   ].sort();
   return crypto.createHash('sha256').update(`${REFRESH_GUARD_VERSION}\n${lines.join('\n')}`).digest('hex');
 }
@@ -198,6 +208,8 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
   const reviewedDeleted = [];
   /** Rows tied to a global IOC (matched or created) that leave the Indicators or are deleted. */
   const iocLinkedLosses = [];
+  /** Surviving rows whose stored global-IOC link would be cleared or moved. */
+  const iocLinkChanges = [];
 
   for (const [k, after] of nextStates) {
     const before = priorStates.get(k) || null;
@@ -231,6 +243,20 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
     if (iocLinked && (rowOutcome === ROW_OUTCOMES.DELETED || (before.member && !after?.member))) {
       iocLinkedLosses.push({ identity: k, matched_ioc_id: row.matched_ioc_id ?? null, row_outcome: rowOutcome });
     }
+    const nextRow = next.get(k) || null;
+    if (row.matched_ioc_id != null && nextRow && String(nextRow.matched_ioc_id ?? '') !== String(row.matched_ioc_id)) {
+      iocLinkChanges.push({
+        identity: k,
+        from_ioc_id: Number(row.matched_ioc_id),
+        to_ioc_id: nextRow.matched_ioc_id == null ? null : Number(nextRow.matched_ioc_id),
+        change: nextRow.matched_ioc_id == null ? 'cleared' : 'moved',
+        reviewed: isReviewed(row),
+        review_status: row.review_status || 'pending',
+        promotion_outcome: row.promotion_outcome || null,
+        member_before: before.member,
+        member_after: after ? after.member : false
+      });
+    }
     if (rowOutcome === ROW_OUTCOMES.DELETED && isReviewed(row)) {
       reviewedDeleted.push({
         identity: k,
@@ -263,7 +289,7 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
   const beforeCodes = codesOf(previousQuality);
   const afterCodes = codesOf(nextQuality);
   const sortById = (a, b) => a.identity.localeCompare(b.identity);
-  const fingerprint = materialFingerprint({ removed, reviewedDeleted });
+  const fingerprint = materialFingerprint({ removed, reviewedDeleted, iocLinkChanges });
   return {
     version: REFRESH_GUARD_VERSION,
     material_fingerprint: fingerprint,
@@ -274,6 +300,7 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
     newly_context_only: newlyContext.sort(sortById).slice(0, L),
     classification_changes: changes.sort(sortById).slice(0, L),
     reviewed_candidates_deleted: reviewedDeleted.sort(sortById).slice(0, L),
+    ioc_link_changes: iocLinkChanges.sort(sortById).slice(0, L),
     quality: {
       before_status: previousQuality?.status || null,
       after_status: nextQuality?.status || null,
@@ -294,6 +321,7 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
       // linked IOC Source keeps): accepting it is an admin decision.
       removed_reviewed_any: removed.filter((r) => r.reviewed).length,
       ioc_linked_losses: iocLinkedLosses.length,
+      ioc_link_changes: iocLinkChanges.length,
       newly_context_only: newlyContext.length,
       classification_changes: changes.length,
       reviewed_candidates_deleted: reviewedDeleted.length
@@ -324,6 +352,7 @@ export function normalizeRefreshMembershipPolicy(raw) {
 /**
  * Role an explicit acceptance of this diff's losses requires. Admin when the
  * losses touch analyst-reviewed Indicators, publisher-asserted Indicators,
+ * a stored global-IOC link (cleared / moved),
  * reviewed candidate rows (deleted) or candidates tied to a global IOC;
  * analyst when the losses are limited to unreviewed, non-publisher-asserted,
  * IOC-free candidates (e.g. a bulk loss of model-only rows).
@@ -338,7 +367,8 @@ export function acceptanceAuthorization(diff) {
     { code: C.PUBLISHER_ASSERTED_REMOVED, count: Number(c.removed_publisher_asserted) || 0 },
     { code: C.REVIEWED_CANDIDATE_DELETED, count: Number(c.reviewed_candidates_deleted) || 0 },
     // Older diffs (before the count existed) are treated as IOC-linked: fail closed.
-    { code: C.IOC_LINKED_CANDIDATE_REMOVED, count: c.ioc_linked_losses == null ? Number(c.removed_indicators) || 0 : Number(c.ioc_linked_losses) || 0 }
+    { code: C.IOC_LINKED_CANDIDATE_REMOVED, count: c.ioc_linked_losses == null ? Number(c.removed_indicators) || 0 : Number(c.ioc_linked_losses) || 0 },
+    { code: C.IOC_LINK_CHANGED, count: Number(c.ioc_link_changes) || 0 }
   ].filter((x) => x.count > 0);
   return { required_role: categories.length ? ACCEPTANCE_ROLES.ADMIN : ACCEPTANCE_ROLES.ANALYST, categories };
 }
@@ -392,6 +422,13 @@ export function evaluateRefreshMembershipGuard(diff, rawPolicy, opts = {}) {
       code: REFRESH_GUARD_REASONS.BULK_MEMBERSHIP_LOSS,
       count: c.removed_indicators,
       detail: `${c.removed_indicators} of ${diff.indicators.before} Indicators would be removed.`
+    });
+  }
+  if (c.ioc_link_changes > 0) {
+    reasons.push({
+      code: REFRESH_GUARD_REASONS.IOC_LINK_CHANGED,
+      count: c.ioc_link_changes,
+      detail: 'Candidates linked to a global IOC would lose that link or be linked to a different IOC record.'
     });
   }
   if (diff.mode.before && diff.mode.after && diff.mode.before !== diff.mode.after) {
@@ -506,6 +543,7 @@ export function compactRefreshMembershipDiff(diff, limit = 40) {
     })),
     newly_context_only: cut(diff.newly_context_only).map((x) => ({ identity: x.identity, policy_decision: x.policy_decision })),
     classification_changes: cut(diff.classification_changes),
-    reviewed_candidates_deleted: cut(diff.reviewed_candidates_deleted)
+    reviewed_candidates_deleted: cut(diff.reviewed_candidates_deleted),
+    ioc_link_changes: cut(diff.ioc_link_changes)
   };
 }

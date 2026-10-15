@@ -17,7 +17,7 @@ export const ACCEPTANCE_REASON_MIN_CHARS = 8;
 export const GUARD_REASON_COPY = Object.freeze({
   acceptance_requires_admin: {
     title: 'Admin acceptance required',
-    detail: 'These changes remove reviewed, publisher-listed or IOC-linked Indicators. Only an admin can accept them.'
+    detail: 'These changes remove reviewed, publisher-listed or IOC-linked Indicators, or change global IOC links. Only an admin can accept them.'
   },
   acceptance_not_authorized: {
     title: 'Acceptance not authorized',
@@ -34,6 +34,10 @@ export const GUARD_REASON_COPY = Object.freeze({
   publisher_assertion_lost: {
     title: 'Publisher-listed Indicators would be removed',
     detail: 'Values the publisher lists as IOCs would no longer be Indicators. This is the typical sign of an extraction change losing part of an IOC section.'
+  },
+  ioc_link_changed: {
+    title: 'Global IOC links would change',
+    detail: 'Values already linked to a global IOC record would lose that link or point at a different IOC. The IOC records themselves are not deleted.'
   },
   bulk_membership_loss: {
     title: 'Large drop in Indicators',
@@ -130,6 +134,17 @@ export function describeRefreshPreview(preview, viewer = {}) {
         ...(d.matched_ioc_id != null ? [{ label: 'IOC record kept', tone: 'neutral' }] : [])
       ]
     }));
+  const iocLinks = (diff.ioc_link_changes || []).map((l) => ({
+    ...display(l.identity),
+    reason: l.change === 'moved' || l.to_ioc_id != null
+      ? `Linked to IOC #${l.to_ioc_id} instead of #${l.from_ioc_id}`
+      : `Link to IOC #${l.from_ioc_id} would be cleared`,
+    protected: true,
+    badges: [
+      ...(l.reviewed ? [{ label: l.review_status && l.review_status !== 'pending' ? `Reviewed · ${String(l.review_status).replace(/_/g, ' ')}` : 'IOC created', tone: 'warning' }] : []),
+      { label: 'IOC record kept', tone: 'neutral' }
+    ]
+  }));
   const changed = (diff.classification_changes || [])
     .filter((c) => (c.fields || []).includes('source_assertion'))
     .map((c) => ({
@@ -150,7 +165,7 @@ export function describeRefreshPreview(preview, viewer = {}) {
     requiresAdmin,
     canAccept,
     adminNotice: requiresAdmin && !canAccept
-      ? 'Accepting these changes requires an admin: they remove reviewed, publisher-listed or IOC-linked Indicators. Ask an admin to review this preview.'
+      ? 'Accepting these changes requires an admin: they remove reviewed, publisher-listed or IOC-linked Indicators, or change global IOC links. Ask an admin to review this preview.'
       : null,
     fingerprint: diff.material_fingerprint || guard.material_fingerprint || null,
     indicatorsLine: before != null && after != null ? `Indicators ${before} → ${after}` : null,
@@ -165,6 +180,7 @@ export function describeRefreshPreview(preview, viewer = {}) {
       changed: changed.length,
       newlyContextOnly: counts.newly_context_only || 0,
       deletedReviewed: counts.reviewed_candidates_deleted || 0,
+      iocLinkChanges: counts.ioc_link_changes || 0,
       keptByLinkedSource: counts.original_occurrences_cleared || 0
     },
     reasons,
@@ -172,6 +188,7 @@ export function describeRefreshPreview(preview, viewer = {}) {
     advisoryReasons: reasons.filter((r) => !r.material),
     removed,
     deletedReviewed,
+    iocLinks,
     added: (diff.added_indicators || []).map(display),
     changed,
     newWarnings: diff.quality?.new_warning_codes || [],
