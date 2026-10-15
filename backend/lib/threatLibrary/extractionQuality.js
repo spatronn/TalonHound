@@ -24,8 +24,14 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
  * v2: "adjacent" rows are rows right AFTER an authoritative section (the
  * direction scope loss pushes them); rows that only precede an appendix are
  * analysis content and report as info.
+ * v3 (production read-only scan + independent real-report ground truth):
+ * a table not read as an explicit IOC table no longer warns when every IOC
+ * value in it is a report Indicator anyway; values left to the model no longer
+ * warn when each is a parent platform of a more specific Indicator; new
+ * check 6 reports Indicators whose only authority is structural discovery (an
+ * IOC-shaped body table header or an unlabelled observable list).
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v2';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v3';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -49,6 +55,8 @@ export const QUALITY_CODES = Object.freeze({
   AUTHORITATIVE_TABLE_NOT_INTERPRETED: 'authoritative_table_not_interpreted',
   /** A valid explicit table row asserted an identity that never materialized. */
   EXPLICIT_TABLE_ROWS_DROPPED: 'explicit_table_rows_dropped',
+  /** Indicators whose only authority is structural discovery (body table header / unlabelled list). */
+  INDICATORS_FROM_STRUCTURAL_DISCOVERY: 'indicators_from_structural_discovery',
   /** Reserved / loopback identity is a report Indicator (membership gates should prevent it). */
   RESERVED_INDICATOR: 'reserved_or_loopback_indicator',
   /** RFC documentation / example identity is a report Indicator. */
@@ -153,6 +161,24 @@ function isScopeDependentNonMember(c) {
   if (!SCOPE_DEPENDENT_POLICIES.has(String(c.policy_decision || ''))) return false;
   const occ = Array.isArray(c.occurrences) ? c.occurrences : [];
   return !occ.some((o) => o.relation_marker === 'benign' || o.relation_marker === 'provider');
+}
+
+/**
+ * Zone reasons that grant authoritative scope from block shape alone, with no
+ * publisher heading: an IOC-shaped table header in body text, or a run of
+ * observable-only rows (documentZones applyObservableListZones).
+ */
+const STRUCTURAL_DISCOVERY_REASONS = new Set(['ioc_table', 'observable_list']);
+
+/** Host part of a domain / URL identity, lower-cased (null for other types). */
+function hostOf(c) {
+  const v = String(c?.normalized_value || '').toLowerCase();
+  if (c?.candidate_type === 'domain') return v;
+  if (c?.candidate_type === 'url') {
+    const m = v.match(/^[a-z][a-z0-9+.-]*:\/\/([^/:?#]+)/);
+    return m ? m[1] : null;
+  }
+  return null;
 }
 
 function sameDomainFamily(domain, host) {
@@ -372,8 +398,30 @@ export function assessExtractionQuality(input) {
   }
 
   // --- 4. Existing structural diagnostics, as warnings ---
+  /** block id → IOC-typed candidates with an occurrence in it */
+  const iocByBlock = new Map();
+  for (const c of candidates) {
+    if (!IOC_TYPES.has(String(c.candidate_type))) continue;
+    for (const o of c.occurrences || []) {
+      if (!o.block_id) continue;
+      if (!iocByBlock.has(o.block_id)) iocByBlock.set(o.block_id, new Set());
+      iocByBlock.get(o.block_id).add(c);
+    }
+  }
+  const memberHosts = candidates.filter((c) => c.__member).map(hostOf).filter(Boolean);
+  // A platform named in prose ("github.com", "workers.dev") whose specific
+  // campaign host / URL is already an Indicator: nothing was lost.
+  const coveredByMember = (c) => {
+    const h = hostOf(c);
+    return Boolean(h) && memberHosts.some((m) => m === h || m.endsWith(`.${h}`));
+  };
+  const blockFullyCaptured = (blockId, covered) => {
+    const list = [...(iocByBlock.get(blockId) || [])];
+    return list.length > 0 && list.every((c) => c.__member || (covered && coveredByMember(c)));
+  };
   const sc = diagnostics.structural_completeness || null;
   for (const d of sc?.degraded_blocks || []) {
+    if (blockFullyCaptured(d.block_id, true)) continue;
     push({
       code: QUALITY_CODES.AUTHORITATIVE_VALUES_NOT_ASSERTED,
       severity: 'warning',
@@ -386,6 +434,9 @@ export function assessExtractionQuality(input) {
     });
   }
   for (const t of sc?.tables_not_interpreted || []) {
+    // Rows inherited the section's authority without the explicit-table path:
+    // every IOC value is an Indicator, so the table lost nothing.
+    if (blockFullyCaptured(t.block_id, false)) continue;
     push({
       code: QUALITY_CODES.AUTHORITATIVE_TABLE_NOT_INTERPRETED,
       severity: 'warning',
@@ -449,6 +500,57 @@ export function assessExtractionQuality(input) {
       block_ids: blockIds,
       section: null,
       evidence: evidenceFor([...new Set(blockIds)])
+    });
+  }
+
+  // --- 6. Indicators whose only authority is structural discovery ---
+  // A body table with an IOC-shaped header or an unlabelled observable list
+  // grants MODE A scope without a publisher heading. When the publisher also
+  // has a headed IOC section, values found ONLY in such blocks are usually
+  // analysis attributes (resolution IPs, triaged look-alike samples); with no
+  // headed section they may be services the text names as legitimate.
+  // A discovery block still governed by a publisher IOC opener (a sub-heading
+  // closed the zone, discovery re-opened it) is the publisher appendix, not a
+  // body attribute: an opener stays active until a non-authoritative heading
+  // of the same or a higher level (level-less openers — PDF, bold paragraphs —
+  // close only on a levelled heading).
+  const governed = new Set();
+  let opener = null;
+  for (const b of blocks) {
+    if (isChrome(b)) continue;
+    const strong = STRONG_IOC_ZONES.has(String(b.zone || ''));
+    if (strong && b.scope_opening_id === b.id) opener = { level: Number(b.level) || null };
+    else if (opener && b.type === 'heading' && !strong && Number(b.level) && (!opener.level || Number(b.level) <= opener.level)) opener = null;
+    if (opener) governed.add(b.id);
+  }
+  const isDiscoveryBlock = (b) => Boolean(b) && !b.scope_opening_id && !governed.has(b.id) &&
+    STRUCTURAL_DISCOVERY_REASONS.has(String(b.zone_reason || ''));
+  const discoveryOnly = [];
+  let headedMembers = 0;
+  for (const c of candidates) {
+    if (!c.__member) continue;
+    const strong = (c.occurrences || []).filter((o) => STRONG_IOC_ZONES.has(String(o.zone || '')) && o.block_id);
+    if (!strong.length) continue;
+    if (strong.every((o) => isDiscoveryBlock(blockById.get(o.block_id)))) discoveryOnly.push(c);
+    else headedMembers += 1;
+  }
+  if (discoveryOnly.length) {
+    const blockIds = [...new Set(discoveryOnly.flatMap((c) => (c.occurrences || []).map((o) => o.block_id).filter(Boolean)))]
+      .filter((id) => isDiscoveryBlock(blockById.get(id)));
+    const reasons = [...new Set(blockIds.map((id) => blockById.get(id)?.zone_reason).filter(Boolean))].sort();
+    const headed = headedMembers > 0;
+    push({
+      code: QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY,
+      severity: headed ? 'warning' : 'info',
+      explanation: headed
+        ? `${discoveryOnly.length} Indicators come only from body ${reasons.join(' / ')} blocks outside the publisher's headed ` +
+          'IOC section; check they are publisher indicators, not analysis attributes or triaged look-alikes.'
+        : `${discoveryOnly.length} Indicators come only from an unlabelled ${reasons.join(' / ')} (no publisher IOC heading); ` +
+          'check the surrounding text does not describe them as legitimate services.',
+      candidates: discoveryOnly.map(identity).sort(),
+      block_ids: blockIds,
+      section: { zone_reasons: reasons, headed_indicators: headedMembers },
+      evidence: evidenceFor(blockIds)
     });
   }
 

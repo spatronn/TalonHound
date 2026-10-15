@@ -61,6 +61,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Indicator table rows were dropped',
     why: 'Values listed in an indicator table did not become candidates.'
   },
+  indicators_from_structural_discovery: {
+    title: 'Indicators taken from a table or list without an IOC heading',
+    why: 'These Indicators come only from a table or list that looked like an IOC list, not from the publisher’s IOC section. Check they are not lookup results, look-alike samples or services the report calls legitimate.'
+  },
   reserved_or_loopback_indicator: {
     title: 'Reserved or local address is an Indicator',
     why: 'Private, reserved or loopback addresses are not attacker infrastructure.'

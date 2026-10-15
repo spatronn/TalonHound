@@ -72,12 +72,13 @@ Each fix retires its entries in `knownFailures.js` and refreshes the baseline.
 
 ## 5. Detecting extraction anomalies automatically
 
-`extractionQuality.assessExtractionQuality` (`tl-quality-v2`) **[V]** runs after every extraction and never reclassifies anything. It covers:
+`extractionQuality.assessExtractionQuality` (`tl-quality-v3`) **[V]** runs after every extraction and never reclassifies anything. It covers:
 - Row-shaped IOC values right after an authoritative section but outside it.
 - An appendix with zero or few hash Indicators.
 - Authoritative sections without Indicators.
 - Structural-completeness and table inconsistencies.
 - Suspicious Indicators: example, legitimate-marker, publisher-domain, email-only, missing provenance.
+- Indicators whose only authority is structural discovery: an IOC-shaped body table header, or an unlabelled observable list not governed by a publisher IOC heading (v3).
 
 On the benchmark it flags all 10 failing cases and warns on none of the 33 correct ones. That figure is optimistic, because several rules were refined on these same synthetic failures (see `docs/threat-library-benchmark.md`).
 

@@ -6,7 +6,7 @@
     "type_resolver": "tl-type-resolver-v8",
     "html": "threat_library_html_v4",
     "pdf": "threat_library_pdf_v4",
-    "quality": "tl-quality-v2",
+    "quality": "tl-quality-v3",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {

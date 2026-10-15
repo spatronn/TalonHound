@@ -6,12 +6,12 @@
   "tags": ["pdf", "formal_ioc_table", "type_indicator_description", "multi_page_table", "ip_port"],
   "source": {
     "kind": "pdf_items",
-    "path": "../../fixtures/pivotc2-ioc-tables-pdf-items.json",
+    "path": "../../fixtures/pivotc2-ioc-section-pdf-items.json",
     "url": "https://socradar.io/blog/cve-2025-25249-pivotc2-fortigate-rat/"
   },
   "ground_truth": {
     "provenance": {
-      "method": "Publisher Host Indicators and Network Indicators tables (Type | Indicator | Description), transcribed into fixtures/pivotc2-ioc-tables-expected.json when the fixture was committed (3aff658)",
+      "method": "Publisher Host Indicators and Network Indicators tables (Type | Indicator | Description), transcribed into fixtures/pivotc2-ioc-tables-expected.json when the fixture was committed (3aff658). The benchmark fixture prepends the real page-45 tail (\"IoCs\" / \"Host Indicators\" headings, extracted with the production pdf-parse pagerender) so the Host Indicators tables keep their publisher heading, as in the full PDF",
       "verified_by": "fixture expectation reviewed against the publisher tables",
       "verified_at": "2026-09-13",
       "notes": "IP:port rows assert the IP; description-only endpoints (…:8443 / …:9443) are row context, not separate identities"

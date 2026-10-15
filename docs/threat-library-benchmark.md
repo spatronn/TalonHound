@@ -76,6 +76,9 @@ Thresholds and rules live in `EXTRACTION_QUALITY_THRESHOLDS`. Several were chose
 | Observable-dense block | Added after two merged-PDF failures went undetected | Negative tests: narrative hash paragraphs |
 | Appendix-hash check counts only appendix or adjacent rows | Added after a unit test showed a false warning on a distant analysis inventory | — |
 | "Adjacent" means rows **after** an authoritative section (`tl-quality-v2`) | Scope loss pushes rows forward; a dropped-files table right before an appendix was a measured false warning | Rows after a closing sub-heading still warn |
+| A table not read as explicit is silent when all its IOC values are Indicators (`tl-quality-v3`) | Production read-only scan: 35 of 35 such warnings were false (CISA, ReliaQuest tables fully captured) | A table whose values never became Indicators still warns |
+| Prose values left to the model are silent when each is the platform of a more specific Indicator (`tl-quality-v3`) | Production: a "GitHub / Cloudflare are shared platforms" caveat warned although the exact repository URLs and Worker host were Indicators | Other unasserted values still warn |
+| Structural-discovery Indicators (`indicators_from_structural_discovery`, `tl-quality-v3`) | Independent real-report ground truth: resolution IPs of a body Domain/IP table, triaged look-alike samples and services named as legitimate became Indicators with no other signal | Discovery rows still governed by a publisher IOC opener (a sub-heading closed the zone) are not reported |
 
 Measured layouts (`extractionQuality.test.js`):
 - **Clean:** references after the appendix, legitimate detection tables, narrative hash paragraphs.

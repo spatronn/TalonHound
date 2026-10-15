@@ -1,5 +1,5 @@
 /**
- * Extraction quality detector (tl-quality-v2): each reason code on a minimal
+ * Extraction quality detector (tl-quality-v3): each reason code on a minimal
  * document, false-positive behaviour on clean layouts, and the read-only
  * contract (candidates, membership and MODE never change).
  */
@@ -37,7 +37,7 @@ const members = (cands) =>
   cands.filter((c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })).map((c) => `${c.candidate_type}:${c.normalized_value}`).sort();
 
 test('contract: version, central thresholds, stable codes', () => {
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v2');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v3');
   assert.ok(Object.isFrozen(EXTRACTION_QUALITY_THRESHOLDS));
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.orphanRunMinValues, 3);
   assert.equal(new Set(Object.values(QUALITY_CODES)).size, Object.keys(QUALITY_CODES).length);
@@ -282,4 +282,74 @@ test('references after the appendix, legitimate detection tables and narrative h
   ]) {
     assert.equal(run(inner).diagnostics.quality.status, 'clean');
   }
+});
+
+// --- tl-quality-v3: false warnings measured on production / real reports ---
+
+test('a table not read as explicit is silent when every IOC value in it is an Indicator anyway', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<ul><li>evil-c2[.]example</li><li>198.51.100.21</li><li>${hex('a')}</li></ul>`);
+  const member = x.annotated.blocks.find((b) => /evil-c2/.test(String(b.text || '')));
+  const assess = (blockId) => assessExtractionQuality({
+    blocks: x.annotated.blocks,
+    candidates: x.candidates,
+    diagnostics: { ...x.diagnostics, structural_completeness: { tables_not_interpreted: [{ block_id: blockId, ioc_shaped_values: 3, reason: 'no_header', zone: 'explicit_ioc_section' }] } }
+  });
+  assert.deepEqual(codes(assess(member.id), 'warning'), []);
+  // A table whose values never became Indicators still warns.
+  assert.ok(codes(assess('no-such-block'), 'warning').includes(QUALITY_CODES.AUTHORITATIVE_TABLE_NOT_INTERPRETED));
+});
+
+test('values left to the model are silent when each is the platform of a more specific Indicator', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<ul><li>https://api.github[.]com/repos/actor-team/payloads</li><li>g-prx.operator1.workers[.]dev</li><li>198.51.100.21</li></ul>
+<p>GitHub (github.com, api.github.com) and Cloudflare workers.dev are shared platforms; match the exact repository and Worker host.</p>`);
+  const prose = x.annotated.blocks.find((b) => /shared platforms/.test(String(b.text || '')));
+  const assess = (blockId) => assessExtractionQuality({
+    blocks: x.annotated.blocks,
+    candidates: x.candidates,
+    diagnostics: { ...x.diagnostics, structural_completeness: { degraded_blocks: [{ block_id: blockId, ai_needed_values: 3, block_type: 'paragraph', zone: 'explicit_ioc_section' }] } }
+  });
+  assert.deepEqual(codes(assess(prose.id), 'warning'), []);
+});
+
+test('body-table attributes outside the headed IOC section warn as structural discovery', () => {
+  const x = run(`<h2>Infrastructure</h2>
+<table><thead><tr><th>Domain</th><th>IP</th><th>First seen</th><th>ASN</th></tr></thead><tbody>
+<tr><td>pinkgoat-c2.example</td><td>203.0.113.11</td><td>2022-03-03</td><td>AS64500</td></tr>
+<tr><td>purplebear-c2.example</td><td>203.0.113.12</td><td>2021-01-08</td><td>AS64501</td></tr>
+</tbody></table>
+<h2>Indicators of compromise</h2>
+<h3>C2 domains</h3><ul><li>pinkgoat-c2[.]example</li><li>purplebear-c2[.]example</li></ul>
+<h3>MD5</h3><ul><li>${hex('a')}</li><li>${hex('b')}</li></ul>`);
+  const q = x.diagnostics.quality;
+  // Reproduces the real-report false positive (resolution IPs of a body
+  // "Domain | IP | First seen | ASN" table become Indicators); the detector
+  // reports it, it does not fix it.
+  assert.ok(members(x.candidates).includes('ip:203.0.113.11'));
+  const w = q.warnings.find((y) => y.code === QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY);
+  assert.ok(w, JSON.stringify(q.warnings.map((y) => y.code)));
+  assert.equal(w.severity, 'warning');
+  assert.ok(w.candidates.every((id) => id.startsWith('ip:')), JSON.stringify(w.candidates));
+  assert.deepEqual(w.section.zone_reasons, ['ioc_table']);
+});
+
+test('an unlabelled observable list with no IOC heading is info, never a warning', () => {
+  const x = run(`<h2>Check suspicious network communications</h2>
+<p>The malware interacts with numerous legitimate web services; unexpected connections to them may indicate compromise.</p>
+<ul><li>api[.]telegram[.]org</li><li>backblazeb2[.]com</li><li>storjshare[.]io</li><li>lightningproxies[.]net</li></ul>`);
+  const q = x.diagnostics.quality;
+  const w = q.warnings.find((y) => y.code === QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY);
+  assert.ok(members(x.candidates).includes('domain:api.telegram.org'));
+  assert.ok(w, JSON.stringify(q.warnings.map((y) => y.code)));
+  assert.equal(w.severity, 'info');
+  assert.deepEqual(codes(q, 'warning'), []);
+});
+
+test('discovery rows still governed by the publisher IOC heading are not reported', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<h3>MD5</h3><ul><li>${hex('a')}</li><li>${hex('b')}</li></ul>
+<h3>C2</h3><p>45.150.109[.]102</p><p>85.155.224[.]59</p><p>103.153.65[.]67</p><p>111.92.246[.]145</p>`);
+  const q = x.diagnostics.quality;
+  assert.ok(!codes(q).includes(QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY), JSON.stringify(q.warnings));
 });
