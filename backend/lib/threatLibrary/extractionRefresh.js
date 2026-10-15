@@ -58,6 +58,7 @@ import {
   reconcileReportCandidates,
   removeReportEntityLinks,
   restoreReportStatus,
+  loadSourceLinkedCandidateIds,
   updateJob,
   updateReportStatus
 } from './store.js';
@@ -286,15 +287,32 @@ export async function prepareRefreshDocument(pool, report) {
  * @param {object[]} previousRows persisted candidate rows
  * @param {Awaited<ReturnType<typeof computeExtractionRefresh>>} refreshed
  * @param {unknown} membershipPolicy
+ * @param {{ linkedCandidateIds?: Set<string>|null }} [opts] rows with IOC Source
+ *   provenance (kept, not deleted, when they leave the original document)
  */
-export function guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy) {
+export function guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy, opts = {}) {
   const diff = buildRefreshMembershipDiff({
     previousRows,
     nextCandidates: refreshed.candidates,
     previousQuality: storedExtractionQuality(report),
-    nextQuality: refreshed.diagnostics?.quality || null
+    nextQuality: refreshed.diagnostics?.quality || null,
+    linkedCandidateIds: opts.linkedCandidateIds || null
   });
   return { diff, guard: evaluateRefreshMembershipGuard(diff, membershipPolicy) };
+}
+
+/**
+ * Linked-source provenance of the stored rows a refresh would drop (one query).
+ * @param {import('pg').Pool} pool
+ * @param {object[]} previousRows
+ * @param {object[]} nextCandidates
+ */
+export async function linkedRowsLeavingDocument(pool, previousRows, nextCandidates) {
+  const nextKeys = new Set((nextCandidates || []).map((c) => `${c.candidate_type}\0${c.normalized_value}`));
+  const leaving = (previousRows || []).filter(
+    (r) => r.has_original_document_occurrence !== false && !nextKeys.has(`${r.candidate_type}\0${r.normalized_value}`)
+  );
+  return loadSourceLinkedCandidateIds(pool, leaving.map((r) => r.id));
 }
 
 /**
@@ -310,7 +328,8 @@ export async function previewExtractionRefresh(pool, report, opts = {}) {
   const { document, documentRebuilt } = await prepareRefreshDocument(pool, report);
   const previousRows = await loadReportCandidateRows(pool, report.id);
   const refreshed = await computeExtractionRefresh(pool, { report, document, previousRows, documentRebuilt });
-  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, opts.membershipPolicy);
+  const linkedCandidateIds = await linkedRowsLeavingDocument(pool, previousRows, refreshed.candidates);
+  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, opts.membershipPolicy, { linkedCandidateIds });
   return {
     preview: true,
     extraction_contract: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
@@ -376,7 +395,8 @@ export async function runExtractionRefresh(pool, ctx) {
     // Membership guard: compare before / after Indicators BEFORE anything is
     // written. A material unexpected loss is not applied unless the request
     // explicitly accepted it (policy `accept` with a reason).
-    const { diff: membershipDiff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy);
+    const linkedCandidateIds = await linkedRowsLeavingDocument(pool, previousRows, refreshed.candidates);
+    const { diff: membershipDiff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy, { linkedCandidateIds });
     const compactDiff = compactRefreshMembershipDiff(membershipDiff);
     if (guard.decision === REFRESH_GUARD_DECISIONS.BLOCK) {
       return await blockExtractionRefresh(pool, { report, ctx, restore, priorProgress, dispatch, guard, compactDiff, startedAt });
@@ -520,8 +540,15 @@ export function membershipGuardSummary(guard, compactDiff) {
     decision: guard.decision,
     policy: guard.policy,
     material: guard.material,
+    material_fingerprint: guard.material_fingerprint || null,
     reasons: guard.reasons.map((r) => ({ code: r.code, count: r.count, material: r.material })),
-    ...(guard.accepted ? { accepted_reason: guard.accepted.reason, accepted_by: guard.accepted.requested_by || null } : {}),
+    ...(guard.accepted
+      ? {
+          accepted_reason: guard.accepted.reason,
+          accepted_by: guard.accepted.requested_by || null,
+          accepted_preview_fingerprint: guard.accepted.preview_fingerprint || null
+        }
+      : {}),
     indicators_before: compactDiff?.indicators?.before ?? null,
     indicators_after: compactDiff?.indicators?.after ?? null,
     added_indicators: compactDiff?.counts?.added_indicators ?? 0,

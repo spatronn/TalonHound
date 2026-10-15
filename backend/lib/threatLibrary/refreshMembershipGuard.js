@@ -14,8 +14,9 @@
  * apply; it never edits candidates, membership rules or analyst decisions.
  */
 
+import crypto from 'node:crypto';
 import { candidateColumns } from './store.js';
-import { isContextOnlyCandidate, isReportIndicatorMember } from './indicatorMembership.js';
+import { isContextOnlyCandidate, isReportIndicatorMember, passesIndicatorTypeGates } from './indicatorMembership.js';
 
 export const REFRESH_GUARD_VERSION = 'tl-refresh-guard-v1';
 
@@ -40,7 +41,23 @@ export const REFRESH_GUARD_REASONS = Object.freeze({
   BULK_MEMBERSHIP_LOSS: 'bulk_membership_loss',
   MEMBERSHIP_MODE_CHANGED: 'membership_mode_changed',
   NEW_QUALITY_WARNINGS: 'new_quality_warnings',
-  ACCEPTANCE_REASON_MISSING: 'acceptance_reason_missing'
+  ACCEPTANCE_REASON_MISSING: 'acceptance_reason_missing',
+  /** An acceptance names no preview, or a preview whose material losses differ from this run's. */
+  PREVIEW_FINGERPRINT_MISSING: 'preview_fingerprint_missing',
+  PREVIEW_STALE: 'preview_stale'
+});
+
+/**
+ * What happens to a stored row whose identity the refreshed extraction no
+ * longer produces (reconcileReportCandidates, original-document scope).
+ */
+export const ROW_OUTCOMES = Object.freeze({
+  /** No linked IOC Source provenance: the row (and its analyst state) is deleted. */
+  DELETED: 'deleted',
+  /** Linked IOC Source provenance: the row and its analyst state are kept; only the original-document flag is cleared. */
+  ORIGINAL_OCCURRENCE_CLEARED: 'original_occurrence_cleared',
+  /** The identity is still extracted: the row is updated in place. */
+  KEPT: 'kept'
 });
 
 const MATERIAL_REASONS = new Set([
@@ -109,17 +126,42 @@ function documentMode(states) {
 }
 
 /**
+ * Fingerprint of the material content of a diff: every Indicator that leaves
+ * the original set (identity, reason, row outcome) and every analyst-reviewed
+ * row that would be deleted. An acceptance names the fingerprint of the
+ * preview the analyst reviewed; the worker recomputes it at execution time and
+ * refuses the acceptance when the losses differ (a stale preview never
+ * authorizes a materially different refresh). Additions do not change it.
+ * @param {{ removed: object[], reviewedDeleted: object[] }} parts full (unbounded) lists
+ */
+export function materialFingerprint({ removed, reviewedDeleted }) {
+  const lines = [
+    ...removed.map((r) => `removed|${r.identity}|${r.reason_code}|${r.row_outcome}|${r.reviewed ? 1 : 0}`),
+    ...reviewedDeleted.map((r) => `deleted|${r.identity}|${r.review_status}|${r.promotion_outcome || ''}`)
+  ].sort();
+  return crypto.createHash('sha256').update(`${REFRESH_GUARD_VERSION}\n${lines.join('\n')}`).digest('hex');
+}
+
+/**
  * Membership diff between the stored candidate rows and a refreshed set.
  * Linked-only rows (no original-document occurrence) are outside the refresh
  * scope: reconcile never deletes them, so they are not compared.
+ *
+ * `linkedCandidateIds` (stored row ids that have IOC Source provenance)
+ * decides what reconcile does with a row the extraction no longer produces:
+ * a linked row is KEPT with its analyst state (only the original-document
+ * flag is cleared, it stays in the union inventory), an unlinked row is
+ * DELETED. Both leave the original-document Indicators.
  * @param {{
  *   previousRows: object[],
  *   nextCandidates: object[],
  *   previousQuality?: object|null,
- *   nextQuality?: object|null
+ *   nextQuality?: object|null,
+ *   linkedCandidateIds?: Set<number|string>|Array<number|string>|null
  * }} input
  */
-export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previousQuality = null, nextQuality = null }) {
+export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previousQuality = null, nextQuality = null, linkedCandidateIds = null }) {
+  const linked = new Set([...(linkedCandidateIds || [])].map((id) => String(id)));
   const L = REFRESH_GUARD_THRESHOLDS.maxListed;
   const prior = new Map(
     (previousRows || []).filter((r) => r.has_original_document_occurrence !== false).map((r) => [key(r), r])
@@ -158,15 +200,30 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
   for (const [k, before] of priorStates) {
     const row = prior.get(k);
     const after = nextStates.get(k) || null;
-    if (!after && isReviewed(row)) {
-      reviewedDeleted.push({ identity: k, review_status: row.review_status || 'pending', promotion_outcome: row.promotion_outcome || null });
+    const hasLinks = row.id != null && linked.has(String(row.id));
+    const rowOutcome = after ? ROW_OUTCOMES.KEPT : hasLinks ? ROW_OUTCOMES.ORIGINAL_OCCURRENCE_CLEARED : ROW_OUTCOMES.DELETED;
+    // A kept linked row stays in the union inventory when its own gates still pass.
+    const unionMemberAfter = rowOutcome === ROW_OUTCOMES.ORIGINAL_OCCURRENCE_CLEARED && passesIndicatorTypeGates(row);
+    if (rowOutcome === ROW_OUTCOMES.DELETED && isReviewed(row)) {
+      reviewedDeleted.push({
+        identity: k,
+        review_status: row.review_status || 'pending',
+        promotion_outcome: row.promotion_outcome || null,
+        matched_ioc_id: row.matched_ioc_id ?? null
+      });
     }
     if (before.member && !after?.member) {
       removed.push({
         identity: k,
-        reason_code: removalReason(before, after),
+        reason_code: after ? removalReason(before, after) : hasLinks ? 'left_document_linked_source_kept' : 'identity_left_document',
+        row_outcome: rowOutcome,
+        union_member_after: unionMemberAfter,
         reviewed: isReviewed(row),
         review_status: row.review_status || 'pending',
+        promotion_outcome: row.promotion_outcome || null,
+        publisher_asserted: EXPLICIT.has(String(before.source_assertion)),
+        // Refresh never deletes the IOC record itself: the global inventory keeps it.
+        matched_ioc_id: row.matched_ioc_id ?? null,
         previous: { source_assertion: before.source_assertion, policy_decision: before.policy_decision },
         next: after ? { source_assertion: after.source_assertion, policy_decision: after.policy_decision, assessment: after.assessment } : null
       });
@@ -179,8 +236,10 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
   const beforeCodes = codesOf(previousQuality);
   const afterCodes = codesOf(nextQuality);
   const sortById = (a, b) => a.identity.localeCompare(b.identity);
+  const fingerprint = materialFingerprint({ removed, reviewedDeleted });
   return {
     version: REFRESH_GUARD_VERSION,
+    material_fingerprint: fingerprint,
     indicators: { before: priorMembers, after: nextMembers },
     mode: { before: documentMode([...priorStates.values()]), after: documentMode([...nextStates.values()]) },
     added_indicators: added.sort(sortById).slice(0, L),
@@ -197,8 +256,13 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
     counts: {
       added_indicators: added.length,
       removed_indicators: removed.length,
-      removed_reviewed_indicators: removed.filter((r) => r.reviewed).length,
-      removed_publisher_asserted: removed.filter((r) => EXPLICIT.has(String(r.previous.source_assertion))).length,
+      // A reviewed Indicator that leaves the original document but stays in the
+      // union inventory with its decision (linked IOC Source) is not a loss of
+      // the analyst's decision; every other reviewed Indicator leaving is.
+      removed_reviewed_indicators: removed.filter((r) => r.reviewed && !r.union_member_after).length,
+      removed_reviewed_kept_by_linked_source: removed.filter((r) => r.reviewed && r.union_member_after).length,
+      removed_publisher_asserted: removed.filter((r) => r.publisher_asserted).length,
+      original_occurrences_cleared: removed.filter((r) => r.row_outcome === ROW_OUTCOMES.ORIGINAL_OCCURRENCE_CLEARED).length,
       newly_context_only: newlyContext.length,
       classification_changes: changes.length,
       reviewed_candidates_deleted: reviewedDeleted.length
@@ -216,6 +280,9 @@ export function normalizeRefreshMembershipPolicy(raw) {
     return {
       mode: REFRESH_MEMBERSHIP_POLICIES.ACCEPT,
       reason: typeof p.reason === 'string' ? p.reason.trim().slice(0, 2000) : '',
+      preview_fingerprint: typeof p.preview_fingerprint === 'string' && /^[a-f0-9]{64}$/.test(p.preview_fingerprint)
+        ? p.preview_fingerprint
+        : null,
       requested_by: p.requested_by || null,
       requested_at: p.requested_at || null
     };
@@ -279,26 +346,44 @@ export function evaluateRefreshMembershipGuard(diff, rawPolicy) {
   const tagged = reasons.map((r) => ({ ...r, material: MATERIAL_REASONS.has(r.code) }));
   let decision = REFRESH_GUARD_DECISIONS.APPLY;
   if (material.length) {
-    if (policy.mode === REFRESH_MEMBERSHIP_POLICIES.ACCEPT && policy.reason.length >= T.acceptanceReasonMinChars) {
-      decision = REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED;
-    } else {
-      decision = REFRESH_GUARD_DECISIONS.BLOCK;
-      if (policy.mode === REFRESH_MEMBERSHIP_POLICIES.ACCEPT) {
-        tagged.push({
-          code: REFRESH_GUARD_REASONS.ACCEPTANCE_REASON_MISSING,
-          count: 1,
-          material: true,
-          detail: `Accepting membership changes needs a reason of at least ${T.acceptanceReasonMinChars} characters.`
-        });
-      }
+    decision = REFRESH_GUARD_DECISIONS.BLOCK;
+    if (policy.mode === REFRESH_MEMBERSHIP_POLICIES.ACCEPT) {
+      // Acceptance is bound to the reviewed preview: reason AND the exact
+      // material losses (fingerprint) must match what is about to run.
+      const acceptanceProblem = policy.reason.length < T.acceptanceReasonMinChars
+        ? {
+            code: REFRESH_GUARD_REASONS.ACCEPTANCE_REASON_MISSING,
+            detail: `Accepting membership changes needs a reason of at least ${T.acceptanceReasonMinChars} characters.`
+          }
+        : !policy.preview_fingerprint
+          ? {
+              code: REFRESH_GUARD_REASONS.PREVIEW_FINGERPRINT_MISSING,
+              detail: 'An acceptance must name the refresh preview it was given for.'
+            }
+          : policy.preview_fingerprint !== diff.material_fingerprint
+            ? {
+                code: REFRESH_GUARD_REASONS.PREVIEW_STALE,
+                detail: 'The membership losses differ from the preview that was accepted. Review the new preview.'
+              }
+            : null;
+      if (acceptanceProblem) tagged.push({ ...acceptanceProblem, count: 1, material: true });
+      else decision = REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED;
     }
   }
   return {
     version: REFRESH_GUARD_VERSION,
     decision,
     policy: policy.mode,
+    material_fingerprint: diff.material_fingerprint,
     ...(decision === REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED
-      ? { accepted: { reason: policy.reason, requested_by: policy.requested_by, requested_at: policy.requested_at } }
+      ? {
+          accepted: {
+            reason: policy.reason,
+            requested_by: policy.requested_by,
+            requested_at: policy.requested_at,
+            preview_fingerprint: policy.preview_fingerprint
+          }
+        }
       : {}),
     reasons: tagged,
     material: material.length > 0,
@@ -321,6 +406,7 @@ export function compactRefreshMembershipDiff(diff, limit = 40) {
   const cut = (list) => (list || []).slice(0, limit);
   return {
     version: diff.version,
+    material_fingerprint: diff.material_fingerprint,
     indicators: diff.indicators,
     mode: diff.mode,
     counts: diff.counts,
@@ -329,9 +415,15 @@ export function compactRefreshMembershipDiff(diff, limit = 40) {
     removed_indicators: cut(diff.removed_indicators).map((x) => ({
       identity: x.identity,
       reason_code: x.reason_code,
+      row_outcome: x.row_outcome,
+      union_member_after: x.union_member_after,
       reviewed: x.reviewed,
       review_status: x.review_status,
-      previous_source_assertion: x.previous.source_assertion
+      promotion_outcome: x.promotion_outcome,
+      publisher_asserted: x.publisher_asserted,
+      matched_ioc_id: x.matched_ioc_id,
+      previous_source_assertion: x.previous.source_assertion,
+      next_source_assertion: x.next?.source_assertion ?? null
     })),
     newly_context_only: cut(diff.newly_context_only).map((x) => ({ identity: x.identity, policy_decision: x.policy_decision })),
     classification_changes: cut(diff.classification_changes),

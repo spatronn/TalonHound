@@ -331,19 +331,28 @@ test('refresh-extraction: explicit acceptance with a reason rides the dispatch t
   const h = harness();
   const res = await h.call('refresh-extraction', { id: 1, role: 'analyst', publicId: 'analyst-pub-1' }, {
     membership_changes: 'accept',
-    reason: 'Reviewed the preview: removed rows were parser false positives.'
+    reason: 'Reviewed the preview: removed rows were parser false positives.',
+    preview_fingerprint: 'a'.repeat(64)
   });
   assert.equal(res.statusCode, 202, JSON.stringify(res.body));
   const policy = h.enqueued[0].data.membershipPolicy;
   assert.equal(policy.mode, 'accept');
   assert.equal(policy.reason, 'Reviewed the preview: removed rows were parser false positives.');
   assert.equal(policy.requested_by, 'analyst-pub-1');
+  assert.equal(policy.preview_fingerprint, 'a'.repeat(64));
   assert.ok(policy.requested_at);
   assert.equal(h.state.jobs[0].progress.dispatch.membershipPolicy.mode, 'accept');
 });
 
 test('refresh-extraction: acceptance without a reason / unknown policy → 400, no job, report untouched', async () => {
-  for (const body of [{ membership_changes: 'accept' }, { membership_changes: 'accept', reason: 'ok' }, { membership_changes: 'force' }]) {
+  const reason = 'Reviewed the preview: removed rows were parser false positives.';
+  for (const body of [
+    { membership_changes: 'accept' },
+    { membership_changes: 'accept', reason: 'ok', preview_fingerprint: 'a'.repeat(64) },
+    { membership_changes: 'accept', reason },
+    { membership_changes: 'accept', reason, preview_fingerprint: 'not-a-fingerprint' },
+    { membership_changes: 'force' }
+  ]) {
     const h = harness();
     const res = await h.call('refresh-extraction', undefined, body);
     assert.equal(res.statusCode, 400, JSON.stringify(body));

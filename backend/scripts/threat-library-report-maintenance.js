@@ -18,7 +18,7 @@
  *
  *   node scripts/threat-library-report-maintenance.js dismiss-source --report <uuid> --source <uuid> [--apply] [--reason "..."]
  *   node scripts/threat-library-report-maintenance.js refresh-extraction --report <uuid> [--apply]
- *       [--accept-membership-changes --reason "..."]
+ *       [--accept-membership-changes --reason "..." [--preview-fingerprint <sha256 from a dry-run>]]
  *
  *                       The dry-run includes the membership guard verdict
  *                       (refreshMembershipGuard.js). A refresh whose diff is a
@@ -51,8 +51,14 @@ import {
 import {
   computeExtractionRefresh,
   guardExtractionRefresh,
+  linkedRowsLeavingDocument,
   membershipGuardSummary
 } from '../lib/threatLibrary/extractionRefresh.js';
+
+/** Fingerprint of the plan's material losses (the acceptance binds to it). */
+function buildPlanFingerprint(report, previousRows, refreshed, linkedCandidateIds) {
+  return guardExtractionRefresh(report, previousRows, refreshed, null, { linkedCandidateIds }).diff.material_fingerprint;
+}
 import {
   REFRESH_GUARD_THRESHOLDS,
   REFRESH_MEMBERSHIP_POLICIES,
@@ -87,6 +93,7 @@ export function parseArgs(argv) {
     source: opt('source'),
     reason: opt('reason') || 'Not an IOC dataset: ordinary site link (automatic IOC Source discovery retired)',
     explicitReason: opt('reason'),
+    previewFingerprint: opt('preview-fingerprint'),
     acceptMembershipChanges: rest.includes('--accept-membership-changes'),
     timeoutMs: Number(opt('timeout-ms') || 600_000)
   };
@@ -185,6 +192,9 @@ export function refreshMembershipPolicyFromArgs(args) {
     policy: {
       mode: REFRESH_MEMBERSHIP_POLICIES.ACCEPT,
       reason,
+      // Pinned to a reviewed dry-run when given; else bound to the plan computed
+      // right before dispatch (the worker re-checks it either way).
+      preview_fingerprint: args.previewFingerprint || null,
       requested_by: MAINTENANCE_ACTOR.actorUsername,
       requested_at: new Date().toISOString()
     }
@@ -205,6 +215,7 @@ async function planRefresh(pool, report, membershipPolicy = null) {
   document = title.document;
   const previousRows = await loadReportCandidateRows(pool, report.id);
   const refreshed = await computeExtractionRefresh(pool, { report, document, previousRows, documentRebuilt });
+  const linkedCandidateIds = await linkedRowsLeavingDocument(pool, previousRows, refreshed.candidates);
   const before = new Map(previousRows.map((r) => [key(r), r]));
   const after = new Map(refreshed.candidates.map((c) => [key(c), c]));
   const indicators = (rows) => rows.filter((r) => isReportIndicatorMember(r)).map(key).sort();
@@ -217,7 +228,10 @@ async function planRefresh(pool, report, membershipPolicy = null) {
     { report, document: refreshed.document }
   );
   const analystRows = previousRows.filter((r) => r.review_status && r.review_status !== 'pending');
-  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy);
+  const policy = membershipPolicy && !membershipPolicy.preview_fingerprint
+    ? { ...membershipPolicy, preview_fingerprint: buildPlanFingerprint(report, previousRows, refreshed, linkedCandidateIds) }
+    : membershipPolicy;
+  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, policy, { linkedCandidateIds });
   const compactDiff = compactRefreshMembershipDiff(diff);
   return {
     document_rebuilt: documentRebuilt,
@@ -271,6 +285,12 @@ async function refreshExtraction(pool, args) {
   if (!policy.ok) return { action: 'refused', code: policy.code };
   const plan = await planRefresh(pool, report, policy.policy);
   if (plan.refusable) return { action: 'refused', code: plan.refusable };
+  if (policy.policy && args.previewFingerprint && args.previewFingerprint !== plan.membership_diff?.material_fingerprint) {
+    return { action: 'refused', code: 'preview_stale', plan };
+  }
+  const dispatchPolicy = policy.policy
+    ? { ...policy.policy, preview_fingerprint: args.previewFingerprint || plan.membership_diff?.material_fingerprint || null }
+    : null;
   if (!args.apply) return { action: 'would_refresh', plan };
 
   // Same sequence as POST /reports/:id/refresh-extraction (acceptMaintenanceJob).
@@ -293,7 +313,7 @@ async function refreshExtraction(pool, args) {
     let jobRow = null;
     try {
       jobRow = await createJob(pool, { reportId: report.id, jobType: mode, requestedBy: null });
-      await updateJob(pool, jobRow.id, { status: 'queued', stage: 'queued', progress: { ...progress, dispatch: { jobType: mode, restoreStatus, ...(policy.policy ? { membershipPolicy: policy.policy } : {}) } } });
+      await updateJob(pool, jobRow.id, { status: 'queued', stage: 'queued', progress: { ...progress, dispatch: { jobType: mode, restoreStatus, ...(dispatchPolicy ? { membershipPolicy: dispatchPolicy } : {}) } } });
       await dispatchQueuedThreatLibraryAnalyses(pool, { enqueue: (job) => enqueueClaimedThreatLibraryJob(queue, job) });
     } catch (err) {
       if (jobRow) await updateJob(pool, jobRow.id, { status: 'failed', stage: 'queued', error_message: 'dispatch_failed' }).catch(() => {});

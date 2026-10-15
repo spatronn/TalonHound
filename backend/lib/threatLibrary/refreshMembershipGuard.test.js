@@ -87,10 +87,22 @@ test('losing a publisher-asserted Indicator blocks under protect, with reason co
 
 test('explicit acceptance with a reason applies the same diff and records who and why', () => {
   const lost = cand('md5', H('a'));
-  const policy = { mode: 'accept', reason: 'Parser fix: hash rows were an analysis table', requested_by: 'user-1', requested_at: '2026-10-14T00:00:00Z' };
+  const preview = buildRefreshMembershipDiff({ previousRows: [row(lost)], nextCandidates: [] });
+  const policy = {
+    mode: 'accept',
+    reason: 'Parser fix: hash rows were an analysis table',
+    preview_fingerprint: preview.material_fingerprint,
+    requested_by: 'user-1',
+    requested_at: '2026-10-14T00:00:00Z'
+  };
   const { verdict } = guard([row(lost)], [], policy);
   assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED);
-  assert.deepEqual(verdict.accepted, { reason: policy.reason, requested_by: 'user-1', requested_at: policy.requested_at });
+  assert.deepEqual(verdict.accepted, {
+    reason: policy.reason,
+    requested_by: 'user-1',
+    requested_at: policy.requested_at,
+    preview_fingerprint: preview.material_fingerprint
+  });
   assert.ok(codes(verdict).includes(REFRESH_GUARD_REASONS.PUBLISHER_ASSERTION_LOST), 'reasons stay recorded');
 });
 
@@ -116,7 +128,7 @@ test('deleting a reviewed non-Indicator row (analyst decision) is material', () 
   const { diff, verdict } = guard([row(ignored), row(keep)], [keep]);
   assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
   assert.deepEqual(codes(verdict), [REFRESH_GUARD_REASONS.REVIEWED_CANDIDATE_DELETED]);
-  assert.deepEqual(diff.reviewed_candidates_deleted, [{ identity: 'domain:cs.append', review_status: 'ignored', promotion_outcome: null }]);
+  assert.deepEqual(diff.reviewed_candidates_deleted, [{ identity: 'domain:cs.append', review_status: 'ignored', promotion_outcome: null, matched_ioc_id: null }]);
 });
 
 test('a created-IOC outcome counts as analyst state', () => {
@@ -178,8 +190,9 @@ test('policy normalization: unknown input is protect; accept keeps a trimmed rea
   assert.deepEqual(normalizeRefreshMembershipPolicy(undefined), { mode: 'protect' });
   assert.deepEqual(normalizeRefreshMembershipPolicy({ mode: 'force' }), { mode: 'protect' });
   assert.deepEqual(normalizeRefreshMembershipPolicy({ mode: 'accept', reason: '  why  ' }), {
-    mode: 'accept', reason: 'why', requested_by: null, requested_at: null
+    mode: 'accept', reason: 'why', preview_fingerprint: null, requested_by: null, requested_at: null
   });
+  assert.equal(normalizeRefreshMembershipPolicy({ mode: 'accept', preview_fingerprint: 'not-hex' }).preview_fingerprint, null);
 });
 
 test('compact diff is bounded and identity-keyed', () => {
@@ -189,4 +202,107 @@ test('compact diff is bounded and identity-keyed', () => {
   assert.equal(compact.counts.added_indicators, 60);
   assert.equal(compact.added_indicators.length, 40);
   assert.ok(compact.added_indicators.every((x) => typeof x === 'string'));
+});
+
+// --- Linked-source / deletion / global IOC distinctions ----------------------
+
+test('a reviewed non-member row that leaves the document is deleted unless an IOC Source links it', () => {
+  const approved = { ...row(cand('domain', 'kept.example', { explicit: false, review_status: 'approved' })), id: 41 };
+  const unlinked = buildRefreshMembershipDiff({ previousRows: [approved], nextCandidates: [] });
+  assert.equal(unlinked.reviewed_candidates_deleted.length, 1, 'unlinked row is deleted with its decision');
+  assert.equal(evaluateRefreshMembershipGuard(unlinked, null).decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  const linked = buildRefreshMembershipDiff({ previousRows: [approved], nextCandidates: [], linkedCandidateIds: new Set(['41']) });
+  assert.deepEqual(linked.reviewed_candidates_deleted, [], 'a linked row is kept, not deleted');
+  assert.equal(evaluateRefreshMembershipGuard(linked, null).decision, REFRESH_GUARD_DECISIONS.APPLY);
+});
+
+test('reviewed original Indicator leaving the document but kept via linked source is not a lost decision', () => {
+  const approved = { ...row(cand('domain', 'c2.example', { explicit: false, modeA: false, review_status: 'approved' })), id: 7 };
+  const linked = buildRefreshMembershipDiff({ previousRows: [approved], nextCandidates: [], linkedCandidateIds: [7] });
+  const removed = linked.removed_indicators[0];
+  assert.equal(removed.row_outcome, 'original_occurrence_cleared');
+  assert.equal(removed.reason_code, 'left_document_linked_source_kept');
+  assert.equal(removed.union_member_after, true);
+  assert.equal(linked.counts.removed_reviewed_indicators, 0);
+  assert.equal(linked.counts.removed_reviewed_kept_by_linked_source, 1);
+  assert.equal(linked.counts.original_occurrences_cleared, 1);
+  assert.equal(linked.counts.reviewed_candidates_deleted, 0);
+  assert.equal(evaluateRefreshMembershipGuard(linked, null).decision, REFRESH_GUARD_DECISIONS.APPLY);
+
+  const deleted = buildRefreshMembershipDiff({ previousRows: [approved], nextCandidates: [] });
+  assert.equal(deleted.removed_indicators[0].row_outcome, 'deleted');
+  assert.equal(deleted.removed_indicators[0].reason_code, 'identity_left_document');
+  const verdict = evaluateRefreshMembershipGuard(deleted, null);
+  assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.deepEqual(codes(verdict), [REFRESH_GUARD_REASONS.REVIEWED_CANDIDATE_DELETED, REFRESH_GUARD_REASONS.REVIEWED_INDICATOR_REMOVED].sort());
+});
+
+test('a publisher-asserted Indicator leaving the original document stays material even when a linked source keeps the row', () => {
+  const explicit = { ...row(cand('md5', H('e'))), id: 9 };
+  const diff = buildRefreshMembershipDiff({ previousRows: [explicit], nextCandidates: [], linkedCandidateIds: [9] });
+  assert.equal(diff.removed_indicators[0].row_outcome, 'original_occurrence_cleared');
+  assert.equal(diff.removed_indicators[0].publisher_asserted, true);
+  const verdict = evaluateRefreshMembershipGuard(diff, null);
+  assert.equal(verdict.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.deepEqual(codes(verdict), [REFRESH_GUARD_REASONS.PUBLISHER_ASSERTION_LOST]);
+});
+
+test('a kept linked row is a union member exactly when its own gates pass (they are unchanged by the refresh)', () => {
+  const approved = { ...row(cand('domain', 'c2.example', { explicit: false, modeA: false, review_status: 'approved' })), id: 8 };
+  // The kept row is not rewritten, so its gates after equal its gates before.
+  const gated = { ...approved };
+  const diff = buildRefreshMembershipDiff({ previousRows: [gated], nextCandidates: [], linkedCandidateIds: [8] });
+  assert.equal(diff.removed_indicators[0].union_member_after, true);
+  const parserDerived = { ...approved, evidence: { ...approved.evidence, is_parser_derived_metadata: true } };
+  const none = buildRefreshMembershipDiff({ previousRows: [parserDerived], nextCandidates: [], linkedCandidateIds: [8] });
+  assert.equal(none.removed_indicators.length, 0, 'never an Indicator, so nothing leaves the set');
+});
+
+test('global IOC identity: a deleted Create-IOC row reports the IOC record it was linked to (refresh never deletes the IOC)', () => {
+  const created = { ...row(cand('domain', 'created.example'), { promotion_outcome: 'created' }), id: 5, matched_ioc_id: 9001 };
+  const diff = buildRefreshMembershipDiff({ previousRows: [created], nextCandidates: [] });
+  assert.equal(diff.removed_indicators[0].matched_ioc_id, 9001);
+  assert.equal(diff.removed_indicators[0].promotion_outcome, 'created');
+  assert.equal(diff.reviewed_candidates_deleted[0].matched_ioc_id, 9001);
+  assert.equal(evaluateRefreshMembershipGuard(diff, null).decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  const compact = compactRefreshMembershipDiff(diff);
+  assert.equal(compact.removed_indicators[0].matched_ioc_id, 9001);
+  assert.equal(compact.removed_indicators[0].row_outcome, 'deleted');
+});
+
+// --- Preview binding (stale previews never authorize) ------------------------
+
+test('material fingerprint: order-independent, ignores additions, changes with the losses', () => {
+  const a = row(cand('md5', H('a')));
+  const b = row(cand('md5', H('b')));
+  const base = buildRefreshMembershipDiff({ previousRows: [a, b], nextCandidates: [] }).material_fingerprint;
+  assert.match(base, /^[a-f0-9]{64}$/);
+  assert.equal(buildRefreshMembershipDiff({ previousRows: [b, a], nextCandidates: [] }).material_fingerprint, base);
+  assert.equal(
+    buildRefreshMembershipDiff({ previousRows: [a, b], nextCandidates: [cand('md5', H('c'))] }).material_fingerprint,
+    base,
+    'an added Indicator does not change what is being given up'
+  );
+  assert.notEqual(buildRefreshMembershipDiff({ previousRows: [a], nextCandidates: [] }).material_fingerprint, base);
+  assert.notEqual(
+    buildRefreshMembershipDiff({ previousRows: [a, { ...b, review_status: 'approved' }], nextCandidates: [] }).material_fingerprint,
+    base,
+    'a newly reviewed row changes the losses'
+  );
+});
+
+test('acceptance of a stale preview is refused; acceptance without a preview is refused', () => {
+  const a = row(cand('md5', H('a')));
+  const b = row(cand('md5', H('b')));
+  const preview = buildRefreshMembershipDiff({ previousRows: [a], nextCandidates: [] });
+  const now = buildRefreshMembershipDiff({ previousRows: [a, b], nextCandidates: [] });
+  const reason = 'Reviewed the preview: intended parser change';
+  const stale = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason, preview_fingerprint: preview.material_fingerprint });
+  assert.equal(stale.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.ok(codes(stale).includes(REFRESH_GUARD_REASONS.PREVIEW_STALE));
+  const missing = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason });
+  assert.equal(missing.decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.ok(codes(missing).includes(REFRESH_GUARD_REASONS.PREVIEW_FINGERPRINT_MISSING));
+  const current = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason, preview_fingerprint: now.material_fingerprint });
+  assert.equal(current.decision, REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED);
 });

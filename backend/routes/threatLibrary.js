@@ -193,11 +193,18 @@ export function parseRefreshMembershipPolicy(body, requestedBy) {
     maxLength: 2000
   });
   if (!reason.ok) return { ok: false, message: reason.message };
+  // The acceptance is bound to the preview the analyst reviewed; the worker
+  // re-evaluates the guard and refuses it when the losses no longer match.
+  const fingerprint = String(body?.preview_fingerprint || '');
+  if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
+    return { ok: false, message: 'preview_fingerprint (from GET …/refresh-extraction/preview) is required to accept membership changes' };
+  }
   return {
     ok: true,
     policy: {
       mode: REFRESH_MEMBERSHIP_POLICIES.ACCEPT,
       reason: reason.reason,
+      preview_fingerprint: fingerprint,
       requested_by: requestedBy || null,
       requested_at: new Date().toISOString()
     }

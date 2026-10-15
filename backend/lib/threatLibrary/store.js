@@ -713,6 +713,23 @@ export function changedCandidateColumns(row, next) {
  * @param {{ scope?: 'original'|{ sourceId: number, sourceFileId?: number|null } }} [options]
  * @returns {Promise<{ rows: object[], added: object[], updated: object[], unchanged: number, removed: object[] }>}
  */
+/**
+ * Ids of the given candidate rows that have linked IOC Source provenance
+ * (reconcile keeps such a row when its identity leaves the original document).
+ * @param {import('pg').Pool} pool
+ * @param {Array<number|string>} candidateIds
+ * @returns {Promise<Set<string>>}
+ */
+export async function loadSourceLinkedCandidateIds(pool, candidateIds) {
+  const ids = [...new Set((candidateIds || []).filter((id) => id != null).map(String))];
+  if (!ids.length) return new Set();
+  const { rows } = await pool.query(
+    `SELECT DISTINCT candidate_id FROM threat_report_candidate_source_links WHERE candidate_id = ANY($1::bigint[])`,
+    [ids]
+  );
+  return new Set(rows.map((r) => String(r.candidate_id)));
+}
+
 export async function reconcileReportCandidates(pool, reportId, candidates, options = {}) {
   const scope = options.scope == null || options.scope === 'original' ? 'original' : options.scope;
   const sourceId = scope && typeof scope === 'object' ? Number(scope.sourceId) : null;
