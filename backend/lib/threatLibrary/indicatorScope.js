@@ -414,6 +414,39 @@ export function isIndicatorValueLine(text) {
 }
 
 /**
+ * A short publisher IOC row that pairs one observable with a filename or short
+ * annotation on either side ("loader.exe &lt;md5&gt;", "&lt;md5&gt; oleasapi.dll").
+ * Shared by zone scope continuation and PDF line assembly so filename-first
+ * rows are never treated as narrative while hash-first rows remain rows.
+ * @param {string} text
+ */
+export function isAnnotatedIndicatorRowLine(text) {
+  const raw = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
+  if (!raw || raw.length > 160) return false;
+  // HTTP request / API examples are technical prose, not publisher IOC rows.
+  if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(raw)) return false;
+  if (isObservableListLine(raw) || isIndicatorValueLine(raw)) return true;
+  const t = refangTextForExtraction(raw);
+  const tokens = t.split(/\s+/).filter(Boolean);
+  if (tokens.length < 1 || tokens.length > 6) return false;
+  for (const tok of tokens) {
+    const clean = tok.replace(/[.,;:)\]。，；]+$/g, '');
+    if (!clean) continue;
+    const looksObservable =
+      /^[a-f0-9]{32}$/i.test(clean) ||
+      /^[a-f0-9]{40}$/i.test(clean) ||
+      /^[a-f0-9]{64}$/i.test(clean) ||
+      /^(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?:\/(?:3[0-2]|[12]?\d))?$/.test(clean) ||
+      /\[\.]/.test(tok) ||
+      isSchemeLessUrlToken(clean) ||
+      isIndicatorValueLine(clean) ||
+      isObservableOnlyLine(clean);
+    if (looksObservable && isIndicatorRowShape(t, clean)) return true;
+  }
+  return false;
+}
+
+/**
  * A line made only of observables ("36.35.56.0/24 36.49.207.0/24", a <pre>
  * block of hashes, "a.example, b.example"): a publisher list whose layout
  * did not split one value per row. Structural, like a list.

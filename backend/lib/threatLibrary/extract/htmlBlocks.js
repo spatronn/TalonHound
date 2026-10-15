@@ -20,8 +20,11 @@ import { createTableBlock } from '../canonicalDocument.js';
  * boundaries. Flattening them to one whitespace-collapsed line destroyed
  * publisher IOC appendices written as "filename HASH" rows inside fenced
  * code blocks.
+ * v5: real heading elements nested inside list items (`<ul><li><h3>…`)
+ * emit as `heading` blocks with their DOM level instead of flattening into
+ * list text — appendix subgroup labels such as "C2" keep heading semantics.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v4';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v5';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -389,12 +392,21 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
     }
     if (tag === 'li') {
       flushPending();
-      // Own inline text first, then nested lists / blocks as their own blocks.
+      // Own inline text first, then nested lists / blocks / headings as their
+      // own blocks. Publishers put section labels inside list chrome
+      // (`<ul><li><h3>C2</h3></li></ul>`); those must keep heading semantics.
       const inline = [];
       const nested = [];
       for (const c of node.children || []) {
-        if (isElement(c) && ['ul', 'ol', 'table', 'pre', 'p', 'div', 'blockquote'].includes(tagOf(c))) nested.push(c);
-        else inline.push(c);
+        const childTag = isElement(c) ? tagOf(c) : '';
+        if (
+          isElement(c) &&
+          (['ul', 'ol', 'table', 'pre', 'p', 'div', 'blockquote'].includes(childTag) || HEADING_TAGS.has(childTag))
+        ) {
+          nested.push(c);
+        } else {
+          inline.push(c);
+        }
       }
       pushLines('list', textLinesOf({ type: 'tag', name: 'span', children: inline }));
       for (const c of nested) walk(c);
