@@ -40,9 +40,9 @@ const STRUCTURES = Object.freeze({
   html_c2_then_nested_plugins: { format: 'html', description: 'h2 IOCs › h3 C2 servers › h4 Plugins', network: ['h3', 'C2 servers'], samples: ['h4', 'Plugins'] },
   html_bold_subsections: { format: 'html', description: 'h2 IOCs › bold C2 servers › bold Loaders', network: ['strong', 'C2 servers'], samples: ['strong', 'Loaders'] },
   html_bold_appendix: { format: 'html', description: 'bold IOC appendix › bold Network › bold Samples', appendix: 'strong', network: ['strong', 'Network'], samples: ['strong', 'Samples'] },
-  pdf_flat: { format: 'pdf', description: 'level-less PDF IOC heading, no sub-headings', network: null, samples: null },
-  pdf_typed_subsections: { format: 'pdf', description: 'level-less PDF IOCs › Network › Samples', network: 'Network', samples: 'Samples' },
-  pdf_c2_then_loaders: { format: 'pdf', description: 'level-less PDF IOCs › C2 servers › Loaders', network: 'C2 servers', samples: 'Loaders' }
+  pdf_flat: { format: 'pdf', description: 'PDF IOC heading with inferred level, no sub-headings', network: null, samples: null },
+  pdf_typed_subsections: { format: 'pdf', description: 'PDF IOCs › Network › Samples (inferred levels)', network: 'Network', samples: 'Samples' },
+  pdf_c2_then_loaders: { format: 'pdf', description: 'PDF IOCs › C2 servers › Loaders (inferred levels)', network: 'C2 servers', samples: 'Loaders' }
 });
 
 /** How the sample inventory is written. */
@@ -97,23 +97,23 @@ ${htmlSamples(repr, iocSet.samples)}
 }
 
 /**
- * PDF-style canonical blocks, shaped like pdfLayout.linesToBlocks output:
- * headings carry no `level`, observable-only lines are `observable_row` list
- * items, other consecutive lines merge into one paragraph.
+ * PDF-style canonical blocks shaped like pdfLayout v5 output: headings carry
+ * inferred `level`, observable-only and filename/hash inventory lines are
+ * `observable_row` list items (not merged narrative paragraphs).
  */
 function pdfVariant(structure, repr, iocSet) {
   let n = 0;
   const id = () => `p1-b${String(++n).padStart(2, '0')}`;
-  const heading = (text) => ({ id: id(), type: 'heading', text, page: 1, section: text });
+  const heading = (text, level) => ({ id: id(), type: 'heading', text, page: 1, section: text, level });
   const paragraph = (text) => ({ id: id(), type: 'paragraph', text, page: 1, section: null });
   const row = (text) => ({ id: id(), type: 'list_item', text, page: 1, section: null, layout: 'observable_row' });
   const blocks = [
     paragraph('The intrusion set deploys a modular loader chain against several regional targets across multiple waves.'),
-    heading('Indicators of compromise')
+    heading('Indicators of compromise', 2)
   ];
-  if (structure.network) blocks.push(heading(structure.network));
+  if (structure.network) blocks.push(heading(structure.network, 3));
   for (const v of iocSet.network) blocks.push(row(v.source));
-  if (structure.samples) blocks.push(heading(structure.samples));
+  if (structure.samples) blocks.push(heading(structure.samples, 3));
   if (repr === 'table') {
     blocks.push(createTableBlock({
       id: id(),
@@ -125,9 +125,10 @@ function pdfVariant(structure, repr, iocSet) {
   } else if (repr === 'hash_lines') {
     for (const s of iocSet.samples) blocks.push(row(s.value));
   } else {
-    blocks.push(paragraph(iocSet.samples.map((s) => `${s.file} ${s.value}`).join(' ')));
+    // filename_hash_lines: one observable row per line (pdf_v5 isFilenameHashRowLine).
+    for (const s of iocSet.samples) blocks.push(row(`${s.file} ${s.value}`));
   }
-  blocks.push(heading('Conclusion'), paragraph('The actor continues to evolve its toolset and infrastructure.'));
+  blocks.push(heading('Conclusion', 2), paragraph('The actor continues to evolve its toolset and infrastructure.'));
   return createCanonicalDocument({
     title: 'Layout variant',
     language: 'en',

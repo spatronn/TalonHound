@@ -125,7 +125,14 @@ const OPERATIONAL_INFRA_RE =
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 
 const REFERENCE_INTENT_RE =
-  /^(?:references?|bibliography|quellen|kaynaklar|referanslar|références|referencias)\b|参考链接|参考文献|相关链接/i;
+  /^(?:references?|bibliography|contact|contacts|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|参考链接|参考文献|相关链接|联系方式/i;
+
+/**
+ * Surrounding prose that names a reporting / law-enforcement contact channel
+ * rather than attacker infrastructure (agency complaint portals, "report to").
+ */
+const REPORTING_CONTACT_RE =
+  /\b(?:please\s+report|report\s+(?:significant\s+)?(?:cyber\s+)?(?:security\s+)?incidents?\s+to|file\s+a\s+complaint|report(?:ing)?\s+(?:this|the)\s+(?:incident|compromise|activity)|contact\s+(?:the\s+)?(?:general\s+intelligence|local\s+law|your\s+it|national\s+cyber)|monitored\s+24(?:\s*\/\s*|\s*)?7|internet\s+crime\s+complaint\s+center)\b/i;
 
 /**
  * Indicator concept at the head of a heading, then a separator or the end:
@@ -725,6 +732,11 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   if (describesBenignComponent(full)) {
     return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: false };
   }
+  // "Report incidents to …" / "file a complaint at …" — agency contact chrome,
+  // never an Indicator (MODE A and MODE B).
+  if (REPORTING_CONTACT_RE.test(text) || REPORTING_CONTACT_RE.test(full)) {
+    return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'reporting_contact', authoritative: false, structural_row: false };
+  }
   if (CONTEXT_RELATION_RE.test(text)) {
     return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'contextual', authoritative, structural_row: false };
   }
@@ -777,7 +789,6 @@ export function strongestSourceRelation(candidate) {
     [SOURCE_RELATIONS.CONTEXTUAL]: 1,
     [SOURCE_RELATIONS.REFERENCE]: 0
   };
-  let best = SOURCE_RELATIONS.CONTEXTUAL;
   const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
   if (!occ.length) {
     return classifySourceRelation(candidate.evidence_text || '', {
@@ -787,11 +798,19 @@ export function strongestSourceRelation(candidate) {
       original: candidate.original_value
     });
   }
+  // Seed below REFERENCE (0) so a reporting-contact / bibliography-only
+  // occurrence is not masked by a CONTEXTUAL default (NCSC agency chrome).
+  let best = null;
+  let bestRank = -1;
   for (const o of occ) {
     const rel = o.source_relation || relationDetailForOccurrence(candidate, o).relation;
-    if ((rank[rel] || 0) > (rank[best] || 0)) best = rel;
+    const rk = rank[rel] ?? 0;
+    if (rk > bestRank) {
+      best = rel;
+      bestRank = rk;
+    }
   }
-  return best;
+  return best || SOURCE_RELATIONS.CONTEXTUAL;
 }
 
 /**

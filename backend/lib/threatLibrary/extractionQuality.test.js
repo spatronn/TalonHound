@@ -128,12 +128,34 @@ test('merged value paragraph inside the appendix: values left to the model warn'
   assert.ok(codes(q, 'high').includes(QUALITY_CODES.APPENDIX_WITHOUT_HASH_INDICATORS));
 });
 
-test('suspicious Indicators: publisher domain family is flagged', () => {
+test('publisher-host family is not a report Indicator; quality still flags residual publisher-domain members', () => {
   const x = run(`<h2>Indicators of compromise</h2>
 <ul><li>cdn.vendor-research[.]example</li><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>`);
-  const w = x.diagnostics.quality.warnings.find((y) => y.code === QUALITY_CODES.PUBLISHER_DOMAIN_INDICATOR);
+  // Gate: same-site publisher chrome is provenance, not an Indicator.
+  assert.equal(members(x.candidates).includes('domain:cdn.vendor-research.example'), false);
+  assert.ok(members(x.candidates).includes('domain:evil-c2.example'));
+  // Defensive quality path: if a publisher-family domain somehow remained a member.
+  const q = assessExtractionQuality({
+    blocks: x.annotated.blocks,
+    candidates: [
+      ...x.candidates,
+      {
+        candidate_type: 'domain',
+        normalized_value: 'cdn.vendor-research.example',
+        is_ioc: true,
+        assessment: 'malicious',
+        source_assertion: 'explicit_ioc',
+        document_has_authoritative_scope: true,
+        evidence_text: 'cdn.vendor-research.example',
+        occurrences: [{ block_id: 'b1', zone: 'explicit_ioc_section', asserted: true, surrounding_text: 'cdn.vendor-research.example' }]
+      }
+    ],
+    diagnostics: x.diagnostics,
+    sourceHost: 'vendor-research.example'
+  });
+  const w = q.warnings.find((y) => y.code === QUALITY_CODES.PUBLISHER_DOMAIN_INDICATOR);
   assert.ok(w);
-  assert.deepEqual(w.candidates, ['domain:cdn.vendor-research.example']);
+  assert.ok(w.candidates.includes('domain:cdn.vendor-research.example'));
 });
 
 test('suspicious Indicators: reserved, example, legitimate marker, email-only, missing provenance (direct input)', () => {

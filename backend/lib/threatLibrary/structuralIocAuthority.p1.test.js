@@ -5,7 +5,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCanonicalDocument } from './canonicalDocument.js';
-import { extractCandidatesFromDocument, THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
+import {
+  extractCandidatesFromDocument,
+  extractCandidatesWithDiagnostics,
+  THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
+} from './candidateExtraction.js';
 import {
   annotateDocumentZones,
   demoteLegitimateServiceListDiscovery,
@@ -28,7 +32,7 @@ import {
 } from './pdfLayout.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v10');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v26');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v27');
 assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v5');
 assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v5');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v7');
@@ -201,6 +205,52 @@ test('truncated defanged hostname is not reconstructed into a shorter domain', (
   assert.equal(find(cands, 'domain', 'cyber.lecture.site.online-driver.kro'), undefined);
   assert.equal(member(find(cands, 'domain', 'www.online.check-computer.kro.kr')), true);
   assert.equal(member(find(cands, 'domain', 'konamo.xyz')), true);
+});
+
+test('MODE B advisory Contact / reporting prose does not promote agency chrome as Indicators', () => {
+  const html = `<article>
+<h1>Iranian cyber targeting advisory</h1>
+<p>Review traffic to these legitimate shared services:</p>
+<ul><li>api[.]telegram[.]org</li><li>backblazeb2[.]com</li><li>storjshare[.]io</li></ul>
+<h2>Contact</h2>
+<h3>United Kingdom</h3>
+<p>Please report significant cyber security incidents to report.ncsc.gov.uk (monitored 24/7)</p>
+<h3>United States</h3>
+<p>If you or someone you know has fallen victim to this campaign, file a complaint with the FBI Internet Crime Complaint Center at www.ic3.gov</p>
+<h3>Netherlands</h3>
+<p>Any individual suspecting or confirming a compromise should contact the General Intelligence Security Service (https://www.aivd.nl) or local law enforcement.</p>
+</article>`;
+  const url = 'https://www.ncsc.gov.uk/news/iranian-cyber-targeting-of-dissidents-activists-and-journalists';
+  const r = extractCanonicalDocumentFromHtml(html, { url, finalUrl: url, httpStatus: 200 });
+  assert.equal(r.ok, true);
+  const { candidates, diagnostics } = extractCandidatesWithDiagnostics(r.document, {
+    sourceUrl: url,
+    sourceHost: 'www.ncsc.gov.uk'
+  });
+  assert.equal(diagnostics.document_scope.has_authoritative_indicator_scope, false, 'MODE B: no publisher IOC appendix');
+  assert.equal(member(find(candidates, 'domain', 'api.telegram.org')), false);
+  assert.equal(member(find(candidates, 'domain', 'report.ncsc.gov.uk')), false, 'publisher reporting portal');
+  assert.equal(member(find(candidates, 'domain', 'www.ic3.gov')), false, 'partner complaint portal');
+  assert.equal(member(find(candidates, 'url', 'https://www.aivd.nl/')), false, 'partner contact URL');
+});
+
+test('incomplete URL path prefix of a sibling IOC URL is not an Indicator', () => {
+  const html = `<article>
+<h2>IOCs</h2>
+<pre>http://203.0.113.55:443/t/
+http://203.0.113.55:443/t/a779ab
+http://203.0.113.55:443/t/ae7427</pre>
+</article>`;
+  const r = extractCanonicalDocumentFromHtml(html, {
+    url: 'https://research.example/raven',
+    finalUrl: 'https://research.example/raven',
+    httpStatus: 200
+  });
+  assert.equal(r.ok, true);
+  const cands = extractCandidatesFromDocument(annotateDocumentZones(r.document));
+  assert.equal(member(find(cands, 'url', 'http://203.0.113.55:443/t/')), false, 'bare prefix');
+  assert.equal(member(find(cands, 'url', 'http://203.0.113.55:443/t/a779ab')), true);
+  assert.equal(member(find(cands, 'url', 'http://203.0.113.55:443/t/ae7427')), true);
 });
 
 test('body Threat Infrastructure table values are not Indicators when appendix exists', () => {

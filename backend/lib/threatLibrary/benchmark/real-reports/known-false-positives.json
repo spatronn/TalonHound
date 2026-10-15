@@ -1,21 +1,5 @@
 {
-  "description": "Indicators the extractor currently promotes on real-report labels although the publisher does not assert them (recorded, NOT accepted). A fix removes its entries; realReports.test.js fails on any FP not listed here and on a listed FP that no longer occurs. Updated for P1 (tl-candidates-v26 / tl-zones-v10): Huntress / DTrack body-table FPs and NCSC legitimate-service list FPs retired; remaining NCSC chrome domains and one Raven bare URL prefix.",
-  "causes": {
-    "advisory_chrome_discovery": "MODE B advisory pages with no IOC appendix still promote publisher chrome / reporting URLs (agency contact domains, partner agency links) from unlabelled body lists or short link rows.",
-    "bare_url_prefix_in_ioc_block": "A bare URL prefix line inside the publisher IOC pre block is kept as a URL Indicator."
-  },
-  "cases": {
-    "real-ncsc-iranian-dissidents": {
-      "cause": "advisory_chrome_discovery",
-      "identities": [
-        "domain:report.ncsc.gov.uk",
-        "domain:www.ic3.gov",
-        "url:https://www.aivd.nl/"
-      ]
-    },
-    "real-raven-citrix-0day": {
-      "cause": "bare_url_prefix_in_ioc_block",
-      "identities": ["url:http://213.209.159.55:443/t/"]
-    }
-  }
+  "description": "Indicators the extractor currently promotes on real-report labels although the publisher does not assert them (recorded, NOT accepted). A fix removes its entries; realReports.test.js fails on any FP not listed here and on a listed FP that no longer occurs. P1 gate (tl-candidates-v27): NCSC advisory chrome and Raven bare URL prefix retired; registry empty when precision is clean.",
+  "causes": {},
+  "cases": {}
 }

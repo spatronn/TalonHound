@@ -158,9 +158,12 @@ const HEADING_HINTS = Object.freeze({
   reference_section: [
     /^references?\b/i,
     /bibliography/i,
+    /^contact(?:s|ing)?\b/i,
+    /^reporting\b/i,
+    /how\s+to\s+report/i,
     /related\s+(reports?|articles?|links?)/i,
-    /further\s+reading/i,
-    /参考链接|参考文献|相关链接|引用/i,
+    /further\s+(?:reading|information)/i,
+    /参考链接|参考文献|相关链接|引用|联系方式/i,
     /kaynaklar|referanslar/i
   ],
   source_metadata: [
