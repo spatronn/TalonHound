@@ -744,6 +744,9 @@ export async function reconcileReportCandidates(pool, reportId, candidates, opti
       `SELECT * FROM threat_report_candidates WHERE report_id = $1 ORDER BY id FOR UPDATE`,
       [reportId]
     );
+    // Revalidation against the LOCKED rows (Refresh extraction membership
+    // guard): a throw here rolls the transaction back before any write.
+    if (typeof options.beforeWrite === 'function') await options.beforeWrite(existing, client);
     const byKey = new Map(existing.map((r) => [`${r.candidate_type}\0${r.normalized_value}`, r]));
     const nextByKey = new Map();
     for (const input of candidates || []) {

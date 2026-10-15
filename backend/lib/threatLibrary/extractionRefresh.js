@@ -301,6 +301,45 @@ export function guardExtractionRefresh(report, previousRows, refreshed, membersh
   return { diff, guard: evaluateRefreshMembershipGuard(diff, membershipPolicy) };
 }
 
+export const REFRESH_CONCURRENT_CHANGE_CODE = 'refresh_candidates_changed_concurrently';
+
+/** Row state the refresh computed from and the guard protects (analyst, promotion, membership). */
+const SNAPSHOT_FIELDS = Object.freeze([
+  'candidate_type',
+  'normalized_value',
+  'review_status',
+  'assessment',
+  'role',
+  'is_ioc',
+  'source_assertion',
+  'match_state',
+  'matched_ioc_id',
+  'promotion_outcome',
+  'has_original_document_occurrence'
+]);
+
+function snapshotKey(row) {
+  const t = row?.updated_at ? new Date(row.updated_at).getTime() : null;
+  return JSON.stringify([...SNAPSHOT_FIELDS.map((f) => row?.[f] ?? null), Number.isFinite(t) ? t : null]);
+}
+
+/**
+ * Ids of rows that differ between the snapshot a refresh was computed and
+ * guarded from and the rows locked for the write (added, removed or changed
+ * by a concurrent review, Create IOCs, promotion or IOC Source reconcile).
+ * @param {object[]} snapshotRows
+ * @param {object[]} lockedRows
+ * @returns {string[]}
+ */
+export function candidateSnapshotDrift(snapshotRows, lockedRows) {
+  const before = new Map((snapshotRows || []).map((r) => [String(r.id), snapshotKey(r)]));
+  const after = new Map((lockedRows || []).map((r) => [String(r.id), snapshotKey(r)]));
+  const drift = [];
+  for (const [id, key] of before) if (after.get(id) !== key) drift.push(id);
+  for (const id of after.keys()) if (!before.has(id)) drift.push(id);
+  return drift.sort();
+}
+
 /**
  * Linked-source provenance of the stored rows a refresh would drop (one query).
  * @param {import('pg').Pool} pool
@@ -402,10 +441,35 @@ export async function runExtractionRefresh(pool, ctx) {
       return await blockExtractionRefresh(pool, { report, ctx, restore, priorProgress, dispatch, guard, compactDiff, startedAt });
     }
 
+    // Time-of-use revalidation: the guard above read the review set outside
+    // the write transaction. Inside it, with every candidate row of the report
+    // locked, the rows must still be exactly the snapshot the refresh was
+    // computed from (a concurrent review / Create IOCs / IOC Source reconcile
+    // aborts with nothing written), and the guard is re-evaluated against the
+    // locked state and link provenance (the accepted preview fingerprint is
+    // checked again there).
+    let lockedGuard = { diff: membershipDiff, guard };
+    const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates, {
+      beforeWrite: async (lockedRows, client) => {
+        const drift = candidateSnapshotDrift(previousRows, lockedRows);
+        if (drift.length) {
+          throw Object.assign(
+            new Error('Candidates changed while Refresh extraction was running (review, Create IOCs or an IOC Source); nothing was saved. Run Refresh extraction again.'),
+            { code: REFRESH_CONCURRENT_CHANGE_CODE, drift_count: drift.length }
+          );
+        }
+        const lockedLinked = await linkedRowsLeavingDocument(client, lockedRows, refreshed.candidates);
+        lockedGuard = guardExtractionRefresh(report, lockedRows, refreshed, membershipPolicy, { linkedCandidateIds: lockedLinked });
+        if (lockedGuard.guard.decision === REFRESH_GUARD_DECISIONS.BLOCK) {
+          throw Object.assign(new Error(lockedGuard.guard.message), { code: REFRESH_BLOCKED_CODE, lockedGuard });
+        }
+      }
+    });
+    const compactLockedDiff = compactRefreshMembershipDiff(lockedGuard.diff);
+
     // Publication date is written only for an applied refresh (this run's
-    // extraction read the stored date; a blocked refresh writes nothing).
+    // extraction read the stored date; a blocked or aborted refresh writes nothing).
     await applyPublicationDate(pool, report, { document, sourceHtml });
-    const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates);
     const outcome = resolveRefreshOutcomeStatus(restore, persisted);
     const grounding = await applyStoredVulnerabilityGrounding(pool, report, refreshed.document);
     const publisherGrounding = await applyStoredPublisherEntityGrounding(
@@ -432,7 +496,7 @@ export async function runExtractionRefresh(pool, ctx) {
       reopened_for_review: outcome.reopened_for_review,
       prior_status: outcome.prior_status,
       restored_status: outcome.analysis_status,
-      membership_guard: membershipGuardSummary(guard, compactDiff)
+      membership_guard: membershipGuardSummary(lockedGuard.guard, compactLockedDiff)
     };
     const lastRefresh = {
       job_id: ctx.jobId,
@@ -441,7 +505,7 @@ export async function runExtractionRefresh(pool, ctx) {
       ...result,
       added_identities: persisted.added.slice(0, 40),
       removed_identities: persisted.removed.slice(0, 40),
-      membership_diff: compactDiff
+      membership_diff: compactLockedDiff
     };
 
     await updateReportStatus(pool, report.id, {
@@ -498,6 +562,20 @@ export async function runExtractionRefresh(pool, ctx) {
       }
     };
   } catch (err) {
+    // The guard re-evaluated against the locked rows blocked: the write
+    // transaction rolled back, so this is an ordinary blocked refresh.
+    if (err?.code === REFRESH_BLOCKED_CODE && err.lockedGuard) {
+      return await blockExtractionRefresh(pool, {
+        report,
+        ctx,
+        restore,
+        priorProgress,
+        dispatch,
+        guard: err.lockedGuard.guard,
+        compactDiff: compactRefreshMembershipDiff(err.lockedGuard.diff),
+        startedAt
+      });
+    }
     const code = err?.code && /^[a-z0-9_]{2,64}$/i.test(String(err.code)) ? String(err.code) : 'refresh_failed';
     // The committed review set is unchanged unless the reconcile transaction
     // committed; either way the report returns to its prior terminal status —

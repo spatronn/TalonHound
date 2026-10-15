@@ -1215,3 +1215,20 @@ test('the same reviewed row without IOC Source provenance is a real deletion and
   assert.ok(result.summary.membership_guard.reasons.some((r) => r.code === 'reviewed_candidate_deleted'));
   assert.ok(db.candidates.some((c) => c.normalized_value === 'linked-only-now.example'), 'not deleted');
 });
+
+test('candidateSnapshotDrift: any added, removed or changed protected row state is drift; identical snapshots are not', async () => {
+  const { candidateSnapshotDrift } = await import('./extractionRefresh.js');
+  const t = new Date('2026-10-15T10:00:00.000Z');
+  const row = (id, patch = {}) => ({
+    id, candidate_type: 'domain', normalized_value: `v${id}.example`, review_status: 'pending', assessment: 'malicious',
+    role: 'c2', is_ioc: true, source_assertion: 'explicit_ioc', match_state: 'new', matched_ioc_id: null,
+    promotion_outcome: null, has_original_document_occurrence: true, updated_at: t, evidence: { x: 1 }, ...patch
+  });
+  const snap = [row(1), row(2)];
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { evidence: { y: 2 } })]), [], 'non-protected columns are not drift');
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { review_status: 'approved' })]), ['2']);
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { updated_at: new Date(t.getTime() + 1) })]), ['2']);
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1)]), ['2'], 'deleted row');
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2), row(3)]), ['3'], 'added row');
+  assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { matched_ioc_id: '42', promotion_outcome: 'created' })]), ['2'], 'Create IOCs');
+});

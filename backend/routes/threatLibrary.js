@@ -1191,6 +1191,24 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       await restoreReportStatus(pool, report.id, restoreStatus, report.analysis_progress || {}).catch(() => {});
       throw err;
     }
+    if (membershipPolicy) {
+      // The explicit acceptance is recorded when it is requested, not only
+      // when the worker applies or refuses it (the outcome event follows).
+      await writeAudit(req, {
+        action: AUDIT_ACTION.THREAT_LIBRARY_REFRESH_ACCEPTANCE_REQUESTED,
+        ...reportAuditEntity(report),
+        severity: AUDIT_SEVERITY.WARNING,
+        status: AUDIT_STATUS.SUCCESS,
+        metadata: {
+          ...reportAuditSnapshot(report),
+          job_public_id: jobRow.public_id,
+          membership_changes: membershipPolicy.mode,
+          acceptance_reason: membershipPolicy.reason,
+          preview_fingerprint: membershipPolicy.preview_fingerprint,
+          initiated_by: initiatedBy(await actorOf(req))
+        }
+      }).catch(() => {});
+    }
     return res.status(202).json({
       report: publicReport(await reportWithDetail(claimed)),
       job_id: jobRow.public_id,

@@ -12,7 +12,7 @@ import { registerThreatLibraryRoutes } from './threatLibrary.js';
 
 const PUBLIC_ID = '11111111-2222-4333-8444-555555555555';
 
-function harness(reportPatch = {}, { jobs = [] } = {}) {
+function harness(reportPatch = {}, { jobs = [], audit = null } = {}) {
   const state = {
     report: {
       id: 7,
@@ -132,7 +132,7 @@ function harness(reportPatch = {}, { jobs = [] } = {}) {
       routes.set(`${String(method).toUpperCase()} ${routePath}`, handlers);
     }
   });
-  registerThreatLibraryRoutes(app, pool, null, { threatLibraryQueue: queue });
+  registerThreatLibraryRoutes(app, pool, audit, { threatLibraryQueue: queue });
   async function call(action, user = { id: 1, role: 'analyst' }, body = {}, method = 'POST') {
     const handlers = routes.get(`${method} /api/threat-library/reports/:publicId/${action}`);
     assert.ok(handlers, `${action} registered`);
@@ -342,6 +342,32 @@ test('refresh-extraction: explicit acceptance with a reason rides the dispatch t
   assert.equal(policy.preview_fingerprint, 'a'.repeat(64));
   assert.ok(policy.requested_at);
   assert.equal(h.state.jobs[0].progress.dispatch.membershipPolicy.mode, 'accept');
+});
+
+test('refresh-extraction: an explicit acceptance is audited when it is queued (actor, reason, fingerprint, job)', async () => {
+  const events = [];
+  const audit = { auditLog: async (e) => { events.push(e); }, resolveActor: async (req) => ({ ...req.user, email: 'analyst@example.test' }) };
+  const h = harness({}, { audit });
+  const res = await h.call('refresh-extraction', { id: 1, role: 'analyst', publicId: 'analyst-pub-1' }, {
+    membership_changes: 'accept',
+    reason: 'Reviewed the preview: removed rows were parser false positives.',
+    preview_fingerprint: 'b'.repeat(64)
+  });
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  const ev = events.find((e) => e.action === 'threat_library.refresh_extraction.acceptance_requested');
+  assert.ok(ev, JSON.stringify(events.map((e) => e.action)));
+  assert.equal(ev.severity, 'warning');
+  assert.equal(ev.metadata.membership_changes, 'accept');
+  assert.equal(ev.metadata.acceptance_reason, 'Reviewed the preview: removed rows were parser false positives.');
+  assert.equal(ev.metadata.preview_fingerprint, 'b'.repeat(64));
+  assert.equal(ev.metadata.job_public_id, res.body.job_id);
+  assert.ok(ev.metadata.initiated_by);
+
+  // A protected (default) refresh is not an acceptance: no such event.
+  const plain = [];
+  const h2 = harness({}, { audit: { auditLog: async (e) => { plain.push(e); } } });
+  assert.equal((await h2.call('refresh-extraction')).statusCode, 202);
+  assert.equal(plain.some((e) => e.action === 'threat_library.refresh_extraction.acceptance_requested'), false);
 });
 
 test('refresh-extraction: acceptance without a reason / unknown policy → 400, no job, report untouched', async () => {
