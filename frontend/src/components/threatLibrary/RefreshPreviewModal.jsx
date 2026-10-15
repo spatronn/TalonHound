@@ -39,7 +39,7 @@ function ChangeGroup({ title, count, testId, children }) {
  * on a plain confirmation; protected ones need an explicit acceptance with a
  * reason, bound to this preview (the server re-checks when the job runs).
  */
-export default function RefreshPreviewModal({ open, loading, error, preview, busy, onClose, onSubmit }) {
+export default function RefreshPreviewModal({ open, loading, error, preview, busy, isAdmin = false, onClose, onSubmit }) {
   const [reason, setReason] = useState('');
   const [submitError, setSubmitError] = useState('');
 
@@ -50,7 +50,7 @@ export default function RefreshPreviewModal({ open, loading, error, preview, bus
     }
   }, [open, preview]);
 
-  const model = describeRefreshPreview(preview);
+  const model = describeRefreshPreview(preview, { isAdmin });
   const body = model.available ? buildRefreshRequestBody(model, reason) : null;
   const submitting = busy === 'refresh_extraction';
 
@@ -167,7 +167,10 @@ export default function RefreshPreviewModal({ open, loading, error, preview, bus
               </ul>
             </ChangeGroup>
 
-            {model.blocked && model.needsAcceptance ? (
+            {model.adminNotice ? (
+              <div style={ui.error} role="alert" data-testid="refresh-preview-admin-required">{model.adminNotice}</div>
+            ) : null}
+            {model.blocked && model.needsAcceptance && model.canAccept ? (
               <div className="tl-refresh__accept">
                 <label htmlFor="tl-refresh-reason" style={ui.label}>Reason for accepting these changes</label>
                 <textarea

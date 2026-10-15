@@ -15,6 +15,14 @@ export const ACCEPTANCE_REASON_MIN_CHARS = 8;
 
 /** Guard reason codes (backend refreshMembershipGuard.js) → analyst wording. */
 export const GUARD_REASON_COPY = Object.freeze({
+  acceptance_requires_admin: {
+    title: 'Admin acceptance required',
+    detail: 'These changes remove reviewed, publisher-listed or IOC-linked Indicators. Only an admin can accept them.'
+  },
+  acceptance_not_authorized: {
+    title: 'Acceptance not authorized',
+    detail: 'The account that accepted these changes is not an active analyst or admin.'
+  },
   reviewed_indicator_removed: {
     title: 'Reviewed Indicators would be removed',
     detail: 'Indicators that already have an analyst decision would leave the Indicators list.'
@@ -90,8 +98,10 @@ function removalBadges(r) {
 
 /**
  * @param {object|null|undefined} preview GET …/refresh-extraction/preview body
+ * @param {{ isAdmin?: boolean }} [viewer] the session role decides whether the
+ *   acceptance is offered (the server enforces it again, from the database role)
  */
-export function describeRefreshPreview(preview) {
+export function describeRefreshPreview(preview, viewer = {}) {
   const diff = preview?.membership_diff || {};
   const guard = preview?.guard || {};
   const counts = diff.counts || {};
@@ -130,11 +140,18 @@ export function describeRefreshPreview(preview) {
   const before = diff.indicators?.before ?? null;
   const after = diff.indicators?.after ?? null;
   const material = reasons.filter((r) => r.material);
-  const acceptanceProblems = new Set(['acceptance_reason_missing', 'preview_fingerprint_missing', 'preview_stale']);
+  const acceptanceProblems = new Set(['acceptance_reason_missing', 'preview_fingerprint_missing', 'preview_stale', 'acceptance_requires_admin', 'acceptance_not_authorized']);
+  const requiresAdmin = blocked && guard.authorization?.required_role === 'admin';
+  const canAccept = !requiresAdmin || viewer.isAdmin === true;
   return {
     available: Boolean(preview && preview.preview === true),
     blocked,
     needsAcceptance: blocked && material.some((r) => !acceptanceProblems.has(r.code)),
+    requiresAdmin,
+    canAccept,
+    adminNotice: requiresAdmin && !canAccept
+      ? 'Accepting these changes requires an admin: they remove reviewed, publisher-listed or IOC-linked Indicators. Ask an admin to review this preview.'
+      : null,
     fingerprint: diff.material_fingerprint || guard.material_fingerprint || null,
     indicatorsLine: before != null && after != null ? `Indicators ${before} → ${after}` : null,
     headline: !blocked
@@ -174,7 +191,7 @@ export function canSubmitAcceptance(reason) {
  */
 export function buildRefreshRequestBody(model, reason) {
   if (!model?.blocked) return {};
-  if (!model.needsAcceptance || !model.fingerprint || !canSubmitAcceptance(reason)) return null;
+  if (!model.needsAcceptance || model.canAccept === false || !model.fingerprint || !canSubmitAcceptance(reason)) return null;
   return {
     membership_changes: 'accept',
     reason: String(reason).trim(),
@@ -185,6 +202,9 @@ export function buildRefreshRequestBody(model, reason) {
 /** Feedback for a refresh job the guard blocked (job progress / error). */
 export function describeBlockedRefresh(job) {
   const reasons = job?.progress?.membership_guard?.reasons || [];
+  if (reasons.some((r) => r.code === 'acceptance_requires_admin' || r.code === 'acceptance_not_authorized')) {
+    return 'Refresh extraction was not applied: accepting these changes requires an admin. Nothing was changed.';
+  }
   if (reasons.some((r) => r.code === 'preview_stale')) {
     return 'Refresh extraction was not applied: the changes no longer match the preview you accepted. Open Refresh extraction again to review the current changes.';
   }

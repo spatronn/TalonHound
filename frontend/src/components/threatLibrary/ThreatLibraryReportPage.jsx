@@ -2386,6 +2386,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           error={refreshPreview.error}
           preview={refreshPreview.data}
           busy={busy}
+          isAdmin={isAdmin}
           onClose={closeRefreshPreview}
           onSubmit={(body) => runMaintenance(MAINTENANCE_MODES.REFRESH_EXTRACTION, body, { fromPreview: true })}
         />

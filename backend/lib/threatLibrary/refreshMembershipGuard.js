@@ -44,7 +44,28 @@ export const REFRESH_GUARD_REASONS = Object.freeze({
   ACCEPTANCE_REASON_MISSING: 'acceptance_reason_missing',
   /** An acceptance names no preview, or a preview whose material losses differ from this run's. */
   PREVIEW_FINGERPRINT_MISSING: 'preview_fingerprint_missing',
-  PREVIEW_STALE: 'preview_stale'
+  PREVIEW_STALE: 'preview_stale',
+  /** The accepted losses touch analyst / publisher / IOC-linked state, and the accepting principal is not an admin. */
+  ACCEPTANCE_REQUIRES_ADMIN: 'acceptance_requires_admin',
+  /** The accepting principal is neither an analyst nor an admin (unknown, readonly, disabled). */
+  ACCEPTANCE_NOT_AUTHORIZED: 'acceptance_not_authorized'
+});
+
+/**
+ * Who may ACCEPT a material membership loss (acceptanceAuthorization). A
+ * refresh with no material loss needs no acceptance and stays an analyst
+ * action. `system` is the server-side maintenance CLI operator.
+ */
+export const ACCEPTANCE_ROLES = Object.freeze({ ADMIN: 'admin', ANALYST: 'analyst' });
+const ADMIN_EQUIVALENT_ROLES = new Set(['admin', 'system']);
+const ACCEPTOR_ROLES = new Set(['admin', 'system', 'analyst']);
+
+/** Loss categories whose acceptance needs an admin (stable codes). */
+export const ADMIN_ACCEPTANCE_CATEGORIES = Object.freeze({
+  REVIEWED_INDICATOR_REMOVED: 'reviewed_indicator_removed',
+  PUBLISHER_ASSERTED_REMOVED: 'publisher_asserted_indicator_removed',
+  REVIEWED_CANDIDATE_DELETED: 'reviewed_candidate_deleted',
+  IOC_LINKED_CANDIDATE_REMOVED: 'ioc_linked_candidate_removed'
 });
 
 /**
@@ -175,6 +196,8 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
   const newlyContext = [];
   const changes = [];
   const reviewedDeleted = [];
+  /** Rows tied to a global IOC (matched or created) that leave the Indicators or are deleted. */
+  const iocLinkedLosses = [];
 
   for (const [k, after] of nextStates) {
     const before = priorStates.get(k) || null;
@@ -204,6 +227,10 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
     const rowOutcome = after ? ROW_OUTCOMES.KEPT : hasLinks ? ROW_OUTCOMES.ORIGINAL_OCCURRENCE_CLEARED : ROW_OUTCOMES.DELETED;
     // A kept linked row stays in the union inventory when its own gates still pass.
     const unionMemberAfter = rowOutcome === ROW_OUTCOMES.ORIGINAL_OCCURRENCE_CLEARED && passesIndicatorTypeGates(row);
+    const iocLinked = row.matched_ioc_id != null || CREATED_OUTCOMES.has(String(row.promotion_outcome || ''));
+    if (iocLinked && (rowOutcome === ROW_OUTCOMES.DELETED || (before.member && !after?.member))) {
+      iocLinkedLosses.push({ identity: k, matched_ioc_id: row.matched_ioc_id ?? null, row_outcome: rowOutcome });
+    }
     if (rowOutcome === ROW_OUTCOMES.DELETED && isReviewed(row)) {
       reviewedDeleted.push({
         identity: k,
@@ -263,6 +290,10 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
       removed_reviewed_kept_by_linked_source: removed.filter((r) => r.reviewed && r.union_member_after).length,
       removed_publisher_asserted: removed.filter((r) => r.publisher_asserted).length,
       original_occurrences_cleared: removed.filter((r) => r.row_outcome === ROW_OUTCOMES.ORIGINAL_OCCURRENCE_CLEARED).length,
+      // Any reviewed Indicator leaving the original-document set (also one a
+      // linked IOC Source keeps): accepting it is an admin decision.
+      removed_reviewed_any: removed.filter((r) => r.reviewed).length,
+      ioc_linked_losses: iocLinkedLosses.length,
       newly_context_only: newlyContext.length,
       classification_changes: changes.length,
       reviewed_candidates_deleted: reviewedDeleted.length
@@ -291,12 +322,47 @@ export function normalizeRefreshMembershipPolicy(raw) {
 }
 
 /**
+ * Role an explicit acceptance of this diff's losses requires. Admin when the
+ * losses touch analyst-reviewed Indicators, publisher-asserted Indicators,
+ * reviewed candidate rows (deleted) or candidates tied to a global IOC;
+ * analyst when the losses are limited to unreviewed, non-publisher-asserted,
+ * IOC-free candidates (e.g. a bulk loss of model-only rows).
+ * @param {ReturnType<typeof buildRefreshMembershipDiff>} diff
+ * @returns {{ required_role: 'admin'|'analyst', categories: { code: string, count: number }[] }}
+ */
+export function acceptanceAuthorization(diff) {
+  const c = diff?.counts || {};
+  const C = ADMIN_ACCEPTANCE_CATEGORIES;
+  const categories = [
+    { code: C.REVIEWED_INDICATOR_REMOVED, count: Number(c.removed_reviewed_any ?? c.removed_reviewed_indicators) || 0 },
+    { code: C.PUBLISHER_ASSERTED_REMOVED, count: Number(c.removed_publisher_asserted) || 0 },
+    { code: C.REVIEWED_CANDIDATE_DELETED, count: Number(c.reviewed_candidates_deleted) || 0 },
+    // Older diffs (before the count existed) are treated as IOC-linked: fail closed.
+    { code: C.IOC_LINKED_CANDIDATE_REMOVED, count: c.ioc_linked_losses == null ? Number(c.removed_indicators) || 0 : Number(c.ioc_linked_losses) || 0 }
+  ].filter((x) => x.count > 0);
+  return { required_role: categories.length ? ACCEPTANCE_ROLES.ADMIN : ACCEPTANCE_ROLES.ANALYST, categories };
+}
+
+/** Whether a resolved principal role may accept admin-only losses. */
+export function isAdminAcceptor(role) {
+  return ADMIN_EQUIVALENT_ROLES.has(String(role || '').toLowerCase());
+}
+
+/** Whether a resolved principal role may accept analyst-level losses. */
+export function isAcceptorRole(role) {
+  return ACCEPTOR_ROLES.has(String(role || '').toLowerCase());
+}
+
+/**
  * Decide whether a refresh may apply its diff.
  * @param {ReturnType<typeof buildRefreshMembershipDiff>} diff
  * @param {unknown} rawPolicy
+ * @param {{ acceptorRole?: string|null }} [opts] role of the accepting principal,
+ *   resolved server-side (never from the request body). Unknown = not admin.
  */
-export function evaluateRefreshMembershipGuard(diff, rawPolicy) {
+export function evaluateRefreshMembershipGuard(diff, rawPolicy, opts = {}) {
   const policy = normalizeRefreshMembershipPolicy(rawPolicy);
+  const authorization = acceptanceAuthorization(diff);
   const T = REFRESH_GUARD_THRESHOLDS;
   const reasons = [];
   const c = diff.counts;
@@ -350,7 +416,17 @@ export function evaluateRefreshMembershipGuard(diff, rawPolicy) {
     if (policy.mode === REFRESH_MEMBERSHIP_POLICIES.ACCEPT) {
       // Acceptance is bound to the reviewed preview: reason AND the exact
       // material losses (fingerprint) must match what is about to run.
-      const acceptanceProblem = policy.reason.length < T.acceptanceReasonMinChars
+      const acceptanceProblem = !isAcceptorRole(opts.acceptorRole)
+        ? {
+            code: REFRESH_GUARD_REASONS.ACCEPTANCE_NOT_AUTHORIZED,
+            detail: 'The accepting principal could not be resolved to an active analyst or admin.'
+          }
+        : authorization.required_role === ACCEPTANCE_ROLES.ADMIN && !isAdminAcceptor(opts.acceptorRole)
+        ? {
+            code: REFRESH_GUARD_REASONS.ACCEPTANCE_REQUIRES_ADMIN,
+            detail: `Accepting these losses requires an admin (${authorization.categories.map((x) => `${x.code} ${x.count}`).join(', ')}).`
+          }
+        : policy.reason.length < T.acceptanceReasonMinChars
         ? {
             code: REFRESH_GUARD_REASONS.ACCEPTANCE_REASON_MISSING,
             detail: `Accepting membership changes needs a reason of at least ${T.acceptanceReasonMinChars} characters.`
@@ -380,6 +456,7 @@ export function evaluateRefreshMembershipGuard(diff, rawPolicy) {
           accepted: {
             reason: policy.reason,
             requested_by: policy.requested_by,
+            acceptor_role: opts.acceptorRole || null,
             requested_at: policy.requested_at,
             preview_fingerprint: policy.preview_fingerprint
           }
@@ -387,6 +464,8 @@ export function evaluateRefreshMembershipGuard(diff, rawPolicy) {
       : {}),
     reasons: tagged,
     material: material.length > 0,
+    // Only meaningful for a material loss: who may accept it.
+    authorization: material.length ? authorization : { required_role: null, categories: [] },
     message:
       decision === REFRESH_GUARD_DECISIONS.BLOCK
         ? `Refresh blocked: ${material.map((r) => `${r.code} (${r.count})`).join(', ')}. Review the preview and re-run with an explicit acceptance and reason to apply.`

@@ -195,6 +195,7 @@ export function refreshMembershipPolicyFromArgs(args) {
       // Pinned to a reviewed dry-run when given; else bound to the plan computed
       // right before dispatch (the worker re-checks it either way).
       preview_fingerprint: args.previewFingerprint || null,
+      // Must equal extractionRefresh.MAINTENANCE_CLI_ACTOR (the worker resolves it to `system`).
       requested_by: MAINTENANCE_ACTOR.actorUsername,
       requested_at: new Date().toISOString()
     }
@@ -231,7 +232,8 @@ async function planRefresh(pool, report, membershipPolicy = null) {
   const policy = membershipPolicy && !membershipPolicy.preview_fingerprint
     ? { ...membershipPolicy, preview_fingerprint: buildPlanFingerprint(report, previousRows, refreshed, linkedCandidateIds) }
     : membershipPolicy;
-  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, policy, { linkedCandidateIds });
+  // The CLI operator (server shell) accepts as `system`, exactly as the worker resolves it.
+  const { diff, guard } = guardExtractionRefresh(report, previousRows, refreshed, policy, { linkedCandidateIds, acceptorRole: policy ? 'system' : null });
   const compactDiff = compactRefreshMembershipDiff(diff);
   return {
     document_rebuilt: documentRebuilt,

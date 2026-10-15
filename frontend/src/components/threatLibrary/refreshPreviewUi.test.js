@@ -136,3 +136,32 @@ test('dialog and quality section never render parser internals or auto-accept', 
   assert.match(modal, /disabled=\{submitting \|\| loading \|\| !body\}/);
   assert.match(modal, /buildRefreshRequestBody\(model, reason\)/);
 });
+
+test('RBAC: an admin-only acceptance is not offered to an analyst; an admin can accept the same preview', () => {
+  const p = preview({ decision: 'block', reasons: [{ code: 'reviewed_indicator_removed', count: 1, material: true }] });
+  p.guard.authorization = { required_role: 'admin', categories: [{ code: 'reviewed_indicator_removed', count: 1 }] };
+  const analyst = describeRefreshPreview(p, { isAdmin: false });
+  assert.equal(analyst.requiresAdmin, true);
+  assert.equal(analyst.canAccept, false);
+  assert.match(analyst.adminNotice, /requires an admin/);
+  assert.equal(buildRefreshRequestBody(analyst, 'Verified against the publisher appendix'), null, 'no acceptance body for an analyst');
+  assert.equal(buildRefreshRequestBody(describeRefreshPreview(p), 'Verified against the publisher appendix'), null, 'unknown viewer is not admin');
+  const admin = describeRefreshPreview(p, { isAdmin: true });
+  assert.equal(admin.canAccept, true);
+  assert.equal(admin.adminNotice, null);
+  assert.equal(buildRefreshRequestBody(admin, 'Verified against the publisher appendix').membership_changes, 'accept');
+});
+
+test('RBAC: analyst-level losses stay acceptable for an analyst; unblocked refreshes are unaffected', () => {
+  const p = preview({ decision: 'block', reasons: [{ code: 'bulk_membership_loss', count: 6, material: true }] });
+  p.guard.authorization = { required_role: 'analyst', categories: [] };
+  const m = describeRefreshPreview(p, { isAdmin: false });
+  assert.equal(m.canAccept, true);
+  assert.equal(buildRefreshRequestBody(m, 'Verified against the publisher appendix').membership_changes, 'accept');
+  assert.deepEqual(buildRefreshRequestBody(describeRefreshPreview(preview(), { isAdmin: false }), ''), {});
+});
+
+test('RBAC: a refresh refused for missing admin rights says so', () => {
+  const job = { job_type: 'refresh_extraction', status: 'failed', progress: { failure_code: 'refresh_membership_loss_blocked', membership_guard: { reasons: [{ code: 'acceptance_requires_admin' }] } } };
+  assert.match(describeMaintenanceOutcome(job).error, /requires an admin/);
+});

@@ -186,6 +186,21 @@ MODE changes, new quality warnings, additions and ordinary reclassification of p
   - The guard runs again against the locked rows and the current IOC Source links. A block there, for example an accepted preview whose losses changed because a link disappeared, is an ordinary blocked refresh.
 
   The publication date is written only after this guarded save. A review issued while the locks are held waits and then applies to the committed set. No new lock is taken: these are the same per-report candidate row locks the save already used. `refreshGuardConcurrency.integration.test.js` races a second connection at both points on real Postgres.
+- **Who may accept (RBAC):** running Refresh extraction, viewing its preview, and refreshes with no material loss stay Analyst + Admin. Accepting a material loss depends on what is lost:
+
+  | Lost by the accepted refresh | Accept as |
+  |---|---|
+  | Analyst-reviewed Indicator (any review decision or Create IOCs outcome), including one a linked IOC Source keeps | Admin |
+  | Publisher-asserted Indicator (explicit IOC / C2 / operational row) | Admin |
+  | Reviewed candidate row deleted | Admin |
+  | Candidate tied to a global IOC (`matched_ioc_id` or created) leaving the Indicators or deleted | Admin |
+  | Only unreviewed, non-publisher-asserted, IOC-free candidates (for example a bulk loss of model-only rows) | Analyst or Admin |
+
+  The preview reports this as `guard.authorization` (`required_role`, `categories`). The rule is enforced at two points, and the preview fingerprint, reason requirement and transaction checks are unchanged:
+  1. **Route:** a non-admin acceptance of admin-only losses gets `403 refresh_acceptance_requires_admin` before the report is claimed. The denial is audited (`…acceptance_requested`, status failed, `result: denied_requires_admin`).
+  2. **Worker:** when the job runs, and again under the row locks, the worker resolves the acceptor's current role from `users` (active users only). The maintenance CLI operator resolves as `system`, which is admin-equivalent. An unresolvable principal is never admin (`acceptance_not_authorized`), so a demoted admin, a passive account or a role claim in the request or dispatch payload cannot authorize. A refused acceptance is an ordinary blocked refresh with nothing written.
+
+  The dialog shows an analyst why an admin is needed instead of offering the acceptance. A protected refresh is unchanged for every role.
 - **Acceptance audit:** queueing an explicit acceptance writes `threat_library.refresh_extraction.acceptance_requested` with the actor, reason, preview fingerprint and job. The worker's outcome event follows, recording whether the acceptance was applied, refused as stale or blocked, with the resulting membership diff counts.
 - **Linked IOC Sources:** a row that leaves the original document but has IOC Source provenance is kept with its analyst state (`original_occurrence_cleared`, still in the union inventory). It is not counted as a deleted reviewed row. A publisher-asserted Indicator that leaves the original document stays a material loss either way. Removed and deleted entries carry the matched IOC id; refresh never deletes the global IOC record.
 - **CLI:** the maintenance CLI does the same with `refresh-extraction --apply --accept-membership-changes --reason "…" [--preview-fingerprint <from a dry-run>]`, and its dry-run shows the verdict and fingerprint.

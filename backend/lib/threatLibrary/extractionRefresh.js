@@ -298,7 +298,36 @@ export function guardExtractionRefresh(report, previousRows, refreshed, membersh
     nextQuality: refreshed.diagnostics?.quality || null,
     linkedCandidateIds: opts.linkedCandidateIds || null
   });
-  return { diff, guard: evaluateRefreshMembershipGuard(diff, membershipPolicy) };
+  return { diff, guard: evaluateRefreshMembershipGuard(diff, membershipPolicy, { acceptorRole: opts.acceptorRole ?? null }) };
+}
+
+/** requested_by of an acceptance queued by the server-side maintenance CLI. */
+export const MAINTENANCE_CLI_ACTOR = 'system:threat-library-maintenance';
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Role of the principal that accepted a refresh, resolved from the database
+ * when the job runs (never from the request body or the queued payload): the
+ * CURRENT role of an active user, so a demoted or disabled admin cannot
+ * authorize an admin-only acceptance queued earlier. The maintenance CLI
+ * (server shell access) is `system`. Anything unresolvable is null (not admin).
+ * @param {import('pg').Pool} pool
+ * @param {{ mode?: string, requested_by?: string|null }} policy
+ * @returns {Promise<string|null>}
+ */
+export async function resolveAcceptorRole(pool, policy) {
+  if (policy?.mode !== 'accept') return null;
+  const who = String(policy.requested_by || '');
+  if (who === MAINTENANCE_CLI_ACTOR) return 'system';
+  if (!UUID_RE.test(who)) return null;
+  try {
+    const { rows } = await pool.query(`SELECT role, status FROM users WHERE public_id = $1::uuid`, [who]);
+    const row = rows?.[0];
+    return row && String(row.status || '') === 'active' ? String(row.role || '') || null : null;
+  } catch (err) {
+    log.warn('refresh acceptance: acceptor role lookup failed (treated as non-admin)', { error: err.message });
+    return null;
+  }
 }
 
 export const REFRESH_CONCURRENT_CHANGE_CODE = 'refresh_candidates_changed_concurrently';
@@ -435,7 +464,10 @@ export async function runExtractionRefresh(pool, ctx) {
     // written. A material unexpected loss is not applied unless the request
     // explicitly accepted it (policy `accept` with a reason).
     const linkedCandidateIds = await linkedRowsLeavingDocument(pool, previousRows, refreshed.candidates);
-    const { diff: membershipDiff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy, { linkedCandidateIds });
+    // Authorization of an explicit acceptance is decided here (and again under
+    // the row locks), from the requester's current role in the database.
+    const acceptorRole = await resolveAcceptorRole(pool, membershipPolicy);
+    const { diff: membershipDiff, guard } = guardExtractionRefresh(report, previousRows, refreshed, membershipPolicy, { linkedCandidateIds, acceptorRole });
     const compactDiff = compactRefreshMembershipDiff(membershipDiff);
     if (guard.decision === REFRESH_GUARD_DECISIONS.BLOCK) {
       return await blockExtractionRefresh(pool, { report, ctx, restore, priorProgress, dispatch, guard, compactDiff, startedAt });
@@ -459,7 +491,7 @@ export async function runExtractionRefresh(pool, ctx) {
           );
         }
         const lockedLinked = await linkedRowsLeavingDocument(client, lockedRows, refreshed.candidates);
-        lockedGuard = guardExtractionRefresh(report, lockedRows, refreshed, membershipPolicy, { linkedCandidateIds: lockedLinked });
+        lockedGuard = guardExtractionRefresh(report, lockedRows, refreshed, membershipPolicy, { linkedCandidateIds: lockedLinked, acceptorRole });
         if (lockedGuard.guard.decision === REFRESH_GUARD_DECISIONS.BLOCK) {
           throw Object.assign(new Error(lockedGuard.guard.message), { code: REFRESH_BLOCKED_CODE, lockedGuard });
         }
@@ -620,10 +652,12 @@ export function membershipGuardSummary(guard, compactDiff) {
     material: guard.material,
     material_fingerprint: guard.material_fingerprint || null,
     reasons: guard.reasons.map((r) => ({ code: r.code, count: r.count, material: r.material })),
+    authorization: guard.authorization || null,
     ...(guard.accepted
       ? {
           accepted_reason: guard.accepted.reason,
           accepted_by: guard.accepted.requested_by || null,
+          accepted_by_role: guard.accepted.acceptor_role || null,
           accepted_preview_fingerprint: guard.accepted.preview_fingerprint || null
         }
       : {}),

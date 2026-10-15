@@ -3,7 +3,7 @@
  */
 
 import multer from 'multer';
-import { requireRole, ROLES } from '../lib/rbac.js';
+import { isAdminRole, requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from '../lib/auditConstants.js';
 import {
   buildDeleteAuditEvent,
@@ -1159,6 +1159,39 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       const parsed = parseRefreshMembershipPolicy(req.body || {}, actorPublicId(await actorOf(req)));
       if (!parsed.ok) return res.status(400).json({ message: parsed.message, code: 'invalid_membership_policy' });
       membershipPolicy = parsed.policy;
+      // Admin-only losses (reviewed / publisher-asserted / IOC-linked) are
+      // refused for a non-admin before anything is claimed or queued. The
+      // worker enforces the same rule again from the requester's current role.
+      if (membershipPolicy && !isAdminRole(req.user?.role)) {
+        let preview = null;
+        try {
+          preview = await (deps.previewExtractionRefresh || previewExtractionRefresh)(pool, report);
+        } catch {
+          preview = null; // nothing to refresh from: the worker reports it; it still enforces the role
+        }
+        const authorization = preview?.guard?.authorization || null;
+        if (authorization?.required_role === 'admin') {
+          await writeAudit(req, {
+            action: AUDIT_ACTION.THREAT_LIBRARY_REFRESH_ACCEPTANCE_REQUESTED,
+            ...reportAuditEntity(report),
+            severity: AUDIT_SEVERITY.WARNING,
+            status: AUDIT_STATUS.FAILED,
+            metadata: {
+              ...reportAuditSnapshot(report),
+              result: 'denied_requires_admin',
+              requester_role: req.user?.role || null,
+              authorization,
+              preview_fingerprint: membershipPolicy.preview_fingerprint,
+              initiated_by: initiatedBy(await actorOf(req))
+            }
+          }).catch(() => {});
+          return res.status(403).json({
+            message: 'Accepting these Indicator losses requires an admin. A protected refresh (without acceptance) is still available.',
+            code: 'refresh_acceptance_requires_admin',
+            authorization
+          });
+        }
+      }
     }
 
     const restoreStatus = { analysis_status: report.analysis_status, import_status: report.import_status };
@@ -1203,6 +1236,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           ...reportAuditSnapshot(report),
           job_public_id: jobRow.public_id,
           membership_changes: membershipPolicy.mode,
+          requester_role: req.user?.role || null,
           acceptance_reason: membershipPolicy.reason,
           preview_fingerprint: membershipPolicy.preview_fingerprint,
           initiated_by: initiatedBy(await actorOf(req))

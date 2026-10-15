@@ -44,9 +44,10 @@ function cand(type, value, opts = {}) {
 const row = (c, extra = {}) => ({ ...candidateColumns(c), id: 1, promotion_outcome: null, ...extra });
 const contextOnly = (c) => ({ ...c, assessment: 'context_only', match_state: 'context_only', policy_decision: 'context_only_negative_zone', source_assertion: 'reference_only' });
 
-function guard(previousRows, nextCandidates, policy, quality = {}) {
+/** Acceptances here come from an admin unless a test says otherwise (role matrix below). */
+function guard(previousRows, nextCandidates, policy, quality = {}, acceptorRole = 'admin') {
   const diff = buildRefreshMembershipDiff({ previousRows, nextCandidates, ...quality });
-  return { diff, verdict: evaluateRefreshMembershipGuard(diff, policy) };
+  return { diff, verdict: evaluateRefreshMembershipGuard(diff, policy, { acceptorRole }) };
 }
 
 const codes = (verdict) => verdict.reasons.map((r) => r.code).sort();
@@ -100,6 +101,7 @@ test('explicit acceptance with a reason applies the same diff and records who an
   assert.deepEqual(verdict.accepted, {
     reason: policy.reason,
     requested_by: 'user-1',
+    acceptor_role: 'admin',
     requested_at: policy.requested_at,
     preview_fingerprint: preview.material_fingerprint
   });
@@ -297,12 +299,100 @@ test('acceptance of a stale preview is refused; acceptance without a preview is 
   const preview = buildRefreshMembershipDiff({ previousRows: [a], nextCandidates: [] });
   const now = buildRefreshMembershipDiff({ previousRows: [a, b], nextCandidates: [] });
   const reason = 'Reviewed the preview: intended parser change';
-  const stale = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason, preview_fingerprint: preview.material_fingerprint });
+  const stale = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason, preview_fingerprint: preview.material_fingerprint }, { acceptorRole: 'admin' });
   assert.equal(stale.decision, REFRESH_GUARD_DECISIONS.BLOCK);
   assert.ok(codes(stale).includes(REFRESH_GUARD_REASONS.PREVIEW_STALE));
-  const missing = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason });
+  const missing = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason }, { acceptorRole: 'admin' });
   assert.equal(missing.decision, REFRESH_GUARD_DECISIONS.BLOCK);
   assert.ok(codes(missing).includes(REFRESH_GUARD_REASONS.PREVIEW_FINGERPRINT_MISSING));
-  const current = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason, preview_fingerprint: now.material_fingerprint });
+  const current = evaluateRefreshMembershipGuard(now, { mode: 'accept', reason, preview_fingerprint: now.material_fingerprint }, { acceptorRole: 'admin' });
   assert.equal(current.decision, REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED);
+});
+
+// ---------------------------------------------------------------- RBAC (guard role matrix)
+
+/** Synthetic diff with only the given loss counts (everything else zero). */
+function lossDiff(counts) {
+  return {
+    material_fingerprint: 'f'.repeat(64),
+    indicators: { before: 10, after: 10 - (counts.removed_indicators || 0) },
+    mode: { before: 'A', after: 'A' },
+    quality: { new_warning_codes: [] },
+    counts: {
+      removed_indicators: 0,
+      removed_reviewed_indicators: 0,
+      removed_reviewed_any: 0,
+      removed_publisher_asserted: 0,
+      reviewed_candidates_deleted: 0,
+      ioc_linked_losses: 0,
+      ...counts
+    }
+  };
+}
+const ACCEPT = { mode: 'accept', reason: 'Reviewed the preview carefully', preview_fingerprint: 'f'.repeat(64), requested_by: 'u' };
+
+test('RBAC role matrix: admin-only loss categories × acceptor roles', async () => {
+  const { ADMIN_ACCEPTANCE_CATEGORIES: C } = await import('./refreshMembershipGuard.js');
+  const categories = [
+    [C.REVIEWED_INDICATOR_REMOVED, { removed_indicators: 1, removed_reviewed_indicators: 1, removed_reviewed_any: 1 }],
+    [C.PUBLISHER_ASSERTED_REMOVED, { removed_indicators: 1, removed_publisher_asserted: 1 }],
+    [C.REVIEWED_CANDIDATE_DELETED, { reviewed_candidates_deleted: 1 }],
+    [C.IOC_LINKED_CANDIDATE_REMOVED, { removed_indicators: 6, ioc_linked_losses: 1 }]
+  ];
+  const roles = [
+    ['admin', 'apply_accepted', null],
+    ['system', 'apply_accepted', null],
+    ['analyst', 'block', 'acceptance_requires_admin'],
+    ['readonly', 'block', 'acceptance_not_authorized'],
+    [null, 'block', 'acceptance_not_authorized'],
+    ['superadmin', 'block', 'acceptance_not_authorized']
+  ];
+  for (const [category, counts] of categories) {
+    const diff = lossDiff(counts);
+    for (const [role, decision, code] of roles) {
+      const v = evaluateRefreshMembershipGuard(diff, ACCEPT, { acceptorRole: role });
+      assert.equal(v.decision, decision, `${category} × ${role}`);
+      assert.equal(v.authorization.required_role, 'admin', category);
+      assert.ok(v.authorization.categories.some((x) => x.code === category), category);
+      if (code) assert.ok(v.reasons.some((r) => r.code === code), `${category} × ${role}: ${JSON.stringify(v.reasons)}`);
+    }
+  }
+});
+
+test('RBAC: an analyst may accept losses limited to unreviewed, non-publisher, IOC-free candidates', () => {
+  const diff = lossDiff({ removed_indicators: 6 }); // bulk loss of model-only rows
+  const analyst = evaluateRefreshMembershipGuard(diff, ACCEPT, { acceptorRole: 'analyst' });
+  assert.equal(analyst.decision, REFRESH_GUARD_DECISIONS.APPLY_ACCEPTED);
+  assert.equal(analyst.authorization.required_role, 'analyst');
+  assert.equal(analyst.accepted.acceptor_role, 'analyst');
+  assert.equal(evaluateRefreshMembershipGuard(diff, ACCEPT, { acceptorRole: 'readonly' }).decision, REFRESH_GUARD_DECISIONS.BLOCK);
+  assert.equal(evaluateRefreshMembershipGuard(diff, ACCEPT).decision, REFRESH_GUARD_DECISIONS.BLOCK, 'no resolved role: fail closed');
+});
+
+test('RBAC: a non-material refresh needs no acceptance and no role; a protected material refresh still blocks for an admin', () => {
+  const none = evaluateRefreshMembershipGuard(lossDiff({}), null);
+  assert.equal(none.decision, REFRESH_GUARD_DECISIONS.APPLY);
+  assert.equal(none.authorization.required_role, null);
+  const protectedAdmin = evaluateRefreshMembershipGuard(lossDiff({ reviewed_candidates_deleted: 1 }), null, { acceptorRole: 'admin' });
+  assert.equal(protectedAdmin.decision, REFRESH_GUARD_DECISIONS.BLOCK, 'being admin is not an acceptance');
+});
+
+test('RBAC: the admin requirement is derived from real diffs (reviewed / publisher / IOC-linked / deletion)', () => {
+  const md5 = cand('md5', H('a'));
+  const roleOf = (prev) => {
+    const diff = buildRefreshMembershipDiff({ previousRows: prev, nextCandidates: [] });
+    return evaluateRefreshMembershipGuard(diff, null).authorization;
+  };
+  assert.equal(roleOf([row(md5)]).required_role, 'admin', 'publisher-asserted Indicator');
+  assert.equal(roleOf([row(md5, { review_status: 'approved' })]).required_role, 'admin', 'reviewed');
+  assert.ok(roleOf([row(md5, { matched_ioc_id: 42 })]).categories.some((c) => c.code === 'ioc_linked_candidate_removed'), 'IOC-linked');
+  // Fingerprint contract unchanged by the authorization fields.
+  const d = buildRefreshMembershipDiff({ previousRows: [row(md5)], nextCandidates: [] });
+  assert.match(d.material_fingerprint, /^[a-f0-9]{64}$/);
+});
+
+test('RBAC: a diff without the IOC-linked count (older payload) fails closed to admin', () => {
+  const diff = lossDiff({ removed_indicators: 6 });
+  delete diff.counts.ioc_linked_losses;
+  assert.equal(evaluateRefreshMembershipGuard(diff, ACCEPT, { acceptorRole: 'analyst' }).decision, REFRESH_GUARD_DECISIONS.BLOCK);
 });

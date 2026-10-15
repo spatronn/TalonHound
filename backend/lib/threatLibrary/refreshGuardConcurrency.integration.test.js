@@ -217,7 +217,8 @@ test('an accepted preview no longer matches once link provenance is removed befo
       mode: 'accept',
       reason: 'Accepting the reviewed publisher row moving to the IOC Source only',
       preview_fingerprint: preview.membership_diff.material_fingerprint,
-      requested_by: null,
+      // Accepting a reviewed publisher row's loss is an admin decision.
+      requested_by: await insertUser('admin'),
       requested_at: new Date().toISOString()
     };
 
@@ -279,5 +280,59 @@ test('a review issued while the refresh holds the row locks waits, then applies 
     assert.equal(row.review_status, 'ignored');
   } finally {
     await cleanup(report.id);
+  }
+});
+
+// ---------------------------------------------------------------- RBAC on real users rows
+
+async function insertUser(role, status = 'active') {
+  const { rows } = await pool.query(
+    `INSERT INTO users (username, password_hash, role, status) VALUES ($1, 'x', $2, $3) RETURNING public_id`,
+    [`itest-${role}-${crypto.randomUUID()}`, role, status]
+  );
+  return rows[0].public_id;
+}
+
+test('RBAC on real Postgres: the worker resolves the acceptor from users — analyst / passive admin refused, active admin applies', opts, async () => {
+  const analyst = await insertUser('analyst');
+  const passiveAdmin = await insertUser('admin', 'passive');
+  const admin = await insertUser('admin');
+  try {
+    for (const [requestedBy, expectOk, code] of [[analyst, false, 'acceptance_requires_admin'], [passiveAdmin, false, 'acceptance_not_authorized'], [admin, true, null]]) {
+      const { report, extracted, job } = await setupReport();
+      try {
+        const template = candidateColumns(extracted.candidates.find((c) => c.candidate_type === 'domain'));
+        // A reviewed publisher row the document no longer produces (a real deletion).
+        await insertRow(report.id, { ...template, normalized_value: 'reviewed-gone.example', original_value: 'reviewed-gone.example', review_status: 'approved' });
+        const { rows: stored } = await pool.query(`SELECT * FROM threat_reports WHERE id = $1`, [report.id]);
+        const preview = await previewExtractionRefresh(pool, stored[0]);
+        assert.equal(preview.guard.authorization.required_role, 'admin');
+        const before = await rowsOf(report.id);
+        const res = await runExtractionRefresh(pool, {
+          reportId: report.id,
+          jobId: job.id,
+          restoreStatus: { analysis_status: 'review_required', import_status: 'ready' },
+          membershipPolicy: {
+            mode: 'accept',
+            reason: 'Reviewed the preview and the deletion is intended',
+            preview_fingerprint: preview.membership_diff.material_fingerprint,
+            requested_by: requestedBy,
+            // A forged claim in the payload is ignored: the role comes from users.
+            requested_by_role: 'admin'
+          }
+        });
+        assert.equal(res.ok, expectOk, JSON.stringify(res.summary?.membership_guard));
+        if (!expectOk) {
+          assert.ok(res.summary.membership_guard.reasons.some((r) => r.code === code));
+          assert.deepEqual(await rowsOf(report.id), before, 'refused: nothing written');
+        } else {
+          assert.equal((await rowsOf(report.id)).some((r) => r.normalized_value === 'reviewed-gone.example'), false);
+        }
+      } finally {
+        await cleanup(report.id);
+      }
+    }
+  } finally {
+    await pool.query(`DELETE FROM users WHERE public_id = ANY($1::uuid[])`, [[analyst, passiveAdmin, admin]]);
   }
 });

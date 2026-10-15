@@ -67,6 +67,13 @@ function createFakeDb({ report, iocCatalog = [] }) {
     reportTags: [],
     chunks: [],
     sourceLinks: [],
+    // users.public_id → { role, status } (acceptor role lookup of an explicit acceptance)
+    users: new Map([
+      ['11111111-2222-4333-8444-555555555555', { role: 'admin', status: 'active' }],
+      ['22222222-2222-4333-8444-555555555555', { role: 'analyst', status: 'active' }],
+      ['33333333-2222-4333-8444-555555555555', { role: 'admin', status: 'disabled' }],
+      ['44444444-2222-4333-8444-555555555555', { role: 'readonly', status: 'active' }]
+    ]),
     jobs: [{ id: 41, report_id: report.id, job_type: 'refresh_extraction', status: 'running', progress: {} }],
     sql: [],
     calls: [],
@@ -109,6 +116,10 @@ function createFakeDb({ report, iocCatalog = [] }) {
       return { rows: [], rowCount: 1 };
     }
     if (/SELECT cancel_requested_at FROM threat_reports/.test(s)) return { rows: [{ cancel_requested_at: null }] };
+    if (/SELECT role, status FROM users WHERE public_id = \$1::uuid/.test(s)) {
+      const u = db.users.get(String(params[0]));
+      return { rows: u ? [{ ...u }] : [] };
+    }
     if (/FROM threat_report_artifacts/.test(s)) return { rows: [] };
     // Linked IOC Source provenance (db.sourceLinks = candidate ids); empty by default.
     if (/SELECT DISTINCT candidate_id FROM threat_report_candidate_source_links/.test(s)) {
@@ -1231,4 +1242,75 @@ test('candidateSnapshotDrift: any added, removed or changed protected row state 
   assert.deepEqual(candidateSnapshotDrift(snap, [row(1)]), ['2'], 'deleted row');
   assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2), row(3)]), ['3'], 'added row');
   assert.deepEqual(candidateSnapshotDrift(snap, [row(1), row(2, { matched_ioc_id: '42', promotion_outcome: 'created' })]), ['2'], 'Create IOCs');
+});
+
+// ---------------------------------------------------------------- RBAC (worker)
+
+test('RBAC (worker): an admin-only acceptance from a non-admin principal is refused at execution; nothing is written', async (t) => {
+  const cases = [
+    ['analyst', '22222222-2222-4333-8444-555555555555', {}, 'acceptance_requires_admin'],
+    ['disabled admin', '33333333-2222-4333-8444-555555555555', {}, 'acceptance_not_authorized'],
+    ['readonly', '44444444-2222-4333-8444-555555555555', {}, 'acceptance_not_authorized'],
+    ['unknown user', '99999999-2222-4333-8444-555555555555', {}, 'acceptance_not_authorized'],
+    ['non-uuid requester', 'admin', {}, 'acceptance_not_authorized'],
+    // Privilege escalation: role claims riding the dispatch payload are ignored.
+    ['forged role fields', '22222222-2222-4333-8444-555555555555', { requested_by_role: 'admin', acceptor_role: 'admin', role: 'admin' }, 'acceptance_requires_admin']
+  ];
+  for (const [label, requestedBy, forged, code] of cases) {
+    const { deps } = noAiSpies(t);
+    const { db, pool } = await seedWithApprovedStaleIndicator();
+    const accept = await acceptPreview(db, pool);
+    const before = JSON.stringify(db.candidates);
+    const result = await refresh(pool, deps, undefined, { ...accept, ...forged, requested_by: requestedBy });
+    assert.equal(result.ok, false, label);
+    assert.equal(result.code, 'refresh_membership_loss_blocked', label);
+    const g = result.summary.membership_guard;
+    assert.ok(g.reasons.some((r) => r.code === code), `${label}: ${JSON.stringify(g.reasons)}`);
+    assert.equal(g.authorization.required_role, 'admin', label);
+    assert.equal(JSON.stringify(db.candidates), before, `${label}: no candidate written`);
+    assert.equal(db.candidates.some((c) => c.normalized_value === 'cs.append'), true, `${label}: reviewed row kept`);
+  }
+});
+
+test('RBAC (worker): the same acceptance from an active admin or the maintenance CLI applies and records the role', async (t) => {
+  const { MAINTENANCE_CLI_ACTOR } = await import('./extractionRefresh.js');
+  for (const [requestedBy, role] of [['11111111-2222-4333-8444-555555555555', 'admin'], [MAINTENANCE_CLI_ACTOR, 'system']]) {
+    const { deps } = noAiSpies(t);
+    const { db, pool } = await seedWithApprovedStaleIndicator();
+    const accept = await acceptPreview(db, pool);
+    const result = await refresh(pool, deps, undefined, { ...accept, requested_by: requestedBy });
+    assert.equal(result.ok, true, role);
+    const g = db.report.analysis_progress.last_refresh.membership_guard;
+    assert.equal(g.decision, 'apply_accepted');
+    assert.equal(g.accepted_by_role, role);
+    assert.equal(g.authorization.required_role, 'admin');
+  }
+});
+
+test('RBAC (worker): the role is read when the job runs — an admin demoted after queueing no longer authorizes', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedWithApprovedStaleIndicator();
+  const accept = await acceptPreview(db, pool);
+  db.users.set(accept.requested_by, { role: 'analyst', status: 'active' });
+  const result = await refresh(pool, deps, undefined, accept);
+  assert.equal(result.ok, false);
+  assert.ok(result.summary.membership_guard.reasons.some((r) => r.code === 'acceptance_requires_admin'));
+});
+
+test('RBAC (worker): a protected refresh (no acceptance) is unchanged for every role — no role lookup', async (t) => {
+  const { deps } = noAiSpies(t);
+  const { db, pool } = await seedAnalyzedReport({ html: { withSecondNetworkIoc: false } });
+  db.report.canonical_document = buildDocument({ withSecondNetworkIoc: true });
+  db.report.canonical_document.meta = { ...db.report.canonical_document.meta };
+  const result = await refresh(pool, deps);
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.membership_guard.decision, 'apply');
+  assert.equal(db.sql.some((q) => /FROM users/.test(q)), false);
+});
+
+test('the CLI actor constant matches the maintenance script operator', async () => {
+  const { MAINTENANCE_CLI_ACTOR } = await import('./extractionRefresh.js');
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../scripts/threat-library-report-maintenance.js', import.meta.url), 'utf8');
+  assert.ok(src.includes(`actorUsername: '${MAINTENANCE_CLI_ACTOR}'`));
 });

@@ -12,7 +12,7 @@ import { registerThreatLibraryRoutes } from './threatLibrary.js';
 
 const PUBLIC_ID = '11111111-2222-4333-8444-555555555555';
 
-function harness(reportPatch = {}, { jobs = [], audit = null } = {}) {
+function harness(reportPatch = {}, { jobs = [], audit = null, preview = null } = {}) {
   const state = {
     report: {
       id: 7,
@@ -132,7 +132,11 @@ function harness(reportPatch = {}, { jobs = [], audit = null } = {}) {
       routes.set(`${String(method).toUpperCase()} ${routePath}`, handlers);
     }
   });
-  registerThreatLibraryRoutes(app, pool, audit, { threatLibraryQueue: queue });
+  const previews = [];
+  const previewExtractionRefresh = preview
+    ? async (_pool, report) => { previews.push(report.id); return preview; }
+    : undefined;
+  registerThreatLibraryRoutes(app, pool, audit, { threatLibraryQueue: queue, ...(previewExtractionRefresh ? { previewExtractionRefresh } : {}) });
   async function call(action, user = { id: 1, role: 'analyst' }, body = {}, method = 'POST') {
     const handlers = routes.get(`${method} /api/threat-library/reports/:publicId/${action}`);
     assert.ok(handlers, `${action} registered`);
@@ -143,7 +147,7 @@ function harness(reportPatch = {}, { jobs = [], audit = null } = {}) {
     await next();
     return res;
   }
-  return { state, enqueued, call, routes };
+  return { state, enqueued, call, routes, previews };
 }
 
 // ---------------------------------------------------------------- Refresh
@@ -398,4 +402,82 @@ test('refresh-extraction preview: gated like the action, read-only, 409 without 
   assert.equal(res.body.code, 'refresh_source_unavailable');
   assert.equal(outdated.state.jobs.length, 0, 'preview never creates a job');
   assert.equal(outdated.state.report.analysis_status, 'review_required', 'preview never claims the report');
+});
+
+// ---------------------------------------------------------------- RBAC (route)
+
+const ADMIN_ONLY_PREVIEW = Object.freeze({
+  guard: {
+    decision: 'block',
+    material: true,
+    authorization: { required_role: 'admin', categories: [{ code: 'reviewed_indicator_removed', count: 1 }] }
+  }
+});
+const ANALYST_PREVIEW = Object.freeze({
+  guard: { decision: 'block', material: true, authorization: { required_role: 'analyst', categories: [] } }
+});
+const acceptBody = (extra = {}) => ({
+  membership_changes: 'accept',
+  reason: 'Reviewed the preview: removed rows were parser false positives.',
+  preview_fingerprint: 'c'.repeat(64),
+  ...extra
+});
+
+test('RBAC: an analyst accepting admin-only losses gets 403 before anything is claimed or queued; the denial is audited', async () => {
+  const events = [];
+  const audit = { auditLog: async (e) => { events.push(e); }, resolveActor: async (req) => ({ ...req.user }) };
+  const h = harness({}, { audit, preview: ADMIN_ONLY_PREVIEW });
+  const statusBefore = h.state.report.analysis_status;
+  const res = await h.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' }, acceptBody());
+  assert.equal(res.statusCode, 403, JSON.stringify(res.body));
+  assert.equal(res.body.code, 'refresh_acceptance_requires_admin');
+  assert.equal(res.body.authorization.required_role, 'admin');
+  assert.equal(h.enqueued.length, 0, 'nothing queued');
+  assert.equal(h.state.jobs.length, 0, 'no job row');
+  assert.equal(h.state.report.analysis_status, statusBefore, 'report not claimed');
+  const denied = events.find((e) => e.action === 'threat_library.refresh_extraction.acceptance_requested');
+  assert.ok(denied, JSON.stringify(events.map((e) => e.action)));
+  assert.equal(denied.status, 'failed');
+  assert.equal(denied.metadata.result, 'denied_requires_admin');
+  assert.equal(denied.metadata.requester_role, 'analyst');
+});
+
+test('RBAC: role-claim injection in the request body never elevates the requester', async () => {
+  const h = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  const res = await h.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' }, acceptBody({
+    role: 'admin',
+    requested_by_role: 'admin',
+    acceptor_role: 'admin',
+    requested_by: '11111111-2222-4333-8444-555555555555'
+  }));
+  assert.equal(res.statusCode, 403);
+  assert.equal(h.enqueued.length, 0);
+});
+
+test('RBAC: an admin acceptance is queued without a route-side preview; the worker re-checks the current role', async () => {
+  const h = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  const res = await h.call('refresh-extraction', { id: 1, role: 'admin', publicId: 'admin-pub-1' }, acceptBody({ requested_by: 'someone-else' }));
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  assert.equal(h.previews.length, 0);
+  const policy = h.enqueued[0].data.membershipPolicy;
+  assert.equal(policy.requested_by, 'admin-pub-1', 'requested_by is the session principal, never the body');
+  assert.equal('acceptor_role' in policy || 'requested_by_role' in policy, false, 'no role claim rides the dispatch');
+});
+
+test('RBAC: analyst workflows are unaffected — protected refresh, preview, and analyst-level acceptance', async () => {
+  const plain = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  assert.equal((await plain.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' })).statusCode, 202);
+  assert.equal(plain.previews.length, 0, 'a protected refresh needs no authorization preview');
+
+  const limited = harness({}, { preview: ANALYST_PREVIEW });
+  const res = await limited.call('refresh-extraction', { id: 2, role: 'analyst', publicId: 'analyst-pub-2' }, acceptBody());
+  assert.equal(res.statusCode, 202, JSON.stringify(res.body));
+  assert.equal(limited.enqueued[0].data.membershipPolicy.mode, 'accept');
+});
+
+test('RBAC: readonly cannot reach refresh or its preview at all', async () => {
+  const h = harness({}, { preview: ADMIN_ONLY_PREVIEW });
+  assert.equal((await h.call('refresh-extraction', { id: 3, role: 'readonly' }, acceptBody())).statusCode, 403);
+  assert.equal((await h.call('refresh-extraction/preview', { id: 3, role: 'readonly' }, {}, 'GET')).statusCode, 403);
+  assert.equal(h.enqueued.length, 0);
 });
