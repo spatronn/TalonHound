@@ -466,6 +466,12 @@ Exact client schema may vary by Cursor version; the server expects Streamable HT
 
 Health check: authenticated `GET /mcp/health` returns `{ ok, mcp, enabled, transport, limits }`.
 
+## Testing
+
+- `npm run test:mcp` (backend, in CI) runs the unit suites. `lib/mcpIocService.test.js` answers SQL from strict fake pools: any query the pool does not recognise throws, so a new read in a tool fails loudly until the fixture learns it. Shared answers for reads used by several tools live in `backend/test-support/`, e.g. `attributionQueryMock.js` for the effective Threat Actors / Malware Families read, filtered by the bound IOC pair.
+- `npm run test:mcp-integration` (in CI, after migrations) runs `lookup_ioc` / `get_ioc_context` against a migrated, disposable PostgreSQL: row-value `IN (VALUES …)` pairs, uuid/bigint casts, catalog joins, attribution suppression and withdrawal, enrichment scope gating. It skips without a database. Never point it at production.
+- Authorization assertions (scopes, owner RBAC, read-only vs action tools) are never mocked to succeed: `lib/mcpPermissions.test.js`, `lib/mcpAuth.test.js` and `routes/mcp.test.js` exercise the real checks.
+
 ## Token revocation
 
 To revoke MCP access:
