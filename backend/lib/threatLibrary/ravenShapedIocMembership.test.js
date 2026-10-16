@@ -11,8 +11,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CANDIDATE_REVIEW_FIXTURE, CANDIDATE_REVIEW_MODULE, importFrontendModule } from '../../test-support/frontendModule.js';
 import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { extractCandidatesWithDiagnostics, THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
@@ -24,14 +23,7 @@ import {
 import { isCredentialLabeledHex } from './indicatorScope.js';
 import { FILE_EXT_HINT, OBSERVABLE_TYPE_RESOLVER_VERSION, resolveDottedToken } from './observableTypeResolver.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const frontendPath = [
-  path.resolve(here, '../../test-fixtures/candidateReview.frontend.js'),
-  path.resolve(here, '../../../../frontend/src/components/threatLibrary/candidateReview.js'),
-  '/opt/TalonHound/frontend/src/components/threatLibrary/candidateReview.js'
-].find((p) => existsSync(p));
-if (!frontendPath) throw new Error('frontend candidateReview.js not found for FE parity');
-const frontend = await import(pathToFileURL(frontendPath).href);
+const frontend = await importFrontendModule(CANDIDATE_REVIEW_MODULE, { fixtureName: CANDIDATE_REVIEW_FIXTURE });
 const { isReviewIndicator, isContextOnlyCandidate: feContextOnly } = frontend;
 
 const SOURCE = 'https://research.example/lab/raven-shaped-mode-a/';
