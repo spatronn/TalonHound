@@ -21,14 +21,21 @@ import {
   extractHtmlLanguage,
   findElement,
   findElements,
-  parseHtml,
-  HTML_BLOCKS_VERSION
+  parseHtml
 } from './htmlBlocks.js';
 import { extractWeixinDocument, WEIXIN_EXTRACTOR_VERSION } from './adapters/weixin.js';
 import { selectHtmlTitle } from './titleSelection.js';
 
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = HTML_BLOCKS_VERSION;
-export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v3';
+/**
+ * Document-level HTML extractor contract. Bumped independently of
+ * htmlBlocks.HTML_BLOCKS_VERSION when content-root selection / layered
+ * fallback policy changes so Refresh rebuilds retained URL HTML under the
+ * new rules.
+ * v6: score article/main roots; prefer denser main over thin card articles;
+ * always compare structured content-root fallback against thin incumbents.
+ */
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v6';
+export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */
 export const CURRENT_HTML_EXTRACTOR_VERSIONS = Object.freeze([
