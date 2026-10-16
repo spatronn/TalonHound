@@ -14,6 +14,7 @@ import { loadCanonicalIocClassification } from './iocCanonicalClassifications.js
 import { API_SYSTEM_SOURCE_NAME } from './apiSystemSource.js';
 import { API_SCOPE } from './apiKeyProfiles.js';
 import { MCP_DEFAULTS } from './mcpConfig.js';
+import { attributionQueryRows } from '../test-support/attributionQueryMock.js';
 
 const TEST_CONFIG = Object.freeze({
   valueMaxChars: MCP_DEFAULTS.VALUE_MAX_CHARS,
@@ -256,8 +257,9 @@ function makeLookupPool({ existing = null, classifications = [], tags = [], sour
 }
 
 // Full mock for get_ioc_context: getApiIoc (SELECT * by id/public_id) + the
-// effective-classification, catalog-tag, source-evidence and enrichment reads.
-function makeContextPool({ row = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null, timestampRows = [], timestampMemberships = [], timestampClaims = [] } = {}) {
+// effective-classification, catalog-tag, source-evidence, enrichment and
+// effective attribution (Threat Actors / Malware Families) reads.
+function makeContextPool({ attributions = {}, row = null, classifications = [], tags = [], sources = [], evidence = [], suppressions = [], evidenceReports = [], enrichment = [], rdap = null, abuseipdb = null, ipinfo = null, spamhaus = null, threatClaims = [], threatRelationships = [], threatEntities = [], threatContextError = null, timestampRows = [], timestampMemberships = [], timestampClaims = [] } = {}) {
   const queries = [];
   return {
     queries,
@@ -361,6 +363,12 @@ function makeContextPool({ row = null, classifications = [], tags = [], sources 
       }
       // Source observation timestamps (loadIocSourceObservationTimestamps): no identity rows by default.
       if (normalized.includes('AS item_first_seen_at')) return { rows: timestampRows || [] };
+      // Effective attribution (fetchEffectiveIocAttributions): none unless a test seeds it.
+      const attributionRows = attributionQueryRows(normalized, params, attributions);
+      if (attributionRows) {
+        if (attributions.error) throw attributions.error;
+        return { rows: attributionRows };
+      }
       throw new Error(`Unexpected SQL in context pool: ${normalized.slice(0, 120)}`);
     }
   };
@@ -2149,4 +2157,102 @@ test('bulk_lookup_iocs: source observation timestamps in one batched read, still
   // Besides tag inheritance and that date read, bulk never touches Threat Library tables.
   assert.equal(pool.queries.some((q) => !isInheritedTagQuery(q) && !q.sql.includes("c.evidence->'source_observation'")
     && /threat_report_candidates|threat_relationships|threat_report_entities|threat_entities|threat_reports/.test(q.sql)), false);
+});
+
+// --- get_ioc_context: effective Threat Actors / Malware Families (24aa017) ---
+
+const ACTOR_ID = '0b9c2f3e-1111-4c3d-8e4f-000000000001';
+const FAMILY_ID = '0b9c2f3e-2222-4c3d-8e4f-000000000002';
+const OTHER_IOC = { id: 999001, observable_type: 'domain' };
+
+function attributionFixtures(row) {
+  const pair = { ioc_id: row.id, ioc_observable_type: row.observable_type };
+  const source = (over) => ({
+    ...pair,
+    entity_kind: 'malware_family',
+    source_label: 'Emotet',
+    source_label_normalized: 'emotet',
+    entity_id: FAMILY_ID,
+    resolution_status: 'resolved',
+    feed_key: 'alienvault-otx',
+    source_name: 'AlienVault OTX',
+    evidence_ref_type: 'otx_pulse',
+    evidence_ref_id: 'pulse-1',
+    evidence_url: 'https://otx.example/pulse/pulse-1',
+    evidence_title: 'Pulse 1',
+    association_kind: 'associated_via_source_pulse',
+    assertion_status: 'current',
+    resolved_name: 'Emotet',
+    resolved_slug: 'emotet',
+    resolved_aliases: ['Geodo'],
+    resolved_active: true,
+    ...over
+  });
+  return {
+    analystThreatActors: [
+      { ...pair, entity_id: ACTOR_ID, source_type: 'analyst', source_name: null, name: 'PeckBirdy', slug: 'peckbirdy', aliases: null, active: true },
+      // Another IOC's association must never leak into this IOC's context.
+      { ioc_id: OTHER_IOC.id, ioc_observable_type: OTHER_IOC.observable_type, entity_id: 'other-actor', source_type: 'analyst', name: 'Unrelated Actor', slug: 'unrelated', active: true }
+    ],
+    analystMalwareFamilies: [],
+    sourceAttributions: [
+      source(),
+      source({ evidence_ref_id: 'pulse-2', source_label: 'TrickBot', source_label_normalized: 'trickbot', entity_id: null, resolution_status: 'unresolved', resolved_name: null, resolved_slug: null, resolved_aliases: null, resolved_active: null }),
+      source({ evidence_ref_id: 'pulse-3', source_label: 'Withdrawn Family', source_label_normalized: 'withdrawn family', entity_id: null, assertion_status: 'withdrawn', resolved_name: null })
+    ],
+    suppressions: [
+      { ...pair, entity_kind: 'malware_family', entity_id: null, source_label_normalized: 'trickbot', feed_key: null, evidence_ref_type: null, evidence_ref_id: null }
+    ]
+  };
+}
+
+test('get_ioc_context attribution: analyst ∪ source-reported, suppressed and withdrawn assertions excluded, scoped to this IOC', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, attributions: attributionFixtures(row) });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.threat_actors.map((a) => [a.id, a.name, a.attribution]), [[ACTOR_ID, 'PeckBirdy', 'analyst']]);
+  assert.deepEqual(out.body.analyst_threat_actor_ids, [ACTOR_ID]);
+  assert.deepEqual(out.body.malware_families.map((f) => [f.id, f.name, f.attribution]), [[FAMILY_ID, 'Emotet', 'source_reported']]);
+  assert.deepEqual(out.body.analyst_malware_family_ids, []);
+  const [emotet] = out.body.malware_families;
+  assert.deepEqual(emotet.aliases, ['Geodo']);
+  assert.deepEqual(emotet.sources.map((s) => [s.source_name, s.evidence_ref_id, s.assertion_status]), [['AlienVault OTX', 'pulse-1', 'current']]);
+  // The read binds exactly this IOC pair and asks for current assertions only.
+  const attributionReads = pool.queries.filter((q) => /FROM ioc_threat_actors ita|FROM ioc_malware_families imf|FROM ioc_source_attributions a|FROM ioc_attribution_overrides/.test(q.sql));
+  assert.equal(attributionReads.length, 4, 'four bounded reads, no N+1');
+  for (const q of attributionReads) {
+    assert.deepEqual(q.params.slice(0, 2), [row.id, row.observable_type]);
+    assert.ok(/^SELECT /.test(q.sql), 'read-only');
+  }
+  const sourceRead = attributionReads.find((q) => q.sql.includes('FROM ioc_source_attributions a'));
+  assert.equal(sourceRead.params[2], false, 'withdrawn assertions are not requested');
+});
+
+test('get_ioc_context attribution: no associations is a stable empty shape, never omitted', async () => {
+  const row = zzyudRow();
+  const out = await mcpGetIocContext(makeContextPool({ row }), { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.threat_actors, []);
+  assert.deepEqual(out.body.malware_families, []);
+  assert.deepEqual(out.body.analyst_threat_actor_ids, []);
+  assert.deepEqual(out.body.analyst_malware_family_ids, []);
+});
+
+test('get_ioc_context attribution: a failed read surfaces as an error, not as "no attribution"', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, attributions: { error: new Error('Connection terminated unexpectedly') } });
+  await assert.rejects(
+    mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: READ_AUTH }),
+    /Connection terminated unexpectedly/
+  );
+});
+
+test('get_ioc_context attribution: pre-migration database (attribution tables absent) degrades to empty lists', async () => {
+  const row = zzyudRow();
+  const pool = makeContextPool({ row, attributions: { error: new Error('relation "ioc_threat_actors" does not exist') } });
+  const out = await mcpGetIocContext(pool, { id: row.public_id }, { config: TEST_CONFIG, mcpAuth: READ_AUTH });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.threat_actors, []);
+  assert.deepEqual(out.body.malware_families, []);
 });
