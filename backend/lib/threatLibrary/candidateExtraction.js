@@ -159,8 +159,12 @@ export {
  * v27: publisher-host family + reporting-contact relation demote advisory
  * chrome; incomplete URL path prefixes that are strict prefixes of sibling
  * URL Indicators are excluded (tl-candidates-v27).
+ * v28: a group sub-label over a publisher IOC table keeps appendix scope when
+ * heading levels are equal or unknown, and pure filename/hash inventories
+ * whose row boundaries were lost read as rows (tl-zones-v11); dense multi-pair
+ * PDF inventory lines stay rows (threat_library_pdf_v6).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v27';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v28';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 

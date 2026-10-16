@@ -43,9 +43,11 @@ const STRUCTURES = Object.freeze({
   pdf_flat: { format: 'pdf', description: 'PDF IOC heading with inferred level, no sub-headings', network: null, samples: null },
   pdf_typed_subsections: { format: 'pdf', description: 'PDF IOCs › Network › Samples (inferred levels)', network: 'Network', samples: 'Samples' },
   pdf_c2_then_loaders: { format: 'pdf', description: 'PDF IOCs › C2 servers › Loaders (inferred levels)', network: 'C2 servers', samples: 'Loaders' },
-  // Degraded pre-v5 shapes retained as regression evidence (knownFailures): level-less
-  // headings and filename/hash lines merged into one narrative paragraph — geometry
-  // pdfLayout could not recover. These are NOT the production pdf_v5 emission path.
+  // Degraded pre-v5 shapes kept as permanent regressions: level-less headings and
+  // filename/hash lines merged into one paragraph. Not the production pdfLayout
+  // emission path, but the same failure modes occurred in pdf_v5 output (equal
+  // inferred heading levels; dense multi-pair lines) — fixed in tl-zones-v11 /
+  // threat_library_pdf_v6, so these must pass.
   pdf_legacy_typed_subsections: {
     format: 'pdf',
     description: 'legacy degraded: level-less PDF IOCs › Network › Samples',

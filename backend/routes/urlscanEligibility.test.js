@@ -6,8 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import path from 'node:path';
+import { resolveFrontendModule } from '../test-support/frontendModule.js';
 import { registerUrlscanEnrichmentRoutes } from './urlscanEnrichment.js';
 import {
   URLSCAN_SUPPORTED_OBSERVABLE_TYPES,
@@ -27,7 +26,6 @@ import { scopesForAccessProfile } from '../lib/apiKeyProfiles.js';
 import { createFakeEnrichmentPool, waitForFakeJob } from '../lib/fixtures/fakeEnrichmentPool.js';
 import { resetEnrichmentProviderGuardForTests } from '../lib/enrichmentProviderGuard.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
 
 const SHA256 = '8588d11874ab52a1637953dc5538984647023d00b529f695fbd0e40cf8e5e852';
 const IOCS = {
@@ -146,7 +144,7 @@ test('urlscan supported observable types = domain + url (whitelist)', () => {
 });
 
 test('frontend URLSCAN_SUPPORTED_IOC_TYPES mirrors the backend list (drift guard)', () => {
-  const src = readFileSync(path.join(here, '../../frontend/src/lib/iocProviderApplicability.js'), 'utf8');
+  const src = readFileSync(resolveFrontendModule('src/lib/iocProviderApplicability.js'), 'utf8');
   const m = src.match(/export const URLSCAN_SUPPORTED_IOC_TYPES = Object\.freeze\(\[([^\]]*)\]\)/);
   assert.ok(m, 'frontend declares URLSCAN_SUPPORTED_IOC_TYPES');
   const frontendTypes = [...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]);

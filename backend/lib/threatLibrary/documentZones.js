@@ -3,7 +3,7 @@
  * Language-agnostic intent with optional multilingual heading hints (not the sole authority).
  */
 
-import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker } from './pdfLayout.js';
+import { collapseLetterSpacing, isObservableOnlyLine, hasCitationMarker, inventoryPairLines } from './pdfLayout.js';
 import { refangTextForExtraction } from './defang.js';
 import { isPrivateOrReservedAddress } from './candidateValue.js';
 import { classifyTypeLabel } from './observableTypeResolver.js';
@@ -66,8 +66,41 @@ import {
  * describes legitimate / shared services; body IOC-looking tables no longer
  * self-prove solely from column headers when outside headed appendix scope
  * (tl-table-v7).
+ * v11: a sub-label that names an indicator group ("Samples", "Loaders") keeps
+ * an open IOC section when a publisher IOC table sits directly beneath it, the
+ * same as when indicator rows do — the inventory's representation (rows vs a
+ * Filename|MD5 table) no longer decides scope when the hierarchy is unknown
+ * (level-less headings, or equal PDF-inferred levels; real same-level HTML
+ * siblings still close the section). A paragraph or row whose text is a pure filename/hash inventory
+ * (row boundaries lost upstream) is read as an observable row with one pair
+ * per line; block ids are unchanged.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v10';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v11';
+
+/**
+ * Pure filename/hash inventory whose row boundaries were lost before zoning
+ * (several pairs on one PDF line, or rows merged into one paragraph). The
+ * block keeps its id and page; only its row structure is restored, so each
+ * hash reads with its own filename. Anything that is not exclusively
+ * filename/hash pairs is left untouched (ambiguous text stays narrative).
+ * @param {object} b block copy
+ */
+export function recoverInventoryRowBlock(b) {
+  if (!b || b.layout === 'page_edge') return b;
+  const rowLike = b.type === 'paragraph' || (b.type === 'list_item' && b.layout === 'observable_row');
+  if (!rowLike) return b;
+  const text = String(b.text || '');
+  if (/[\r\n]/.test(text)) return b;
+  const pairs = inventoryPairLines(text);
+  if (!pairs) return b;
+  return {
+    ...b,
+    type: 'list_item',
+    layout: 'observable_row',
+    text: pairs.join('\n'),
+    ...(b.type === 'paragraph' ? { layout_recovered: 'inventory_paragraph' } : {})
+  };
+}
 
 /**
  * A short heading that is itself an observable-type label ("Domain", "IP
@@ -417,15 +450,36 @@ const GROUP_LABEL_CONCEPT_RE =
  * @param {number} i
  * @param {{ level: number|null }} opening
  * @param {Set<string>} chromeIds
+ * @param {{ inferredLevels?: boolean }} [opts] heading levels are estimates
+ *   (PDF numbering / font height), not document structure
  */
-function isSubgroupLabelHeading(b, blocks, i, opening, chromeIds) {
+function isSubgroupLabelHeading(b, blocks, i, opening, chromeIds, opts = {}) {
   const text = collapseLetterSpacing(String(b.text || '').trim());
   if (!text || text.length > 72 || /[.!?。]$/.test(text)) return false;
   if (!GROUP_LABEL_CONCEPT_RE.test(text)) return false;
   const level = Number.isInteger(b.level) ? b.level : null;
   if (level != null && opening.level != null && level > opening.level) return true;
   const next = nextContentBlock(blocks, i, chromeIds);
-  return Boolean(next) && isIndicatorRowBlock(next);
+  if (!next) return false;
+  if (isIndicatorRowBlock(next)) return true;
+  // An IOC table beneath the label (Filename | MD5 inventory) is the same
+  // publisher content as rows when the hierarchy is unknown — level-less, or
+  // PDF levels that only estimate rank. A real same-level HTML sibling
+  // ("Related infrastructure") is a new section, so a table there must
+  // self-prove on its own (tl-table-v7). Called only inside an open
+  // authoritative section.
+  const hierarchyUnknown = level == null || opening.level == null || (opts.inferredLevels === true && level === opening.level);
+  return hierarchyUnknown && isIndicatorContentBlock(next, { underAuthoritativeTopic: true });
+}
+
+/**
+ * Heading levels of a PDF canonical document are inferred from numbering and
+ * relative font height (pdfLayout.inferPdfHeadingLevel): equal levels are an
+ * absence of evidence, not proof that two headings are siblings.
+ * @param {{ meta?: object }} doc
+ */
+function hasInferredHeadingLevels(doc) {
+  return doc?.meta?.adapter === 'pdf' || /^threat_library_pdf_/.test(String(doc?.meta?.extractor || ''));
 }
 
 /**
@@ -666,8 +720,9 @@ export function sectionOpensWithIndicatorContent(blocks, i, chromeIds) {
  * @param {{ sourceUrl?: string|null, sourceHost?: string|null }} [opts]
  */
 export function annotateDocumentZones(doc, opts = {}) {
-  const blocks = (doc.blocks || []).map((b) => ({ ...b }));
+  const blocks = (doc.blocks || []).map((b) => recoverInventoryRowBlock({ ...b }));
   const footerIds = detectRepeatedHeaderFooterBlockIds(blocks);
+  const inferredLevels = hasInferredHeadingLevels(doc);
   /** @type {DocumentZone} */
   let currentZone = 'report_body';
   let currentHeading = null;
@@ -870,7 +925,7 @@ export function annotateDocumentZones(doc, opts = {}) {
         !wrappedContinuation &&
         !headingRole &&
         !headingZone &&
-        isSubgroupLabelHeading(b, blocks, i, opening, footerIds);
+        isSubgroupLabelHeading(b, blocks, i, opening, footerIds, { inferredLevels });
       // Document hierarchy: a heading nested deeper than the one that opened
       // the section, whose own content starts with indicator rows, is a
       // sub-list of that section whatever its label says ("VBS", "Stage 2

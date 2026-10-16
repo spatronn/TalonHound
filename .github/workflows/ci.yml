@@ -87,7 +87,7 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families
+        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library
 
       - name: Lint installation.sh
         run: bash -n installation.sh
@@ -122,9 +122,15 @@ jobs:
         working-directory: backend
         run: npm run test:setup-wizard-integration
 
-      - name: Threat Library report-list search integration tests (real Postgres)
+      - name: Threat Library integration tests (real Postgres)
         working-directory: backend
+        env:
+          ALLOW_THREAT_LIBRARY_DB_TESTS: '1'
         run: npm run test:threat-library-integration
+
+      - name: MCP IOC read tools (real Postgres)
+        working-directory: backend
+        run: npm run test:mcp-integration
 
       - name: Threat Library report tags → IOC effective tags (real Postgres)
         working-directory: backend

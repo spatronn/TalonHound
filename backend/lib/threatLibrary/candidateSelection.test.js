@@ -5,8 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { existsSync } from 'node:fs';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CANDIDATE_REVIEW_FIXTURE, CANDIDATE_REVIEW_MODULE, importFrontendModule } from '../../test-support/frontendModule.js';
 import { applyCandidateReviewActions } from './reviewService.js';
 import {
   filterCandidatesForSelection,
@@ -14,16 +13,7 @@ import {
   selectionScopeToken
 } from './candidateSelection.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const frontendCandidates = [
-  path.resolve(here, '../../test-fixtures/candidateReview.frontend.js'),
-  path.resolve(here, '../../../../frontend/src/components/threatLibrary/candidateReview.js'),
-  '/opt/TalonHound/frontend/src/components/threatLibrary/candidateReview.js'
-].filter((p) => existsSync(p));
-if (!frontendCandidates.length) {
-  throw new Error('frontend candidateReview.js not found for selection parity');
-}
-const frontend = await import(pathToFileURL(frontendCandidates[0]).href);
+const frontend = await importFrontendModule(CANDIDATE_REVIEW_MODULE, { fixtureName: CANDIDATE_REVIEW_FIXTURE });
 
 const report = { id: 9, public_id: 'rep-1', analysis_status: 'review_required', source_url: null };
 

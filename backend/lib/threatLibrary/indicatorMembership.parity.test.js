@@ -8,8 +8,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { CANDIDATE_REVIEW_FIXTURE, CANDIDATE_REVIEW_MODULE, importFrontendModule } from '../../test-support/frontendModule.js';
 import pg from 'pg';
 import {
   membershipParityCases,
@@ -25,24 +24,9 @@ import {
   publisherAuthoritativeIocMembershipSql
 } from './indicatorMembership.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const { existsSync } = await import('node:fs');
-const frontendCandidates = [
-  // Optional: docker-cp / image-local fixture (backend container has no frontend tree)
-  path.resolve(here, '../../test-fixtures/candidateReview.frontend.js'),
-  // Monorepo checkout (agent workstation / source tree with backend+frontend)
-  path.resolve(here, '../../../../frontend/src/components/threatLibrary/candidateReview.js'),
-  // Host deploy tree when tests run on the metal rather than inside the image
-  '/opt/TalonHound/frontend/src/components/threatLibrary/candidateReview.js'
-].filter((p) => existsSync(p));
-
-if (!frontendCandidates.length) {
-  throw new Error(
-    'frontend candidateReview.js not found for parity import; place it at frontend/src/... or docker-cp to /app/test-fixtures/candidateReview.frontend.js'
-  );
-}
-
-const frontend = await import(pathToFileURL(frontendCandidates[0]).href);
+// Repository sibling frontend, TALONHOUND_FRONTEND_DIR, or a module copied to
+// backend/test-fixtures/ (backend container has no frontend tree).
+const frontend = await importFrontendModule(CANDIDATE_REVIEW_MODULE, { fixtureName: CANDIDATE_REVIEW_FIXTURE });
 
 test('parity matrix: frontend == backend JS for every membership branch', () => {
   for (const row of membershipParityCases()) {

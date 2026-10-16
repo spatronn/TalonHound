@@ -40,8 +40,11 @@ Mark an entry `"ai_dependent": true` when the semantic (model) layer, not the de
 - `<pre>` hash and filename/hash lines
 - level-less PDF headings
 - mixed C2 and loader/plugin sub-sections
+- degraded pre-v5 PDF shapes (`pdf_legacy_*`: level-less headings, filename/hash lines merged into one paragraph)
 
 Membership must be identical across all of them.
+
+`pdfStructuralMetamorphic.test.js` extends this for PDF with exact identity sets: 4 heading structures × 4 heading-level estimates (nested, equal, level-less, mixed) × 6 inventory representations, plus split headings, tables continued across pages with repeated chrome, adjacent MD5/SHA1/SHA256 cells, appendix boundaries, incomplete URLs, provider domains and the pdf.js geometry path (dense multi-pair lines, column order). Two cases pin deliberate ambiguity: with equal or unknown levels, a sub-label that names no indicator group ("Plugins") after a C2 child closes scope, and a real same-level HTML sibling over a Filename|MD5 table does not inherit appendix scope.
 
 ### Private cases
 
@@ -65,6 +68,8 @@ npm run benchmark:threat-library -- --write-baseline
 ```
 
 `knownFailures.js` records cases that still fail, with a diagnosed cause. Their expectations stay strict. They run as `todo`, and a ratchet test fails once one starts passing, so a fix retires its entry.
+
+The registry is empty since P1.1 (`tl-zones-v11` / `tl-candidates-v28` / `threat_library_pdf_v6`, 2026-10-16). The five `pdf_legacy_*` entries were retired. Their causes (`levelless_pdf_sibling_heading`, `pdf_merged_filename_hash_lines`) were not only fixture artifacts: current pdf_v5 output hit the same failures whenever bold-only headings inferred equal levels, or a visual line held three or more filename/hash pairs.
 
 ## Detector validation notes
 

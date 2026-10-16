@@ -97,3 +97,13 @@ Supporting tools:
 4. **A benchmark gate on every extractor version bump.**
 
 Avoid adding new heading keyword lists or per-publisher rules. Each failure class should land as a benchmark case first.
+
+## 7. P1.1 follow-up: PDF structure (2026-10-16)
+
+**[V]** The two PDF weaknesses in §1.2 are closed for the known failure classes, deterministically:
+- **Heading rank.** pdf_v5 already persists an inferred level, but equal font sizes infer equal levels, so an appendix and its sub-headings read as siblings. Zones v11 treat equal *PDF-inferred* levels (and missing levels) as unknown hierarchy. An indicator-group sub-label then keeps the open appendix over a publisher IOC table, as it already did over rows. Equal levels on real HTML headings are document structure and still close the section.
+- **Line structure.** `pdfLayout.inventoryPairLines` recognises a pure filename/hash inventory. pdf_v6 emits dense multi-pair lines as rows (one pair per line), and zones v11 re-type an already-merged pure inventory in place (same block id).
+
+**[R] Qwen was not added.** Every known failure had its evidence in the blocks: equal-rank headings plus an IOC table, or exclusive filename/hash token pairs. A model would only have re-derived it, at a cost in latency, availability and determinism. The remaining ambiguity is pinned instead of guessed. With unknown rank, a sub-label naming no indicator group ("Plugins") after a C2 child closes scope. That is still the right candidate for the narrow, grounded verifier in §3, which would return a role plus a quoted span and never create candidates. Measure it on labeled real reports first.
+
+**[R] Future ingestion improvement:** carry a font-weight / bold signal and a heading x-indent into the level estimate (`inferPdfHeadingLevel`), so bold-only hierarchies get distinct ranks at the source instead of relying on the unknown-hierarchy rules.
