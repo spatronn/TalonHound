@@ -35,7 +35,8 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
  * nested-heading loss) even when the orphan-run length is below the v3
  * threshold; check 8 flags IOC-looking body tables that sit outside every
  * headed appendix (authority risk even when membership was correctly withheld).
- * v5 (refresh membership reconciliation): check 9, refresh / retry only,
+ * v5 (refresh membership reconciliation): check 9, on a fresh extraction
+ * that replays stored analyst state (Refresh extraction, Retry / Re-run AI),
  * compares the deterministic publisher membership with the membership after
  * replayed analyst state (withReplayMembershipDivergence). An explicit
  * analyst override (promote_to_ioc, Context Only review) is a note; any other
@@ -762,6 +763,20 @@ export function assessReplayMembershipDivergence({ deterministic, final, previou
  */
 export function withReplayMembershipDivergence(quality, input) {
   if (!quality || typeof quality !== 'object') return quality;
+  // Idempotent: a record that already carries check 9 is re-derived, not appended to.
+  const code = QUALITY_CODES.ANALYST_STATE_MEMBERSHIP_DIVERGENCE;
+  const stale = (quality.warnings || []).filter((x) => x.code === code);
+  if (stale.length) {
+    const counts = { ...(quality.counts || { high: 0, warning: 0, info: 0 }) };
+    for (const x of stale) counts[x.severity] = Math.max(0, (counts[x.severity] || 0) - 1);
+    quality = {
+      ...quality,
+      counts,
+      status: counts.high ? 'high' : counts.warning ? 'warning' : counts.info ? 'info' : 'clean',
+      warnings: (quality.warnings || []).filter((x) => x.code !== code),
+      warnings_total: Math.max(0, (quality.warnings_total ?? (quality.warnings || []).length) - stale.length)
+    };
+  }
   const w = assessReplayMembershipDivergence(input);
   if (!w) return quality;
   const warning = {
