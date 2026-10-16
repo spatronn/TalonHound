@@ -1,5 +1,5 @@
 /**
- * PDF structural reliability (P1.1 — tl-zones-v11 / tl-candidates-v28 /
+ * PDF structural reliability (P1.1 — tl-zones-v12 / tl-candidates-v28 /
  * threat_library_pdf_v6): metamorphic regressions.
  *
  * One synthetic publisher IOC set is rendered in structurally equivalent PDF
@@ -97,7 +97,7 @@ function appendixVariant(o) {
 
 test('contract versions', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v6');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v11');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v12');
 });
 
 // --- inventory reconstruction primitives ------------------------------------
