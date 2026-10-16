@@ -33,7 +33,7 @@ import {
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v10');
 assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v27');
-assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v5');
+assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v6');
 assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v5');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v7');
 assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v5');
