@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+  <title>ChainDrop supply chain compromise: Anatomy of a self-propagating worm | Vendor Security Blog</title>
+  <meta property="og:site_name" content="Vendor Security Blog" />
+</head>
+<body>
+  <!-- Thin hero card uses <article> — must not eclipse the real post body. -->
+  <article class="card-block card-block--hero" data-bi-an="Single Header">
+    <div class="card-block__meta">
+      <p>Research</p>
+      <p>August 4</p>
+      <p>10 min read</p>
+    </div>
+    <h1>ChainDrop supply chain compromise: Anatomy of a self-propagating worm</h1>
+    <p>By Vendor Security Research</p>
+    <p>view all posts by this author</p>
+    <p>, Alice Analyst</p>
+    <p>view all posts by this author</p>
+  </article>
+
+  <main class="wp-block-group is-layout-constrained">
+    <div class="entry-content wp-block-post-content has-global-padding">
+      <p>Vendor Threat Intelligence identified a large-scale npm supply chain attack
+      affecting more than 400 packages. The malicious releases contain a
+      self-propagating credential-stealing worm delivered through an obfuscated
+      Bun-based JavaScript payload that executes via an npm preinstall lifecycle hook.</p>
+
+      <h2 id="attack-chain-overview">Attack chain overview</h2>
+      <p>The campaign appeared as unauthorized patch releases. Operators used
+      stolen maintainer credentials and later propagated with npm publishing tokens.
+      Narrative mentions of github.com and registry.npmjs.org are platform context,
+      not publisher-asserted Indicators.</p>
+
+      <h2 id="mitigation">Mitigation and protection guidance</h2>
+      <p>Organizations should rotate credentials from a known-clean environment and
+      rebuild affected systems from trusted sources.</p>
+
+      <h2 id="indicators-of-compromise-ioc">Indicators of compromise (IOC)</h2>
+      <figure class="wp-block-table">
+        <table class="has-fixed-layout">
+          <tbody>
+            <tr>
+              <td><strong>Indicator</strong></td>
+              <td><strong>Description</strong></td>
+            </tr>
+            <tr>
+              <td>54dc7ea54a1317cca0e890a2770630cf7fa6c97813e0cb9d2caa93012b350668</td>
+              <td><em>setup.mjs</em> (npm tarball preinstall loader)</td>
+            </tr>
+            <tr>
+              <td>fd3ca4007b225fdf8de7af4345a19179d5efa8c4bb9205f88cda806e5684b1eb</td>
+              <td><em>setup.mjs</em> (.claude and .vscode repository loader)</td>
+            </tr>
+            <tr>
+              <td>9fc2570b7cef51c1b8df116d144d11ff4096357be7d2c4c6367cfc2509cf1bcc</td>
+              <td>Math_*.js</td>
+            </tr>
+            <tr>
+              <td>npm-cache[.]com</td>
+              <td>C2 domain</td>
+            </tr>
+            <tr>
+              <td>pypi-get[.]com</td>
+              <td>C2 domain</td>
+            </tr>
+            <tr>
+              <td>js-mirror[.]com</td>
+              <td>C2 domain</td>
+            </tr>
+            <tr>
+              <td>hxxps[:]//npm-cache[.]com:443/router</td>
+              <td>C2 URL</td>
+            </tr>
+          </tbody>
+        </table>
+      </figure>
+
+      <h2 id="advanced-hunting-queries">Advanced hunting queries</h2>
+      <p>Defenders can run the following hunting query. These code snippets are
+      detections, not an IOC table:</p>
+      <pre><code>DeviceFileEvents
+| where Timestamp &gt; ago(3d)
+| where SHA256 in~ ("54dc7ea54a1317cca0e890a2770630cf7fa6c97813e0cb9d2caa93012b350668")
+</code></pre>
+
+      <h2 id="learn-more">Learn more</h2>
+      <p>Follow the Vendor Threat Intelligence community for updates.</p>
+    </div>
+  </main>
+
+  <!-- Related teaser cards also misuse <article>. -->
+  <article class="card-block card-block--default" data-bi-an="Related Articles">
+    <h3>Related: phishing infrastructure ecosystem</h3>
+    <p>Short teaser excerpt about unrelated research.</p>
+  </article>
+  <article class="card-block card-block--default" data-bi-an="Related Articles">
+    <h3>Related: post-quantum authentication</h3>
+    <p>Another short teaser.</p>
+  </article>
+</body>
+</html>

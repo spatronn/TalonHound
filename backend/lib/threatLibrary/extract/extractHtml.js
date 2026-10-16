@@ -41,6 +41,84 @@ export const CURRENT_HTML_EXTRACTOR_VERSIONS = Object.freeze([
 const tagOf = (el) => String(el?.name || '').toLowerCase();
 
 /**
+ * Non-whitespace character mass of extracted blocks — used to pick among
+ * competing article/main/content-root candidates.
+ * @param {import('../canonicalDocument.js').CanonicalBlock[]} blocks
+ */
+function blockCharMass(blocks) {
+  return (blocks || [])
+    .map((b) => String(b.text || '').replace(/\s+/g, ''))
+    .join('').length;
+}
+
+/**
+ * Prefer a denser content root when the first `<article>` is a thin card /
+ * teaser (common on modern blog themes that reuse `<article>` for related
+ * posts) while the real body lives under `<main>` or an entry-content div.
+ *
+ * Use main / denser sibling when it is at least 2× the thin candidate and at
+ * least `minDelta` characters larger — enough to reject chrome-only cards
+ * without displacing a real article that happens to sit inside a slightly
+ * larger main wrapper.
+ */
+const THIN_ROOT_MIN_RATIO = 2;
+const THIN_ROOT_MIN_DELTA = 200;
+
+/**
+ * @param {{ score: number, blocks: object[], kind: string }[]} scored
+ * @returns {{ score: number, blocks: object[], kind: string }|null}
+ */
+export function pickBestContentRoot(scored) {
+  if (!scored?.length) return null;
+  const ranked = [...scored].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // Tie-break: prefer semantic article → main → other
+    const rank = { article: 0, main: 1, content_hint: 2, body: 3 };
+    return (rank[a.kind] ?? 9) - (rank[b.kind] ?? 9);
+  });
+  const best = ranked[0];
+  const mainAlt = ranked.find((c) => c.kind === 'main');
+  const articleAlt = ranked.find((c) => c.kind === 'article');
+
+  // Thin card/teaser <article> under a much denser <main>: use main.
+  if (
+    best.kind === 'article'
+    && mainAlt
+    && mainAlt.score >= best.score * THIN_ROOT_MIN_RATIO
+    && mainAlt.score >= best.score + THIN_ROOT_MIN_DELTA
+  ) {
+    return mainAlt;
+  }
+
+  // Dense <main> that only slightly outscores a real <article>: keep article
+  // to avoid sidebar/TOC chrome that rides along with <main>.
+  if (
+    best.kind === 'main'
+    && articleAlt
+    && !(
+      best.score >= articleAlt.score * THIN_ROOT_MIN_RATIO
+      && best.score >= articleAlt.score + THIN_ROOT_MIN_DELTA
+    )
+  ) {
+    return articleAlt;
+  }
+
+  return best;
+}
+
+/**
+ * Whether a competing extraction is substantially denser than the current one
+ * (thin chrome / card vs real article body).
+ * @param {number} challengerChars
+ * @param {number} incumbentChars
+ */
+export function isSubstantiallyDenser(challengerChars, incumbentChars) {
+  const c = Number(challengerChars) || 0;
+  const i = Number(incumbentChars) || 0;
+  return c >= i * THIN_ROOT_MIN_RATIO && c >= i + THIN_ROOT_MIN_DELTA;
+}
+
+/**
  * Provenance of the selected title, recorded only when it carries information
  * (a declared site name, or a rejected site-wide brand title).
  * @param {ReturnType<typeof selectHtmlTitle>} selection
@@ -60,6 +138,9 @@ export function titleMeta(selection) {
 
 /**
  * Primary generic extractor (article → main → body).
+ * Scores every `<article>` and `<main>` and picks the densest root so thin
+ * card/teaser `<article>` elements (related posts, hero cards) do not eclipse
+ * the real post body under `<main>`.
  * @param {string} html
  * @param {{ url?: string, titleHint?: string }} [meta]
  */
@@ -68,31 +149,43 @@ export function extractGenericArticleDocument(html, meta = {}) {
   const selection = selectHtmlTitle(raw, { url: meta.url, hint: meta.titleHint });
   const title = selection.title;
   const dom = parseHtml(raw);
-  const article = findElement(dom, (el) => tagOf(el) === 'article');
-  const main = article ? null : findElement(dom, (el) => tagOf(el) === 'main');
-  let root = article || main;
-  let skipTags;
-  if (!root) {
-    root = findElement(dom, (el) => tagOf(el) === 'body') || dom;
-    // Strip site chrome headers when falling back to full body
-    skipTags = new Set(['header']);
+
+  /** @type {{ score: number, blocks: object[], kind: string }[]} */
+  const scored = [];
+  for (const el of findElements(dom, (n) => tagOf(n) === 'article')) {
+    const blocks = extractBlocksFromNode(el, { blockId });
+    scored.push({ score: blockCharMass(blocks), blocks, kind: 'article' });
+  }
+  for (const el of findElements(dom, (n) => tagOf(n) === 'main')) {
+    const blocks = extractBlocksFromNode(el, { blockId });
+    scored.push({ score: blockCharMass(blocks), blocks, kind: 'main' });
   }
 
-  const blocks = extractBlocksFromNode(root, { blockId }, { skipTags });
+  let chosen = pickBestContentRoot(scored);
+  let skipTags;
+  if (!chosen || chosen.score < 40) {
+    const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
+    // Strip site chrome headers when falling back to full body
+    skipTags = new Set(['header']);
+    const blocks = extractBlocksFromNode(body, { blockId }, { skipTags });
+    chosen = { score: blockCharMass(blocks), blocks, kind: 'body' };
+  }
+
   return createCanonicalDocument({
     title: title || 'Untitled',
     language: extractHtmlLanguage(raw),
-    blocks,
+    blocks: chosen.blocks,
     meta: {
       source_url: meta.url || null,
       extractor: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
       adapter: 'generic_html',
+      content_root: chosen.kind,
       ...titleMeta(selection)
     }
   });
 }
 
-const CONTENT_ROOT_HINT_RE = /(article-body|post-content|entry-content|article_content|content-body|story-body|main-content)/i;
+const CONTENT_ROOT_HINT_RE = /(article-body|post-content|entry-content|article_content|content-body|story-body|main-content|wp-block-post-content)/i;
 
 /**
  * Structured DOM fallback: content-like containers when article/main empty.
@@ -212,14 +305,25 @@ export function extractCanonicalDocumentFromHtml(html, ctx = {}) {
     }
   }
 
-  if (!document || meaningfulCharCount(document) < 40) {
+  // Always score structured content-root fallback against the incumbent.
+  // Thin card/teaser `<article>` nodes often clear the 40-char gate while the
+  // real body lives in entry-content / post-content containers — without this
+  // comparison those pages silently succeed with chrome-only documents.
+  {
     path.push('structured_fallback');
     const fallback = extractStructuredFallbackDocument(html, {
       url: ctx.url || ctx.finalUrl,
       titleHint: ctx.titleHint
     });
-    if (!document || meaningfulCharCount(fallback) > meaningfulCharCount(document)) {
+    const incumbentChars = meaningfulCharCount(document);
+    const fallbackChars = meaningfulCharCount(fallback);
+    const preferFallback =
+      !document
+      || incumbentChars < 40
+      || isSubstantiallyDenser(fallbackChars, incumbentChars);
+    if (preferFallback && fallbackChars > incumbentChars) {
       document = fallback;
+      path.push('structured_fallback_preferred');
     }
   }
 

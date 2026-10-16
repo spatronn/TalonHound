@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Hardening CI runners against supply-chain abuse | Vendor Security Blog</title></head>
+<body>
+  <article class="card-block card-block--hero">
+    <p>Guidance</p>
+    <p>March 12</p>
+    <p>6 min read</p>
+    <h1>Hardening CI runners against supply-chain abuse</h1>
+    <p>By Vendor Security Research</p>
+    <p>view all posts by this author</p>
+  </article>
+  <main>
+    <div class="entry-content wp-block-post-content">
+      <p>This guidance article explains how to harden continuous integration runners.
+      It discusses npm lifecycle scripts, credential scoping, and cache hygiene.
+      No formal indicators of compromise are published here.</p>
+      <h2>Recommended controls</h2>
+      <p>Pin dependencies, disable unexpected lifecycle scripts in CI, and rotate
+      tokens from a known-clean administrator workstation. References to the
+      public package registry and the source-control forge describe platforms,
+      not attacker infrastructure.</p>
+      <h2>Example hunting idea</h2>
+      <pre><code>DeviceProcessEvents
+| where FileName =~ "node.exe"
+| where ProcessCommandLine has "preinstall"
+</code></pre>
+      <p>Operators should treat this as defensive documentation only.</p>
+    </div>
+  </main>
+</body>
+</html>
