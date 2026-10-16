@@ -120,12 +120,27 @@ test('an IOC heading without observables is info (published elsewhere)', () => {
 });
 
 test('merged value paragraph inside the appendix: values left to the model warn', () => {
+  // Mixed pair order — which filename belongs to which hash is not recoverable,
+  // so the paragraph stays narrative and the detector must surface it.
   const x = run(`<h2>Indicators of compromise</h2>
-<p>loader.exe ${hex('a')} helper.dll ${hex('b')} plugin.dll ${hex('c')}</p>
+<p>loader.exe ${hex('a')} ${hex('b')} helper.dll plugin.dll ${hex('c')}</p>
 <ul><li>evil-c2[.]example</li></ul>`);
   const q = x.diagnostics.quality;
   assert.ok(codes(q).includes(QUALITY_CODES.AUTHORITATIVE_VALUES_NOT_ASSERTED), JSON.stringify(codes(q)));
   assert.ok(codes(q, 'high').includes(QUALITY_CODES.APPENDIX_WITHOUT_HASH_INDICATORS));
+});
+
+test('pure filename/hash inventory paragraph inside the appendix is read as rows (tl-zones-v11)', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<p>loader.exe ${hex('a')} helper.dll ${hex('b')} plugin.dll ${hex('c')}</p>
+<ul><li>evil-c2[.]example</li></ul>`);
+  const q = x.diagnostics.quality;
+  assert.deepEqual(
+    members(x.candidates).filter((id) => id.startsWith('md5:')).sort(),
+    [hex('a'), hex('b'), hex('c')].map((h) => `md5:${h}`).sort()
+  );
+  assert.ok(!codes(q).includes(QUALITY_CODES.AUTHORITATIVE_VALUES_NOT_ASSERTED), JSON.stringify(codes(q)));
+  assert.ok(!codes(q).includes(QUALITY_CODES.APPENDIX_WITHOUT_HASH_INDICATORS), JSON.stringify(codes(q)));
 });
 
 test('publisher-host family is not a report Indicator; quality still flags residual publisher-domain members', () => {

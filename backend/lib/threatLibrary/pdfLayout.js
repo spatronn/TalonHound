@@ -24,8 +24,12 @@ import { FILE_EXT_HINT, hasDelegatedDnsSuffix } from './observableTypeResolver.j
  * font height) so appendix hierarchy rules work for PDF the same way as HTML;
  * "filename hash" inventory lines stay as observable rows instead of merging
  * into narrative paragraphs.
+ * v6: a visual line that is a pure filename/hash inventory with several pairs
+ * ("a.dll <md5> b.dll <md5> c.dll <md5>", a dense multi-column inventory the
+ * table detector did not split) is an observable row with one pair per line,
+ * instead of a narrative paragraph that can absorb an adjacent lead-in sentence.
  */
-export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v5';
+export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v6';
 
 /** Fraction of page height (top/bottom) treated as printed header/footer band. */
 const PAGE_EDGE_FRACTION = 0.055;
@@ -797,6 +801,42 @@ export function inferPdfHeadingLevel(line, ctx) {
   return 3;
 }
 
+const INVENTORY_HASH_RE = /^(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$/;
+
+function isInventoryFilenameToken(token) {
+  const m = /^[^\s/\\:]+\.([A-Za-z0-9]{1,10})$/.exec(token);
+  if (!m) return false;
+  return FILE_EXT_HINT.has(m[1].toLowerCase()) && !hasDelegatedDnsSuffix(token.toLowerCase());
+}
+
+/**
+ * Pair lines of a pure filename/hash inventory whose row boundaries were lost
+ * (several "filename HASH" pairs on one visual line, or rows already merged
+ * into one block). Every token must be a file hash or a filename, in one
+ * consistent order — (filename hash)+ or (hash filename)+ — with at least two
+ * pairs. A prose word, URL, odd token count or mixed order is not an
+ * inventory and returns null: ambiguous text stays narrative.
+ * @param {string} text
+ * @returns {string[]|null} one pair per line, original spelling and order
+ */
+export function inventoryPairLines(text) {
+  const raw = String(text || '').trim();
+  if (!raw || raw.length > 4000) return null;
+  const tokens = raw.split(/\s+/);
+  if (tokens.length < 4 || tokens.length % 2 !== 0) return null;
+  const hashFirst = INVENTORY_HASH_RE.test(tokens[0]);
+  const lines = [];
+  for (let k = 0; k < tokens.length; k += 2) {
+    const [a, b] = [tokens[k], tokens[k + 1]];
+    const pair = hashFirst
+      ? INVENTORY_HASH_RE.test(a) && isInventoryFilenameToken(b)
+      : isInventoryFilenameToken(a) && INVENTORY_HASH_RE.test(b);
+    if (!pair) return null;
+    lines.push(`${a} ${b}`);
+  }
+  return lines;
+}
+
 /**
  * A short "filename HASH" / "HASH filename" inventory line. Kept local to
  * avoid a pdfLayout ↔ indicatorScope import cycle; mirrors the annotated-row
@@ -804,6 +844,7 @@ export function inferPdfHeadingLevel(line, ctx) {
  * @param {string} text
  */
 export function isFilenameHashRowLine(text) {
+  if (inventoryPairLines(text)) return true;
   const t = refangTextForExtraction(String(text || '').trim()).replace(/^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s*|[-•*·]\s*)/, '').trim();
   if (!t || t.length > 160) return false;
   const hash = t.match(/\b([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b/);
@@ -917,6 +958,22 @@ export function linesToBlocks(lines, ctx) {
     if (line.pageEdge) {
       flushPara();
       mk('paragraph', line.text, { layout: 'page_edge' });
+      continue;
+    }
+    const pairs = inventoryPairLines(line.text);
+    if (pairs) {
+      // One visual line holding several filename/hash pairs: one pair per
+      // line, so each hash keeps its own filename annotation (row shape).
+      flushPara();
+      blocks.push({
+        id: `p${ctx.pageNum}-b${String(idx).padStart(2, '0')}`,
+        type: 'list_item',
+        text: pairs.join('\n'),
+        page: ctx.pageNum,
+        section: null,
+        layout: 'observable_row'
+      });
+      idx += 1;
       continue;
     }
     if (isObservableOnlyLine(line.text) || isFilenameHashRowLine(line.text)) {
