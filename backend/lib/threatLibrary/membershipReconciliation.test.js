@@ -179,22 +179,25 @@ test('a new identity starts pending; an unchanged Indicator keeps its state (non
 
 // --- 2. preserveStoredIocLinks ------------------------------------------------------
 
-function fakePool(liveIds) {
+/** @param {{ id: number, observable_type: string, observable: string }[]} liveIocs */
+function fakePool(liveIocs) {
   const calls = [];
   return {
     calls,
     async query(sql, params) {
       calls.push({ sql, params });
-      assert.match(sql, /^SELECT id, observable_type FROM ioc_items WHERE id = ANY/);
-      return { rows: params[0].filter((id) => liveIds.includes(Number(id))).map((id) => ({ id, observable_type: 'url' })) };
+      assert.match(sql, /^SELECT id, observable_type, observable FROM ioc_items WHERE id = ANY/);
+      return { rows: liveIocs.filter((r) => params[0].map(Number).includes(Number(r.id))) };
     }
   };
 }
+const RAVEN_PREFIX = 'http://213.209.159.55:443/t/';
+const ravenIoc = { id: 3561785, observable_type: 'url', observable: RAVEN_PREFIX };
 
 test('a skipped catalog lookup keeps the stored global-IOC link when the IOC still exists', async () => {
   const prior = createdRow(incompletePrefix('http://213.209.159.55:443/t/'));
   const fresh = { ...incompletePrefix('http://213.209.159.55:443/t/'), matched_ioc_id: null };
-  const pool = fakePool([3561785]);
+  const pool = fakePool([ravenIoc]);
   const { candidates, preserved } = await preserveStoredIocLinks(pool, [fresh], [prior]);
   assert.equal(candidates[0].matched_ioc_id, 3561785);
   assert.equal(candidates[0].matched_ioc_observable_type, 'url');
@@ -209,14 +212,48 @@ test('a deleted IOC record is not resurrected, a lookup that ran and missed is n
   assert.equal(gone.candidates[0].matched_ioc_id, null);
   assert.deepEqual(gone.preserved, []);
 
-  const ranPool = fakePool([3561785]);
+  const ranPool = fakePool([]);
   const ran = await preserveStoredIocLinks(ranPool, [{ ...explicitRow('url', 'http://x.example/t/'), matched_ioc_id: null }], [prior]);
   assert.equal(ran.candidates[0].matched_ioc_id, null, 'is_ioc lookup ran: a real catalog miss stays a miss');
   assert.equal(ranPool.calls.length, 0);
 
-  const nonePool = fakePool([1]);
+  const nonePool = fakePool([]);
   await preserveStoredIocLinks(nonePool, [explicitRow('ip', '198.51.100.9', { matched_ioc_id: 1 })], [createdRow(explicitRow('ip', '198.51.100.9'), { matched_ioc_id: 1 })]);
   assert.equal(nonePool.calls.length, 0);
+});
+
+test('a stored link is carried only when the IOC record is the same identity (type and normalized value)', async () => {
+  const prior = createdRow(incompletePrefix(RAVEN_PREFIX));
+  const fresh = () => [{ ...incompletePrefix(RAVEN_PREFIX), matched_ioc_id: null }];
+  // Same id, different value (stale id now names another URL): not carried.
+  const otherValue = await preserveStoredIocLinks(fakePool([{ ...ravenIoc, observable: 'http://213.209.159.55/other' }]), fresh(), [prior]);
+  assert.equal(otherValue.candidates[0].matched_ioc_id, null);
+  assert.deepEqual(otherValue.preserved, []);
+  // Same id under another observable type (ioc_items is keyed (observable_type, id)): not carried.
+  const otherType = await preserveStoredIocLinks(fakePool([{ ...ravenIoc, observable_type: 'domain' }]), fresh(), [prior]);
+  assert.equal(otherType.candidates[0].matched_ioc_id, null);
+  // Stored link typed differently from the candidate: not carried, no lookup needed to refuse it.
+  const retyped = await preserveStoredIocLinks(fakePool([ravenIoc]), fresh(), [{ ...prior, matched_ioc_observable_type: 'domain' }]);
+  assert.equal(retyped.candidates[0].matched_ioc_id, null);
+  // URL normalization: the catalog's normalized spelling still matches.
+  const host = 'https://Example.test:443/t/';
+  const priorUrl = createdRow(incompletePrefix(host), { matched_ioc_id: 9 });
+  const norm = await preserveStoredIocLinks(
+    fakePool([{ id: 9, observable_type: 'url', observable: 'https://example.test/t/' }]),
+    [{ ...incompletePrefix(host), matched_ioc_id: null }],
+    [priorUrl]
+  );
+  assert.equal(norm.candidates[0].matched_ioc_id, 9);
+});
+
+test('a refused (mismatched) link surfaces as a protected IOC link change, never silently', async () => {
+  const prior = createdRow(incompletePrefix(RAVEN_PREFIX));
+  const linked = await preserveStoredIocLinks(fakePool([{ ...ravenIoc, observable: 'http://elsewhere.test/' }]), [{ ...incompletePrefix(RAVEN_PREFIX), matched_ioc_id: null }], [prior]);
+  const final = preserveAnalystCandidates(linked.candidates, [prior]);
+  const diff = buildRefreshMembershipDiff({ previousRows: [prior], nextCandidates: final });
+  assert.equal(diff.counts.ioc_link_changes, 1);
+  assert.equal(diff.ioc_link_changes[0].change, 'cleared');
+  assert.equal(evaluateRefreshMembershipGuard(diff, null).decision, REFRESH_GUARD_DECISIONS.BLOCK);
 });
 
 // --- 3. Guard: IOC link changes are protected --------------------------------------
@@ -260,6 +297,17 @@ test('a moved IOC link is protected; the fingerprint binds the exact link change
   assert.equal(same.verdict.decision, REFRESH_GUARD_DECISIONS.APPLY);
 });
 
+test('the fingerprint also binds IOC-linked row losses (they decide admin authorization)', () => {
+  const linkedRow = { ...candidateColumns({ ...explicitRow('domain', 'a.example'), matched_ioc_id: 5 }), id: '1' };
+  const plainRow = { ...candidateColumns(explicitRow('domain', 'a.example')), id: '1' };
+  const next = [{ ...explicitRow('domain', 'a.example'), is_ioc: false, assessment: 'context_only', match_state: 'context_only', source_assertion: 'non_ioc' }];
+  const withLink = buildRefreshMembershipDiff({ previousRows: [linkedRow], nextCandidates: next.map((c) => ({ ...c, matched_ioc_id: 5 })) });
+  const without = buildRefreshMembershipDiff({ previousRows: [plainRow], nextCandidates: next });
+  assert.equal(withLink.counts.ioc_linked_losses, 1);
+  assert.equal(without.counts.ioc_linked_losses, 0);
+  assert.notEqual(withLink.material_fingerprint, without.material_fingerprint);
+});
+
 test('harmless metadata (match_state, evidence) on a kept link does not block', () => {
   const c = explicitRow('domain', 'c2.example', { review_status: 'approved' });
   const prior = { ...candidateColumns({ ...c, matched_ioc_id: 77, match_state: 'existing' }), id: '1', promotion_outcome: 'created' };
@@ -289,7 +337,11 @@ test('end to end (pure): the Raven and NCSC shapes now leave membership as prote
     { ...incompletePrefix('http://213.209.159.55:443/t/'), matched_ioc_id: null },
     { ...providerService('iproyal.com'), matched_ioc_id: 3445489 }
   ];
-  const linked = await preserveStoredIocLinks(fakePool([3561785, 3445489]), matched, prev);
+  const linked = await preserveStoredIocLinks(
+    fakePool([ravenIoc, { id: 3445489, observable_type: 'domain', observable: 'iproyal.com' }]),
+    matched,
+    prev
+  );
   const final = preserveAnalystCandidates(linked.candidates, prev);
   const { diff, verdict } = guard(prev, final);
   assert.deepEqual(diff.indicators, { before: 2, after: 0 });
@@ -351,4 +403,21 @@ test('withReplayMembershipDivergence merges additively and recomputes status / c
   assert.equal(merged.warnings[0].code, 'analyst_state_membership_divergence');
   assert.equal(base.warnings.length, 0, 'input not mutated');
   assert.equal(withReplayMembershipDivergence(null, { deterministic: det, final: det }), null);
+});
+
+test('withReplayMembershipDivergence is idempotent: an existing check 9 warning is re-derived, not duplicated', () => {
+  const base = { version: 'tl-quality-v5', mode: 'B', status: 'clean', counts: { high: 0, warning: 0, info: 0 }, warnings: [], warnings_total: 0 };
+  const det = [providerService('svc.example')];
+  const input = {
+    deterministic: det,
+    final: [{ ...det[0], assessment: 'suspicious', match_state: 'existing' }],
+    previousRows: [{ candidate_type: 'domain', normalized_value: 'svc.example', review_status: 'approved', evidence: {} }]
+  };
+  const once = withReplayMembershipDivergence(base, input);
+  const twice = withReplayMembershipDivergence(once, input);
+  assert.deepEqual(twice, once);
+  const cleared = withReplayMembershipDivergence(once, { deterministic: det, final: det });
+  assert.equal(cleared.status, 'clean');
+  assert.equal(cleared.warnings.length, 0);
+  assert.deepEqual(cleared.counts, { high: 0, warning: 0, info: 0 });
 });

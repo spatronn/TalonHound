@@ -392,3 +392,68 @@ test('concurrent Create IOCs relink between the guard snapshot and the row lock 
     await cleanup(s.report.id, [s.iocPrefix, s.iocDomain, decoy]);
   }
 });
+
+test('explicit promote_to_ioc survives an applied refresh: classification, decision, link and Quality v5 note persisted', opts, async () => {
+  const s = await setupReport();
+  try {
+    // The prefix was promoted Context Only → IOC by an analyst (single-row
+    // override) and then created: an explicit decision, not bulk history.
+    const promotedFrom = { assessment: 'context_only', role: 'reference', match_state: 'context_only', review_status: 'pending', is_ioc: false, policy_decision: 'ioc_excluded_incomplete_url_prefix', decision_source: 'deterministic', promoted_at: new Date().toISOString(), promoted_by: 'itest-analyst' };
+    await pool.query(
+      `UPDATE threat_report_candidates
+       SET evidence = COALESCE(evidence, '{}'::jsonb) || $2::jsonb, assessment = 'suspicious', role = 'unknown', updated_at = NOW()
+       WHERE id = $1`,
+      [s.ids[PREFIX], JSON.stringify({ promoted_from: promotedFrom, decision_source: 'analyst', policy_decision: 'analyst_promoted_from_context_only' })]
+    );
+    const before = await allRows(s.report.id);
+    assert.equal(indicators(before).includes(PREFIX), true, 'the promoted prefix is an Indicator');
+    const preview = await previewExtractionRefresh(pool, await storedReport(s.report.id));
+    assert.equal(preview.membership_diff.removed_indicators.some((r) => r.identity === `url:${PREFIX}`), false, 'a promoted row is not a refresh loss');
+    assert.equal(preview.membership_diff.counts.ioc_link_changes, 0);
+
+    const res = await runExtractionRefresh(pool, { reportId: s.report.id, jobId: s.job.id, restoreStatus: RESTORE });
+    assert.equal(res.ok, true, JSON.stringify(res.summary?.membership_guard));
+    const row = (await allRows(s.report.id)).find((r) => r.normalized_value === PREFIX);
+    assert.equal(String(row.id), String(s.ids[PREFIX]));
+    assert.equal(row.is_ioc, true, 'promotion re-applied');
+    assert.equal(row.assessment, 'suspicious');
+    assert.equal(row.review_status, 'approved');
+    assert.equal(row.promotion_outcome, 'created');
+    assert.equal(Number(row.matched_ioc_id), s.iocPrefix);
+    assert.equal(row.evidence.promoted_from.promoted_by, 'itest-analyst', 'promotion provenance kept');
+    assert.equal(row.evidence.policy_decision, 'analyst_promoted_from_context_only');
+    assert.equal(indicators([row]).includes(PREFIX), true, 'still an Indicator after refresh');
+
+    const quality = (await storedReport(s.report.id)).analysis_progress.extraction_diagnostics.quality;
+    assert.equal(quality.version, 'tl-quality-v5');
+    const w = quality.warnings.find((x) => x.code === 'analyst_state_membership_divergence');
+    assert.ok(w, 'the override is recorded as a divergence');
+    assert.equal(w.severity, 'info', 'an explicit analyst promotion is a note, not a warning');
+    assert.equal(w.divergence.causes.analyst_promotion, 1);
+    assert.equal(w.divergence.causes.unexplained, 0);
+  } finally {
+    await cleanup(s.report.id, [s.iocPrefix, s.iocDomain]);
+  }
+});
+
+test('a stored link whose IOC record no longer names the identity is not carried: protected change, nothing written', opts, async () => {
+  const s = await setupReport();
+  const wrong = await insertIoc('http://203.0.113.99/unrelated', 'url');
+  try {
+    // Stale id: the prefix row points at an IOC record of another value.
+    await pool.query(`UPDATE threat_report_candidates SET matched_ioc_id = $2, updated_at = NOW() WHERE id = $1`, [s.ids[PREFIX], wrong]);
+    const before = await allRows(s.report.id);
+    const preview = await previewExtractionRefresh(pool, await storedReport(s.report.id));
+    assert.deepEqual(preview.membership_diff.ioc_link_changes.map((l) => [l.identity, l.change, l.from_ioc_id, l.to_ioc_id]), [
+      [`url:${PREFIX}`, 'cleared', wrong, null]
+    ]);
+    assert.equal(preview.guard.authorization.required_role, 'admin');
+    const res = await runExtractionRefresh(pool, { reportId: s.report.id, jobId: s.job.id, restoreStatus: RESTORE });
+    assert.equal(res.ok, false);
+    assert.equal(res.code, REFRESH_BLOCKED_CODE);
+    assert.ok(res.summary.membership_guard.reasons.some((r) => r.code === 'ioc_link_changed'));
+    assert.deepEqual(await allRows(s.report.id), before, 'protect: nothing written');
+  } finally {
+    await cleanup(s.report.id, [s.iocPrefix, s.iocDomain, wrong]);
+  }
+});
