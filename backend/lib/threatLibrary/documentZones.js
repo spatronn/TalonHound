@@ -74,8 +74,17 @@ import {
  * siblings still close the section). A paragraph or row whose text is a pure filename/hash inventory
  * (row boundaries lost upstream) is read as an observable row with one pair
  * per line; block ids are unchanged.
+ * v12: mid-appendix sample inventory rows ("File size:", "File type:",
+ * "File location:") are not treated as article-tag chrome. Closing the
+ * publisher IOC section on those key-value list items dropped every later
+ * hash/URL under the same "Indicators of Compromise" heading to report_body
+ * (MODE A false negatives). Article tag chips remain bare phrases without a
+ * field label and still end the section after indicator content. Real
+ * same-level HTML siblings whose label matches GROUP_LABEL_CONCEPT_RE
+ * ("Additional Resources", "Related articles") no longer continue the
+ * appendix merely because a following link line looks like an indicator row.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v11';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v12';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -194,7 +203,9 @@ const HEADING_HINTS = Object.freeze({
     /^contact(?:s|ing)?\b/i,
     /^reporting\b/i,
     /how\s+to\s+report/i,
-    /related\s+(reports?|articles?|links?)/i,
+    /related\s+(reports?|articles?|links?|resources?)/i,
+    /^additional\s+resources?\b/i,
+    /^see\s+also\b/i,
     /further\s+(?:reading|information)/i,
     /参考链接|参考文献|相关链接|引用|联系方式/i,
     /kaynaklar|referanslar/i
@@ -372,6 +383,10 @@ export function combinedHeadingText(blocks, index) {
  * Short list items that are article tags / categories / topic chips rather than
  * publisher IOC rows. Bare filename-shaped tokens (`Node.js`) count as chrome;
  * annotated indicator rows (`host – Decoy domain`) do not.
+ *
+ * Sample / file inventory rows under an IOC appendix use "Label: value"
+ * (`File size: 1,991 bytes`). Those stay inside the appendix — only bare
+ * chips without a field label end the section after indicator content.
  * @param {object} b
  */
 export function isArticleMetadataListItem(b) {
@@ -379,6 +394,9 @@ export function isArticleMetadataListItem(b) {
   const text = String(b.text || '').trim();
   if (!text || text.length > 64) return false;
   if (isIndicatorValueLine(text) || isObservableListLine(text)) return false;
+  // Publisher sample cards: "File size:", "File type:", "SHA-256 hash:", …
+  // Article tags are bare phrases ("MacOS", "Threat intelligence").
+  if (/^[\p{L}\p{N}][\p{L}\p{N} ./+_-]{0,48}:\s+\S/u.test(text)) return false;
   const refanged = refangTextForExtraction(text);
   if (/https?:\/\//i.test(refanged) || /\b[a-f0-9]{32,64}\b/i.test(refanged)) return false;
   // A real host/IP (including defanged / annotated rows) keeps the IOC section
@@ -458,6 +476,17 @@ function isSubgroupLabelHeading(b, blocks, i, opening, chromeIds, opts = {}) {
   if (!text || text.length > 72 || /[.!?。]$/.test(text)) return false;
   if (!GROUP_LABEL_CONCEPT_RE.test(text)) return false;
   const level = Number.isInteger(b.level) ? b.level : null;
+  // Real same-or-shallower HTML siblings are new topics ("Additional Resources"),
+  // not appendix subgroups — even when "additional"/"related" matches the
+  // group-label vocabulary and a following link row looks indicator-shaped.
+  if (
+    level != null &&
+    opening.level != null &&
+    level <= opening.level &&
+    opts.inferredLevels !== true
+  ) {
+    return false;
+  }
   if (level != null && opening.level != null && level > opening.level) return true;
   const next = nextContentBlock(blocks, i, chromeIds);
   if (!next) return false;
