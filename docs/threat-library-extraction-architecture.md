@@ -60,7 +60,7 @@ What is sound **[V]**:
 Done on this branch:
 - The benchmark with metamorphic layouts and a known-failure ratchet.
 - Deterministic quality warnings.
-- The refresh membership guard with preview-bound acceptance.
+- The refresh membership guard (`tl-refresh-guard-v2`: also protects global IOC link changes) with preview-bound acceptance.
 
 **[R] Next, in order:**
 1. Score 20–30 privately labeled real reports, and run the read-only quality scan on production with `--clean` to measure real false-warning rates.
@@ -72,7 +72,7 @@ Each fix retires its entries in `knownFailures.js` and refreshes the baseline.
 
 ## 5. Detecting extraction anomalies automatically
 
-`extractionQuality.assessExtractionQuality` (`tl-quality-v3`) **[V]** runs after every extraction and never reclassifies anything. It covers:
+`extractionQuality.assessExtractionQuality` (`tl-quality-v5`; v4 added the appendix/body-table checks, v5 the analyst-replay membership divergence check 9, see `threat-library.md`) **[V]** runs after every extraction and never reclassifies anything. It covers:
 - Row-shaped IOC values right after an authoritative section but outside it.
 - An appendix with zero or few hash Indicators.
 - Authoritative sections without Indicators.

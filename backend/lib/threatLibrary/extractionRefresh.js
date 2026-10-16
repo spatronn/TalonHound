@@ -70,7 +70,8 @@ import {
   requiresReviewAfterExtractionRefresh
 } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
-import { compactExtractionQuality, storedExtractionQuality } from './extractionQuality.js';
+import { compactExtractionQuality, storedExtractionQuality, withReplayMembershipDivergence } from './extractionQuality.js';
+import { preserveStoredIocLinks } from './iocMatch.js';
 import {
   REFRESH_GUARD_DECISIONS,
   buildRefreshMembershipDiff,
@@ -191,13 +192,24 @@ export async function computeExtractionRefresh(pool, { report, document, previou
   const replay = aiReplayUpdatesFromRows(previousRows, { documentRebuilt });
   const merged = mergeAiCandidateUpdates(extracted.candidates, { candidate_updates: replay }, { document: extracted.document });
   const matched = await matchCandidateSet(pool, merged);
-  const candidates = preserveAnalystCandidates(matched.candidates, previousRows);
+  // Deterministic publisher reading (extraction + AI replay + catalog match),
+  // with the stored global-IOC links of identities the lookup skipped kept.
+  const linked = await preserveStoredIocLinks(pool, matched.candidates, previousRows);
+  const candidates = preserveAnalystCandidates(linked.candidates, previousRows);
+  // Where replayed analyst state moves membership away from the deterministic
+  // reading, quality says so (an explicit override is a note; anything else warns).
+  const quality = withReplayMembershipDivergence(extracted.diagnostics?.quality || null, {
+    deterministic: linked.candidates,
+    final: candidates,
+    previousRows
+  });
   return {
     document: extracted.document,
-    diagnostics: extracted.diagnostics,
+    diagnostics: quality ? { ...extracted.diagnostics, quality } : extracted.diagnostics,
     candidates,
     summary: summarizeResolvedCandidates(candidates),
-    replayedAiDecisions: replay.length
+    replayedAiDecisions: replay.length,
+    iocLinksPreserved: linked.preserved
   };
 }
 
@@ -664,9 +676,23 @@ export function membershipGuardSummary(guard, compactDiff) {
     indicators_before: compactDiff?.indicators?.before ?? null,
     indicators_after: compactDiff?.indicators?.after ?? null,
     added_indicators: compactDiff?.counts?.added_indicators ?? 0,
-    removed_indicators: compactDiff?.counts?.removed_indicators ?? 0
+    removed_indicators: compactDiff?.counts?.removed_indicators ?? 0,
+    ioc_link_changes: compactDiff?.counts?.ioc_link_changes ?? 0,
+    // Affected identities (bounded) so the audit trail names what an
+    // acceptance covered, not only how many rows.
+    affected: {
+      removed_indicators: (compactDiff?.removed_indicators || []).slice(0, AUDIT_IDENTITY_LIMIT).map((r) => r.identity),
+      reviewed_candidates_deleted: (compactDiff?.reviewed_candidates_deleted || []).slice(0, AUDIT_IDENTITY_LIMIT).map((r) => r.identity),
+      ioc_link_changes: (compactDiff?.ioc_link_changes || []).slice(0, AUDIT_IDENTITY_LIMIT).map((r) => ({
+        identity: r.identity,
+        from_ioc_id: r.from_ioc_id,
+        to_ioc_id: r.to_ioc_id ?? null
+      }))
+    }
   };
 }
+
+const AUDIT_IDENTITY_LIMIT = 40;
 
 export const REFRESH_BLOCKED_CODE = 'refresh_membership_loss_blocked';
 

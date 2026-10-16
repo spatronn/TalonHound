@@ -50,6 +50,8 @@ import {
 } from './extractionStages.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { preserveAnalystCandidates } from './candidateAnalystState.js';
+import { preserveStoredIocLinks } from './iocMatch.js';
+import { withReplayMembershipDivergence } from './extractionQuality.js';
 import { createServiceLogger } from '../appLogger.js';
 import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
 import { groundAiPublisherEntities } from './publisherEntityGrounding.js';
@@ -277,6 +279,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     const previousRows = await loadReportCandidateRows(pool, report.id);
     let candidates;
     let extractionDiagnostics = report.analysis_progress?.extraction_diagnostics || null;
+    let freshExtraction = false;
     const existingCount = previousRows.length;
     const reuse = decideCandidateReuse({
       priorExtractionVersion: report.analysis_progress?.candidate_extraction_version || null,
@@ -303,6 +306,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       document = extracted.document;
       candidates = preserveAnalystCandidates(extracted.candidates, previousRows, { carryStoredMatch: true });
       extractionDiagnostics = extracted.diagnostics;
+      freshExtraction = true;
       await reconcileReportCandidates(pool, report.id, candidates);
       progressCarry.candidate_extraction_version = THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
       progressCarry.extraction_diagnostics = compactExtractionDiagnostics(extractionDiagnostics);
@@ -547,7 +551,18 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     const matched = await matchCandidateSet(pool, candidates);
     const summary = matched.summary;
 
-    const resolved = preserveAnalystCandidates(matched.candidates, previousRows);
+    const linked = await preserveStoredIocLinks(pool, matched.candidates, previousRows);
+    const resolved = preserveAnalystCandidates(linked.candidates, previousRows);
+    // Quality check 9 (same as Refresh extraction): only for this run's own
+    // extraction; a reused candidate set keeps its stored quality record.
+    if (freshExtraction && extractionDiagnostics?.quality) {
+      const quality = withReplayMembershipDivergence(extractionDiagnostics.quality, {
+        deterministic: linked.candidates,
+        final: resolved,
+        previousRows
+      });
+      if (quality !== extractionDiagnostics.quality) extractionDiagnostics = { ...extractionDiagnostics, quality };
+    }
     const savedCandidates = (await reconcileReportCandidates(pool, report.id, resolved)).rows;
 
     // Clear prior entity links/relationships for this report before re-applying (idempotent finalize)

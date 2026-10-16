@@ -151,12 +151,19 @@ Retry on a `review_required` / finalized report is refused with `409 retry_not_a
 **Refresh extraction** (`extractionRefresh.js`) is what to run after a deterministic extractor contract change (`tl-candidates-vN → vN+1`). It reuses the stored canonical document (re-extracted from the retained HTML / stored PDF when the document contract is outdated — it never re-fetches; without a retained source it fails with `refresh_source_unavailable`), then reruns candidate extraction, canonicalization, occurrence / assertion construction, publisher IOC membership, IOC matching and the candidate counts. Its static import graph contains no `./ai/*` module (enforced by `extractionRefresh.test.js`); it writes no entities, relationships, report tags, summary, confidence, report type, TLP, `ai_result`, analysis chunks or run id. Per canonical identity `(candidate_type, normalized_value)`:
 
 - **surviving identity** — extraction-owned fields (occurrences, assertion, evidence, typing, policy) are recomputed; a stored model decision (`evidence.decision_source = 'ai'` / `ai_role_suggestion`) is replayed through the same `mergeAiCandidateUpdates` step the pipeline uses, so the current evidence policy still gates it; matching is recomputed; analyst state is kept (`review_status`, the Context only decision, the Context Only → IOC promotion override and `promoted_from`, `promotion_outcome`, row id / public id). Unchanged rows are not written.
+- **analyst-state reconciliation contract** (`candidateAnalystState.applyAnalystState`, hotfix after P1):
+  - *Publisher Indicator membership* is the current deterministic reading (extraction + replayed AI + matching). It is the only source of `is_ioc`, `assessment`, `role`, `source_assertion`.
+  - *Review status* is analyst-owned and always kept. A row with a Create-IOCs outcome that is still `pending` keeps its implied approval, unless a later Context Only / Ignore / Reject decision stands.
+  - *Explicit promotion* (`promote_to_ioc`, recorded in `evidence.promoted_from`, review `approved`) is re-applied after extraction: the row stays an IOC candidate.
+  - *Historical Create IOCs* (`promotion_outcome = created | already_existing`) is history, not membership. It no longer forces `is_ioc = true`; a contract fix can move a created identity out of the Indicators. That move is a protected loss (reviewed + IOC-linked → admin acceptance).
+  - *Global IOC link* (`matched_ioc_id`) is a fact about the identity. When the catalog lookup is skipped because the row is now non-IOC, the stored link is carried (`iocMatch.preserveStoredIocLinks`) only if the stored `ioc_items` record still has the candidate's observable type and normalized value. A deleted or mismatched record is not carried; the guard reports that as `ioc_link_changed`. `match_state` is recomputed with the carried link. The global IOC record itself is never changed or deleted by refresh.
+  - `promotion_outcome` / `promotion_detail` / `promoted_at` are never rewritten by reconcile.
 - **new identity** — inserted as extraction produces it; an `ai_needed` candidate stays `ai_needed` (no classification is fabricated; use Re-run AI analysis to classify it).
 - **removed identity** — deleted (relationship rows pointing at it cascade, as on every candidate rebuild). State never moves to a different identity (e.g. `technical_artifact|X` → `domain|x`).
 
 On completion a `review_required` report stays `review_required`. A finalized report (`ready`) stays finalized when the reconcile diff has no review-relevant change (added/removed canonical identity, or a change to assessment, role, review, match, IOC link, `is_ioc`, or source assertion). Occurrence and evidence metadata alone do not unfinalize it. A review-relevant change sets `review_required` and the job result reports `reopened_for_review`. A failed refresh returns the report to the status it had before the job (it never strands a report in `failed`) and records the error on the job and in `analysis_progress.last_refresh`. The worker log and the `threat_library.report.analysis.completed` audit event carry `job_type`, the extraction contract, added / updated / removed counts, `ai_invoked: false`, and `review_reopened` when a finalized report was sent back to review. Retry and Re-run AI persist candidates through the same reconciler, so a surviving canonical identity keeps its row id and analyst decisions (review, Context Only, Promote to IOC, Create-IOC outcome and IOC link).
 
-#### Membership guard (`tl-refresh-guard-v1`)
+#### Membership guard (`tl-refresh-guard-v2`)
 
 Before reconciling, a refresh compares the report Indicator membership it would produce with the stored one (`refreshMembershipGuard.js`). The diff records:
 - added and removed Indicators, each removal with a reason code (`identity_left_document`, `publisher_assertion_lost`, `became_context_only`, `excluded_by_type_gate`, `mode_changed`, `membership_rule`)
@@ -165,6 +172,7 @@ Before reconciling, a refresh compares the report Indicator membership it would 
 - analyst-reviewed rows that would be deleted
 - the MODE change
 - new extraction-quality warnings
+- global IOC link changes on surviving rows (`ioc_link_changes`: `matched_ioc_id` cleared or moved, with `from_ioc_id` / `to_ioc_id`) — v2
 
 The diff is saved in `analysis_progress.last_refresh.membership_diff` and in the job progress.
 
@@ -173,6 +181,7 @@ Material losses are protected. The **default policy `protect` blocks** a refresh
 - delete a reviewed or Create-IOC row (`reviewed_candidate_deleted`)
 - drop a publisher-asserted Indicator (`publisher_assertion_lost`)
 - remove at least 5 Indicators that are also at least 20% of the set (`bulk_membership_loss`)
+- clear or move a stored global IOC link on a surviving row, even when Indicator counts are unchanged (`ioc_link_changed`, v2)
 
 A blocked refresh writes nothing: no candidates and no publication date. The report keeps its status, and the job fails with `refresh_membership_loss_blocked` and a message naming the reasons.
 
@@ -180,7 +189,7 @@ MODE changes, new quality warnings, additions and ordinary reclassification of p
 
 - **Preview:** `GET …/reports/:id/refresh-extraction/preview` returns the same diff and guard verdict and never writes. The UI's **Refresh extraction** action opens this preview first.
 - **Explicit acceptance:** `POST …/refresh-extraction` with `{ "membership_changes": "accept", "reason": "…", "preview_fingerprint": "<membership_diff.material_fingerprint>" }` (reason ≥ 8 characters) applies the previewed changes. The policy rides the job dispatch, and the refresh audit event records `membership_guard` with the decision, reasons, `accepted_reason`, `accepted_preview_fingerprint` and the initiating analyst.
-- **Stale previews:** the fingerprint covers every Indicator that leaves the original set (identity, reason, row outcome) and every reviewed row that would be deleted; additions do not change it. The worker recomputes the diff when the job runs. A missing fingerprint is refused (`preview_fingerprint_missing`), and so is one that no longer matches the losses (`preview_stale`). An acceptance therefore never authorizes a materially different refresh.
+- **Stale previews:** the fingerprint covers every Indicator that leaves the original set (identity, reason, row outcome), every reviewed row that would be deleted, every global IOC link change (identity, from, to) and every IOC-linked row that leaves the Indicators or is deleted; additions do not change it. v1 fingerprints never match a v2 diff (the version is hashed), so a preview taken before the upgrade must be re-taken. The worker recomputes the diff when the job runs. A missing fingerprint is refused (`preview_fingerprint_missing`), and so is one that no longer matches the losses (`preview_stale`). An acceptance therefore never authorizes a materially different refresh.
 - **Concurrent changes (time of use):** the guard first runs on rows read outside the write transaction. Inside the reconcile transaction, after every candidate row of the report is locked (`SELECT … FOR UPDATE`), the refresh checks two things before writing:
   - The locked rows must equal that snapshot: review state, assessment, role, IOC flag, assertion, match, promotion outcome, original-document flag and `updated_at`, with no row added or removed. A review, Create IOCs, promotion or IOC Source change committed in between aborts the refresh with `refresh_candidates_changed_concurrently`. Nothing is written and the report returns to its prior status; run Refresh extraction again.
   - The guard runs again against the locked rows and the current IOC Source links. A block there, for example an accepted preview whose losses changed because a link disappeared, is an ordinary blocked refresh.
@@ -194,6 +203,7 @@ MODE changes, new quality warnings, additions and ordinary reclassification of p
   | Publisher-asserted Indicator (explicit IOC / C2 / operational row) | Admin |
   | Reviewed candidate row deleted | Admin |
   | Candidate tied to a global IOC (`matched_ioc_id` or created) leaving the Indicators or deleted | Admin |
+  | Global IOC link cleared or moved on a surviving row (`ioc_link_changed`) | Admin |
   | Only unreviewed, non-publisher-asserted, IOC-free candidates (for example a bulk loss of model-only rows) | Analyst or Admin |
 
   The preview reports this as `guard.authorization` (`required_role`, `categories`). The rule is enforced at two points, and the preview fingerprint, reason requirement and transaction checks are unchanged:
@@ -201,7 +211,7 @@ MODE changes, new quality warnings, additions and ordinary reclassification of p
   2. **Worker:** when the job runs, and again under the row locks, the worker resolves the acceptor's current role from `users` (active users only). The maintenance CLI operator resolves as `system`, which is admin-equivalent. An unresolvable principal is never admin (`acceptance_not_authorized`), so a demoted admin, a passive account or a role claim in the request or dispatch payload cannot authorize. A refused acceptance is an ordinary blocked refresh with nothing written.
 
   The dialog shows an analyst why an admin is needed instead of offering the acceptance. A protected refresh is unchanged for every role.
-- **Acceptance audit:** queueing an explicit acceptance writes `threat_library.refresh_extraction.acceptance_requested` with the actor, reason, preview fingerprint and job. The worker's outcome event follows, recording whether the acceptance was applied, refused as stale or blocked, with the resulting membership diff counts.
+- **Acceptance audit:** queueing an explicit acceptance writes `threat_library.refresh_extraction.acceptance_requested` with the actor, reason, preview fingerprint and job. The worker's outcome event follows, recording whether the acceptance was applied, refused as stale or blocked, with the resulting membership diff counts. `membership_guard.affected` names the identities an acceptance covered (bounded to 40 each): removed Indicators, deleted reviewed rows and IOC link changes (`identity`, `from_ioc_id`, `to_ioc_id`).
 - **Linked IOC Sources:** a row that leaves the original document but has IOC Source provenance is kept with its analyst state (`original_occurrence_cleared`, still in the union inventory). It is not counted as a deleted reviewed row. A publisher-asserted Indicator that leaves the original document stays a material loss either way. Removed and deleted entries carry the matched IOC id; refresh never deletes the global IOC record.
 - **CLI:** the maintenance CLI does the same with `refresh-extraction --apply --accept-membership-changes --reason "…" [--preview-fingerprint <from a dry-run>]`, and its dry-run shows the verdict and fingerprint.
 
@@ -215,6 +225,8 @@ Every extraction (import, Retry, Re-run AI and Refresh) runs `extractionQuality.
 - suspicious Indicators: example, legitimate-marker, publisher-domain, email-only or missing-provenance
 
 Each warning has a stable code, severity, candidate identities, block ids, section context, evidence excerpts, an explanation and extractor versions. Thresholds live in `EXTRACTION_QUALITY_THRESHOLDS`.
+
+**Check 9 (`tl-quality-v5`): `analyst_state_membership_divergence`.** On a fresh extraction that replays stored analyst state (Refresh extraction, Retry / Re-run AI), the deterministic publisher membership is compared with the membership after analyst state is re-applied. A difference caused by an explicit analyst decision (`promote_to_ioc` keeps an Indicator, a Context Only review excludes one) is an `info` note; any other difference is a `warning` listing the unexplained identities. The warning carries `divergence` (`added_by_replay`, `removed_by_replay`, `causes`). It never changes membership. Stored `tl-quality-v1`…`v4` records stay readable unchanged; a report gets a v5 record on its next import / refresh.
 
 The record is stored in `analysis_progress.extraction_diagnostics.quality` and returned as `extraction_quality` on report payloads. The report page shows it as **Overview → Extraction quality** (status, analyst wording per reason code, section context and affected values; no block ids, zones or versions), plus a header chip when something needs review. Warnings are labelled as automatic signals, not confirmed errors. MCP `get_threat_report` returns a summary (status, counts, codes). Reports imported before `tl-quality-v1` have `null` until their next refresh. The benchmark (`docs/threat-library-benchmark.md`) measures the detector's false warnings and detection rate.
 

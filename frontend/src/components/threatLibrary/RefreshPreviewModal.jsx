@@ -152,6 +152,16 @@ export default function RefreshPreviewModal({ open, loading, error, preview, bus
                 ))}
               </ul>
             </ChangeGroup>
+            <ChangeGroup title="Global IOC links that would change" count={model.iocLinks.length} testId="refresh-preview-ioc-links">
+              <ul className="tl-refresh__list">
+                {model.iocLinks.slice(0, LIST_LIMIT).map((item) => (
+                  <ValueRow key={item.identity} item={item}>
+                    <span className="tl-refresh__reason">{item.reason}</span>
+                    {item.badges.map((b) => <ToneBadge key={b.label} tone={b.tone}>{b.label}</ToneBadge>)}
+                  </ValueRow>
+                ))}
+              </ul>
+            </ChangeGroup>
             <ChangeGroup title="Added to Indicators" count={model.added.length} testId="refresh-preview-added">
               <ul className="tl-refresh__list">
                 {model.added.slice(0, LIST_LIMIT).map((item) => <ValueRow key={item.identity} item={item} />)}

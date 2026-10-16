@@ -35,8 +35,14 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
  * nested-heading loss) even when the orphan-run length is below the v3
  * threshold; check 8 flags IOC-looking body tables that sit outside every
  * headed appendix (authority risk even when membership was correctly withheld).
+ * v5 (refresh membership reconciliation): check 9, on a fresh extraction
+ * that replays stored analyst state (Refresh extraction, Retry / Re-run AI),
+ * compares the deterministic publisher membership with the membership after
+ * replayed analyst state (withReplayMembershipDivergence). An explicit
+ * analyst override (promote_to_ioc, Context Only review) is a note; any other
+ * divergence warns. Checks 1-8 are unchanged.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v4';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v5';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -72,6 +78,11 @@ export const QUALITY_CODES = Object.freeze({
    * authority risk even when the values correctly stayed non-Indicators.
    */
   BODY_IOC_TABLE_OUTSIDE_APPENDIX: 'body_ioc_table_outside_appendix',
+  /**
+   * Replayed analyst state moves report Indicator membership away from the
+   * deterministic publisher reading (refresh / retry; check 9).
+   */
+  ANALYST_STATE_MEMBERSHIP_DIVERGENCE: 'analyst_state_membership_divergence',
   /** Reserved / loopback identity is a report Indicator (membership gates should prevent it). */
   RESERVED_INDICATOR: 'reserved_or_loopback_indicator',
   /** RFC documentation / example identity is a report Indicator. */
@@ -684,6 +695,117 @@ export function assessExtractionQuality(input) {
 }
 
 /**
+ * Divergence causes of check 9. `analyst_promotion` / `analyst_exclusion` are
+ * explicit, recorded analyst decisions; `unexplained` means replay changed
+ * membership with no such decision (a reconciliation defect).
+ */
+export const REPLAY_DIVERGENCE_CAUSES = Object.freeze({
+  ANALYST_PROMOTION: 'analyst_promotion',
+  ANALYST_EXCLUSION: 'analyst_exclusion',
+  UNEXPLAINED: 'unexplained'
+});
+
+const identityOf = (c) => `${c.candidate_type}:${c.normalized_value}`;
+const memberOf = (c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) });
+
+/**
+ * Check 9: membership divergence between the deterministic publisher reading
+ * and the candidate set after analyst-state replay. Pure; never changes
+ * candidates. Returns null when the two agree.
+ * @param {{ deterministic: object[], final: object[], previousRows?: object[] }} input
+ */
+export function assessReplayMembershipDivergence({ deterministic, final, previousRows = [] }) {
+  const priorByKey = new Map((previousRows || []).map((r) => [identityOf(r), r]));
+  const det = new Map((deterministic || []).map((c) => [identityOf(c), memberOf(c)]));
+  const C = REPLAY_DIVERGENCE_CAUSES;
+  const items = [];
+  for (const c of final || []) {
+    const k = identityOf(c);
+    if (!det.has(k)) continue;
+    const before = det.get(k);
+    const after = memberOf(c);
+    if (before === after) continue;
+    const prior = priorByKey.get(k) || null;
+    const ev = prior?.evidence && typeof prior.evidence === 'object' ? prior.evidence : {};
+    const review = String(prior?.review_status || 'pending').toLowerCase();
+    let cause = C.UNEXPLAINED;
+    if (after && ev.promoted_from && typeof ev.promoted_from === 'object' && review === 'approved') cause = C.ANALYST_PROMOTION;
+    else if (!after && review === 'context_only') cause = C.ANALYST_EXCLUSION;
+    items.push({ identity: k, direction: after ? 'added_by_replay' : 'removed_by_replay', cause });
+  }
+  if (!items.length) return null;
+  const unexplained = items.filter((x) => x.cause === C.UNEXPLAINED);
+  const count = (cause) => items.filter((x) => x.cause === cause).length;
+  const parts = [
+    count(C.ANALYST_PROMOTION) ? `${count(C.ANALYST_PROMOTION)} kept as Indicator(s) by an explicit analyst promotion` : null,
+    count(C.ANALYST_EXCLUSION) ? `${count(C.ANALYST_EXCLUSION)} publisher Indicator(s) excluded by an analyst Context Only decision` : null,
+    unexplained.length ? `${unexplained.length} changed by replayed state with no analyst decision that explains it` : null
+  ].filter(Boolean);
+  return {
+    code: QUALITY_CODES.ANALYST_STATE_MEMBERSHIP_DIVERGENCE,
+    severity: unexplained.length ? 'warning' : 'info',
+    explanation: `Indicators differ from the publisher reading after analyst decisions were re-applied: ${parts.join('; ')}. Nothing was changed.`,
+    candidates: (unexplained.length ? unexplained : items).map((x) => x.identity).sort(),
+    candidate_count: items.length,
+    divergence: {
+      added_by_replay: items.filter((x) => x.direction === 'added_by_replay').length,
+      removed_by_replay: items.filter((x) => x.direction === 'removed_by_replay').length,
+      causes: Object.fromEntries(Object.values(C).map((cause) => [cause, count(cause)]))
+    }
+  };
+}
+
+/**
+ * Quality record with check 9 merged in (counts / status recomputed). Returns
+ * the input unchanged when there is no divergence (or no quality record).
+ * @param {object|null} quality assessExtractionQuality result
+ * @param {{ deterministic: object[], final: object[], previousRows?: object[] }} input
+ */
+export function withReplayMembershipDivergence(quality, input) {
+  if (!quality || typeof quality !== 'object') return quality;
+  // Idempotent: a record that already carries check 9 is re-derived, not appended to.
+  const code = QUALITY_CODES.ANALYST_STATE_MEMBERSHIP_DIVERGENCE;
+  const stale = (quality.warnings || []).filter((x) => x.code === code);
+  if (stale.length) {
+    const counts = { ...(quality.counts || { high: 0, warning: 0, info: 0 }) };
+    for (const x of stale) counts[x.severity] = Math.max(0, (counts[x.severity] || 0) - 1);
+    quality = {
+      ...quality,
+      counts,
+      status: counts.high ? 'high' : counts.warning ? 'warning' : counts.info ? 'info' : 'clean',
+      warnings: (quality.warnings || []).filter((x) => x.code !== code),
+      warnings_total: Math.max(0, (quality.warnings_total ?? (quality.warnings || []).length) - stale.length)
+    };
+  }
+  const w = assessReplayMembershipDivergence(input);
+  if (!w) return quality;
+  const warning = {
+    code: w.code,
+    severity: w.severity,
+    explanation: w.explanation,
+    candidates: w.candidates.slice(0, T.maxListedCandidates),
+    candidate_count: w.candidate_count,
+    block_ids: [],
+    section: null,
+    evidence: [],
+    divergence: w.divergence,
+    extractor_version: quality.extractor_versions || null
+  };
+  const warnings = [...(quality.warnings || []), warning]
+    .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.code.localeCompare(b.code));
+  const counts = { ...(quality.counts || { high: 0, warning: 0, info: 0 }) };
+  counts[w.severity] = (counts[w.severity] || 0) + 1;
+  const status = counts.high ? 'high' : counts.warning ? 'warning' : counts.info ? 'info' : 'clean';
+  return {
+    ...quality,
+    status,
+    counts,
+    warnings: warnings.slice(0, T.maxWarnings),
+    warnings_total: (quality.warnings_total ?? (quality.warnings || []).length) + 1
+  };
+}
+
+/**
  * Stored quality record of a report row (analysis_progress.extraction_diagnostics.quality),
  * or null when the report predates tl-quality-v1 (filled by the next import / Refresh extraction).
  * @param {{ analysis_progress?: object|null }|null|undefined} row
@@ -732,6 +854,7 @@ export function compactExtractionQuality(quality) {
       block_ids: (w.block_ids || []).slice(0, T.maxListedBlocks),
       section: w.section || null,
       evidence: (w.evidence || []).slice(0, T.maxEvidence),
+      ...(w.divergence ? { divergence: w.divergence } : {}),
       extractor_version: w.extractor_version || null
     }))
   };

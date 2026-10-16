@@ -69,6 +69,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'IOC-section heading with rows left out',
     why: 'Values under an Indicators or C2 heading were not kept inside that section, so they are not Indicators. A nested list heading or sibling sub-heading may have closed the section early.'
   },
+  analyst_state_membership_divergence: {
+    title: 'Analyst decisions change the publisher Indicators',
+    why: 'After a refresh, re-applied analyst decisions keep or remove Indicators differently from how the publisher’s text reads. An explicit promotion or Context Only decision is expected; any other difference should be checked.'
+  },
   body_ioc_table_outside_appendix: {
     title: 'Body table contributed Indicators outside the IOC section',
     why: 'An analysis table that looks like an IOC inventory produced Indicators that do not also appear under the publisher’s headed IOC section. Confirm they are publisher-asserted, not lookup attributes.'

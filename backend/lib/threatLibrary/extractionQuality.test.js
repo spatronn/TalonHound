@@ -1,5 +1,5 @@
 /**
- * Extraction quality detector (tl-quality-v4): each reason code on a minimal
+ * Extraction quality detector (tl-quality-v5): each reason code on a minimal
  * document, false-positive behaviour on clean layouts, and the read-only
  * contract (candidates, membership and MODE never change).
  */
@@ -37,7 +37,7 @@ const members = (cands) =>
   cands.filter((c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })).map((c) => `${c.candidate_type}:${c.normalized_value}`).sort();
 
 test('contract: version, central thresholds, stable codes', () => {
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v4');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v5');
   assert.ok(Object.isFrozen(EXTRACTION_QUALITY_THRESHOLDS));
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.orphanRunMinValues, 3);
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.appendixHeadingNonmemberMinValues, 2);
