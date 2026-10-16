@@ -161,14 +161,17 @@ function documentMode(states) {
  * preview the analyst reviewed; the worker recomputes it at execution time and
  * refuses the acceptance when the losses differ (a stale preview never
  * authorizes a materially different refresh). Additions do not change it.
- * Every global-IOC link change on a surviving row is part of it too.
- * @param {{ removed: object[], reviewedDeleted: object[], iocLinkChanges?: object[] }} parts full (unbounded) lists
+ * Every global-IOC link change on a surviving row, and every IOC-linked row
+ * that leaves the Indicators or is deleted (these decide admin authorization),
+ * is part of it too.
+ * @param {{ removed: object[], reviewedDeleted: object[], iocLinkChanges?: object[], iocLinkedLosses?: object[] }} parts full (unbounded) lists
  */
-export function materialFingerprint({ removed, reviewedDeleted, iocLinkChanges = [] }) {
+export function materialFingerprint({ removed, reviewedDeleted, iocLinkChanges = [], iocLinkedLosses = [] }) {
   const lines = [
     ...removed.map((r) => `removed|${r.identity}|${r.reason_code}|${r.row_outcome}|${r.reviewed ? 1 : 0}`),
     ...reviewedDeleted.map((r) => `deleted|${r.identity}|${r.review_status}|${r.promotion_outcome || ''}`),
-    ...iocLinkChanges.map((r) => `ioc_link|${r.identity}|${r.from_ioc_id}|${r.to_ioc_id ?? ''}`)
+    ...iocLinkChanges.map((r) => `ioc_link|${r.identity}|${r.from_ioc_id}|${r.to_ioc_id ?? ''}`),
+    ...iocLinkedLosses.map((r) => `ioc_loss|${r.identity}|${r.matched_ioc_id ?? ''}|${r.row_outcome}`)
   ].sort();
   return crypto.createHash('sha256').update(`${REFRESH_GUARD_VERSION}\n${lines.join('\n')}`).digest('hex');
 }
@@ -289,7 +292,7 @@ export function buildRefreshMembershipDiff({ previousRows, nextCandidates, previ
   const beforeCodes = codesOf(previousQuality);
   const afterCodes = codesOf(nextQuality);
   const sortById = (a, b) => a.identity.localeCompare(b.identity);
-  const fingerprint = materialFingerprint({ removed, reviewedDeleted, iocLinkChanges });
+  const fingerprint = materialFingerprint({ removed, reviewedDeleted, iocLinkChanges, iocLinkedLosses });
   return {
     version: REFRESH_GUARD_VERSION,
     material_fingerprint: fingerprint,
