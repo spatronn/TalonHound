@@ -55,9 +55,20 @@ function looksHeadingLike(b) {
   if (b.type !== 'paragraph' && b.type !== 'caption') return false;
   const t = textOf(b);
   if (!t || t.length > 90 || /[.!?。]$/.test(t)) return false;
-  // Short observable-only lines are content, not headings.
-  if (isIndicatorValueLine(t) || isObservableListLine(t)) return false;
-  if (OBSERVABLE_RE.test(refangTextForExtraction(t)) && t.length < 48) return false;
+  // Observable inventory / annotated IOC rows are content, never synthetic headings
+  // (e.g. "8.218.50[.]207 - Staging server …" must not open a C2 scope from "C2").
+  if (isIndicatorValueLine(t) || isObservableListLine(t) || isAnnotatedIndicatorRowLine(t)) return false;
+  const refanged = refangTextForExtraction(t);
+  if (OBSERVABLE_RE.test(refanged) && t.length < 48) return false;
+  // Observable-led annotation lines ("host - role", "ip | note") stay content.
+  if (
+    OBSERVABLE_RE.test(refanged) &&
+    /^(?:https?:\/\/|\d{1,3}(?:\.\d{1,3}){3}|[a-f0-9]{32,64}\b|[a-z0-9][a-z0-9.-]+\.[a-z]{2,})/i.test(
+      refanged.replace(/\[\.\]/g, '.')
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -94,6 +105,37 @@ function lookAheadInventory(blocks, i, chromeIds, depth = 4) {
   return false;
 }
 
+/**
+ * Strong inventory look-ahead for C2 / operational openings: tables, list rows,
+ * and annotated value lines — not prose that merely mentions an observable.
+ */
+function lookAheadStrongInventory(blocks, i, chromeIds, depth = 6) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < depth; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') return false;
+    seen += 1;
+    if (b.type === 'table' || b.layout === 'observable_row') return true;
+    const t = textOf(b);
+    if (!t) continue;
+    // HTTP/API examples are technical prose, not publisher IOC inventory.
+    if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(t.trim())) continue;
+    if (/^(?:\d+\s+){2,}\|\s*(?:GET|POST|\{)/i.test(t.trim())) continue;
+    if (isIndicatorValueLine(t) || isAnnotatedIndicatorRowLine(t) || isObservableListLine(t)) return true;
+    if (
+      (b.type === 'list' || b.type === 'list_item') &&
+      OBSERVABLE_RE.test(refangTextForExtraction(t)) &&
+      t.length <= 140 &&
+      !/[.!?。]/.test(t) &&
+      !/\b(?:microsoft\.com|microsoftonline\.com|googleapis\.com)\b/i.test(t)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function headingLevel(b, stack) {
   if (Number.isInteger(b.level)) return b.level;
   if (stack.length) return stack[stack.length - 1].level + 1;
@@ -115,12 +157,40 @@ function nearestAuthoritative(stack) {
   return null;
 }
 
+function nearestNegative(stack) {
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    if (stack[i].zone && NEGATIVE_ZONES.has(stack[i].zone) && !stack[i].authoritative) {
+      return stack[i];
+    }
+  }
+  return null;
+}
+
 function annotateContentFields(b, stack) {
   const auth = nearestAuthoritative(stack);
+  const neg = auth ? null : nearestNegative(stack);
+  // Stable structural provenance: path texts for display + heading block ids
+  // for identity (heading wording changes must not orphan ancestry joins).
   b.section_path = stack.map((s) => s.text);
+  b.section_path_ids = stack.map((s) => s.id);
   b.authoritative_ancestor_id = auth?.id || null;
   b.authoritative_zone = auth?.zone || null;
-  b.tree_zone = auth?.zone || 'report_body';
+  if (auth?.zone) {
+    b.tree_zone = auth.zone;
+    b.negative_scope = false;
+  } else if (neg?.zone) {
+    b.tree_zone = neg.zone;
+    b.negative_scope = true;
+  } else {
+    b.tree_zone = 'report_body';
+    b.negative_scope = false;
+  }
+}
+
+function popAuthoritativeAppendix(stack) {
+  while (stack.length && stack[stack.length - 1].authoritative) {
+    stack.pop();
+  }
 }
 
 /**
@@ -135,6 +205,7 @@ export function annotateSectionTree(doc, opts = {}) {
   /** @type {{ id: string, text: string, level: number, zone: string|null, role: string|null, authoritative: boolean, synthetic: boolean }[]} */
   const stack = [];
   let authoritativeOpenings = 0;
+  let realAuthoritativeOpenings = 0;
   const trace = [];
 
   const pushTrace = (entry) => {
@@ -146,6 +217,7 @@ export function annotateSectionTree(doc, opts = {}) {
     if (isChrome(b, chromeIds)) {
       b.tree_zone = 'header_footer';
       b.section_path = [];
+      b.section_path_ids = [];
       b.authoritative_ancestor_id = null;
       b.authoritative_zone = null;
       continue;
@@ -167,19 +239,51 @@ export function annotateSectionTree(doc, opts = {}) {
     // Subgroup continuation under an open appendix: group-label vocabulary
     // and/or inventory look-ahead. Real same-level HTML siblings that name a
     // new topic (no group label, no inventory) close scope below.
+    // Reference / negative headings never inherit appendix authority — even when
+    // the following blocks look like URL "inventory" (citation lists).
     let treatAsSubgroup = false;
-    if (parentAuth) {
+    const isNegativeHeading = Boolean(zone && NEGATIVE_ZONES.has(zone));
+    if (parentAuth && !isNegativeHeading) {
       const deeper =
         Number.isInteger(b.level) &&
         Number.isInteger(parentAuth.level) &&
         b.level > parentAuth.level;
-      const levelUnknown =
-        !Number.isInteger(b.level) ||
-        !Number.isInteger(parentAuth.level) ||
-        (inferredLevels && Number.isInteger(b.level) && b.level === parentAuth.level);
-      if (deeper || levelUnknown || !isRealHeading) {
-        treatAsSubgroup = groupLabel || inventoryNext || (zone && AUTHORITATIVE.has(zone));
+      const sameLevelInferred =
+        inferredLevels &&
+        Number.isInteger(b.level) &&
+        Number.isInteger(parentAuth.level) &&
+        b.level === parentAuth.level;
+      // PDF same-level real headings are sibling topics, not nested subgroups —
+      // even when inventory-ish content follows (that content belongs to the
+      // new topic, not the prior appendix).
+      if (
+        sameLevelInferred &&
+        isRealHeading &&
+        !groupLabel &&
+        !(zone && AUTHORITATIVE.has(zone))
+      ) {
+        treatAsSubgroup = false;
+      } else {
+        const levelUnknown =
+          !Number.isInteger(b.level) ||
+          !Number.isInteger(parentAuth.level) ||
+          sameLevelInferred;
+        if (deeper || levelUnknown || !isRealHeading) {
+          treatAsSubgroup = groupLabel || inventoryNext || (zone && AUTHORITATIVE.has(zone));
+        }
       }
+    }
+
+    if (isNegativeHeading) {
+      // Bibliography / references terminate authoritative IOC scope.
+      popAuthoritativeAppendix(stack);
+      pushTrace({
+        block_id: b.id,
+        decision: 'close_appendix_on_negative_heading',
+        zone,
+        level,
+        reason: 'reference_or_negative_terminates_authority'
+      });
     }
 
     if (isRealHeading && Number.isInteger(b.level) && !inferredLevels) {
@@ -197,19 +301,38 @@ export function annotateSectionTree(doc, opts = {}) {
         while (stack.length && stack[stack.length - 1].level >= level && !stack[stack.length - 1].authoritative) {
           stack.pop();
         }
-      } else if (!treatAsSubgroup && zone && !AUTHORITATIVE.has(zone) && !NEGATIVE_ZONES.has(zone)) {
-        // Non-IOC real heading with unknown hierarchy under appendix: leave
-        // appendix open but do not push a competing authoritative node.
+      } else if (
+        !treatAsSubgroup &&
+        parentAuth &&
+        !(zone && AUTHORITATIVE.has(zone)) &&
+        !(zone && NEGATIVE_ZONES.has(zone))
+      ) {
+        // Non-IOC real heading (including unzoned topic titles) under an open
+        // appendix. Under PDF inferred levels — or when the zone is unknown —
+        // leaving the appendix open leaks authority across topic siblings
+        // (Conclusion, Analysis, …). Close authoritative scope.
+        if (inferredLevels || !zone) {
+          popAuthoritativeAppendix(stack);
+          pushTrace({
+            block_id: b.id,
+            decision: 'close_appendix_on_topic_heading',
+            zone,
+            level,
+            reason: inferredLevels ? 'pdf_inferred_non_ioc_sibling' : 'unzoned_topic_sibling'
+          });
+        }
         annotateContentFields(b, stack);
         b.tree_is_heading = true;
         b.tree_heading_zone = zone;
-        pushTrace({
-          block_id: b.id,
-          decision: 'skip_non_ioc_heading',
-          zone,
-          level,
-          reason: 'unknown_hierarchy_non_authoritative'
-        });
+        if (!(inferredLevels || !zone)) {
+          pushTrace({
+            block_id: b.id,
+            decision: 'skip_non_ioc_heading',
+            zone,
+            level,
+            reason: 'unknown_hierarchy_non_authoritative'
+          });
+        }
         continue;
       }
     } else if (!isRealHeading) {
@@ -232,12 +355,27 @@ export function annotateSectionTree(doc, opts = {}) {
       }
     }
 
+    // C2 / operational topic headings open MODE A authority only when the
+    // following blocks look like a publisher inventory (not narrative prose
+    // that happens to discuss C2 technique). Long descriptive titles
+    // ("Outlook calendar events as a C2 channel") never open authority.
+    const isC2orOps = zone === 'c2_section' || zone === 'operational_infrastructure';
+    const narrativeC2Topic =
+      isC2orOps &&
+      (t.length > 64 ||
+        /\bas a\b|\bchannel\b|\bmodule\b|\babuses?\b|\busing\b|\bvia\b|\bdetails?\b|\bfigure\b/i.test(t));
+    const strongInventory = isC2orOps && !narrativeC2Topic ? lookAheadStrongInventory(blocks, i, chromeIds) : false;
+    // groupLabel is for nested appendix subgroups only — a heading that merely
+    // contains the word "C2" must not open MODE A without inventory evidence.
+    const opensAuthoritativeZone =
+      Boolean(zone && AUTHORITATIVE.has(zone)) && (!isC2orOps || strongInventory);
+
     const inheritAuth = Boolean(parentAuth && treatAsSubgroup);
-    const authoritative = Boolean(zone && AUTHORITATIVE.has(zone)) || inheritAuth;
+    const authoritative = opensAuthoritativeZone || inheritAuth;
     const effectiveZone = authoritative
-      ? zone && AUTHORITATIVE.has(zone)
+      ? opensAuthoritativeZone && zone && AUTHORITATIVE.has(zone)
         ? zone
-        : parentAuth?.zone || zone
+        : parentAuth?.zone || (opensAuthoritativeZone ? zone : null)
       : zone && NEGATIVE_ZONES.has(zone)
         ? zone
         : null;
@@ -252,7 +390,14 @@ export function annotateSectionTree(doc, opts = {}) {
       synthetic: !isRealHeading
     };
     stack.push(node);
-    if (node.authoritative) authoritativeOpenings += 1;
+    if (node.authoritative) {
+      authoritativeOpenings += 1;
+      // Count independently of the bounded trace buffer — late appendix headings
+      // must still establish MODE A on long documents.
+      if (!node.synthetic && node.zone && AUTHORITATIVE.has(node.zone)) {
+        realAuthoritativeOpenings += 1;
+      }
+    }
     pushTrace({
       block_id: b.id,
       decision: 'push',
@@ -273,12 +418,20 @@ export function annotateSectionTree(doc, opts = {}) {
     }
   }
 
+  // MODE A requires a real (non-synthetic) publisher IOC/C2/sample heading.
+  // Synthetic subgroup nesting under that heading is allowed, but synthetic-only
+  // openings must not invent MODE A on a narrative (MODE B) document.
+  // realAuthoritativeOpenings is counted during the walk (not from the bounded
+  // trace) so late appendix headings on long reports still establish MODE A.
+
   return {
     version: SECTION_TREE_VERSION,
     blocks,
     meta: {
       authoritative_openings: authoritativeOpenings,
-      has_authoritative_scope: authoritativeOpenings > 0,
+      real_authoritative_openings: realAuthoritativeOpenings,
+      // Publisher-authoritative IOC inventory governs the document (MODE A).
+      has_authoritative_scope: realAuthoritativeOpenings > 0,
       inferred_levels: inferredLevels,
       trace
     }
