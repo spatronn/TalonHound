@@ -1,0 +1,272 @@
+{
+  "title": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+  "blocks": [
+    {
+      "id": "b005",
+      "page": null,
+      "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+      "type": "heading",
+      "level": 1,
+      "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+    },
+    {
+      "id": "b223",
+      "page": null,
+      "text": "Indicators of Compromise",
+      "type": "heading",
+      "level": 2,
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b224",
+      "page": null,
+      "text": "Blinder Tunnel malware payloads and hashes",
+      "type": "paragraph",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b225",
+      "page": null,
+      "text": "DubaiAirport_Carrers_IT_Test.zip \u2013 Initial malicious archive",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b226",
+      "page": null,
+      "text": "6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b227",
+      "page": null,
+      "text": "FlightManager.csproj \u2013 Weaponized Visual Studio project file",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b228",
+      "page": null,
+      "text": "f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b229",
+      "page": null,
+      "text": "RuntimeBroker.dll \u2013 Primary RAT loader",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b230",
+      "page": null,
+      "text": "53f35e49eb9b271fd8cbcd3daacb525328dbf159a03dbd1c7adebe0363daa402",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b231",
+      "page": null,
+      "text": "PsProxy.dll \u2013 In-memory PowerShell execution engine",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b232",
+      "page": null,
+      "text": "3fd810a3aa0039993393741b32287c367a9a5037a41e826906440887cdd3ed13",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b233",
+      "page": null,
+      "text": "Blackwood.dll \u2013 Custom Chisel tunneling wrapper",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b234",
+      "page": null,
+      "text": "76273382e4252c1f60a2251141e108942494409c759358320735891762c0682e",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b235",
+      "page": null,
+      "text": "Blackwood.dll.conf \u2013 Contacting 91.107.156[.]29",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b236",
+      "page": null,
+      "text": "d3561bd4aad003dc3e08157b0891860bb496b80cd6e44901692e08ab1d4e8260",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b237",
+      "page": null,
+      "text": "Blackwood archive \u2013 Contacting 65.109.214[.]145",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b238",
+      "page": null,
+      "text": "f5ba1645694c62f527ed6ceda8c68a5c3dd92b4032439167e8e937e72803b4bd",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b239",
+      "page": null,
+      "text": "Blackwood archive \u2013 Contacting 87.248.129[.]239",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b240",
+      "page": null,
+      "text": "7cc571aca6d8715d9aaad3d83e1bcd30467565d583db1dfe73697c5d00a1f875",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b241",
+      "page": null,
+      "text": "IP addresses:",
+      "type": "paragraph",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b242",
+      "page": null,
+      "text": "91.107.156[.]29",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b243",
+      "page": null,
+      "text": "87.248.129[.]239",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b244",
+      "page": null,
+      "text": "65.109.214[.]145",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b245",
+      "page": null,
+      "text": "38.180.136[.]127",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b246",
+      "page": null,
+      "text": "Phishing domains:",
+      "type": "paragraph",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b247",
+      "page": null,
+      "text": "cloud.g-drive[.]cam",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b248",
+      "page": null,
+      "text": "googeldrive[.]cam",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b249",
+      "page": null,
+      "text": "drivegoogel[.]cam",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b250",
+      "page": null,
+      "text": "googelmeet[.]online",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b251",
+      "page": null,
+      "text": "meetonline[.]cam",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b252",
+      "page": null,
+      "text": "asdfafadafg[.]online",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b253",
+      "page": null,
+      "text": "Registry keys:",
+      "type": "paragraph",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b254",
+      "page": null,
+      "text": "HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run\\MicrosoftRuntime",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b255",
+      "page": null,
+      "text": "GitHub C2 infrastructure:",
+      "type": "paragraph",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b256",
+      "page": null,
+      "text": "hxxps[:]//github[.]com/peakyblinders-tm",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    },
+    {
+      "id": "b257",
+      "page": null,
+      "text": "hxxps[:]//github[.]com/GreenBeret0",
+      "type": "list",
+      "section": "Indicators of Compromise"
+    }
+  ],
+  "meta": {
+    "adapter": "generic_html",
+    "extractor": "threat_library_html_v6",
+    "site_names": [
+      "Unit 42"
+    ],
+    "source_url": "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/",
+    "source_host": "unit42.paloaltonetworks.com",
+    "content_root": "main",
+    "candidate_extraction_version": "tl-candidates-v29",
+    "excerpt": true,
+    "excerpt_note": "Synthetic-scope regression excerpt; not a full production export"
+  }
+}
