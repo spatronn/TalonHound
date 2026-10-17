@@ -134,6 +134,21 @@ describe('sectionTree.shadow', () => {
     assert.match(String(diagnostics.section_tree_shadow?.error || ''), /forced shadow env failure/);
   });
 
+  it('fullRezone:false force-off ignores process env full-rezone flag', () => {
+    const prev = process.env.THREAT_LIBRARY_SECTION_TREE_SHADOW_FULL_REZONE;
+    process.env.THREAT_LIBRARY_SECTION_TREE_SHADOW_FULL_REZONE = '1';
+    try {
+      const result = evaluateSectionTreeShadow(doc([{ id: 'a', type: 'paragraph', text: 'x' }]), [], {
+        fullRezone: false
+      });
+      assert.equal(result.ok, true);
+      assert.equal(result.full_rezone, null);
+    } finally {
+      if (prev === undefined) delete process.env.THREAT_LIBRARY_SECTION_TREE_SHADOW_FULL_REZONE;
+      else process.env.THREAT_LIBRARY_SECTION_TREE_SHADOW_FULL_REZONE = prev;
+    }
+  });
+
   it('does not mutate authoritative candidate objects', () => {
     const hashVal = '6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239';
     const candidates = [

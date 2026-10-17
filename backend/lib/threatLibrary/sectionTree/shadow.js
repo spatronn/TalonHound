@@ -15,7 +15,7 @@ import { SECTION_TREE_SHADOW_VERSION, SECTION_TREE_VERSION } from './version.js'
 /**
  * @param {object} document canonical document
  * @param {object[]} candidates deterministic candidates (authoritative)
- * @param {{ fullRezone?: boolean, enabled?: boolean }} [opts]
+ * @param {{ fullRezone?: boolean, enabled?: boolean, env?: NodeJS.ProcessEnv|Record<string,string|undefined> }} [opts]
  */
 export function evaluateSectionTreeShadow(document, candidates, opts = {}) {
   const t0 = Date.now();
@@ -29,7 +29,11 @@ export function evaluateSectionTreeShadow(document, candidates, opts = {}) {
     });
 
     let fullRezone = null;
-    const wantFull = opts.fullRezone === true || isSectionTreeFullRezonePreviewEnabled();
+    // Explicit false must force-off (do not OR process.env). Undefined → env flag.
+    const env = opts.env || process.env;
+    const wantFull =
+      opts.fullRezone === true ||
+      (opts.fullRezone == null && isSectionTreeFullRezonePreviewEnabled(env));
     if (wantFull) {
       const full = previewMembershipFullRezone(document, candidates, { tree });
       fullRezone = compareMembershipSets(detKeys, full.memberKeys, {
@@ -48,7 +52,7 @@ export function evaluateSectionTreeShadow(document, candidates, opts = {}) {
       additive: additiveCmp,
       full_rezone: fullRezone,
       elapsed_ms: Date.now() - t0,
-      // Bounded structural trace — heading texts only, no body content.
+      // Bounded structural decisions (block_id / zone / flags) — no body prose.
       trace: (tree.meta.trace || []).slice(0, 40)
     };
   } catch (err) {
@@ -88,7 +92,8 @@ export function attachSectionTreeShadowDiagnostics(document, candidates, diagnos
   }
   try {
     out.section_tree_shadow = evaluateSectionTreeShadow(document, candidates, {
-      fullRezone: isSectionTreeFullRezonePreviewEnabled(env)
+      fullRezone: isSectionTreeFullRezonePreviewEnabled(env),
+      env
     });
   } catch (err) {
     // Absolute fail-soft: never let shadow evaluation break extraction/import.
