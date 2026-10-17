@@ -1,0 +1,100 @@
+{
+  "id": "golden-levelblue-blind-eagle",
+  "title": "LevelBlue SpiderLabs — Blind Eagle (synthetic sub-labels, 'name (SHA-256 hash)' cells)",
+  "publisher": "LevelBlue SpiderLabs",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "six_report_audit",
+    "mode_a",
+    "mixed_cell_name_hash",
+    "synthetic_sub_labels",
+    "partial_defang",
+    "scheme_less_url",
+    "provider_domains"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-six/levelblue-blind-eagle-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.levelblue.com/blogs/spiderlabs-blog/still-circling-blind-eagles-toolkit-keeps-evolving",
+    "talonhound_report_id": "a6574f0c-566c-4006-b25a-7a7ea1362fca",
+    "fixture": "excerpt of the stored production canonical document (threat_library_html_v6): headings, tables, table labels and every block holding an extracted observable; verified extraction-equivalent to the full document on tl-zones-v12 / tl-candidates-v28",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-16"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-16 six-report audit): the formal IOC appendix of the original publisher page was read row by row from a raw HTML snapshot with a standalone outliner (no TalonHound zone/scope/typing/classification code); MODE A semantics (only appendix rows are Indicators). Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (six-report audit, 2026-10-16)",
+      "verified_at": "2026-10-16",
+      "notes": "Appendix h3 with <p> sub-labels 'Network' (Table 4) and 'Files and Persistence' (Table 5). Table 5 cells 'Paralell.dll (SHA-256 …)' / 'Client1.exe (SHA-256 …)' assert the two hashes; file names / paths / scheduled task are host artifacts (not network IOCs). raw.githubusercontent.com (GitHub raw host) and frootvpn.com (commercial VPN) are provider infrastructure.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "46.246.84.5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "181.235.8.24",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "178.16.52.80",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.89.160.17",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "raw.githubusercontent.com/cabeto850128/comicsam",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rema200426.duckdns.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a4fbd707f4ce7ca68e6137cef1c56b6f408e5f0a0f148434d996bb98c3a21fff",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a73cb9d5d46e19f3daa4a14cfe5d8fa4319a3d62452039e4972e6a316bbb26f4",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "domain",
+        "value": "raw.githubusercontent.com"
+      }
+    ],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "frootvpn.com"
+      }
+    ],
+    "ambiguous": [],
+    "sections": [
+      {
+        "heading": "Appendix: Indicators of Compromise",
+        "expected": "authoritative"
+      }
+    ]
+  }
+}

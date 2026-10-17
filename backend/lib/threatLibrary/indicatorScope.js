@@ -340,6 +340,20 @@ export function describesBenignComponent(masked) {
 }
 
 /**
+ * True when `text` describes this exact value as a legitimate / benign
+ * component (same window and negation rules as relation classification).
+ * Read-only helper for diagnostics.
+ * @param {string} text surrounding / row text
+ * @param {string[]} values the value's spellings
+ */
+export function textDescribesValueAsBenign(text, values) {
+  const focus = (Array.isArray(values) ? values : [values]).filter(Boolean);
+  if (!focus.length) return false;
+  const surrounding = refangTextForExtraction(String(text || ''));
+  return describesBenignComponent(maskForeignNetworkTokens(maskObservable(surrounding, focus), focus));
+}
+
+/**
  * Anaphor that refers back to the observable of the previous sentence, per
  * observable kind ("… 198.51.100[.]7. This IP address was previously used by
  * …"). Only the immediately following sentence is read, and only when it
@@ -691,13 +705,21 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   // publisher-curated section (or after an explicit typed/header-labelled
   // table upgraded the block zone). A narrative dense IP grid must not become
   // operational-malicious merely because cells were extracted as table_row.
-  if (form === 'ip_port' || (authoritative && structuralRow)) {
-    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'structural_row', authoritative, structural_row: true };
-  }
-
   const focusValue = [opts.value, opts.original].filter(Boolean);
   const surrounding = refangTextForExtraction(String(surroundingText || ''));
   const full = maskForeignNetworkTokens(maskObservable(surrounding, focusValue), focusValue);
+
+  if (form === 'ip_port' || (authoritative && structuralRow)) {
+    // The row itself can say what the value is: a publisher row that calls
+    // this exact value a legitimate / benign component ("<hash> | Legitimate
+    // <Vendor> executable") lists it for context — the side-loading
+    // host beside the malicious DLL — not as an Indicator. Any maliciousness
+    // or abuse cue in the same row window keeps the row assertion.
+    if (structuralRow && form !== 'ip_port' && describesBenignComponent(full)) {
+      return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
+    }
+    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'structural_row', authoritative, structural_row: true };
+  }
   const text = maskForeignNetworkTokens(
     maskObservable(clauseContaining(surrounding, focusValue), focusValue),
     focusValue
@@ -868,7 +890,8 @@ export function attachOccurrenceRelations(candidate) {
     o.occurrence_kind = occurrenceKindFor(o, detail);
     // Source assertion = publisher-curated section AND (row placement OR an
     // operational clause). Zone alone is never an assertion.
-    o.asserted = detail.authoritative && (detail.structural_row || detail.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
+    // A row that names the value as a benign component asserts nothing malicious.
+    o.asserted = detail.marker !== 'benign' && detail.authoritative && (detail.structural_row || detail.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
   }
   candidate.source_relation = strongestSourceRelation(candidate);
   return candidate;

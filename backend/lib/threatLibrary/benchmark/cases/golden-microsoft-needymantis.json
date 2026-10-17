@@ -1,0 +1,89 @@
+{
+  "id": "golden-microsoft-needymantis",
+  "title": "Microsoft Security — NeedyMantis (References nested under the IOC heading)",
+  "publisher": "Microsoft Security",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "six_report_audit",
+    "mode_a",
+    "nested_reference_section",
+    "kql_code_blocks"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-six/microsoft-needymantis-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.microsoft.com/en-us/security/blog/2026/09/28/needymantis-unpacking-a-post-compromise-malware-family-used-in-targeted-operations/",
+    "talonhound_report_id": "fbe98a2f-2e5a-4b3d-a9d6-050cccceec9c",
+    "fixture": "excerpt of the stored production canonical document (threat_library_html_v6): headings, tables, table labels and every block holding an extracted observable; verified extraction-equivalent to the full document on tl-zones-v12 / tl-candidates-v28",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-16"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-16 six-report audit): the formal IOC appendix of the original publisher page was read row by row from a raw HTML snapshot with a standalone outliner (no TalonHound zone/scope/typing/classification code); MODE A semantics (only appendix rows are Indicators). Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (six-report audit, 2026-10-16)",
+      "verified_at": "2026-10-16",
+      "notes": "h3 References sits under the h2 IOC heading and lists publisher/vendor references (excluded). Production import failed at the AI stage (first-response timeout); the deterministic document was persisted and is used here.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "e842dd7642c8e04b5ec20b6393848a9c904e4832930950c16664fe7800ba382e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9cb68f986043a576e19d32184c583b7d8f571c7219d8dc0065dced1c13f077ef",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c82520eb03c084226be4eafbff46f56dca0aa8804a2a7f23a085a96afe71ef77",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "corp.tripswithengine.com",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "url",
+        "value": "https://securelist.com/tr/daemon-tools-backdoor/119654/"
+      },
+      {
+        "type": "url",
+        "value": "https://winsparkle.org/"
+      },
+      {
+        "type": "url",
+        "value": "https://poedit.com/"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "google.com"
+      }
+    ],
+    "ambiguous": [],
+    "sections": [
+      {
+        "heading": "Indicators of compromise",
+        "expected": "authoritative"
+      },
+      {
+        "heading": "References",
+        "expected": "excluded"
+      }
+    ]
+  }
+}

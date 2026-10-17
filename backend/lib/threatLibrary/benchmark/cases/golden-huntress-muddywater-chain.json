@@ -1,0 +1,82 @@
+{
+  "id": "golden-huntress-muddywater-chain",
+  "title": "Huntress — MuddyWater attack chain (path + labelled hash cells, legitimate binary row)",
+  "publisher": "Huntress",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "six_report_audit",
+    "mode_a",
+    "mixed_cell_path_hash",
+    "legitimate_binary_row",
+    "p_wrapped_cells"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-six/huntress-muddywater-chain-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.huntress.com/blog/muddywater-attack-chain",
+    "talonhound_report_id": "527d864d-48e3-4ee7-a179-a7ec8108b6e7",
+    "fixture": "excerpt of the stored production canonical document (threat_library_html_v6): headings, tables, table labels and every block holding an extracted observable; verified extraction-equivalent to the full document on tl-zones-v12 / tl-candidates-v28",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-16"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-16 six-report audit): the formal IOC appendix of the original publisher page was read row by row from a raw HTML snapshot with a standalone outliner (no TalonHound zone/scope/typing/classification code); MODE A semantics (only appendix rows are Indicators). Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (six-report audit, 2026-10-16)",
+      "verified_at": "2026-10-16",
+      "notes": "Row 'c:\\Users\\Public\\Downloads\\FMAPP.exe SHA256: e2589260…' is described by the publisher as 'Legitimate Fortemedia Inc. executable' (side-loading host) — excluded. Row FMAPP.dll 'Malicious DLL used for the C2' — Indicator. 'asuedulimit' is a user name (not an IOC type).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "173.16.10.1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "162.0.230.185",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "157.20.182.49",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "589ecb0bb31adc6101b9e545a4e5e07ae2e97d464b0a62242a498e613a7740b6",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "hunt.io"
+      }
+    ],
+    "excluded_legitimate": [
+      {
+        "type": "sha256",
+        "value": "e25892603c42e34bd7ba0d8ea73be600d898cadc290e3417a82c04d6281b743b"
+      },
+      {
+        "type": "domain",
+        "value": "ifconfig.me"
+      }
+    ],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [
+      {
+        "heading": "Indicators of compromise (IOCs)",
+        "expected": "authoritative"
+      }
+    ]
+  }
+}

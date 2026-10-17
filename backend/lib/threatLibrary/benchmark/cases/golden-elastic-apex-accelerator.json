@@ -1,0 +1,222 @@
+{
+  "id": "golden-elastic-apex-accelerator",
+  "title": "Elastic Security Labs — Apex Accelerator (C2 topic section, crypto constants, 4-column observable table)",
+  "publisher": "Elastic Security Labs",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "six_report_audit",
+    "mode_a",
+    "c2_topic_section",
+    "dotted_technical_identifiers",
+    "hash_shaped_constants",
+    "legitimate_url"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-six/elastic-apex-accelerator-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/apex-accelerator-malicious-npm-packages",
+    "talonhound_report_id": "c8ae5cab-47b3-4ec8-b69d-2b10deb0fe51",
+    "fixture": "excerpt of the stored production canonical document (threat_library_html_v6): headings, tables, table labels and every block holding an extracted observable; verified extraction-equivalent to the full document on tl-zones-v12 / tl-candidates-v28",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-16"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-16 six-report audit): the formal IOC appendix of the original publisher page was read row by row from a raw HTML snapshot with a standalone outliner (no TalonHound zone/scope/typing/classification code); MODE A semantics (only appendix rows are Indicators). Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (six-report audit, 2026-10-16)",
+      "verified_at": "2026-10-16",
+      "notes": "Appendix 'Observables and indicators of compromise' = 9 SHA256 + 14 domains. hw.ncpu / hw.memsize / hw.model are macOS sysctl keys in a descriptive list ('CPU count via hw.ncpu'); the four 64-hex values are AES/ChaCha keys, an XOR mask and a string-table key; the Dropbox URL is a validly signed Visual Studio installer used as a front.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "985829083f3937df6c82419216f7697afae0caac8efca6257a756066fe2c0abb",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "5ee7145061f05779f7f6f9b72e216713d17d53e183a92f408bfbbc44f2bfb95d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "42a760b15fea7c9af718ee45386c1c3ea1bec9e30c95d16c287bcc8b2efdc72e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "127ae4cad80b6605157ca2a1feada8a235e16aacc5d2119337a98115a4e13274",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "20f0a401676292d4ae34932e61f34afa97bcfc47ee517cda2afeb7222264a193",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a50cdb508d13884630945a98eea0615b866d938eb0a16c5d958e6c8c181a6df8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "68f5a00eafa8ecebf5d93328e0fec23b24d6f91808c8384db002946a13656c71",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ee8cd9aba420f1b26b5d43e5bcdd6025a277b4946bb5daf76ab45c0e5f7ecd0b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ed5cb4af1d2cb067b8d23783ebf05d70278728462ba4f1bf29da0a3a41efc35e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "apexaccs.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "arena.apexaccs.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "token.apexaccs.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vrf.apexaccs.org",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "arena.apexfdn.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "verify.apexfdn.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ccmihr.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "0auth-chromium.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ehegisnightmare.icu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "arenapex.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cloudmain365duo.top",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fdn4apex.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "main.router-apex.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "update.apex-arena-router.com",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "url",
+        "value": "https://www.dropbox.com/scl/fi/tbxu5vgr9l1vuw3s7rw7v/VisualStudioSetup.exe?rlkey=o6dpwfynneuxeyok7g5trtv96&st=nj5jxsoe&dl=1"
+      }
+    ],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "hw.ncpu"
+      },
+      {
+        "type": "domain",
+        "value": "hw.memsize"
+      },
+      {
+        "type": "domain",
+        "value": "hw.model"
+      },
+      {
+        "type": "sha256",
+        "value": "b31c6e241ac846728da9c1fac4936651cffb944d143ab816276bcc6da0284787"
+      },
+      {
+        "type": "sha256",
+        "value": "e98f37d7f4e1fa433d19304dc2258042090e2d1d7eea7670d41f738d08729660"
+      },
+      {
+        "type": "sha256",
+        "value": "ccf8a1cec56605b8517552ba1a2d061c03a29e90274fb2fcf59ba4b75c392390"
+      },
+      {
+        "type": "sha256",
+        "value": "d719bf57e65ba09de1bacdb182c99118edafd518fd3a4a9797bcad221adb8151"
+      },
+      {
+        "type": "url",
+        "value": "https://vrf.apexaccs.org/api/v1/vrf"
+      },
+      {
+        "type": "url",
+        "value": "https://ehegisnightmare.icu/build/nTOugj-fWWMurYHg/bludness.exe"
+      }
+    ],
+    "ambiguous": [
+      {
+        "type": "url",
+        "value": "https://ccmihr.com/macos/jquery.js",
+        "rationale": "Publisher-asserted 'C2 server' row of the sample configuration table inside the C2-named analysis section; only its host is in the formal appendix. Membership is consistent with the existing C2-section policy; either state is accepted."
+      },
+      {
+        "type": "url",
+        "value": "https://main.router-apex.com/updater.sh",
+        "rationale": "Body table 'Earlier delivery infrastructure'; host is an appendix domain, the URL itself is not in the appendix."
+      },
+      {
+        "type": "url",
+        "value": "https://update.apex-arena-router.com/loader.sh",
+        "rationale": "Body table 'Earlier delivery infrastructure'; host is an appendix domain, the URL itself is not in the appendix."
+      }
+    ],
+    "sections": [
+      {
+        "heading": "Observables and indicators of compromise",
+        "expected": "authoritative"
+      }
+    ]
+  }
+}

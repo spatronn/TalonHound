@@ -1,0 +1,124 @@
+{
+ "title": "Unmasking an Attack Chain of MuddyWater | Huntress",
+ "language": "en",
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.huntress.com/blog/muddywater-attack-chain",
+  "source_host": "www.huntress.com",
+  "content_root": "article",
+  "candidate_extraction_version": "tl-candidates-v28"
+ },
+ "blocks": [
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Background",
+   "type": "heading",
+   "level": 2,
+   "section": "Background"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "On March 4, 2026, Hunt.io published a blog regarding Iranian-linked APT infrastructure indicators. Figure 1 illustrates an excerpt of that blog.",
+   "type": "paragraph",
+   "section": "Background"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Observations",
+   "type": "heading",
+   "level": 2,
+   "section": "Observations"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "This was an instance of DLL side-loading; that is, FMAPP.exe is a legitimate Fortemedia Inc. application, and when launched, loads FMAPP.dll from the same folder. It’s this DLL that contains the malicious code, and connects back to the C2 IP address, 157.20.182[.]49.",
+   "type": "paragraph",
+   "section": "Observations"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Detailed activity",
+   "type": "heading",
+   "level": 2,
+   "section": "Detailed activity"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "They also appeared to have an issue with their C2 initially. You can see them run the FMAPP.exe executable to get their DLL loaded, then they run tasklist | findstr FMAPP in order to verify that it’s running. They then ping the C2 IP address in order to verify that the machine is online, and they check the IP address of the victim’s machine by connecting to ifconfig[.]me and attempt to run FMAPP.exe again:",
+   "type": "paragraph",
+   "section": "Detailed activity"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "2026-01-24 23:05:44 ping 157.20.182[.]49",
+   "type": "paragraph",
+   "section": "Detailed activity"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "2026-01-24 23:12:15 curl ifconfig[.]me",
+   "type": "paragraph",
+   "section": "Detailed activity"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Indicators of compromise (IOCs)",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of compromise (IOCs)"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "Item | Description ¶ 173.16.10[.]1 | IP address from initial RDP connection ¶ 162.0.230[.]185 | IP address used with ssh ¶ 157.20.182[.]49 | FMAPP.dll C2 IP address ¶ asuedulimit | User name used with ssh ¶ c:\\Users\\Public\\Downloads\\FMAPP.exe SHA256: e25892603c42e34bd7ba0d8ea73be600d898cadc290e3417a82c04d6281b743b | Legitimate Fortemedia Inc. executable ¶ c:\\Users\\Public\\Downloads\\FMAPP.dll SHA256: 589ecb0bb31adc6101b9e545a4e5e07ae2e97d464b0a62242a498e613a7740b6 | Malicious DLL used for the C2",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Item",
+      "Description"
+     ],
+     [
+      "173.16.10[.]1",
+      "IP address from initial RDP connection"
+     ],
+     [
+      "162.0.230[.]185",
+      "IP address used with ssh"
+     ],
+     [
+      "157.20.182[.]49",
+      "FMAPP.dll C2 IP address"
+     ],
+     [
+      "asuedulimit",
+      "User name used with ssh"
+     ],
+     [
+      "c:\\Users\\Public\\Downloads\\FMAPP.exe SHA256: e25892603c42e34bd7ba0d8ea73be600d898cadc290e3417a82c04d6281b743b",
+      "Legitimate Fortemedia Inc. executable"
+     ],
+     [
+      "c:\\Users\\Public\\Downloads\\FMAPP.dll SHA256: 589ecb0bb31adc6101b9e545a4e5e07ae2e97d464b0a62242a498e613a7740b6",
+      "Malicious DLL used for the C2"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Indicators of compromise (IOCs)"
+  }
+ ]
+}

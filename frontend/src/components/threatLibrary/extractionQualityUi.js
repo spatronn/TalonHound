@@ -61,6 +61,18 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Indicator table rows were dropped',
     why: 'Values listed in an indicator table did not become candidates.'
   },
+  table_observable_not_extracted: {
+    title: 'Hash or IP in the IOC table was not read',
+    why: 'A hash or IP address written in the indicator column of an IOC table did not become a candidate. The cell may combine a file name or path with the value.'
+  },
+  content_inferred_hash_column: {
+    title: 'Second hash column may be a certificate attribute',
+    why: 'A column whose header names no hash type was read as hashes next to the declared hash column. It may hold certificate thumbprints or serials rather than samples.'
+  },
+  undelegated_suffix_domain_indicator: {
+    title: 'Indicator domain with a non-public suffix',
+    why: 'The domain ends in a suffix that does not exist in public DNS. It may be a system or code identifier rather than a host.'
+  },
   indicators_from_structural_discovery: {
     title: 'Indicators taken from a table or list without an IOC heading',
     why: 'These Indicators come only from a table or list that looked like an IOC list, not from the publisher’s IOC section. Check they are not lookup results, look-alike samples or services the report calls legitimate.'

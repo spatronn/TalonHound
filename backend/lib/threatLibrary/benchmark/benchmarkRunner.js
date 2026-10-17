@@ -99,6 +99,7 @@ export function validateBenchmarkCase(c, origin = 'case') {
         if (gt[key] != null && !Array.isArray(gt[key])) problems.push(`ground_truth.${key} must be an array`);
         for (const e of gt[key] || []) {
           if (!e?.type || !e?.value) problems.push(`ground_truth.${key}: every entry needs type and value`);
+          if (key === 'ambiguous' && !String(e?.rationale || '').trim()) problems.push('ground_truth.ambiguous: every entry needs a rationale');
         }
       }
       const seen = new Map();

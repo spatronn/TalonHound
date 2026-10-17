@@ -163,8 +163,16 @@ export {
  * heading levels are equal or unknown, and pure filename/hash inventories
  * whose row boundaries were lost read as rows (tl-zones-v11); dense multi-pair
  * PDF inventory lines stay rows (threat_library_pdf_v6).
+ * v29 (six-report audit): a mixed indicator cell ("C:\…\x.dll SHA256: <h>",
+ * "x.dll (SHA-256 <h>)") keeps its file identity as context and recovers the
+ * hash(es) it carries, linked as cell companions (tl-table-v8); certificate /
+ * fuzzy-hash attribute columns are never indicator columns (tl-table-v8); a
+ * publisher row that calls its value a legitimate / benign component is
+ * reference context, not a row assertion; a weak-suffix dotted token on a
+ * prose-led short line in a curated zone is not promoted to a domain
+ * (tl-type-resolver-v9).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v28';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v29';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -501,6 +509,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       inconsistent: false,
       missing_identities: [],
       dropped_asserted_identities: [],
+      /** Indicator cells holding a file identity plus observables (tl-table mixed cells). */
+      mixed_cells: { decomposed: 0, recovered_values: 0, residual_unparsed: 0, residual_observables: [] },
       tables: []
     },
     /** Observable-type resolution: what the syntax guessed vs what the source supports. */
@@ -1051,8 +1061,15 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         slashOrder: slashDateOrder,
         notAfter: observationNotAfter
       });
+      const attributeKinds = new Map((interp.columns || []).filter((c) => c.attribute_kind).map((c) => [c.index, c.attribute_kind]));
       const contextCells = rowCells
-        .map((text, index) => ({ column_index: index, header: columnLabels?.[index] || null, text }))
+        .map((text, index) => ({
+          column_index: index,
+          header: columnLabels?.[index] || null,
+          text,
+          // Certificate / fuzzy-hash attribute of the row's sample (never an Indicator).
+          ...(attributeKinds.has(index) ? { attribute_kind: attributeKinds.get(index) } : {})
+        }))
         .filter((c) => c.text && !interp.indicator_columns.includes(c.column_index))
         .slice(0, 8)
         .map((c) => ({ ...c, text: c.text.slice(0, 160) }));
@@ -1079,8 +1096,21 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           resolved_type: v.resolved_type || v.candidate_type,
           typing_reason: v.typing_reason || undefined,
           cells: contextCells.length ? contextCells : undefined,
-          observation: observation || undefined
+          observation: observation || undefined,
+          // Mixed cell provenance: the file identity and the hash(es) it carries.
+          cell_companions: v.cell_companions?.length ? v.cell_companions : undefined,
+          cell_residual: v.cell_residual || undefined
         };
+        if (v.cell_companions?.length && v.is_ioc !== false) t.mixed_cells.recovered_values += 1;
+        if (v.cell_companions?.length && v.is_ioc === false) t.mixed_cells.decomposed += 1;
+        if (v.cell_residual) {
+          t.mixed_cells.residual_unparsed += 1;
+          for (const id of v.residual_observables || []) {
+            if (t.mixed_cells.residual_observables.length < 24) {
+              t.mixed_cells.residual_observables.push({ table_id: block.id, row_index: row.row_index, identity: id, zone: block.zone || null });
+            }
+          }
+        }
         const entry = add(v.refanged, v.candidate_type, block, {
           form: OCCURRENCE_FORMS.TABLE_ROW,
           port: v.port ?? null,

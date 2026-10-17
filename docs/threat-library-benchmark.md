@@ -24,7 +24,8 @@ Cases live in `backend/lib/threatLibrary/benchmark/cases/*.json`, one case per f
 | `ground_truth.indicators` | the complete publisher-asserted Indicator set; `assertion` is an exact `source_assertion` or `explicit` (any `explicit_*`) |
 | `ground_truth.context_only` | must be Context Only (references, contact domains, provider context) |
 | `ground_truth.excluded_legitimate` | legitimate observables that must never be Indicators (signed binaries, vendor API URLs, loopback) |
-| `ground_truth.not_indicators` | must not be Indicators, otherwise unconstrained (MODE A narrative hashes) |
+| `ground_truth.not_indicators` | must not be Indicators, otherwise unconstrained (MODE A narrative hashes, certificate thumbprints, system identifiers); never extracted is acceptable |
+| `ground_truth.ambiguous` | publisher evidence supports either reading; every entry needs a `rationale`. Never counted as TP, FN or FP, and the observed state is reported under `ambiguous` |
 | `ground_truth.sections` | `{ heading, expected: authoritative \| narrative \| excluded, until? }`: zone class of the content under a publisher heading |
 
 Mark an entry `"ai_dependent": true` when the semantic (model) layer, not the deterministic stage, owns its decision (MODE B narrative). Such entries are reported separately and left out of the deterministic precision and recall.
@@ -69,7 +70,11 @@ npm run benchmark:threat-library -- --write-baseline
 
 `knownFailures.js` records cases that still fail, with a diagnosed cause. Their expectations stay strict. They run as `todo`, and a ratchet test fails once one starts passing, so a fix retires its entry.
 
-The registry is empty since P1.1 (`tl-zones-v11` / `tl-candidates-v28` / `threat_library_pdf_v6`, 2026-10-16). The five `pdf_legacy_*` entries were retired. Their causes (`levelless_pdf_sibling_heading`, `pdf_merged_filename_hash_lines`) were not only fixture artifacts: current pdf_v5 output hit the same failures whenever bold-only headings inferred equal levels, or a visual line held three or more filename/hash pairs.
+### Six-report golden corpus (`golden-*`, 2026-10-17)
+
+Six real publisher reports from the 2026-10-16 batch audit (Unit 42, Check Point Research, Huntress, LevelBlue SpiderLabs, Elastic Security Labs, Microsoft Security; 65 independently labelled Indicators) are committed as `canonical` cases. Each fixture in `lib/threatLibrary/fixtures/golden-six/` is an **excerpt** of the stored production canonical document: headings, tables, table labels and every block holding an extracted observable. Each excerpt was verified to reproduce the full document's deterministic extraction (same candidates, members, Context Only set and quality codes) on `tl-candidates-v28` before any fix. They need no database, network or model. `benchmark.test.js` pins their exact publisher sets and the audited failure classes: mixed path/name + hash cells, a legitimate binary row, certificate thumbprint columns, dotted system identifiers under a C2 topic, and references nested under the IOC heading. On `tl-candidates-v28` they scored 62/65 recall and 82.7% precision with `quality=clean`. From `tl-candidates-v29` / `tl-quality-v6` they are exact.
+
+The known-failures registry has been empty since P1.1 (`tl-zones-v11` / `tl-candidates-v28` / `threat_library_pdf_v6`, 2026-10-16). The five `pdf_legacy_*` entries were retired. Their causes (`levelless_pdf_sibling_heading`, `pdf_merged_filename_hash_lines`) were not only fixture artifacts: current pdf_v5 output hit the same failures whenever bold-only headings inferred equal levels, or a visual line held three or more filename/hash pairs.
 
 ## Detector validation notes
 

@@ -1,0 +1,182 @@
+{
+  "id": "golden-checkpoint-mois-cybercrime",
+  "title": "Check Point Research — Iranian MOIS actors (SHA256 + certificate thumbprint table)",
+  "publisher": "Check Point Research",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "six_report_audit",
+    "mode_a",
+    "certificate_thumbprint_column",
+    "attribute_columns",
+    "bare_hash_paragraph"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-six/checkpoint-mois-cybercrime-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://research.checkpoint.com/2026/iranian-mois-actors-the-cyber-crime-connection/",
+    "talonhound_report_id": "23e2d7ff-136b-45a8-8f41-4acf20235f6b",
+    "fixture": "excerpt of the stored production canonical document (threat_library_html_v6): headings, tables, table labels and every block holding an extracted observable; verified extraction-equivalent to the full document on tl-zones-v12 / tl-candidates-v28",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-16"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-16 six-report audit): the formal IOC appendix of the original publisher page was read row by row from a raw HTML snapshot with a standalone outliner (no TalonHound zone/scope/typing/classification code); MODE A semantics (only appendix rows are Indicators). Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (six-report audit, 2026-10-16)",
+      "verified_at": "2026-10-16",
+      "notes": "Section label for the certificate table is omitted: the page's 'GO UP' navigation link sits between that table and the next heading (kept verbatim in the fixture). The 40-hex 'Certificate Thumbprint' column holds code-signing certificate thumbprints (attributes of the signing certificate), not SHA-1 file hashes; 38-hex serial numbers are not hashes. The body IP and MD5 are narrative mentions (MODE A).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "aae017e7a36e016655c91bd01b4f3c46309bbe540733f82cce29392e72e9bd1f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "077ab28d66abdafad9f5411e18d26e87fe43da1410ee8fe846bd721ab0cb52de",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ddceade244c636435f2444cd4c4d3dc161981f3af1f622c03442747ecef50888",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2b7d8a519f44d3105e9fde2770c75efb933994c658855dca7d48c8b4897f81e6",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "64cf334716f15da1db7981fad6c81a640d94aa1d65391ef879f4b7b6edf6e7f1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "74db1f653da6de134bdc526412a517a30b6856de9c3e5d0c742cb5fe9959ad0d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "94f05495eb1b2ebe592481e01d3900615040aa02bd1807b705a50e45d7c53444",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "4aef998e3b3f6ca21c78ed71732c9d2bdcc8a4e0284f51d7462c79d446fbc7be",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a4bd1371fe644d7e6898045cc8e7b5e1562bdfd0e4871d46034e29a22dec6377",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "64263640a6fdeb2388bca2e9094a17065308cf8dcb0032454c0a71d9b78327eb",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a8c380b57cb7c381ca6ba845bd7af7333f52ee4dc4e935e98b48bb81facad72b",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "24857fe82f454719cd18bcbe19b0cfa5387bee1022008b7f5f3a8be9f05e4d14",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a92d28f1d32e3a9ab7c3691f8bfca8f7586bb0666adbba47eab3e1a8faf7ecc0",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2a09bbb3d1ddb729ea7591f197b5955453aa3769c6fb98a5ef60c6e4b7df23a5",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "url",
+        "value": "https://research.checkpoint.com/2026/iranian-mois-actors-the-cyber-crime-connection/"
+      },
+      {
+        "type": "ip",
+        "value": "18.223.24.218"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "sha1",
+        "value": "0902d7915a19975817ec1ccb0f2f6714aed19638",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "2087bb914327e937ea6e77fe6c832576338c2af8",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "21a435ecaa7b86efbec7f6fb61fcda3da686125c",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "389b12da259a23fa4559eb1d97198120f2a722fe",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "579a4584a6eef0a2453841453221d0fb25c08c89",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "d920ae0f8ea8b5bd42de49e01c6bbd4c2c6d0847",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "f8444dfc740b94227ab9b2e757b8f8f1fa49362a",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "9dcb994ea2b8e6169b76a524fae7b2d2dcd1807d",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "b674578d4bdb24cd58bf2dc884eaa658b7aa250c",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "sha1",
+        "value": "551bdf646df8e9abe04483882650a8ffae43cb55",
+        "note": "code-signing certificate thumbprint"
+      },
+      {
+        "type": "md5",
+        "value": "eb5e96e05129e5691f9677be4e396c88"
+      }
+    ],
+    "ambiguous": [],
+    "sections": [
+      {
+        "heading": "Handala Rhadmanthys Variants",
+        "expected": "authoritative"
+      }
+    ]
+  }
+}

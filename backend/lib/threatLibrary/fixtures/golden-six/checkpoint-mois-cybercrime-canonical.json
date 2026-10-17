@@ -1,0 +1,326 @@
+{
+ "title": "Iranian MOIS Actors & the Cyber Crime Connection - Check Point Research",
+ "language": "en-us",
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Check Point Research",
+   "Check Point Software Technologies Ltd."
+  ],
+  "source_url": "https://research.checkpoint.com/2026/iranian-mois-actors-the-cyber-crime-connection/",
+  "source_host": "research.checkpoint.com",
+  "content_root": "body",
+  "candidate_extraction_version": "tl-candidates-v28"
+ },
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "CATEGORIES",
+   "type": "heading",
+   "level": 2,
+   "section": "CATEGORIES"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Iranian MOIS Actors & the Cyber Crime Connection",
+   "type": "heading",
+   "level": 1,
+   "section": "Iranian MOIS Actors & the Cyber Crime Connection"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "https://research.checkpoint.com/2026/iranian-mois-actors-the-cyber-crime-connection/",
+   "type": "paragraph",
+   "section": "Iranian MOIS Actors & the Cyber Crime Connection"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Key Points",
+   "type": "heading",
+   "level": 2,
+   "section": "Key Points"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "Introduction",
+   "type": "heading",
+   "level": 2,
+   "section": "Introduction"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Background – MOIS and Criminal Activity",
+   "type": "heading",
+   "level": 2,
+   "section": "Background – MOIS and Criminal Activity"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Void Manticore (Handala) and Rhadamanthys",
+   "type": "heading",
+   "level": 2,
+   "section": "Void Manticore (Handala) and Rhadamanthys"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "MuddyWater – Tsundere Botnet and the Castle Loader Connection",
+   "type": "heading",
+   "level": 2,
+   "section": "MuddyWater – Tsundere Botnet and the Castle Loader Connection"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Tsundere Botnet (a.k.a DinDoor)",
+   "type": "heading",
+   "level": 3,
+   "section": "Tsundere Botnet (a.k.a DinDoor)"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Given that two separate sources linked Tsundere to MuddyWater, one via a VPS and the other through vendor telemetry, it is likely that MuddyWater uses the botnet as part of its operations. Another overlap between DinDoor-related activity and known MuddyWater tradecraft is the use of rclone to access a Wasabi server, which traces back to an IP address previously associated with MuddyWater (18.223.24[.]218, linked to eb5e96e05129e5691f9677be4e396c88).",
+   "type": "paragraph",
+   "section": "Tsundere Botnet (a.k.a DinDoor)"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "Castle Loader Connection (a.k.a FakeSet)",
+   "type": "heading",
+   "level": 3,
+   "section": "Castle Loader Connection (a.k.a FakeSet)"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Iranian Qilin Affiliates",
+   "type": "heading",
+   "level": 2,
+   "section": "Iranian Qilin Affiliates"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Indicators of Compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Handala Rhadmanthys Variants",
+   "type": "heading",
+   "level": 3,
+   "section": "Handala Rhadmanthys Variants"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "aae017e7a36e016655c91bd01b4f3c46309bbe540733f82cce29392e72e9bd1f",
+   "type": "paragraph",
+   "section": "Handala Rhadmanthys Variants"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "Malware samples signed with suspicious certificates",
+   "type": "heading",
+   "level": 3,
+   "section": "Malware samples signed with suspicious certificates"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "sha256 | Certificate Common Name | Certificate Thumbprint | Certificate Serial Number | Malware Family ¶ 077ab28d66abdafad9f5411e18d26e87fe43da1410ee8fe846bd721ab0cb52de | Amy Cherne | 0902d7915a19975817ec1ccb0f2f6714aed19638 | 330007f1068f41bf0f662a03b500000007f106 | FakeSet / CastleLoader ¶ ddceade244c636435f2444cd4c4d3dc161981f3af1f622c03442747ecef50888 | Amy Cherne | 0902d7915a19975817ec1ccb0f2f6714aed19638 | 330007f1068f41bf0f662a03b500000007f106 | FakeSet / CastleLoader ¶ 2b7d8a519f44d3105e9fde2770c75efb933994c658855dca7d48c8b4897f81e6 | Amy Cherne | 2087bb914327e937ea6e77fe6c832576338c2af8 | 330006df515a14fe3748416fe200000006df51 | FakeSet / CastleLoader ¶ 64cf334716f15da1db7981fad6c81a640d94aa1d65391ef879f4b7b6edf6e7f1 | Amy Cherne | 21a435ecaa7b86efbec7f6fb61fcda3da686125c | 330006e75231f49437ae56778a00000006e752 | FakeSet / CastleLoader ¶ 74db1f653da6de134bdc526412a517a30b6856de9c3e5d0c742cb5fe9959ad0d | Amy Cherne | 389b12da259a23fa4559eb1d97198120f2a722fe | 330007d5443a7d25208ec5feb100000007d544 | FakeSet / CastleLoader ¶ 94f05495eb1b2ebe592481e01d3900615040aa02bd1807b705a50e45d7c53444 | Amy Cherne | 389b12da259a23fa4559eb1d97198120f2a722fe | 330007d5443a7d25208ec5feb100000007d544 | FakeSet / CastleLoader ¶ 4aef998e3b3f6ca21c78ed71732c9d2bdcc8a4e0284f51d7462c79d446fbc7be | Amy Cherne | 579a4584a6eef0a2453841453221d0fb25c08c89 | 33000700e919066fd9db11bac70000000700e9 | FakeSet / CastleLoader ¶ a4bd1371fe644d7e6898045cc8e7b5e1562bdfd0e4871d46034e29a22dec6377 | Amy Cherne | d920ae0f8ea8b5bd42de49e01c6bbd4c2c6d0847 | 330007ebfbe75a64b52aaf4cb700000007ebfb | FakeSet / CastleLoader ¶ 64263640a6fdeb2388bca2e9094a17065308cf8dcb0032454c0a71d9b78327eb | Donald Gay | f8444dfc740b94227ab9b2e757b8f8f1fa49362a | 3300072b29c3bf8403a6c15be2000000072b29 | FakeSet / CastleLoader ¶ a8c380b57cb7c381ca6ba845bd7af7333f52ee4dc4e935e98b48bb81facad72b | Donald Gay | 9dcb994ea2b8e6169b76a524fae7b2d2dcd1807d | 33000725fea86dd19e8571b26c0000000725fe | FakeSet / CastleLoader ¶ 24857fe82f454719cd18bcbe19b0cfa5387bee1022008b7f5f3a8be9f05e4d14 | Donald Gay | b674578d4bdb24cd58bf2dc884eaa658b7aa250c | 3300079a51c7063e66053d229b000000079a51 | StageComp ¶ a92d28f1d32e3a9ab7c3691f8bfca8f7586bb0666adbba47eab3e1a8faf7ecc0 | Donald Gay | b674578d4bdb24cd58bf2dc884eaa658b7aa250c | 3300079a51c7063e66053d229b000000079a51 | StageComp ¶ 2a09bbb3d1ddb729ea7591f197b5955453aa3769c6fb98a5ef60c6e4b7df23a5 | Amy Cherne | 551bdf646df8e9abe04483882650a8ffae43cb55 | 330006e15e43401dbd9416e20e00000006e15e | DinDoor / Tsundere Deno",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "077ab28d66abdafad9f5411e18d26e87fe43da1410ee8fe846bd721ab0cb52de",
+      "Amy Cherne",
+      "0902d7915a19975817ec1ccb0f2f6714aed19638",
+      "330007f1068f41bf0f662a03b500000007f106",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "ddceade244c636435f2444cd4c4d3dc161981f3af1f622c03442747ecef50888",
+      "Amy Cherne",
+      "0902d7915a19975817ec1ccb0f2f6714aed19638",
+      "330007f1068f41bf0f662a03b500000007f106",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "2b7d8a519f44d3105e9fde2770c75efb933994c658855dca7d48c8b4897f81e6",
+      "Amy Cherne",
+      "2087bb914327e937ea6e77fe6c832576338c2af8",
+      "330006df515a14fe3748416fe200000006df51",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "64cf334716f15da1db7981fad6c81a640d94aa1d65391ef879f4b7b6edf6e7f1",
+      "Amy Cherne",
+      "21a435ecaa7b86efbec7f6fb61fcda3da686125c",
+      "330006e75231f49437ae56778a00000006e752",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "74db1f653da6de134bdc526412a517a30b6856de9c3e5d0c742cb5fe9959ad0d",
+      "Amy Cherne",
+      "389b12da259a23fa4559eb1d97198120f2a722fe",
+      "330007d5443a7d25208ec5feb100000007d544",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "94f05495eb1b2ebe592481e01d3900615040aa02bd1807b705a50e45d7c53444",
+      "Amy Cherne",
+      "389b12da259a23fa4559eb1d97198120f2a722fe",
+      "330007d5443a7d25208ec5feb100000007d544",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "4aef998e3b3f6ca21c78ed71732c9d2bdcc8a4e0284f51d7462c79d446fbc7be",
+      "Amy Cherne",
+      "579a4584a6eef0a2453841453221d0fb25c08c89",
+      "33000700e919066fd9db11bac70000000700e9",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "a4bd1371fe644d7e6898045cc8e7b5e1562bdfd0e4871d46034e29a22dec6377",
+      "Amy Cherne",
+      "d920ae0f8ea8b5bd42de49e01c6bbd4c2c6d0847",
+      "330007ebfbe75a64b52aaf4cb700000007ebfb",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "64263640a6fdeb2388bca2e9094a17065308cf8dcb0032454c0a71d9b78327eb",
+      "Donald Gay",
+      "f8444dfc740b94227ab9b2e757b8f8f1fa49362a",
+      "3300072b29c3bf8403a6c15be2000000072b29",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "a8c380b57cb7c381ca6ba845bd7af7333f52ee4dc4e935e98b48bb81facad72b",
+      "Donald Gay",
+      "9dcb994ea2b8e6169b76a524fae7b2d2dcd1807d",
+      "33000725fea86dd19e8571b26c0000000725fe",
+      "FakeSet / CastleLoader"
+     ],
+     [
+      "24857fe82f454719cd18bcbe19b0cfa5387bee1022008b7f5f3a8be9f05e4d14",
+      "Donald Gay",
+      "b674578d4bdb24cd58bf2dc884eaa658b7aa250c",
+      "3300079a51c7063e66053d229b000000079a51",
+      "StageComp"
+     ],
+     [
+      "a92d28f1d32e3a9ab7c3691f8bfca8f7586bb0666adbba47eab3e1a8faf7ecc0",
+      "Donald Gay",
+      "b674578d4bdb24cd58bf2dc884eaa658b7aa250c",
+      "3300079a51c7063e66053d229b000000079a51",
+      "StageComp"
+     ],
+     [
+      "2a09bbb3d1ddb729ea7591f197b5955453aa3769c6fb98a5ef60c6e4b7df23a5",
+      "Amy Cherne",
+      "551bdf646df8e9abe04483882650a8ffae43cb55",
+      "330006e15e43401dbd9416e20e00000006e15e",
+      "DinDoor / Tsundere Deno"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "sha256",
+     "Certificate Common Name",
+     "Certificate Thumbprint",
+     "Certificate Serial Number",
+     "Malware Family"
+    ]
+   },
+   "layout": "table",
+   "section": "Malware samples signed with suspicious certificates"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "GO UP",
+   "type": "paragraph",
+   "section": "Malware samples signed with suspicious certificates"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "POPULAR POSTS",
+   "type": "heading",
+   "level": 2,
+   "section": "POPULAR POSTS"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "BLOGS AND PUBLICATIONS",
+   "type": "heading",
+   "level": 3,
+   "section": "BLOGS AND PUBLICATIONS"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "“The Turkish Rat” Evolved Adwind in a Massive Ongoing Phishing Campaign",
+   "type": "heading",
+   "level": 3,
+   "section": "“The Turkish Rat” Evolved Adwind in a Massive Ongoing Phishing Campaign"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "“The Next WannaCry” Vulnerability is Here",
+   "type": "heading",
+   "level": 3,
+   "section": "“The Next WannaCry” Vulnerability is Here"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "“Handala Hack” – Unveiling Group’s Modus Operandi",
+   "type": "heading",
+   "level": 3,
+   "section": "“Handala Hack” – Unveiling Group’s Modus Operandi"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "SUBSCRIBE TO CYBER INTELLIGENCE REPORTS",
+   "type": "heading",
+   "level": 2,
+   "section": "SUBSCRIBE TO CYBER INTELLIGENCE REPORTS"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "We value your privacy!",
+   "type": "heading",
+   "level": 2,
+   "section": "We value your privacy!"
+  }
+ ]
+}

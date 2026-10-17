@@ -18,6 +18,9 @@ import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { isReportIndicatorMember } from './indicatorMembership.js';
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES, THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from './documentZones.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
+import { textDescribesValueAsBenign } from './indicatorScope.js';
+import { hasDelegatedDnsSuffix, suffixStrength } from './observableTypeResolver.js';
+import { refangTextForExtraction } from './defang.js';
 
 /**
  * Bump when a check, a reason code or a threshold changes.
@@ -41,8 +44,17 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
  * replayed analyst state (withReplayMembershipDivergence). An explicit
  * analyst override (promote_to_ioc, Context Only review) is a note; any other
  * divergence warns. Checks 1-8 are unchanged.
+ * v6 (six-report audit): checks that compare against evidence independent of
+ * the membership decision itself. Check 10: hash / IPv4 tokens written in an
+ * IOC-table indicator cell of an authoritative section that never became a
+ * candidate (a cell parse kept only its leading file identity). Check 11: an
+ * indicator column inferred from content beside a header-declared hash
+ * column of another hash type (certificate thumbprints / serials). Check 12:
+ * an Indicator domain with a weak, undelegated suffix (system identifiers read
+ * as hosts). Check 5 also reads the occurrence text, not only the relation
+ * marker, for a legitimate / benign description of an Indicator.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v5';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v6';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -94,7 +106,13 @@ export const QUALITY_CODES = Object.freeze({
   /** An Indicator seen only as the domain part of email addresses. */
   EMAIL_DOMAIN_ONLY_INDICATOR: 'indicator_only_email_domain',
   /** An Indicator without a source block / evidence span. */
-  INDICATOR_MISSING_PROVENANCE: 'indicator_missing_provenance'
+  INDICATOR_MISSING_PROVENANCE: 'indicator_missing_provenance',
+  /** A hash / IPv4 written in an authoritative IOC-table indicator cell never became a candidate (check 10). */
+  TABLE_OBSERVABLE_NOT_EXTRACTED: 'table_observable_not_extracted',
+  /** Content-inferred indicator column of another hash type beside a declared hash column (check 11). */
+  CONTENT_INFERRED_HASH_COLUMN: 'content_inferred_hash_column',
+  /** An Indicator domain whose suffix is weak and not delegated (check 12). */
+  UNDELEGATED_SUFFIX_DOMAIN_INDICATOR: 'undelegated_suffix_domain_indicator'
 });
 
 /**
@@ -146,6 +164,34 @@ const IOC_SHAPE_RE =
   /\b[a-f0-9]{32}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{64}\b|\b(?:hxxps?|https?):\/\/|\b(?:\d{1,3}\.){3}\d{1,3}\b|\[\.\]/i;
 
 const identity = (c) => `${c.candidate_type}:${c.normalized_value}`;
+
+/** Standalone hash / IPv4 tokens of one indicator cell, lower-cased (URL / path components excluded). */
+const CELL_HASH_RE = /^(?:[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64})$/i;
+const CELL_IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?::\d{1,5})?$/;
+function cellObservableTokens(cell) {
+  const out = [];
+  for (const raw of refangTextForExtraction(String(cell || '')).split(/[\s,;|]+/)) {
+    if (!raw || raw.includes('/') || raw.includes('\\')) continue;
+    const tok = raw.replace(/^[(\[{<"'“‘]+|[)\]}>"'”’.,:;]+$/g, '');
+    if (CELL_HASH_RE.test(tok)) out.push(tok.toLowerCase());
+    else if (CELL_IPV4_RE.test(tok)) out.push(tok.split(':')[0]);
+  }
+  return out;
+}
+
+/** Special-use / alternative-root suffixes that are legitimately undelegated in ICANN DNS. */
+const SPECIAL_USE_SUFFIXES = new Set(['onion', 'bit', 'i2p', 'exit', 'loki', 'eth', 'coin', 'lib', 'bazar', 'emc']);
+function isUndelegatedWeakDomain(value) {
+  const labels = String(value || '').toLowerCase().replace(/\.$/, '').split('.').filter(Boolean);
+  if (labels.length < 2 || SPECIAL_USE_SUFFIXES.has(labels[labels.length - 1])) return false;
+  return suffixStrength(labels) === 'weak' && !hasDelegatedDnsSuffix(labels.join('.'));
+}
+
+/** An occurrence whose own text describes the value as a legitimate / benign component. */
+function occurrenceDescribesBenign(c, o) {
+  const text = o?.surrounding_text || '';
+  return Boolean(text) && textDescribesValueAsBenign(text, [c.normalized_value, o.original_value, c.original_value]);
+}
 const isChrome = (b) => b?.layout === 'page_edge' || b?.zone === 'header_footer';
 const isContent = (b) => b && b.type !== 'heading' && !isChrome(b);
 const excerpt = (text, n = 200) => String(text || '').replace(/\s+/g, ' ').trim().slice(0, n);
@@ -445,9 +491,12 @@ export function assessExtractionQuality(input) {
     const h = hostOf(c);
     return Boolean(h) && memberHosts.some((m) => m === h || m.endsWith(`.${h}`));
   };
+  // A row the publisher itself calls a legitimate / benign component is
+  // excluded on purpose (row-level benign assertion), not lost.
+  const deliberatelyExcluded = (c) => String(c.policy_decision || '') === 'context_only_benign_component';
   const blockFullyCaptured = (blockId, covered) => {
     const list = [...(iocByBlock.get(blockId) || [])];
-    return list.length > 0 && list.every((c) => c.__member || (covered && coveredByMember(c)));
+    return list.length > 0 && list.every((c) => c.__member || deliberatelyExcluded(c) || (covered && coveredByMember(c)));
   };
   const sc = diagnostics.structural_completeness || null;
   for (const d of sc?.degraded_blocks || []) {
@@ -502,7 +551,10 @@ export function assessExtractionQuality(input) {
     const occ = Array.isArray(c.occurrences) ? c.occurrences : [];
     if (isNonActionable(c)) flag(QUALITY_CODES.RESERVED_INDICATOR, c);
     if (c.rfc_example === true) flag(QUALITY_CODES.EXAMPLE_INDICATOR, c);
-    if (occ.some((o) => o.relation_marker === 'benign')) flag(QUALITY_CODES.LEGITIMATE_MARKER_INDICATOR, c);
+    if (occ.some((o) => o.relation_marker === 'benign' || occurrenceDescribesBenign(c, o))) {
+      flag(QUALITY_CODES.LEGITIMATE_MARKER_INDICATOR, c);
+    }
+    if (c.candidate_type === 'domain' && isUndelegatedWeakDomain(c.normalized_value)) flag(QUALITY_CODES.UNDELEGATED_SUFFIX_DOMAIN_INDICATOR, c);
     if (c.candidate_type === 'domain' && input?.sourceHost && sameDomainFamily(c.normalized_value, input.sourceHost)) {
       flag(QUALITY_CODES.PUBLISHER_DOMAIN_INDICATOR, c);
     }
@@ -517,7 +569,8 @@ export function assessExtractionQuality(input) {
     [QUALITY_CODES.LEGITIMATE_MARKER_INDICATOR]: ['warning', 'Report Indicators that the source also describes as legitimate / signed components.'],
     [QUALITY_CODES.PUBLISHER_DOMAIN_INDICATOR]: ['warning', "Report Indicators in the publisher's own domain family."],
     [QUALITY_CODES.EMAIL_DOMAIN_ONLY_INDICATOR]: ['warning', 'Report Indicators that occur only as the domain part of email addresses (contact / sender context).'],
-    [QUALITY_CODES.INDICATOR_MISSING_PROVENANCE]: ['warning', 'Report Indicators without a source block or evidence span.']
+    [QUALITY_CODES.INDICATOR_MISSING_PROVENANCE]: ['warning', 'Report Indicators without a source block or evidence span.'],
+    [QUALITY_CODES.UNDELEGATED_SUFFIX_DOMAIN_INDICATOR]: ['warning', 'Report Indicator domains whose last label is not a delegated DNS suffix (system / code identifiers read as hosts?).']
   };
   for (const [code, list] of groups) {
     const [severity, explanation] = SUSPICIOUS[code];
@@ -673,6 +726,79 @@ export function assessExtractionQuality(input) {
         candidates: exclusiveMembers.map(identity).sort(),
         block_ids: [b.id],
         section: { heading: b.section_heading || null, zone: b.zone || null, zone_reason: b.zone_reason || null },
+        evidence: evidenceFor([b.id])
+      });
+    }
+  }
+
+  // --- 10. Observables written in authoritative IOC-table indicator cells
+  // that never became candidates. Independent of membership: the cell text is
+  // compared with the candidate set, so a value dropped before it ever was a
+  // candidate (a cell read only as its leading file identity) is visible.
+  const candidateValues = new Set(candidates.map((c) => String(c.normalized_value || '').toLowerCase()));
+  const missingByTable = new Map();
+  for (const b of blocks) {
+    const interp = b?.ioc_table;
+    if (b?.type !== 'table' || !interp || !STRONG_IOC_ZONES.has(String(b.zone || ''))) continue;
+    if (interp.kind !== 'ioc_table' && interp.kind !== 'artifact_table') continue;
+    // An artifact table returns before indicator_columns is set: read the intents.
+    const cols = Array.isArray(interp.indicator_columns) && interp.indicator_columns.length
+      ? interp.indicator_columns
+      : (interp.columns || []).filter((c) => c.intent === 'indicator').map((c) => c.index);
+    for (const row of interp.rows || []) {
+      for (const col of cols) {
+        for (const tok of cellObservableTokens(row.cells?.[col])) {
+          if (candidateValues.has(tok)) continue;
+          if (!missingByTable.has(b.id)) missingByTable.set(b.id, { ids: new Set(), heading: b.section_heading || null, zone: b.zone || null });
+          missingByTable.get(b.id).ids.add(tok);
+        }
+      }
+    }
+  }
+  for (const [blockId, m] of missingByTable) {
+    push({
+      code: QUALITY_CODES.TABLE_OBSERVABLE_NOT_EXTRACTED,
+      severity: 'warning',
+      explanation: `${m.ids.size} hash / IPv4 value(s) written in the indicator column of an IOC table under ` +
+        `"${m.heading || m.zone}" never became candidates (a mixed cell may have been read only as its file name / path).`,
+      candidates: [...m.ids].sort(),
+      block_ids: [blockId],
+      section: { heading: m.heading, zone: m.zone },
+      evidence: evidenceFor([blockId])
+    });
+  }
+
+  // --- 11. Content-inferred hash column beside a header-declared hash column.
+  // A second hash-shaped column whose header names no hash type is usually an
+  // attribute of the sample (certificate thumbprint / serial), not a sample.
+  for (const b of blocks) {
+    const interp = b?.ioc_table;
+    if (b?.type !== 'table' || !interp || !Array.isArray(interp.columns)) continue;
+    const typesByCol = new Map();
+    for (const row of interp.rows || []) {
+      for (const v of row.values || []) {
+        if (!HASH_TYPES.has(String(v.candidate_type))) continue;
+        if (!typesByCol.has(v.column_index)) typesByCol.set(v.column_index, new Set());
+        typesByCol.get(v.column_index).add(v.candidate_type);
+      }
+    }
+    const declared = interp.columns.filter((c) => c.intent === 'indicator' && c.method === 'header' && typesByCol.has(c.index));
+    if (!declared.length) continue;
+    const declaredTypes = new Set(declared.flatMap((c) => [...typesByCol.get(c.index)]));
+    const inferred = interp.columns.filter(
+      (c) => c.intent === 'indicator' && (c.method === 'content' || c.method === 'content_override') &&
+        typesByCol.has(c.index) && [...typesByCol.get(c.index)].every((t) => !declaredTypes.has(t))
+    );
+    for (const col of inferred) {
+      const ids = (interp.rows || []).flatMap((r) => (r.values || []).filter((v) => v.column_index === col.index).map((v) => `${v.candidate_type}:${v.normalized_value}`));
+      push({
+        code: QUALITY_CODES.CONTENT_INFERRED_HASH_COLUMN,
+        severity: 'warning',
+        explanation: `Column "${col.header || col.index}" was read as an indicator column from its content (${[...typesByCol.get(col.index)].join('/')}) ` +
+          `beside the declared ${[...declaredTypes].join('/')} column; it may hold an attribute of the sample (e.g. a certificate thumbprint).`,
+        candidates: [...new Set(ids)].sort(),
+        block_ids: [b.id],
+        section: { heading: b.section_heading || null, zone: b.zone || null },
         evidence: evidenceFor([b.id])
       });
     }

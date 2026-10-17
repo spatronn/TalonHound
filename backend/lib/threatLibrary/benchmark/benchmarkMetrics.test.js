@@ -309,3 +309,37 @@ test('a value extracted under another type is a typing failure, not a missing ex
     [1, 1, 1]
   );
 });
+
+test('ambiguous entries: never TP / FN / FP, observed state reported; not_indicators need no candidate', () => {
+  const amb = 'https://c2.example/path/a.js';
+  const member = scoreBenchmarkCase({
+    groundTruth: {
+      indicators: [{ type: 'domain', value: 'c2.example' }],
+      not_indicators: [{ type: 'sha1', value: 'd'.repeat(40) }],
+      ambiguous: [{ type: 'url', value: amb, rationale: 'publisher-asserted C2 row outside the formal appendix' }]
+    },
+    candidates: [cand('domain', 'c2.example'), cand('url', amb)]
+  });
+  assert.equal(member.indicators.fp, 0, 'an ambiguous member is not a false positive');
+  assert.equal(member.indicators.tp, 1);
+  assert.deepEqual(member.ambiguous.map((a) => [a.id, a.member]), [[`url:${amb}`, true]]);
+  // The thumbprint-shaped non-indicator was never extracted: acceptable, not an extraction miss.
+  assert.equal(member.candidate_extraction.recall, 1);
+  const absent = scoreBenchmarkCase({
+    groundTruth: { indicators: [{ type: 'domain', value: 'c2.example' }], ambiguous: [{ type: 'url', value: amb, rationale: 'r' }] },
+    candidates: [cand('domain', 'c2.example')]
+  });
+  assert.equal(absent.indicators.fn, 0, 'an absent ambiguous identity is not a false negative');
+  assert.deepEqual(absent.ambiguous.map((a) => [a.id, a.member, a.extracted]), [[`url:${amb}`, false, false]]);
+});
+
+test('ambiguous entries must carry a rationale', () => {
+  const base = { id: 'x-case', source: { kind: 'canonical', path: 'x.json' }, ground_truth: { provenance: { method: 'm', verified_by: 'v' } } };
+  assert.throws(
+    () => validateBenchmarkCase({ ...base, ground_truth: { ...base.ground_truth, ambiguous: [{ type: 'url', value: 'https://a.example/x' }] } }),
+    /ambiguous: every entry needs a rationale/
+  );
+  assert.doesNotThrow(() =>
+    validateBenchmarkCase({ ...base, ground_truth: { ...base.ground_truth, ambiguous: [{ type: 'url', value: 'https://a.example/x', rationale: 'either reading' }] } })
+  );
+});
