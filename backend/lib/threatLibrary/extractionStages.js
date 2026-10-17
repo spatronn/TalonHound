@@ -19,7 +19,14 @@ import {
 } from './candidateExtraction.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { assessExtractionQuality, compactExtractionQuality } from './extractionQuality.js';
-import { attachSectionTreeShadowDiagnostics, compactSectionTreeShadow } from './sectionTree/index.js';
+import {
+  attachSectionTreeShadowDiagnostics,
+  compactSectionTreeShadow,
+  getScopeEngine,
+  isSectionTreeScopeAuthoritative,
+  applySectionTreeAuthority,
+  SCOPE_ENGINE_LEGACY
+} from './sectionTree/index.js';
 import { hostnameFromUrl } from './candidateTyping.js';
 import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOccurrence.js';
 import { bulkMatchCandidates } from './iocMatch.js';
@@ -249,20 +256,68 @@ export function extractReportCandidates(report, document) {
     sourceUrl,
     observationNotAfter: observationNotAfterFor(report)
   });
-  // Read-only quality warnings over this extraction (never alters candidates).
+
+  // Authoritative scope engine: exactly one engine owns final membership zones.
+  // section_tree remaps occurrence authority from heading ancestry and re-runs
+  // evidence policy. legacy keeps linear documentZones unchanged.
+  // Invalid THREAT_LIBRARY_SCOPE_ENGINE must fail closed at extraction time
+  // rather than silently changing membership semantics.
+  getScopeEngine(process.env, { strict: true });
+  let candidates = extracted.candidates;
+  if (isSectionTreeScopeAuthoritative()) {
+    try {
+      const applied = applySectionTreeAuthority(stamped, extracted.candidates);
+      candidates = applied.candidates;
+      extracted.diagnostics = extracted.diagnostics || {};
+      extracted.diagnostics.scope_engine = {
+        engine: applied.scope_engine,
+        version: applied.scope_engine_version,
+        section_tree_version: applied.section_tree_version,
+        has_authoritative_scope: applied.has_authoritative_scope === true,
+        remapped_occurrences: applied.remapped_occurrences,
+        demoted_occurrences: applied.demoted_occurrences
+      };
+      stamped.meta.scope_engine = applied.scope_engine;
+      stamped.meta.scope_engine_version = applied.scope_engine_version;
+      stamped.meta.section_tree_version = applied.section_tree_version;
+    } catch (err) {
+      // Fail closed to legacy membership rather than shipping partial remap.
+      extracted.diagnostics = extracted.diagnostics || {};
+      extracted.diagnostics.scope_engine = {
+        engine: SCOPE_ENGINE_LEGACY,
+        version: null,
+        error: String(err?.message || err).slice(0, 240),
+        fallback: true
+      };
+      stamped.meta.scope_engine = SCOPE_ENGINE_LEGACY;
+      candidates = extracted.candidates;
+    }
+  } else {
+    stamped.meta.scope_engine = SCOPE_ENGINE_LEGACY;
+    extracted.diagnostics = extracted.diagnostics || {};
+    extracted.diagnostics.scope_engine = {
+      engine: SCOPE_ENGINE_LEGACY,
+      version: null
+    };
+  }
+
+  // Quality warnings after authority remap so they reflect the active engine.
   extracted.diagnostics.quality = assessExtractionQuality({
     blocks: extracted.annotated?.blocks || [],
-    candidates: extracted.candidates,
+    candidates,
     diagnostics: extracted.diagnostics,
     sourceHost,
     zonesVersion: extracted.annotated?.meta?.zones_version || null
   });
-  // Optional section-tree shadow comparison (feature-flagged). Never alters
-  // candidates; failures are swallowed into diagnostics.section_tree_shadow.
-  attachSectionTreeShadowDiagnostics(stamped, extracted.candidates, extracted.diagnostics);
+
+  // Optional shadow diagnostics (independent of authoritative engine).
+  // When section_tree is already authoritative, shadow still compares but must
+  // not mutate candidates again.
+  attachSectionTreeShadowDiagnostics(stamped, candidates, extracted.diagnostics);
+
   return {
     document: stamped,
-    candidates: extracted.candidates,
+    candidates,
     diagnostics: extracted.diagnostics,
     // Zone-annotated view of `document` (never persisted; read-only consumers).
     annotated: extracted.annotated
@@ -418,6 +473,18 @@ export function compactExtractionDiagnostics(diagnostics) {
         }
       : undefined,
     quality: diagnostics.quality ? compactExtractionQuality(diagnostics.quality) : undefined,
+    scope_engine: diagnostics.scope_engine
+      ? {
+          engine: diagnostics.scope_engine.engine || null,
+          version: diagnostics.scope_engine.version || null,
+          section_tree_version: diagnostics.scope_engine.section_tree_version || null,
+          has_authoritative_scope: diagnostics.scope_engine.has_authoritative_scope === true,
+          remapped_occurrences: diagnostics.scope_engine.remapped_occurrences ?? null,
+          demoted_occurrences: diagnostics.scope_engine.demoted_occurrences ?? null,
+          error: diagnostics.scope_engine.error || undefined,
+          fallback: diagnostics.scope_engine.fallback === true || undefined
+        }
+      : undefined,
     section_tree_shadow: diagnostics.section_tree_shadow
       ? compactSectionTreeShadow(diagnostics.section_tree_shadow)
       : undefined,
