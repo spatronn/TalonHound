@@ -31,7 +31,7 @@ import {
   PDF_LAYOUT_VERSION
 } from './pdfLayout.js';
 
-assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v12');
+assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v13');
 assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v29');
 assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v6');
 assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v5');

@@ -397,6 +397,17 @@ function followingAnaphoricSentence(masked, kind) {
 /** Value-only lines and "value – note" / "label: value" rows are structural indicator rows. */
 /** "1. ", "[2] ", "• " — a list marker must be followed by whitespace so "36.35.56.0/24" keeps its first octet. */
 const BULLET_PREFIX_RE = /^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s+|[-•*·]\s*)/;
+
+/**
+ * Attribute labels of a key/value indicator record ("SHA256 hash: … / File
+ * name: … / File size: … / Description: …", Unit 42 IOC appendices).
+ */
+const RECORD_FIELD_LABEL =
+  '(?:file\\s*(?:name|type|size|description|location|path)|filename|description|notes?|comments?|purpose|size|location|path|(?:sha-?(?:1|256|512)|md5|imphash|ssdeep)(?:\\s+hash)?|hash|url|domain|host(?:name)?|ip(?:\\s+address)?|e-?mail|first\\s+seen|last\\s+seen|compil(?:ed|ation)(?:\\s+time(?:stamp)?)?|signer|thumbprint|serial(?:\\s+number)?|mutex|user[\\s-]?agent|command\\s+line)';
+
+/** "<record attribute>: <value>" line — one field of an indicator record, never a heading. */
+export const RECORD_FIELD_LINE_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]\\s*\\S`, 'i');
+const RECORD_FIELD_PREFIX_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]`, 'i');
 const OTHER_OBSERVABLE_RE =
   /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
 
@@ -529,7 +540,10 @@ export function isIndicatorRowShape(text, value) {
   const idx = t.toLowerCase().indexOf(v.toLowerCase());
   if (idx < 0) return false;
   const before = t.slice(0, idx).trim();
-  const after = t.slice(idx + v.length).trim();
+  let after = t.slice(idx + v.length).trim();
+  // "SHA256 hash: <hash> File size: 92,657 bytes": a labelled value followed by
+  // the next attribute of the same record is still one row (tl-zones-v13).
+  if (before && RECORD_FIELD_PREFIX_RE.test(before) && RECORD_FIELD_PREFIX_RE.test(after)) after = '';
   if (before && after) return false;
   const annotation = before || after;
   if (!annotation) return true;

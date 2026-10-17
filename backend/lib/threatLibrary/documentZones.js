@@ -17,6 +17,7 @@ import {
   isIndicatorRowShape,
   isIndicatorValueLine,
   isObservableListLine,
+  RECORD_FIELD_LINE_RE,
   zoneForSectionRole
 } from './indicatorScope.js';
 
@@ -83,8 +84,15 @@ import {
  * same-level HTML siblings whose label matches GROUP_LABEL_CONCEPT_RE
  * ("Additional Resources", "Related articles") no longer continue the
  * appendix merely because a following link line looks like an indicator row.
+ * v13: the same key-value records as paragraphs ("File name: eld0.exe",
+ * "Description: Python agent host") are record fields, not synthetic headings:
+ * one used to reset the appendix (and its anchor), so every later H3
+ * "Operation A/B/C" block fell to report_body, while another reopened it at
+ * random. A colon record label ("Docro extension path:") whose short run still
+ * lists indicator rows keeps scope, and "SHA256 hash: <hash> File size: …"
+ * merged on one line is one indicator row (Unit 42 PPI report, 25 misses).
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v12';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v13';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -687,6 +695,9 @@ export function looksLikeLabelHeading(text) {
   if (/^[a-f0-9]{32,64}\b/i.test(t)) return false;
   const lead = t.split(/\s+/)[0].replace(/[.,;:)\]].*$/, '');
   if (lead && (isObservableOnlyLine(lead) || isIndicatorValueLine(lead))) return false;
+  // "File name: eld0.exe" / "Description: Python agent host" are attribute
+  // fields of one indicator record, never section titles (tl-zones-v13).
+  if (RECORD_FIELD_LINE_RE.test(t)) return false;
   const words = t.split(/\s+/).filter(Boolean);
   // Trailing colon is a section label only when short ("C2:", "Network IOCs:").
   if (/[:：]$/.test(t) && (t.length > 48 || words.length > 5)) return false;
@@ -1148,7 +1159,17 @@ export function annotateDocumentZones(doc, opts = {}) {
       // A short line immediately above a table is a caption / recovered header
       // ("IP Address First Seen Last Seen"), not a new topic boundary.
       const tableCaptionContinuation = Boolean(next) && next.type === 'table';
-      if (!synthTyped && !synthSubgroup && !tableCaptionContinuation) {
+      // "Docro extension path:" introduces the next record of the same
+      // appendix ("File location: … / Domain: vendralo[.]info"): a colon label
+      // whose short run up to the next real heading still lists indicator
+      // rows is a record label, not a topic boundary (tl-zones-v13).
+      const recordLabelContinuation =
+        !synthTyped &&
+        !synthSubgroup &&
+        !tableCaptionContinuation &&
+        /[:：]$/.test(text) &&
+        sectionHasIndicatorContent(blocks, i, footerIds, 8, { underAuthoritativeTopic: true });
+      if (!synthTyped && !synthSubgroup && !tableCaptionContinuation && !recordLabelContinuation) {
         // Synthetic labels have no DOM level; if a following real heading still
         // opens publisher indicator content under the appendix, keep the
         // appendix rather than discarding parent membership with the child C2.
@@ -1196,12 +1217,18 @@ export function annotateDocumentZones(doc, opts = {}) {
           clearStrongScope();
           b.zone_reason = 'heading_reset';
         }
-      } else if (synthLabel || tableCaptionContinuation || synthSubgroup) {
+      } else if (synthLabel || tableCaptionContinuation || synthSubgroup || recordLabelContinuation) {
         if (synthLabel) {
           currentTypeLabel = synthLabel;
           b.type_label_heading = synthLabel;
         }
-        b.zone_reason = synthTyped ? 'typed_subheading' : tableCaptionContinuation ? 'table_caption' : 'subgroup_label';
+        b.zone_reason = synthTyped
+          ? 'typed_subheading'
+          : tableCaptionContinuation
+            ? 'table_caption'
+            : synthSubgroup
+              ? 'subgroup_label'
+              : 'record_label';
         b.section_role = currentRole;
         b.scope_opening_id = opening.id;
         trace({ block_id: b.id, decision: b.zone_reason, zone: currentZone, heading: headingText.slice(0, 120), opened_by: opening.id });

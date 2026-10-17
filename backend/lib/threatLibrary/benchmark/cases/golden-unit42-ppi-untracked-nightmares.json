@@ -1,0 +1,1733 @@
+{
+  "id": "golden-unit42-ppi-untracked-nightmares",
+  "title": "Unit 42 — Untracked Nightmares (key-value IOC records under H3 operation headings)",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "key_value_records",
+    "nested_operation_subheadings",
+    "regression_tl_zones_v13"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-six/unit42-ppi-untracked-nightmares-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/ppi-network-malware-campaign-analysis/",
+    "talonhound_report_id": "f5dbeb05-60f4-41f3-9dc9-45cd876eb488",
+    "fixture": "excerpt of the canonical document (threat_library_html_v6) re-extracted from a raw HTML snapshot (2026-10-17): every block from h2 'Indicators of Compromise' through Appendix B, plus all headings, tables and body blocks holding an extracted observable; verified extraction-equivalent to the full document (347 candidates, identical membership). On tl-zones-v12 it reproduces production (305 Indicators, 25 false negatives).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-17"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-17): the 'Indicators of Compromise' section and 'Appendix A' of the original publisher page were read from a raw HTML snapshot converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every defanged value and SHA256 there is an Indicator. MODE A semantics. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (PPI report audit, 2026-10-17)",
+      "verified_at": "2026-10-17",
+      "notes": "25 IOCs were missed on tl-zones-v12: key-value record lines ('File name: windirstat.exe', 'Description: Python agent host') acted as synthetic headings that reset the appendix, so H3 'Operation A/B/C' fell to report_body. The two ARKTunnel resource-icon SHA256 rows are listed by the publisher and kept as Indicators. Filenames in the records stay non-Indicators.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "7f792c45de1e28fd42ac44c9444f157a2161742d130bac336c0e991aabbb112c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "fc485882626512e7ff82a1d7cd8e8fb3e9751b026d97e682d6908aefff1f2d73",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3052bd320a34e12ee694811ed0578797477dfd480c664491e509ed15ce1a6961",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "25558ea78c4aa0fdd0f45fafcaa546d3115dc5806809d144a5801a40e48fd4c5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9b0d9cbc0fd4a7bae8b78a15dfbe63052779414ad725845732c4a0083008da69",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ceb30a5eb9ad9d9c6712c80726df16f96f99d9fc0753be241b00b4d636eb576e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "cf184d04ca31fb2b6b7efd85399c29c1136b539153e137ceb3877b1b905791de",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "62d49d0c78207ec2452cc8a30501db771c9edbae89889e41a7dd227551243e8e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://stryper.info/t.ps1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://stryper.info/aa.js",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://aa.amazingshield.xyz/33244556546.py",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "stryper.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "aa.amazingshield.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "crowdstri.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "aaebc8c07de485be6d1bfa956668c5e18aa1ff5588dfe84672e20ae90b4560f1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e05bc22afbc5ddd50b49c85ee169dd13318000d38286de2b8bcff98217256a8d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b367762140ae7f5098230b8a5da738c9241f286281ec9439dd6ca581fc87989c",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "d8d783f8e050a6e394f3c0aa5e2bc73a38d822e55fbc39c0648cbff566de3cdf",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "06e0afd01bbc6c9d5dc16c3165089b233dc071e1f251abd06235d1b9166cdac5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "reg.pcsdkflyer.ca",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2c6e11027b011042c9a118fc20728f8f4ebb6be8795cc84cc9a45622c297d354",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "553ce594c9c6afdd4794fddc28c194e3bc3c1b052310e5099c58ac15bab72104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "fdcc95b7791c0d6590dcf1a412dc9fcc92ad2095818d1b78368b31efad012007",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vendralo.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "finersto.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "drelto.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mqsearch.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "extentrack.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "noiseship.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "atthelake.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "uy.basesfiles.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "basesfile.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "igk.filexspace.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ikx.filexspace.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "filexstorage.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "filescloud.pro",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zippyfiles.net",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mifilesx.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dw.xrsdownload.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "storage.ggclicker.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "watchadvance.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "animalview.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "trickflag.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "suitstraw.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.fuelleg.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vesselsystem.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "minewave.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "collartitle.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "boardmagic.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "placespoon.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "needcherries.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "voyagemist.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "statementtouch.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "chawton.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "velfps.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "velvoxlab.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "venrx.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "venrxhub.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "venrx.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ravexoffical.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "adex-blog.blogspot.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "achievershelf.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "activitymeal.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "additionplot.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "adviceturn.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "afternoonscrew.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "agreementjuice.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "airplaneiron.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "airtwig.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "amountfuel.icu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "animalrecord.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "apparatustruck.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "apparelplate.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "archairport.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "authoritykittens.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "babyvein.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "badgewing.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bagcare.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "basinpleasure.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "basketballyear.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "baskethumor.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bedroomdesire.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "beliefpicture.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bellplayground.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bikesdonkey.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "birthdaymagic.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "boatthought.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "boundarychickens.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "boytank.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "branchmorning.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "breathdoctor.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "bubbleslip.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cabbagemeasure.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cablecanvas.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cardgrape.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cattlegold.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "celeryerror.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "centscarf.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "chalkprose.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cherriestruck.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "chesstail.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "chickensmine.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "churchpail.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "clothcrib.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "clothcurrent.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "coatberry.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.activitykitty.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.apparatustaste.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.armcard.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.badgeterritory.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.baitmetal.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.beefteeth.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.believesisters.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.boundaryfly.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.bubbleappliance.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.cableland.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.chinexpert.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.conditiongrade.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.coppersummer.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.creatorcreator.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.dresstent.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.dropjeans.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.edgeplayground.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.exchangeclub.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.existencediscussion.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.expansionsalt.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.fangstitch.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.fogparcel.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.foodhook.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.forkcountry.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.geesepurpose.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.giantsdogs.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.giraffetoothpaste.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.guitarrobin.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.halllunch.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.harborclam.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.holecompany.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.knifesea.icu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.monthsmoke.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.nosegovernor.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.pagesubstance.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.poisonblade.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.prosesalt.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.purposethings.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.quiltgirls.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.reactionbit.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.rewardrun.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.riceapparel.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.seashoreletters.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.selectiondogs.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.shapeboot.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.shoptax.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.stopfinger.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.structurekiss.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.tanksuggestion.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.thingbrass.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.thoughtslave.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.threadfuel.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.trailcontrol.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.trickbushes.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.vacationthought.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.viewschool.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.voyagelaugh.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.woolreward.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.yearicicle.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "connect.zebratransport.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "controlprice.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "coughcoal.icu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "countrypipe.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cowsfoot.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "crackfood.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "creamfurniture.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "creditchickens.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "crediteducation.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "crimestreet.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "crimesupport.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "curvebite.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "deathrock.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "deathshop.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "decisionreaction.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dinosaursjam.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "distancebedroom.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "distributiontheory.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dolldebt.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "doorsoap.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "dustprotest.icu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "expansionsalt.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fallbeginner.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fangbear.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "filescenter.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "filesilo.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fingerbasketball.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "flavorwood.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fleshfrog.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fleshplants.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "fleshproduce.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "foodrock.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "forkmice.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "friendjewel.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "geeseairport.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "girlsgrain.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "glassmove.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "goldsteel.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "governmentyard.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "grandfatherquiver.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gripcollar.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gripsleep.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "gunbear.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hairreward.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "hatescale.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "healthiron.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "holemuscle.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "homecub.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "homefireman.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "honeyfear.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ilesilo.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "instrumentvolcano.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kittenschalk.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kittensgrade.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "kittensrobin.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "landerror.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "lesilo.cloud",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "liptendency.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "liquidtoes.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "liquidwrench.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "lockettrail.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "lumberbaseball.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "memorycompany.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "micesisters.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "milkname.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "minuteblade.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mountainsurprise.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mouthfruit.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "northbox.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "partpipe.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "partyfriends.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "passengerbrake.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "peacejewel.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "peacetongue.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "petminister.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pictureporter.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pieplant.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pizzasthread.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "pleasurewaves.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "popcornregret.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "porterdebt.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "powerbushes.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "profitfact.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "prosetoothbrush.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "quincepage.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "raintexture.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rakepurpose.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "raterake.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "readingscience.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "reasonachiever.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "recessgiraffe.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "recordhistory.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "regretsquirrel.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "restbucket.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ricestar.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rifledog.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "ringsparcel.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "roadyear.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rockcredit.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rollglass.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "roofbattle.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "roofreaction.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rosegrip.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "routeletters.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "runhouses.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "scarecrowcare.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "scentrod.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "screwbirth.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "seatlace.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "seaword.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "servantadvice.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "shiptank.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "shirtexample.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "shoesearthquake.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sinkwash.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "skirtloss.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "slipvegetable.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "smokecar.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "songtheory.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "spadeleg.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sparkrice.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "sparkrub.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "spoonducks.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "springdogs.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "spybaseball.space",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "startmonkey.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "statementservant.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "steamhouses.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "stopzinc.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "structurelinen.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "suggestioncemetery.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "suitsoap.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "swimrest.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tablechess.info",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tailsilk.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "territorycaption.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "texturebadge.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "thrillducks.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "throneback.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "tinsofa.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "toespiders.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "toothpastesense.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "toothpastesun.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "townquiver.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "trampdonkey.icu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "treesboard.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "truckpig.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "truckshat.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "turnclass.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "umbrellavessel.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vacationengine.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "vestthings.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "volcanopin.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wastereading.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wasteturkey.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wastewine.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wavepan.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "whistlebook.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "whistlesong.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wormspark.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "woundsecretary.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "wrenobservation.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "yamsmell.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "yardvalue.cfd",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zephyrhall.cfd",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "crowdstrike.com"
+      }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "technical_artifact",
+        "value": "windirstat.exe"
+      },
+      {
+        "type": "technical_artifact",
+        "value": "eld0.exe"
+      },
+      {
+        "type": "technical_artifact",
+        "value": "a.dll"
+      },
+      {
+        "type": "technical_artifact",
+        "value": "wscl.exe"
+      },
+      {
+        "type": "technical_artifact",
+        "value": "adblock.dll"
+      }
+    ],
+    "ambiguous": [],
+    "sections": [
+      {
+        "heading": "Indicators of Compromise",
+        "expected": "authoritative",
+        "until": "Additional Resources"
+      },
+      {
+        "heading": "Appendix A: CL-CRI-1171 Full Discovered Infrastructure Tables",
+        "expected": "authoritative"
+      },
+      {
+        "heading": "Technical Analysis",
+        "expected": "narrative",
+        "until": "Initial Access Vector in Intrusions"
+      }
+    ]
+  }
+}
