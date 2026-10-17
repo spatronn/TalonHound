@@ -1,0 +1,61 @@
+{
+  "id": "shadow-unit42-blinder-tunnel",
+  "title": "Unit 42 — Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "shadow_hybrid_poc",
+    "synthetic_heading_boundary",
+    "hash_inventory",
+    "mode_a"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../fixtures/blinder-tunnel-ioc-excerpt.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/blinder-tunnel-targets-critical-infrastructure/",
+    "talonhound_report_id": "98ae9ac2-4be0-4860-b381-610e67baede7",
+    "fixture": "IoC-appendix excerpt derived from the stored Unit 42 canonical (threat_library_html_v6) for offline regression; full production export is intentionally not committed"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading of the Unit 42 formal IOC inventory (malware payloads/hashes, IP addresses, phishing domains, GitHub C2 infrastructure) from the original publisher page and the stored canonical blocks. Not derived from TalonHound candidate membership.",
+      "verified_by": "shadow-hybrid investigation 2026-10-17",
+      "verified_at": "2026-10-17",
+      "mode": "A",
+      "notes": "MODE A: only the publisher IOC appendix / C2 list are Indicators. Narrative attribution domains and incomplete phishing URL placeholders are not Indicators."
+    },
+    "indicators": [
+      { "type": "sha256", "value": "6e7d9b33f1e72ea1ede71373a604ecdb060dab7d42055179c1eede9ecd1fd239", "assertion": "explicit" },
+      { "type": "sha256", "value": "f5b12772db6817f7a765a6fe7565fd3d4f87edc28e42fe3ec0244a372a410fc9", "assertion": "explicit" },
+      { "type": "sha256", "value": "53f35e49eb9b271fd8cbcd3daacb525328dbf159a03dbd1c7adebe0363daa402", "assertion": "explicit" },
+      { "type": "sha256", "value": "3fd810a3aa0039993393741b32287c367a9a5037a41e826906440887cdd3ed13", "assertion": "explicit" },
+      { "type": "sha256", "value": "76273382e4252c1f60a2251141e108942494409c759358320735891762c0682e", "assertion": "explicit" },
+      { "type": "sha256", "value": "d3561bd4aad003dc3e08157b0891860bb496b80cd6e44901692e08ab1d4e8260", "assertion": "explicit" },
+      { "type": "sha256", "value": "f5ba1645694c62f527ed6ceda8c68a5c3dd92b4032439167e8e937e72803b4bd", "assertion": "explicit" },
+      { "type": "sha256", "value": "7cc571aca6d8715d9aaad3d83e1bcd30467565d583db1dfe73697c5d00a1f875", "assertion": "explicit" },
+      { "type": "ip", "value": "91.107.156.29", "assertion": "explicit" },
+      { "type": "ip", "value": "87.248.129.239", "assertion": "explicit" },
+      { "type": "ip", "value": "65.109.214.145", "assertion": "explicit" },
+      { "type": "ip", "value": "38.180.136.127", "assertion": "explicit" },
+      { "type": "domain", "value": "cloud.g-drive.cam", "assertion": "explicit" },
+      { "type": "domain", "value": "googeldrive.cam", "assertion": "explicit" },
+      { "type": "domain", "value": "drivegoogel.cam", "assertion": "explicit" },
+      { "type": "domain", "value": "googelmeet.online", "assertion": "explicit" },
+      { "type": "domain", "value": "meetonline.cam", "assertion": "explicit" },
+      { "type": "domain", "value": "asdfafadafg.online", "assertion": "explicit" },
+      { "type": "url", "value": "https://github.com/peakyblinders-tm", "assertion": "explicit" },
+      { "type": "url", "value": "https://github.com/GreenBeret0", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "ip", "value": "0.0.0.0", "rationale": "SOCKS bind address in Chisel config, reserved" },
+      { "type": "domain", "value": "ns1.soroshpasargad.com", "rationale": "attribution / passive DNS context" },
+      { "type": "domain", "value": "portal.sharjahairport.cloud", "rationale": "related Elastic research co-mention" }
+    ],
+    "not_indicators": [
+      { "type": "url", "value": "https://cloud.g-drive.cam/drive/file/d/[generated", "rationale": "incomplete publisher placeholder" },
+      { "type": "domain", "value": "readme.md", "rationale": "filename mistype, not a domain IOC" }
+    ]
+  }
+}

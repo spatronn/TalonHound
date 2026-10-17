@@ -19,6 +19,7 @@ import {
 } from './candidateExtraction.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { assessExtractionQuality, compactExtractionQuality } from './extractionQuality.js';
+import { attachSectionTreeShadowDiagnostics, compactSectionTreeShadow } from './sectionTree/index.js';
 import { hostnameFromUrl } from './candidateTyping.js';
 import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOccurrence.js';
 import { bulkMatchCandidates } from './iocMatch.js';
@@ -256,6 +257,9 @@ export function extractReportCandidates(report, document) {
     sourceHost,
     zonesVersion: extracted.annotated?.meta?.zones_version || null
   });
+  // Optional section-tree shadow comparison (feature-flagged). Never alters
+  // candidates; failures are swallowed into diagnostics.section_tree_shadow.
+  attachSectionTreeShadowDiagnostics(stamped, extracted.candidates, extracted.diagnostics);
   return {
     document: stamped,
     candidates: extracted.candidates,
@@ -414,6 +418,9 @@ export function compactExtractionDiagnostics(diagnostics) {
         }
       : undefined,
     quality: diagnostics.quality ? compactExtractionQuality(diagnostics.quality) : undefined,
+    section_tree_shadow: diagnostics.section_tree_shadow
+      ? compactSectionTreeShadow(diagnostics.section_tree_shadow)
+      : undefined,
     structural_completeness: diagnostics.structural_completeness
       ? {
           warning: diagnostics.structural_completeness.warning === true,

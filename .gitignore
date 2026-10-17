@@ -50,3 +50,8 @@ Thumbs.db
 scripts/_tmp_*
 **/_tmp_*
 .talonhound-upgrade/
+tmp-amos-*.json
+
+# Host-only ops helpers and full production document exports (never commit)
+**/_host_*
+backend/lib/threatLibrary/experiments/shadowHybrid/fixtures/blinder-tunnel-canonical.json
