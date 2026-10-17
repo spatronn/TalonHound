@@ -151,7 +151,10 @@ export const GROUND_TRUTH_CATEGORIES = Object.freeze([
   // Legitimate observables (signed binaries, vendor APIs, loopback) that must never be Indicators.
   'excluded_legitimate',
   // Must not be Indicators; any other state is acceptable (e.g. MODE A narrative hashes).
-  'not_indicators'
+  'not_indicators',
+  // Publisher evidence supports either reading (entry carries a `rationale`):
+  // never counted as TP, FN or FP; the observed state is reported instead.
+  'ambiguous'
 ]);
 
 /**
@@ -191,17 +194,19 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
   const expectedContext = index('context_only');
   const expectedExcluded = index('excluded_legitimate');
   const expectedNonIndicators = index('not_indicators');
+  const ambiguous = index('ambiguous');
   const aiDependentIds = new Set(aiDependent.map((x) => x.id));
   const members = [...byId.values()].filter((c) => c.__member);
   const memberIds = new Set(members.map(candidateIdentity));
-  const scoredMemberIds = new Set([...memberIds].filter((id) => !aiDependentIds.has(id)));
+  const scoredMemberIds = new Set([...memberIds].filter((id) => !aiDependentIds.has(id) && !ambiguous.has(id)));
 
-  // Candidate extraction recall over every labeled identity (any state).
+  // Candidate extraction recall over every labeled identity whose state
+  // requires a candidate. `not_indicators` / `ambiguous` accept any state,
+  // including never being extracted (a thumbprint that is no SHA-1 candidate).
   const labeled = new Set([
     ...expectedIndicators.keys(),
     ...expectedContext.keys(),
     ...expectedExcluded.keys(),
-    ...expectedNonIndicators.keys(),
     ...aiDependentIds
   ]);
   // A labeled value that exists only under another candidate type (an MD5
@@ -309,6 +314,11 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
       expected: expectedNonIndicators.size,
       promoted: [...expectedNonIndicators.keys()].filter((id) => memberIds.has(id)).sort()
     },
+    ambiguous: [...ambiguous.keys()].sort().map((id) => ({
+      id,
+      member: memberIds.has(id),
+      ...candidateSummary(byId.get(id), mistypedAs(id))
+    })),
     ai_dependent: aiDependent.map((x) => ({
       id: x.id,
       category: x.category,

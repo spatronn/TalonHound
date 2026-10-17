@@ -1,0 +1,457 @@
+{
+ "title": "NeedyMantis: Unpacking a post-compromise malware family used in targeted operations | Microsoft Security Blog",
+ "language": "en-us",
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Microsoft Security Blog"
+  ],
+  "source_url": "https://www.microsoft.com/en-us/security/blog/2026/09/28/needymantis-unpacking-a-post-compromise-malware-family-used-in-targeted-operations/",
+  "source_host": "www.microsoft.com",
+  "content_root": "main",
+  "candidate_extraction_version": "tl-candidates-v28"
+ },
+ "blocks": [
+  {
+   "id": "b005",
+   "page": null,
+   "text": "NeedyMantis: Unpacking a post-compromise malware family used in targeted operations",
+   "type": "heading",
+   "level": 1,
+   "section": "NeedyMantis: Unpacking a post-compromise malware family used in targeted operations"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "heading",
+   "level": 2,
+   "section": "Share"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Tags",
+   "type": "heading",
+   "level": 2,
+   "section": "Tags"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Threats intelligence",
+   "type": "heading",
+   "level": 2,
+   "section": "Threats intelligence"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Content types",
+   "type": "heading",
+   "level": 2,
+   "section": "Content types"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "Products and services",
+   "type": "heading",
+   "level": 2,
+   "section": "Products and services"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Topics",
+   "type": "heading",
+   "level": 2,
+   "section": "Topics"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "Observed operators and targeting",
+   "type": "heading",
+   "level": 2,
+   "section": "Observed operators and targeting"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Malware packaging and distribution",
+   "type": "heading",
+   "level": 2,
+   "section": "Malware packaging and distribution"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "NeedyMantis architecture and capabilities",
+   "type": "heading",
+   "level": 2,
+   "section": "NeedyMantis architecture and capabilities"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "First-stage loader",
+   "type": "heading",
+   "level": 3,
+   "section": "First-stage loader"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "In the analyzed sample, the loader DLL was named WinSparkle.dll (SHA-256: e842dd7642c8e04b5ec20b6393848a9c904e4832930950c16664fe7800ba382e) and its file archive was named WinSparkle (SHA-256: 9cb68f986043a576e19d32184c583b7d8f571c7219d8dc0065dced1c13f077ef). NeedyMantis spoofed and replaced the WinSparkle software update component of the Poedit translation software.",
+   "type": "paragraph",
+   "section": "First-stage loader"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Custom file archives",
+   "type": "heading",
+   "level": 3,
+   "section": "Custom file archives"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Other analyzed NeedyMantis file archives have contained different file names and components. An older version of the malware, for example, used a libcurl (SHA-256: c82520eb03c084226be4eafbff46f56dca0aa8804a2a7f23a085a96afe71ef77) file archive, and it contained only four files:",
+   "type": "paragraph",
+   "section": "Custom file archives"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Second-stage loader",
+   "type": "heading",
+   "level": 3,
+   "section": "Second-stage loader"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Main component",
+   "type": "heading",
+   "level": 3,
+   "section": "Main component"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Configuration",
+   "type": "heading",
+   "level": 4,
+   "section": "Configuration"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "0x12c: C2 host (corp.tripswithengine[.]com)",
+   "type": "list",
+   "section": "Configuration"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Communications DLL",
+   "type": "heading",
+   "level": 4,
+   "section": "Communications DLL"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Command and control",
+   "type": "heading",
+   "level": 4,
+   "section": "Command and control"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "A 256-byte buffer is created that starts with google.com followed by random bytes",
+   "type": "list",
+   "section": "Command and control"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "0x04: RC4 encrypted google.com buffer",
+   "type": "list",
+   "section": "Command and control"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "The C2 server uses the buffer at offset 0x104 to recreate the RC4 key and presumably checks the RC4 encrypted google.com buffer",
+   "type": "list",
+   "section": "Command and control"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Commands",
+   "type": "heading",
+   "level": 4,
+   "section": "Commands"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "Mitigation and protection guidance",
+   "type": "heading",
+   "level": 2,
+   "section": "Mitigation and protection guidance"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Look for outbound connections in network egress traffic to corp.tripswithengine[.]com.",
+   "type": "list",
+   "section": "Mitigation and protection guidance"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "Microsoft Defender detections",
+   "type": "heading",
+   "level": 3,
+   "section": "Microsoft Defender detections"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "Tactic | Observed activity | Microsoft Defender coverage ¶ Execution | Shellcode loading, DLL sideloading, decryption, and decompression | Microsoft Defender for Endpoint – Suspicious DLL loaded – An executable file loaded an unexpected DLL file – Suspicious decode command Microsoft Defender Antivirus – TrojanDropper:Win64/NeedyMantis ¶ Execution | Hands-on-keyboard leveraging Impacket tool for follow-on activity | Microsoft Defender for Endpoint – Ongoing hands-on-keyboard attack via Impacket toolkit – Impacket toolkit – Impacket module execution Microsoft Defender Antivirus – HackTool:Win32/Impacket ¶ Execution | Storm-3069 threat actor TTPs | Microsoft Defender for Endpoint – Suspicious activity linked to an emerging threat actor has been detected ¶ Command and control | Network connectivity to NeedyMantis infrastructure | Microsoft Defender Antivirus – Behavior:Win64/NeedyMantis",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Tactic",
+      "Observed activity",
+      "Microsoft Defender coverage"
+     ],
+     [
+      "Execution",
+      "Shellcode loading, DLL sideloading, decryption, and decompression",
+      "Microsoft Defender for Endpoint – Suspicious DLL loaded – An executable file loaded an unexpected DLL file – Suspicious decode command Microsoft Defender Antivirus – TrojanDropper:Win64/NeedyMantis"
+     ],
+     [
+      "Execution",
+      "Hands-on-keyboard leveraging Impacket tool for follow-on activity",
+      "Microsoft Defender for Endpoint – Ongoing hands-on-keyboard attack via Impacket toolkit – Impacket toolkit – Impacket module execution Microsoft Defender Antivirus – HackTool:Win32/Impacket"
+     ],
+     [
+      "Execution",
+      "Storm-3069 threat actor TTPs",
+      "Microsoft Defender for Endpoint – Suspicious activity linked to an emerging threat actor has been detected"
+     ],
+     [
+      "Command and control",
+      "Network connectivity to NeedyMantis infrastructure",
+      "Microsoft Defender Antivirus – Behavior:Win64/NeedyMantis"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Microsoft Defender detections"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Microsoft Security Copilot",
+   "type": "heading",
+   "level": 3,
+   "section": "Microsoft Security Copilot"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "Threat intelligence reports",
+   "type": "heading",
+   "level": 3,
+   "section": "Threat intelligence reports"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "Hunting queries",
+   "type": "heading",
+   "level": 2,
+   "section": "Hunting queries"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "Microsoft Defender XDR",
+   "type": "heading",
+   "level": 3,
+   "section": "Microsoft Defender XDR"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "\"corp.tripswithengine.com\"",
+   "type": "code",
+   "section": "Microsoft Defender XDR",
+   "line_group": "b214"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "Microsoft Sentinel",
+   "type": "heading",
+   "level": 3,
+   "section": "Microsoft Sentinel"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "\"corp.tripswithengine.com\"",
+   "type": "code",
+   "section": "Microsoft Sentinel",
+   "line_group": "b258"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "Indicators of compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of compromise"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "Indicator | Type | Description | First seen | Last seen ¶ e842dd7642c8e04b5ec20b6393848a9c904e4832930950c16664fe7800ba382e | SHA-256 | First-stage loader WinSparkle.dll | 2026-05-21 | 2026-05-21 ¶ 9cb68f986043a576e19d32184c583b7d8f571c7219d8dc0065dced1c13f077ef | SHA-256 | Custom file archive WinSparkle | 2026-05-23 | 2026-05-23 ¶ c82520eb03c084226be4eafbff46f56dca0aa8804a2a7f23a085a96afe71ef77 | SHA-256 | Custom file archive libcurl | 2025-10-03 | 2025-10-03 ¶ corp.tripswithengine[.]com | Host name | C2 host name |  |",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Indicator",
+      "Type",
+      "Description",
+      "First seen",
+      "Last seen"
+     ],
+     [
+      "e842dd7642c8e04b5ec20b6393848a9c904e4832930950c16664fe7800ba382e",
+      "SHA-256",
+      "First-stage loader WinSparkle.dll",
+      "2026-05-21",
+      "2026-05-21"
+     ],
+     [
+      "9cb68f986043a576e19d32184c583b7d8f571c7219d8dc0065dced1c13f077ef",
+      "SHA-256",
+      "Custom file archive WinSparkle",
+      "2026-05-23",
+      "2026-05-23"
+     ],
+     [
+      "c82520eb03c084226be4eafbff46f56dca0aa8804a2a7f23a085a96afe71ef77",
+      "SHA-256",
+      "Custom file archive libcurl",
+      "2025-10-03",
+      "2025-10-03"
+     ],
+     [
+      "corp.tripswithengine[.]com",
+      "Host name",
+      "C2 host name",
+      "",
+      ""
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Indicators of compromise"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "References",
+   "type": "heading",
+   "level": 3,
+   "section": "References"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "https://securelist.com/tr/daemon-tools-backdoor/119654/",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "https://winsparkle.org/",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "https://poedit.com/",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "Learn more",
+   "type": "heading",
+   "level": 3,
+   "section": "Learn more"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "Microsoft Threat Intelligence",
+   "type": "heading",
+   "level": 2,
+   "section": "Microsoft Threat Intelligence"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "Related posts",
+   "type": "heading",
+   "level": 2,
+   "section": "Related posts"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "Beyond the ransomware: Tracking Storm-2570’s consistent tradecraft across deployments",
+   "type": "heading",
+   "level": 3,
+   "section": "Beyond the ransomware: Tracking Storm-2570’s consistent tradecraft across deployments"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "DeadLock ransomware: Breaking down a Rust-based encryptor with decentralized recovery infrastructure",
+   "type": "heading",
+   "level": 3,
+   "section": "DeadLock ransomware: Breaking down a Rust-based encryptor with decentralized recovery infrastructure"
+  },
+  {
+   "id": "b307",
+   "page": null,
+   "text": "GigaWiper: Anatomy of a destructive backdoor assembled from multiple malware",
+   "type": "heading",
+   "level": 3,
+   "section": "GigaWiper: Anatomy of a destructive backdoor assembled from multiple malware"
+  }
+ ]
+}

@@ -49,8 +49,12 @@ import { isValidIpAddress } from '../publicIp.js';
  * v8: a heading-inherited network type label ("Domains and IPs") must not
  * promote a non-delegated file-extension token (`Node.js`) to a domain;
  * typed Domain *table* cells remain authoritative for unusual suffixes.
+ * v9: the explicit-indicator-row promotion of a weak / undelegated suffix
+ * requires the row to lead with the value or a label ("C2: x.lol", "- x.lol");
+ * a prose-led short line in a curated zone ("CPU count via <sysctl key>") keeps
+ * the syntax reading. Strong / delegated suffixes are unchanged.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v8';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v9';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -362,6 +366,23 @@ export function hasCodeIdentifierShape(raw, opts = {}) {
     return opts.suffixStrength !== 'strong';
   }
   return false; // Exploit.in — brand-style capital on the first label only
+}
+
+/** Row lead that only labels / enumerates the value ("C2:", "Domain -", "1.", "•"). */
+const ROW_LABEL_LEAD_RE = /(?:[:：|=>→\-–—]|^\s*(?:[-*•·▪]|\(?\d{1,3}[.)]|\[\d{1,3}\]))\s*$/;
+
+/**
+ * True when the text before a value on its own row is empty, a label ending in
+ * a separator, an enumeration mark or a network type label — not prose.
+ * @param {string} before text before the value (clauseAround)
+ */
+export function rowLedByValueOrLabel(before) {
+  const b = String(before || '');
+  const cut = Math.max(b.lastIndexOf('\n'), b.lastIndexOf(' ¶ '), b.lastIndexOf('. '), b.lastIndexOf('; '), b.lastIndexOf('|'));
+  const lead = (cut >= 0 ? b.slice(cut + 1) : b).replace(/^[\s¶]+/, '').trimEnd();
+  if (!lead) return true;
+  if (ROW_LABEL_LEAD_RE.test(lead)) return true;
+  return isNetworkTypeLabel(lead.replace(/[:：\s]+$/, ''));
 }
 
 /**
@@ -713,8 +734,15 @@ export function resolveDottedToken(raw, ctx = {}) {
   }
 
   // 9. Provenance: an indicator row inside a publisher-curated indicator list
-  //    is an explicit assertion even for an unusual suffix.
-  if (explicitRow) return out('domain', 'explicit_indicator_row');
+  //    is an explicit assertion even for an unusual suffix. For a weak /
+  //    undelegated suffix the row must actually lead with the value or a label
+  //    ("evil.lol", "C2: evil.lol", "- evil.lol"): a short descriptive line
+  //    under a C2-named topic ("CPU count via <sysctl key>", "Physical RAM
+  //    via <sysctl key>") names a system identifier, not a host.
+  if (explicitRow && (strength === 'strong' || hasDelegatedDnsSuffix(lower) || rowLedByValueOrLabel(before))) {
+    return out('domain', 'explicit_indicator_row');
+  }
+  if (explicitRow) signals.row_prose_lead = true;
 
   // 10. Syntax alone.
   if (labels.length === 2 && CODE_WORD_LAST_LABEL_RE.test(last) && strength !== 'strong') {

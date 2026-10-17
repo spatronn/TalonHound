@@ -41,8 +41,16 @@ import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
  * merely because headers look like Domain / IP / MD5. Infrastructure-lookup
  * tables (First seen / ASN / registrar) and file-hash inventories never
  * self-prove from body analysis context alone.
+ * v8: a mixed indicator cell whose leading value is a file path / file name
+ * is decomposed: the file identity stays a non-network value and every
+ * hash / network value of the remainder is a value of the cell (cell
+ * companions); a remainder that is prose is reported, never silently dropped.
+ * Bracketed tokens and bare type labels ("(SHA-256") no longer reject a
+ * cell's hash. Certificate / fuzzy-hash attribute headers (thumbprint, serial,
+ * signer, issuer, imphash, ssdeep, TLSH) name attribute columns, never
+ * indicator columns.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v7';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v8';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -106,6 +114,29 @@ const HASH_DECLARED_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash']);
 /** Header labels that name a file / component column (not an IOC value column). */
 const FILE_NAME_HEADER_RE =
   /^(?:file(?:\s*name)?s?|filenames?|path|filepath|file\s*path|sample(?:\s*name)?|module|component|artifact|artefact|dropped\s*file|dosya(?:\s*ad[ıi])?|dateiname|archivo|fichier|文件名|文件)$/;
+
+/**
+ * Column headers that name an ATTRIBUTE of another column's observable rather
+ * than an observable of their own: the code-signing certificate of a sample
+ * (thumbprint / serial / signer / issuer) or a structural / fuzzy
+ * hash of it (imphash, ssdeep, TLSH). A SHA-1-shaped thumbprint is the
+ * certificate's identity, not a malware sample's: such a column is never an
+ * indicator column, whatever its values parse as. Its cells stay on the row as
+ * labelled provenance (`cells`, `attribute_kind`).
+ */
+const ATTRIBUTE_COLUMN_HEADER_RE =
+  /(?:^|\b)(?:certificate|certificates|cert|certs|code[\s-]*signing|thumbprint|thumbprints|serial(?:\s*(?:number|no))?|signer|signers|signing\s*(?:identity|subject|issuer)|issuer|issued\s*(?:by|to)|imphash|ssdeep|tlsh|sertifika|parmak\s*izi|zertifikat|certificado|сертификат|отпечаток|证书|指纹)(?:\b|$)/i;
+
+/**
+ * Attribute kind of a column header, or null.
+ * @param {string|null} header
+ * @returns {'certificate'|'fuzzy_hash'|null}
+ */
+export function attributeColumnKind(header) {
+  const norm = normalizeHeaderLabel(header || '');
+  if (!norm || norm.length > 48 || !ATTRIBUTE_COLUMN_HEADER_RE.test(norm)) return null;
+  return /\b(?:imphash|ssdeep|tlsh)\b/.test(norm) ? 'fuzzy_hash' : 'certificate';
+}
 
 /** Heading / caption text that already curates samples or IOCs for this table. */
 const AUTHORITATIVE_TABLE_HEADING_RE =
@@ -277,6 +308,12 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   // lists several values ("H1 H2", "<br>"-separated) is split below, never
   // accepted as one spaced "hash".
   if (whole?.ok && !/\s/.test(String(whole.normalized_value || '')) && !(whole.candidate_type === 'domain' && /\s/.test(refanged))) {
+    // A leading non-network value (path / file name) that consumed only part
+    // of the cell: the rest may still hold the row's observables
+    // ("C:\…\x.dll SHA256: <h>", "x.dll (SHA-256 <h>)"). Never accept the
+    // partial reading silently.
+    const mixed = whole.is_ioc === false ? decomposeMixedCell(refanged, whole, declared, ctx) : null;
+    if (mixed) return mixed;
     // `raw` is the faithful source spelling (defanged form kept for provenance).
     return { values: [{ ...whole, raw: source }], rejected: [], reason: null };
   }
@@ -287,11 +324,24 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   const refangedTokens = refanged.split(CELL_TOKEN_SPLIT_RE).filter(Boolean);
   const aligned = sourceTokens.length === refangedTokens.length;
   for (let i = 0; i < refangedTokens.length; i += 1) {
-    const tok = refangedTokens[i];
-    if (!tok || isInlineTypeLabelToken(tok)) continue;
+    const rawTok = refangedTokens[i];
+    if (!rawTok || isInlineTypeLabelToken(rawTok)) continue;
+    let tok = rawTok;
     let parsed = parseToken(tok, declared, ctx);
+    // "(SHA-256", "<hash>)": brackets around a value or a bare type label.
+    if (!parsed?.ok) {
+      const stripped = rawTok.replace(WRAPPING_PUNCT_RE, '');
+      if (!stripped || SEPARATOR_TOKEN_RE.test(stripped) || isBareTypeLabelToken(stripped)) continue;
+      if (stripped !== rawTok) {
+        const retry = parseToken(stripped, declared, ctx);
+        if (retry?.ok) {
+          tok = stripped;
+          parsed = retry;
+        }
+      }
+    }
     if (!parsed) continue;
-    if (parsed.ok && aligned) parsed = { ...parsed, raw: sourceTokens[i] };
+    if (parsed.ok && aligned) parsed = { ...parsed, raw: tok === rawTok ? sourceTokens[i] : tok };
     if (parsed.ok) {
       const key = `${parsed.candidate_type}\0${parsed.normalized_value}`;
       if (seen.has(key)) continue;
@@ -301,7 +351,127 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
       rejected.push(parsed);
     }
   }
+  // A file identity listed with its own hash(es) in one cell: link them.
+  const fileIds = values.filter((v) => v.is_ioc === false && NON_NETWORK_RESOLVED_TYPES.has(v.candidate_type));
+  const iocIds = values.filter((v) => v.is_ioc !== false);
+  if (fileIds.length === 1 && iocIds.length && iocIds.every((v) => HASH_DECLARED_TYPES.has(v.candidate_type))) {
+    const fileIdentity = `${fileIds[0].candidate_type}:${fileIds[0].normalized_value}`;
+    const companions = iocIds.map((v) => `${v.candidate_type}:${v.normalized_value}`);
+    for (const v of values) v.cell_companions = v === fileIds[0] ? companions : iocIds.includes(v) ? [fileIdentity] : v.cell_companions;
+  }
   return { values, rejected, reason: values.length ? null : 'no_observable' };
+}
+
+/** Brackets / quotes wrapping a token inside a mixed cell ("(SHA-256", "<hash>)"). */
+const WRAPPING_PUNCT_RE = /^[(\[{<"'“‘«]+|[)\]}>"'”’»,;.]+$/g;
+/** Separator tokens between a file identity and its metadata ("-", "|", "=", "→"). */
+const SEPARATOR_TOKEN_RE = /^[-–—|/=:→>]+$/;
+
+/**
+ * A type label written without a trailing colon inside a mixed cell
+ * ("(SHA-256 <h>)", "MD5 <h>"): names the value after it, never a value.
+ * @param {string} token wrapping punctuation already stripped
+ */
+function isBareTypeLabelToken(token) {
+  const t = String(token || '').replace(/[:：]+$/, '');
+  if (!t || parseToken(t, null)?.ok) return false;
+  return Boolean(parseDeclaredType(t));
+}
+
+/**
+ * Remove the first case-insensitive occurrence of `needle` from `text`.
+ * @returns {string|null} remainder, or null when `needle` is not in `text`
+ */
+function withoutFirstOccurrence(text, needle) {
+  const n = String(needle || '');
+  if (!n) return null;
+  const at = text.toLowerCase().indexOf(n.toLowerCase());
+  if (at < 0) return null;
+  return `${text.slice(0, at)} ${text.slice(at + n.length)}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Mixed indicator cell: a leading non-network value (file path / file name)
+ * followed by the row's own observables — "C:\…\x.dll SHA256: <h>",
+ * "x.dll (SHA-256 <h>)", "loader.exe - <md5>". The file identity stays
+ * a non-network value (context); every IOC value in the remainder is its own
+ * value of the cell. The remainder is recovered only when it is made of
+ * observables, type labels and separators: a description that merely mentions
+ * an observable ("loader.exe connects to evil.example") is not decomposed, but
+ * an observable in it is reported (`residual_observables`) instead of being
+ * dropped silently.
+ * @param {string} refanged whole cell, refanged
+ * @param {object} whole the leading non-network value parseToken produced
+ * @returns {{ values: object[], rejected: object[], reason: null, decomposition: object }|null}
+ *   null when the leading value accounts for the whole cell
+ */
+function decomposeMixedCell(refanged, whole, declared, ctx) {
+  const head = whole.parsed?.normalized_path || whole.normalized_value || whole.refanged;
+  const residual = withoutFirstOccurrence(refanged, head);
+  if (residual == null || !/[\p{L}\p{N}]/u.test(residual)) return null;
+  const idOf = (v) => `${v.candidate_type}:${v.normalized_value}`;
+  // Cell sequence in source order: file identities and the IOC values after them.
+  const sequence = [{ ...whole, raw: head }];
+  const seen = new Set([`${whole.candidate_type}\0${whole.normalized_value}`]);
+  let clean = true;
+  const residualObservables = [];
+  for (const rawTok of residual.split(CELL_TOKEN_SPLIT_RE).filter(Boolean)) {
+    const tok = rawTok.replace(WRAPPING_PUNCT_RE, '');
+    if (!tok || SEPARATOR_TOKEN_RE.test(tok) || isInlineTypeLabelToken(rawTok) || isBareTypeLabelToken(tok)) continue;
+    const p = parseToken(tok, hashOnlyDeclared(declared), ctx);
+    // A further complete file identity of a multi-pair cell ("a.dll (MD5 <h>)
+    // <path>\b.dll (MD5 <h>)"): an absolute path or a bare file name. A path
+    // fragment (the tail of an unquoted "Program Files" path) is not.
+    const fileIdentity = p?.ok && p.is_ioc === false &&
+      (p.candidate_type === 'file_path' || (p.candidate_type === 'technical_artifact' && !/[\\/]/.test(tok)));
+    if (p?.ok && (p.is_ioc !== false || fileIdentity)) {
+      const key = `${p.candidate_type}\0${p.normalized_value}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        sequence.push({ ...p, raw: tok });
+      }
+      continue;
+    }
+    clean = false;
+    const loose = parseToken(tok, null, ctx);
+    if (loose?.ok && loose.is_ioc !== false) residualObservables.push(idOf(loose));
+  }
+  const iocValues = sequence.filter((v) => v.is_ioc !== false);
+  if (!clean || !iocValues.length) {
+    // Unparsed remainder: keep the leading value, report what was not read
+    // (every observable of a prose remainder, parsed or not).
+    residualObservables.unshift(...iocValues.map(idOf));
+    return {
+      values: [{ ...whole, raw: head, cell_residual: residual.slice(0, 160), residual_observables: residualObservables.length ? residualObservables : undefined }],
+      rejected: [],
+      reason: null,
+      decomposition: { mixed: true, recovered: 0, residual_unparsed: true, residual_observables: residualObservables }
+    };
+  }
+  // Link each IOC value to the file identity written before it.
+  const companions = new Map(sequence.map((v) => [v, []]));
+  let file = null;
+  for (const v of sequence) {
+    if (v.is_ioc === false) {
+      file = v;
+      continue;
+    }
+    if (file) {
+      companions.get(file).push(idOf(v));
+      companions.get(v).push(idOf(file));
+    }
+  }
+  return {
+    values: sequence.map((v) => (companions.get(v).length ? { ...v, cell_companions: companions.get(v) } : v)),
+    rejected: [],
+    reason: null,
+    decomposition: { mixed: true, recovered: iocValues.length, residual_unparsed: false }
+  };
+}
+
+/** A declared hash type still guides a residual hash; any other declared type does not apply to it. */
+function hashOnlyDeclared(declared) {
+  return declared && HASH_DECLARED_TYPES.has(declared.type) ? declared : null;
 }
 
 /**
@@ -395,10 +565,25 @@ function cellIsObservable(cellText) {
   const parsed = [];
   for (const tok of tokens) {
     const p = parseToken(tok, null);
-    if (!p?.ok) return null;
+    if (!p?.ok) return mixedCellObservable(refanged);
     parsed.push(p);
   }
   return { ...parsed[0], is_ioc: parsed.every((p) => p.is_ioc), multi_value: parsed.length };
+}
+
+/**
+ * A mixed file-identity cell ("x.dll (SHA-256 <h>)") scores as an observable
+ * cell when its remainder decomposes cleanly into IOC values (same rule as
+ * parseIndicatorCell, so scoring and assertion agree).
+ * @param {string} refanged
+ */
+function mixedCellObservable(refanged) {
+  const whole = parseToken(refanged, null);
+  if (!whole?.ok || whole.is_ioc !== false || /\s/.test(String(whole.normalized_value || ''))) return null;
+  const mixed = decomposeMixedCell(refanged, whole, null, {});
+  if (!mixed || mixed.decomposition.residual_unparsed) return null;
+  const ioc = mixed.values.find((v) => v.is_ioc !== false);
+  return ioc ? { ...ioc, multi_value: mixed.values.length } : null;
 }
 
 /**
@@ -672,6 +857,12 @@ export function interpretIocTable(block, opts = {}) {
       columns.push({ index: c, header: header || null, intent: 'other', method: 'version_column', declared_type: null, ...stats });
       continue;
     }
+    const attributeKind = header ? attributeColumnKind(header) : null;
+    if (attributeKind) {
+      // Never an indicator column, even when every cell parses (thumbprints).
+      columns.push({ index: c, header, intent: 'other', method: 'attribute_column', attribute_kind: attributeKind, declared_type: null, ...stats });
+      continue;
+    }
     let intent = header ? headerIntent(header) : null;
     let method = intent ? 'header' : null;
     const declaredFromHeader = header ? parseDeclaredType(header) : null;
@@ -697,7 +888,7 @@ export function interpretIocTable(block, opts = {}) {
   }
   // Description: the widest non-indicator, non-type text column when unlabelled.
   if (!columns.some((c) => c.intent === 'description')) {
-    const others = columns.filter((c) => c.intent === 'other' && c.method !== 'version_column' && c.non_empty > 0);
+    const others = columns.filter((c) => c.intent === 'other' && c.method !== 'version_column' && c.method !== 'attribute_column' && c.non_empty > 0);
     others.sort((a, b) => b.avg_chars - a.avg_chars);
     if (others[0]) {
       others[0].intent = 'description';

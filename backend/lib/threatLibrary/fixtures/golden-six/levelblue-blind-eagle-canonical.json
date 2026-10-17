@@ -1,0 +1,659 @@
+{
+ "title": "Still Circling: Blind Eagle",
+ "language": "en",
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Trustwave Holdings, Inc."
+  ],
+  "source_url": "https://www.levelblue.com/blogs/spiderlabs-blog/still-circling-blind-eagles-toolkit-keeps-evolving",
+  "source_host": "www.levelblue.com",
+  "content_root": "article",
+  "candidate_extraction_version": "tl-candidates-v28"
+ },
+ "blocks": [
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Still Circling: Blind Eagle's Toolkit Keeps Evolving",
+   "type": "heading",
+   "level": 1,
+   "section": "Still Circling: Blind Eagle's Toolkit Keeps Evolving"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "How does Blind Eagle execute process injection via Paralell.dll in the JC-46 AsyncRAT delivery chain?",
+   "type": "heading",
+   "level": 2,
+   "section": "How does Blind Eagle execute process injection via Paralell.dll in the JC-46 AsyncRAT delivery chain?"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "In the Blind Eagle JC-46 AsyncRAT chain, a PowerShell orchestrator uses custom Base28 decoding to yield Paralell.dll and Client1.exe. Paralell.dll serves as a.NET injector targeting MSBuild.exe. Rather than standard thread creation, Paralell.dll abuses the Windows Notification Facility via the undocumented NtUpdateWnfStateData syscall to execute the payload as a kernel delivered callback, leaving process hollowing as a fallback for legacy Windows targets.",
+   "type": "paragraph",
+   "section": "How does Blind Eagle execute process injection via Paralell.dll in the JC-46 AsyncRAT delivery chain?"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "a RunPE loader built entirely on a bare AutoIt3 interpreter and staged through raw.githubusercontent.com, a domain most security stacks allow-list by default",
+   "type": "paragraph",
+   "section": "How does Blind Eagle execute process injection via Paralell.dll in the JC-46 AsyncRAT delivery chain?"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "A Familiar Pattern, on New Servers",
+   "type": "heading",
+   "level": 3,
+   "section": "A Familiar Pattern, on New Servers"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Host | Server Banner | Files Recovered | Role in the Chain ¶ 46[.]246.84.5 | Apache/2.4.58 (Win64) PHP/8.0.30 | envifa.vbs, sostener2.vbs | XOR-0xE0 + AES-256-ECB VBS dropper with self-mutation ¶ 181[.]235.8.24 | Apache/2.4.58 (Win64) PHP/8.2.12 | 31agosto.vbs, 31diciembre.vbs, andre.vbs, sostener.vbs | Custom stream-cipher loader → fileless RunPE ¶ 178[.]16.52.80 | Apache/2.4.58 (Win64) | hold.bat, hold.vbs, hold.js | Triple-language dropper; custom AES S-box in JS ¶ 64[.]89.160.17 | Apache/2.4.43 (Win64) PHP/7.4.4 | System*.vbs, .pif (AutoIt3.exe), .html (AutoIt source) | AutoIt3 RunPE loader staged via GitHub",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Host",
+      "Server Banner",
+      "Files Recovered",
+      "Role in the Chain"
+     ],
+     [
+      "46[.]246.84.5",
+      "Apache/2.4.58 (Win64) PHP/8.0.30",
+      "envifa.vbs, sostener2.vbs",
+      "XOR-0xE0 + AES-256-ECB VBS dropper with self-mutation"
+     ],
+     [
+      "181[.]235.8.24",
+      "Apache/2.4.58 (Win64) PHP/8.2.12",
+      "31agosto.vbs, 31diciembre.vbs, andre.vbs, sostener.vbs",
+      "Custom stream-cipher loader → fileless RunPE"
+     ],
+     [
+      "178[.]16.52.80",
+      "Apache/2.4.58 (Win64)",
+      "hold.bat, hold.vbs, hold.js",
+      "Triple-language dropper; custom AES S-box in JS"
+     ],
+     [
+      "64[.]89.160.17",
+      "Apache/2.4.43 (Win64) PHP/7.4.4",
+      "System*.vbs, .pif (AutoIt3.exe), .html (AutoIt source)",
+      "AutoIt3 RunPE loader staged via GitHub"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "A Familiar Pattern, on New Servers"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "One data point is worth calling out on its own: the C2 host recovered from the 46[.]246.84.5 dropper is not new infrastructure in any meaningful sense. That same IP address appears in historical AsyncRAT C2 resolution data for Blind Eagle dating back to March 2023, resolving through the same commercial VPN exit pool the group has leaned on for years. Whether this reflects literal infrastructure reuse or simply the actor drawing repeatedly from the same small, cheap VPN provider, it reinforces an assessment we have made previously: Blind Eagle’s operational tempo is high, but its infrastructure choices are narrow, repetitive, and rarely refreshed.",
+   "type": "paragraph",
+   "section": "A Familiar Pattern, on New Servers"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "One Actor, Three Obfuscation Dialects",
+   "type": "heading",
+   "level": 3,
+   "section": "One Actor, Three Obfuscation Dialects"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "Fixed-key XOR and a Self-rewriting Dropper",
+   "type": "heading",
+   "level": 3,
+   "section": "Fixed-key XOR and a Self-rewriting Dropper"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "The simplest of the three (46[.]246.84.5) XOR-encrypts 35 string constants with a single hardcoded byte, 0xE0, before assembling and executing an in-memory AES-256-ECB PowerShell decryptor.",
+   "type": "paragraph",
+   "section": "Fixed-key XOR and a Self-rewriting Dropper"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Figure 1. The envifa.vbs / sostener2.vbs string decryptor— XOR against a single hardcoded byte, 0xE0.",
+   "type": "paragraph",
+   "section": "Fixed-key XOR and a Self-rewriting Dropper"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "A Hand-rolled Stream Cipher, Disguised with Fake Arithmetic",
+   "type": "heading",
+   "level": 3,
+   "section": "A Hand-rolled Stream Cipher, Disguised with Fake Arithmetic"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "The 181[.]235.8.24 loader family (31agosto.vbs, 31diciembre.vbs, andre.vbs, sostener.vbs) is considerably more elaborate. Roughly 95% of each 3.5 to 4.0 MB file is a single giant Base64-like string built from thousands of chained VBScript string-concatenation statements – not junk, but the AES ciphertext for the next stage, split into small fragments purely to defeat naive Base64-blob signatures and to inflate the file well past the size threshold some scanners use to skip deep inspection.",
+   "type": "paragraph",
+   "section": "A Hand-rolled Stream Cipher, Disguised with Fake Arithmetic"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "A JavaScript Stage with its own AES S-box",
+   "type": "heading",
+   "level": 3,
+   "section": "A JavaScript Stage with its own AES S-box"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "The most technically distinctive sample in this collection came from 178.16.52.80: a three-file chain (hold.bat, hold.vbs, hold.js) in which the final JavaScript stage implements a fully custom AES-256 cipher — not a wrapper around .NET’s AesCryptoServiceProvider, but a hand-rolled implementation with a non-standard substitution box and non-standard round constants.",
+   "type": "paragraph",
+   "section": "A JavaScript Stage with its own AES S-box"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Figure 5. hold.js— a custom AES-256 implementation with a substituted S-box and RCON table, then an additional 0xA5 XOR mask layered on top of the decrypted output.",
+   "type": "paragraph",
+   "section": "A JavaScript Stage with its own AES S-box"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "Dedicated to hunting and eradicating the world's most challenging threats.",
+   "type": "heading",
+   "level": 4,
+   "section": "Dedicated to hunting and eradicating the world's most challenging threats."
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "A Bare AutoIt3 Interpreter, Staged from GitHub",
+   "type": "heading",
+   "level": 3,
+   "section": "A Bare AutoIt3 Interpreter, Staged from GitHub"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "The fourth staging server, 64[.]89.160.17, introduced a delivery mechanism we had not previously documented for this actor: instead of a single obfuscated dropper, two small VBScript downloaders (System3.vbs, System5.vbs, roughly 790 bytes each) simply shell out to PowerShell to fetch two files from raw.githubusercontent.com and chain them together.",
+   "type": "paragraph",
+   "section": "A Bare AutoIt3 Interpreter, Staged from GitHub"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "Figure 6. The complete, functional body of System3.vbs. No .ps1 file ever touches disk; the PowerShell command is built inline and passed via -Command.",
+   "type": "paragraph",
+   "section": "A Bare AutoIt3 Interpreter, Staged from GitHub"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "“Photo Studio”: One Persistence Disguise, Three Toolchains",
+   "type": "heading",
+   "level": 3,
+   "section": "“Photo Studio”: One Persistence Disguise, Three Toolchains"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Perhaps the most useful correlation to come out of this collection window did not come from any single sample, but from comparing all of them side by side. Three independently obfuscated loader families — the 181[.]235.8.24 stream-cipher loader, the 178[.]16.52.80 triple-language dropper, and the JC-46 AsyncRAT chain discussed below — all decode to the identical persistence cover identity, down to the exact string values:",
+   "type": "paragraph",
+   "section": "“Photo Studio”: One Persistence Disguise, Three Toolchains"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Constant | Value (identical across all three families) ¶ Scheduled task name | Photo Studio ¶ Dropped persistence file | PhotoStudio.vbs ¶ Persistence task tag / folder | PhotoStudioVBS ¶ Task logon type | InteractiveToken ¶ Task run level | LeastPrivilege ¶ Task action command | wscript.exe",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Constant",
+      "Value (identical across all three families)"
+     ],
+     [
+      "Scheduled task name",
+      "Photo Studio"
+     ],
+     [
+      "Dropped persistence file",
+      "PhotoStudio.vbs"
+     ],
+     [
+      "Persistence task tag / folder",
+      "PhotoStudioVBS"
+     ],
+     [
+      "Task logon type",
+      "InteractiveToken"
+     ],
+     [
+      "Task run level",
+      "LeastPrivilege"
+     ],
+     [
+      "Task action command",
+      "wscript.exe"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "“Photo Studio”: One Persistence Disguise, Three Toolchains"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "These three families use entirely different outer obfuscation — hex-XOR string tables in one, a custom stream cipher in another, rolling XOR with a distinct seed in the third — yet the decoded stage-2 logic that installs persistence is functionally and, in places, literally identical, right down to a Task Scheduler XML template built from ~40 assembled string fragments and a helper function that writes files via a double ADODB.Stream trick specifically to force UTF-8-without-BOM encoding. This is strong evidence of a shared internal builder: the obfuscation layer is generated fresh per campaign (probably to defeat hash- and signature-based detection), while the payload-delivery and persistence logic is templated and reused wholesale. Notably, none of the samples we examined were observed actually invoking the scheduled-task creation routine at runtime in the code path reached during static analysis — the full Task Scheduler XML machinery is present and callable in every family but appears to be a builder feature that individual campaigns can enable or leave dormant.",
+   "type": "paragraph",
+   "section": "“Photo Studio”: One Persistence Disguise, Three Toolchains"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "JC-46: A Materially Upgraded AsyncRAT Build",
+   "type": "heading",
+   "level": 3,
+   "section": "JC-46: A Materially Upgraded AsyncRAT Build"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "The most significant find in this collection window is a four-layer chain (31agosto.vbs, andre.vbs, sostener.vbs — reusing the same filenames as the stream-cipher loader family above but carrying a different final payload) that terminates in a heavily customized AsyncRAT build the developer’s own debug artifacts refer to as project JC-46.",
+   "type": "paragraph",
+   "section": "JC-46: A Materially Upgraded AsyncRAT Build"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Layer-by-Layer: From Hex-XOR to Base28",
+   "type": "heading",
+   "level": 3,
+   "section": "Layer-by-Layer: From Hex-XOR to Base28"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "The Base28-decoded bytes are then AES-256-CBC decrypted (a different, hardcoded 32-byte key and 16-byte IV per blob) into two artifacts: Paralell.dll (a 69 KB, CryptoObfuscator-protected .NET injector) and Client1.exe (the 298 KB AsyncRAT payload itself). Paralell.dll’s own debug symbols were left in the build:",
+   "type": "paragraph",
+   "section": "Layer-by-Layer: From Hex-XOR to Base28"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "WNF Injection: A Step Up from CreateRemoteThread",
+   "type": "heading",
+   "level": 3,
+   "section": "WNF Injection: A Step Up from CreateRemoteThread"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Paralell.dll’s class and method names follow a consistent fashion/clothing theme (CoutureFlow, StyleInjection, RunwayWalk) that reads as innocuous on casual review but maps cleanly onto a process-injection engine. Rather than the classic VirtualAllocEx / WriteProcessMemory / CreateRemoteThread sequence that most EDR products key on, the injector’s primary path abuses the Windows Notification Facility (WNF) via the undocumented NtUpdateWnfStateData syscall to trigger the payload as a kernel-delivered callback, with process hollowing retained only as a fallback for older Windows targets.",
+   "type": "paragraph",
+   "section": "WNF Injection: A Step Up from CreateRemoteThread"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "Figure 9. Reconstructed WNF injection flow (Paralell.dll). The injection target, MSBuild.exe, is a Microsoft build tool that most EDR baselines whitelist by default.",
+   "type": "paragraph",
+   "section": "WNF Injection: A Step Up from CreateRemoteThread"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "HVNC and Browser Profile Cloning: The Banking-fraud Engine",
+   "type": "heading",
+   "level": 3,
+   "section": "HVNC and Browser Profile Cloning: The Banking-fraud Engine"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Client1.exe’s most operationally significant feature is a Hidden VNC (HVNC) module built specifically around Blind Eagle’s banking-fraud mission. The RAT creates an entirely separate Windows desktop that is never connected to any monitor or user session, spawns an Explorer shell onto it for a normal-looking taskbar and start menu, and streams it to the operator while forwarding their mouse and keyboard input back.",
+   "type": "paragraph",
+   "section": "HVNC and Browser Profile Cloning: The Banking-fraud Engine"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "Figure 10. Hidden desktop creation, reconstructed from Client1.exe imports and strings.",
+   "type": "paragraph",
+   "section": "HVNC and Browser Profile Cloning: The Banking-fraud Engine"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "Figure 12. Victim-facing distraction overlay strings extracted verbatim from Client1.exe.",
+   "type": "paragraph",
+   "section": "HVNC and Browser Profile Cloning: The Banking-fraud Engine"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Google introduced App-Bound Encryption (ABE) in Chrome 127 (August 2024) specifically to stop non-Chrome processes from decrypting saved credentials and cookies. Client1.exe implements a working bypass for ABE v20 – escalating to SYSTEM via Winlogon token impersonation, then using the Windows CNG APIs to decrypt the ABE master key before falling back to direct SQLite write-ahead-log parsing to read the cookie database while Chrome still has it locked.",
+   "type": "paragraph",
+   "section": "HVNC and Browser Profile Cloning: The Banking-fraud Engine"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "Figure 13. Reconstructed Chrome App-Bound Encryption v20 bypass, based on NCrypt/BCrypt import and string analysis of Client1.exe.",
+   "type": "paragraph",
+   "section": "HVNC and Browser Profile Cloning: The Banking-fraud Engine"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "The Rest of the Capability Set",
+   "type": "heading",
+   "level": 3,
+   "section": "The Rest of the Capability Set"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Category | Capabilities ¶ Surveillance | Keylogger; screenshot streaming; HVNC hidden desktop; webcam live stream (wchelper.exe module extracted from an embedded wch.zip); audio capture; clipboard monitor/hijack ¶ Credential theft | Chromium-family password/cookie theft across 20+ browser profiles; Chrome App-Bound Encryption v20 bypass; Windows Credential Manager dump; Outlook and Thunderbird credential parsing; Wi-Fi passwords in cleartext ¶ Hidden RDP (HRDP) | Creates a hidden local admin account excluded from the login screen; enables RDP and disables Network Level Authentication; installs RDP Wrapper on Windows Home; opens a UPnP port mapping; reverse-tunnels TCP 3389 back to the C2 ¶ UAC bypass (5 methods) | fodhelper.exe registry hijack; cmstp.exe INF abuse; eventvwr.msc mscfile hijack; DelegateExecute via computerdefaults.exe; Task Scheduler XML with HighestAvailable ¶ Defense evasion | Disables Windows Defender’s real-time protection and adds exclusions; forges an NVIDIA version resource; WNF-based injection; Spanish-language distraction overlay during HVNC sessions ¶ Reconnaissance | WMI hardware/OS fingerprint; geo-IP lookup; AV product enumeration; hardware ID hashing; local /24 ICMP sweep; installed-software inventory",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Category",
+      "Capabilities"
+     ],
+     [
+      "Surveillance",
+      "Keylogger; screenshot streaming; HVNC hidden desktop; webcam live stream (wchelper.exe module extracted from an embedded wch.zip); audio capture; clipboard monitor/hijack"
+     ],
+     [
+      "Credential theft",
+      "Chromium-family password/cookie theft across 20+ browser profiles; Chrome App-Bound Encryption v20 bypass; Windows Credential Manager dump; Outlook and Thunderbird credential parsing; Wi-Fi passwords in cleartext"
+     ],
+     [
+      "Hidden RDP (HRDP)",
+      "Creates a hidden local admin account excluded from the login screen; enables RDP and disables Network Level Authentication; installs RDP Wrapper on Windows Home; opens a UPnP port mapping; reverse-tunnels TCP 3389 back to the C2"
+     ],
+     [
+      "UAC bypass (5 methods)",
+      "fodhelper.exe registry hijack; cmstp.exe INF abuse; eventvwr.msc mscfile hijack; DelegateExecute via computerdefaults.exe; Task Scheduler XML with HighestAvailable"
+     ],
+     [
+      "Defense evasion",
+      "Disables Windows Defender’s real-time protection and adds exclusions; forges an NVIDIA version resource; WNF-based injection; Spanish-language distraction overlay during HVNC sessions"
+     ],
+     [
+      "Reconnaissance",
+      "WMI hardware/OS fingerprint; geo-IP lookup; AV product enumeration; hardware ID hashing; local /24 ICMP sweep; installed-software inventory"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "The Rest of the Capability Set"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "Table 3. JC-46 (Client1.exe) capability inventory, grouped by objective.",
+   "type": "paragraph",
+   "section": "The Rest of the Capability Set"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "Detection Takeaways for Defenders",
+   "type": "heading",
+   "level": 3,
+   "section": "Detection Takeaways for Defenders"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Organizations should avoid blindly allow-listing trusted services such as raw.githubusercontent.com; instead, correlate downloads with subsequent execution from user-writable directories. Likewise, monitor for legitimate interpreters such as AutoIt3 executing scripts from %TEMP% or %LOCALAPPDATA%, regardless of the interpreter's reputation.",
+   "type": "paragraph",
+   "section": "Detection Takeaways for Defenders"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 3,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Appendix: Indicators of Compromise",
+   "type": "heading",
+   "level": 3,
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Network",
+   "type": "paragraph",
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Indicator | Notes ¶ 46[.]246.84.5 | Open-directory staging server; historically resolved AsyncRAT C2 domains via frootvpn.com since at least March 2023 ¶ 181[.]235.8.24 | Open-directory staging server hosting the stream-cipher loader family ¶ 178[.]16.52.80 | Open-directory staging server hosting hold.bat / hold.vbs / hold.js ¶ 64[.]89.160.17 | Open-directory staging server hosting the AutoIt RunPE chain ¶ raw.githubusercontent.com/cabeto850128/comicsam | GitHub repository used to stage the AutoIt interpreter and loader source ¶ rema200426.duckdns.org | JC-46 AsyncRAT C2 (DuckDNS registration pattern suggests use since at least April 2020)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Indicator",
+      "Notes"
+     ],
+     [
+      "46[.]246.84.5",
+      "Open-directory staging server; historically resolved AsyncRAT C2 domains via frootvpn.com since at least March 2023"
+     ],
+     [
+      "181[.]235.8.24",
+      "Open-directory staging server hosting the stream-cipher loader family"
+     ],
+     [
+      "178[.]16.52.80",
+      "Open-directory staging server hosting hold.bat / hold.vbs / hold.js"
+     ],
+     [
+      "64[.]89.160.17",
+      "Open-directory staging server hosting the AutoIt RunPE chain"
+     ],
+     [
+      "raw.githubusercontent.com/cabeto850128/comicsam",
+      "GitHub repository used to stage the AutoIt interpreter and loader source"
+     ],
+     [
+      "rema200426.duckdns.org",
+      "JC-46 AsyncRAT C2 (DuckDNS registration pattern suggests use since at least April 2020)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Table 4. Network indicators.",
+   "type": "paragraph",
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Files and Persistence",
+   "type": "paragraph",
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Indicator | Notes ¶ envifa.vbs / sostener2.vbs | XOR-0xE0 + AES-256-ECB self-mutating dropper ¶ 31agosto.vbs / 31diciembre.vbs / andre.vbs / sostener.vbs | Stream-cipher and JC-46 loader family (filenames reused across two distinct final payloads) ¶ hold.bat / hold.vbs / hold.js | Triple-language dropper with custom AES S-box ¶ System3.vbs / System5.vbs | GitHub-staging AutoIt downloaders ¶ kiSBJ4DDvg.pif / XjvdJar2Kf.pif | Bare AutoIt3.exe interpreter, renamed ¶ Paralell.dll (SHA-256 a4fbd707f4ce7ca68e6137cef1c56b6f408e5f0a0f148434d996bb98c3a21fff) | JC-46 WNF process injector ¶ Client1.exe (SHA-256 a73cb9d5d46e19f3daa4a14cfe5d8fa4319a3d62452039e4972e6a316bbb26f4) | JC-46 AsyncRAT payload, Gen:Variant.AsyncRAT.23 ¶ %LOCALAPPDATA%\\PhotoStudioVBS\\PhotoStudio.vbs | Shared persistence disguise, observed across three loader families ¶ Scheduled Task: “Photo Studio” | Logon-triggered persistence for the shared builder’s output",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Indicator",
+      "Notes"
+     ],
+     [
+      "envifa.vbs / sostener2.vbs",
+      "XOR-0xE0 + AES-256-ECB self-mutating dropper"
+     ],
+     [
+      "31agosto.vbs / 31diciembre.vbs / andre.vbs / sostener.vbs",
+      "Stream-cipher and JC-46 loader family (filenames reused across two distinct final payloads)"
+     ],
+     [
+      "hold.bat / hold.vbs / hold.js",
+      "Triple-language dropper with custom AES S-box"
+     ],
+     [
+      "System3.vbs / System5.vbs",
+      "GitHub-staging AutoIt downloaders"
+     ],
+     [
+      "kiSBJ4DDvg.pif / XjvdJar2Kf.pif",
+      "Bare AutoIt3.exe interpreter, renamed"
+     ],
+     [
+      "Paralell.dll (SHA-256 a4fbd707f4ce7ca68e6137cef1c56b6f408e5f0a0f148434d996bb98c3a21fff)",
+      "JC-46 WNF process injector"
+     ],
+     [
+      "Client1.exe (SHA-256 a73cb9d5d46e19f3daa4a14cfe5d8fa4319a3d62452039e4972e6a316bbb26f4)",
+      "JC-46 AsyncRAT payload, Gen:Variant.AsyncRAT.23"
+     ],
+     [
+      "%LOCALAPPDATA%\\PhotoStudioVBS\\PhotoStudio.vbs",
+      "Shared persistence disguise, observed across three loader families"
+     ],
+     [
+      "Scheduled Task: “Photo Studio”",
+      "Logon-triggered persistence for the shared builder’s output"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Table 5. File and host-based indicators.",
+   "type": "paragraph",
+   "section": "Appendix: Indicators of Compromise"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Stay Informed",
+   "type": "heading",
+   "level": 4,
+   "section": "Stay Informed"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Stay Informed",
+   "type": "heading",
+   "level": 4,
+   "section": "Stay Informed"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "QuimaRAT: A Java RAT with Burning Ambitions",
+   "type": "heading",
+   "level": 4,
+   "section": "QuimaRAT: A Java RAT with Burning Ambitions"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "A CISO's Guide: AI Threats, Supply Chain Risk, and Security Leadership",
+   "type": "heading",
+   "level": 4,
+   "section": "A CISO's Guide: AI Threats, Supply Chain Risk, and Security Leadership"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Latest Intelligence",
+   "type": "heading",
+   "level": 2,
+   "section": "Latest Intelligence"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "Inside PhantomPolia: Remus Stealer Delivery via Donut Shellcode in ClickFix Campaign",
+   "type": "heading",
+   "level": 4,
+   "section": "Inside PhantomPolia: Remus Stealer Delivery via Donut Shellcode in ClickFix Campaign"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Filling the Well: Nightmare-Eclipse's BigDiskBuster and the Defender Update That Never Lands",
+   "type": "heading",
+   "level": 4,
+   "section": "Filling the Well: Nightmare-Eclipse's BigDiskBuster and the Defender Update That Never Lands"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "TIKTOUK: Tracing a WordPress Credential Collection Toolkit",
+   "type": "heading",
+   "level": 4,
+   "section": "TIKTOUK: Tracing a WordPress Credential Collection Toolkit"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Related Offerings",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Offerings"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Discover how our specialists can tailor a security program to fit the needs of your organization.",
+   "type": "heading",
+   "level": 4,
+   "section": "Discover how our specialists can tailor a security program to fit the needs of your organization."
+  }
+ ]
+}

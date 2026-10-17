@@ -65,6 +65,31 @@ test('verified PDF fixtures keep their publisher sets and section structure', ()
   }
 });
 
+test('six-report golden corpus: exact publisher sets and the audited failure classes stay fixed', () => {
+  const golden = [
+    'golden-unit42-ai-enabled-malware',
+    'golden-checkpoint-mois-cybercrime',
+    'golden-huntress-muddywater-chain',
+    'golden-levelblue-blind-eagle',
+    'golden-elastic-apex-accelerator',
+    'golden-microsoft-needymantis'
+  ];
+  for (const id of golden) {
+    const m = byId.get(id)?.metrics;
+    assert.ok(m, `${id} present`);
+    assert.equal(m.indicators.fp, 0, `${id} false positives: ${m.indicators.false_positives.map((x) => x.id).join(' ')}`);
+    assert.equal(m.indicators.fn, 0, `${id} false negatives: ${m.indicators.false_negatives.map((x) => x.id).join(' ')}`);
+    // Legitimate binaries, thumbprints, technical identifiers, crypto constants never promoted.
+    assert.deepEqual(m.legitimate_exclusion.promoted, [], `${id} legitimate`);
+    assert.deepEqual(m.non_indicators.promoted, [], `${id} non-indicators`);
+    // Reference / source / narrative context stays Context Only.
+    assert.deepEqual(m.context_only.wrong, [], `${id} context only`);
+    assert.equal(m.sections.correct, m.sections.checked, `${id} sections`);
+    assert.equal(m.assertions.correct, m.assertions.checked, `${id} assertions`);
+  }
+  assert.equal(golden.reduce((n, id) => n + byId.get(id).metrics.indicators.expected, 0), 65, 'independent publisher Indicator total');
+});
+
 test('no unexpected Indicator membership change against baseline.json', () => {
   const baseline = readBaseline();
   assert.ok(baseline, 'baseline.json is missing — run npm run benchmark:threat-library -- --write-baseline');
