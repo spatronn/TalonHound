@@ -1,0 +1,1413 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/revstealer-credential-harvesting-infostealer",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v1",
+  "section_tree_version": "tl-section-tree-v2",
+  "candidate_extraction_version": "tl-candidates-v29"
+ },
+ "title": "Credential harvesting that survives takedowns: REVSTEALER",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 1,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Elastic Security Labs deep dives into REVSTEALER, an emerging infostealer targeting browsers, wallets, and gaming accounts.",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Daniel StepanicSalim BitamJia Yu Chan",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Detection EngineeringMalware Analysis",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Elastic Security Labs is tracking an emerging infostealer, REVSTEALER, under REF2859. This family has gained momentum in recent months, with higher distribution volume, and has emerged as a formidable threat, featuring a comprehensive credential harvester, an embedded sandbox scoring system, and a Polygon blockchain-based dead drop for resilience. Beyond credential theft, REVSTEALER targets gaming platforms for additional monetization; the developer clearly understands that victim accounts on these platforms hold real monetary value in resale markets.",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Gen Threat Labs first covered REVSTEALER earlier this summer, detailing its core features. In this research publication, we will walk through how it’s distributed, cover its main features, and share observed infrastructure. For readers who prefer more in-depth technical details on the malware, we are also releasing a whitepaper covering the family. We are also releasing an IDAPython string decryption script for anyone working with samples directly.",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "The white paper is located here and contains an in-depth analysis of REVSTEALER and REF2859.",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 2,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Large volume of samples (~4700) on VirusTotal over the past year, with varied submission context",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Comprehensive stealer component targeting browsers, VPN/chat applications, password managers, gaming platforms. Includes ABE debugger-based bypass.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Weighted anti-analysis checks (sandbox scoring system)",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "EtherHiding - Polygon-based dead drop for resilient infra swapping",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Tasking delivers four modules, not previously documented publicly",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Widespread use of VMProtect packer in most REVSTEALER samples; unpacked samples display a verification prompt similar to LummaStealer and AuraStealer",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Attack vector",
+   "type": "heading",
+   "level": 2,
+   "section": "Attack vector"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Gen Threat Labs documented REVSTEALER reaching victims through a social-engineering path targeting gamers by advertising free cheats and mod menus. Building on this reporting, we identified at least 17 YouTube channels promoting the two related domains elitecheatsx[.]live and resight-cheats[.]net.",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Malicious link in a YouTube video description",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "In the campaigns we observed, this took the form of YouTube account takeovers. Existing channels with established subscriber bases were hijacked and used to post short (1–2 minute) AI-generated videos demonstrating the \"cheats\" and linking viewers to the malicious sites.",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "Compromised YouTube account",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "The game-cheat campaign is only one observed presentation. Related VirusTotal submissions used names and file metadata that impersonated unrelated, recognizable software, including Slack, qBittorrent, Steel Series GG, Blender, and many more. This breadth suggests the builds are packaged for multiple lure themes, not just gaming-focused campaigns. We also ran a Retrohunt with our YARA rule, which returned about 4,700 matching samples across VirusTotal’s database over the past year.",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "Retrohunt matches visualized by submission first seen date",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Many of the samples we analyzed were packed with VMProtect, but the malware code was mostly recoverable through memory dumping.",
+   "type": "paragraph",
+   "section": "Attack vector"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Features",
+   "type": "heading",
+   "level": 2,
+   "section": "Features"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "Development",
+   "type": "heading",
+   "level": 3,
+   "section": "Development"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "Across its design, REVSTEALER reflects a developer building for long-term operational use. The malware incorporates features such as self-deletion, indirect syscalls, API hashing, string encryption, mechanisms to avoid user-mode hooks, and custom exception handling.",
+   "type": "paragraph",
+   "section": "Development"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "An indirect syscall dispatcher",
+   "type": "paragraph",
+   "section": "Development"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "Unlike most commodity stealers, REVSTEALER seems to put more effort into validating its targets; this is evident in its cryptocurrency wallet harvester, which uses a multi-layer architecture with a discovery engine followed by a collector that applies wallet-specific extension filters to extract only relevant files.",
+   "type": "paragraph",
+   "section": "Development"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "CIS exclusion checks",
+   "type": "heading",
+   "level": 3,
+   "section": "CIS exclusion checks"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Before REVSTEALER qualifies the victim machine, it first checks the machine's default/system languages and keyboard layout using a custom FNV-1a hash lookup. It retrieves each value from the machine, hashes it, and compares it against an embedded table of precomputed values representing the Commonwealth of Independent States (CIS) locales. If any of these three checks match, the malware terminates.",
+   "type": "paragraph",
+   "section": "CIS exclusion checks"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Exclusion checks based on language and keyboard layout",
+   "type": "paragraph",
+   "section": "CIS exclusion checks"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Sandbox scoring system",
+   "type": "heading",
+   "level": 3,
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "To determine whether the malware is running in a genuine environment, REVSTEALER integrates a custom sandbox scoring system using ten checks. Each check assigns a specific number of points based on sandbox characteristics such as low total physical RAM or CPU core counts.",
+   "type": "paragraph",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "If the total score is 7 or higher, the malware determines the machine is likely running in a sandbox environment and then self-terminates.",
+   "type": "paragraph",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Sandbox threshold comparison",
+   "type": "paragraph",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "The following checks are used in this feature:",
+   "type": "paragraph",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Process Blocklist (Type 0)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "CPU Core Count (Type 1)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "RAM Threshold (Type 2)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "GPU / PCI Vendor Check (Type 3)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "Username / Computer Name Blocklist (Type 4)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "System Uptime (Type 5)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "Sleep / Timing Check (Type 6)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Media Foundation Check (Type 7)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "CPUID Check (Type 8)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Virtualization Check (Type 9)",
+   "type": "list",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "Several of these checks hash values such as process names or usernames using a custom FNV-1a hash algorithm and compare the result against an embedded table. This method ensures no plaintext strings appear in the binary and prevents static analysis tools from seeing them.",
+   "type": "paragraph",
+   "section": "Sandbox scoring system"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Credential harvesting",
+   "type": "heading",
+   "level": 3,
+   "section": "Credential harvesting"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "REVSTEALER targets browser credentials and cookies, cryptocurrency wallets, and browser extensions. This includes 225 Chromium extension identifiers spanning cryptocurrency wallets and password managers, alongside 51 standalone wallet applications. It also collects data from messaging clients, gaming platforms, VPNs, FTP clients, OBS Studio, Windows Sticky Notes, and 2FA applications, along with selected documents and configuration files from user directories and non-system drives.",
+   "type": "paragraph",
+   "section": "Credential harvesting"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "REVSTEALER’s Chromium support includes an implementation for bypassing App-Bound Encryption. To obtain the App-Bound key, it launches a browser process under debugger control, locates code associated with App-Bound decryption, and sets a nearby hardware breakpoint. When the breakpoint triggers, the malware reads the decrypted key directly from the browser’s memory. The implementation was likely influenced by the public ElevationKatz project (under ChromeKatz).",
+   "type": "paragraph",
+   "section": "Credential harvesting"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "Example of decrypted App-Bound key in memory",
+   "type": "paragraph",
+   "section": "Credential harvesting"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Payload watermarking",
+   "type": "heading",
+   "level": 3,
+   "section": "Payload watermarking"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "The developer places a 16-byte watermark at the end of raw payloads and validates it at runtime. Packed builds do not trigger the check because the watermark is no longer located at EOF. When a watermarked raw copy is launched, a verification window requires the user to enter a random six-character token in order to proceed with execution. This discourages distribution of unprotected payloads while also hindering sandbox analyses. Similar techniques have been observed in Lumma Stealer and AuraStealer.",
+   "type": "paragraph",
+   "section": "Payload watermarking"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Polygon dead drops as fallback",
+   "type": "heading",
+   "level": 3,
+   "section": "Polygon dead drops as fallback"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "Each REVSTEALER build contains a primary C2 address and a Polygon smart-contract address. If the primary server is unavailable, REVSTEALER queries up to 5 public Polygon JSON-RPC endpoints, reads data from the contract, and decrypts a fallback C2 address using an embedded AES key.",
+   "type": "paragraph",
+   "section": "Polygon dead drops as fallback"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Below are examples of extracted C2 hosts and Polygon dead drop configurations from three REVSTEALER samples with different themes.",
+   "type": "paragraph",
+   "section": "Polygon dead drops as fallback"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Sample sha-256: 8b33e0f32c42a317e3d9cd67d5a6dc68e91a6cf9dd44742162858e7d83cf2073",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "File Name: SteelSeriesGG.exe",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Configuration(c2=b'polygon.iwmukj[.]xyz:443', polygon_contract_address=b'0x7e4126ADFE6679B3613F629CD49162Fb08fc53Bd', contract_function_selector=b'0xdbefdad6', contract_return_aes_key='f07666ac22dfa1a361b8a8576baf69eadaf15431db9f3c34e93334d8d2f8d691')",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Sample sha-256: bd97d5cab2d09b001d1b9e08890bce1a2b2cf8542a4b31c86b2def59328cafb2",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "File Name: slack.exe",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Configuration(c2=b'polygon.mnyhgxda[.]xyz:443', polygon_contract_address=b'0x0EC6a6D31b36271eBD06450EA98c84eBa8a191d5', contract_function_selector=b'0xd21368b4', contract_return_aes_key='5c30efd5b9ff75023c3813705f5c47feccc496f439b24b3e572db4c3b08dffe3')",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Sample sha-256: 1617552169df805405b1bb70f742d6eac5af342f31c6e39ff6b9613bd2392354",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "File Name: qBittorrent.exe",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "Configuration(c2=b'static4.livelab[.]one:443', polygon_contract_address=b'0x49cE5712164755ed212209bc71539bBc6fCFF541', contract_function_selector=b'0x071258c6', contract_return_aes_key='83f5b4ca629681abab2b9680472a304572a8c91b4a8ccc1189fbf58c6186db09')",
+   "type": "code",
+   "section": "Polygon dead drops as fallback",
+   "line_group": "b061"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Looking up one of the contract addresses on OKLink, there is an initial transaction to create a Polygon contract (bytecode prefix 0x60806040), initialized with an encrypted fallback C2 endpoint.",
+   "type": "paragraph",
+   "section": "Polygon dead drops as fallback"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "Polygon C2 transaction",
+   "type": "paragraph",
+   "section": "Polygon dead drops as fallback"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "Victim profiling",
+   "type": "heading",
+   "level": 3,
+   "section": "Victim profiling"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "Before any stealing components are launched, REVSTEALER profiles the victim machine, collecting the following data:",
+   "type": "paragraph",
+   "section": "Victim profiling"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Name | Note ¶ System/OS info | Current timestamp, machine fingerprint, system locale, CPU info, RAM, Windows OS version, GPU name, host name, username, token integrity of user, timezone, keyboard layout, screen resolution ¶ Environment variable dump | Uses GetEnvironmentStringsW to dump full environment block that can commonly hold sensitive material ¶ Process listing | Collects all running processes ¶ Installed applications | Collects all installed applications via Windows uninstall registry key path (SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall) ¶ Windows clipboard | Collects the latest clipboard data using OpenClipboard / GetClipboardData ¶ Screenshot capture | Captures a full screenshot of the victim machine",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "System/OS info",
+      "Current timestamp, machine fingerprint, system locale, CPU info, RAM, Windows OS version, GPU name, host name, username, token integrity of user, timezone, keyboard layout, screen resolution"
+     ],
+     [
+      "Environment variable dump",
+      "Uses GetEnvironmentStringsW to dump full environment block that can commonly hold sensitive material"
+     ],
+     [
+      "Process listing",
+      "Collects all running processes"
+     ],
+     [
+      "Installed applications",
+      "Collects all installed applications via Windows uninstall registry key path (SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall)"
+     ],
+     [
+      "Windows clipboard",
+      "Collects the latest clipboard data using OpenClipboard / GetClipboardData"
+     ],
+     [
+      "Screenshot capture",
+      "Captures a full screenshot of the victim machine"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Name",
+     "Note"
+    ]
+   },
+   "layout": "table",
+   "section": "Victim profiling"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "Gaming platforms",
+   "type": "heading",
+   "level": 3,
+   "section": "Gaming platforms"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "REVSTEALER has a deliberate focus on gaming platforms, harvesting sensitive materials, authentication tokens, and session cookies from popular platforms such as Blizzard’s Battle.net, EA Desktop, and Steam, along with targeting specific games such as Roblox and Minecraft. Instead of broadly sweeping the entire victim machine, the malware targets file paths, looking for configuration/settings files for each platform/game. For some of these targets, such as Roblox, REVSTEALER uses CryptUnprotectData to decrypt the user’s session cookie, enabling full account takeover without the user’s password.",
+   "type": "paragraph",
+   "section": "Gaming platforms"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "Polygon transaction creating the REVSTEALER dead drop contract holding an encrypted fallback C2 address",
+   "type": "paragraph",
+   "section": "Gaming platforms"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "The following table lists the gaming targets and their paths:",
+   "type": "paragraph",
+   "section": "Gaming platforms"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "Platform/Game | File path ¶ Battle.net (Blizzard) | %LOCALAPPDATA%\\Battle.net\\Battle.net.config ¶ Battlestate Games | %APPDATA%\\Battlestate Games\\BsgLauncher\\settings ¶ Electronic Arts | %LOCALAPPDATA%\\Electronic Arts\\EA Desktop\\*.ini ¶ Roblox | %LOCALAPPDATA%\\Roblox\\LocalStorage\\RobloxCookies.dat ¶ Steam | %LOCALAPPDATA%\\Steam\\local.vdf, %LOCALAPPDATA%\\Steam\\loginusers.vdf ¶ Minecraft | %USERPROFILE%\\intentlauncher\\launcherconfig %USERPROFILE%\\.lunarclient\\settings\\game\\accounts.json %APPDATA%\\.minecraft\\TlauncherProfiles.json %APPDATA%\\.feather\\accounts.json %APPDATA%\\.minecraft\\meteor-client\\accounts.nbt %APPDATA%\\.minecraft\\Impact\\alts.json %APPDATA%\\Badlion Client\\accounts.json %APPDATA%\\.minecraft\\launcher_accounts.json %APPDATA%\\.minecraft\\launcher_profiles_microsoft_store.json",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Battle.net (Blizzard)",
+      "%LOCALAPPDATA%\\Battle.net\\Battle.net.config"
+     ],
+     [
+      "Battlestate Games",
+      "%APPDATA%\\Battlestate Games\\BsgLauncher\\settings"
+     ],
+     [
+      "Electronic Arts",
+      "%LOCALAPPDATA%\\Electronic Arts\\EA Desktop\\*.ini"
+     ],
+     [
+      "Roblox",
+      "%LOCALAPPDATA%\\Roblox\\LocalStorage\\RobloxCookies.dat"
+     ],
+     [
+      "Steam",
+      "%LOCALAPPDATA%\\Steam\\local.vdf, %LOCALAPPDATA%\\Steam\\loginusers.vdf"
+     ],
+     [
+      "Minecraft",
+      "%USERPROFILE%\\intentlauncher\\launcherconfig %USERPROFILE%\\.lunarclient\\settings\\game\\accounts.json %APPDATA%\\.minecraft\\TlauncherProfiles.json %APPDATA%\\.feather\\accounts.json %APPDATA%\\.minecraft\\meteor-client\\accounts.nbt %APPDATA%\\.minecraft\\Impact\\alts.json %APPDATA%\\Badlion Client\\accounts.json %APPDATA%\\.minecraft\\launcher_accounts.json %APPDATA%\\.minecraft\\launcher_profiles_microsoft_store.json"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Platform/Game",
+     "File path"
+    ]
+   },
+   "layout": "table",
+   "section": "Gaming platforms"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Four follow-on modules delivered by C2 tasking",
+   "type": "heading",
+   "level": 3,
+   "section": "Four follow-on modules delivered by C2 tasking"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "REVSTEALER can receive additional executable content through C2 tasks. We recovered four related, self-contained payloads that extend its capabilities beyond credential theft.",
+   "type": "paragraph",
+   "section": "Four follow-on modules delivered by C2 tasking"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "Module | Capability ¶ ProManager | Wallet-file and browser-extension theft, phishing overlays, password-aware input capture, and payload delivery ¶ WinUpdate | Cryptocurrency-address replacement and mnemonic-shaped clipboard theft ¶ SoftManager | Reverse SOCKS5 proxy and backconnect access over an encrypted WebSocket protocol ¶ LockAppHost | XMRig deployment, competitor suspension, and persistence",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "ProManager",
+      "Wallet-file and browser-extension theft, phishing overlays, password-aware input capture, and payload delivery"
+     ],
+     [
+      "WinUpdate",
+      "Cryptocurrency-address replacement and mnemonic-shaped clipboard theft"
+     ],
+     [
+      "SoftManager",
+      "Reverse SOCKS5 proxy and backconnect access over an encrypted WebSocket protocol"
+     ],
+     [
+      "LockAppHost",
+      "XMRig deployment, competitor suspension, and persistence"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Module",
+     "Capability"
+    ]
+   },
+   "layout": "table",
+   "section": "Four follow-on modules delivered by C2 tasking"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Despite their distinct roles, all four REVSTEALER modules follow a common design pattern: obfuscated configuration, VMProtect-style protection, and Polygon smart contracts used as dead drops for replaceable settings, including C2 endpoints and XMRig’s command line.",
+   "type": "paragraph",
+   "section": "Four follow-on modules delivered by C2 tasking"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "REVSTEALER technical white paper",
+   "type": "heading",
+   "level": 2,
+   "section": "REVSTEALER technical white paper"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Elastic Security Labs presents a comprehensive technical analysis of REVSTEALER, covering its full capabilities, network communications, anti-analysis, sandbox scoring system, EtherHiding techniques, and follow-on modules.",
+   "type": "paragraph",
+   "section": "REVSTEALER technical white paper"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "You can find the technical white paper here.",
+   "type": "paragraph",
+   "section": "REVSTEALER technical white paper"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "String decryption script for REVSTEALER in IDA Pro",
+   "type": "heading",
+   "level": 2,
+   "section": "String decryption script for REVSTEALER in IDA Pro"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "Using the nightMARE framework, our team is releasing an IDAPython script available for download here. This tool can place decrypted strings in the IDA Pro decompiler to help analysts pinpoint the malware’s functionality.",
+   "type": "paragraph",
+   "section": "String decryption script for REVSTEALER in IDA Pro"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "REVSTEALER and MITRE ATT&CK",
+   "type": "heading",
+   "level": 2,
+   "section": "REVSTEALER and MITRE ATT&CK"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "REVSTEALER and MITRE ATT&CK"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary’s tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Stealth",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Automated Exfiltration",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Clipboard Data",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Credentials from Password Stores: Credentials from Web Browsers",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "File and Directory Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Indicator Removal: File Deletion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Native API",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Screen Capture",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "System Information Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "User Execution: Malicious File",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: Time Based Checks",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Web Service: Dead Drop Resolver",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Detecting and preventing REVSTEALER",
+   "type": "heading",
+   "level": 2,
+   "section": "Detecting and preventing REVSTEALER"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "Detection rules for REVSTEALER",
+   "type": "heading",
+   "level": 3,
+   "section": "Detection rules for REVSTEALER"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Network Activity to a Suspicious Top Level Domain",
+   "type": "list",
+   "section": "Detection rules for REVSTEALER"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "Prevention rules for REVSTEALER",
+   "type": "heading",
+   "level": 3,
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Shellcode Execution from Low Reputation Module",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "VirtualAlloc API Call from an Unsigned DLL",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Network Library Load via LdrLoadDLL",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "DNS Query to Suspicious Top Level Domain",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Potential Evasion with Hardware Breakpoints",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "Remote Thread Context Manipulation",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Potential Browser Information Discovery",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Suspicious Remote Process Suspend Activity",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Browser Process Spawned from an Unusual Parent",
+   "type": "list",
+   "section": "Prevention rules for REVSTEALER"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "YARA rules for REVSTEALER",
+   "type": "heading",
+   "level": 3,
+   "section": "YARA rules for REVSTEALER"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Elastic Security has created YARA rules to identify this activity.",
+   "type": "paragraph",
+   "section": "YARA rules for REVSTEALER"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Windows.Trojan.RevStealer.yar",
+   "type": "list",
+   "section": "YARA rules for REVSTEALER"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "Observables and indicators of compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Observables and indicators of compromise"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "This research discusses the following observables.",
+   "type": "paragraph",
+   "section": "Observables and indicators of compromise"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "All observables are also available for download.",
+   "type": "paragraph",
+   "section": "Observables and indicators of compromise"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "Observable | Type | Name | Reference ¶ 4c897108e8e793d6904110928c996815c302d6975c9bc61162149e855a963d50 | SHA-256 | resightloader.exe | REVSTEALER Loader ¶ adc4aa652965396b52e79435ca54987ae9eb21bf5e67de5e9461b09655165ee4 | SHA-256 |  | REVSTEALER ¶ 14b2ac356ed75d10ef40bbaaa48e7dd9fff7de9719c2a43ad123fe843dd4e4e2 | SHA-256 | SoftManager72fb40.exe | SoftManager ¶ 7c08cf409194056a8517865e5d3433d1499bb8262263b55b49b8b07d9d182fcb | SHA-256 | WinUpdate60e3a3.exe | WinUpdate ¶ 13d7237d7289e67c2d806a65d52580b453ce4987acbe2c4c4d04833f55ebccfa | SHA-256 | ProManagerServicedc894.exe | ProManager ¶ c66d2b77b9e85c53391891212413ad9a99eb66f4b11c6a431e78884a5b2651e5 | SHA-256 | LockAppHost14a02b.exe | LockAppHost ¶ monitor5.roast-core85[.]click | domain-name |  | REVSTEALER C2 server ¶ config.hubdisplay[.]lol | domain-name |  | ProManager C2 domain ¶ health.journal-metric[.]lol | domain-name |  | WinUpdate C2 domain ¶ metric.gardenpark[.]click | domain-name |  | SoftManager C2 domain ¶ 0x98FF8e7cdC13AE46b83B7590B986F25f1560DF03 | Wallet address |  | ProManager Polygon contract address ¶ 0x0cF1Ec8B9551103de729c3b02D77221Da9d81Acc | Wallet address |  | WinUpdate Polygon contract address ¶ 0x0E04c59f31E382D2B8A1637f4B9A5f04165EC48d | Wallet address |  | SoftManager Polygon contract address ¶ 0xC4eC9B7be1c2A0B39Eca678673DcB9164CA5df53 | Wallet address |  | LockAppHost Polygon contract address",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "4c897108e8e793d6904110928c996815c302d6975c9bc61162149e855a963d50",
+      "SHA-256",
+      "resightloader.exe",
+      "REVSTEALER Loader"
+     ],
+     [
+      "adc4aa652965396b52e79435ca54987ae9eb21bf5e67de5e9461b09655165ee4",
+      "SHA-256",
+      "",
+      "REVSTEALER"
+     ],
+     [
+      "14b2ac356ed75d10ef40bbaaa48e7dd9fff7de9719c2a43ad123fe843dd4e4e2",
+      "SHA-256",
+      "SoftManager72fb40.exe",
+      "SoftManager"
+     ],
+     [
+      "7c08cf409194056a8517865e5d3433d1499bb8262263b55b49b8b07d9d182fcb",
+      "SHA-256",
+      "WinUpdate60e3a3.exe",
+      "WinUpdate"
+     ],
+     [
+      "13d7237d7289e67c2d806a65d52580b453ce4987acbe2c4c4d04833f55ebccfa",
+      "SHA-256",
+      "ProManagerServicedc894.exe",
+      "ProManager"
+     ],
+     [
+      "c66d2b77b9e85c53391891212413ad9a99eb66f4b11c6a431e78884a5b2651e5",
+      "SHA-256",
+      "LockAppHost14a02b.exe",
+      "LockAppHost"
+     ],
+     [
+      "monitor5.roast-core85[.]click",
+      "domain-name",
+      "",
+      "REVSTEALER C2 server"
+     ],
+     [
+      "config.hubdisplay[.]lol",
+      "domain-name",
+      "",
+      "ProManager C2 domain"
+     ],
+     [
+      "health.journal-metric[.]lol",
+      "domain-name",
+      "",
+      "WinUpdate C2 domain"
+     ],
+     [
+      "metric.gardenpark[.]click",
+      "domain-name",
+      "",
+      "SoftManager C2 domain"
+     ],
+     [
+      "0x98FF8e7cdC13AE46b83B7590B986F25f1560DF03",
+      "Wallet address",
+      "",
+      "ProManager Polygon contract address"
+     ],
+     [
+      "0x0cF1Ec8B9551103de729c3b02D77221Da9d81Acc",
+      "Wallet address",
+      "",
+      "WinUpdate Polygon contract address"
+     ],
+     [
+      "0x0E04c59f31E382D2B8A1637f4B9A5f04165EC48d",
+      "Wallet address",
+      "",
+      "SoftManager Polygon contract address"
+     ],
+     [
+      "0xC4eC9B7be1c2A0B39Eca678673DcB9164CA5df53",
+      "Wallet address",
+      "",
+      "LockAppHost Polygon contract address"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Observable",
+     "Type",
+     "Name",
+     "Reference"
+    ]
+   },
+   "layout": "table",
+   "section": "Observables and indicators of compromise"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "References",
+   "type": "heading",
+   "level": 2,
+   "section": "References"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "The following were referenced throughout the above research:",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Gen Threat Labs REVSTEALER coverage on X",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Cloud Threat Emulation on Autopilot: Context is Everything",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Cloud Threat Emulation on Autopilot: Context is Everything",
+   "type": "heading",
+   "level": 3,
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "September 21, 2026",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "Terrance DeJesus",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Linux Detection Engineering - Local Privilege Escalation",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Linux Detection Engineering - Local Privilege Escalation",
+   "type": "heading",
+   "level": 3,
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "September 11, 2026",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "Ruben Groenewoud",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "How to correlate Kubernetes audit logs with container runtime data",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "How to correlate Kubernetes audit logs with container runtime data",
+   "type": "heading",
+   "level": 3,
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "September 03, 2026",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Isai Anthony",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Linux Detection Engineering - Fileless Execution",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "Linux Detection Engineering - Fileless Execution",
+   "type": "heading",
+   "level": 3,
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "September 01, 2026",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Ruben Groenewoud",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "From 88 lines to 1: Detecting DLL hijacking with Elastic Defend",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "From 88 lines to 1: Detecting DLL hijacking with Elastic Defend",
+   "type": "heading",
+   "level": 3,
+   "section": "From 88 lines to 1: Detecting DLL hijacking with Elastic Defend"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "August 28, 2026",
+   "type": "paragraph",
+   "section": "From 88 lines to 1: Detecting DLL hijacking with Elastic Defend"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Ian Garratt",
+   "type": "paragraph",
+   "section": "From 88 lines to 1: Detecting DLL hijacking with Elastic Defend"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "From 88 lines to 1: Detecting DLL hijacking with Elastic Defend"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

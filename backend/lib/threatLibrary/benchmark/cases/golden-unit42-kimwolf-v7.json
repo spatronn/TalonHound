@@ -1,0 +1,144 @@
+{
+  "id": "golden-unit42-kimwolf-v7",
+  "title": "Unit 42 — Kimwolf v7 (key-value records with VHash, APK certificate thumbprint, TLS certificate SHA-256)",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "key_value_records",
+    "certificate_fingerprint",
+    "vhash",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/unit42-kimwolf-v7-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/kimwolf-v7-botnet-malware/",
+    "talonhound_report_id": "cbc3ca8d-b706-4d49-8860-7227a797b2ec",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "406647de09a0ffa279756b4ccb344b1b76a333320c5b50fd367901fa006cf0ff",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "345222bca004595977f971d76900b0c65fd9bf9d91c50cd0c5bf5a93f1ad9e49",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2ec2e85b0358e0c681cb5067489a9086ec97dbbf7e3c952dd9cd496b319d5af5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "951c94809aa6c7ab587125f9d4df30fa6a49ee0cbba76a4b7ceedaaa0e5dcd36",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f07821e313c16cbbd82def45094a22c8d474164051bdbc7648d6869e012014b4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "d759364844d78a728505fb0485c3adbc",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "036bcb62be72c4663b9564955f93b05f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "md5",
+        "value": "33faca1e0090f6b12eff703daf4606e4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "rpcuniverse.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "eth.rpcuniverse.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "avax.rpcuniverse.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "edctgwib2n5l34t525zkxqzk5bqb6e5il2yiq5r6zu7gtlxa4uosn3qd.onion",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.94.221.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.193.31.158",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.193.31.119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.193.31.122",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.193.31.102",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "212.193.31.92",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "md5",
+        "value": "76554ad09897ac723a850eaf8c525efa"
+      },
+      {
+        "type": "sha1",
+        "value": "2a1d96f1b066877812587ac94f45f82dfff5f5f9"
+      },
+      {
+        "type": "sha256",
+        "value": "f3e8a55a2a3ea7c7b6676e90f4f49a2c55b13065b68ee50c51cc35fe2b5c3237"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

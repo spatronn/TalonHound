@@ -7,7 +7,7 @@
  */
 
 import { applyEvidencePolicy, buildCandidateEvidenceRecord } from '../evidencePolicy.js';
-import { NEGATIVE_ZONES, STRONG_IOC_ZONES } from '../documentZones.js';
+import { DELEGATED_IOC_ZONE, NEGATIVE_ZONES, STRONG_IOC_ZONES } from '../documentZones.js';
 import {
   isIndicatorValueLine,
   isAnnotatedIndicatorRowLine,
@@ -122,6 +122,39 @@ function shouldForceStructuralRow(candidateType, text, value, occ, block) {
   return false;
 }
 
+const NETWORK_OR_HASH_DECLARED = new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256', 'hash']);
+/** Column headers that declare indicator / infrastructure values. */
+const INDICATOR_COLUMN_HEADER_RE =
+  /\b(?:domains?|hosts?|hostnames?|ips?|ip\s+address(?:es)?|addresses|urls?|uris?|c2s?|c&c|servers?|infrastructure|endpoints?|indicators?|iocs?|observables?|sha-?(?:1|256)|md5|hash(?:es)?)\b/i;
+
+/**
+ * Row placement that is a publisher assertion inside the delegated scope:
+ * an ip:port endpoint, an observable-only list line, or a table cell of a
+ * column the publisher typed as network / hash / indicator values ("Domain /
+ * IP", "Key infrastructure", "URL", "SHA256"). Free-form value / config
+ * columns ("Value", "Variable-name", "Name") assert nothing.
+ * @param {object} candidate
+ * @param {object} occ
+ * @param {string} text block text
+ * @param {string} value
+ */
+function delegatedStructuralRow(candidate, occ, text, value) {
+  const form = String(occ?.form || '');
+  if (form === 'ip_port') return true;
+  if (form === 'table_row') {
+    const rows = (Array.isArray(candidate.table_rows) ? candidate.table_rows : [])
+      .concat(Array.isArray(candidate.evidence?.table_rows) ? candidate.evidence.table_rows : [])
+      .filter((r) => r && r.table_id === occ.block_id);
+    return rows.some((r) =>
+      NETWORK_OR_HASH_DECLARED.has(String(r.declared_type || '').toLowerCase()) ||
+      INDICATOR_COLUMN_HEADER_RE.test(String(r.column_header || '')) ||
+      INDICATOR_COLUMN_HEADER_RE.test(String(r.type_cell || ''))
+    );
+  }
+  const line = lineContainingObservable(text, value) || text;
+  return isIndicatorValueLine(line) || isObservableListLine(line);
+}
+
 /**
  * Apply section-tree ancestry as the sole authoritative occurrence-zone source.
  *
@@ -145,6 +178,7 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
   const hasAuth = tree.meta.has_authoritative_scope === true;
   let remappedOccurrences = 0;
   let demotedOccurrences = 0;
+  let delegatedOccurrences = 0;
 
   const out = (candidates || []).map((c) => {
     const value = c.normalized_value || c.original_value;
@@ -183,6 +217,19 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
             // Only inventory placements / focused hash|value lines may assert by
             // row shape. Short API/code URLs keep ancestry but lose stale row_shape
             // so evidence policy treats them as narrative under MODE A.
+            if (authZone === DELEGATED_IOC_ZONE) {
+              // Delegated scope: only publisher-typed inventory placements are
+              // rows; everything else is read for its relation (operational
+              // clause / sample statement) and never asserts by shape alone.
+              const row = !isHttpExampleLine(text) && delegatedStructuralRow(c, next, text, value);
+              next.structural_row = row;
+              next.row_shape = row;
+              next.zone_reason = 'section_tree_delegated_scope';
+              delete next.asserted;
+              delegatedOccurrences += 1;
+              remappedOccurrences += 1;
+              return next;
+            }
             if (
               !isHttpExampleLine(text) &&
               shouldForceStructuralRow(c.candidate_type, text, value, next, block)
@@ -256,6 +303,8 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
     scope_engine_version: SECTION_TREE_SCOPE_ENGINE_VERSION,
     section_tree_version: tree.version || SECTION_TREE_VERSION,
     remapped_occurrences: remappedOccurrences,
-    demoted_occurrences: demotedOccurrences
+    demoted_occurrences: demotedOccurrences,
+    delegated_scope: tree.meta.delegated_scope === true,
+    delegated_occurrences: delegatedOccurrences
   };
 }

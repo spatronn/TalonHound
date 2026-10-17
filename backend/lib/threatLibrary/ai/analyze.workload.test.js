@@ -283,7 +283,7 @@ test('only ai_needed candidates are asked for; explicit assertions cannot be dow
       { id: 'h', type: 'heading', page: 2, text: 'Indicators of Compromise' },
       { id: 'r1', type: 'list_item', layout: 'observable_row', page: 2, text: 'https://drop.badactor-example.net/gate' },
       { id: 'r2', type: 'list_item', layout: 'observable_row', page: 2, text: '203.0.113.77' },
-      { id: 'r3', type: 'list_item', layout: 'observable_row', page: 2, text: 'c4ca4238a0b923820dcc509a6f75849b' }
+      { id: 'r3', type: 'list_item', layout: 'observable_row', page: 2, text: '7f3d2a91c5e84b06d1f9a2c3e4b5d6f7' }
     ]
   });
   const cands = extractCandidatesFromDocument(doc);

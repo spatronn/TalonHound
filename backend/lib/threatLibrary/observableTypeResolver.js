@@ -53,8 +53,13 @@ import { isValidIpAddress } from '../publicIp.js';
  * requires the row to lead with the value or a label ("C2: x.lol", "- x.lol");
  * a prose-led short line in a curated zone ("CPU count via <sysctl key>") keeps
  * the syntax reading. Strong / delegated suffixes are unchanged.
+ * v10 (nine-report audit): `host.example:443` (port glued to a delegated DNS
+ * name) is an endpoint, never a `key: value` config assignment; a URL with an
+ * unfilled template placeholder (`/{campaignId}`, `%7Bid%7D`) is rejected as
+ * `template_placeholder`; `.md` joins the file-extension collisions
+ * (README.md, MEMORY.md) that stay context-decided.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v9';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v10';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -309,6 +314,8 @@ const FILE_EXT_HINT = new Set([
   // Java / .NET / server-page deployables and handlers (none is a DNS suffix).
   'war', 'ear', 'jspx', 'jspf', 'ashx', 'asmx', 'ascx', 'axd', 'cshtml', 'phtml', 'shtml', 'cfm',
   'txt', 'log', 'dat', 'bin', 'cfg', 'conf', 'ini', 'xml', 'json', 'csv',
+  // Markdown docs (README.md, MEMORY.md); .md (Moldova) stays context-decided.
+  'md',
   // Certificates / desktop launchers commonly listed beside sample hashes.
   'crt', 'pem', 'cer', 'der', 'p12', 'pfx', 'desktop',
   'enc', 'locked', 'crypt', 'payload', 'tmp', 'temp',
@@ -476,6 +483,9 @@ export function classifyPathLikeShape(refanged) {
 
 /** A publisher elision ("…", "[...]", "(…)") inside a value. */
 const ELIDED_VALUE_RE = /…|\[\s*(?:\.{2,}|…)\s*\]|\(\s*(?:\.{2,}|…)\s*\)/;
+/** Unfilled template placeholder in a URL path / query ({campaignId}, %7Bid%7D, ${var}). */
+// The closing brace may already be stripped as trailing punctuation.
+const TEMPLATE_PLACEHOLDER_RE = /\$?\{[A-Za-z_][\w.-]{0,40}(?:\}|$)|%7B[A-Za-z_][\w.-]{0,40}(?:%7D|$)/i;
 
 /**
  * Validate a candidate URL value. Only an absolute URL (scheme + valid host)
@@ -503,6 +513,11 @@ export function validateUrlCandidate(raw) {
   // not an observable anyone can match.
   if (ELIDED_VALUE_RE.test(String(raw || '')) || ELIDED_VALUE_RE.test(refanged)) {
     return { ok: false, resolved_type: 'invalid', reason: 'elided_value' };
+  }
+  // "host/<hex>/{campaignId}": a URL template with an unfilled placeholder
+  // names a pattern, not a resource anyone requested.
+  if (TEMPLATE_PLACEHOLDER_RE.test(String(raw || '')) || TEMPLATE_PLACEHOLDER_RE.test(refanged)) {
+    return { ok: false, resolved_type: 'invalid', reason: 'template_placeholder' };
   }
   const shape = classifyPathLikeShape(refanged);
   const [head, ...restParts] = refanged.split(/\s+/);
@@ -648,8 +663,12 @@ export function resolveDottedToken(raw, ctx = {}) {
   const codeContext = CODE_CONTEXT_RE.test(clause) || ctx.blockType === 'code' || ctx.zone === 'code';
   const explicitRow =
     ctx.strongZone === true && (ctx.form === 'table_row' || ctx.form === 'list_row' || ctx.indicatorRow === true);
+  // Endpoint position: `host.example:443` (port glued to a delegated DNS name,
+  // then a boundary) is a network endpoint, never a `key: value` pair.
+  const portMatch = /^:(\d{1,5})(?=$|[\s,;)\]'"`\/|>.](?!\d))/.exec(after);
+  const hostPort = Boolean(portMatch) && Number(portMatch[1]) <= 65535 && hasDelegatedDnsSuffix(lower);
   // Key position: `token = value` / `"token": value` (never `token://`).
-  const assignmentKey = /^["'`]?\s*(?:=(?!=)|:(?!\/\/)\s*(?:["'`\d[{]|true|false|null))/.test(after) && !declaredNetwork;
+  const assignmentKey = !hostPort && /^["'`]?\s*(?:=(?!=)|:(?!\/\/)\s*(?:["'`\d[{]|true|false|null))/.test(after) && !declaredNetwork;
   const pathSegment = isPathSegmentPosition(before, after);
   Object.assign(signals, {
     suffix_strength: strength,

@@ -1,0 +1,4229 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Unit 42"
+  ],
+  "source_url": "https://unit42.paloaltonetworks.com/tuxbot-v3-evolution-iot-botnet/",
+  "source_host": "unit42.paloaltonetworks.com",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v1",
+  "section_tree_version": "tl-section-tree-v2",
+  "candidate_extraction_version": "tl-candidates-v29"
+ },
+ "title": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "Malware",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development",
+   "type": "heading",
+   "level": 1,
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "23",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "min read",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Related Products",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Advanced DNS SecurityAdvanced Threat PreventionAdvanced URL FilteringAdvanced WildFireCloud-Delivered Security ServicesUnit 42 Incident Response",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "By:",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Asher Davila",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Chris Navarrete",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Doel Santos",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Published:",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "July 15, 2026",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Categories:",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Tags:",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "C2",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "DGA",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Docker compose",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "TuxBot v3 Evolution",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "VirusTotal",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "XOR",
+   "type": "list",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "TuxBot v3: Inside an IoT Botnet Framework With LLM-Assisted Development"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Executive Summary",
+   "type": "heading",
+   "level": 2,
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "We identified a previously undocumented modular internet-of-things (IoT) botnet framework named TuxBot v3 Evolution.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "The malware authors leveraged an LLM to assist in their code development, yielding mixed results. While the AI complied with their request to generate botnet code, it included a safety disclaimer that the developer failed to remove before shipping.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "Although the LLM clearly aided in constructing the botnet, several functions in the analyzed samples failed to work correctly. While a manual code review could have easily resolved these errors, the authors neglected this step. However, it is highly likely that corrected, more polished iterations exist, which significantly elevates the potential threat posed by this malware.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "We initially reported this information through our Timely Threat Intelligence program, and this article provides further in-depth analysis of the TuxBot v3 Evolution botnet.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "We recovered detailed information on the framework from internal telemetry. The data includes the full source code, compiled binaries for 17 architectures and automated distributed denial of service (DDoS) performance testing reports. The bot programs infected devices to display the console banner “Infected By Akiru.”",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "The TuxBot v3 Evolution framework consists of:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "A C-based bot agent that cross-compiles for architectures from ARM and MIPS to x86_64, PowerPC, RISC-V, etc.",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "A Go-based command-and-control (C2) server with a DDoS-for-hire panel",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "A custom exploit virtual machine",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Docker-based test infrastructure",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "An automated build system",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "The bot agent brute-forces Telnet access on targeted devices with 1,496 credential pairs, contains exploit code targeting more than 30 IoT device families and communicates with a C2 server over an encrypted TCP channel.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Fall-back C2 mechanisms include:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "A SHA512 domain generation algorithm (DGA)",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Peer-to-peer (P2P) gossip with Ed25519-signed commands",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "IRC",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "DNS TXT queries",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "HTTP polling",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected from the threats discussed above through the following products:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Advanced WildFire",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "Advanced URL Filtering and Advanced DNS Security",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Advanced Threat Prevention",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "If you think you might have been compromised or have an urgent matter, contact the Unit 42 Incident Response team.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Related Unit 42 Topics | LLM, AI, Botnet, IoT, DDoS",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Related Unit 42 Topics",
+      "LLM, AI, Botnet, IoT, DDoS"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "TuxBot Framework Details",
+   "type": "heading",
+   "level": 2,
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "TuxBot is a modular IoT botnet framework derived from various known IoT botnet codebases. Based on our analysis of the samples, TuxBot includes features borrowed from the known botnet AISURU and the publicly unknown Wuhan botnet lineages. (We infer the Wuhan botnet lineage based on references in the TuxBot samples.)",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "It is also partially ported from the open-source MHDDoS Python DDoS toolkit.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Figure 1 shows screenshots of the TuxBot v3 Evolution installer. According to the system configuration, the framework maintains dual versioning: 3.5.2 for the Installer version and 3.0.0-EVOLUTION-FINAL within the Docker configuration file.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Figure 1. TuxBot interactive setup wizard screens.",
+   "type": "caption",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "We discovered two important sources of TuxBot data from the wild. Our first discovery was an archive containing the complete source code of the framework. This archive consists of:",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "61 C++ source files",
+   "type": "list",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "58 headers",
+   "type": "list",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Its own compiler and virtual machine",
+   "type": "list",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Docker Compose configurations for test environments",
+   "type": "list",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Quick Emulator (QEMU) setups for multi-architecture testing",
+   "type": "list",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "254 automated DDoS benchmark reports",
+   "type": "list",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "Our second discovery was a compiled bot binary that was also bundled in the source tree under the QEMU test directory and hidden with a dot-prefix to the filename. This sample was submitted to VirusTotal on Jan. 20, 2026.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Comparing this binary with the source code reveals that it is a development build. This binary was compiled with its C2 IP address set to the loopback IP address 127.0.0.1 and the bot protocol port set to 31337. Because this information can be modified during the botnet setup process, the operator could have production builds with a real C2 IP address and with the bugs we document here already fixed.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "The TuxBot framework we recovered and analyzed is approximately 70% functional. The core infection flow (scanning, credential brute-forcing, persistence, primary C2 setup and DDoS execution) works. The Telnet, SSH, HTTP and Android Debug Bridge (ADB) scanners all operate correctly. Furthermore, with its 1,496 credential pairs, the Telnet scanner remains a viable infection vector.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Exploitation beyond brute-forcing is limited. All three exploit systems are non-functional for different reasons that we detail later in this analysis. An additional scanner fires, but its hard-coded dropper IP address is no longer active.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "Several other features are broken due to a handful of bugs, most of which trace back to large language model (LLM)-assisted development. The developer relied on an LLM to generate C modules, port exploits and write C2 server code.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Raw chain-of-thought reasoning from the LLM was left verbatim in source files, and the LLM hallucinated cryptographic implementations that the developer shipped without verifying. During our analysis, we could fix several of these broken features with a few targeted prompts to an LLM. This means an adversary with access to the same source code could produce a more complete version with minimal effort.",
+   "type": "paragraph",
+   "section": "TuxBot Framework Details"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "Development Timeline",
+   "type": "heading",
+   "level": 3,
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "The archive containing the source code also contains a Git log. This Git log allowed us to build a timeline that shows the development progress of this botnet, noted in Table 1.",
+   "type": "paragraph",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "Date | Event | Evidence ¶ Jan. 3, 2025 | Developer clones MHDDoS (DDoS attack script) from GitHub | Git log in the MHDDoS/ subdirectory leaks the workstation hostname newtuxdev.sevielw.digikalas[.]online ¶ Aug. 6, 2025 | Developer domain digikalas[.]online registered | Namecheap registration with Icelandic privacy protection (Withheld for Privacy ehf), Cloudflare DNS ¶ Jan. 4–6, 2026 | 254 automated DDoS benchmark reports generated | The package found includes reports, directory timestamps and JSON test configurations against Docker targets ¶ Jan. 20, 2026 | The first TuxBot sample appears on VirusTotal | SHA256 hash 71dfbb171eca4ef9d02ff630b56e5283bbef7b375d4dbe9e8c9531bef312fa8d, x86_64 debug build with symbols ¶ March 5, 2026 | C2 server first seen on Xpanse | 209.182.237[.]133:2222, banner SSH-2.0-CNC-Control-Server ¶ April 22, 2026 | Six new samples detected in internal telemetry | Not on VirusTotal, multiple architectures, GCC 14.2.0 production builds",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Date",
+      "Event",
+      "Evidence"
+     ],
+     [
+      "Jan. 3, 2025",
+      "Developer clones MHDDoS (DDoS attack script) from GitHub",
+      "Git log in the MHDDoS/ subdirectory leaks the workstation hostname newtuxdev.sevielw.digikalas[.]online"
+     ],
+     [
+      "Aug. 6, 2025",
+      "Developer domain digikalas[.]online registered",
+      "Namecheap registration with Icelandic privacy protection (Withheld for Privacy ehf), Cloudflare DNS"
+     ],
+     [
+      "Jan. 4–6, 2026",
+      "254 automated DDoS benchmark reports generated",
+      "The package found includes reports, directory timestamps and JSON test configurations against Docker targets"
+     ],
+     [
+      "Jan. 20, 2026",
+      "The first TuxBot sample appears on VirusTotal",
+      "SHA256 hash 71dfbb171eca4ef9d02ff630b56e5283bbef7b375d4dbe9e8c9531bef312fa8d, x86_64 debug build with symbols"
+     ],
+     [
+      "March 5, 2026",
+      "C2 server first seen on Xpanse",
+      "209.182.237[.]133:2222, banner SSH-2.0-CNC-Control-Server"
+     ],
+     [
+      "April 22, 2026",
+      "Six new samples detected in internal telemetry",
+      "Not on VirusTotal, multiple architectures, GCC 14.2.0 production builds"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Table 1. TuxBot Framework development timeline.",
+   "type": "paragraph",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "The source code and publicly available data provide a rough development chronology. The developer's hostname, captured in the included Git log, indicates an Iranian-hosted workstation. The developer domain newtuxdev.sevielw.digikalas[.]online was no longer live, but the parent domain digikalas[.]online has remained active and resolved to an IP address on Iran's Arvan Cloud content delivery network (CDN) during our research.",
+   "type": "paragraph",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "The 254 benchmark reports from the archive from January 2026 reveal:",
+   "type": "paragraph",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "Active testing of 12 attack methods across three Docker-based botnet hosts",
+   "type": "list",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Measuring packet rates, throughput and error rates",
+   "type": "list",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "This testing occurred just weeks before the first sample appeared on VirusTotal, consistent with a late-stage development push before deployment.",
+   "type": "paragraph",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "The source code contains an IP address of 185.10.68[.]127, which we pivoted on to link TuxBot to Keksec/Kaitori (a Tsunami/Mirai/Gafgyt variant) ecosystems to a shared infrastructure.",
+   "type": "paragraph",
+   "section": "Development Timeline"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "Framework Overview",
+   "type": "heading",
+   "level": 2,
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "According to the framework’s description, the TuxBot developer built what they called a professional-grade C2 framework platform with a multi-user admin panel, automated deployment and modular attack capabilities. Figure 2 shows the botnet panel reference.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Figure 2. TuxBot C2 botmaster panel command reference.",
+   "type": "caption",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "The C2 server is written in Go and uses three listeners that use different TCP ports for incoming connections.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "The first listener serves the bot protocol on TCP port 1999 (or 31337, depending on the build), handling encrypted command dispatch to connected bots. The same port is multiplexed with an admin binary protocol identified by a magic byte header.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "The second listener is an SSH server on TCP port 2222 that presents an interactive shell for operators. This is the DDoS-for-hire interface shown in Figure 3. Operators log in, see a count of connected bots and issue attack commands in the format !method target duration.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "Figure 3. TuxBot SSH C2 control panel system status screen.",
+   "type": "caption",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "As Figure 4 shows, the C2 server enforces per-user quotas on concurrent attacks, maximum duration and bot allocation. This is all backed by a MariaDB database that stores user accounts, attack logs and permissions.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "Figure 4. TuxBot system statistics showing currently connected bots.",
+   "type": "caption",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "The third listener is a machine API on TCP port 9999 that uses a JSON interface intended for programmatic access.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "The integrated build system automates the entire deployment:",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Installing dependencies (Go, MariaDB, cross-compilation toolchains)",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Initializing the database schema",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Generating a configuration",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Compiling the C2",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Cross-compiling the bot for 17 target architectures, as noted in Figure 5",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Figure 5. Exploit loading and cross-compilation of bot clients (malware artifacts).",
+   "type": "caption",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "These target architectures include:",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "x86_64",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "ARM",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "ARM64",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "MIPS",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "MIPSEL",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "MIPS64",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "PowerPC",
+   "type": "list",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "The compiled binaries are placed in a directory served over HTTP, so exploited devices can download the appropriate binary for their architecture.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "The framework includes Docker Compose configurations for several test scenarios. A “battle arena” configuration spins up a C2 server, five bot replicas and a target host running nginx and socat listeners on game server ports (Minecraft, TeamSpeak, FiveM, Xbox Live). This allowed the developer to test DDoS methods against real protocol listeners in a controlled environment. Additional configurations test P2P gossip recovery, full integration with all scanners active and production-like deployments with stealth and persistence enabled.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "An interesting design note is that the source code configures the SSH banner as SSH-2.0-CNC, but the live C2 server on Xpanse at 209.182.237[.]133 presents the banner as SSH-2.0-CNC-Control-Server. This discrepancy suggests that the production deployment uses a modified version of the source code we discovered, providing further evidence that the operator has a separate, potentially more complete build.",
+   "type": "paragraph",
+   "section": "Framework Overview"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Bot Overview",
+   "type": "heading",
+   "level": 2,
+   "section": "Bot Overview"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Analysis Details",
+   "type": "heading",
+   "level": 3,
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "The bot is a C program that compiles into a single statically linked binary. It links against glibc and libsodium for X25519, ChaCha20, Poly1305, SHA512 and Ed25519 algorithms.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "The original binary submitted to VirusTotal was an earlier debug build with symbols intact, compiled with GCC 11.4.0 instead of the production GCC 14.2.0. The bot programs infected devices to display the console banner Infected By Akiru, as shown in Figure 6.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Figure 6. Post-infection screen console message.",
+   "type": "caption",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "On execution, the bot follows a fixed initialization sequence. After seeding the pseudo-random number generator and initializing libsodium, it performs the following activities:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Loading the C2 address",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "Setting up anti-debugging protections",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Hiding its process name",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Installing persistence",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Launching a cascade of subsystems consisting of:",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "The attack dispatcher",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "A competitor killer feature",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "An exploit VM",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Self-replication servers",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Multiple C2 channels (IRC, HTTP, DNS, P2P)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Scanners (Telnet, SSH, HTTP, PHP-based application, ADB)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "A SOCKS5 proxy",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "The mining placeholder",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "The main process then enters a loop that receives encrypted commands from the C2 server and dispatches attacks.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "String Table and the XOR Key Bug",
+   "type": "heading",
+   "level": 3,
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "TuxBot stores sensitive strings (C2 addresses, scanner calls, exploit payloads) in an XOR-encrypted table that it decrypts at runtime. The table key is previously defined as 0xDEDEFB4F.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "The toggle_obf() function splits this 32-bit key into its four component bytes (0x4F, 0xFB, 0xDE, 0xDE) and XORs each byte of each table entry with all four in sequence. Because XOR is associative, these four operations collapse into a single effective key. The two 0xDE bytes cancel each other out (any byte XORed with itself yields zero), leaving 0x4F XOR 0xFB = 0xB4.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "The table contains 58 entries. Forty-nine of them decrypt correctly with key 0xB4 and include:",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "The C2 port (1999)",
+   "type": "list",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Scanner strings (shell, enable, system)",
+   "type": "list",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "The Infected By Akiru post-infection console banner",
+   "type": "list",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Busybox probe strings",
+   "type": "list",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Various process names used for stealth",
+   "type": "list",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Nine entries produce garbage when decrypted with 0xB4. These entries were encrypted using a separate offline tool, which uses a key of 0xDEDEFBAF, yielding an effective byte of 0x54.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "The developer introduced this bug by changing the least significant byte of the key in the table from 0xAF to 0x4F. The offline encryption tool was never updated to match, and the nine entries that had already been processed with the old key were never re-encrypted. As a result, these entries are encrypted in the binary with key 0x54, while the runtime applies key 0xB4, producing corrupted output.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Decrypting them with the correct key (0x54) reveals the intended values shown in Table 2.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Entry | Intended Value ¶ TABLE_IRC_SERVER | 127.0.0[.]1 ¶ TABLE_IRC_PORT | 6667 ¶ TABLE_IRC_CHANNEL | #tuxbot ¶ TABLE_IRC_NICK_PREFIX | tux ¶ TABLE_HTTP_C2_URL | hxxp[:]//127.0.0[.]1/cmd ¶ TABLE_THINKPHP_PAYLOAD | Full HTTP GET request (312 bytes) targeting ThinkPHP invokefunction ¶ TABLE_GPON_PAYLOAD | Full HTTP POST request (316 bytes) targeting GPON diag_Form ¶ TABLE_REALTEK_PAYLOAD1 | Full SOAP request (988 bytes) targeting Realtek UPnP /picdesc.xml ¶ TABLE_REALTEK_PAYLOAD2 | Full SOAP request (988 bytes) targeting Realtek UPnP /wanipcn.xml",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Entry",
+      "Intended Value"
+     ],
+     [
+      "TABLE_IRC_SERVER",
+      "127.0.0[.]1"
+     ],
+     [
+      "TABLE_IRC_PORT",
+      "6667"
+     ],
+     [
+      "TABLE_IRC_CHANNEL",
+      "#tuxbot"
+     ],
+     [
+      "TABLE_IRC_NICK_PREFIX",
+      "tux"
+     ],
+     [
+      "TABLE_HTTP_C2_URL",
+      "hxxp[:]//127.0.0[.]1/cmd"
+     ],
+     [
+      "TABLE_THINKPHP_PAYLOAD",
+      "Full HTTP GET request (312 bytes) targeting ThinkPHP invokefunction"
+     ],
+     [
+      "TABLE_GPON_PAYLOAD",
+      "Full HTTP POST request (316 bytes) targeting GPON diag_Form"
+     ],
+     [
+      "TABLE_REALTEK_PAYLOAD1",
+      "Full SOAP request (988 bytes) targeting Realtek UPnP /picdesc.xml"
+     ],
+     [
+      "TABLE_REALTEK_PAYLOAD2",
+      "Full SOAP request (988 bytes) targeting Realtek UPnP /wanipcn.xml"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "Table 2. String table decrypted values.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "All four exploit payloads hard code the dropper IP address 185.10.68[.]127 inside them, an IP address that is flagged as malicious on VirusTotal in early May 2026.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "The consequences of this bug are significant. The IRC C2 fall-back channel, the HTTP C2 polling channel and the four table-stored exploit payloads are all non-functional at runtime. The bot attempts to use them, but it silently fails due to the corrupted string values. For example, the IRC channel tries to inet_addr() on garbage bytes, gets INADDR_NONE and retries the connection every 10 seconds.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "We were able to fix this to call the add_entry_plaintext() function correctly, by taking the raw string and XORing it with the runtime key (0xB4) at initialization, guaranteeing the keys always match. With that fix applied, the IRC C2 channel connects, joins #tuxbot and accepts attack commands as noted in Figure 7.",
+   "type": "paragraph",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Figure 7. IRC channel (#tuxbot) and connected infected bots.",
+   "type": "caption",
+   "section": "String Table and the XOR Key Bug"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Credential Table",
+   "type": "heading",
+   "level": 3,
+   "section": "Credential Table"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "The bot ships with 1,496 username/password pairs for Telnet brute-forcing. The file header explicitly says // START IMPORTED FROM DDOS-ROOTSEC pass_file. Each entry is XORed with key 0xB4 (matching the runtime key, so these work correctly).",
+   "type": "paragraph",
+   "section": "Credential Table"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "The list of 1,495 login credentials includes standard and vendor-specific defaults.",
+   "type": "paragraph",
+   "section": "Credential Table"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "C2 Protocol",
+   "type": "heading",
+   "level": 3,
+   "section": "C2 Protocol"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "TuxBot implements a layered C2 architecture with one primary channel and five fall-back mechanisms. Only the primary channel and three of the five fall-back mechanisms were functional in the version we analyzed. Figure 8 shows the diagram.",
+   "type": "paragraph",
+   "section": "C2 Protocol"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "Figure 8. C2 protocols and the client/server relationships.",
+   "type": "caption",
+   "section": "C2 Protocol"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Primary Channel: Encrypted TCP",
+   "type": "heading",
+   "level": 4,
+   "section": "Primary Channel: Encrypted TCP"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "The bot connects to the C2 server on TCP port 1999 (or 31337, depending on build configuration). The handshake begins with the bot sending 4 bytes: 0xDEADBE01. It then generates and sends its 32-byte public key. The C2 server responds with its own 32-byte public key. Each encrypted packet has the following format:",
+   "type": "paragraph",
+   "section": "Primary Channel: Encrypted TCP"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "4-byte magic (0xDEADBEEF)",
+   "type": "list",
+   "section": "Primary Channel: Encrypted TCP"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "12-byte nonce (from /dev/urandom)",
+   "type": "list",
+   "section": "Primary Channel: Encrypted TCP"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "Ciphertext",
+   "type": "list",
+   "section": "Primary Channel: Encrypted TCP"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "16-byte Poly1305 tag",
+   "type": "list",
+   "section": "Primary Channel: Encrypted TCP"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Fall-Back Channels",
+   "type": "heading",
+   "level": 4,
+   "section": "Fall-Back Channels"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "The framework defines five additional C2 channels, summarized in Table 3.",
+   "type": "paragraph",
+   "section": "Fall-Back Channels"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Channel | Implementation | Status ¶ DNS TXT | Queries c2.tuxbot.local via 8.8.8[.]8 | Functional ¶ DGA | Seed format <YYYY-MM-DD>-TuxBotv3-Evolution-Seed-2025-<index>, SHA-512, 20 domains/day | Functional ¶ P2P Gossip | TCP port 13337, Ed25519-signed commands | Functional ¶ IRC | TCP port 6667, plaintext | Broken ¶ HTTP Polling | Polls hxxp[:]//127.0.0[.]1/cmd | Broken",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Channel",
+      "Implementation",
+      "Status"
+     ],
+     [
+      "DNS TXT",
+      "Queries c2.tuxbot.local via 8.8.8[.]8",
+      "Functional"
+     ],
+     [
+      "DGA",
+      "Seed format <YYYY-MM-DD>-TuxBotv3-Evolution-Seed-2025-<index>, SHA-512, 20 domains/day",
+      "Functional"
+     ],
+     [
+      "P2P Gossip",
+      "TCP port 13337, Ed25519-signed commands",
+      "Functional"
+     ],
+     [
+      "IRC",
+      "TCP port 6667, plaintext",
+      "Broken"
+     ],
+     [
+      "HTTP Polling",
+      "Polls hxxp[:]//127.0.0[.]1/cmd",
+      "Broken"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Fall-Back Channels"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "Table 3. C2 channels and their implementation status.",
+   "type": "paragraph",
+   "section": "Fall-Back Channels"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Secondary Channel: IRC Protocol",
+   "type": "heading",
+   "level": 4,
+   "section": "Secondary Channel: IRC Protocol"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "The broken IRC implementation reveals the intent for a secondary channel of communication, as demonstrated below in Figure 9.",
+   "type": "paragraph",
+   "section": "Secondary Channel: IRC Protocol"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Figure 9. Example of IRC bot C2 communication from an infected machine.",
+   "type": "caption",
+   "section": "Secondary Channel: IRC Protocol"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "When fixed, it forks a child process that connects to an IRC server, joins a channel (default #tuxbot) and listens for PRIVMSG commands prefixed with the ! character. It supports 12 attack methods (udp, syn, ack, vse, stomp, greip, greeth, udpplain, bypass, std, socket and dns) plus a kill command.",
+   "type": "paragraph",
+   "section": "Secondary Channel: IRC Protocol"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "Commands arrive as plaintext IRC messages and get parsed by the parse_irc_command() function. Then the commands are converted to the same binary packet format used by the primary encrypted channel before being passed to attack_parse().",
+   "type": "paragraph",
+   "section": "Secondary Channel: IRC Protocol"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "Unlike the primary channel, the IRC channel has no encryption and no authentication. Anyone who knows the server and channel can command the bots.",
+   "type": "paragraph",
+   "section": "Secondary Channel: IRC Protocol"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "DGA Details",
+   "type": "heading",
+   "level": 3,
+   "section": "DGA Details"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "The dga_generate_domain() function constructs a seed string formatted as %04d-%02d-%02d-TuxBotv3-Evolution-Seed-2025-%d, where the date is the current UTC date and the final integer iterates from 0–19 per cycle. This produces 20 candidate domains per day.",
+   "type": "paragraph",
+   "section": "DGA Details"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "The SHA512 hash of this string is computed, and the first 12 bytes of the digest are mapped to lowercase letters (digest[i] % 26 into the a-z charset) to form the domain label. The top-level domain (TLD) is selected from a 6-entry table (.com, .net, .org, .info, .biz and .cc) using digest[12] % 6. Both the main C2 reconnection loop and the resilience module use this function to try DGA domains when the primary C2 address is unreachable.",
+   "type": "paragraph",
+   "section": "DGA Details"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "Exploits",
+   "type": "heading",
+   "level": 3,
+   "section": "Exploits"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "The source tree contains four categories of exploit. Only one of them works at runtime. This is a direct consequence of the bugs introduced during development.",
+   "type": "paragraph",
+   "section": "Exploits"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "Exploit Category 1: Hard-Coded C Functions (Implemented But Never Called)",
+   "type": "heading",
+   "level": 4,
+   "section": "Exploit Category 1: Hard-Coded C Functions (Implemented But Never Called)"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Sixteen exploit functions are implemented as native C code, covering 13 CVEs across different vendors and devices. Each function constructs an HTTP or SOAP request with a %s format string for the dropper IP address. The code is complete and would work if called. But exploit_engine_init() has zero callers anywhere in the codebase. No scanner or spread module references it. These 16 exploits are compiled into the binary and considered as dead code.",
+   "type": "paragraph",
+   "section": "Exploit Category 1: Hard-Coded C Functions (Implemented But Never Called)"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "Exploit Category 2: Exploit VM (Called But Broken)",
+   "type": "heading",
+   "level": 4,
+   "section": "Exploit Category 2: Exploit VM (Called But Broken)"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "The main Telnet scanner spawns a dedicated exploit worker thread that calls vm_run_random() in a loop against random IP addresses, making this the only exploit system the bot actually tries to use at runtime. The developer built a custom domain-specific language for writing exploits as text files, a Go compiler to compile them into a binary package and a C virtual machine to execute them.",
+   "type": "paragraph",
+   "section": "Exploit Category 2: Exploit VM (Called But Broken)"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "We also observed 27 .expl files, a custom file format created by the developer for this framework. Each file contains a single exploit, making exploit integration modular rather than hard-coded. These were written and compiled into a single 10,694-byte exploit package that would add coverage for 13 CVEs (including CVE-2022-1388, CVE-2022-22965, CVE-2020-8515 and CVE-2022-44877) plus two non-CVE targets.",
+   "type": "paragraph",
+   "section": "Exploit Category 2: Exploit VM (Called But Broken)"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "The package fails because the Go compiler writes the file magic value as 0x54555845 (\"TUXE\") while the C VM expects 0x4558504C (\"EXPL\"). The package is rejected on load, and the exploit worker thread runs but fires nothing. Beyond the magic mismatch, the compiler never emits an OP_CONNECT opcode, and the variable syntax differs between the compiler and VM. This means that even fixing the file magic value would not be enough to make the package execute correctly.",
+   "type": "paragraph",
+   "section": "Exploit Category 2: Exploit VM (Called But Broken)"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "Exploit Category 3",
+   "type": "heading",
+   "level": 4,
+   "section": "Exploit Category 3"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "This category consists of XOR table payloads, but these are broken due to an XOR key mismatch. Four exploit payloads are stored as XOR-encrypted entries in the string table. These target different vendors and were intended as an alternative delivery mechanism. They are all encrypted with the wrong XOR key (0x54 instead of 0xB4), resulting in garbled HTTP requests at runtime.",
+   "type": "paragraph",
+   "section": "Exploit Category 3"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "Exploit Category 4",
+   "type": "heading",
+   "level": 4,
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "This category consists of functional dedicated scanners for remote code execution (RCE) and ADB.",
+   "type": "paragraph",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "In summary, the exploit categories are described in Table 4.",
+   "type": "paragraph",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "Exploit Category | Count ¶ Implemented but never called (dead code) | 13 CVEs + 4 non-CVE targets (System 1, exploit engine) ¶ Called at runtime but broken (VM magic mismatch) | 13 CVEs + 2 non-CVE targets (System 2, exploit VM) ¶ Broken (XOR key mismatch) | 4 exploits overlapping with System 1 (System 3) ¶ Functional dedicated scanners | RCE vulnerability scanner, ADB scanner",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Exploit Category",
+      "Count"
+     ],
+     [
+      "Implemented but never called (dead code)",
+      "13 CVEs + 4 non-CVE targets (System 1, exploit engine)"
+     ],
+     [
+      "Called at runtime but broken (VM magic mismatch)",
+      "13 CVEs + 2 non-CVE targets (System 2, exploit VM)"
+     ],
+     [
+      "Broken (XOR key mismatch)",
+      "4 exploits overlapping with System 1 (System 3)"
+     ],
+     [
+      "Functional dedicated scanners",
+      "RCE vulnerability scanner, ADB scanner"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "Table 4. Exploit categories and counts (per implementation status).",
+   "type": "paragraph",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "These four categories mean that this bot's actual exploit capability at runtime is limited to the last two categories:",
+   "type": "paragraph",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "An RCE vulnerability scanner (whose dropper is dead)",
+   "type": "list",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "The ADB scanner",
+   "type": "list",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "The other three exploit categories that were supposed to provide broad IoT exploitation are non-functional, each for a different reason. A complete table of all CVEs and their status is provided in the Indicators of Compromise section.",
+   "type": "paragraph",
+   "section": "Exploit Category 4"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "DDoS Methods",
+   "type": "heading",
+   "level": 3,
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "The attack dispatch system registers 78 attack vectors. These vectors map to only six actual handler functions, as shown in Table 5.",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "Handler (Designator) | Vectors | Description ¶ attack_udp_generic_optimized | 25 | UDP/GRE/ICMP floods using raw sockets with sendmmsg() batches of 512 packets ¶ attack_tcp_syn_optimized | 47 | TCP SYN floods, also mapped to all Layer 7 HTTP method IDs ¶ attack_tcp_ack_optimized | 2 | TCP ACK floods ¶ attack_tcp_stomp_optimized | 1 | TCP ACK+PSH floods ¶ attack_udp_dns_optimized | 2 | DNS query floods ¶ attack_miner | 1 | Cryptocurrency mining placeholder",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Handler (Designator)",
+      "Vectors",
+      "Description"
+     ],
+     [
+      "attack_udp_generic_optimized",
+      "25",
+      "UDP/GRE/ICMP floods using raw sockets with sendmmsg() batches of 512 packets"
+     ],
+     [
+      "attack_tcp_syn_optimized",
+      "47",
+      "TCP SYN floods, also mapped to all Layer 7 HTTP method IDs"
+     ],
+     [
+      "attack_tcp_ack_optimized",
+      "2",
+      "TCP ACK floods"
+     ],
+     [
+      "attack_tcp_stomp_optimized",
+      "1",
+      "TCP ACK+PSH floods"
+     ],
+     [
+      "attack_udp_dns_optimized",
+      "2",
+      "DNS query floods"
+     ],
+     [
+      "attack_miner",
+      "1",
+      "Cryptocurrency mining placeholder"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "Table 5. DDoS method handlers and their descriptions.",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "The 47 vectors mapped to attack_tcp_syn_optimized include all application-layer methods for HTTP that the developer attempted to port from MHDDoS:",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "GET floods",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "POST floods",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "Slowloris DDoS attacks",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "Apache Range header attacks",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "WordPress XMLRPC pingback attacks",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "Cloudflare bypass attack variants",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "These methods have source code implementations, but attack_init() routes all of their vector IDs to the TCP SYN handler. An operator who types !get target 60 expecting an HTTP GET flood instead gets a TCP SYN flood.",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "The HTTP attack methods are compiled into the binary as dead code. Figure 11 shows the command for a controlled bot to launch an attack against a given IP address and port number.",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Figure 10. TuxBot C2 panel connection showing the launch of an attack through the connected bot.",
+   "type": "caption",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "The source tree contains approximately 92 individual method implementations across three lineages:",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "30 from the traditional Mirai codebase",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "12 AISURU-suffixed variants with sendmmsg() batch optimization",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "8 Wuhan-suffixed variants bridged through adapter code",
+   "type": "list",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "These exist in the compiled binary but are never called because attack_init() redirects everything to the six optimized handlers shown in Figure 12 below.",
+   "type": "paragraph",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "Figure 11. TuxBot C2 panel connection showing the launch of an attack through the connected bot.",
+   "type": "caption",
+   "section": "DDoS Methods"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "Network HTTP Brute-Forcing Scanning Support",
+   "type": "heading",
+   "level": 3,
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "The source code reveals a modular architecture designed for high-efficiency network scanning, specifically using a dedicated HTTP scanning routine to discover vulnerable web interfaces.",
+   "type": "paragraph",
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "The HTTP scanner operates as an isolated child process that manages up to 128 concurrent connections in an infinite, non-blocking select() loop. For each idle slot (approximately 5% chance per tick), it targets a random public IP address on TCP port 80 or 8080, excluding loopback and non-routable IP address ranges.",
+   "type": "paragraph",
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "The scanner then attempts a non-blocking TCP connection to a random administrative endpoint (such as /admin or /cpanel). It does so using credential combinations (like admin:admin) from hard-coded lists via a Base64-encoded Authorization: Basic header in an HTTP GET request.",
+   "type": "paragraph",
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "If the response yields a successful HTTP/1.* with 200 OK status strings, the scanner prints a debug log and terminates the connection. Crucially, the source code indicates that this feature was not fully implemented, as the successful propagation logic is stubbed out and completely lacks the functionality to report successful infections back to the C2 server. If the attempt times out after 5 seconds or fails, it simply closes the connection and frees the slot for reuse.",
+   "type": "paragraph",
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "Figure 12 shows an example of the scanning traffic filtered in Wireshark.",
+   "type": "paragraph",
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "Figure 12. Network HTTP brute-force scanning traffic from an infected machine.",
+   "type": "caption",
+   "section": "Network HTTP Brute-Forcing Scanning Support"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "Persistence and Stealth",
+   "type": "heading",
+   "level": 3,
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "The persistence and stealth subsystems follow patterns well established in the IoT botnet ecosystem, so we will not describe every technique in detail. TuxBot installs itself through seven persistence mechanisms:",
+   "type": "paragraph",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "A systemd service disguised as sd-pam.service with Restart=always",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "Two cron entries (@reboot and */5 * * * *)",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "Shell profile injection into .bashrc, .profile and .zshrc files",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "Hidden backup copies at three file system locations",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "A guardian process with crash backoff",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "Hardware watchdog keepalive",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "Periodic binary relocation across 21 directories with dot-prefixed filenames",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "This process masquerades under one of 20 system daemon names (such as systemd-udevd, dbus-daemon, cron, sshd) selected at random",
+   "type": "list",
+   "section": "Persistence and Stealth"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "Self-Defense Mechanisms",
+   "type": "heading",
+   "level": 3,
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "The Anti-VM module implements a weighted scoring system with a threshold of 30, combining more than 10 detection methods, including:",
+   "type": "paragraph",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "DMI file checks for VMware/VirtualBox/QEMU",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "MAC address prefix matching for seven VM vendors",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "Disk size and CPU count heuristics",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "Timing-based detection",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Kernel module scanning",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "Checks for running analysis tools (gdb, IDA, Ghidra, radare2, Wireshark, Volatility).",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "A competitor killer feature",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "Scans of /proc for memory signatures of Mirai, QBOT, Vamp, Anime and dvrHelper",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Killing matches and binding their ports to prevent re-infection",
+   "type": "list",
+   "section": "Self-Defense Mechanisms"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "LLM-Assisted Development",
+   "type": "heading",
+   "level": 2,
+   "section": "LLM-Assisted Development"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Analysis Details",
+   "type": "heading",
+   "level": 3,
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "The developer used an LLM to write a significant part of this framework. Multiple files contain raw LLM chain-of-thought reasoning left verbatim in comments. These comments are the LLM's internal reasoning as it worked through porting tasks. This reasoning is complete with self-interruptions, decisions and references to “the user” (meaning the developer who prompted the LLM). Here are a few examples:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "While trying to port an ADB exploit to the custom .expl format, the LLM writes:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "// If the user insists on \"all exploits\", I will add it but with a NOTE that checksums might fail.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "The LLM is questioning whether it remembers code it generated earlier in the same conversation:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "// I created them so I should know?",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "Discovering that a Python exploit script it was porting is broken:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "// Wait, where is the command?",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "These patterns recur throughout the exploit files:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "Self-interruptions (Wait)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "Self-corrections (Actually)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "Investigation prompts (Let's check)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "First-person task narration (I will)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "Structured decision labels (DECISION:)",
+   "type": "list",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "One comment reads // Correct action: I've already explored it. I will check other files. These comments are an LLM narrating its own workflow to itself. Human developers do not usually write comments like these.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": "The same patterns appear in the C bot modules. Comments include:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "Actually, TFTP requires lock-step ACK, Let's assume if the system() call returns, we might want to exit and actually crypto_core allows generating them from a seed. Let's use a random seed.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "The most consequential LLM artifact is in the C2 authentication module. The file header claims to implement Argon2id password hashing. The section header reads PASSWORD HASHING - ARGON2ID. The function comment says HashPassword creates a cryptographically secure password hash using Argon2id.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "Related LLM comments include:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "// Since golang.org/x/crypto/argon2 isn't imported, we'll use our enhanced PBKDF2",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "// with very high iterations as a strong alternative",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "hash := deriveKeyEnhanced(password, salt)",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "Despite its use of PKBDF2 for password hashing, the LLM formats the output to look like Argon2id anyway:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "return fmt.Sprintf(\"$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s\", ...)",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": "The LLM hallucinated that it implemented Argon2id but actually fell back to SHA256 loops while keeping the Argon2id comments, constants and output format.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "Every .c file in the bot directory (approximately 60 files) carries an identical header:",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": "WARNING: This code is for educational and authorized security research only. Unauthorized use is strictly prohibited and may be illegal.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "The LLM complied with the request to generate botnet code but added a safety disclaimer. The developer shipped it without removing it.",
+   "type": "paragraph",
+   "section": "Analysis Details"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "What Works and What Does Not",
+   "type": "heading",
+   "level": 2,
+   "section": "What Works and What Does Not"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": "Table 6 summarizes the operational status of each major component of TuxBot v3 Evolution.",
+   "type": "paragraph",
+   "section": "What Works and What Does Not"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "Component | Status ¶ Multi-architecture compilation (17 targets) | Functional ¶ Primary encrypted C2 (X25519 + ChaCha20-Poly1305) | Functional ¶ Telnet brute-force scanner (1,496 credentials) | Functional ¶ SSH scanner | Functional ¶ HTTP scanner | Functional ¶ ADB scanner | Functional ¶ Exploit engine | Dead code. It could be activated by adding a call to the exploit engine function. ¶ Exploit VM | Broken ¶ RCE scanner | Partial ¶ DDoS (UDP/TCP/DNS floods) | Functional ¶ Persistence (systemd/cron/shell/watchdog) | Functional ¶ Stealth (process mimicry/relocation/anti-VM) | Functional ¶ Competitor killing | Functional ¶ DGA (SHA-512, 20 domains/day) | Functional ¶ P2P gossip (Ed25519 signed) | Functional ¶ Credential list | Functional ¶ IRC C2 fall back | Broken ¶ HTTP C2 fall back | Broken ¶ XOR table exploit payloads (4 entries) | Broken ¶ L7 HTTP DDoS methods (MHDDoS port) | Dead code ¶ Polymorphic engine | Dead code ¶ CF/CAPTCHA bypass modules | Dead code ¶ Mining | Placeholder/Non-Functional ¶ Windows build | Non-Functional",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Component",
+      "Status"
+     ],
+     [
+      "Multi-architecture compilation (17 targets)",
+      "Functional"
+     ],
+     [
+      "Primary encrypted C2 (X25519 + ChaCha20-Poly1305)",
+      "Functional"
+     ],
+     [
+      "Telnet brute-force scanner (1,496 credentials)",
+      "Functional"
+     ],
+     [
+      "SSH scanner",
+      "Functional"
+     ],
+     [
+      "HTTP scanner",
+      "Functional"
+     ],
+     [
+      "ADB scanner",
+      "Functional"
+     ],
+     [
+      "Exploit engine",
+      "Dead code. It could be activated by adding a call to the exploit engine function."
+     ],
+     [
+      "Exploit VM",
+      "Broken"
+     ],
+     [
+      "RCE scanner",
+      "Partial"
+     ],
+     [
+      "DDoS (UDP/TCP/DNS floods)",
+      "Functional"
+     ],
+     [
+      "Persistence (systemd/cron/shell/watchdog)",
+      "Functional"
+     ],
+     [
+      "Stealth (process mimicry/relocation/anti-VM)",
+      "Functional"
+     ],
+     [
+      "Competitor killing",
+      "Functional"
+     ],
+     [
+      "DGA (SHA-512, 20 domains/day)",
+      "Functional"
+     ],
+     [
+      "P2P gossip (Ed25519 signed)",
+      "Functional"
+     ],
+     [
+      "Credential list",
+      "Functional"
+     ],
+     [
+      "IRC C2 fall back",
+      "Broken"
+     ],
+     [
+      "HTTP C2 fall back",
+      "Broken"
+     ],
+     [
+      "XOR table exploit payloads (4 entries)",
+      "Broken"
+     ],
+     [
+      "L7 HTTP DDoS methods (MHDDoS port)",
+      "Dead code"
+     ],
+     [
+      "Polymorphic engine",
+      "Dead code"
+     ],
+     [
+      "CF/CAPTCHA bypass modules",
+      "Dead code"
+     ],
+     [
+      "Mining",
+      "Placeholder/Non-Functional"
+     ],
+     [
+      "Windows build",
+      "Non-Functional"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "What Works and What Does Not"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "Table 6. Operational status for each TuxBot framework component.",
+   "type": "paragraph",
+   "section": "What Works and What Does Not"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": "During our research, we were able to fix these issues with a handful of LLM-assisted prompts. We reconstructed the correct table entries and fixed the IRC C2 channel with a few targeted prompts. Given that the operator already has the source code and has been actively deploying binaries (six new samples in April 2026), we can reasonably assume that a version with some or all of these fixes already exists in the wild.",
+   "type": "paragraph",
+   "section": "What Works and What Does Not"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "Infrastructure and Ecosystem",
+   "type": "heading",
+   "level": 2,
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "By searching through publicly available data, we found active infrastructure and connections to the broader IoT botnet ecosystem.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "The primary C2 server is hosted at 209.182.237[.]133, in Singapore. Connecting to TCP port 2222 on this server presents the banner SSH-2.0-CNC-Control-Server, first observed on Xpanse on March 5, 2026, and also visible through Shodan. The SSH key exchange includes a key exchange algorithm that fingerprints Go's crypto/ssh library rather than OpenSSH.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b276",
+   "page": null,
+   "text": "The dropper server at 185.10.68[.]127 is hosted on FlokiNET, an Iceland-based provider known for bulletproof hosting. This IP address had 11/91 malicious detections on VirusTotal in May 2026, with at least 10 communicating malware samples and six associated downloads.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b277",
+   "page": null,
+   "text": "This dropper server serves TuxBot payloads at /bins/bot.<arch> and, on different URL paths, also serves Kaitori v3.9 binaries. Passive DNS history for this IP address shows domains consistent with DDoS-for-hire operations going back to 2021, with the domains vrunabo[.]su, rezy1337.ted[.]ge and high.cpu.co[.]ua.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b278",
+   "page": null,
+   "text": "These two servers are linked by the jetross[.]com Let's Encrypt TLS certificate that appears on both hosts, tying the C2 server in Singapore to the dropper in Iceland under the same operator.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b279",
+   "page": null,
+   "text": "The dropper IP address is the pivot point that connects TuxBot to the wider Keksec/AISURU ecosystem. Kaitori v3.9 samples recovered from our internal telemetry in July 2025 (82 samples) downloaded their payloads from 185.10.68[.]127 on different URL paths. A separate sample, a Go binary, communicates with both 194.46.59[.]169 (a known AISURU IP address) and 185.10.68[.]127. TuxBot, Kaitori and AISURU tooling all converge on the same dropper server, but they are separate codebases.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b280",
+   "page": null,
+   "text": "One additional artifact sits in the source code. The RCE scanning engine contains a hard-coded payload that downloads from hxxp[:]//188.166.2[.]226/OwO/Tsunami.x86 with the user-agent r00ts3c-owned-you. This string was copy-pasted from the r00ts3c Tsunami codebase, which was included in the MHDDoS repository that the developer cloned in January 2025.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b281",
+   "page": null,
+   "text": "The IP address is a decommissioned DigitalOcean droplet now serving Ubiquiti's UISP platform. This payload is dead code.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b282",
+   "page": null,
+   "text": "The developer domain digikalas[.]online resolves to 37.32.24[.]195 on Iran's Noyan Abr Arvan. Its TLS certificate covers api.digikalas[.]online and health.digikalas[.]online, suggesting it hosts a web application beyond the malware development context. The developer subdomain was leaked in the git historical log data.",
+   "type": "paragraph",
+   "section": "Infrastructure and Ecosystem"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "Our discovery of TuxBot v3 Evolution reveals a development snapshot of an IoT botnet framework. The framework has working core capabilities and several broken features that trace to a small number of reproducible bugs.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "Binaries compiled from this framework have been appearing in the wild since January 2026. The C2 infrastructure has been active since at least March 2026.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "The developer relied heavily on LLM-generated code throughout the project. That approach accelerated integration and allowed what could be a single developer to produce a multi-architecture botnet with:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "Encrypted C2",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "A DGA",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "P2P gossip",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b290",
+   "page": null,
+   "text": "A custom exploit VM",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b291",
+   "page": null,
+   "text": "A Go-based DDoS-for-hire panel",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b292",
+   "page": null,
+   "text": "The LLM also introduced bugs that went unnoticed because the generated code reads well on the surface. The XOR key mismatch, the VM magic incompatibility, the exploit engine that never gets called and the hallucinated Argon2id implementation are the kind of errors that a manual code review would have caught immediately. The developer trusted the output and moved on.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b293",
+   "page": null,
+   "text": "Shared infrastructure with Kaitori v3.9 and AISURU tooling places the TuxBot operator within the Keksec ecosystem. This group is known for running multiple IoT botnet variants in parallel.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "TuxBot appears to be another variant in that portfolio. It’s one that aims to go beyond the usual Mirai fork with its encrypted C2, its DGA and a modular exploit system, even though that system does not work yet in the version we recovered.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b295",
+   "page": null,
+   "text": "The broken features can be fixed. We demonstrated this during our analysis by reconstructing the IRC C2 channel and decrypting the mismatched table entries with a few targeted LLM prompts. A fully working version of this framework is not a theoretical concern, but a likely threat.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected from the threats discussed above through the following products:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b297",
+   "page": null,
+   "text": "The Advanced WildFire machine-learning models and analysis techniques have been reviewed and updated in light of the indicators shared in this research.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b298",
+   "page": null,
+   "text": "Advanced URL Filtering and Advanced DNS Security identify known domains and URLs associated with this activity as malicious.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "Advanced Threat Prevention is designed to defend networks against both commodity threats and targeted threats.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b300",
+   "page": null,
+   "text": "If you think you may have been compromised or have an urgent matter, get in touch with the Unit 42 Incident Response team or call:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b301",
+   "page": null,
+   "text": "North America: Toll Free: +1 (866) 486-4842 (866.4.UNIT42)",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b302",
+   "page": null,
+   "text": "UK: +44.20.3743.3660",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "Europe and Middle East: +31.20.299.3130",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b304",
+   "page": null,
+   "text": "Asia: +65.6983.8730",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b305",
+   "page": null,
+   "text": "Japan: +81.50.1790.0200",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b306",
+   "page": null,
+   "text": "Australia: +61.2.4062.7950",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b307",
+   "page": null,
+   "text": "India: 000 800 050 45107",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b308",
+   "page": null,
+   "text": "South Korea: +82.080.467.8774",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b309",
+   "page": null,
+   "text": "Palo Alto Networks has shared these findings with our fellow Cyber Threat Alliance (CTA) members. CTA members use this intelligence to rapidly deploy protections to their customers and to systematically disrupt malicious cyber actors. Learn more about the Cyber Threat Alliance.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b310",
+   "page": null,
+   "text": "Indicators of Compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b311",
+   "page": null,
+   "text": "TuxBot Framework (Compiled Malicious Binaries):",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b312",
+   "page": null,
+   "text": "SHA256 hash: 6b7a8e0c96c2318e747f074f9a99d26738700769ac01bba692d19fc884847737",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b312"
+  },
+  {
+   "id": "b313",
+   "page": null,
+   "text": "File size: 1,456,432 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b312"
+  },
+  {
+   "id": "b314",
+   "page": null,
+   "text": "Filename: tuxbot.alpha",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b312"
+  },
+  {
+   "id": "b315",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, Alpha (unofficial), version 1 (SYSV), statically linked, BuildID[sha1]=cd540bb31909440fd2bf773e6f1480f5b6f12400, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b312"
+  },
+  {
+   "id": "b316",
+   "page": null,
+   "text": "SHA256 hash: 146f6010f6ee082aab13e0148d39baefa77eaba4ff65817b511b08c2092bdfd2",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b316"
+  },
+  {
+   "id": "b317",
+   "page": null,
+   "text": "File size: 1,234,964 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b316"
+  },
+  {
+   "id": "b318",
+   "page": null,
+   "text": "Filename: tuxbot.arm",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b316"
+  },
+  {
+   "id": "b319",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, BuildID[sha1]=877b804892ab218a53420b6dfbd0a2837368d0b5, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b316"
+  },
+  {
+   "id": "b320",
+   "page": null,
+   "text": "SHA256 hash: bd6431fb06e4689142ef597cf00382e38ae20a5393a4d9277e45a3f5b3cbcff9",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b320"
+  },
+  {
+   "id": "b321",
+   "page": null,
+   "text": "File size: 1,329,000 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b320"
+  },
+  {
+   "id": "b322",
+   "page": null,
+   "text": "Filename: tuxbot.arm64",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b320"
+  },
+  {
+   "id": "b323",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, ARM aarch64, version 1 (GNU/Linux), statically linked, BuildID[sha1]=b21cdc5e1b96c640a1d553ed518c49729e367823, for GNU/Linux 3.7.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b320"
+  },
+  {
+   "id": "b324",
+   "page": null,
+   "text": "SHA256 hash: a03b0d41f5ef03328150331ffa0ed970998883f7e0343d79b2d3b95330d8e7c1",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b324"
+  },
+  {
+   "id": "b325",
+   "page": null,
+   "text": "File size: 972,032 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b324"
+  },
+  {
+   "id": "b326",
+   "page": null,
+   "text": "Filename: tuxbot.arm7",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b324"
+  },
+  {
+   "id": "b327",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, EABI5 version 1 (GNU/Linux), statically linked, BuildID[sha1]=a70cea846442c18ad265f311b5ced29a4071771d, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b324"
+  },
+  {
+   "id": "b328",
+   "page": null,
+   "text": "SHA256 hash: eb2fa179fde2f097c18d5d700ad87d660fc238ee14cbe5477032e60856859621",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b328"
+  },
+  {
+   "id": "b329",
+   "page": null,
+   "text": "File size: 1,352,256 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b328"
+  },
+  {
+   "id": "b330",
+   "page": null,
+   "text": "Filename: tuxbot.hppa",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b328"
+  },
+  {
+   "id": "b331",
+   "page": null,
+   "text": "File type: ELF 32-bit MSB executable, PA-RISC, 1.1 version 1 (GNU/Linux), statically linked, BuildID[sha1]=69dc276dde8efcb409411508da55d4cbe28d5600, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b328"
+  },
+  {
+   "id": "b332",
+   "page": null,
+   "text": "SHA256 hash: a8d70d16509e227d8306be361bc37a3dc9fe34bf476f51e361e55e6d293c2b3f",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b332"
+  },
+  {
+   "id": "b333",
+   "page": null,
+   "text": "File size: 1,160,756 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b332"
+  },
+  {
+   "id": "b334",
+   "page": null,
+   "text": "Filename: tuxbot.m68k",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b332"
+  },
+  {
+   "id": "b335",
+   "page": null,
+   "text": "File type: ELF 32-bit MSB executable, Motorola m68k, 68020, version 1 (SYSV), statically linked, BuildID[sha1]=adf267caab78a74c4b4dfabe7b578b0a4d639782, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b332"
+  },
+  {
+   "id": "b336",
+   "page": null,
+   "text": "SHA256 hash: 0f8bcca3ed65e980da2a1f90a767b7d543be32eeea3e9338d09d4d635a497988",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b336"
+  },
+  {
+   "id": "b337",
+   "page": null,
+   "text": "File size: 1,431,220 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b336"
+  },
+  {
+   "id": "b338",
+   "page": null,
+   "text": "Filename: tuxbot.mips",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b336"
+  },
+  {
+   "id": "b339",
+   "page": null,
+   "text": "File type: ELF 32-bit MSB executable, MIPS, MIPS32 rel2 version 1 (SYSV), statically linked, BuildID[sha1]=a8fd13f6b1bdfa87c0f466df69b7e81325b5dd15, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b336"
+  },
+  {
+   "id": "b340",
+   "page": null,
+   "text": "SHA256 hash: 96b1f96efca3b9df2dea85678d60da27e3265b4a00e39e20e64b27bb985e1561",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b340"
+  },
+  {
+   "id": "b341",
+   "page": null,
+   "text": "File size: 1,468,624 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b340"
+  },
+  {
+   "id": "b342",
+   "page": null,
+   "text": "Filename: tuxbot.mips64",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b340"
+  },
+  {
+   "id": "b343",
+   "page": null,
+   "text": "File type: ELF 64-bit MSB executable, MIPS, MIPS64 rel2 version 1 (SYSV), statically linked, BuildID[sha1]=befb0e4d1cd7d2b4139b55f811993af2c8839e75, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b340"
+  },
+  {
+   "id": "b344",
+   "page": null,
+   "text": "SHA256 hash: c7a36d6b8128c41f93a32413675401a10a2b5769b221bbaa8c5c309585b73ceb",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b344"
+  },
+  {
+   "id": "b345",
+   "page": null,
+   "text": "File size: 1,403,096 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b344"
+  },
+  {
+   "id": "b346",
+   "page": null,
+   "text": "Filename: tuxbot.mips64el",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b344"
+  },
+  {
+   "id": "b347",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, MIPS, MIPS64 rel2 version 1 (SYSV), statically linked, BuildID[sha1]=e0f8dd23e4fb0086feb42ea0a5dcef70d7b4d17c, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b344"
+  },
+  {
+   "id": "b348",
+   "page": null,
+   "text": "SHA256 hash: 246c97957651de568e61eba1abe572f0b0f960456209995d43d53a0d7cc494a1",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b348"
+  },
+  {
+   "id": "b349",
+   "page": null,
+   "text": "File size: 1,431,268 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b348"
+  },
+  {
+   "id": "b350",
+   "page": null,
+   "text": "Filename: tuxbot.mipsel",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b348"
+  },
+  {
+   "id": "b351",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, MIPS, MIPS32 rel2 version 1 (SYSV), statically linked, BuildID[sha1]=7ad840b1945cc346012987727ebcc062431965a4, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b348"
+  },
+  {
+   "id": "b352",
+   "page": null,
+   "text": "SHA256 hash: 3ec016d637e4c9cd331edd2580a229621ad638e924a4aa29ac0342e9144ace19",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b352"
+  },
+  {
+   "id": "b353",
+   "page": null,
+   "text": "File size: 1,492,228 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b352"
+  },
+  {
+   "id": "b354",
+   "page": null,
+   "text": "Filename: tuxbot.ppc",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b352"
+  },
+  {
+   "id": "b355",
+   "page": null,
+   "text": "File type: ELF 32-bit MSB executable, PowerPC or cisco 4500, version 1 (SYSV), statically linked, BuildID[sha1]=4e1483737f769e1cee80fa4d7a056a5d8e3b537e, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b352"
+  },
+  {
+   "id": "b356",
+   "page": null,
+   "text": "SHA256 hash: 2f2c3551762c03da126e45dca6fc2f997c63f0f1bfc21fd0ceed680ac6f083ce",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b356"
+  },
+  {
+   "id": "b357",
+   "page": null,
+   "text": "File size: 1,721,904 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b356"
+  },
+  {
+   "id": "b358",
+   "page": null,
+   "text": "Filename: tuxbot.ppc64le",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b356"
+  },
+  {
+   "id": "b359",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, 64-bit PowerPC or cisco 7500, version 1 (GNU/Linux), statically linked, BuildID[sha1]=4cba585d9f208bd712b28f867f908e503ccc9cfe, for GNU/Linux 3.10.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b356"
+  },
+  {
+   "id": "b360",
+   "page": null,
+   "text": "SHA256 hash: 9cd5e7e3c8bad321ef6c3d47fe25b3b56e9487f703a7eeee52db4067e6bafe61",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b360"
+  },
+  {
+   "id": "b361",
+   "page": null,
+   "text": "File size: 1,185,264 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b360"
+  },
+  {
+   "id": "b362",
+   "page": null,
+   "text": "Filename: tuxbot.riscv64",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b360"
+  },
+  {
+   "id": "b363",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, UCB RISC-V, version 1 (GNU/Linux), statically linked, BuildID[sha1]=64af594c7f91793813e3d769e63816b143102396, for GNU/Linux 4.15.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b360"
+  },
+  {
+   "id": "b364",
+   "page": null,
+   "text": "SHA256 hash: e3a5296e762e9ee16010399666441d663beeea956382e97cca032a6a5ad06811",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b364"
+  },
+  {
+   "id": "b365",
+   "page": null,
+   "text": "File size: 1,542,064 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b364"
+  },
+  {
+   "id": "b366",
+   "page": null,
+   "text": "Filename: tuxbot.s390x",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b364"
+  },
+  {
+   "id": "b367",
+   "page": null,
+   "text": "File type: ELF 64-bit MSB executable, IBM S/390, version 1 (GNU/Linux), statically linked, BuildID[sha1]=2774a5f5991657eb9b0062cd3da0391c9bad2643, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b364"
+  },
+  {
+   "id": "b368",
+   "page": null,
+   "text": "SHA256 hash: f1efb78887bb8783d7781c07cd13b53c9c79ebe5baa81f335838d0a6e73dec7e",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b368"
+  },
+  {
+   "id": "b369",
+   "page": null,
+   "text": "File size: 1,096,720 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b368"
+  },
+  {
+   "id": "b370",
+   "page": null,
+   "text": "Filename: tuxbot.sh4",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b368"
+  },
+  {
+   "id": "b371",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, Renesas SH, version 1 (SYSV), statically linked, BuildID[sha1]=304e14a138b92135aad27bb37f4e9db440401ec2, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b368"
+  },
+  {
+   "id": "b372",
+   "page": null,
+   "text": "SHA256 hash: f324a45fcd2a9db4e542c09486c21b08bc42d6bf76fbd5f17871090361b10815",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b372"
+  },
+  {
+   "id": "b373",
+   "page": null,
+   "text": "File size: 2,240,240 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b372"
+  },
+  {
+   "id": "b374",
+   "page": null,
+   "text": "Filename: tuxbot.sparc64",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b372"
+  },
+  {
+   "id": "b375",
+   "page": null,
+   "text": "File type: ELF 64-bit MSB executable, SPARC V9, Sun UltraSPARC1 Extensions Required, relaxed memory ordering, version 1 (GNU/Linux), statically linked, BuildID[sha1]=74fba0bad93bbb0e1eedb196b6efe6af1c0bf23d, for GNU/Linux 3.2.0, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b372"
+  },
+  {
+   "id": "b376",
+   "page": null,
+   "text": "SHA256 hash: 15c17dce89deccd5172285b2650de957918aa1157cde8e4633ae15dfe31f2711",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b376"
+  },
+  {
+   "id": "b377",
+   "page": null,
+   "text": "File size: 1,491,208 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b376"
+  },
+  {
+   "id": "b378",
+   "page": null,
+   "text": "Filename: tuxbot.x86_64",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b376"
+  },
+  {
+   "id": "b379",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, x86-64, version 1 (GNU/Linux), statically linked, BuildID[sha1]=81670f250f4b3492fd3e00920f9fe7395ecbf85c, for GNU/Linux 3.2.0, stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b376"
+  },
+  {
+   "id": "b380",
+   "page": null,
+   "text": "Confirmed TuxBot (External samples):",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b381",
+   "page": null,
+   "text": "SHA256 hash: 71dfbb171eca4ef9d02ff630b56e5283bbef7b375d4dbe9e8c9531bef312fa8d",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b381"
+  },
+  {
+   "id": "b382",
+   "page": null,
+   "text": "File size: 2,274,688 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b381"
+  },
+  {
+   "id": "b383",
+   "page": null,
+   "text": "Filename: .bot_x86_64",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b381"
+  },
+  {
+   "id": "b384",
+   "page": null,
+   "text": "File type: ELF 64-bit LSB executable, x86-64, version 1 (GNU/Linux), statically linked, BuildID[sha1]=b1cc41e2b9ddb11d0c9d03d319531fea9459cdae, for GNU/Linux 3.2.0, with debug_info, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b381"
+  },
+  {
+   "id": "b385",
+   "page": null,
+   "text": "Confirmed TuxBot (Internal samples):",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b386",
+   "page": null,
+   "text": "SHA256 hash: 511d3ffb4091cbcc94571d9fb3102e8cb424c6e187d01d53ff12078d54929bda",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b386"
+  },
+  {
+   "id": "b387",
+   "page": null,
+   "text": "File size: 163,121 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b386"
+  },
+  {
+   "id": "b388",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, version 1 (ARM), statically linked, with debug_info, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b386"
+  },
+  {
+   "id": "b389",
+   "page": null,
+   "text": "SHA256 hash: 6aa4034dc7a2858094ff4dc59af07d6fe31119591e41599bcc0f3d0b516ee734",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b389"
+  },
+  {
+   "id": "b390",
+   "page": null,
+   "text": "File size: 163,120 bytes",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b389"
+  },
+  {
+   "id": "b391",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, version 1 (ARM), statically linked, with debug_info, not stripped",
+   "type": "list",
+   "section": "Indicators of Compromise",
+   "line_group": "b389"
+  },
+  {
+   "id": "b392",
+   "page": null,
+   "text": "TuxBot C2 Servers:",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b393",
+   "page": null,
+   "text": "185.10.68[.]127 - Dropper (HTTP, /bins/bot.<arch>)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b394",
+   "page": null,
+   "text": "209.182.237[.]133:1999/31337 - Bot protocol (encrypted TCP)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b395",
+   "page": null,
+   "text": "209.182.237[.]133:2222 - C2 SSH admin panel",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b396",
+   "page": null,
+   "text": "209.182.237[.]133:9999 - Machine API (TCP JSON)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b397",
+   "page": null,
+   "text": "Keksec/Kaitori (not TuxBot directly):",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b398",
+   "page": null,
+   "text": "45.145.185[.]229 - Keksec dropper (/bins/keksec.mips)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b399",
+   "page": null,
+   "text": "107.174.133[.]119 - Keksec dropper (Huawei exploit payload)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b400",
+   "page": null,
+   "text": "194.46.59[.]169 - AISURU infrastructure (yamux Go tool)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b401",
+   "page": null,
+   "text": "Historical IP addresses:",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b402",
+   "page": null,
+   "text": "188.166.2[.]226 - Tsunami dropper (dead code in RCE exploit). Now serves Ubiquiti UISP. Blocking will affect legitimate services.",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b403",
+   "page": null,
+   "text": "154.6.197[.]43 - Present in the bot source code as scan/server domain. Successful Telnet logins are reported to this IP address. Flagged as a scanner by GreyNoise.",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b404",
+   "page": null,
+   "text": "Domains:",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b405",
+   "page": null,
+   "text": "c2.tuxbot.local - DNS fall-back C2 domain (hard coded in binary)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b406",
+   "page": null,
+   "text": "cfcybernews[.]eu - Test domain leaked by CF bypass module",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b407",
+   "page": null,
+   "text": "captcha.kanfetka[.]site - Test domain leaked by CAPTCHA bypass module",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b408",
+   "page": null,
+   "text": "digikalas[.]online - Developer domain",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b409",
+   "page": null,
+   "text": "jetross[.]com - TLS certificate linking the C2 server to the dropper",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b410",
+   "page": null,
+   "text": "Host Indicators:",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b411",
+   "page": null,
+   "text": "Infected By Akiru - Console output after bot execution",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b412",
+   "page": null,
+   "text": "/bin/busybox Akiru - Busybox probe during Telnet scanning",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b413",
+   "page": null,
+   "text": "Akiru: applet not found - Expected response to busybox probe",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b414",
+   "page": null,
+   "text": "sd-pam.service - Systemd persistence service name",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b415",
+   "page": null,
+   "text": "/tmp/.%08x.lock - Lock file format for single-instance enforcement",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b416",
+   "page": null,
+   "text": "Network Indicators:",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b417",
+   "page": null,
+   "text": "0xDEADBE01 + 32 bytes - C2 handshake initiation (X25519 public key)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b418",
+   "page": null,
+   "text": "0xDEADBEEF + 12-byte nonce + ciphertext + 16-byte MAC - Encrypted C2 packet format",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b419",
+   "page": null,
+   "text": "User-Agent: TuxBot - HTTP requests from bot",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b420",
+   "page": null,
+   "text": "User-Agent: r00ts3c-owned-you - RCE (dead code, inherited from MHDDoS)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b421",
+   "page": null,
+   "text": "SSH banner: SSH-2.0-CNC-Control-Server - C2 SSH service (Shodan fingerprint)",
+   "type": "list",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b422",
+   "page": null,
+   "text": "Exploited CVEs",
+   "type": "heading",
+   "level": 3,
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b423",
+   "page": null,
+   "text": "Implemented but never called at runtime:",
+   "type": "paragraph",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b424",
+   "page": null,
+   "text": "CVE-2013-7471",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b425",
+   "page": null,
+   "text": "CVE-2014-8361",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b426",
+   "page": null,
+   "text": "CVE-2014-2321",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b427",
+   "page": null,
+   "text": "CVE-2017-17215",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b428",
+   "page": null,
+   "text": "CVE-2017-18377",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b429",
+   "page": null,
+   "text": "CVE-2018-10561",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b430",
+   "page": null,
+   "text": "CVE-2018-10562",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b431",
+   "page": null,
+   "text": "CVE-2018-20062",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b432",
+   "page": null,
+   "text": "CVE-2020-17456",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b433",
+   "page": null,
+   "text": "CVE-2022-30525",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b434",
+   "page": null,
+   "text": "CVE-2023-39780",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b435",
+   "page": null,
+   "text": "CVE-2025-34037",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b436",
+   "page": null,
+   "text": "CVE-2026-5815",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b437",
+   "page": null,
+   "text": "Completely Broken (exploit VM magic mismatch, never executes):",
+   "type": "paragraph",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b438",
+   "page": null,
+   "text": "CVE-2007-3010",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b439",
+   "page": null,
+   "text": "CVE-2007-5693",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b440",
+   "page": null,
+   "text": "CVE-2016-11021",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b441",
+   "page": null,
+   "text": "CVE-2020-8515",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b442",
+   "page": null,
+   "text": "CVE-2021-4045",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b443",
+   "page": null,
+   "text": "CVE-2021-25646",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b444",
+   "page": null,
+   "text": "CVE-2022-1388",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b445",
+   "page": null,
+   "text": "CVE-2022-22947",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b446",
+   "page": null,
+   "text": "CVE-2022-22965",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b447",
+   "page": null,
+   "text": "CVE-2022-44877",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b448",
+   "page": null,
+   "text": "CVE-2023-1389",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b449",
+   "page": null,
+   "text": "CVE-2025-34117",
+   "type": "list",
+   "section": "Exploited CVEs"
+  },
+  {
+   "id": "b450",
+   "page": null,
+   "text": "Additional Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b451",
+   "page": null,
+   "text": "QiAnXin XLab – AISURU Botnet Reports",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b452",
+   "page": null,
+   "text": "Cloudflare Radar – DDoS Threat Reports",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b453",
+   "page": null,
+   "text": "Tags",
+   "type": "heading",
+   "level": 3,
+   "section": "Tags"
+  },
+  {
+   "id": "b454",
+   "page": null,
+   "text": "C2",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b455",
+   "page": null,
+   "text": "DGA",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b456",
+   "page": null,
+   "text": "Docker compose",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b457",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b458",
+   "page": null,
+   "text": "TuxBot v3 Evolution",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b459",
+   "page": null,
+   "text": "VirusTotal",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b460",
+   "page": null,
+   "text": "XOR",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b461",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b462",
+   "page": null,
+   "text": "Next: No Manners Here: The Ruthless Rise of The Gentlemen Ransomware",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b463",
+   "page": null,
+   "text": "Table of Contents",
+   "type": "heading",
+   "level": 3,
+   "section": "Table of Contents"
+  },
+  {
+   "id": "b464",
+   "page": null,
+   "text": "Related Articles",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b465",
+   "page": null,
+   "text": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b466",
+   "page": null,
+   "text": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b467",
+   "page": null,
+   "text": "Identity Abuse Through Trusted Communication Channels",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b468",
+   "page": null,
+   "text": "Related Malware Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b469",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b470",
+   "page": null,
+   "text": "October 15, 2026",
+   "type": "paragraph",
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b471",
+   "page": null,
+   "text": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b472",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b473",
+   "page": null,
+   "text": "LLM",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b474",
+   "page": null,
+   "text": "Network security",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b475",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b476",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b477",
+   "page": null,
+   "text": "October 14, 2026",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b478",
+   "page": null,
+   "text": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+   "type": "heading",
+   "level": 4,
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b479",
+   "page": null,
+   "text": "Apache",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b480",
+   "page": null,
+   "text": "CL-STA-0954",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b481",
+   "page": null,
+   "text": "Logging",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b482",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b483",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b484",
+   "page": null,
+   "text": "October 6, 2026",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b485",
+   "page": null,
+   "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b486",
+   "page": null,
+   "text": "Advanced Persistent Threat",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b487",
+   "page": null,
+   "text": "Agent Serpens",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b488",
+   "page": null,
+   "text": "AppDomainManager",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b489",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b490",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b491",
+   "page": null,
+   "text": "September 29, 2026",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b492",
+   "page": null,
+   "text": "OperTraitors: How Kubernetes Operators Betray Your Security Posture",
+   "type": "heading",
+   "level": 4,
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b493",
+   "page": null,
+   "text": "AI",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b494",
+   "page": null,
+   "text": "AI agents",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b495",
+   "page": null,
+   "text": "API",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b496",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b497",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b498",
+   "page": null,
+   "text": "September 16, 2026",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b499",
+   "page": null,
+   "text": "Atomic macOS (AMOS) Stealer Activity",
+   "type": "heading",
+   "level": 4,
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b500",
+   "page": null,
+   "text": "MacOS",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b501",
+   "page": null,
+   "text": "Threat intelligence",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b502",
+   "page": null,
+   "text": "Unit 42",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b503",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b504",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b505",
+   "page": null,
+   "text": "September 10, 2026",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b506",
+   "page": null,
+   "text": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE",
+   "type": "heading",
+   "level": 4,
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b507",
+   "page": null,
+   "text": "API",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b508",
+   "page": null,
+   "text": "Cryptographic",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b509",
+   "page": null,
+   "text": "JSON",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b510",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b511",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b512",
+   "page": null,
+   "text": "September 9, 2026",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b513",
+   "page": null,
+   "text": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b514",
+   "page": null,
+   "text": "ARKTunnel",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b515",
+   "page": null,
+   "text": "C2",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b516",
+   "page": null,
+   "text": "CL-CRI-1171",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b517",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b518",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b519",
+   "page": null,
+   "text": "September 3, 2026",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b520",
+   "page": null,
+   "text": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America",
+   "type": "heading",
+   "level": 4,
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b521",
+   "page": null,
+   "text": "Agentic AI",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b522",
+   "page": null,
+   "text": "ChatGPT",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b523",
+   "page": null,
+   "text": "CL-CRI-1131",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b524",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b525",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b526",
+   "page": null,
+   "text": "August 31, 2026",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b527",
+   "page": null,
+   "text": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams",
+   "type": "heading",
+   "level": 4,
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b528",
+   "page": null,
+   "text": "Cloaked Ursa",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b529",
+   "page": null,
+   "text": "Entra ID",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b530",
+   "page": null,
+   "text": "Microsoft Teams",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b531",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b532",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b533",
+   "page": null,
+   "text": "August 25, 2026",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b534",
+   "page": null,
+   "text": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution",
+   "type": "heading",
+   "level": 4,
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b535",
+   "page": null,
+   "text": "Backdoor",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b536",
+   "page": null,
+   "text": "Bitcoin",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b537",
+   "page": null,
+   "text": "DLL hijacking",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b538",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  }
+ ],
+ "language": "en-us"
+}

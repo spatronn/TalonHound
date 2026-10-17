@@ -1,0 +1,278 @@
+{
+  "id": "golden-unit42-tuxbot-v3",
+  "title": "Unit 42 — TuxBot v3 (key-value records with ELF BuildID[sha1], .local / systemd-unit host indicators)",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "key_value_records",
+    "elf_build_id",
+    "special_use_domain",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/unit42-tuxbot-v3-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/tuxbot-v3-evolution-iot-botnet/",
+    "talonhound_report_id": "b7072fac-0b16-4f2f-95e8-ed293472b1d8",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "6b7a8e0c96c2318e747f074f9a99d26738700769ac01bba692d19fc884847737",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "146f6010f6ee082aab13e0148d39baefa77eaba4ff65817b511b08c2092bdfd2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "bd6431fb06e4689142ef597cf00382e38ae20a5393a4d9277e45a3f5b3cbcff9",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a03b0d41f5ef03328150331ffa0ed970998883f7e0343d79b2d3b95330d8e7c1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "eb2fa179fde2f097c18d5d700ad87d660fc238ee14cbe5477032e60856859621",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "a8d70d16509e227d8306be361bc37a3dc9fe34bf476f51e361e55e6d293c2b3f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "0f8bcca3ed65e980da2a1f90a767b7d543be32eeea3e9338d09d4d635a497988",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "96b1f96efca3b9df2dea85678d60da27e3265b4a00e39e20e64b27bb985e1561",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c7a36d6b8128c41f93a32413675401a10a2b5769b221bbaa8c5c309585b73ceb",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "246c97957651de568e61eba1abe572f0b0f960456209995d43d53a0d7cc494a1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "3ec016d637e4c9cd331edd2580a229621ad638e924a4aa29ac0342e9144ace19",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "2f2c3551762c03da126e45dca6fc2f997c63f0f1bfc21fd0ceed680ac6f083ce",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9cd5e7e3c8bad321ef6c3d47fe25b3b56e9487f703a7eeee52db4067e6bafe61",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "e3a5296e762e9ee16010399666441d663beeea956382e97cca032a6a5ad06811",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f1efb78887bb8783d7781c07cd13b53c9c79ebe5baa81f335838d0a6e73dec7e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f324a45fcd2a9db4e542c09486c21b08bc42d6bf76fbd5f17871090361b10815",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "15c17dce89deccd5172285b2650de957918aa1157cde8e4633ae15dfe31f2711",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "71dfbb171eca4ef9d02ff630b56e5283bbef7b375d4dbe9e8c9531bef312fa8d",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "511d3ffb4091cbcc94571d9fb3102e8cb424c6e187d01d53ff12078d54929bda",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "6aa4034dc7a2858094ff4dc59af07d6fe31119591e41599bcc0f3d0b516ee734",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.10.68.127",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "209.182.237.133",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.145.185.229",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "107.174.133.119",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "194.46.59.169",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "154.6.197.43",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "cfcybernews.eu",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "captcha.kanfetka.site",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "digikalas.online",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "jetross.com",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "sha1",
+        "value": "cd540bb31909440fd2bf773e6f1480f5b6f12400"
+      },
+      {
+        "type": "sha1",
+        "value": "877b804892ab218a53420b6dfbd0a2837368d0b5"
+      },
+      {
+        "type": "sha1",
+        "value": "b21cdc5e1b96c640a1d553ed518c49729e367823"
+      },
+      {
+        "type": "sha1",
+        "value": "a70cea846442c18ad265f311b5ced29a4071771d"
+      },
+      {
+        "type": "sha1",
+        "value": "69dc276dde8efcb409411508da55d4cbe28d5600"
+      },
+      {
+        "type": "sha1",
+        "value": "adf267caab78a74c4b4dfabe7b578b0a4d639782"
+      },
+      {
+        "type": "sha1",
+        "value": "a8fd13f6b1bdfa87c0f466df69b7e81325b5dd15"
+      },
+      {
+        "type": "sha1",
+        "value": "befb0e4d1cd7d2b4139b55f811993af2c8839e75"
+      },
+      {
+        "type": "sha1",
+        "value": "e0f8dd23e4fb0086feb42ea0a5dcef70d7b4d17c"
+      },
+      {
+        "type": "sha1",
+        "value": "7ad840b1945cc346012987727ebcc062431965a4"
+      },
+      {
+        "type": "sha1",
+        "value": "4e1483737f769e1cee80fa4d7a056a5d8e3b537e"
+      },
+      {
+        "type": "sha1",
+        "value": "4cba585d9f208bd712b28f867f908e503ccc9cfe"
+      },
+      {
+        "type": "sha1",
+        "value": "64af594c7f91793813e3d769e63816b143102396"
+      },
+      {
+        "type": "sha1",
+        "value": "2774a5f5991657eb9b0062cd3da0391c9bad2643"
+      },
+      {
+        "type": "sha1",
+        "value": "304e14a138b92135aad27bb37f4e9db440401ec2"
+      },
+      {
+        "type": "sha1",
+        "value": "74fba0bad93bbb0e1eedb196b6efe6af1c0bf23d"
+      },
+      {
+        "type": "sha1",
+        "value": "81670f250f4b3492fd3e00920f9fe7395ecbf85c"
+      },
+      {
+        "type": "sha1",
+        "value": "b1cc41e2b9ddb11d0c9d03d319531fea9459cdae"
+      },
+      {
+        "type": "domain",
+        "value": "c2.tuxbot.local"
+      },
+      {
+        "type": "domain",
+        "value": "sd-pam.service"
+      }
+    ],
+    "ambiguous": [
+      {
+        "type": "ip",
+        "value": "188.166.2.226",
+        "rationale": "Publisher lists it as a historical IP but warns it \"now serves Ubiquiti UISP. Blocking will affect legitimate services.\""
+      }
+    ],
+    "sections": []
+  }
+}

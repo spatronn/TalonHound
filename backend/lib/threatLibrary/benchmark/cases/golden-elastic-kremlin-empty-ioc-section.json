@@ -1,0 +1,365 @@
+{
+  "id": "golden-elastic-kremlin-empty-ioc-section",
+  "title": "Elastic — KREMLIN (formal IOC section is only a download link; infrastructure in body tables and operational prose)",
+  "publisher": "Elastic Security Labs",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "empty_authoritative_section",
+    "delegated_scope",
+    "infrastructure_tables",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/elastic-kremlin-empty-ioc-section-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/malicious-browser-extension-kremlin-banking-malware",
+    "talonhound_report_id": "6497023f-4ea3-4a03-bb81-d5fe3e408190",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "url",
+        "value": "https://codecaudiog.site/generate?domain=codecvideowin.online&payload=991589b0-4cc9-11f0-b9f4-1402ec3d56f0&prefix=NF&prefix_count=10&output=base64",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://codecvideowin.online/f9e95a1e1fa3f3aebfc802c6c8e6a2eb",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://codecvideowin.online/af15d5f?p=991589b0-4cc9-11f0-b9f4-1402ec3d56f0",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "ip",
+        "value": "185.221.23.133",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://codecaudiog.site/87b76a60ba7c474dbf8f689df2808e1a?payload=f1d7b074-b81f-11ef-a763-1402ec3d56f0",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://acrobat-updater.com/generate",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://acrobat-updater.com/api/v2/acrobat/latest",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "mysterylink.xyz",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "quirkyclub.club",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "cheapzone.space",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "affordableonline.online",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "ip",
+        "value": "144.172.112.239",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "ip",
+        "value": "45.90.13.210",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://orange-sun-195a.checkeligibitily.workers.dev/",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "lojinhadoluiz.online",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "https://cremeb.com/qrcode/api/v1/read?domain=",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "ip",
+        "value": "37.16.74.100",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "ip",
+        "value": "37.16.74.34",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "granderevolucao.store",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "connection.upgradeonline.site",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "volmira.site",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "zaviro.online",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "domain",
+        "value": "seguranca.versionnova.site",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "ip",
+        "value": "178.92.162.38",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "sha256",
+        "value": "42a3e2bb135fb46b11b127f45a266b3a4d9dff4aa1cf75433f93fe69ba51a9b9",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "sha256",
+        "value": "ba80216c960977fa45e317f00dcf31e96acab29904a737cbc0bf86e929c3be5f",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "sha256",
+        "value": "cb15cbf3f01a92e609e4c2bc26155e667e96c5d04770e83abba66ee07bcecea0",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "sha256",
+        "value": "170dffb37e05f525f735bc9ad84b3908a488f7ce43fcb07739a10e4331e15a2c",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "sha256",
+        "value": "106eac79396a3ff77b8f375c391260ce422be2ae4d55d3aa75b2635cbdc0fa42",
+        "assertion": "publisher_body_assertion"
+      },
+      {
+        "type": "url",
+        "value": "archive.org/download/caramelov/caramelov.jpg",
+        "assertion": "publisher_operational_statement"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "domain",
+        "value": "archive.org"
+      },
+      {
+        "type": "domain",
+        "value": "protonmail.com"
+      }
+    ],
+    "not_indicators": [
+      {
+        "type": "url",
+        "value": "https://granderevolucao.store/5c92d3b8734b4f498752f735a1ca0987/%7BcampaignId%7D"
+      },
+      {
+        "type": "domain",
+        "value": "www.creamp1eonlyfans.net"
+      }
+    ],
+    "ambiguous": [
+      {
+        "type": "url",
+        "value": "https://archive.org/download/hotelmoskva/hotelmoskva.jpg",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "url",
+        "value": "https://ia601808.us.archive.org/5/items/sentinel_20260722_0435/Sentinel.jpg",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "176.98.187.47",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "45.90.13.77",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "209.99.185.204",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "72.251.7.22",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "72.251.7.23",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "104.219.250.37",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "172.234.24.211",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "172.239.57.117",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "ip",
+        "value": "2.59.170.20",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "url",
+        "value": "https://volmira.site//api/savecreds",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "url",
+        "value": "https://zaviro.online//api/v1/fingerprint",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "sha256",
+        "value": "c8c38634dd44d7c6162c66174a6ee23ee404265125166e8d757681bdd66a4268",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "sha256",
+        "value": "223be3f8648bf6998c4a58b972522e5fda8d9d0a57b4e163811930de66c3f7ca",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "codecaudiog.site",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "codecvideowin.online",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "version.checkeligibitily.workers.dev",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "acrobat-updater.com",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "donalurdesconfeitos.site",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "marialurdes.site",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "harialurdes.site",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "cremeb.com",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "connection.timesmaluku.com",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "californicationdetroit.com",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "lojinhadaana.org",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "find-postman.ddesdokww.workers.dev",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "graph.checkeligibitily.workers.dev",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "luizestrelhashapr.online",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "sha256",
+        "value": "5ece7fd3766b0b7f8aadefa562313cea6c3c94f9398658dd389910e5be44f552",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      },
+      {
+        "type": "domain",
+        "value": "orange-sun-195a.checkeligibitily.workers.dev",
+        "rationale": "Publisher-asserted campaign infrastructure / analysed sample in the article body (infrastructure tables, payload table, \"the following binary\", \"C2 endpoints\") that the publisher left out of its external IOC release; membership via the delegated scope is defensible either way."
+      }
+    ],
+    "sections": []
+  }
+}

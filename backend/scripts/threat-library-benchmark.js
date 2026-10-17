@@ -29,6 +29,10 @@ import {
 } from '../lib/threatLibrary/benchmark/benchmarkRunner.js';
 import { knownFailureFor } from '../lib/threatLibrary/benchmark/knownFailures.js';
 
+// Benchmark the production scope engine unless one is chosen explicitly
+// (THREAT_LIBRARY_SCOPE_ENGINE=legacy measures the emergency rollback).
+process.env.THREAT_LIBRARY_SCOPE_ENGINE = process.env.THREAT_LIBRARY_SCOPE_ENGINE || 'section_tree';
+
 function parseArgs(argv) {
   const args = { json: false, writeBaseline: false, casePrefix: null, privateDir: undefined, sourceDir: undefined };
   for (let i = 0; i < argv.length; i += 1) {

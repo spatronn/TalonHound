@@ -1,0 +1,135 @@
+{
+  "id": "golden-unit42-peerstitch",
+  "title": "Unit 42 — PEERSTITCH (file + network tables; sha256(\"123456\") secret artifact)",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "well_known_digest",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/unit42-peerstitch-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/fortimanager-cve-2024-47575-peerstitch-malware/",
+    "talonhound_report_id": "ad8fd193-05fb-4077-91df-005454048a08",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "b9fb0b27ddd59b58d3ae53c7227298a3e0de1e6f868b9429ae21533bb9cd1e70",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "829b1cd270b30565739a478441833f49f10a49bd06f0d18cc96c8ae4a0431f11",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "bd064244dad748cf2a44074bee56f5bfab4a2b18ee944b75d1b3febd4c1fe02a",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "9c4c4436ff5cdf0d6d68f5108031cbf3708a095cde4ef8c09316af7a7110437e",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "fc1b10c58057ef9f1f9a1e2a3d4a1c89f43b0ead451398c70ed7a6e0312b36ee",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f84eea718526706afdf2d1a2774fab76ecb11c18fb61995a37be8249c5e379ab",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "b7ae166fd49a7ecfe6322a80b8aa56d6aa0825d8f5d106dab2e4fb7d14ce15a8",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "23.240.77.233",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "47.18.167.159",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "45.32.41.202",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "198.199.122.22",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://23.240.77.233:8085/pM.js",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://47.18.167.159:8085/pM.js",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://23.240.77.233:8084/directory",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://23.240.77.233:8084/acme/new-acct",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://23.240.77.233:8084/acme/order/11111",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://23.240.77.233:8084/acme/authz/1",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://23.240.77.233:8084/acme/finalize/61924744/774083503",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "sha256",
+        "value": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

@@ -218,7 +218,8 @@ const AUTHORITATIVE_ZONES = new Set([
   'explicit_ioc_section',
   'c2_section',
   'sample_table',
-  'operational_infrastructure'
+  'operational_infrastructure',
+  'delegated_ioc_scope'
 ]);
 
 const EXCLUDED_ZONES = new Set([
@@ -270,7 +271,7 @@ export function discoverDocumentIndicatorScope(blocks) {
  * structural forms (ip:port, indicator-list row).
  */
 const OPERATIONAL_RELATION_RE =
-  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing)?|connect(?:s|ed|ing)?\s+to|communicat(?:es|ed|ing)\s+with|callback|payload|downloads?\s+(?:hxxps?:\/\/|https?:\/\/|from|OBSERVABLE)|downloaded?\s+from|fetch(?:es|ed)?\s+from|drops?\s+from|phish(?:ing)?|malware\s+(?:connects?|beacons?|talks?)|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure)|hard-?coded|(?:fetch|download|retriev|pull|load|deliver|drop|serv|stag|exfiltrat|upload)\w*\b(?:[^.;]|\.(?!\s|$)){0,60}?\b(?:from|to)\s+(?:the\s+)?(?:(?:url|uri|domain|server|host|address|site|endpoint|link)\s+)?["'“”‘’`]?\s*OBSERVABLE|(?:hosted|served|staged|stored)\s+(?:at|on)\s+OBSERVABLE|(?:get|post|put|head|http|https)\s+requests?\s+(?:is\s+|was\s+)?(?:sent\s+)?(?:to|from)\s+(?:the\s+)?(?:(?:url|uri|domain|server|host|address|endpoint)\s+)?["'“”‘’`]?\s*OBSERVABLE|OBSERVABLE\s*["'“”‘’`]?\s+(?:was|were|is|are|has|have|had)\s+(?:\w+ly\s+)?(?:been\s+)?(?:\w+ly\s+)?(?:used|abused|leveraged|set\s+up)\s+to\s+(?:host|serve|stage|deliver|distribute)|OBSERVABLE\s*["'“”‘’`]?\s+(?:was|were|is|are|has|have|had)\s+(?:\w+ly\s+)?(?:been\s+)?(?:\w+ly\s+)?(?:hosted|served|staged)\s+(?:on|at|from|by)|(?:used|operated|controlled|owned|run|registered)\s+by\s+(?:the\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,4}?(?:threat\s+actors?|apt[\w-]*|attackers?|adversar(?:y|ies)|operators?|threat\s+group|intrusion\s+set)|attributed\s+to\s+(?:the\s+)?(?:[\w-]+\s+){0,3}?(?:apt[\w-]*|group|actors?|threat\s+actors?|operators?|intrusion\s+set))\b|回连|远控|木马连接|命令控制|komuta|bağlan(?:ır|ıyor|dı|maktadır)/i;
+  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing)?|connect(?:s|ed|ing)?\s+to|communicat(?:es|ed|ing)\s+with|callback|payload|downloads?\s+(?:hxxps?:\/\/|https?:\/\/|from|OBSERVABLE)|downloaded?\s+from|fetch(?:es|ed)?\s+from|drops?\s+from|phish(?:ing)?|malware\s+(?:connects?|beacons?|talks?)|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure)|hard-?coded|(?:fetch|download|retriev|pull|load|deliver|drop|serv(?!ic|er)|stag|exfiltrat|upload)\w*\b(?:[^.;]|\.(?!\s|$)){0,60}?\b(?:from|to)\s+(?:the\s+)?(?:(?:url|uri|domain|server|host|address|site|endpoint|link)\s+)?["'“”‘’`]?\s*OBSERVABLE|(?:hosted|served|staged|stored)\s+(?:at|on)\s+OBSERVABLE|(?:get|post|put|head|http|https)\s+requests?\s+(?:is\s+|was\s+)?(?:sent\s+)?(?:to|from)\s+(?:the\s+)?(?:(?:url|uri|domain|server|host|address|endpoint)\s+)?["'“”‘’`]?\s*OBSERVABLE|OBSERVABLE\s*["'“”‘’`]?\s+(?:was|were|is|are|has|have|had)\s+(?:\w+ly\s+)?(?:been\s+)?(?:\w+ly\s+)?(?:used|abused|leveraged|set\s+up)\s+to\s+(?:host|serve|stage|deliver|distribute)|OBSERVABLE\s*["'“”‘’`]?\s+(?:was|were|is|are|has|have|had)\s+(?:\w+ly\s+)?(?:been\s+)?(?:\w+ly\s+)?(?:hosted|served|staged)\s+(?:on|at|from|by)|(?:used|operated|controlled|owned|run|registered)\s+by\s+(?:the\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,4}?(?:threat\s+actors?|apt[\w-]*|attackers?|adversar(?:y|ies)|operators?|threat\s+group|intrusion\s+set)|attributed\s+to\s+(?:the\s+)?(?:[\w-]+\s+){0,3}?(?:apt[\w-]*|group|actors?|threat\s+actors?|operators?|intrusion\s+set))\b|回连|远控|木马连接|命令控制|komuta|bağlan(?:ır|ıyor|dı|maktadır)/i;
 
 /**
  * The observable is the thing being hosted ("… was used to host the domain
@@ -283,6 +284,14 @@ const HOSTED_OBJECT_RE =
 
 const PROVIDER_RELATION_RE =
   /\b(?:purchased?|bought|rented?|leased?|registered?\s+(?:via|through|with|at)|subscri(?:bed|be)|procur(?:ed|e)|to\s+purchase|(?:rent|purchas|bought|buy|leas|subscrib|procur|acquir)\w*\b[^.;]{0,60}?\bto\s+host|services?\s+such\s+as|infrastructure\s+provider|cloud\s+provider|hosting\s+provider|vps\s+provider|vpn\s+provider|used\s+(?:the\s+)?(?:commercial\s+)?(?:services?|providers?|vendors?|platforms?|vpn|vps|proxy|cloud(?:\s+provider)?)|from\s+(?:a\s+)?(?:vps|vpn|proxy|hosting|cloud)\s+(?:provider|vendor|service)|commercial\s+vpn)\b|satın\s+al|satın\s+ald|购买|租用|注册于/i;
+
+/**
+ * The observable names the platform itself ("abuse of the public Archive.org
+ * service", "the legitimate Telegram API"): a hosting / service provider the
+ * operation used, not infrastructure the operators own.
+ */
+const PLATFORM_SERVICE_RE =
+  /\b(?:public|legitimate|free|popular|commercial|third[\s-]party|cloud)\s+OBSERVABLE\s+(?:service|platform|hosting|storage|cdn|api|website|site)s?\b/i;
 
 const PROVIDER_CATALOGUE_RE =
   /\b(?:likely\s+to\s+purchase|to\s+obtain\s+(?:infrastructure|services?|prox(?:y|ies)|vps|vpn)|used\s+\w[\w.-]*\s+(?:to\s+purchase|for\s+(?:infrastructure|hosting|prox(?:y|ies)|vps)))\b/i;
@@ -307,6 +316,48 @@ const BENIGN_COMPONENT_RE =
 const BENIGN_NEGATION_RE =
   /\b(?:malicious|malware|trojan\w*|backdoor\w*|implant|fake|fraudulent|masquerad\w*|impersonat\w*|spoof\w*|disguis\w*|mimic\w*|look-?alike|typo-?squat\w*|legitimate[- ]looking|appears?\s+(?:to\s+be\s+)?legitimate|looks?\s+legitimate|abus\w*|hijack\w*|weaponi[sz]\w*|tamper\w*|modified|patched|compromised|infected|side-?load\w*|payload|loader|dropper)\b/i;
 
+/**
+ * Publisher stance that the value is not itself malicious: hedged negation
+ * ("not inherently / necessarily / confirmed malicious") or a dual-use /
+ * shared-service class ("dual-use tools", "free tunnel brokers"). The hedge
+ * contains the word "malicious" itself, so it is matched — and removed —
+ * before the maliciousness-cue check runs on the rest of the window.
+ */
+const HEDGED_NOT_MALICIOUS_RE =
+  /\b(?:not|never|isn['’]?t|aren['’]?t|wasn['’]?t)\s+(?:(?:inherently|necessarily|itself|by\s+itself|in\s+itself|per\s+se|confirmed|known|considered|deemed|proven|believed|thought|assessed)\s+)?(?:(?:as|to\s+be)\s+)?(?:malicious|harmful|attacker[- ]controlled)\b|\bdoes\s+not\s+(?:confirm|indicate|prove|imply)\s+(?:abuse|malicious\w*|compromise)\b/gi;
+const DUAL_USE_RE =
+  /\b(?:dual[\s-]?use|free\s+(?:ssh\s+)?tunnel(?:ing)?\s+(?:providers?|brokers?|services?)|tunnel\s+brokers?|known\s+free\s+\w+\s+(?:providers?|brokers?|services?)|(?:legitimate|public|commercial)\s+(?:third[\s-]party\s+)?(?:services?|platforms?|providers?|apis?|endpoints?|infrastructure|rpc(?:\s+(?:providers?|endpoints?))?|resolvers?|cdns?)|third[\s-]party\s+services?)\b/i;
+/** Maliciousness that a hedge or a dual-use class does not cancel. */
+const STANCE_OVERRIDE_RE =
+  /\b(?:attacker[- ]controlled|actor[- ]controlled|operated\s+by\s+(?:the\s+)?(?:threat\s+)?(?:actors?|attackers?|operators?|group)|registered\s+by\s+(?:the\s+)?(?:threat\s+)?(?:actors?|attackers?)|malicious\s+(?:domain|server|host|infrastructure|url|ip|site|c2)|fake|typo-?squat\w*|look-?alike|impersonat\w*|spoof\w*|phishing)\b/i;
+
+/** Contrast with other values: the stance words are about those, not this one. */
+const CONTRASTIVE_STANCE_RE =
+  /\b(?:alongside|unlike|besides|other\s+than|apart\s+from|in\s+addition\s+to|in\s+contrast|whereas|rather\s+than|instead\s+of|beyond\s+the)\b|\bwhile\s+the\s+(?:[\w-]+\s+){0,10}?(?:are|were|is|was)\b/i;
+
+/** "(This domain is …)" / "It is …": the next sentence still describes the value. */
+const ANAPHORIC_STANCE_START_RE =
+  /^\s*[(\[]?\s*(?:this|that|the|such)\s+(?:domain|host(?:name)?|ip(?:\s+address)?|address|url|uri|endpoint|service|value|indicator|site|server|platform|api|provider)\b|^\s*[(\[]?\s*(?:it|they)\s+(?:is|are|was|were)\b/i;
+
+/**
+ * True when the window states the publisher's stance that this value is
+ * legitimate / dual-use / not inherently malicious, with no cue that the
+ * value itself is attacker infrastructure.
+ * @param {string} window text around the masked OBSERVABLE
+ */
+function statesNonMaliciousStance(window) {
+  // "X … alongside the five legitimate providers" / "unlike the public
+  // endpoints, X …": the benign words describe the OTHER values.
+  if (CONTRASTIVE_STANCE_RE.test(window)) return false;
+  const hedge = HEDGED_NOT_MALICIOUS_RE.test(window);
+  HEDGED_NOT_MALICIOUS_RE.lastIndex = 0;
+  const rest = window.replace(HEDGED_NOT_MALICIOUS_RE, ' ');
+  HEDGED_NOT_MALICIOUS_RE.lastIndex = 0;
+  if (STANCE_OVERRIDE_RE.test(rest)) return false;
+  if (hedge) return true;
+  return DUAL_USE_RE.test(rest) && !BENIGN_NEGATION_RE.test(rest);
+}
+
 /** Another hash / URL / IP token: the boundary of the window that describes this observable. */
 const FOREIGN_OBSERVABLE_TOKEN_RE =
   /\b[a-f0-9]{32}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{64}\b|\b(?:hxxps?|https?):\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\bURL\b|\bIP\b/gi;
@@ -322,7 +373,9 @@ export function describesBenignComponent(masked) {
   const at = t.indexOf('OBSERVABLE');
   if (at < 0) return false;
   const tail = at + 'OBSERVABLE'.length;
-  const before = t.slice(0, at);
+  // A wildcard / subdomain dot glued to the value ("*.lhr.life" masked as
+  // "*. OBSERVABLE") is not a sentence boundary.
+  const before = t.slice(0, at).replace(/\*?\.\s*$/, '');
   let start = Math.max(before.lastIndexOf('. '), before.lastIndexOf('; '), before.lastIndexOf('! '), before.lastIndexOf('? '));
   const base = start >= 0 ? start + 2 : 0;
   start = base;
@@ -336,7 +389,74 @@ export function describesBenignComponent(masked) {
   const foreign = after.slice(0, end).search(FOREIGN_OBSERVABLE_TOKEN_RE);
   if (foreign >= 0) end = foreign;
   const window = `${before.slice(start)} OBSERVABLE ${after.slice(0, end)}`;
-  return BENIGN_COMPONENT_RE.test(window) && !BENIGN_NEGATION_RE.test(window);
+  if (BENIGN_COMPONENT_RE.test(window) && !BENIGN_NEGATION_RE.test(window) && !CONTRASTIVE_STANCE_RE.test(window)) return true;
+  if (statesNonMaliciousStance(window)) return true;
+  // The next sentence may still describe this value ("… (This domain is not
+  // inherently malicious, but …)"): read its stance when it starts anaphorically.
+  if (sentenceEnd >= 0 && foreign < 0) {
+    const next = after.slice(sentenceEnd + 1);
+    const nextEnd = next.search(/[.;!?](?:\s|$)/);
+    const sentence = nextEnd >= 0 ? next.slice(0, nextEnd) : next;
+    if (ANAPHORIC_STANCE_START_RE.test(sentence) && !/OBSERVABLE/.test(sentence) &&
+        sentence.search(FOREIGN_OBSERVABLE_TOKEN_RE) < 0 && statesNonMaliciousStance(sentence)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** "These endpoints are …" / "The above domains are …": a sentence about the preceding list. */
+const LIST_ANAPHORA_RE =
+  /^\s*(?:these|those|the\s+(?:above|listed|preceding|following)|all\s+(?:of\s+)?(?:these|the\s+above))\s+(?:\w+\s+){0,3}?(?:endpoints?|domains?|urls?|uris?|services?|hosts?|hostnames?|addresses|ips?|servers?|providers?|resolvers?|sites?|platforms?|nodes?)\b/i;
+
+function firstSentence(text) {
+  const t = String(text || '').trim();
+  const end = t.search(/[.;!?](?:\s|$)/);
+  return end >= 0 ? t.slice(0, end) : t;
+}
+
+/**
+ * Publisher stance about a whole observable list, from its lead-in or the
+ * sentence right after it ("These endpoints are legitimate public Ethereum
+ * RPC services … rather than blocking these endpoints outright"). Marks each
+ * list block with `list_stance: 'non_malicious'`; occurrences carry it and
+ * read as a benign relation (same as a row that calls its value legitimate).
+ * Pure over a block array (mutates the given copies only).
+ * @param {object[]} blocks canonical / zone-annotated blocks (mutated)
+ */
+export function annotateListStances(blocks) {
+  const list = Array.isArray(blocks) ? blocks : [];
+  // Only lists whose rows are bare observables (an inventory the sentence can
+  // describe as a whole); prose bullets argue, they are not a value list.
+  const isListBlock = (b) => b && (b.type === 'list_item' || b.type === 'list' || b.layout === 'observable_row') &&
+    (b.layout === 'observable_row' || isIndicatorValueLine(String(b.text || '')) || isObservableListLine(String(b.text || '')));
+  const isCaption = (b) => b && (b.type === 'caption' || /^\s*(?:figure|fig\.|table|image)\s*\d+/i.test(String(b.text || '')));
+  const stanceOf = (text) => {
+    const s = firstSentence(text);
+    if (!s || CONTRASTIVE_STANCE_RE.test(s)) return false;
+    if (BENIGN_COMPONENT_RE.test(s) && !BENIGN_NEGATION_RE.test(s)) return true;
+    return statesNonMaliciousStance(s);
+  };
+  for (let i = 0; i < list.length; i += 1) {
+    if (!isListBlock(list[i]) || isListBlock(list[i - 1])) continue;
+    let j = i;
+    while (j + 1 < list.length && isListBlock(list[j + 1])) j += 1;
+    let lead = i - 1;
+    while (lead >= 0 && isCaption(list[lead])) lead -= 1;
+    let next = j + 1;
+    while (next < list.length && isCaption(list[next])) next += 1;
+    const leadText = lead >= 0 && list[lead]?.type !== 'heading' ? list[lead].text : '';
+    const nextText = next < list.length && list[next]?.type !== 'heading' ? list[next].text : '';
+    // A lead-in that names the class ("legitimate services such as:") or an
+    // anaphoric follow-up sentence about "these endpoints".
+    const lead_stance = /[:：]\s*$/.test(String(leadText || '').trim()) && stanceOf(leadText);
+    const next_stance = LIST_ANAPHORA_RE.test(String(nextText || '')) && stanceOf(nextText);
+    if (lead_stance || next_stance) {
+      for (let k = i; k <= j; k += 1) list[k].list_stance = 'non_malicious';
+    }
+    i = j;
+  }
+  return list;
 }
 
 /**
@@ -610,11 +730,17 @@ export function clauseContaining(text, value) {
   const variants = spellingVariants(value);
   if (!variants.length) return hay;
   const parts = hay.split(/(?<=[.;，；])\s+|,\s+|\s+(?:and|und|et|ve|和)\s+/);
-  const hit = parts.find((p) => {
+  const index = parts.findIndex((p) => {
     const low = p.toLowerCase();
     return variants.some((v) => v && low.includes(String(v).toLowerCase()));
   });
-  return hit || hay;
+  if (index < 0) return hay;
+  const hit = parts[index];
+  // A coordinated list member ("… sent to the following two C2 endpoints: X
+  // and Y") carries no words of its own: it shares the clause it continues.
+  const bare = variants.reduce((s, v) => s.split(String(v)).join(' '), hit).replace(/[\s.,;:()[\]"'“”‘’`]+/g, '');
+  if (!bare && index > 0 && !/[.;!?]\s*$/.test(parts[index - 1])) return `${parts[index - 1]} ${hit}`;
+  return hit;
 }
 
 function escapeRegExp(s) {
@@ -679,11 +805,64 @@ function structuralRowOf(occ) {
   // Domain part of an email address: never a row (see candidateExtraction).
   if (form === 'email_domain') return false;
   if (occ.structural_row === true || occ.row_shape === true) return true;
+  // Delegated scope decided the row reading already (publisher-typed columns,
+  // endpoints, value lines only): a free-form table cell is not a row there.
+  if (String(occ.zone_reason || '') === 'section_tree_delegated_scope') return false;
   if (form === 'table_row' || form === 'list_row' || form === 'ip_port') return true;
   const bt = String(occ.block_type || '');
   if (bt === 'list_item' || occ.layout === 'observable_row') return true;
   const zr = String(occ.zone_reason || '');
   return zr === 'observable_list' || zr === 'cidr_list' || zr === 'ioc_table';
+}
+
+/** Malware-artifact nouns that make a prose hash the publisher's sample. */
+const SAMPLE_SUBJECT_RE =
+  /\b(?:samples?|scripts?|loaders?|installers?|droppers?|payloads?|implants?|backdoors?|stealers?|rats?|trojans?|malware|binar(?:y|ies)|executables?|dlls?|variants?|stagers?|reimplementation|wave\s+[a-z0-9])\b/i;
+
+/**
+ * The sentence holding OBSERVABLE, plus a short record label right before it
+ * ("Wave A. OBSERVABLE First observed …" → "Wave A. OBSERVABLE First observed …").
+ * @param {string} masked
+ */
+function sentenceWithLeadLabel(masked) {
+  const t = String(masked || '');
+  const at = t.indexOf('OBSERVABLE');
+  if (at < 0) return '';
+  const boundaries = [...t.slice(0, at).matchAll(/[.;!?]\s+/g)];
+  let start = boundaries.length ? boundaries[boundaries.length - 1].index + boundaries[boundaries.length - 1][0].length : 0;
+  if (boundaries.length) {
+    const prevStart = boundaries.length >= 2 ? boundaries[boundaries.length - 2].index + boundaries[boundaries.length - 2][0].length : 0;
+    const label = t.slice(prevStart, start).trim();
+    if (label && label.split(/\s+/).length <= 4) start = prevStart;
+  }
+  const rest = t.slice(at);
+  const end = rest.search(/[.;!?](?:\s|$)/);
+  return t.slice(start, end >= 0 ? at + end : t.length);
+}
+
+function isHexDigestValue(values) {
+  return (Array.isArray(values) ? values : [values]).some((v) => /^[a-f0-9]{32}$|^[a-f0-9]{40}$|^[a-f0-9]{64}$/i.test(String(v || '').trim()));
+}
+
+const ALERT_ADJECTIVE_RE =
+  /\b(?:unusual|suspicious|potential|possible|anomalous|uncommon|rare|abnormal|detected|detection|alert)\b/i;
+
+/**
+ * A detection-rule / alert caption: a Title-Case rule name containing an
+ * alert adjective, then ":" and the matched telemetry naming the observable.
+ * @param {string} masked clause with the observable masked as OBSERVABLE
+ */
+export function isDetectionAlertCaption(masked) {
+  const t = String(masked || '').trim();
+  const colon = t.indexOf(':');
+  if (colon < 8 || colon > 120) return false;
+  const name = t.slice(0, colon);
+  if (/OBSERVABLE/.test(name) || !/OBSERVABLE/.test(t.slice(colon))) return false;
+  if (!ALERT_ADJECTIVE_RE.test(name)) return false;
+  const words = name.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && w.length > 3);
+  if (words.length < 3) return false;
+  const titled = words.filter((w) => /^[A-Z]/.test(w)).length;
+  return titled / words.length >= 0.75;
 }
 
 /**
@@ -713,6 +892,11 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   if (EXCLUDED_ZONES.has(zone)) {
     return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'excluded_zone', authoritative: false, structural_row: structuralRow };
   }
+  // The publisher said what the whole list is ("These endpoints are legitimate
+  // public … services"): every row of it is context, never an assertion.
+  if (opts.listStance === 'non_malicious') {
+    return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: structuralRow };
+  }
 
   const form = String(opts.form || '');
   // Endpoint forms (ip:port) assert by shape. Table rows assert only inside a
@@ -740,6 +924,13 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   );
   if (!text.trim()) return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'empty', authoritative, structural_row: false };
 
+  // "Unusual Network Connection to Suspicious Web Service: cloudflared to X":
+  // a detection-rule / alert name with its telemetry detail describes what a
+  // rule matched, not a publisher assertion that X is malicious.
+  if (isDetectionAlertCaption(text)) {
+    return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'detection_alert', authoritative, structural_row: false };
+  }
+
   // Direction: the hosted object ("… used to host the domain OBSERVABLE") was
   // served by infrastructure — an operational reading, never "provider".
   if (HOSTED_OBJECT_RE.test(text) || HOSTED_OBJECT_RE.test(full)) {
@@ -747,7 +938,7 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   }
 
   const operational = OPERATIONAL_RELATION_RE.test(text);
-  const providerLocal = PROVIDER_RELATION_RE.test(text) || PROVIDER_CATALOGUE_RE.test(text);
+  const providerLocal = PROVIDER_RELATION_RE.test(text) || PROVIDER_CATALOGUE_RE.test(text) || PLATFORM_SERVICE_RE.test(text);
   const providerCatalogue = PROVIDER_RELATION_RE.test(full) || PROVIDER_CATALOGUE_RE.test(full);
   const provider = providerLocal || (providerCatalogue && !operational);
 
@@ -767,6 +958,14 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   // decided before the model ever sees it.
   if (describesBenignComponent(full)) {
     return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: false };
+  }
+  // Delegated scope (every formal IOC section empty): a hash the clause names
+  // as the analysed malware artifact ("we examine the following script:
+  // <hash>", "Wave A. <hash> … downloads", "the installer <hash>") is the
+  // publisher's sample assertion. Curated IOC sections never need this.
+  if (zone === 'delegated_ioc_scope' && isHexDigestValue(focusValue) &&
+      (SAMPLE_SUBJECT_RE.test(text) || SAMPLE_SUBJECT_RE.test(sentenceWithLeadLabel(full)))) {
+    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'operational', authoritative, structural_row: false };
   }
   // "Report incidents to …" / "file a complaint at …" — agency contact chrome,
   // never an Indicator (MODE A and MODE B).
@@ -886,7 +1085,8 @@ function relationDetailForOccurrence(candidate, o) {
     structuralRow: o.structural_row === true || o.row_shape === true || legacyRecordedRow(o),
     blockType: o.block_type || null,
     layout: o.layout || null,
-    zoneReason: o.zone_reason || null
+    zoneReason: o.zone_reason || null,
+    listStance: o.list_stance || null
   });
 }
 

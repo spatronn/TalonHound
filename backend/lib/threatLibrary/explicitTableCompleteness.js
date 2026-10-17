@@ -56,6 +56,10 @@ export function createExplicitTableAssertionTracker() {
     rememberAlias(type, fromValue, toValue) {
       aliases.set(explicitTableIdentityKey(type, fromValue), explicitTableIdentityKey(type, toValue));
     },
+    /** An asserted value kept under another type on purpose (non-file digest → technical artifact). */
+    rememberReclassified(type, value, newType) {
+      aliases.set(explicitTableIdentityKey(type, value), explicitTableIdentityKey(newType, value));
+    },
     finalize(createdCandidates) {
       const created = (createdCandidates || []).filter(
         (c) => Array.isArray(c.table_rows) && c.table_rows.some((r) => r.explicit)

@@ -32,6 +32,12 @@ import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOcc
 import { bulkMatchCandidates } from './iocMatch.js';
 import { deriveMatchState } from './constants.js';
 import { readArtifactBuffer } from './artifactStore.js';
+import {
+  ESCALATING_ASSESSMENTS,
+  EVIDENCE_INTEGRITY_VERSION,
+  groundAiCandidateUpdate,
+  indexDocumentBlocks
+} from './evidenceIntegrity.js';
 import { getReportById, updateReportPublicationDate } from './store.js';
 import { detectReportPublicationDate, resolvePublicationDateUpdate } from './publicationDate.js';
 import { createServiceLogger } from '../appLogger.js';
@@ -275,7 +281,9 @@ export function extractReportCandidates(report, document) {
         section_tree_version: applied.section_tree_version,
         has_authoritative_scope: applied.has_authoritative_scope === true,
         remapped_occurrences: applied.remapped_occurrences,
-        demoted_occurrences: applied.demoted_occurrences
+        demoted_occurrences: applied.demoted_occurrences,
+        delegated_scope: applied.delegated_scope === true,
+        delegated_occurrences: applied.delegated_occurrences || 0
       };
       stamped.meta.scope_engine = applied.scope_engine;
       stamped.meta.scope_engine_version = applied.scope_engine_version;
@@ -367,6 +375,9 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
   const byKey = new Map(
     (candidates || []).filter(keep).map((c) => [`${c.candidate_type}\0${c.normalized_value}`, c])
   );
+  // Publisher-evidence integrity: model quotes / blocks / escalations are
+  // checked against the canonical document (when one is supplied).
+  const blocks = opts.document ? indexDocumentBlocks(opts.document) : null;
   for (const u of aiValue?.candidate_updates || []) {
     const key = `${u.candidate_type}\0${u.normalized_value}`;
     const existing = byKey.get(key);
@@ -374,14 +385,47 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
     if (sourceText && (u.candidate_type === 'ip' || u.candidate_type === 'ipv6')) {
       if (isOnlyEmbeddedInDnsHostname(sourceText, u.candidate_type, u.normalized_value)) continue;
     }
-    applyEvidencePolicy(existing, {
-      assessment: u.assessment,
-      role: u.role || existing.role,
-      confidence: u.confidence ?? existing.confidence
-    });
-    if (u.evidence_text) existing.evidence_text = u.evidence_text;
+    // The deterministic anchor is the publisher evidence; it is kept as-is
+    // whatever the model says (first merge wins: replays never move it).
+    if (!existing.publisher_evidence) {
+      existing.publisher_evidence = { text: existing.evidence_text || null, block_id: existing.block_id || null };
+    }
+    const grounding = blocks ? groundAiCandidateUpdate(existing, u, blocks) : null;
+    const escalates = ESCALATING_ASSESSMENTS.has(String(u.assessment || '').toLowerCase());
+    // An unsupported model claim never escalates a candidate: a malicious /
+    // suspicious label needs real publisher text naming the value. Demotions
+    // (context only, benign roles) are conservative and still apply.
+    const applyAssessment = !grounding || grounding.supported || !escalates;
+    applyEvidencePolicy(existing, applyAssessment
+      ? { assessment: u.assessment, role: u.role || existing.role, confidence: u.confidence ?? existing.confidence }
+      : null);
+    // Stable record of the model's own output (identical when Refresh replays
+    // the same decision): what it said, whether publisher text supports it,
+    // and whether it was applied.
+    existing.ai_classification = {
+      assessment: u.assessment || null,
+      role: u.role || null,
+      confidence: u.confidence ?? null,
+      supported: grounding ? grounding.supported : null,
+      applied: applyAssessment,
+      integrity_version: EVIDENCE_INTEGRITY_VERSION
+    };
+    if (u.evidence_text) {
+      if (!grounding || grounding.quote === 'grounded') {
+        existing.evidence_text = u.evidence_text;
+        if (grounding?.quote_block_id) existing.block_id = grounding.quote_block_id;
+      } else {
+        // Paraphrase / fabricated quote: keep the publisher anchor, retain the
+        // model text only as a rejected, auditable suggestion.
+        existing.ai_evidence_rejected = { text: String(u.evidence_text).slice(0, 240), reason: grounding.quote };
+      }
+    }
     if (u.section) existing.section = u.section;
-    if (u.evidence_block_ids?.[0]) existing.block_id = u.evidence_block_ids[0];
+    if (!grounding) {
+      if (u.evidence_block_ids?.[0]) existing.block_id = u.evidence_block_ids[0];
+    } else if (grounding.cited_block_id && grounding.quote !== 'grounded') {
+      existing.block_id = grounding.cited_block_id;
+    }
   }
   return [...byKey.values()].map((c) => applyEvidencePolicy(c));
 }

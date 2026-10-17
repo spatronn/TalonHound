@@ -112,6 +112,30 @@ export const QUALITY_CODE_COPY = Object.freeze({
   indicator_missing_provenance: {
     title: 'Indicator without source evidence',
     why: 'No source passage is recorded for this Indicator.'
+  },
+  delegated_authority_applied: {
+    title: 'IOC section is empty — Indicators come from the report body',
+    why: 'Every IOC heading in this report only points elsewhere (for example a download link). These Indicators come from the publisher’s own statements in the body: C2 endpoints, download sources, analysed samples and infrastructure table columns. Narrative mentions stayed Context Only. Review them, and add the publisher’s IOC file as an IOC Source when available.'
+  },
+  non_file_digest_reclassified: {
+    title: 'Hash-shaped values that are not file hashes',
+    why: 'The publisher labels these values as build IDs, certificate fingerprints, VirusTotal / fuzzy hashes, keys or digests of trivial strings. They were kept as context, not as file-hash Indicators.'
+  },
+  publisher_stance_conflict: {
+    title: 'Indicator also called legitimate or dual-use',
+    why: 'The publisher lists this value as an indicator in one place and describes it as legitimate, dual-use or not inherently malicious in another. It stays an Indicator; check the publisher’s stance before acting on it.'
+  },
+  ai_evidence_ungrounded: {
+    title: 'Model quote not found in the report',
+    why: 'The model proposed an evidence quote that does not appear in the report text. The publisher’s own passage was kept; the model text is stored only as a rejected suggestion.'
+  },
+  ai_escalation_unsupported: {
+    title: 'Model malicious label without supporting text',
+    why: 'The model labelled these values malicious or suspicious but cited no report passage that names them. The label was not applied.'
+  },
+  malicious_assessed_non_members: {
+    title: 'Malicious-looking values outside the publisher’s IOC list',
+    why: 'These values are assessed malicious but the publisher did not list them in its IOC section, so they are not Indicators. They stay visible under All.'
   }
 });
 

@@ -1,0 +1,1278 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Unit 42"
+  ],
+  "source_url": "https://unit42.paloaltonetworks.com/russian-webmail-espionage/",
+  "source_host": "unit42.paloaltonetworks.com",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v1",
+  "section_tree_version": "tl-section-tree-v2",
+  "candidate_extraction_version": "tl-candidates-v29"
+ },
+ "title": "Russian Global Webmail Espionage",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Cybercrime",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "Cybercrime",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Russian Global Webmail Espionage",
+   "type": "heading",
+   "level": 1,
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "min read",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Related Products",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Advanced DNS SecurityAdvanced URL FilteringCloud-Delivered Security ServicesCortexUnit 42 Incident Response",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "By:",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Unit 42",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Published:",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "July 23, 2026",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Categories:",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Cybercrime",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Tags:",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "CL-STA-1114",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "JavaScript",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Javascript injection",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Nation-state",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Obfuscation",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Phishing",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "Zimbra webmail",
+   "type": "list",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "Russian Global Webmail Espionage"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Executive Summary",
+   "type": "heading",
+   "level": 2,
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "Unit 42 has observed a persistent cyberespionage campaign we track as CL-STA-1114. This activity cluster overlaps with activity from a Russian threat actor tracked by other vendors as Void Blizzard and LAUNDRY BEAR.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "The attackers behind this campaign targeted Zimbra webmail in organizations in the following sectors:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Governments",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "Defense",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "Transportation",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "Financial organizations across the following regions:",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "NATO member states",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "Ukraine",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Commonwealth of Independent States (CIS) countries",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Africa",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Unique to this campaign, the group leveraged zero-click phishing emails that exploit a vulnerability in the Zimbra Collaboration Suite (ZCS) webmail platform (CVE-2025-66376). The exploit automatically injects a malicious JavaScript payload without requiring recipient interaction. Once executed, the payload exfiltrates sensitive user data, including login credentials, email archives, and search histories. Threat actors continue to actively target unpatched ZCS instances using CVE-2025-66376.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected from the threats discussed above through the following products:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Cortex Advanced Email Security",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Advanced URL Filtering and Advanced DNS Security",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "If you think you might have been compromised or have an urgent matter, contact the Unit 42 Incident Response team.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Related Unit 42 Topics | Cyberespionage, Phishing, Data Exfiltration",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Related Unit 42 Topics",
+      "Cyberespionage, Phishing, Data Exfiltration"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "Technical Analysis",
+   "type": "heading",
+   "level": 2,
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "The attackers behind CL-STA-1114 have been active since at least 2024, and this campaign targeting Zimbra servers started in July 2025. Initial access starts with a phishing email that contains either an HTML attachment or embedded HTML in the message text. This lure is designed to catch recipients' attention with news headlines.",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "Figure 1 shows an example of the lure used and a snippet of the underlying HTML code.",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "Figure 1. Example lure and a snippet of its underlying HTML content.",
+   "type": "caption",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "The HTML text contains an obfuscated division with a Base64-encoded script (highlighted in red in Figure 1). The obfuscated section creates an invisible Scalable Vector Graphics (SVG) element that, upon loading, decodes the Base64-encoded script into a JavaScript payload that it injects into the victim’s browser.",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "When executed, this JavaScript exfiltrates the victim’s Zimbra webmail data to a hard-coded command and control (C2) server. Exfiltrated data includes:",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "CSRF tokens",
+   "type": "list",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "Email address and password",
+   "type": "list",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Two-factor authentication (2FA) scratch codes",
+   "type": "list",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "System and environment details",
+   "type": "list",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "The victim’s last 90 days of email and search history",
+   "type": "list",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "Over the course of this campaign, we observed minimal changes to the JavaScript payload.",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Figure 2 illustrates the attack chain.",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "Figure 2. The attack chain.",
+   "type": "caption",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Since we began tracking this campaign, there have been at least nine IP addresses and nine domains for the C2 servers. These servers were active for an average of 35.4 days. See the Indicators of Compromise (IoC) section for a list of the IP addresses and domains used in CL-STA-1114 activity.",
+   "type": "paragraph",
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "This campaign activity in CL-STA-1114 illustrates the persistent and evolving threat of state-sponsored cyberespionage. The attacker behind this activity targets widely used mail platforms like Zimbra, posing a risk to critical industries globally.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "This research highlights the need for vigilance, proactive patching and advanced threat detection to protect organizations. Network administrators, defenders and security researchers should patch vulnerable systems and use the IoCs below to investigate and strengthen defenses against CL-STA-1114 and similar activity.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected from the threats discussed above through the following products:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "The Cortex Advanced Email Security module routes suspicious HTML attachments to Advanced WildFire for static and dynamic analysis. This ensures that by the time an endpoint opens the attachment, it has already been scanned, allowing the agent to immediately act on a known verdict.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Advanced URL Filtering and Advanced DNS Security identify known domains and URLs associated with this activity as malicious.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "If you think you may have been compromised or have an urgent matter, get in touch with the Unit 42 Incident Response team or call:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "North America: Toll Free: +1 (866) 486-4842 (866.4.UNIT42)",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "UK: +44.20.3743.3660",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Europe and Middle East: +31.20.299.3130",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Asia: +65.6983.8730",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Japan: +81.50.1790.0200",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "Australia: +61.2.4062.7950",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "India: 000 800 050 45107",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "South Korea: +82.080.467.8774",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "Palo Alto Networks has shared these findings with our fellow Cyber Threat Alliance (CTA) members. CTA members use this intelligence to rapidly deploy protections to their customers and to systematically disrupt malicious cyber actors. Learn more about the Cyber Threat Alliance.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "Indicators of Compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "IP addresses",
+   "type": "heading",
+   "level": 3,
+   "section": "IP addresses"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "37.120.247[.]228",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "64.226.124[.]190",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "104.248.134[.]194",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "185.86.79[.]95",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "193.238.152[.]66",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "194.156.103[.]193",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "216.252.238[.]18",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "216.252.238[.]64",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "216.252.238[.]104",
+   "type": "list",
+   "section": "IP addresses"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "Domains",
+   "type": "heading",
+   "level": 3,
+   "section": "Domains"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "analyticemailmeter[.]com",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "emailanalytics[.]com[.]ua",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "istc-cloud[.]com",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "mailnalysis[.]com",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "synacorzimbra[.]nl",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "zimbra-metadata[.]com",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "zimbrastat[.]com",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "zimbrasoft[.]com[.]ua",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "zmailanalytics[.]com",
+   "type": "list",
+   "section": "Domains"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Additional Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Operation GhostMail: Russian APT exploits Zimbra Webmail to Target Ukraine State Agency – Seqrite Blog",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "AIVD and MIVD identify new Russian cyber threat actor – AIVD/MIVD",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "New Russia-affiliated actor Void Blizzard targets critical sectors for espionage – Microsoft",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Tags",
+   "type": "heading",
+   "level": 3,
+   "section": "Tags"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "CL-STA-1114",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "JavaScript",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Javascript injection",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Nation-state",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Obfuscation",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Phishing",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "Zimbra webmail",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Next: Three Steps to the Terminal: A Siemens ROX II Zero-Day Trilogy",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Table of Contents",
+   "type": "heading",
+   "level": 3,
+   "section": "Table of Contents"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Related Articles",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Token Jacking: Cybercriminals Could Be Stealing Your AI Resources",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "The Xcode Assassin Returns: A Deep Dive Into the Latest XCSSET Version",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "The npm Threat Landscape: Attack Surface and Mitigations (Updated July 15)",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Related Cybercrime Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Related Cybercrime Resources"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "Related Cybercrime Resources"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "May 28, 2026",
+   "type": "paragraph",
+   "section": "Related Cybercrime Resources"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface",
+   "type": "heading",
+   "level": 4,
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Fiddling Scorpius",
+   "type": "list",
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Fighting Ursa",
+   "type": "list",
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Muddled Libra",
+   "type": "list",
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "May 27, 2026",
+   "type": "paragraph",
+   "section": "2026 World Cup: Discussing The World’s Biggest Game’s Attack Surface"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Out of the Crypt: The Evolving Cyber Extortion Economy",
+   "type": "heading",
+   "level": 4,
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Bling Libra",
+   "type": "list",
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Extortion",
+   "type": "list",
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Frontier AI",
+   "type": "list",
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "March 16, 2026",
+   "type": "paragraph",
+   "section": "Out of the Crypt: The Evolving Cyber Extortion Economy"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Boggy Serpens Threat Assessment",
+   "type": "heading",
+   "level": 4,
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "Advanced Persistent Threat",
+   "type": "list",
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "Boggy Serpens",
+   "type": "list",
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "C2",
+   "type": "list",
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Threat Actor Groups",
+   "type": "paragraph",
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "February 10, 2026",
+   "type": "paragraph",
+   "section": "Boggy Serpens Threat Assessment"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "A Peek Into Muddled Libra’s Operational Playbook",
+   "type": "heading",
+   "level": 4,
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Muddled Libra",
+   "type": "list",
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "PowerShell",
+   "type": "list",
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Scattered Spider",
+   "type": "list",
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "February 3, 2026",
+   "type": "paragraph",
+   "section": "A Peek Into Muddled Libra’s Operational Playbook"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Why Smart People Fall For Phishing Attacks",
+   "type": "heading",
+   "level": 4,
+   "section": "Why Smart People Fall For Phishing Attacks"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "AI",
+   "type": "list",
+   "section": "Why Smart People Fall For Phishing Attacks"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Phishing",
+   "type": "list",
+   "section": "Why Smart People Fall For Phishing Attacks"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Why Smart People Fall For Phishing Attacks"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "Why Smart People Fall For Phishing Attacks"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "January 29, 2026",
+   "type": "paragraph",
+   "section": "Why Smart People Fall For Phishing Attacks"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics",
+   "type": "heading",
+   "level": 4,
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "AI",
+   "type": "list",
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "IoT",
+   "type": "list",
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Russia",
+   "type": "list",
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "December 10, 2025",
+   "type": "paragraph",
+   "section": "Understanding the Russian Cyberthreat to the 2026 Winter Olympics"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "01flip: Multi-Platform Ransomware Written in Rust",
+   "type": "heading",
+   "level": 4,
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Bitcoin",
+   "type": "list",
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "CL-CRI-103",
+   "type": "list",
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "Cryptocurrency",
+   "type": "list",
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "November 25, 2025",
+   "type": "paragraph",
+   "section": "01flip: Multi-Platform Ransomware Written in Rust"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "The Dual-Use Dilemma of AI: Malicious LLMs",
+   "type": "heading",
+   "level": 4,
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Credential Harvesting",
+   "type": "list",
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Data exfiltration",
+   "type": "list",
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "LLM",
+   "type": "list",
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "November 14, 2025",
+   "type": "paragraph",
+   "section": "The Dual-Use Dilemma of AI: Malicious LLMs"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Digital Doppelgangers: Anatomy of Evolving Impersonation Campaigns Distributing Gh0st RAT",
+   "type": "heading",
+   "level": 4,
+   "section": "Digital Doppelgangers: Anatomy of Evolving Impersonation Campaigns Distributing Gh0st RAT"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "DLL Sideloading",
+   "type": "list",
+   "section": "Digital Doppelgangers: Anatomy of Evolving Impersonation Campaigns Distributing Gh0st RAT"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "Gh0st Rat",
+   "type": "list",
+   "section": "Digital Doppelgangers: Anatomy of Evolving Impersonation Campaigns Distributing Gh0st RAT"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "PDNS",
+   "type": "list",
+   "section": "Digital Doppelgangers: Anatomy of Evolving Impersonation Campaigns Distributing Gh0st RAT"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Digital Doppelgangers: Anatomy of Evolving Impersonation Campaigns Distributing Gh0st RAT"
+  }
+ ],
+ "language": "en-us"
+}

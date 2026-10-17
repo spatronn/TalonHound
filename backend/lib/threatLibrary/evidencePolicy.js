@@ -22,8 +22,10 @@ import { NON_NETWORK_RESOLVED_TYPES, NETWORK_IOC_TYPES, validateCanonicalIocValu
 import {
   isLoopbackOrLocalhostAddress,
   isPrivateOrReservedAddress,
-  isRfcExampleDomain
+  isRfcExampleDomain,
+  isSpecialUseLocalName
 } from './candidateValue.js';
+import { hasDelegatedDnsSuffix } from './observableTypeResolver.js';
 import {
   EXPLICIT_PUBLISHER_IOC_ASSERTIONS,
   hasAuthoritativePublisherIocScope,
@@ -92,8 +94,30 @@ const DECISIVE_PROSE_MARKERS = new Set(['contextual', 'provider', 'benign', 'exc
  */
 function isBenignComponentOnly(candidate) {
   const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
-  return occ.length > 0 && occ.some((o) => o.relation_marker === 'benign') &&
-    occ.every((o) => o.relation_marker === 'benign' || o.relation_marker === 'excluded_zone');
+  // Only detection-rule / alert captions name the value ("Unusual Network
+  // Connection to …: tool to X"): a rule matched it; the publisher asserts nothing.
+  if (occ.length && occ.every((o) => o.relation_marker === 'detection_alert' || o.relation_marker === 'excluded_zone') &&
+      occ.some((o) => o.relation_marker === 'detection_alert')) {
+    return true;
+  }
+  if (!occ.length || !occ.some((o) => o.relation_marker === 'benign')) return false;
+  // The publisher's own stance (legitimate / dual-use / not inherently
+  // malicious) decides unless another occurrence asserts the value: an
+  // indicator row, an operational clause or an endpoint. Neutral mentions
+  // elsewhere ("cloudflared talking to X") do not outweigh the stance.
+  return occ.every((o) => o.asserted !== true && o.relation_marker !== 'operational' && o.relation_marker !== 'structural_row');
+}
+
+/**
+ * Publisher stance and assertion disagree about the same value: one
+ * occurrence calls it legitimate / dual-use, another asserts it. The
+ * assertion keeps membership; the conflict is recorded for review.
+ * @param {object} candidate annotated candidate
+ */
+function hasStanceConflict(candidate) {
+  const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
+  return occ.some((o) => o.relation_marker === 'benign') &&
+    occ.some((o) => o.asserted === true || o.relation_marker === 'operational' || o.relation_marker === 'structural_row');
 }
 
 /**
@@ -261,9 +285,33 @@ export function annotateNonActionableNetworkIdentity(candidate) {
     if (isLoopbackOrLocalhostAddress(value)) {
       candidate.non_actionable_local = true;
       candidate.rfc_example = true;
+    } else if (isSpecialUseLocalName(value)) {
+      // ".local" / ".internal" / ".lan": resolvable only inside a local network.
+      candidate.non_actionable_local = true;
+    }
+  } else if (type === 'url') {
+    // A URL is no more actionable than its host: http://localhost/…,
+    // http://10.0.0.5/…, http://nas.local/… stay context like the bare host.
+    const host = hostOfUrl(value);
+    if (host) {
+      const bare = host.replace(/^\[|\]$/g, '');
+      if (isLoopbackOrLocalhostAddress(bare) || isSpecialUseLocalName(bare)) {
+        candidate.non_actionable_local = true;
+        candidate.reserved_address = true;
+      } else if (/^[\d.]+$/.test(bare) || bare.includes(':')) {
+        if (isPrivateOrReservedAddress(bare)) candidate.reserved_address = true;
+      }
     }
   }
   return candidate;
+}
+
+function hostOfUrl(value) {
+  try {
+    return new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -326,6 +374,19 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
       candidate.canonical_rejection = canonical.reason;
       return excludeFromIoc(candidate, summary, { role: 'reference', policy: 'ioc_excluded_invalid_canonical' });
     }
+    // Gate 3b — a "domain" whose last label is not a delegated DNS suffix
+    // (systemd unit "sd-pam.service", stylesheet "08x.css", "a.internal") can
+    // never resolve in public DNS: a system / file identifier, not a host —
+    // even when the publisher listed it under "Host Indicators".
+    // A value the publisher explicitly typed "Domain" in an indicator table
+    // keeps that reading (explicit-table completeness; quality check 12 warns).
+    const declaredDomain = (Array.isArray(candidate.table_rows) ? candidate.table_rows : [])
+      .concat(Array.isArray(evidenceRecord(candidate).table_rows) ? evidenceRecord(candidate).table_rows : [])
+      .some((r) => String(r?.declared_type || '').toLowerCase() === 'domain');
+    if (type === 'domain' && !declaredDomain && !hasDelegatedDnsSuffix(candidate.normalized_value)) {
+      candidate.canonical_rejection = 'undelegated_dns_suffix';
+      return excludeFromIoc(candidate, summary, { role: 'reference', policy: 'ioc_excluded_undelegated_suffix' });
+    }
   }
 
   const relation = candidate.source_relation || strongestSourceRelation(candidate);
@@ -333,6 +394,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   const explicit = summary.hasStrong;
   const reportSource = candidate.is_report_source === true;
   const benignComponent = !explicit && isBenignComponentOnly(candidate);
+  candidate.stance_conflict = hasStanceConflict(candidate) || undefined;
   const proseForModel =
     !explicit && hasAuthoritativeScope && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS && isUndecidedProseSampleHash(candidate);
 
@@ -650,13 +712,15 @@ export function buildCandidateEvidenceRecord(c) {
     layout: o.layout || undefined,
     zone_reason: o.zone_reason || undefined,
     scope_opening_id: o.scope_opening_id || undefined,
-    typing_reason: o.typing_reason || undefined
+    typing_reason: o.typing_reason || undefined,
+    list_stance: o.list_stance || undefined
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
     table_id: r.table_id || null,
     page: r.page ?? null,
     row_index: r.row_index ?? null,
     column_index: r.column_index ?? null,
+    column_header: r.column_header ? String(r.column_header).slice(0, 80) : undefined,
     declared_type: r.declared_type || null,
     type_cell: r.type_cell ? String(r.type_cell).slice(0, 80) : null,
     indicator_cell: r.indicator_cell ? String(r.indicator_cell).slice(0, 300) : null,
@@ -691,6 +755,21 @@ export function buildCandidateEvidenceRecord(c) {
     resolved_type: c.resolved_type || c.candidate_type,
     typing_reason: c.typing_reason || null,
     artifact_kind: c.artifact_kind || null,
+    // Hex value read as a non-file digest (build-id / certificate / vhash / key …).
+    ...(c.digest_kind ? { digest_kind: c.digest_kind, digest_shape: c.digest_shape || null } : {}),
+    ...(c.stance_conflict === true ? { stance_conflict: true } : {}),
+    // Immutable deterministic publisher anchor + the model's separate output
+    // (evidenceIntegrity): the model never silently replaces publisher text.
+    ...(c.publisher_evidence && typeof c.publisher_evidence === 'object'
+      ? {
+          publisher_evidence: {
+            text: c.publisher_evidence.text ? String(c.publisher_evidence.text).slice(0, 500) : null,
+            block_id: c.publisher_evidence.block_id || null
+          }
+        }
+      : {}),
+    ...(c.ai_classification && typeof c.ai_classification === 'object' ? { ai_classification: c.ai_classification } : {}),
+    ...(c.ai_evidence_rejected && typeof c.ai_evidence_rejected === 'object' ? { ai_evidence_rejected: c.ai_evidence_rejected } : {}),
     canonical_rejection: c.canonical_rejection || null,
     type_resolution: c.type_resolution && typeof c.type_resolution === 'object' ? c.type_resolution : null,
     occurrence_count: occurrences.length || c.occurrence_count || 0,

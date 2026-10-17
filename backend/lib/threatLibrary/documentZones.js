@@ -147,6 +147,7 @@ export const DOCUMENT_ZONES = Object.freeze([
   'c2_section',
   'sample_table',
   'operational_infrastructure',
+  'delegated_ioc_scope',
   'reference_section',
   'source_metadata',
   'header_footer',
@@ -155,6 +156,15 @@ export const DOCUMENT_ZONES = Object.freeze([
   'code',
   'unknown'
 ]);
+
+/**
+ * Body scope of a document whose every formal IOC section is empty (the
+ * publisher released its indicators elsewhere — "available for download
+ * here"). Authority is delegated to the publisher's own assertions in the
+ * body: operational clauses, endpoints and rows of network / indicator-typed
+ * table columns. Narrative mentions in it assert nothing. Section-tree only.
+ */
+export const DELEGATED_IOC_ZONE = 'delegated_ioc_scope';
 
 /** Negative / context-only zones for IOC promotion */
 export const NEGATIVE_ZONES = new Set([
@@ -170,7 +180,8 @@ export const STRONG_IOC_ZONES = new Set([
   'explicit_ioc_section',
   'c2_section',
   'sample_table',
-  'operational_infrastructure'
+  'operational_infrastructure',
+  DELEGATED_IOC_ZONE
 ]);
 
 /**

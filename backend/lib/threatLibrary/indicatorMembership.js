@@ -33,7 +33,9 @@ export const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = Object.freeze([
   'explicit_ioc_section',
   'c2_section',
   'sample_table',
-  'operational_infrastructure'
+  'operational_infrastructure',
+  // Every formal IOC section empty: publisher assertions in the body (section-tree).
+  'delegated_ioc_scope'
 ]);
 
 const NON_IOC_TYPE_SET = new Set(NON_IOC_CANDIDATE_TYPES);
@@ -413,6 +415,22 @@ export function membershipParityCases() {
         ]
       }
     }, { member: true, context_only: false, pending_actionable: true }),
+    // Every formal IOC section empty: a delegated-scope assertion is a member,
+    // a delegated-scope narrative mention is not (MODE A rules unchanged).
+    wrap('mode_a_delegated_scope_asserted', {
+      source_assertion: 'explicit_c2',
+      evidence: {
+        source_assertion: 'explicit_c2',
+        occurrences: [{ zone: 'delegated_ioc_scope', asserted: true, occurrence_kind: 'endpoint' }]
+      }
+    }, { member: true, context_only: false, pending_actionable: true }),
+    wrap('mode_a_delegated_scope_narrative', {
+      source_assertion: 'body_mention',
+      evidence: {
+        source_assertion: 'body_mention',
+        occurrences: [{ zone: 'delegated_ioc_scope', asserted: false, occurrence_kind: 'narrative_mention' }]
+      }
+    }, { member: false, context_only: false, pending_actionable: false }),
     wrap('mode_b_narrative_malicious', {
       document_has_authoritative_scope: false,
       source_assertion: 'body_mention',

@@ -1,0 +1,232 @@
+{
+  "id": "golden-unit42-aeternum",
+  "title": "Unit 42 — Aeternum (mixed IOC tables: hedged Telegram API row, public RPC endpoints)",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "mixed_ioc_table",
+    "hedged_negation",
+    "public_infrastructure",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/unit42-aeternum-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/aeternum-blockchain-c2-analysis/",
+    "talonhound_report_id": "3c52e2c8-e6e2-4c9c-baba-b4c5582f4dbe",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "5bfb25b8255b61e5ffdf6804451534bcfa9f1dfd225e6c8cdcefb5f50d846898",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "1505eda3da68e2ff9919b55a31018bd30a991236f041aee835f3bc4e430ce505",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://github.com/lencod/",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://github.com/Mash3Do/",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "f2a326cff405299e4ebdfaac955c52fc7e496544eaa0921ecad4816cb3ae3a27",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "4e24bbd0fabac6c3efcec943046afbfd332b2c0108a13becfda23a0e26f9ff5f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "81bb80d9c5a97dc41b65f6248c131963c91346eb4fb672836b3d53ae67564d9f",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "193.221.200.219",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "http://sekirolegion.duckdns.org/api/endpoint.php",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "ea1b6ff3a0c1a749b9f09d66789973321d63d8896b48f7345193bdad512950a2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "download.sftp-api-group-wechat.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "update.constant-path.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "update-launcher.xyz",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "test-steve.cyou",
+        "assertion": "explicit"
+      },
+      {
+        "type": "url",
+        "value": "https://cdnjsdelivr.beer/",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "domain",
+        "value": "api.telegram.org"
+      }
+    ],
+    "not_indicators": [],
+    "ambiguous": [
+      {
+        "type": "url",
+        "value": "https://polygon.rpc.hypersync.xyz/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-mumbai.g.alchemy.com/v2/demo",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-mumbai-bor-rpc.publicnode.com/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://api.noderpc.xyz/rpc-polygon-pos/public",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-mumbai.gateway.tenderly.co/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://public.stackup.sh/api/v1/node/polygon-mainnet",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://gateway.tenderly.co/public/polygon",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-amoy.gateway.tenderly.co/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://rpc.poolz.finance/polygon",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://gateway.tenderly.co/public/polygon-mumbai",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://api.zan.top/polygon-amoy",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://endpoints.omniatech.io/v1/polygon-zkevm/testnet/public",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://rpc.polygon-zkevm.gateway.fm/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-pokt.nodies.app/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-amoy.therpc.io/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://rpc.polygonsupernet.public.arianee.net/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://public.stackup.sh/api/v1/node/polygon-mumbai",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-zkevm-mainnet.public.blastapi.io/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygontestapi.terminet.io/rpc",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-mainnet.g.alchemy.com/v2/demo",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "url",
+        "value": "https://polygon-zkevm.drpc.org/",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      },
+      {
+        "type": "domain",
+        "value": "gulf.moneroocean.stream",
+        "rationale": "Public shared infrastructure (Polygon RPC provider / Monero mining pool) listed in the publisher IOC table without any malicious assertion; either reading is defensible under the current policy."
+      }
+    ],
+    "sections": []
+  }
+}

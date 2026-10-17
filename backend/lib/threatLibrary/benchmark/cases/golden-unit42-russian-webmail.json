@@ -1,0 +1,129 @@
+{
+  "id": "golden-unit42-russian-webmail",
+  "title": "Unit 42 — Russian Global Webmail Espionage (H3 IP / domain lists)",
+  "publisher": "Palo Alto Unit 42",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "list_appendix",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/unit42-russian-webmail-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/russian-webmail-espionage/",
+    "talonhound_report_id": "b3fe461e-b8dd-4d4b-8a60-dd0ed66071a4",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "37.120.247.228",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "64.226.124.190",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "104.248.134.194",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "185.86.79.95",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "193.238.152.66",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "194.156.103.193",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.252.238.18",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.252.238.64",
+        "assertion": "explicit"
+      },
+      {
+        "type": "ip",
+        "value": "216.252.238.104",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "analyticemailmeter.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "emailanalytics.com.ua",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "istc-cloud.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "mailnalysis.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "synacorzimbra.nl",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zimbra-metadata.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zimbrastat.com",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zimbrasoft.com.ua",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "zmailanalytics.com",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}
