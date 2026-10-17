@@ -90,6 +90,17 @@ test('six-report golden corpus: exact publisher sets and the audited failure cla
   assert.equal(golden.reduce((n, id) => n + byId.get(id).metrics.indicators.expected, 0), 65, 'independent publisher Indicator total');
 });
 
+test('Unit 42 PPI key-value IOC records stay inside the appendix across H3 operation headings (tl-zones-v13)', () => {
+  const m = byId.get('golden-unit42-ppi-untracked-nightmares')?.metrics;
+  assert.ok(m, 'golden-unit42-ppi-untracked-nightmares present');
+  assert.equal(m.indicators.expected, 330, 'independent publisher Indicator total');
+  assert.equal(m.indicators.fn, 0, `false negatives: ${m.indicators.false_negatives.map((x) => x.id).join(' ')}`);
+  assert.equal(m.indicators.fp, 0, `false positives: ${m.indicators.false_positives.map((x) => x.id).join(' ')}`);
+  assert.deepEqual(m.non_indicators.promoted, [], 'record file names never promoted');
+  assert.deepEqual(m.context_only.wrong, [], 'context only');
+  assert.equal(m.sections.correct, m.sections.checked, 'sections');
+});
+
 test('no unexpected Indicator membership change against baseline.json', () => {
   const baseline = readBaseline();
   assert.ok(baseline, 'baseline.json is missing — run npm run benchmark:threat-library -- --write-baseline');

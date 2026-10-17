@@ -1,0 +1,2795 @@
+{
+ "title": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+ "language": "en-us",
+ "blocks": [
+  {
+   "id": "b005",
+   "type": "heading",
+   "text": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+   "page": null,
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+   "level": 1
+  },
+  {
+   "id": "b025",
+   "type": "heading",
+   "text": "Executive Summary",
+   "page": null,
+   "section": "Executive Summary",
+   "level": 2
+  },
+  {
+   "id": "b038",
+   "type": "table",
+   "text": "Related Unit 42 Topics | SEO Poisoning, Browser Hijacking, RATs",
+   "page": null,
+   "section": "Executive Summary",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Related Unit 42 Topics",
+      "SEO Poisoning, Browser Hijacking, RATs"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b039",
+   "type": "heading",
+   "text": "Overview of CL-CRI-1171 Activity",
+   "page": null,
+   "section": "Overview of CL-CRI-1171 Activity",
+   "level": 2
+  },
+  {
+   "id": "b042",
+   "type": "heading",
+   "text": "The PPI Ecosystem: An Infection Marketplace",
+   "page": null,
+   "section": "The PPI Ecosystem: An Infection Marketplace",
+   "level": 3
+  },
+  {
+   "id": "b044",
+   "type": "heading",
+   "text": "Tracking CL-CRI-1171: The PPI Operation Behind the Payloads",
+   "page": null,
+   "section": "Tracking CL-CRI-1171: The PPI Operation Behind the Payloads",
+   "level": 3
+  },
+  {
+   "id": "b048",
+   "type": "heading",
+   "text": "Unpacking the Delivery Infrastructure",
+   "page": null,
+   "section": "Unpacking the Delivery Infrastructure",
+   "level": 3
+  },
+  {
+   "id": "b058",
+   "type": "table",
+   "text": "Operating System | Browser | Referring SEO Domain | Search Keyword | Victim IP ¶ Windows_10 | Chrome | atthelake[.]info | hwidspoofer | 5.xxx.xx.xxx ¶ Windows_10 | Chrome | atthelake[.]info | combatwarriorsGit | 2.xx.xxx.xx",
+   "page": null,
+   "section": "Unpacking the Delivery Infrastructure",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Operating System",
+      "Browser",
+      "Referring SEO Domain",
+      "Search Keyword",
+      "Victim IP"
+     ],
+     [
+      "Windows_10",
+      "Chrome",
+      "atthelake[.]info",
+      "hwidspoofer",
+      "5.xxx.xx.xxx"
+     ],
+     [
+      "Windows_10",
+      "Chrome",
+      "atthelake[.]info",
+      "combatwarriorsGit",
+      "2.xx.xxx.xx"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b062",
+   "type": "heading",
+   "text": "The YouTube Funnel",
+   "page": null,
+   "section": "The YouTube Funnel",
+   "level": 3
+  },
+  {
+   "id": "b068",
+   "type": "heading",
+   "text": "Technical Analysis",
+   "page": null,
+   "section": "Technical Analysis",
+   "level": 2
+  },
+  {
+   "id": "b071",
+   "type": "list",
+   "text": "Operation A: Insomnia RAT – A dual-payload, cross-platform backdoor that brings its own environment to ensure survival. Targeting both Windows and macOS using Node.js, paired with a twin Python agent.",
+   "page": null,
+   "section": "Technical Analysis"
+  },
+  {
+   "id": "b074",
+   "type": "heading",
+   "text": "Initial Access Vector in Intrusions",
+   "page": null,
+   "section": "Initial Access Vector in Intrusions",
+   "level": 3
+  },
+  {
+   "id": "b077",
+   "type": "list",
+   "text": "Second intrusion set: Browsed to noiseship[.]cfd, a domain registered just 39 days earlier, and downloaded a trojanized windirstat.exe installer. This package carried the PPI loader with affiliate ID CID=3075.",
+   "page": null,
+   "section": "Initial Access Vector in Intrusions"
+  },
+  {
+   "id": "b078",
+   "type": "heading",
+   "text": "The OfferLoader Execution Chain",
+   "page": null,
+   "section": "The OfferLoader Execution Chain",
+   "level": 3
+  },
+  {
+   "id": "b082",
+   "type": "paragraph",
+   "text": "In two separate intrusion sets we discovered that the ZIP file contained OfferLoader masquerading as a windirstat.exe installer that initiates the compromise by unpacking windirstat.tmp. This temporary file transmits an initial tracking beacon to voyagemist[.]space. This is another gating mechanism: depending on the structure of the beacon, one of two text files will be retrieved. They either contain “no” to signal that the loader should not unpack further stages, or “ok” to signal all offers will be deployed. Following this check-in, the process spawns three child processes: eld0.exe, eld1.exe and eld2.exe. Each child process corresponds to a different malware campaign. The loader passes specific affiliate-tracking parameters to each process via a command line.",
+   "page": null,
+   "section": "The OfferLoader Execution Chain"
+  },
+  {
+   "id": "b086",
+   "type": "heading",
+   "text": "Operation A: Insomnia RAT – A Cross-Platform Backdoor",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor",
+   "level": 3
+  },
+  {
+   "id": "b088",
+   "type": "list",
+   "text": "An upgraded variant of a Node.js backdoor (reported by Walmart Global Tech in 2025)",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor"
+  },
+  {
+   "id": "b093",
+   "type": "paragraph",
+   "text": "Eld0.exe drops the a.dll payload and spawns a hidden PowerShell process to download and execute t.ps1. This double-stage installer script disables Windows Defender protections, adds the entire C:\\ drive as an exclusion, suppresses security notifications and deploys the two Insomnia RAT backdoors. t.ps1 also downloads and sets up the environment needed to execute both backdoors by installing Python and Node.js on the victim’s machine. Node.js is hidden from the system's Add/Remove Programs list by setting SystemComponent=1 in the registry.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor"
+  },
+  {
+   "id": "b094",
+   "type": "paragraph",
+   "text": "The first part of Insomnia RAT is a Node.js agent downloaded from stryper[.]info/aa.js. While the prior variant targeted Windows, Linux and FreeBSD with a single payload, this iteration targets Windows and macOS using platform-specific C2 server lists. It also deploys a companion Python agent as a redundant fallback, ensuring persistent access if one runtime environment is detected or removed.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor"
+  },
+  {
+   "id": "b097",
+   "type": "paragraph",
+   "text": "The same t.ps1 script installs a second, redundant agent. This Python script is downloaded from aa.amazingshield[.]xyz. The installer downloads a legitimate Python distribution and registers a second scheduled task, OOBETaskScheduler, under \\Microsoft\\Windows\\Servicing\\.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor"
+  },
+  {
+   "id": "b098",
+   "type": "paragraph",
+   "text": "The Python agent is simpler than its Node.js sibling, but follows the same C2 protocol pattern: POST requests to /d for tasks and POST requests to /e for error reporting. The agent collects the MachineGuid, OS product name, hostname and processor architecture.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor"
+  },
+  {
+   "id": "b099",
+   "type": "paragraph",
+   "text": "The Python agent used crowdstri[.]com as its C2 domain. This appears to be a deliberate typosquat of crowdstrike[.]com, designed to blend into logs and evade quick security reviews.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT – A Cross-Platform Backdoor"
+  },
+  {
+   "id": "b100",
+   "type": "heading",
+   "text": "Operation B: ARKTunnel – A WebSocket RAT Hidden in a Bitmap",
+   "page": null,
+   "section": "Operation B: ARKTunnel – A WebSocket RAT Hidden in a Bitmap",
+   "level": 3
+  },
+  {
+   "id": "b101",
+   "type": "paragraph",
+   "text": "The eld1.exe chain terminates in a previously undocumented tunnel payload. The chain uses least-significant-bit (LSB) steganography to deploy the final payload. Figure 8 shows the full infection chain of Operation B.",
+   "page": null,
+   "section": "Operation B: ARKTunnel – A WebSocket RAT Hidden in a Bitmap"
+  },
+  {
+   "id": "b103",
+   "type": "paragraph",
+   "text": "Rather than dropping an executable directly to disk, eld1.exe extracts a ZIP archive from a BMP image resource using LSB steganography. The result is the payload archive, ProcorTrex.zip, which contains wscl.exe, a previously unreported WebSocket-based tunneling RAT. We named this RAT ARKTunnel, based on the attacker's fabricated company name rotation of EarthKark and TamarkLark.",
+   "page": null,
+   "section": "Operation B: ARKTunnel – A WebSocket RAT Hidden in a Bitmap"
+  },
+  {
+   "id": "b105",
+   "type": "paragraph",
+   "text": "The C2 server address, reg.pcsdkflyer[.]ca, is decoded from a 39-byte configuration blob using Base64-decoding followed by an XOR decryption routine. The portable executable (PE) metadata of wscl.exe contains a fabricated company name, TamarkLark Corporation, and a fictitious product name, TamarkLark Manager, which led us to suspect that other ARKTunnel samples might use additional fabricated company names.",
+   "page": null,
+   "section": "Operation B: ARKTunnel – A WebSocket RAT Hidden in a Bitmap"
+  },
+  {
+   "id": "b111",
+   "type": "paragraph",
+   "text": "All of the samples share the same wscl.exe filename pattern and GUID-based temp directory extraction pattern, indicating that they are variants of the same family.",
+   "page": null,
+   "section": "Operation B: ARKTunnel – A WebSocket RAT Hidden in a Bitmap"
+  },
+  {
+   "id": "b113",
+   "type": "heading",
+   "text": "Operation C: Docro Hijacker – Reviving Old Techniques",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques",
+   "level": 3
+  },
+  {
+   "id": "b114",
+   "type": "paragraph",
+   "text": "The eld2.exe payload installs a Chrome browser hijacker that we have named Docro Hijacker. The hijacker revives a browser-hijacking technique that has resurfaced periodically since 2015, now re-engineered to bypass updates to Chrome's integrity protections. While this iteration closely mirrors a proof-of-concept detailed by Synacktiv in 2025, this campaign marks the updated technique’s first documented instance of in-the-wild deployment.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b117",
+   "type": "paragraph",
+   "text": "eld2.exe is an Inno Setup package, and much like its loader, it extracts and runs eld2.tmp which contacts the affiliate’s extentrack[.]com install tracker.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b118",
+   "type": "paragraph",
+   "text": "eld2.tmp drops and loads Adblock.dll, which bypasses Chrome's Secure Preferences HMAC-SHA256 integrity check. The DLL extracts Chrome's HMAC key from resources.pak, computes valid HMAC signatures for the modified preference values and writes them directly to the Secure Preferences file. This file functions as an anti-tamper mechanism for browsers by storing a validated copy of the user's settings.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b120",
+   "type": "list",
+   "text": "Search hijacking: Changes the default search provider to mqsearch[.]com, a domain that masquerades as a search engine",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b122",
+   "type": "paragraph",
+   "text": "The docro extension uses Chrome's declarativeNetRequest API to dynamically rewrite network requests. Upon installation, it contacts vendralo[.]info to retrieve a unique per-victim UUID and fetch a set of network rewriting rules that are refreshed hourly.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b123",
+   "type": "paragraph",
+   "text": "These rules are used to hijack and monetize search results in the victim's browser. When the victim performs an internet search, across any of more than 190 Google country-code domains, the extension loads a script from drelto[.]info/farlix into the search results page. Because the script runs within the search engine's own origin context, it has full access to the page content. This enables the operator to inject advertisements into organic search results, rewrite affiliate links to capture referral revenue and/or redirect clicks to attacker-controlled destinations. These actions are functionally transparent to the user and visually indistinguishable from the legitimate search page.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b124",
+   "type": "paragraph",
+   "text": "The extension also checks vendralo[.]info for updates via /extensionInstaller/updateChromeExtension, allowing the operator to silently rotate to a new extension version at any time. Install telemetry is reported to finersto[.]com and extentrack[.]com.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b125",
+   "type": "paragraph",
+   "text": "With more than 50 unique samples contacting mqsearch[.]com according to VirusTotal, Docro Hijacker appears to be a mature, independent monetization module.",
+   "page": null,
+   "section": "Operation C: Docro Hijacker – Reviving Old Techniques"
+  },
+  {
+   "id": "b126",
+   "type": "heading",
+   "text": "Conclusion",
+   "page": null,
+   "section": "Conclusion",
+   "level": 2
+  },
+  {
+   "id": "b131",
+   "type": "heading",
+   "text": "Palo Alto Networks Protection and Mitigation",
+   "page": null,
+   "section": "Palo Alto Networks Protection and Mitigation",
+   "level": 2
+  },
+  {
+   "id": "b151",
+   "type": "heading",
+   "text": "Indicators of Compromise",
+   "page": null,
+   "section": "Indicators of Compromise",
+   "level": 2
+  },
+  {
+   "id": "b152",
+   "type": "heading",
+   "text": "Initial Access and OfferLoader",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "level": 3
+  },
+  {
+   "id": "b153",
+   "type": "paragraph",
+   "text": "SHA256 hash: 7f792c45de1e28fd42ac44c9444f157a2161742d130bac336c0e991aabbb112c",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b153"
+  },
+  {
+   "id": "b154",
+   "type": "paragraph",
+   "text": "File name: windirstat.exe",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b153"
+  },
+  {
+   "id": "b155",
+   "type": "paragraph",
+   "text": "File type: PE32 executable, Inno Setup 6.7.1",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b153"
+  },
+  {
+   "id": "b156",
+   "type": "paragraph",
+   "text": "File description: OfferLoader trojanized WinDirStat installer delivered via SEO-poisoning",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b153"
+  },
+  {
+   "id": "b157",
+   "type": "paragraph",
+   "text": "SHA256 hash: fc485882626512e7ff82a1d7cd8e8fb3e9751b026d97e682d6908aefff1f2d73",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b157"
+  },
+  {
+   "id": "b158",
+   "type": "paragraph",
+   "text": "File name: windirstat.tmp",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b157"
+  },
+  {
+   "id": "b159",
+   "type": "paragraph",
+   "text": "File type: PE32 executable, Inno Setup unpacked stage",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b157"
+  },
+  {
+   "id": "b160",
+   "type": "paragraph",
+   "text": "File description: Unpacked WinDirStat stage",
+   "page": null,
+   "section": "Initial Access and OfferLoader",
+   "line_group": "b157"
+  },
+  {
+   "id": "b161",
+   "type": "heading",
+   "text": "Operation A: Insomnia RAT",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "level": 3
+  },
+  {
+   "id": "b162",
+   "type": "paragraph",
+   "text": "SHA256 hash: 3052bd320a34e12ee694811ed0578797477dfd480c664491e509ed15ce1a6961",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b162"
+  },
+  {
+   "id": "b163",
+   "type": "paragraph",
+   "text": "File name: eld0.exe",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b162"
+  },
+  {
+   "id": "b164",
+   "type": "paragraph",
+   "text": "File type: PE32 executable, Inno Setup 6.3.0 SetupLdr",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b162"
+  },
+  {
+   "id": "b165",
+   "type": "paragraph",
+   "text": "File description: Insomnia RAT initial loader",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b162"
+  },
+  {
+   "id": "b166",
+   "type": "paragraph",
+   "text": "SHA256 hash: 25558ea78c4aa0fdd0f45fafcaa546d3115dc5806809d144a5801a40e48fd4c5",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b166"
+  },
+  {
+   "id": "b167",
+   "type": "paragraph",
+   "text": "File name: eld0.tmp",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b166"
+  },
+  {
+   "id": "b168",
+   "type": "paragraph",
+   "text": "File type: PE32 executable, Inno Setup unpacked stage",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b166"
+  },
+  {
+   "id": "b169",
+   "type": "paragraph",
+   "text": "File description: Unpacked loader stage",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b166"
+  },
+  {
+   "id": "b170",
+   "type": "paragraph",
+   "text": "SHA256 hash: 9b0d9cbc0fd4a7bae8b78a15dfbe63052779414ad725845732c4a0083008da69",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b170"
+  },
+  {
+   "id": "b171",
+   "type": "paragraph",
+   "text": "File name: a.dll",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b170"
+  },
+  {
+   "id": "b172",
+   "type": "paragraph",
+   "text": "File type: PE32 DLL",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b170"
+  },
+  {
+   "id": "b173",
+   "type": "paragraph",
+   "text": "File description: Executes the PowerShell downloader for the Node.js and Python second stages",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b170"
+  },
+  {
+   "id": "b174",
+   "type": "paragraph",
+   "text": "SHA256 hash: ceb30a5eb9ad9d9c6712c80726df16f96f99d9fc0753be241b00b4d636eb576e",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b174"
+  },
+  {
+   "id": "b175",
+   "type": "paragraph",
+   "text": "File name: t.ps1",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b174"
+  },
+  {
+   "id": "b176",
+   "type": "paragraph",
+   "text": "File type: PowerShell",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b174"
+  },
+  {
+   "id": "b177",
+   "type": "paragraph",
+   "text": "File description: Insomnia RAT PowerShell loader",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b174"
+  },
+  {
+   "id": "b178",
+   "type": "paragraph",
+   "text": "SHA256 hash: cf184d04ca31fb2b6b7efd85399c29c1136b539153e137ceb3877b1b905791de",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b178"
+  },
+  {
+   "id": "b179",
+   "type": "paragraph",
+   "text": "File name: <guid>.py",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b178"
+  },
+  {
+   "id": "b180",
+   "type": "paragraph",
+   "text": "File type: Python script",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b178"
+  },
+  {
+   "id": "b181",
+   "type": "paragraph",
+   "text": "File description: the Python-based component of the Insomnia RAT dual payload.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b178"
+  },
+  {
+   "id": "b182",
+   "type": "paragraph",
+   "text": "SHA256 hash: 62d49d0c78207ec2452cc8a30501db771c9edbae89889e41a7dd227551243e8e",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b182"
+  },
+  {
+   "id": "b183",
+   "type": "paragraph",
+   "text": "File name: aa.js",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b182"
+  },
+  {
+   "id": "b184",
+   "type": "paragraph",
+   "text": "File type: JavaScript",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b182"
+  },
+  {
+   "id": "b185",
+   "type": "paragraph",
+   "text": "File description: the Node.js-based component of the Insomnia RAT dual payload.",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b182"
+  },
+  {
+   "id": "b186",
+   "type": "paragraph",
+   "text": "URL: hxxps[:]//stryper[.]info/t.ps1",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b186"
+  },
+  {
+   "id": "b187",
+   "type": "paragraph",
+   "text": "Description: Stage-2 PowerShell installer for the Node.js and Python agents",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b186"
+  },
+  {
+   "id": "b188",
+   "type": "paragraph",
+   "text": "URL: hxxps[:]//stryper[.]info/aa.js",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b188"
+  },
+  {
+   "id": "b189",
+   "type": "paragraph",
+   "text": "Description: Stage-3 Node.js agent",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b188"
+  },
+  {
+   "id": "b190",
+   "type": "paragraph",
+   "text": "URL: hxxp[:]//aa.amazingshield[.]xyz/33244556546.py",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b190"
+  },
+  {
+   "id": "b191",
+   "type": "paragraph",
+   "text": "Description: Stage-3 Python agent",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b190"
+  },
+  {
+   "id": "b192",
+   "type": "paragraph",
+   "text": "Domain: stryper[.]info",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b192"
+  },
+  {
+   "id": "b193",
+   "type": "paragraph",
+   "text": "Description: Second-stage PowerShell and Node.js agent host",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b192"
+  },
+  {
+   "id": "b194",
+   "type": "paragraph",
+   "text": "Domain: aa.amazingshield[.]xyz",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b194"
+  },
+  {
+   "id": "b195",
+   "type": "paragraph",
+   "text": "Description: Python agent host",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b194"
+  },
+  {
+   "id": "b196",
+   "type": "paragraph",
+   "text": "Domain: crowdstri[.]com",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b196"
+  },
+  {
+   "id": "b197",
+   "type": "paragraph",
+   "text": "Description: CrowdStrike-typosquat C2 for the Python agent",
+   "page": null,
+   "section": "Operation A: Insomnia RAT",
+   "line_group": "b196"
+  },
+  {
+   "id": "b198",
+   "type": "heading",
+   "text": "Operation B: ARKTunnel",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "level": 3
+  },
+  {
+   "id": "b199",
+   "type": "paragraph",
+   "text": "SHA256 hash: aaebc8c07de485be6d1bfa956668c5e18aa1ff5588dfe84672e20ae90b4560f1",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b199"
+  },
+  {
+   "id": "b200",
+   "type": "paragraph",
+   "text": "File name: eld1.exe",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b199"
+  },
+  {
+   "id": "b201",
+   "type": "paragraph",
+   "text": "File type: PE32 executable",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b199"
+  },
+  {
+   "id": "b202",
+   "type": "paragraph",
+   "text": "File description: LSB-steganography dropper. The attacker forged the PE version-info resource to mimic a popular test proctoring application.",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b199"
+  },
+  {
+   "id": "b203",
+   "type": "paragraph",
+   "text": "SHA256 hash: e05bc22afbc5ddd50b49c85ee169dd13318000d38286de2b8bcff98217256a8d File size: 92,657 bytes",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b203"
+  },
+  {
+   "id": "b204",
+   "type": "paragraph",
+   "text": "File name: procorTrex.zip",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b203"
+  },
+  {
+   "id": "b205",
+   "type": "paragraph",
+   "text": "File location: C:\\Users\\Public\\procorTrex.zip",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b203"
+  },
+  {
+   "id": "b206",
+   "type": "paragraph",
+   "text": "File type: ZIP archive",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b203"
+  },
+  {
+   "id": "b207",
+   "type": "paragraph",
+   "text": "File description: ZIP carved from the eld1.exe BMP steganography payload",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b203"
+  },
+  {
+   "id": "b208",
+   "type": "paragraph",
+   "text": "SHA256 hash: b367762140ae7f5098230b8a5da738c9241f286281ec9439dd6ca581fc87989c File size: 245,248 bytes",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b208"
+  },
+  {
+   "id": "b209",
+   "type": "paragraph",
+   "text": "File name: wscl.exe",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b208"
+  },
+  {
+   "id": "b210",
+   "type": "paragraph",
+   "text": "File type: PE32 executable",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b208"
+  },
+  {
+   "id": "b211",
+   "type": "paragraph",
+   "text": "File description: WebSocket tunneling RAT",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b208"
+  },
+  {
+   "id": "b212",
+   "type": "paragraph",
+   "text": "ARKTunnel resource icons:",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b212"
+  },
+  {
+   "id": "b213",
+   "type": "paragraph",
+   "text": "SHA256 hash: d8d783f8e050a6e394f3c0aa5e2bc73a38d822e55fbc39c0648cbff566de3cdf",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b212"
+  },
+  {
+   "id": "b214",
+   "type": "paragraph",
+   "text": "File description: Resource Icon shared across ARKTunnel samples",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b212"
+  },
+  {
+   "id": "b215",
+   "type": "paragraph",
+   "text": "SHA256 hash: 06e0afd01bbc6c9d5dc16c3165089b233dc071e1f251abd06235d1b9166cdac5",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b215"
+  },
+  {
+   "id": "b216",
+   "type": "paragraph",
+   "text": "File description: Resource Icon shared across ARKTunnel samples",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b215"
+  },
+  {
+   "id": "b217",
+   "type": "paragraph",
+   "text": "Domain: reg.pcsdkflyer[.]ca",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b217"
+  },
+  {
+   "id": "b218",
+   "type": "paragraph",
+   "text": "Description: wscl.exe WebSocket RAT C2",
+   "page": null,
+   "section": "Operation B: ARKTunnel",
+   "line_group": "b217"
+  },
+  {
+   "id": "b219",
+   "type": "heading",
+   "text": "Operation C: Docro Hijacker",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "level": 3
+  },
+  {
+   "id": "b220",
+   "type": "paragraph",
+   "text": "SHA256 hash: 2c6e11027b011042c9a118fc20728f8f4ebb6be8795cc84cc9a45622c297d354",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b220"
+  },
+  {
+   "id": "b221",
+   "type": "paragraph",
+   "text": "File name: eld2.exe",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b220"
+  },
+  {
+   "id": "b222",
+   "type": "paragraph",
+   "text": "File type: PE32 executable, Inno Setup installer",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b220"
+  },
+  {
+   "id": "b223",
+   "type": "paragraph",
+   "text": "File description: Branch C installer that drops Adblock.dll and the docro Chrome extension",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b220"
+  },
+  {
+   "id": "b224",
+   "type": "paragraph",
+   "text": "SHA256 hash: 553ce594c9c6afdd4794fddc28c194e3bc3c1b052310e5099c58ac15bab72104",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b224"
+  },
+  {
+   "id": "b225",
+   "type": "paragraph",
+   "text": "File name: eld2.tmp",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b224"
+  },
+  {
+   "id": "b226",
+   "type": "paragraph",
+   "text": "File type: PE32 executable",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b224"
+  },
+  {
+   "id": "b227",
+   "type": "paragraph",
+   "text": "File description: Inno Setup unpacked stage",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b224"
+  },
+  {
+   "id": "b228",
+   "type": "paragraph",
+   "text": "SHA256 hash: fdcc95b7791c0d6590dcf1a412dc9fcc92ad2095818d1b78368b31efad012007",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b228"
+  },
+  {
+   "id": "b229",
+   "type": "paragraph",
+   "text": "File size: 3,041,280 bytes",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b228"
+  },
+  {
+   "id": "b230",
+   "type": "paragraph",
+   "text": "File name: Adblock.dll",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b228"
+  },
+  {
+   "id": "b231",
+   "type": "paragraph",
+   "text": "File location: %TEMP%\\Adblock.dll",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b228"
+  },
+  {
+   "id": "b232",
+   "type": "paragraph",
+   "text": "File type: PE32 DLL",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b228"
+  },
+  {
+   "id": "b233",
+   "type": "paragraph",
+   "text": "File description: Chrome Secure Preferences HMAC-SHA256 bypass DLL that sideloads the docro extension and hijacks the default search provider",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b228"
+  },
+  {
+   "id": "b234",
+   "type": "paragraph",
+   "text": "Docro extension path:",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b234"
+  },
+  {
+   "id": "b235",
+   "type": "paragraph",
+   "text": "File location: C:\\ProgramData\\DocsHelper\\docro",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b234"
+  },
+  {
+   "id": "b236",
+   "type": "paragraph",
+   "text": "File description: Manifest V3 Chrome extension sideloaded by Adblock.dll",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b234"
+  },
+  {
+   "id": "b237",
+   "type": "paragraph",
+   "text": "Domain: vendralo[.]info",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b237"
+  },
+  {
+   "id": "b238",
+   "type": "paragraph",
+   "text": "Description: Per-victim UUID and hourly rule delivery",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b237"
+  },
+  {
+   "id": "b239",
+   "type": "paragraph",
+   "text": "Domain: finersto[.]com",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b239"
+  },
+  {
+   "id": "b240",
+   "type": "paragraph",
+   "text": "Description: Extension install and start telemetry",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b239"
+  },
+  {
+   "id": "b241",
+   "type": "paragraph",
+   "text": "Domain: drelto[.]info",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b241"
+  },
+  {
+   "id": "b242",
+   "type": "paragraph",
+   "text": "Description: SERP-injection script host",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b241"
+  },
+  {
+   "id": "b243",
+   "type": "paragraph",
+   "text": "Domain: mqsearch[.]com",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b243"
+  },
+  {
+   "id": "b244",
+   "type": "paragraph",
+   "text": "Description: Hijacked the default search provider endpoint",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b243"
+  },
+  {
+   "id": "b245",
+   "type": "paragraph",
+   "text": "Domain: extentrack[.]com",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b245"
+  },
+  {
+   "id": "b246",
+   "type": "paragraph",
+   "text": "Description: Docs Helper install-success and install-failure callback",
+   "page": null,
+   "section": "Operation C: Docro Hijacker",
+   "line_group": "b245"
+  },
+  {
+   "id": "b247",
+   "type": "heading",
+   "text": "CL-CRI-1171 Rotational Infrastructure",
+   "page": null,
+   "section": "CL-CRI-1171 Rotational Infrastructure",
+   "level": 3
+  },
+  {
+   "id": "b248",
+   "type": "heading",
+   "text": "Initial-Access Lure and SEO File-Locker Hosts",
+   "page": null,
+   "section": "Initial-Access Lure and SEO File-Locker Hosts",
+   "level": 4
+  },
+  {
+   "id": "b249",
+   "type": "table",
+   "text": "Domain | Role ¶ noiseship[.]cfd | SEO-poison domain ¶ atthelake[.]info | Top referring SEO-poison domain ¶ uy.basesfiles[.]com | Fake file host ¶ basesfile[.]com | Sibling fake file host ¶ igk.filexspace[.]com ikx.filexspace[.]com | SEO file-locker lure hosts ¶ filexstorage[.]site | SEO file-locker lure host ¶ filescloud[.]pro | SEO file-locker lure host ¶ zippyfiles[.]net | SEO file-locker lure host ¶ mifilesx[.]site | SEO file-locker lure host ¶ dw.xrsdownload[.]com | SEO file-locker lure host ¶ storage.ggclicker[.]com | SEO file-locker / referrer host ¶ watchadvance[.]com | SEO-poisoning domain",
+   "page": null,
+   "section": "Initial-Access Lure and SEO File-Locker Hosts",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Domain",
+      "Role"
+     ],
+     [
+      "noiseship[.]cfd",
+      "SEO-poison domain"
+     ],
+     [
+      "atthelake[.]info",
+      "Top referring SEO-poison domain"
+     ],
+     [
+      "uy.basesfiles[.]com",
+      "Fake file host"
+     ],
+     [
+      "basesfile[.]com",
+      "Sibling fake file host"
+     ],
+     [
+      "igk.filexspace[.]com ikx.filexspace[.]com",
+      "SEO file-locker lure hosts"
+     ],
+     [
+      "filexstorage[.]site",
+      "SEO file-locker lure host"
+     ],
+     [
+      "filescloud[.]pro",
+      "SEO file-locker lure host"
+     ],
+     [
+      "zippyfiles[.]net",
+      "SEO file-locker lure host"
+     ],
+     [
+      "mifilesx[.]site",
+      "SEO file-locker lure host"
+     ],
+     [
+      "dw.xrsdownload[.]com",
+      "SEO file-locker lure host"
+     ],
+     [
+      "storage.ggclicker[.]com",
+      "SEO file-locker / referrer host"
+     ],
+     [
+      "watchadvance[.]com",
+      "SEO-poisoning domain"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b250",
+   "type": "heading",
+   "text": "Domains Used to Confirm OfferLoader Installations",
+   "page": null,
+   "section": "Domains Used to Confirm OfferLoader Installations",
+   "level": 4
+  },
+  {
+   "id": "b251",
+   "type": "heading",
+   "text": "Domain:",
+   "page": null,
+   "section": "Domain:",
+   "level": 4
+  },
+  {
+   "id": "b252",
+   "type": "list",
+   "text": "animalview[.]xyz",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b253",
+   "type": "list",
+   "text": "trickflag[.]info",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b254",
+   "type": "list",
+   "text": "suitstraw[.]info",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b255",
+   "type": "list",
+   "text": "connect.fuelleg[.]info",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b256",
+   "type": "list",
+   "text": "vesselsystem[.]xyz",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b257",
+   "type": "list",
+   "text": "minewave[.]info",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b258",
+   "type": "list",
+   "text": "collartitle[.]info",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b259",
+   "type": "list",
+   "text": "boardmagic[.]info",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b260",
+   "type": "list",
+   "text": "placespoon[.]xyz",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b261",
+   "type": "list",
+   "text": "needcherries[.]online",
+   "page": null,
+   "section": "Domain:"
+  },
+  {
+   "id": "b262",
+   "type": "heading",
+   "text": "Payload-Handoff and Second-Stage Hosts",
+   "page": null,
+   "section": "Payload-Handoff and Second-Stage Hosts",
+   "level": 4
+  },
+  {
+   "id": "b263",
+   "type": "heading",
+   "text": "Install-Tracker Beacons (Operator Panel)",
+   "page": null,
+   "section": "Install-Tracker Beacons (Operator Panel)",
+   "level": 4
+  },
+  {
+   "id": "b264",
+   "type": "table",
+   "text": "Domain | Role ¶ voyagemist[.]space | PPI affiliate install tracker ¶ statementtouch[.]xyz | PPI affiliate install tracker ¶ chawton[.]info | PPI affiliate install tracker",
+   "page": null,
+   "section": "Install-Tracker Beacons (Operator Panel)",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Domain",
+      "Role"
+     ],
+     [
+      "voyagemist[.]space",
+      "PPI affiliate install tracker"
+     ],
+     [
+      "statementtouch[.]xyz",
+      "PPI affiliate install tracker"
+     ],
+     [
+      "chawton[.]info",
+      "PPI affiliate install tracker"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b265",
+   "type": "heading",
+   "text": "YouTube Funnel – Burner Blogs and Custom-Domain Sites",
+   "page": null,
+   "section": "YouTube Funnel – Burner Blogs and Custom-Domain Sites",
+   "level": 4
+  },
+  {
+   "id": "b266",
+   "type": "table",
+   "text": "Domain Name | Persona | Type ¶ velfps.blogspot[.]com | Velvox | Blogspot burner ¶ velvoxlab.blogspot[.]com | Velvox | Blogspot burner ¶ venrx.blogspot[.]com | Venrx | Blogspot burner ¶ venrxhub.blogspot[.]com | Venrx | Blogspot burner ¶ venrx[.]xyz | Venrx | Custom-domain burner ¶ ravexoffical.blogspot[.]com | Ravex | Blogspot burner ¶ adex-blog.blogspot[.]com | Adex | Blogspot burner",
+   "page": null,
+   "section": "YouTube Funnel – Burner Blogs and Custom-Domain Sites",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Domain Name",
+      "Persona",
+      "Type"
+     ],
+     [
+      "velfps.blogspot[.]com",
+      "Velvox",
+      "Blogspot burner"
+     ],
+     [
+      "velvoxlab.blogspot[.]com",
+      "Velvox",
+      "Blogspot burner"
+     ],
+     [
+      "venrx.blogspot[.]com",
+      "Venrx",
+      "Blogspot burner"
+     ],
+     [
+      "venrxhub.blogspot[.]com",
+      "Venrx",
+      "Blogspot burner"
+     ],
+     [
+      "venrx[.]xyz",
+      "Venrx",
+      "Custom-domain burner"
+     ],
+     [
+      "ravexoffical.blogspot[.]com",
+      "Ravex",
+      "Blogspot burner"
+     ],
+     [
+      "adex-blog.blogspot[.]com",
+      "Adex",
+      "Blogspot burner"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b267",
+   "type": "paragraph",
+   "text": "Please note: While Velvox is a real company, the attackers used its name coincidentally. They did not use or impersonate the company’s resources or identity.",
+   "page": null,
+   "section": "YouTube Funnel – Burner Blogs and Custom-Domain Sites"
+  },
+  {
+   "id": "b268",
+   "type": "heading",
+   "text": "Additional Resources",
+   "page": null,
+   "section": "Additional Resources",
+   "level": 2
+  },
+  {
+   "id": "b269",
+   "type": "list",
+   "text": "“WinYahoo” PUP Modifies Chrome Secure Preferences – Malwarebytes",
+   "page": null,
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b270",
+   "type": "list",
+   "text": "NodeJS backdoors delivering proxyware and monetization schemes – Walmart Global Tech blog",
+   "page": null,
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b271",
+   "type": "heading",
+   "text": "Appendix A: CL-CRI-1171 Full Discovered Infrastructure Tables",
+   "page": null,
+   "section": "Appendix A: CL-CRI-1171 Full Discovered Infrastructure Tables",
+   "level": 2
+  },
+  {
+   "id": "b272",
+   "type": "table",
+   "text": "Indicator | Role ¶ achievershelf[.]space | Gate/landing ¶ activitymeal[.]space | Gate/landing ¶ additionplot[.]cfd | Gate/landing ¶ adviceturn[.]xyz | Gate/landing ¶ afternoonscrew[.]space | Gate/landing ¶ agreementjuice[.]space | Gate/landing ¶ airplaneiron[.]xyz | Gate/landing ¶ airtwig[.]xyz | Gate/landing ¶ amountfuel[.]icu | Gate/landing ¶ animalrecord[.]xyz | Gate/landing ¶ apparatustruck[.]xyz | Gate/landing ¶ apparelplate[.]space | Gate/landing ¶ archairport[.]xyz | Gate/landing ¶ authoritykittens[.]info | Gate/landing ¶ babyvein[.]xyz | Gate/landing ¶ badgewing[.]xyz | Gate/landing ¶ bagcare[.]space | Gate/landing ¶ basinpleasure[.]xyz | Gate/landing ¶ basketballyear[.]xyz | Gate/landing ¶ baskethumor[.]xyz | Gate/landing ¶ bedroomdesire[.]xyz | Gate/landing ¶ beliefpicture[.]xyz | Gate/landing ¶ bellplayground[.]xyz | Gate/landing ¶ bikesdonkey[.]info | Gate/landing ¶ birthdaymagic[.]xyz | Gate/landing ¶ boatthought[.]xyz | Gate/landing ¶ boundarychickens[.]xyz | Gate/landing ¶ boytank[.]xyz | Gate/landing ¶ branchmorning[.]xyz | Gate/landing ¶ breathdoctor[.]xyz | Gate/landing ¶ bubbleslip[.]xyz | Gate/landing ¶ cabbagemeasure[.]xyz | Gate/landing ¶ cablecanvas[.]xyz | Gate/landing ¶ cardgrape[.]xyz | Gate/landing ¶ cattlegold[.]xyz | Gate/landing ¶ celeryerror[.]xyz | Gate/landing ¶ centscarf[.]xyz | Gate/landing ¶ chalkprose[.]xyz | Gate/landing ¶ cherriestruck[.]space | Gate/landing ¶ chesstail[.]xyz | Gate/landing ¶ chickensmine[.]space | Gate/landing ¶ churchpail[.]xyz | Gate/landing ¶ clothcrib[.]xyz | Gate/landing ¶ clothcurrent[.]xyz | Gate/landing ¶ coatberry[.]xyz | Gate/landing ¶ connect.activitykitty[.]xyz | Install tracker ¶ connect.apparatustaste[.]xyz | Install tracker ¶ connect.armcard[.]xyz | Install tracker ¶ connect.badgeterritory[.]xyz | Install tracker ¶ connect.baitmetal[.]xyz | Install tracker ¶ connect.beefteeth[.]xyz | Install tracker ¶ connect.believesisters[.]xyz | Install tracker ¶ connect.boundaryfly[.]xyz | Install tracker ¶ connect.bubbleappliance[.]xyz | Install tracker ¶ connect.cableland[.]xyz | Install tracker ¶ connect.chinexpert[.]xyz | Install tracker ¶ connect.conditiongrade[.]xyz | Install tracker ¶ connect.coppersummer[.]xyz | Install tracker ¶ connect.creatorcreator[.]xyz | Install tracker ¶ connect.dresstent[.]xyz | Install tracker ¶ connect.dropjeans[.]xyz | Install tracker ¶ connect.edgeplayground[.]xyz | Install tracker ¶ connect.exchangeclub[.]xyz | Install tracker ¶ connect.existencediscussion[.]info | Install tracker ¶ connect.expansionsalt[.]info | Install tracker ¶ connect.fangstitch[.]xyz | Install tracker ¶ connect.fogparcel[.]info | Install tracker ¶ connect.foodhook[.]info | Install tracker ¶ connect.forkcountry[.]xyz | Install tracker ¶ connect.geesepurpose[.]xyz | Install tracker ¶ connect.giantsdogs[.]info | Install tracker ¶ connect.giraffetoothpaste[.]xyz | Install tracker ¶ connect.guitarrobin[.]xyz | Install tracker ¶ connect.halllunch[.]info | Install tracker ¶ connect.harborclam[.]xyz | Install tracker ¶ connect.holecompany[.]info | Install tracker ¶ connect.knifesea[.]icu | Install tracker ¶ connect.monthsmoke[.]info | Install tracker ¶ connect.nosegovernor[.]xyz | Install tracker ¶ connect.pagesubstance[.]xyz | Install tracker ¶ connect.poisonblade[.]xyz | Install tracker ¶ connect.prosesalt[.]xyz | Install tracker ¶ connect.purposethings[.]info | Install tracker ¶ connect.quiltgirls[.]xyz | Install tracker ¶ connect.reactionbit[.]info | Install tracker ¶ connect.rewardrun[.]xyz | Install tracker ¶ connect.riceapparel[.]xyz | Install tracker ¶ connect.seashoreletters[.]info | Install tracker ¶ connect.selectiondogs[.]xyz | Install tracker ¶ connect.shapeboot[.]info | Install tracker ¶ connect.shoptax[.]xyz | Install tracker ¶ connect.stopfinger[.]info | Install tracker ¶ connect.structurekiss[.]xyz | Install tracker ¶ connect.tanksuggestion[.]xyz | Install tracker ¶ connect.thingbrass[.]xyz | Install tracker ¶ connect.thoughtslave[.]xyz | Install tracker ¶ connect.threadfuel[.]xyz | Install tracker ¶ connect.trailcontrol[.]xyz | Install tracker ¶ connect.trickbushes[.]info | Install tracker ¶ connect.vacationthought[.]xyz | Install tracker ¶ connect.viewschool[.]xyz | Install tracker ¶ connect.voyagelaugh[.]xyz | Install tracker ¶ connect.woolreward[.]xyz | Install tracker ¶ connect.yearicicle[.]xyz | Install tracker ¶ connect.zebratransport[.]xyz | Install tracker ¶ controlprice[.]xyz | Gate/landing ¶ coughcoal[.]icu | Gate/landing ¶ countrypipe[.]space | Gate/landing ¶ cowsfoot[.]xyz | Gate/landing ¶ crackfood[.]space | Gate/landing ¶ creamfurniture[.]space | Gate/landing ¶ creditchickens[.]xyz | Gate/landing ¶ crediteducation[.]cfd | Gate/landing ¶ crimestreet[.]xyz | Gate/landing ¶ crimesupport[.]cfd | Gate/landing ¶ curvebite[.]xyz | Gate/landing ¶ deathrock[.]xyz | Gate/landing ¶ deathshop[.]xyz | Gate/landing ¶ decisionreaction[.]xyz | Gate/landing ¶ dinosaursjam[.]cfd | Gate/landing ¶ distancebedroom[.]xyz | Gate/landing ¶ distributiontheory[.]cfd | Gate/landing ¶ dolldebt[.]xyz | Gate/landing ¶ doorsoap[.]cfd | Gate/landing ¶ dustprotest[.]icu | Gate/landing ¶ expansionsalt[.]info | Gate/landing ¶ fallbeginner[.]xyz | Gate/landing ¶ fangbear[.]xyz | Gate/landing ¶ filescenter[.]cloud | Gate/landing ¶ filesilo[.]cloud | Gate/landing ¶ fingerbasketball[.]xyz | Gate/landing ¶ flavorwood[.]xyz | Gate/landing ¶ fleshfrog[.]xyz | Gate/landing ¶ fleshplants[.]xyz | Gate/landing ¶ fleshproduce[.]xyz | Gate/landing ¶ foodrock[.]space | Gate/landing ¶ forkmice[.]xyz | Gate/landing ¶ friendjewel[.]cfd | Gate/landing ¶ geeseairport[.]xyz | Gate/landing ¶ girlsgrain[.]xyz | Gate/landing ¶ glassmove[.]xyz | Gate/landing ¶ goldsteel[.]cfd | Gate/landing ¶ governmentyard[.]cfd | Gate/landing ¶ grandfatherquiver[.]xyz | Gate/landing ¶ gripcollar[.]xyz | Gate/landing ¶ gripsleep[.]xyz | Gate/landing ¶ gunbear[.]xyz | Gate/landing ¶ hairreward[.]xyz | Gate/landing ¶ hatescale[.]info | Gate/landing ¶ healthiron[.]space | Gate/landing ¶ holemuscle[.]xyz | Gate/landing ¶ homecub[.]cfd | Gate/landing ¶ homefireman[.]xyz | Gate/landing ¶ honeyfear[.]xyz | Gate/landing ¶ ilesilo[.]cloud | Gate/landing ¶ instrumentvolcano[.]space | Gate/landing ¶ kittenschalk[.]xyz | Gate/landing ¶ kittensgrade[.]cfd | Gate/landing ¶ kittensrobin[.]info | Gate/landing ¶ landerror[.]xyz | Gate/landing ¶ lesilo[.]cloud | Gate/landing ¶ liptendency[.]info | Gate/landing ¶ liquidtoes[.]xyz | Gate/landing ¶ liquidwrench[.]cfd | Gate/landing ¶ lockettrail[.]xyz | Gate/landing ¶ lumberbaseball[.]xyz | Gate/landing ¶ memorycompany[.]xyz | Gate/landing ¶ micesisters[.]xyz | Gate/landing ¶ milkname[.]xyz | Gate/landing ¶ minuteblade[.]xyz | Gate/landing ¶ mountainsurprise[.]cfd | Gate/landing ¶ mouthfruit[.]cfd | Gate/landing ¶ noiseship[.]cfd | Gate/landing ¶ northbox[.]xyz | Gate/landing ¶ partpipe[.]xyz | Gate/landing ¶ partyfriends[.]cfd | Gate/landing ¶ passengerbrake[.]space | Gate/landing ¶ peacejewel[.]xyz | Gate/landing ¶ peacetongue[.]xyz | Gate/landing ¶ petminister[.]xyz | Gate/landing ¶ pictureporter[.]cfd | Gate/landing ¶ pieplant[.]space | Gate/landing ¶ pizzasthread[.]xyz | Gate/landing ¶ pleasurewaves[.]info | Gate/landing ¶ popcornregret[.]xyz | Gate/landing ¶ porterdebt[.]xyz | Gate/landing ¶ powerbushes[.]xyz | Gate/landing ¶ profitfact[.]xyz | Gate/landing ¶ prosetoothbrush[.]xyz | Gate/landing ¶ quincepage[.]xyz | Gate/landing ¶ raintexture[.]xyz | Gate/landing ¶ rakepurpose[.]xyz | Gate/landing ¶ raterake[.]cfd | Gate/landing ¶ readingscience[.]xyz | Gate/landing ¶ reasonachiever[.]xyz | Gate/landing ¶ recessgiraffe[.]xyz | Gate/landing ¶ recordhistory[.]xyz | Gate/landing ¶ regretsquirrel[.]xyz | Gate/landing ¶ restbucket[.]xyz | Gate/landing ¶ ricestar[.]xyz | Gate/landing ¶ rifledog[.]xyz | Gate/landing ¶ ringsparcel[.]xyz | Gate/landing ¶ roadyear[.]xyz | Gate/landing ¶ rockcredit[.]space | Gate/landing ¶ rollglass[.]xyz | Gate/landing ¶ roofbattle[.]xyz | Gate/landing ¶ roofreaction[.]xyz | Gate/landing ¶ rosegrip[.]xyz | Gate/landing ¶ routeletters[.]xyz | Gate/landing ¶ runhouses[.]xyz | Gate/landing ¶ scarecrowcare[.]xyz | Gate/landing ¶ scentrod[.]info | Gate/landing ¶ screwbirth[.]xyz | Gate/landing ¶ seatlace[.]space | Gate/landing ¶ seaword[.]xyz | Gate/landing ¶ servantadvice[.]xyz | Gate/landing ¶ shiptank[.]cfd | Gate/landing ¶ shirtexample[.]xyz | Gate/landing ¶ shoesearthquake[.]xyz | Gate/landing ¶ sinkwash[.]space | Gate/landing ¶ skirtloss[.]xyz | Gate/landing ¶ slipvegetable[.]xyz | Gate/landing ¶ smokecar[.]space | Gate/landing ¶ songtheory[.]xyz | Gate/landing ¶ spadeleg[.]xyz | Gate/landing ¶ sparkrice[.]space | Gate/landing ¶ sparkrub[.]xyz | Gate/landing ¶ spoonducks[.]cfd | Gate/landing ¶ springdogs[.]xyz | Gate/landing ¶ spybaseball[.]space | Gate/landing ¶ startmonkey[.]cfd | Gate/landing ¶ statementservant[.]xyz | Gate/landing ¶ statementtouch[.]xyz | Gate/landing ¶ steamhouses[.]cfd | Gate/landing ¶ stopzinc[.]xyz | Gate/landing ¶ structurelinen[.]xyz | Gate/landing ¶ suggestioncemetery[.]xyz | Gate/landing ¶ suitsoap[.]xyz | Gate/landing ¶ suitstraw[.]info | Gate/landing ¶ swimrest[.]xyz | Gate/landing ¶ tablechess[.]info | Gate/landing ¶ tailsilk[.]xyz | Gate/landing ¶ territorycaption[.]xyz | Gate/landing ¶ texturebadge[.]xyz | Gate/landing ¶ thrillducks[.]xyz | Gate/landing ¶ throneback[.]xyz | Gate/landing ¶ tinsofa[.]xyz | Gate/landing ¶ toespiders[.]xyz | Gate/landing ¶ toothpastesense[.]xyz | Gate/landing ¶ toothpastesun[.]xyz | Gate/landing ¶ townquiver[.]xyz | Gate/landing ¶ trampdonkey[.]icu | Gate/landing ¶ treesboard[.]xyz | Gate/landing ¶ truckpig[.]cfd | Gate/landing ¶ truckshat[.]xyz | Gate/landing ¶ turnclass[.]xyz | Gate/landing ¶ umbrellavessel[.]xyz | Gate/landing ¶ vacationengine[.]xyz | Gate/landing ¶ vesselsystem[.]xyz | Gate/landing ¶ vestthings[.]cfd | Gate/landing ¶ volcanopin[.]xyz | Gate/landing ¶ voyagemist[.]space | Gate/landing ¶ wastereading[.]xyz | Gate/landing ¶ wasteturkey[.]xyz | Gate/landing ¶ wastewine[.]xyz | Gate/landing ¶ wavepan[.]xyz | Gate/landing ¶ whistlebook[.]cfd | Gate/landing ¶ whistlesong[.]xyz | Gate/landing ¶ wormspark[.]xyz | Gate/landing ¶ woundsecretary[.]xyz | Gate/landing ¶ wrenobservation[.]xyz | Gate/landing ¶ yamsmell[.]xyz | Gate/landing ¶ yardvalue[.]cfd | Gate/landing ¶ zephyrhall[.]cfd | Gate/landing",
+   "page": null,
+   "section": "Appendix A: CL-CRI-1171 Full Discovered Infrastructure Tables",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Indicator",
+      "Role"
+     ],
+     [
+      "achievershelf[.]space",
+      "Gate/landing"
+     ],
+     [
+      "activitymeal[.]space",
+      "Gate/landing"
+     ],
+     [
+      "additionplot[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "adviceturn[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "afternoonscrew[.]space",
+      "Gate/landing"
+     ],
+     [
+      "agreementjuice[.]space",
+      "Gate/landing"
+     ],
+     [
+      "airplaneiron[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "airtwig[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "amountfuel[.]icu",
+      "Gate/landing"
+     ],
+     [
+      "animalrecord[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "apparatustruck[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "apparelplate[.]space",
+      "Gate/landing"
+     ],
+     [
+      "archairport[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "authoritykittens[.]info",
+      "Gate/landing"
+     ],
+     [
+      "babyvein[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "badgewing[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "bagcare[.]space",
+      "Gate/landing"
+     ],
+     [
+      "basinpleasure[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "basketballyear[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "baskethumor[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "bedroomdesire[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "beliefpicture[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "bellplayground[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "bikesdonkey[.]info",
+      "Gate/landing"
+     ],
+     [
+      "birthdaymagic[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "boatthought[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "boundarychickens[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "boytank[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "branchmorning[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "breathdoctor[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "bubbleslip[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "cabbagemeasure[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "cablecanvas[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "cardgrape[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "cattlegold[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "celeryerror[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "centscarf[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "chalkprose[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "cherriestruck[.]space",
+      "Gate/landing"
+     ],
+     [
+      "chesstail[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "chickensmine[.]space",
+      "Gate/landing"
+     ],
+     [
+      "churchpail[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "clothcrib[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "clothcurrent[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "coatberry[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "connect.activitykitty[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.apparatustaste[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.armcard[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.badgeterritory[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.baitmetal[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.beefteeth[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.believesisters[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.boundaryfly[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.bubbleappliance[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.cableland[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.chinexpert[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.conditiongrade[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.coppersummer[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.creatorcreator[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.dresstent[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.dropjeans[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.edgeplayground[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.exchangeclub[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.existencediscussion[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.expansionsalt[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.fangstitch[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.fogparcel[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.foodhook[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.forkcountry[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.geesepurpose[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.giantsdogs[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.giraffetoothpaste[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.guitarrobin[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.halllunch[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.harborclam[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.holecompany[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.knifesea[.]icu",
+      "Install tracker"
+     ],
+     [
+      "connect.monthsmoke[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.nosegovernor[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.pagesubstance[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.poisonblade[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.prosesalt[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.purposethings[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.quiltgirls[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.reactionbit[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.rewardrun[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.riceapparel[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.seashoreletters[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.selectiondogs[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.shapeboot[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.shoptax[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.stopfinger[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.structurekiss[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.tanksuggestion[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.thingbrass[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.thoughtslave[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.threadfuel[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.trailcontrol[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.trickbushes[.]info",
+      "Install tracker"
+     ],
+     [
+      "connect.vacationthought[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.viewschool[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.voyagelaugh[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.woolreward[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.yearicicle[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "connect.zebratransport[.]xyz",
+      "Install tracker"
+     ],
+     [
+      "controlprice[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "coughcoal[.]icu",
+      "Gate/landing"
+     ],
+     [
+      "countrypipe[.]space",
+      "Gate/landing"
+     ],
+     [
+      "cowsfoot[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "crackfood[.]space",
+      "Gate/landing"
+     ],
+     [
+      "creamfurniture[.]space",
+      "Gate/landing"
+     ],
+     [
+      "creditchickens[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "crediteducation[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "crimestreet[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "crimesupport[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "curvebite[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "deathrock[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "deathshop[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "decisionreaction[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "dinosaursjam[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "distancebedroom[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "distributiontheory[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "dolldebt[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "doorsoap[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "dustprotest[.]icu",
+      "Gate/landing"
+     ],
+     [
+      "expansionsalt[.]info",
+      "Gate/landing"
+     ],
+     [
+      "fallbeginner[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "fangbear[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "filescenter[.]cloud",
+      "Gate/landing"
+     ],
+     [
+      "filesilo[.]cloud",
+      "Gate/landing"
+     ],
+     [
+      "fingerbasketball[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "flavorwood[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "fleshfrog[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "fleshplants[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "fleshproduce[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "foodrock[.]space",
+      "Gate/landing"
+     ],
+     [
+      "forkmice[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "friendjewel[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "geeseairport[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "girlsgrain[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "glassmove[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "goldsteel[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "governmentyard[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "grandfatherquiver[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "gripcollar[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "gripsleep[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "gunbear[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "hairreward[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "hatescale[.]info",
+      "Gate/landing"
+     ],
+     [
+      "healthiron[.]space",
+      "Gate/landing"
+     ],
+     [
+      "holemuscle[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "homecub[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "homefireman[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "honeyfear[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "ilesilo[.]cloud",
+      "Gate/landing"
+     ],
+     [
+      "instrumentvolcano[.]space",
+      "Gate/landing"
+     ],
+     [
+      "kittenschalk[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "kittensgrade[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "kittensrobin[.]info",
+      "Gate/landing"
+     ],
+     [
+      "landerror[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "lesilo[.]cloud",
+      "Gate/landing"
+     ],
+     [
+      "liptendency[.]info",
+      "Gate/landing"
+     ],
+     [
+      "liquidtoes[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "liquidwrench[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "lockettrail[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "lumberbaseball[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "memorycompany[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "micesisters[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "milkname[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "minuteblade[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "mountainsurprise[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "mouthfruit[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "noiseship[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "northbox[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "partpipe[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "partyfriends[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "passengerbrake[.]space",
+      "Gate/landing"
+     ],
+     [
+      "peacejewel[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "peacetongue[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "petminister[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "pictureporter[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "pieplant[.]space",
+      "Gate/landing"
+     ],
+     [
+      "pizzasthread[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "pleasurewaves[.]info",
+      "Gate/landing"
+     ],
+     [
+      "popcornregret[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "porterdebt[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "powerbushes[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "profitfact[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "prosetoothbrush[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "quincepage[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "raintexture[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "rakepurpose[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "raterake[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "readingscience[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "reasonachiever[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "recessgiraffe[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "recordhistory[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "regretsquirrel[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "restbucket[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "ricestar[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "rifledog[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "ringsparcel[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "roadyear[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "rockcredit[.]space",
+      "Gate/landing"
+     ],
+     [
+      "rollglass[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "roofbattle[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "roofreaction[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "rosegrip[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "routeletters[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "runhouses[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "scarecrowcare[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "scentrod[.]info",
+      "Gate/landing"
+     ],
+     [
+      "screwbirth[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "seatlace[.]space",
+      "Gate/landing"
+     ],
+     [
+      "seaword[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "servantadvice[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "shiptank[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "shirtexample[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "shoesearthquake[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "sinkwash[.]space",
+      "Gate/landing"
+     ],
+     [
+      "skirtloss[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "slipvegetable[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "smokecar[.]space",
+      "Gate/landing"
+     ],
+     [
+      "songtheory[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "spadeleg[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "sparkrice[.]space",
+      "Gate/landing"
+     ],
+     [
+      "sparkrub[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "spoonducks[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "springdogs[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "spybaseball[.]space",
+      "Gate/landing"
+     ],
+     [
+      "startmonkey[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "statementservant[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "statementtouch[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "steamhouses[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "stopzinc[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "structurelinen[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "suggestioncemetery[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "suitsoap[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "suitstraw[.]info",
+      "Gate/landing"
+     ],
+     [
+      "swimrest[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "tablechess[.]info",
+      "Gate/landing"
+     ],
+     [
+      "tailsilk[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "territorycaption[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "texturebadge[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "thrillducks[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "throneback[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "tinsofa[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "toespiders[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "toothpastesense[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "toothpastesun[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "townquiver[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "trampdonkey[.]icu",
+      "Gate/landing"
+     ],
+     [
+      "treesboard[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "truckpig[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "truckshat[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "turnclass[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "umbrellavessel[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "vacationengine[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "vesselsystem[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "vestthings[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "volcanopin[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "voyagemist[.]space",
+      "Gate/landing"
+     ],
+     [
+      "wastereading[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "wasteturkey[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "wastewine[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "wavepan[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "whistlebook[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "whistlesong[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "wormspark[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "woundsecretary[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "wrenobservation[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "yamsmell[.]xyz",
+      "Gate/landing"
+     ],
+     [
+      "yardvalue[.]cfd",
+      "Gate/landing"
+     ],
+     [
+      "zephyrhall[.]cfd",
+      "Gate/landing"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b273",
+   "type": "heading",
+   "text": "Appendix B: YouTube Channels Linked to CL-CRI-1171 Activity",
+   "page": null,
+   "section": "Appendix B: YouTube Channels Linked to CL-CRI-1171 Activity",
+   "level": 2
+  },
+  {
+   "id": "b274",
+   "type": "paragraph",
+   "text": "(Channels were taken down after we notified Google.)",
+   "page": null,
+   "section": "Appendix B: YouTube Channels Linked to CL-CRI-1171 Activity"
+  },
+  {
+   "id": "b275",
+   "type": "table",
+   "text": "Persona | Channel ¶ Velvox | @VelvoxYT ¶ Venrx | @Venrx ¶ Ravex | @RAVEX-wu1pg ¶ Adex | @adex915 ¶ Ripex | @ripex ¶ HASNZ TWEAKS | @hasnzyt ¶ Ontrendytt | @OnTrendd ¶ Trend Rise | @trendrise ¶ Reknotic Lab | @Reknotic ¶ NowFixTutorials | @NowFixTutorials ¶ f4fix | @f4fix",
+   "page": null,
+   "section": "Appendix B: YouTube Channels Linked to CL-CRI-1171 Activity",
+   "layout": "table",
+   "table": {
+    "headers": null,
+    "rows": [
+     [
+      "Persona",
+      "Channel"
+     ],
+     [
+      "Velvox",
+      "@VelvoxYT"
+     ],
+     [
+      "Venrx",
+      "@Venrx"
+     ],
+     [
+      "Ravex",
+      "@RAVEX-wu1pg"
+     ],
+     [
+      "Adex",
+      "@adex915"
+     ],
+     [
+      "Ripex",
+      "@ripex"
+     ],
+     [
+      "HASNZ TWEAKS",
+      "@hasnzyt"
+     ],
+     [
+      "Ontrendytt",
+      "@OnTrendd"
+     ],
+     [
+      "Trend Rise",
+      "@trendrise"
+     ],
+     [
+      "Reknotic Lab",
+      "@Reknotic"
+     ],
+     [
+      "NowFixTutorials",
+      "@NowFixTutorials"
+     ],
+     [
+      "f4fix",
+      "@f4fix"
+     ]
+    ],
+    "caption": null,
+    "source": "html_dom"
+   }
+  },
+  {
+   "id": "b276",
+   "type": "heading",
+   "text": "Tags",
+   "page": null,
+   "section": "Tags",
+   "level": 3
+  },
+  {
+   "id": "b277",
+   "type": "list",
+   "text": "ARKTunnel",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b278",
+   "type": "list",
+   "text": "C2",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b279",
+   "type": "list",
+   "text": "CL-CRI-1171",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b280",
+   "type": "list",
+   "text": "Docro Hijacker",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b281",
+   "type": "list",
+   "text": "Pay-per-install",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b282",
+   "type": "list",
+   "text": "Payload",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b283",
+   "type": "paragraph",
+   "text": "Threat Research Center",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b284",
+   "type": "paragraph",
+   "text": "Next: Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America",
+   "page": null,
+   "section": "Tags"
+  },
+  {
+   "id": "b285",
+   "type": "heading",
+   "text": "Table of Contents",
+   "page": null,
+   "section": "Table of Contents",
+   "level": 3
+  },
+  {
+   "id": "b286",
+   "type": "heading",
+   "text": "Related Articles",
+   "page": null,
+   "section": "Related Articles",
+   "level": 3
+  },
+  {
+   "id": "b287",
+   "type": "list",
+   "text": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "page": null,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b288",
+   "type": "list",
+   "text": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+   "page": null,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b289",
+   "type": "list",
+   "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "page": null,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b290",
+   "type": "heading",
+   "text": "Related Malware Resources",
+   "page": null,
+   "section": "Related Malware Resources",
+   "level": 2
+  },
+  {
+   "id": "b293",
+   "type": "heading",
+   "text": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "page": null,
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "level": 4
+  },
+  {
+   "id": "b300",
+   "type": "heading",
+   "text": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+   "page": null,
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+   "level": 4
+  },
+  {
+   "id": "b307",
+   "type": "heading",
+   "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "page": null,
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "level": 4
+  },
+  {
+   "id": "b314",
+   "type": "heading",
+   "text": "OperTraitors: How Kubernetes Operators Betray Your Security Posture",
+   "page": null,
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture",
+   "level": 4
+  },
+  {
+   "id": "b321",
+   "type": "heading",
+   "text": "Atomic macOS (AMOS) Stealer Activity",
+   "page": null,
+   "section": "Atomic macOS (AMOS) Stealer Activity",
+   "level": 4
+  },
+  {
+   "id": "b328",
+   "type": "heading",
+   "text": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE",
+   "page": null,
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE",
+   "level": 4
+  },
+  {
+   "id": "b335",
+   "type": "heading",
+   "text": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America",
+   "page": null,
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America",
+   "level": 4
+  },
+  {
+   "id": "b342",
+   "type": "heading",
+   "text": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams",
+   "page": null,
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams",
+   "level": 4
+  },
+  {
+   "id": "b349",
+   "type": "heading",
+   "text": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution",
+   "page": null,
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution",
+   "level": 4
+  }
+ ],
+ "meta": {
+  "source_url": "https://unit42.paloaltonetworks.com/ppi-network-malware-campaign-analysis/",
+  "extractor": "threat_library_html_v6",
+  "adapter": "generic_html",
+  "content_root": "main",
+  "site_names": [
+   "Unit 42"
+  ]
+ }
+}
