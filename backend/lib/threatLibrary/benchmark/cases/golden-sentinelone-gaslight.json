@@ -1,0 +1,58 @@
+{
+  "id": "golden-sentinelone-gaslight",
+  "title": "www.sentinelone.com - macOS.Gaslight | Rust Backdoor Turns Prompt Injection on the Analyst, Not the Sandbox | Se",
+  "publisher": "www.sentinelone.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "signing_identifier",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/sentinelone-gaslight-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.sentinelone.com/labs/macos-gaslight-rust-backdoor-turns-prompt-injection-on-the-analyst-not-the-sandbox/",
+    "talonhound_report_id": "4accb3b1-d2af-4156-a5be-7cebf2665b11",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "IOC table; the ad hoc signing identifier and LaunchAgent label are not network / file IOCs.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "6328567511d88fdc2ae0939c5ef17b7a63d2a833881900de018a4f12f4982525"
+      },
+      {
+        "type": "sha256",
+        "value": "77b4fd46994992f0e57302cfe76ed23c0d90101381d2b89fc2ddf5c4536e77ca"
+      },
+      {
+        "type": "sha256",
+        "value": "baabf249c77bc54c54ab0e66e15af798bd28aa5b4683554456a8b73ab8741239"
+      },
+      {
+        "type": "sha256",
+        "value": "e4503e31d5a297d93ade64f50a5b5fe91e73dad251ac2615b4c975684f68e080"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

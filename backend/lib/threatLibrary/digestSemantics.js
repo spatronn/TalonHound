@@ -166,24 +166,55 @@ export function classifyHexDigest(text, value, opts = {}) {
   return own;
 }
 
-function classifyLabel(label, opts = {}) {
-  if (!label.trim()) return { kind: DIGEST_KINDS.FILE, label, reason: 'unlabelled' };
+/**
+ * Field-name spelling → words: camelCase / PascalCase humps and dotted keys
+ * become separate words ("accessTokenHash" → "access Token Hash",
+ * "fileSha256" → "file Sha256"), so label nouns read the same however the
+ * publisher's JSON / config key spells them. snake_case and kebab-case are
+ * already word-separated for the patterns.
+ * @param {string} label
+ */
+export function labelWords(label) {
+  return String(label || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/(?<=[a-z])\.(?=[a-z])/gi, ' ');
+}
+
+function bestKindIn(text) {
   let best = null;
   for (const [kind, re] of KIND_PATTERNS) {
-    const all = [...label.matchAll(new RegExp(re.source, 'gi'))];
+    const all = [...text.matchAll(new RegExp(re.source, 'gi'))];
     if (!all.length) continue;
     const at = all[all.length - 1].index;
     if (!best || at > best.at) best = { kind, at };
   }
+  return best;
+}
+
+function classifyLabel(label, opts = {}) {
+  if (!label.trim()) return { kind: DIGEST_KINDS.FILE, label, reason: 'unlabelled' };
+  // The label as written decides first (`VHash`, `ImpHash`, `BuildID` are
+  // single tokens there); only when it names no kind is the field-name
+  // spelling split into words (`accessTokenHash`).
+  let words = label;
+  let best = bestKindIn(label);
+  if (!best) {
+    const split = labelWords(label);
+    if (split !== label) {
+      best = bestKindIn(split);
+      if (best) words = split;
+    }
+  }
   if (!best) {
     // "… with the key (<hex>)", "Key: <hex>": a bare key noun closing the label.
-    if (opts.bareKey === true && BARE_KEY_LABEL_RE.test(label) && !REGISTRY_KEY_LABEL_RE.test(label) && !FILE_NOUN_RE.test(label)) {
+    if (opts.bareKey === true && BARE_KEY_LABEL_RE.test(words) && !REGISTRY_KEY_LABEL_RE.test(words) && !FILE_NOUN_RE.test(words)) {
       return { kind: DIGEST_KINDS.CRYPTO_KEY, label, reason: `${DIGEST_KINDS.CRYPTO_KEY}_label` };
     }
     return { kind: DIGEST_KINDS.FILE, label, reason: 'file_label' };
   }
   // A file noun after the non-file noun names the file ("certificate-signed sample SHA256:").
-  if (FILE_NOUN_RE.test(label.slice(best.at + 1))) return { kind: DIGEST_KINDS.FILE, label, reason: 'file_noun_after_label' };
+  if (FILE_NOUN_RE.test(words.slice(best.at + 1))) return { kind: DIGEST_KINDS.FILE, label, reason: 'file_noun_after_label' };
   return { kind: best.kind, label, reason: `${best.kind}_label` };
 }
 

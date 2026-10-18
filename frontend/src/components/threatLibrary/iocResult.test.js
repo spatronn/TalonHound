@@ -60,6 +60,15 @@ test('classifyCreateOutcome mirrors backend classifyCreateEligibility rule order
   assert.equal(classifyCreateOutcome(newRow(7, { assessment: 'context_only' })), 'not_applicable');
   assert.equal(classifyCreateOutcome(newRow(8, { assessment: 'benign' })), 'not_applicable');
   assert.equal(classifyCreateOutcome(newRow(9, { is_ioc: false })), 'not_applicable');
+  assert.equal(classifyCreateOutcome(newRow(10, { assessment: 'unknown' })), 'will_create');
+});
+
+test('stale not_applicable from an earlier Create IOCs run clears when approved+unknown is now creatable', () => {
+  const row = newRow(11, { assessment: 'unknown', promotion_outcome: 'not_applicable' });
+  assert.equal(classifyCreateOutcome(row), 'will_create');
+  assert.equal(iocResultOutcome(row), null);
+  assert.equal(iocResultLabel(row), '—');
+  assert.equal(createAction([row]).enabled, true);
 });
 
 test('existing-only selection (4 existing, 0 createable): IOC Result reads "Already exists", not "—"', () => {

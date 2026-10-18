@@ -189,8 +189,20 @@ export {
  * references; a typed row / list lead-in naming its value a provider or
  * service, or prose naming the service whose traffic is intercepted, is a
  * provider relation (tl-type-resolver-v11, tl-zones-v14, tl-section-tree-v4).
+ * v32 (twelve-report audit): a descriptive table never opens C2 authority and
+ * provider-stance prose is not inventory, so a pointer-only IOC section
+ * delegates (tl-section-tree-v5); a role-labelled list in an IOC section
+ * ("operator-side IPs observed: X and Y") and a lookalike / impersonation role
+ * governing the value are assertions; a legitimate stance survives a clause
+ * that places the malice in another component; "ZIP archive" / "JAR file"
+ * name the analysed sample; camelCase digest keys (`accessTokenHash`) read as
+ * words; "Contact Form …" is no longer a reference heading (tl-zones-v15);
+ * managed-runtime namespaces (`javax.tools`) are code (tl-type-resolver-v12);
+ * a hostname tail after "-" or a redaction placeholder is never derived; a
+ * key-value "SHA256 | <hex>" row declares its type in the delegated scope
+ * (tl-scope-engine-section-tree-v3).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v31';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v32';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -376,6 +388,24 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]‘’“”«»]+/gi;
 const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`)\]，。；‘’“”«»]+)/gi;
 const URL_SCHEME_PREFIX_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
+
+/** A redaction placeholder right before a hostname tail ("<REDACTED>", "[redacted]", "REDACTED", "xxx"). */
+const REDACTION_PLACEHOLDER_END_RE = /(?:<\s*[^<>\s]{0,24}\s*>|\[\s*[^\[\]\s]{0,24}\s*\]|\bredacted|\b[x*]{3,})\s*$/i;
+
+/**
+ * True when the DOMAIN_RE match starting at `start` is only the tail of a
+ * longer publisher hostname the regex could not read ("<REDACTED>-my.x.com",
+ * "<REDACTED>.example.com").
+ * @param {string} text
+ * @param {number} start
+ */
+function isTruncatedHostTail(text, start) {
+  if (start <= 0) return false;
+  const prev = text[start - 1];
+  if (prev === '-') return true;
+  if (prev === '.') return REDACTION_PLACEHOLDER_END_RE.test(text.slice(Math.max(0, start - 40), start - 1));
+  return false;
+}
 const MD5_RE = /\b[a-fA-F0-9]{32}\b/g;
 const SHA1_RE = /\b[a-fA-F0-9]{40}\b/g;
 const SHA256_RE = /\b[a-fA-F0-9]{64}\b/g;
@@ -1401,6 +1431,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // matches DOMAIN_RE as the prefix "...kro" because a 1-char final label
       // cannot be a TLD. Do not invent a shorter complete domain from that.
       if (/^\.[a-z0-9](?![a-z0-9-])/i.test(text.slice(end))) continue;
+      // Redacted / truncated publisher hostname: "<REDACTED>-my.sharepoint.com"
+      // matches only its tail "my.sharepoint.com". A hostname label never
+      // starts with "-", and a redaction placeholder glued with "." hides the
+      // leading labels: the tail is a different (parent) host, never derive it.
+      if (isTruncatedHostTail(text, start)) continue;
       // `user@host.example`: the host is the address's domain (same
       // no-over-derivation rule as a URL host). Email is not a candidate type,
       // so the domain stays a candidate but never a structural row assertion.

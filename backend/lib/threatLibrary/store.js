@@ -730,6 +730,26 @@ export async function loadSourceLinkedCandidateIds(pool, candidateIds) {
   return new Set(rows.map((r) => String(r.candidate_id)));
 }
 
+/**
+ * Ids of a report's candidates that carry linked IOC Source provenance
+ * (`threat_report_candidate_source_links`). One query. The JS membership
+ * predicates read this as `has_linked_source_occurrence`, matching
+ * `linkedSourceIndicatorMembershipSql` (link row exists).
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ * @returns {Promise<Set<string>>}
+ */
+export async function loadReportLinkedSourceCandidateIds(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT l.candidate_id
+     FROM threat_report_candidate_source_links l
+     JOIN threat_report_candidates c ON c.id = l.candidate_id
+     WHERE c.report_id = $1`,
+    [reportId]
+  );
+  return new Set(rows.map((r) => String(r.candidate_id)));
+}
+
 export async function reconcileReportCandidates(pool, reportId, candidates, options = {}) {
   const scope = options.scope == null || options.scope === 'original' ? 'original' : options.scope;
   const sourceId = scope && typeof scope === 'object' ? Number(scope.sourceId) : null;

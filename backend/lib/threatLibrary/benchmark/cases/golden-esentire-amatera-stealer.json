@@ -1,0 +1,69 @@
+{
+  "id": "golden-esentire-amatera-stealer",
+  "title": "www.esentire.com - Amatera Stealer 4.0.2 Beta: What's New in This Variant",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-amatera-stealer-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/amatera-stealer-4-0-2-beta-whats-new-in-this-variant",
+    "talonhound_report_id": "9dd50b0d-cf15-423a-a934-15777aa3a69b",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "IOC table (MODE A); the dropper URL repeats inside a command line.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "compactedtightness.cfd"
+      },
+      {
+        "type": "domain",
+        "value": "oakenfjrod.ru"
+      },
+      {
+        "type": "ip",
+        "value": "77.91.97.244"
+      },
+      {
+        "type": "sha256",
+        "value": "534460224e1140ca7f512daea7258a9fce40dc0daef6994d79d08bdf4ce3e4b8"
+      },
+      {
+        "type": "sha256",
+        "value": "e913fa5b2dd0a7fc3dbaf0a6f882b3ead9a58511bd945b6e5c478cbd2b900508"
+      },
+      {
+        "type": "sha256",
+        "value": "ec1206989449d30746b5ceb2b297cda9f3f09636a0e122ecafb40b1dc2e86772"
+      },
+      {
+        "type": "url",
+        "value": "https://download.version-516.com/other"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

@@ -30,8 +30,8 @@ docker compose exec -T backend node scripts/section-tree-authority-compare.js --
 
 Candidates and diagnostics stamp:
 
-- `scope_engine` / `scope_engine_version` (`tl-scope-engine-section-tree-v2`)
-- `section_tree_version` (`tl-section-tree-v4`)
+- `scope_engine` / `scope_engine_version` (`tl-scope-engine-section-tree-v3`)
+- `section_tree_version` (`tl-section-tree-v5`)
 
 ## Architecture
 
@@ -61,15 +61,43 @@ When **every** real formal IOC / C2 / sample heading of a document holds no obse
 | ip:port endpoint | yes |
 | observable-only list / value line | yes |
 | cell of a column the publisher typed as network / hash / indicator values ("Domain / IP", "Key infrastructure", "URL", "SHA256") | yes |
+| key-value row whose label cell names the value's own type ("SHA256 \| <hex>", "C2 \| <host>"), unless the table calls the file / host legitimate (scope-engine v3) | yes |
 | free-form table cell ("Value", "Variable-name", "Name") | no |
-| operational clause ("downloads the installer from X", "communicates with the C2 endpoint X") | yes |
-| hash named as the analysed artifact ("we examine the following script: H", "Wave A. H …") | yes |
-| neutral mention, provider platform ("abuse of the public X service"), legitimate / dual-use stance | no |
+| operational clause ("downloads the installer from X", "communicates with the C2 endpoint X", "the threat actor pasted a URL into the chat: X") | yes |
+| lookalike / impersonation role governing the value ("the lookalike domain, X", "X … and other lookalike domains") — never the imitated brand | yes |
+| hash named as the analysed artifact ("we examine the following script: H", "Wave A. H …", "a ZIP archive named X.zip (SHA-256: H)", "the JAR file …") | yes |
+| neutral mention, provider platform ("abuse of the public X service"), legitimate / dual-use stance ("the legitimate Oracle-signed runtime (SHA-256: H), all malicious logic is in the JAR") | no |
 
 Reference sections, chrome and code blocks never join the delegated scope; a non-empty IOC section
 anywhere in the document disables delegation (normal MODE A). Quality check 13
 (`delegated_authority_applied`, warning) lists the delegated Indicators for review. Attach the
 publisher's external IOC file as a linked IOC Source when it is available.
+
+What counts as "non-empty" (tl-section-tree-v5):
+
+- A C2 / operational topic heading opens authority only over publisher inventory: an IOC table (an
+  indicator column whose cells parse as observables, `interpretIocTable` kind `ioc_table`), list
+  rows or value lines. A descriptive table under it ("Endpoint | Method | Description",
+  "Channel | Authentication | Normal Poll") is technical content: it neither opens C2 authority nor
+  makes the topic an inventory that vetoes delegation.
+- Prose that names services only to say they are legitimate or cannot be blocked ("Blocking
+  docs.example or api.example is not viable") is not inventory.
+- A "Contact" heading is a reference block only as a whole contact block ("Contact", "Contact us",
+  "Contact information"); a topic such as "Contact Form Engagement" is narrative and joins the
+  delegated scope (tl-zones-v15).
+- Unchanged (policy D.3): a nested body C2 subsection that does hold an indicator line ("3.3.4 C2
+  Beaconing" with the beacon URL) still disables delegation for the whole document.
+
+Values that never become hosts in any scope: a hostname tail after `-` or a redaction placeholder
+(`<REDACTED>-my.sharepoint.com` → no `my.sharepoint.com`), and managed-runtime namespaces
+(`javax.tools`, `java.net.*`, `System.Net.*`; tl-type-resolver-v12).
+
+## Role-labelled lists in IOC sections (tl-candidates-v32)
+
+Inside a curated or delegated IOC scope, a list the publisher labels by the operator's role
+("Specific operator-side IPs observed: X (…) and Y (…)", "Attacker domains: X, Y") asserts every
+listed value, including the coordinated ones. A legitimate / victim label ("Legitimate Microsoft IPs
+observed:", "Victim IPs observed:") asserts nothing.
 
 ## Publisher evidence integrity (tl-evidence-integrity-v1)
 
@@ -97,3 +125,12 @@ Inside such a table, a row whose own descriptor cells name the value a category-
 a provider relation and asserts nothing; a C2, staging, operational, lookalike or weaponized role
 keeps the row assertion. A list whose lead-in object phrase names the listed values as providers /
 explorers / resolvers ("… through three Blockscout providers:") carries the same stance.
+
+## Linked-source counts (MCP parity)
+
+Linked IOC Source provenance lives in `threat_report_candidate_source_links`. The SQL buckets
+(`linkedSourceIndicatorMembershipSql`: type gates + a link row) and the JS buckets
+(`countCandidateBuckets`) agree only when the candidate rows carry that provenance. The report
+detail API attaches it as `sources`; MCP `get_threat_report` attaches it as
+`has_linked_source_occurrence` (`loadReportLinkedSourceCandidateIds`, one query). `counts.indicators`
+stays the original-document set; `linked_only` / `total_unique` include linked-file values.

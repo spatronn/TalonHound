@@ -1,0 +1,222 @@
+{
+  "id": "golden-proofpoint-cruciferra",
+  "title": "www.proofpoint.com - Unpacking “Cruciferra”: An Analysis of a Sophisticated Crypter Service | Proofpoint US",
+  "publisher": "www.proofpoint.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "scheme_only_url",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/proofpoint-cruciferra-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.proofpoint.com/us/blog/threat-insight/unpacking-cruciferra-analysis-sophisticated-crypter-service",
+    "talonhound_report_id": "e3d975bf-19d1-4dfc-acdb-54a9ee64808f",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Example IOCs table (36 URLs incl. scheme-only hosts, 6 SHA-256, 2 domains, 1 ip:port).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "0zbqnac1t4dv2t2wuodv1m.com"
+      },
+      {
+        "type": "domain",
+        "value": "gatuso.duckdns.org"
+      },
+      {
+        "type": "ip",
+        "value": "89.34.90.99"
+      },
+      {
+        "type": "sha256",
+        "value": "3c181f642e24c28602a87be7f195e2f3d1ffa30b37e20f5121d99f88b22ab80e"
+      },
+      {
+        "type": "sha256",
+        "value": "3f31aee0948d16f8d64bf6bec69a4331099993e502b11bfc56b2c0112024489d"
+      },
+      {
+        "type": "sha256",
+        "value": "59ad96dd3b4d5f10a5c53bbd465446e52dc7701a4ac633632f762bf1336d3347"
+      },
+      {
+        "type": "sha256",
+        "value": "66dbe675480dc229e5b3ab8ad74207f73486e64e57805074f784bb2e01bcb865"
+      },
+      {
+        "type": "sha256",
+        "value": "6dbd6f9f2fa636c16ac4fa81418b68a604424861b9650dd9c4f2b0ba6f67d6ac"
+      },
+      {
+        "type": "sha256",
+        "value": "a6fb779be35592fb0ff624a8f8e12ab3cafe7bcfc312cd98263814db7fb01e02"
+      },
+      {
+        "type": "url",
+        "value": "http://faeytrdeaw.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://figyuyrqwr.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://fiusyevr.live"
+      },
+      {
+        "type": "url",
+        "value": "http://fuaytrwese.love"
+      },
+      {
+        "type": "url",
+        "value": "http://hfyuayustrv.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://hsahyteiows.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://jaiydteds.love"
+      },
+      {
+        "type": "url",
+        "value": "http://jsiruytrawey.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://kawosyetw.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://kawuuterta.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://laiwutrencr.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://lasiduutfe.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://lisiutegrm.live"
+      },
+      {
+        "type": "url",
+        "value": "http://maisytawe.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://mksfuuerwo.live"
+      },
+      {
+        "type": "url",
+        "value": "http://ncduuyese.live"
+      },
+      {
+        "type": "url",
+        "value": "http://nciyeyrawoe.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://nviuawusye.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://nvsieyrrawe.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://paiwudyea.love"
+      },
+      {
+        "type": "url",
+        "value": "http://pmcjsuyraw.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://qeuasytua.love"
+      },
+      {
+        "type": "url",
+        "value": "http://svuatwea.love"
+      },
+      {
+        "type": "url",
+        "value": "http://syfiaydytea.live"
+      },
+      {
+        "type": "url",
+        "value": "http://viuyeyrwqs.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://vusuydryt.love"
+      },
+      {
+        "type": "url",
+        "value": "http://xkcifgieusr.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "http://xnbscuya.love"
+      },
+      {
+        "type": "url",
+        "value": "http://xuastyrdqk.love"
+      },
+      {
+        "type": "url",
+        "value": "http://yicoweytcbtw.gu.cc"
+      },
+      {
+        "type": "url",
+        "value": "https://almacensantangel.com/wp-includes/assets/YourSSA_Documents_0000000676152_05_187_2026_Document_0000000676152.rar"
+      },
+      {
+        "type": "url",
+        "value": "https://digital-magicians.com/photo295825092412.zip?_r=ea623202"
+      },
+      {
+        "type": "url",
+        "value": "https://fvxcuvuyte.live"
+      },
+      {
+        "type": "url",
+        "value": "https://hsauyeet.live"
+      },
+      {
+        "type": "url",
+        "value": "https://kdsuyrse.live"
+      },
+      {
+        "type": "url",
+        "value": "https://oakwusya.love"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

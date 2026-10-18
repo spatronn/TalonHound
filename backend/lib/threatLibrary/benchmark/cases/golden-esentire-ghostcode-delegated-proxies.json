@@ -1,0 +1,105 @@
+{
+  "id": "golden-esentire-ghostcode-delegated-proxies",
+  "title": "www.esentire.com - GhostCode: Dissecting a Novel Device Code Phishing Kit",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "delegated_scope",
+    "empty_authoritative_section",
+    "contact_heading",
+    "lookalike_role",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-ghostcode-delegated-proxies-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/ghostcode-dissecting-a-novel-device-code-phishing-kit",
+    "talonhound_report_id": "bbe31e2c-1e1c-4bc8-9f45-6aa763ba953f",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Pointer-only IOC section (GitHub IOC file): delegated body assertions - residential proxy IP table, the core phishing host and the two lookalike domains of \"Contact Form Engagement\" (all also in the publisher IOC file).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "account-access-rc3uenqi.elitechiropracticandrehab.com"
+      },
+      {
+        "type": "domain",
+        "value": "bjssourcing.com"
+      },
+      {
+        "type": "domain",
+        "value": "greenlightdlstribution.com"
+      },
+      {
+        "type": "ip",
+        "value": "151.225.227.193"
+      },
+      {
+        "type": "ip",
+        "value": "176.253.248.175"
+      },
+      {
+        "type": "ip",
+        "value": "5.230.71.51"
+      },
+      {
+        "type": "ip",
+        "value": "81.96.174.54"
+      },
+      {
+        "type": "ip",
+        "value": "82.33.39.74"
+      },
+      {
+        "type": "ip",
+        "value": "86.132.13.219"
+      },
+      {
+        "type": "ip",
+        "value": "90.215.55.70"
+      },
+      {
+        "type": "ip",
+        "value": "92.40.47.84"
+      },
+      {
+        "type": "ip",
+        "value": "94.9.97.142"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "voewo.com"
+      },
+      {
+        "type": "url",
+        "value": "https://login.microsoft.com/device"
+      },
+      {
+        "type": "domain",
+        "value": "login.microsoftonline.com"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

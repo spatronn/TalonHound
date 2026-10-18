@@ -1,0 +1,59 @@
+{
+  "id": "golden-esentire-denogate",
+  "title": "www.esentire.com - Trust Me, I'm IT: Threat Actors Deliver Deno-Based Backdoor \"DenoGate\" via Microsoft Teams",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "loopback",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-denogate-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/trust-me-im-it-threat-actors-deliver-deno-based-backdoor-denogate-via-microsoft-teams",
+    "talonhound_report_id": "b8432aad-4d1b-4f25-a607-65f5c0deb59f",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "IOC table (MODE A); 127.0.0.1:port rows are local loopback servers.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "d1mjrkjsk5qy13.cloudfront.net"
+      },
+      {
+        "type": "sha256",
+        "value": "ff5a477871a4b83e2b38e660f28ef998680dcb6ba21fddff3e3f66c04ffc3596"
+      },
+      {
+        "type": "url",
+        "value": "wss://d1mjrkjsk5qy13.cloudfront.net/api/connect"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "ip",
+        "value": "127.0.0.1"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

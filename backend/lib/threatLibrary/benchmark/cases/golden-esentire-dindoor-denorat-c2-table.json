@@ -1,0 +1,104 @@
+{
+  "id": "golden-esentire-dindoor-denorat-c2-table",
+  "title": "www.esentire.com - DinDoor, DenoRAT, and NightshadeC2: Analyzing TAG-150's Evolving Tradecraft",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "descriptive_c2_table",
+    "digest_field_name",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-dindoor-denorat-c2-table-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/dindoor-denorat-and-nightshadec2-analyzing-tag-150s-evolving-tradecraft",
+    "talonhound_report_id": "9dd78293-fd16-45b6-8e7c-f6d338ee2e5b",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Type | Value | Description IOC table (MODE A). A JSON accessTokenHash in a C2 code block is a token hash, not a file.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "columbnezhjdq.com"
+      },
+      {
+        "type": "domain",
+        "value": "smallsmokik.com"
+      },
+      {
+        "type": "domain",
+        "value": "webstizkgao.com"
+      },
+      {
+        "type": "sha256",
+        "value": "1f233db3e59051811e16c65e32121f69dd80e91567002978e47a613a5a4903b0"
+      },
+      {
+        "type": "sha256",
+        "value": "6103228087aaee53f37db88ab7aa1e7e5dd8c27a395bef7e3af985774a888c94"
+      },
+      {
+        "type": "sha256",
+        "value": "a06d514a34d2ab08c3a13a58056827c50ba9bf01b68ca4b2cecb4e1462af53fa"
+      },
+      {
+        "type": "sha256",
+        "value": "b4fd836b82f2d8daf8b90a95046987e993e5687707fc57b527a8145d865e3fdc"
+      },
+      {
+        "type": "sha256",
+        "value": "c1e0a0543b12c64726f8bb36389010d7f35e57993a22ce5b73c56b9cc2a87a00"
+      },
+      {
+        "type": "sha256",
+        "value": "c2cdf1ecd6684bbcef0405444a570a76e9589bbd563476b08788bde34d83b511"
+      },
+      {
+        "type": "sha256",
+        "value": "e0dd60bb3a409029988db6a10cb1e36586c2636da9eff3a3587bc38473fde54b"
+      },
+      {
+        "type": "sha256",
+        "value": "fa0d1adb545881a2d8a508191961a9fd39485c4ac2a0f20ad8e2f931dc45c9ef"
+      },
+      {
+        "type": "url",
+        "value": "http://webstizkgao.com/health"
+      },
+      {
+        "type": "url",
+        "value": "http://webstizkgao.com/message-event"
+      },
+      {
+        "type": "url",
+        "value": "http://webstizkgao.com/user"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "sha256",
+        "value": "2e9812a0dc5998a3f9a59fe64193884a67dadac05171494ffd2b81a711eb1359"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

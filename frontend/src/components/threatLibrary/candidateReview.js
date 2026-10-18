@@ -688,7 +688,9 @@ export function classifyCreateOutcome(candidate) {
   if (!isUnionReviewIndicator(c)) return 'not_applicable';
   if (!PROMOTABLE_TYPES.has(type)) return 'unsupported';
   if (review !== 'approved' && review !== 'created_ioc') return 'not_approved';
-  if (assessment !== 'malicious' && assessment !== 'suspicious') return 'not_applicable';
+  // Mirror backend: approved + unknown is creatable; only benign stays blocked
+  // among non-context assessments (context_only / invalid handled above).
+  if (assessment === 'benign') return 'not_applicable';
   if (c.matched_ioc_id || review === 'created_ioc' || state === 'existing' || lower(c.promotion_outcome) === 'created') {
     return 'already_existing';
   }
@@ -701,11 +703,16 @@ export function classifyCreateOutcome(candidate) {
  * already existing shows that deterministically from its stored IOC link, so an
  * existing-only selection needs no no-op mutation and survives a refresh.
  * Anything else falls back to the persisted outcome (null = not run).
+ * Stale blocker outcomes (`not_applicable` / `not_approved`) from an earlier
+ * Create IOCs run are dropped when the live eligibility is now `will_create`
+ * (e.g. approved + unknown after the create gate was corrected).
  */
 export function iocResultOutcome(candidate) {
   const persisted = lower(candidate?.promotion_outcome);
   if (persisted === 'created' || persisted === 'already_existing') return persisted;
-  if (classifyCreateOutcome(candidate) === 'already_existing') return 'already_existing';
+  const live = classifyCreateOutcome(candidate);
+  if (live === 'already_existing') return 'already_existing';
+  if (live === 'will_create') return null;
   return persisted && persisted !== 'will_create' ? persisted : null;
 }
 
