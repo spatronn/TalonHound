@@ -14,7 +14,7 @@ import { AI_OUTPUT_BOUNDS, buildProviderJsonSchema } from './ai/contract.js';
 test('internal contract versions for this change', () => {
   assert.equal(THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, 'threat_library_pdf_v6');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v31');
-  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v6');
+  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v7');
   assert.equal(THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION, 'threat-library-semantic-v10');
 });
 
@@ -50,7 +50,8 @@ test('outdated PDF/HTML canonical documents are rebuilt from the stored artifact
   assert.equal(isDocumentContractCurrent({ source_type: 'pdf' }, { blocks, meta: { extractor: 'threat_library_pdf_v2' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v1' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION } }), true);
-  // v6 content-root selection: prior HTML contracts re-extract from retained source HTML.
+  // v7 structured links: prior HTML contracts re-extract from retained source HTML.
+  assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v6' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v5' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_html_v2' } }), false);
   assert.equal(isDocumentContractCurrent({ source_type: 'url' }, { blocks, meta: { extractor: 'threat_library_weixin_v2' } }), false);

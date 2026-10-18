@@ -34,7 +34,8 @@ import { selectHtmlTitle } from './titleSelection.js';
  * v6: score article/main roots; prefer denser main over thin card articles;
  * always compare structured content-root fallback against thin incumbents.
  */
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v6';
+// v7: structured block.links from htmlBlocks v6 (destination-only href anchors).
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v7';
 export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */
@@ -159,12 +160,13 @@ export function extractGenericArticleDocument(html, meta = {}) {
 
   /** @type {{ score: number, blocks: object[], kind: string }[]} */
   const scored = [];
+  const blockOpts = { baseUrl: meta.url || null };
   for (const el of findElements(dom, (n) => tagOf(n) === 'article')) {
-    const blocks = extractBlocksFromNode(el, { blockId });
+    const blocks = extractBlocksFromNode(el, { blockId }, blockOpts);
     scored.push({ score: blockCharMass(blocks), blocks, kind: 'article' });
   }
   for (const el of findElements(dom, (n) => tagOf(n) === 'main')) {
-    const blocks = extractBlocksFromNode(el, { blockId });
+    const blocks = extractBlocksFromNode(el, { blockId }, blockOpts);
     scored.push({ score: blockCharMass(blocks), blocks, kind: 'main' });
   }
 
@@ -174,7 +176,7 @@ export function extractGenericArticleDocument(html, meta = {}) {
     const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
     // Strip site chrome headers when falling back to full body
     skipTags = new Set(['header']);
-    const blocks = extractBlocksFromNode(body, { blockId }, { skipTags });
+    const blocks = extractBlocksFromNode(body, { blockId }, { ...blockOpts, skipTags });
     chosen = { score: blockCharMass(blocks), blocks, kind: 'body' };
   }
 
@@ -219,8 +221,9 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
 
   let bestBlocks = [];
   let bestScore = 0;
+  const blockOpts = { baseUrl: meta.url || null };
   for (const el of candidates) {
-    const blocks = extractBlocksFromNode(el, { blockId });
+    const blocks = extractBlocksFromNode(el, { blockId }, blockOpts);
     const score = blocks.map((b) => (b.text || '').replace(/\s+/g, '').length).reduce((a, b) => a + b, 0);
     if (score > bestScore) {
       bestScore = score;
@@ -231,7 +234,7 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
   // Last resort: cleaned body text density — only if substantial
   if (bestBlocks.length === 0) {
     const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
-    bestBlocks = extractBlocksFromNode(body, { blockId }, { skipTags: new Set(['header', 'aside']) });
+    bestBlocks = extractBlocksFromNode(body, { blockId }, { ...blockOpts, skipTags: new Set(['header', 'aside']) });
   }
 
   return createCanonicalDocument({

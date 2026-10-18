@@ -8,6 +8,7 @@
 
 import { readArtifactBuffer } from '../artifactStore.js';
 import {
+  discoverIocSourcesFromBlocks,
   discoverIocSourcesFromHtml,
   discoverIocSourcesFromText,
   upsertDiscoveredSources
@@ -49,11 +50,16 @@ export async function runIocSourceDiscoveryForReport(pool, report, opts = {}) {
       }
     }
 
-    // Fallback / PDF: scan canonical document text + excerpts (visible URLs only).
+    // Canonical blocks (structured links + visible URLs) — same evidence model
+    // as section-tree external_ioc_pointer.
     const doc = report.canonical_document;
     if (doc && Array.isArray(doc.blocks)) {
-      const text = doc.blocks.map((b) => b.text || '').join('\n');
-      discovered.push(...discoverIocSourcesFromText(text, { reportUrl }));
+      discovered.push(...discoverIocSourcesFromBlocks(doc.blocks, { reportUrl }));
+      // PDF / text-only fallback when blocks have no structured links.
+      if (!doc.blocks.some((b) => Array.isArray(b.links) && b.links.length)) {
+        const text = doc.blocks.map((b) => b.text || '').join('\n');
+        discovered.push(...discoverIocSourcesFromText(text, { reportUrl }));
+      }
     }
     for (const art of artifacts) {
       if (art.text_excerpt) {

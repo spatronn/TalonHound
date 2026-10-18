@@ -465,9 +465,11 @@ Same candidate identity + source provenance links → existing review workflow
 
 Discovery requires textual IOC-dataset evidence (or a strong `/ioc|indicators/`
 path). Destination-only anchors such as “Indicators of Compromise can be found
-here” are recovered from the retained HTML artifact because canonical blocks
-drop `href`. An empty formal IOC section that explicitly points at an external
-pack does **not** delegate Indicator authority into the article body.
+here” are preserved as structured `block.links` (htmlBlocks v6 / HTML extractor
+v7) and scored by the shared `externalIocReference` module used by both
+discovery and section-tree authority. An empty formal IOC section that
+explicitly points at an external pack does **not** delegate Indicator authority
+into the article body. Discovery still never attaches or extracts.
 
 **Counts (must stay aligned across UI, API, MCP, SQL):**
 

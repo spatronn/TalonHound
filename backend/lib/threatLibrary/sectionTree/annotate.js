@@ -26,6 +26,10 @@ import {
 } from '../indicatorScope.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
 import { refangTextForExtraction } from '../defang.js';
+import {
+  EXTERNAL_IOC_POINTER_RE,
+  blockIsExternalIocReference
+} from '../iocSources/externalIocReference.js';
 import { SECTION_TREE_VERSION } from './version.js';
 
 const AUTHORITATIVE = STRONG_IOC_ZONES;
@@ -96,10 +100,7 @@ function isInventoryish(b) {
 }
 
 /** A sentence that points at an externally published indicator file. */
-export const EXTERNAL_POINTER_RE =
-  /\b(?:available|download(?:able|ed)?|can\s+be\s+found|found\s+(?:in|at|on)|see|refer\s+to|published|released|hosted|listed|provided|accessible)\b[^.]{0,120}\b(?:here|below|github|gitlab|repository|repo|file|files|csv|json|stix|misp|txt|package|archive|link|page|website)\b/i;
-
-const EXTERNAL_URL_IN_TEXT_RE = /\bhttps?:\/\/\S+/i;
+export const EXTERNAL_POINTER_RE = EXTERNAL_IOC_POINTER_RE;
 
 const OBSERVABLE_GLOBAL_RE = new RegExp(OBSERVABLE_RE.source, 'gi');
 
@@ -467,21 +468,28 @@ export function annotateSectionTree(doc, opts = {}) {
   // join the delegated scope.
   let inventoryInScope = 0;
   let externalPointerInScope = false;
+  /** @type {{ id: string, text: string }|null} */
+  let externalPointerAnchor = null;
   for (const b of blocks) {
     if (b.tree_is_heading || !b.authoritative_ancestor_id || b.tree_zone === 'header_footer') continue;
     if (hasObservableInventory(b)) inventoryInScope += 1;
-    const t = textOf(b);
-    // Suppress delegated body authority only when the empty IOC section names a
-    // concrete external dataset URL. Vague "available for download here" without
-    // a URL still delegates (body may be the only publisher assertions).
-    const prose = String(t || '').replace(/https?:\/\/\S+/gi, ' ');
+    // Shared scorer with discovery: visible URL and/or structured block.links
+    // (destination-only "can be found here" anchors). Vague "download here"
+    // without a concrete destination still allows delegated body authority.
+    const headingText =
+      (Array.isArray(b.section_path) && b.section_path.length
+        ? b.section_path[b.section_path.length - 1]
+        : null) || null;
     if (
-      t &&
-      EXTERNAL_URL_IN_TEXT_RE.test(t) &&
-      EXTERNAL_POINTER_RE.test(prose) &&
-      /\b(?:ioc|iocs|indicators?|observables?|download|repository|repo|github|gitlab|csv|stix|misp)\b/i.test(prose)
+      blockIsExternalIocReference(b, {
+        headingText,
+        reportUrl: doc?.meta?.source_url || null
+      })
     ) {
       externalPointerInScope = true;
+      if (!externalPointerAnchor) {
+        externalPointerAnchor = { id: b.id, text: String(b.text || '').slice(0, 160) };
+      }
     }
   }
   const delegatedScope =
@@ -520,6 +528,7 @@ export function annotateSectionTree(doc, opts = {}) {
       // unless an explicit external IOC pointer owns the pack instead.
       delegated_scope: delegatedScope,
       external_ioc_pointer: externalPointerInScope,
+      external_ioc_pointer_block_id: externalPointerAnchor?.id || null,
       empty_authoritative_openings: delegatedScope ? realOpeningIds.slice(0, 8) : [],
       delegated_blocks: delegatedBlocks,
       inferred_levels: inferredLevels,

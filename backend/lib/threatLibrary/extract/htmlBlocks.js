@@ -23,8 +23,11 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v5: real heading elements nested inside list items (`<ul><li><h3>…`)
  * emit as `heading` blocks with their DOM level instead of flattening into
  * list text — appendix subgroup labels such as "C2" keep heading semantics.
+ * v6: hyperlinks inside content blocks are preserved as structured
+ * `links: [{ href, text }]` so destination-only anchors ("can be found here")
+ * remain available to section-tree authority and IOC Source discovery.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v5';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v6';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -79,6 +82,43 @@ function tagOf(node) {
 
 function attr(node, name) {
   return node && node.attribs ? node.attribs[name] : undefined;
+}
+
+/**
+ * Collect `<a href>` pairs under a content node (absolute when baseUrl given).
+ * Noise subtrees are skipped. Nested anchors are not double-counted.
+ * @param {object} node
+ * @param {string|null} [baseUrl]
+ * @returns {{ href: string, text: string }[]}
+ */
+export function collectHyperlinks(node, baseUrl = null) {
+  const out = [];
+  const walk = (n) => {
+    if (!n) return;
+    if (!isElement(n)) {
+      if (n.type === 'root') for (const c of n.children || []) walk(c);
+      return;
+    }
+    const tag = tagOf(n);
+    if (NOISE_TAGS.has(tag)) return;
+    if (tag === 'a') {
+      const hrefRaw = String(attr(n, 'href') || '').trim();
+      if (hrefRaw && !hrefRaw.startsWith('#') && !hrefRaw.startsWith('mailto:') && !hrefRaw.startsWith('javascript:')) {
+        let href = hrefRaw;
+        try {
+          href = baseUrl ? new URL(hrefRaw, baseUrl).href : new URL(hrefRaw).href;
+        } catch {
+          // Keep relative unresolved when no usable base — callers may resolve later.
+          href = hrefRaw;
+        }
+        out.push({ href, text: textOf(n).trim().slice(0, 240) });
+      }
+      return;
+    }
+    for (const c of n.children || []) walk(c);
+  };
+  walk(node);
+  return out;
 }
 
 /**
@@ -275,6 +315,7 @@ export function extractBlocksFromHtmlFragment(fragmentHtml, ids, opts = {}) {
 export function extractBlocksFromNode(root, ids, opts = {}) {
   const blocks = [];
   const skip = opts.skipTags || new Set();
+  const baseUrl = opts.baseUrl || null;
   let idx = 1;
   let currentSection = null;
   const push = (type, text, extra = {}) => {
@@ -292,16 +333,22 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
     return block;
   };
 
+  const withLinks = (extra, links) => {
+    if (!links || !links.length) return extra || {};
+    return { ...(extra || {}), links };
+  };
+
   /**
    * One block per visual line. A single line is an ordinary block; several
    * lines (<br>-separated) share `line_group` = the first line's block id so
-   * provenance can reassemble the paragraph.
+   * provenance can reassemble the paragraph. Hyperlinks from the source node
+   * are attached to every line of the group (authority / discovery read any).
    */
-  const pushLines = (type, lines) => {
-    if (lines.length <= 1) return push(type, lines[0] || '');
+  const pushLines = (type, lines, links = null) => {
+    if (lines.length <= 1) return push(type, lines[0] || '', withLinks({}, links));
     let group = null;
     for (const line of lines) {
-      const block = push(type, line, group ? { line_group: group } : {});
+      const block = push(type, line, withLinks(group ? { line_group: group } : {}, links));
       if (block && !group) {
         group = block.id;
         block.line_group = group;
@@ -312,11 +359,29 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
 
   /** Pending inline text collected directly inside a container. */
   let pending = [];
+  /** @type {{ href: string, text: string }[]} */
+  let pendingLinks = [];
   const flushPending = () => {
     if (!pending.length) return;
     const text = pending.join('');
+    const links = pendingLinks.length ? pendingLinks.slice() : null;
     pending = [];
-    pushLines('paragraph', splitRenderedLines(text));
+    pendingLinks = [];
+    pushLines('paragraph', splitRenderedLines(text), links);
+  };
+
+  const recordAnchor = (anchorNode) => {
+    const hrefRaw = String(attr(anchorNode, 'href') || '').trim();
+    if (!hrefRaw || hrefRaw.startsWith('#') || hrefRaw.startsWith('mailto:') || hrefRaw.startsWith('javascript:')) {
+      return;
+    }
+    let href = hrefRaw;
+    try {
+      href = baseUrl ? new URL(hrefRaw, baseUrl).href : new URL(hrefRaw).href;
+    } catch {
+      href = hrefRaw;
+    }
+    pendingLinks.push({ href, text: textOf(anchorNode).trim().slice(0, 240) });
   };
 
   const walk = (node) => {
@@ -345,7 +410,7 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
       // A paragraph may still wrap block children (lists, tables inside <blockquote>).
       const hasBlockChild = (node.children || []).some((c) => isElement(c) && (tagOf(c) === 'table' || tagOf(c) === 'ul' || tagOf(c) === 'ol' || tagOf(c) === 'pre'));
       if (!hasBlockChild) {
-        pushLines('paragraph', textLinesOf(node));
+        pushLines('paragraph', textLinesOf(node), collectHyperlinks(node, baseUrl));
         return;
       }
       for (const c of node.children || []) walk(c);
@@ -408,7 +473,8 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
           inline.push(c);
         }
       }
-      pushLines('list', textLinesOf({ type: 'tag', name: 'span', children: inline }));
+      const inlineNode = { type: 'tag', name: 'span', children: inline };
+      pushLines('list', textLinesOf(inlineNode), collectHyperlinks(inlineNode, baseUrl));
       for (const c of nested) walk(c);
       flushPending();
       return;
@@ -420,6 +486,11 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
     if (tag === 'img') return;
     if (tag === 'hr') {
       flushPending();
+      return;
+    }
+    if (tag === 'a') {
+      recordAnchor(node);
+      for (const c of node.children || []) walk(c);
       return;
     }
     // Inline element: its children join the pending run verbatim (author

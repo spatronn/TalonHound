@@ -10,7 +10,9 @@
  * when a declared-type IOC table leads its content (shared with tl-zones-v14).
  * External IOC dataset pointers under an empty formal section set
  * `external_ioc_pointer` and suppress delegated body authority (the linked
- * IOC Source path owns the pack).
+ * IOC Source path owns the pack). Pointer detection uses the shared
+ * externalIocReference scorer over visible URLs and structured block.links
+ * (htmlBlocks v6 destination-only href anchors).
  */
 export const SECTION_TREE_VERSION = 'tl-section-tree-v4';
 
