@@ -576,6 +576,26 @@ export async function runExtractionRefresh(pool, ctx) {
       progress: { stage: outcome.analysis_status, mode: MODE, dispatch, summary: refreshed.summary, refresh: result }
     });
 
+    // Idempotent selective discovery: upsert discovered rows only (never attach).
+    try {
+      const { runIocSourceDiscoveryForReport } = await import('./iocSources/runDiscovery.js');
+      await runIocSourceDiscoveryForReport(
+        pool,
+        {
+          ...report,
+          canonical_document: refreshed.document,
+          source_url: report.source_url,
+          source_url_canonical: report.source_url_canonical
+        },
+        { logger: log }
+      );
+    } catch (err) {
+      log.warn?.('ioc source discovery after refresh failed (non-fatal)', {
+        reportId: report.id,
+        error: String(err?.message || err).slice(0, 200)
+      });
+    }
+
     log.info('extraction refresh completed', {
       reportId: report.id,
       jobId: ctx.jobId,

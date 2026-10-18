@@ -4,7 +4,8 @@
 
 /**
  * @typedef {{ headers: string[]|null, rows: string[][], caption?: string|null, source?: string|null }} CanonicalTable
- * @typedef {{ id: string, type: string, text: string, page?: number|null, section?: string|null, table?: CanonicalTable }} CanonicalBlock
+ * @typedef {{ href: string, text: string }} CanonicalHyperlink
+ * @typedef {{ id: string, type: string, text: string, page?: number|null, section?: string|null, table?: CanonicalTable, links?: CanonicalHyperlink[] }} CanonicalBlock
  * @typedef {{ title: string, language: string|null, blocks: CanonicalBlock[], meta?: object }} CanonicalDocument
  */
 

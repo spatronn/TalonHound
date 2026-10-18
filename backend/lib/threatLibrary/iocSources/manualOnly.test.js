@@ -1,7 +1,7 @@
 /**
- * Additional IOC Sources are manual-only. No import, analysis, retry, re-run,
- * refresh, worker or scheduled path may create IOC Source rows; the only
- * writer is the explicit Add Source URL action (createManualIocSource).
+ * Additional IOC Sources: selective auto-discovery may insert `discovered`
+ * rows, but analysis / retry / refresh must never attach, extract, or approve.
+ * The only analyst creation entry point remains Add Source URL.
  */
 
 import test from 'node:test';
@@ -33,36 +33,47 @@ const runtimeFiles = [
 const read = (f) => fs.readFileSync(f, 'utf8');
 const rel = (f) => path.relative(backendRoot, f).replace(/\\/g, '/');
 
-test('automatic discovery modules are gone and nothing references them', () => {
-  assert.equal(fs.existsSync(path.join(here, 'discover.js')), false);
-  assert.equal(fs.existsSync(path.join(here, 'runDiscovery.js')), false);
-  const offenders = runtimeFiles.filter((f) => /runIocSourceDiscoveryForReport|discoverIocSourcesFrom(Html|Text)|upsertDiscoveredSources|iocSources\/(discover|runDiscovery)\.js/.test(read(f)));
-  assert.deepEqual(offenders.map(rel), []);
+test('discovery modules exist and pipeline may invoke discovery only', () => {
+  assert.equal(fs.existsSync(path.join(here, 'discover.js')), true);
+  assert.equal(fs.existsSync(path.join(here, 'runDiscovery.js')), true);
+  const pipeline = read(path.join(here, '..', 'pipeline.js'));
+  assert.match(pipeline, /runIocSourceDiscoveryForReport/);
+  assert.doesNotMatch(pipeline, /extractIocSource|inspectIocSource|transitionSource\([^)]*'approve'/);
 });
 
-test('the only IOC Source insert is the manual Add Source URL action', () => {
+test('IOC Source INSERT writers are manual create + discovery upsert only', () => {
   const inserts = runtimeFiles.filter((f) => /INSERT INTO threat_report_ioc_sources\b/.test(read(f)));
-  assert.deepEqual(inserts.map(rel), ['lib/threatLibrary/iocSources/store.js']);
+  assert.deepEqual(inserts.map(rel).sort(), [
+    'lib/threatLibrary/iocSources/discover.js',
+    'lib/threatLibrary/iocSources/store.js'
+  ]);
   const store = read(path.join(here, 'store.js'));
   const fn = store.slice(store.indexOf('export async function createManualIocSource('));
   const body = fn.slice(0, fn.indexOf('\n}\n'));
   assert.match(body, /INSERT INTO threat_report_ioc_sources/);
-  assert.match(body, /'manual'/, 'rows are created with manual provenance');
+  assert.match(body, /'manual'/);
   assert.doesNotMatch(body, /'auto'/);
-  assert.equal(store.split('INSERT INTO threat_report_ioc_sources').length - 1, 1);
+
+  const discover = read(path.join(here, 'discover.js'));
+  assert.match(discover, /upsertDiscoveredSources/);
+  assert.match(discover, /discovery_method \|\| 'auto'/);
+  assert.match(discover, /IOC_SOURCE_LIFECYCLE\.DISCOVERED/);
 });
 
-test('report import / analysis / retry / re-run / refresh paths never touch IOC Sources', () => {
+test('report import / analysis / refresh paths never attach or extract IOC Sources', () => {
   for (const file of ['pipeline.js', 'extractionRefresh.js', 'extractionStages.js', 'urlIngest.js', 'pdfIngest.js', 'thibImport.js']) {
     const src = read(path.join(here, '..', file));
-    assert.doesNotMatch(src, /['"]\.\/iocSources\//, `${file} imports no IOC Source module (static or dynamic)`);
-    assert.doesNotMatch(src, /(INSERT INTO|UPDATE|DELETE FROM)\s+threat_report_ioc_sources/, file);
+    assert.doesNotMatch(src, /extractIocSource|inspectIocSource/, file);
+    assert.doesNotMatch(src, /(UPDATE|DELETE FROM)\s+threat_report_ioc_sources/, file);
   }
+  // Analysis + refresh may discover; the worker process itself does not.
   const worker = read(path.join(backendRoot, 'threat-library-worker.js'));
-  assert.doesNotMatch(worker, /discover/i);
+  assert.doesNotMatch(worker, /runIocSourceDiscoveryForReport/);
+  const refresh = read(path.join(here, '..', 'extractionRefresh.js'));
+  assert.match(refresh, /runIocSourceDiscoveryForReport/);
 });
 
-test('the Add Source URL route stays the creation entry point and checks intelligence before queueing', () => {
+test('the Add Source URL route stays the manual creation entry point and checks intelligence before queueing', () => {
   const routes = read(path.join(backendRoot, 'routes/threatLibrary.js'));
   const start = routes.indexOf("'/api/threat-library/reports/:publicId/ioc-sources',\n    requireRole");
   assert.ok(start > 0, 'POST /reports/:id/ioc-sources exists');

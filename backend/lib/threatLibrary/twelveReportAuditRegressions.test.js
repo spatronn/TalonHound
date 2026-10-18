@@ -74,7 +74,7 @@ test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v5');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v6');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v7');
 });
 
 // --- A. C2 authority needs an IOC inventory; provider prose does not veto ----

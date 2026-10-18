@@ -13,6 +13,11 @@
  * descriptive table ("Endpoint | Method | Description"); prose that names
  * services only to call them legitimate / unblockable is not inventory, so it
  * no longer vetoes the delegated scope.
+ * External IOC dataset pointers under an empty formal section set
+ * `external_ioc_pointer` and suppress delegated body authority (the linked
+ * IOC Source path owns the pack). Pointer detection uses the shared
+ * externalIocReference scorer over visible URLs and structured block.links
+ * (htmlBlocks v7 destination-only href anchors).
  */
 export const SECTION_TREE_VERSION = 'tl-section-tree-v5';
 

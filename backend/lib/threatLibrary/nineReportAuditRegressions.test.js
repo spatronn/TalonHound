@@ -218,7 +218,7 @@ const DELEGATED_BODY = `
 <tr><td>0x05ddd2131556d71352f5a10213fb1705b81dbd8d2f86fbe528a8a4be1de7d2e9</td><td>config["main"]</td><td>config-only-example[.]store</td></tr>
 </tbody></table>`;
 
-test('B: an IOC section that only points elsewhere delegates authority to body assertions', () => {
+test('B: an empty IOC section without a concrete external dataset URL delegates authority to body assertions', () => {
   const x = run(`${DELEGATED_BODY}
 <h2>Indicators of compromise</h2>
 <p>These indicators are also available for download here.</p>
@@ -232,6 +232,7 @@ test('B: an IOC section that only points elsewhere delegates authority to body a
     assert.ok(!m.includes(not), `${not} must not be an Indicator`);
   }
   assert.equal(x.diagnostics.scope_engine.delegated_scope, true);
+  assert.equal(x.diagnostics.scope_engine.external_ioc_pointer, false);
   assert.ok(codes(x).includes(QUALITY_CODES.DELEGATED_AUTHORITY_APPLIED));
   assert.ok(codes(x).includes(QUALITY_CODES.AUTHORITATIVE_SECTION_EMPTY));
 });
@@ -251,13 +252,27 @@ test('B: a pointer sentence carrying a link is not an inventory; a real IOC row 
     { id: 'h1', type: 'heading', level: 2, text: 'Indicators of compromise' },
     { id: 'p1', type: 'paragraph', text: 'All observables are available for download in our GitHub repository: https://github.com/vendor-example/iocs' }
   ] });
-  assert.equal(pointer.meta.delegated_scope, true);
-  assert.equal(pointer.blocks.find((b) => b.id === 'p0').tree_zone, 'delegated_ioc_scope');
+  // Explicit external IOC dataset pointer: do not delegate body technical
+  // narrative into Indicator authority (linked IOC Source owns the pack).
+  assert.equal(pointer.meta.external_ioc_pointer, true);
+  assert.equal(pointer.meta.delegated_scope, false);
+  assert.notEqual(pointer.blocks.find((b) => b.id === 'p0').tree_zone, 'delegated_ioc_scope');
   const real = annotateSectionTree({ blocks: [
     { id: 'h1', type: 'heading', level: 2, text: 'Indicators of compromise' },
     { id: 'p1', type: 'paragraph', text: '198.51.100[.]41' }
   ] });
   assert.equal(real.meta.delegated_scope, false);
+});
+
+test('B: empty IOC section without an external dataset pointer still delegates body authority', () => {
+  const empty = annotateSectionTree({ blocks: [
+    { id: 'p0', type: 'paragraph', text: 'The loader beacons to 198.51.100.40:443.' },
+    { id: 'h1', type: 'heading', level: 2, text: 'Indicators of compromise' },
+    { id: 'p1', type: 'paragraph', text: 'See the campaign narrative above for infrastructure details.' }
+  ] });
+  assert.equal(empty.meta.external_ioc_pointer, false);
+  assert.equal(empty.meta.delegated_scope, true);
+  assert.equal(empty.blocks.find((b) => b.id === 'p0').tree_zone, 'delegated_ioc_scope');
 });
 
 // ---------------------------------------------------------------- A. evidence integrity

@@ -14,7 +14,7 @@ import { buildCandidateEvidenceRecord } from '../evidencePolicy.js';
 import { SCOPE_ENGINE_LEGACY, SCOPE_ENGINE_SECTION_TREE } from './version.js';
 
 function doc(blocks, meta = {}) {
-  return { title: 't', blocks, meta: { extractor: 'threat_library_html_v6', ...meta } };
+  return { title: 't', blocks, meta: { extractor: 'threat_library_html_v7', ...meta } };
 }
 
 function pdfDoc(blocks) {

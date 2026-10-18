@@ -73,3 +73,57 @@ export const IOC_SOURCE_CONTENT_TYPES = Object.freeze([
   'application/yaml',
   'text/yaml'
 ]);
+
+/**
+ * Text / surrounding-text cues for automatic discovery (case-insensitive
+ * substring match). These must describe a publisher IOC dataset — not ordinary
+ * research citations or tooling links.
+ *
+ * IMPORTANT: do not put hostnames (e.g. "github.com/") here or in URL cues;
+ * that previously self-reinforced every GitHub link to an accept score.
+ */
+export const IOC_SOURCE_DISCOVERY_CUES = Object.freeze([
+  'complete ioc',
+  'full ioc',
+  'full ioc list',
+  'ioc list',
+  'iocs are available',
+  'iocs can be found',
+  'indicators of compromise can be found',
+  'indicators of compromise',
+  'indicators are published',
+  'indicators are available',
+  'additional indicators',
+  'additional ioc',
+  'supplementary indicators',
+  'download ioc',
+  'download indicators',
+  'threat indicators csv',
+  'ioc appendix',
+  'indicator appendix',
+  'ioc repository',
+  'ioc dataset',
+  'indicator dataset',
+  'host indicators',
+  'network indicators',
+  'sample hashes',
+  'see the following ioc',
+  'ioc pack',
+  'indicator pack'
+]);
+
+/**
+ * Path / filename cues only. Never include bare hosts (github.com/) — host
+ * relevance is scored separately and only when text evidence already exists.
+ */
+export const IOC_SOURCE_DISCOVERY_URL_CUES = Object.freeze([
+  '/ioc/',
+  '/iocs/',
+  '/indicators/',
+  '/indicator/',
+  'ioc.',
+  'indicators.'
+]);
+
+/** Minimum score to accept a discovered source (requires textual evidence). */
+export const IOC_SOURCE_DISCOVERY_SCORE_THRESHOLD = 4;
