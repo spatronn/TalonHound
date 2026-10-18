@@ -61,8 +61,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * v11 (ten-report audit): a dotted name inside a URN (`urn:ms-drs:<host>`) is
  * an identifier; product styling `Socket.IO` (capitalised word + all-caps
  * suffix) is a code / product shape.
+ * v12 (twelve-report audit): managed-runtime standard-library namespaces
+ * (`javax.*`, `jakarta.*`, `java.<std>.*`, `System.<BCL>.*`) are code
+ * identifiers even when the last label is a real TLD (`javax.tools`).
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v11';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v12';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -637,6 +640,30 @@ function stripTrailingPunct(s) {
  * }} [ctx]
  * @returns {DottedResolution}
  */
+/** Second labels of the Java standard library under `java.` (java.net, java.util …). */
+const JAVA_STD_PACKAGES = new Set([
+  'lang', 'util', 'io', 'net', 'nio', 'security', 'awt', 'sql', 'time', 'text', 'beans', 'rmi', 'math', 'applet', 'crypto'
+]);
+/** Second labels of the .NET base class library under `System.` (System.Net, System.IO …). */
+const DOTNET_SYSTEM_NAMESPACES = new Set([
+  'net', 'io', 'text', 'reflection', 'diagnostics', 'security', 'runtime', 'threading', 'collections', 'windows',
+  'management', 'data', 'linq', 'web', 'xml', 'drawing', 'componentmodel', 'globalization', 'resources', 'servicemodel'
+]);
+
+/**
+ * A managed-runtime standard-library namespace path: `javax.*` / `jakarta.*`,
+ * `java.<std package>…`, or `System.<BCL namespace>…`.
+ * @param {string[]} labels lower-cased labels
+ */
+export function isRuntimeNamespace(labels) {
+  if (!Array.isArray(labels) || labels.length < 2) return false;
+  const [first, second] = labels;
+  if (first === 'javax' || first === 'jakarta') return true;
+  if (first === 'java') return JAVA_STD_PACKAGES.has(second);
+  if (first === 'system') return DOTNET_SYSTEM_NAMESPACES.has(second);
+  return false;
+}
+
 export function resolveDottedToken(raw, ctx = {}) {
   const original = String(raw || '').trim().replace(/\.$/, '');
   const refanged = (refangObservable(original) || original).replace(/\.$/, '');
@@ -715,6 +742,12 @@ export function resolveDottedToken(raw, ctx = {}) {
   // 2. Parser knowledge: exact URL host / URL path basename.
   if (basenames.has(lower)) return out('technical_artifact', 'url_path_basename');
   if (hosts.has(lower)) return out('domain', 'url_host');
+
+  // 2b. Standard-library namespaces of managed runtimes (`javax.tools`,
+  //     `java.net.URLClassLoader`, `System.Net.Http`): a package / namespace
+  //     path, never a host — even when the last label is a real TLD (.tools,
+  //     .net). Declared network types and exact URL hosts were decided above.
+  if (isRuntimeNamespace(labels)) return out('technical_artifact', 'runtime_namespace');
 
   // 3. Filesystem path segment (`.../app.war/x.jsp`, `dir\name.ext\file`): a
   //    directory or file inside a path, not a host. A URL authority (`//host`)
@@ -881,7 +914,7 @@ export function buildTypeResolutionRecord(input) {
 export function artifactKindFor(reason) {
   const r = String(reason || '');
   if (/single_instance|mutex/.test(r)) return 'mutex';
-  if (/^code_|method_suffix|code_block/.test(r)) return 'code';
+  if (/^code_|method_suffix|code_block|runtime_namespace/.test(r)) return 'code';
   if (/url_path_basename|file_/.test(r) || r === 'multi_dot_ext' || r === 'extension_without_host_context') return 'file';
   if (r === 'path_segment') return 'path';
   const m = r.match(/^(config|registry|path|command|process|metadata|file|code)_(?:label|context)$/);

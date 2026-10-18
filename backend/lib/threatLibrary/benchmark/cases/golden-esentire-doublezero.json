@@ -1,0 +1,58 @@
+{
+  "id": "golden-esentire-doublezero",
+  "title": "www.esentire.com - eSentire | Threat Intelligence Malware Analysis: DoubleZero",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "appendix",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-doublezero-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/esentire-threat-intelligence-malware-analysis-doublezero",
+    "talonhound_report_id": "8628befc-bf7d-48bf-9951-2a32456a669c",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Appendix > Indicators of Compromise: Name | File Hash (SHA-256) table.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "30b3cbe8817ed75d8221059e4be35d5624bd6b5dc921d4991a7adc4c3eb5de4a"
+      },
+      {
+        "type": "sha256",
+        "value": "3b2e708eaa4744c76a633391cf2c983f4a098b46436525619e5ea44e105355fe"
+      },
+      {
+        "type": "sha256",
+        "value": "8dd8b9bd94de1e72f0c400c5f32dcefc114cc0a5bf14b74ba6edc19fd4aeb2a5"
+      },
+      {
+        "type": "sha256",
+        "value": "d897f07ae6f42de8f35e2b05f5ef5733d7ec599d5e786d3225e66ca605a48f53"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

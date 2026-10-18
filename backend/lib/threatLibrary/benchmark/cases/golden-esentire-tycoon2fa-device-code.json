@@ -1,0 +1,59 @@
+{
+  "id": "golden-esentire-tycoon2fa-device-code",
+  "title": "www.esentire.com - Tycoon 2FA Operators Adopt OAuth Device Code Phishing",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_section_prose",
+    "role_enumeration",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-tycoon2fa-device-code-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/tycoon-2fa-operators-adopt-oauth-device-code-phishing",
+    "talonhound_report_id": "3ba72c2e-4b68-4128-b101-489489ce83b3",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "IOC section = pointer + detection bullets; one bullet enumerates the operator-side IPs (asserted). Body lure / check-domain URLs are MODE A narrative.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "47.252.11.99"
+      },
+      {
+        "type": "ip",
+        "value": "47.90.180.205"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "login.microsoftonline.com"
+      },
+      {
+        "type": "url",
+        "value": "https://microsoft.com/devicelogin"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

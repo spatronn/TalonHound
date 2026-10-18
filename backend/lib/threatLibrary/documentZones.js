@@ -96,8 +96,11 @@ import {
  * v14 (ten-report audit): a qualified inventory heading ("Observations") opens
  * an IOC section only when its first table is a declared-type IOC table
  * (indicator column + observable-type column); otherwise it stays narrative.
+ * v15 (twelve-report audit): "Contact" is a reference heading only as a
+ * whole contact block ("Contact", "Contact us", "Contact information"); a
+ * topic that starts with the word ("Contact Form Engagement") is narrative.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v14';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v15';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -224,7 +227,9 @@ const HEADING_HINTS = Object.freeze({
   reference_section: [
     /^references?\b/i,
     /bibliography/i,
-    /^contact(?:s|ing)?\b/i,
+    // A contact / "Contact us" block, not a topic that starts with the word
+    // ("Contact Form Engagement" is the lure narrative, not chrome).
+    /^contact(?:s|ing)?(?:\s+(?:us|information|info|details|the\s+(?:authors?|team|researchers?)|our\s+team))?\s*[:.!]?\s*$/i,
     /^reporting\b/i,
     /how\s+to\s+report/i,
     /related\s+(reports?|articles?|links?|resources?)/i,

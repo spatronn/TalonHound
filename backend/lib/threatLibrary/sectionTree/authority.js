@@ -12,7 +12,8 @@ import {
   isIndicatorValueLine,
   isAnnotatedIndicatorRowLine,
   isObservableListLine,
-  lineContainingObservable
+  lineContainingObservable,
+  textDescribesValueAsBenign
 } from '../indicatorScope.js';
 import { refangTextForExtraction } from '../defang.js';
 import { annotateSectionTree } from './annotate.js';
@@ -128,6 +129,43 @@ const INDICATOR_COLUMN_HEADER_RE =
   /\b(?:domains?|hosts?|hostnames?|ips?|ip\s+address(?:es)?|addresses|urls?|uris?|c2s?|c&c|servers?|infrastructure|endpoints?|indicators?|iocs?|observables?|sha-?(?:1|256)|md5|hash(?:es)?)\b/i;
 
 /**
+ * Row label of a key-value ("Property | Value") table that names this
+ * value's own type: "SHA256 | <hex>", "MD5: <hex>", "C2 | <host>". The label
+ * cell is the type declaration of that row, the same way a typed column
+ * header is for a column. Hash labels must match the hash length.
+ */
+const KEY_VALUE_TYPE_LABELS = [
+  [/^(?:sha-?256(?:\s+hash)?|sha2-256)$/i, new Set(['sha256'])],
+  [/^(?:sha-?1(?:\s+hash)?)$/i, new Set(['sha1'])],
+  [/^(?:md-?5(?:\s+hash)?)$/i, new Set(['md5'])],
+  [/^(?:ip(?:v4)?(?:\s+address)?|c2\s+ip)$/i, new Set(['ip'])],
+  [/^(?:domain|domain\s+name|c2(?:\s+(?:domain|server|host))?|hostname)$/i, new Set(['domain', 'ip'])],
+  [/^(?:url|c2\s+url|download\s+url|payload\s+url)$/i, new Set(['url'])]
+];
+
+/**
+ * True when the table row's label cell (another column of the same row) is a
+ * pure type label matching this candidate's type, and the table does not call
+ * the described file / host legitimate ("Description | Legitimate Microsoft
+ * binary", "Signed by Microsoft Corporation").
+ * @param {object} candidate
+ * @param {object} r table_rows entry for this value
+ * @param {string} text the table block text
+ * @param {string} value
+ */
+function keyValueRowDeclaresType(candidate, r, text, value) {
+  const type = String(candidate.candidate_type || '').toLowerCase();
+  const labels = (Array.isArray(r.cells) ? r.cells : [])
+    .filter((cell) => cell && cell.column_index !== r.column_index)
+    .map((cell) => String(cell.text || '').trim().replace(/[:：]\s*$/, ''));
+  const declares = labels.some((label) =>
+    KEY_VALUE_TYPE_LABELS.some(([re, types]) => re.test(label) && types.has(type))
+  );
+  if (!declares) return false;
+  return !textDescribesValueAsBenign(text, [value, r.raw_value].filter(Boolean));
+}
+
+/**
  * Row placement that is a publisher assertion inside the delegated scope:
  * an ip:port endpoint, an observable-only list line, or a table cell of a
  * column the publisher typed as network / hash / indicator values ("Domain /
@@ -148,7 +186,8 @@ function delegatedStructuralRow(candidate, occ, text, value) {
     return rows.some((r) =>
       NETWORK_OR_HASH_DECLARED.has(String(r.declared_type || '').toLowerCase()) ||
       INDICATOR_COLUMN_HEADER_RE.test(String(r.column_header || '')) ||
-      INDICATOR_COLUMN_HEADER_RE.test(String(r.type_cell || ''))
+      INDICATOR_COLUMN_HEADER_RE.test(String(r.type_cell || '')) ||
+      keyValueRowDeclaresType(candidate, r, text, value)
     );
   }
   const line = lineContainingObservable(text, value) || text;
