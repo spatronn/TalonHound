@@ -283,6 +283,7 @@ export function extractReportCandidates(report, document) {
         remapped_occurrences: applied.remapped_occurrences,
         demoted_occurrences: applied.demoted_occurrences,
         delegated_scope: applied.delegated_scope === true,
+        external_ioc_pointer: applied.external_ioc_pointer === true,
         delegated_occurrences: applied.delegated_occurrences || 0
       };
       stamped.meta.scope_engine = applied.scope_engine;
@@ -526,6 +527,8 @@ export function compactExtractionDiagnostics(diagnostics) {
           has_authoritative_scope: diagnostics.scope_engine.has_authoritative_scope === true,
           remapped_occurrences: diagnostics.scope_engine.remapped_occurrences ?? null,
           demoted_occurrences: diagnostics.scope_engine.demoted_occurrences ?? null,
+          delegated_scope: diagnostics.scope_engine.delegated_scope === true || undefined,
+          external_ioc_pointer: diagnostics.scope_engine.external_ioc_pointer === true || undefined,
           error: diagnostics.scope_engine.error || undefined,
           fallback: diagnostics.scope_engine.fallback === true || undefined
         }

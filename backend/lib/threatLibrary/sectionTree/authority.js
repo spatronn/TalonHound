@@ -305,6 +305,7 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
     remapped_occurrences: remappedOccurrences,
     demoted_occurrences: demotedOccurrences,
     delegated_scope: tree.meta.delegated_scope === true,
+    external_ioc_pointer: tree.meta.external_ioc_pointer === true,
     delegated_occurrences: delegatedOccurrences
   };
 }

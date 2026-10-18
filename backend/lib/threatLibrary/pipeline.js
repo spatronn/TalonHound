@@ -676,8 +676,15 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       progress: { stage: 'review_required', summary }
     });
 
-    // Additional IOC Sources are manual-only: analysis never creates
-    // threat_report_ioc_sources rows (iocSources/sourceType.js).
+    // Selective Additional IOC Source discovery (rows only — never fetch/attach).
+    // Explicit publisher IOC references become `discovered` for analyst inspect/approve.
+    try {
+      const { runIocSourceDiscoveryForReport } = await import('./iocSources/runDiscovery.js');
+      await runIocSourceDiscoveryForReport(pool, { ...report, canonical_document: document }, { logger: log });
+    } catch (err) {
+      log.warn('ioc source discovery failed (non-fatal)', { reportId: report.id, error: err.message });
+    }
+
     log.info('matching complete', { reportId: report.id, ...summary });
     return { ok: true, summary };
   } catch (err) {

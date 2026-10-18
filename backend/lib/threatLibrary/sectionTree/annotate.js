@@ -96,8 +96,10 @@ function isInventoryish(b) {
 }
 
 /** A sentence that points at an externally published indicator file. */
-const EXTERNAL_POINTER_RE =
+export const EXTERNAL_POINTER_RE =
   /\b(?:available|download(?:able|ed)?|can\s+be\s+found|found\s+(?:in|at|on)|see|refer\s+to|published|released|hosted|listed|provided|accessible)\b[^.]{0,120}\b(?:here|below|github|gitlab|repository|repo|file|files|csv|json|stix|misp|txt|package|archive|link|page|website)\b/i;
+
+const EXTERNAL_URL_IN_TEXT_RE = /\bhttps?:\/\/\S+/i;
 
 const OBSERVABLE_GLOBAL_RE = new RegExp(OBSERVABLE_RE.source, 'gi');
 
@@ -458,14 +460,32 @@ export function annotateSectionTree(doc, opts = {}) {
   // observable inventory (only "available for download here"), the publisher
   // released its indicators elsewhere. MODE A stays (assertion required), but
   // authority is delegated to the publisher's own body assertions instead of
-  // silently suppressing all of them. Reference / chrome / code blocks and
-  // headings never join the delegated scope.
+  // silently suppressing all of them — unless the empty section explicitly
+  // points at an external IOC dataset. In that case body technical narrative
+  // must not inherit Indicator authority; linked IOC Source discovery owns
+  // the publisher pack. Reference / chrome / code blocks and headings never
+  // join the delegated scope.
   let inventoryInScope = 0;
+  let externalPointerInScope = false;
   for (const b of blocks) {
     if (b.tree_is_heading || !b.authoritative_ancestor_id || b.tree_zone === 'header_footer') continue;
     if (hasObservableInventory(b)) inventoryInScope += 1;
+    const t = textOf(b);
+    // Suppress delegated body authority only when the empty IOC section names a
+    // concrete external dataset URL. Vague "available for download here" without
+    // a URL still delegates (body may be the only publisher assertions).
+    const prose = String(t || '').replace(/https?:\/\/\S+/gi, ' ');
+    if (
+      t &&
+      EXTERNAL_URL_IN_TEXT_RE.test(t) &&
+      EXTERNAL_POINTER_RE.test(prose) &&
+      /\b(?:ioc|iocs|indicators?|observables?|download|repository|repo|github|gitlab|csv|stix|misp)\b/i.test(prose)
+    ) {
+      externalPointerInScope = true;
+    }
   }
-  const delegatedScope = realAuthoritativeOpenings > 0 && inventoryInScope === 0;
+  const delegatedScope =
+    realAuthoritativeOpenings > 0 && inventoryInScope === 0 && !externalPointerInScope;
   let delegatedBlocks = 0;
   if (delegatedScope) {
     const anchor = realOpeningIds[0];
@@ -496,8 +516,10 @@ export function annotateSectionTree(doc, opts = {}) {
       real_authoritative_openings: realAuthoritativeOpenings,
       // Publisher-authoritative IOC inventory governs the document (MODE A).
       has_authoritative_scope: realAuthoritativeOpenings > 0,
-      // Every formal IOC section empty → body assertions carry authority.
+      // Every formal IOC section empty → body assertions carry authority,
+      // unless an explicit external IOC pointer owns the pack instead.
       delegated_scope: delegatedScope,
+      external_ioc_pointer: externalPointerInScope,
       empty_authoritative_openings: delegatedScope ? realOpeningIds.slice(0, 8) : [],
       delegated_blocks: delegatedBlocks,
       inferred_levels: inferredLevels,

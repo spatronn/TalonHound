@@ -450,7 +450,11 @@ A Threat Library report may reference multiple external IOC datasets (for exampl
 Report analysis completes
       │
       ▼
-Auto-discovery (links only — never fetch/attach)
+Selective auto-discovery of explicit publisher IOC references
+(HTML href + text cues + IOC heading; never bare github.com/)
+      │
+      ▼
+`discovered` rows only — never fetch / attach / extract / approve
       │
       ▼
 Analyst inspects → Approve & Attach → deterministic extract
@@ -458,6 +462,12 @@ Analyst inspects → Approve & Attach → deterministic extract
       ▼
 Same candidate identity + source provenance links → existing review workflow
 ```
+
+Discovery requires textual IOC-dataset evidence (or a strong `/ioc|indicators/`
+path). Destination-only anchors such as “Indicators of Compromise can be found
+here” are recovered from the retained HTML artifact because canonical blocks
+drop `href`. An empty formal IOC section that explicitly points at an external
+pack does **not** delegate Indicator authority into the article body.
 
 **Counts (must stay aligned across UI, API, MCP, SQL):**
 

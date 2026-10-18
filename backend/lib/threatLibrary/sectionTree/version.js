@@ -8,6 +8,9 @@
  * download here") → body blocks join the delegated scope (`delegated_ioc_scope`).
  * v4: a qualified inventory heading ("Observations") is an IOC section only
  * when a declared-type IOC table leads its content (shared with tl-zones-v14).
+ * External IOC dataset pointers under an empty formal section set
+ * `external_ioc_pointer` and suppress delegated body authority (the linked
+ * IOC Source path owns the pack).
  */
 export const SECTION_TREE_VERSION = 'tl-section-tree-v4';
 

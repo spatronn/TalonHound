@@ -1,10 +1,10 @@
 /**
- * Additional IOC Sources are manual-only: an analyst adds a source URL to a
- * report. Nothing scans report content for candidate source links, and no
- * workflow creates threat_report_ioc_sources rows except the explicit
- * Add Source URL action (store.createManualIocSource).
+ * Classify the format of an Additional IOC Source URL for inspection.
  *
- * This module only classifies the format of a source URL for inspection.
+ * Source rows are created by:
+ * - selective auto-discovery (`discover.js` / `runDiscovery.js`) — `discovered`
+ *   only; never fetch/attach/extract
+ * - the explicit Add Source URL action (`store.createManualIocSource`)
  */
 
 export function guessTypeFromUrl(url) {
