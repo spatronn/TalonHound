@@ -1,0 +1,61 @@
+{
+  "id": "golden-elastic-coding-agent-tunnels",
+  "title": "Elastic — coding-agent tunnels and LaunchAgents (MODE B, dual-use tunnel brokers, detection-rule captions; zero Indicators)",
+  "publisher": "Elastic Security Labs",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_b",
+    "zero_indicators",
+    "dual_use_infrastructure",
+    "detection_rule_caption",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/elastic-coding-agent-tunnels-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/coding-agent-launchagent-tunnel-detection",
+    "talonhound_report_id": "f9cbed18-222e-4de2-bef8-043ce099d957",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "domain",
+        "value": "api.trycloudflare.com"
+      },
+      {
+        "type": "domain",
+        "value": "trycloudflare.com"
+      },
+      {
+        "type": "domain",
+        "value": "localhost.run"
+      },
+      {
+        "type": "domain",
+        "value": "lhr.life"
+      },
+      {
+        "type": "url",
+        "value": "http://localhost/"
+      }
+    ],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

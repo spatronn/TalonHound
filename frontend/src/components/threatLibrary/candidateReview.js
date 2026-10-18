@@ -76,7 +76,8 @@ const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = new Set([
   'explicit_ioc_section',
   'c2_section',
   'sample_table',
-  'operational_infrastructure'
+  'operational_infrastructure',
+  'delegated_ioc_scope'
 ]);
 
 function hasAuthoritativePublisherIocScope(candidate) {

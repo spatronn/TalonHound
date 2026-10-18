@@ -11,6 +11,7 @@
 
 import {
   classifyHeadingText,
+  DELEGATED_IOC_ZONE,
   STRONG_IOC_ZONES,
   NEGATIVE_ZONES,
   detectRepeatedHeaderFooterBlockIds
@@ -91,6 +92,32 @@ function isInventoryish(b) {
   }
   if (b.type === 'table') return true;
   return false;
+}
+
+/** A sentence that points at an externally published indicator file. */
+const EXTERNAL_POINTER_RE =
+  /\b(?:available|download(?:able|ed)?|can\s+be\s+found|found\s+(?:in|at|on)|see|refer\s+to|published|released|hosted|listed|provided|accessible)\b[^.]{0,120}\b(?:here|below|github|gitlab|repository|repo|file|files|csv|json|stix|misp|txt|package|archive|link|page|website)\b/i;
+
+const OBSERVABLE_GLOBAL_RE = new RegExp(OBSERVABLE_RE.source, 'gi');
+
+/**
+ * Content that lists at least one observable (an inventory), as opposed to a
+ * pointer sentence such as "These indicators are also available for download
+ * here." or "IOCs are listed in our GitHub repository: <url>".
+ * @param {object} b annotated content block
+ */
+function hasObservableInventory(b) {
+  if (!b || b.type === 'heading') return false;
+  const t = textOf(b);
+  if (!t) return false;
+  const refanged = refangTextForExtraction(t);
+  // A URL is one observable (not its scheme + host + path pieces).
+  const urls = refanged.match(/\bhttps?:\/\/\S+/gi) || [];
+  const rest = refanged.replace(/\bhttps?:\/\/\S+/gi, ' ');
+  const hits = urls.length + (rest.match(OBSERVABLE_GLOBAL_RE) || []).length;
+  if (!hits) return false;
+  if (b.type !== 'table' && hits <= 1 && EXTERNAL_POINTER_RE.test(t)) return false;
+  return true;
 }
 
 function lookAheadInventory(blocks, i, chromeIds, depth = 4) {
@@ -206,6 +233,8 @@ export function annotateSectionTree(doc, opts = {}) {
   const stack = [];
   let authoritativeOpenings = 0;
   let realAuthoritativeOpenings = 0;
+  /** @type {string[]} */
+  const realOpeningIds = [];
   const trace = [];
 
   const pushTrace = (entry) => {
@@ -396,6 +425,7 @@ export function annotateSectionTree(doc, opts = {}) {
       // must still establish MODE A on long documents.
       if (!node.synthetic && node.zone && AUTHORITATIVE.has(node.zone)) {
         realAuthoritativeOpenings += 1;
+        realOpeningIds.push(node.id);
       }
     }
     pushTrace({
@@ -418,6 +448,34 @@ export function annotateSectionTree(doc, opts = {}) {
     }
   }
 
+  // Empty formal IOC sections: when every real authoritative opening holds no
+  // observable inventory (only "available for download here"), the publisher
+  // released its indicators elsewhere. MODE A stays (assertion required), but
+  // authority is delegated to the publisher's own body assertions instead of
+  // silently suppressing all of them. Reference / chrome / code blocks and
+  // headings never join the delegated scope.
+  let inventoryInScope = 0;
+  for (const b of blocks) {
+    if (b.tree_is_heading || !b.authoritative_ancestor_id || b.tree_zone === 'header_footer') continue;
+    if (hasObservableInventory(b)) inventoryInScope += 1;
+  }
+  const delegatedScope = realAuthoritativeOpenings > 0 && inventoryInScope === 0;
+  let delegatedBlocks = 0;
+  if (delegatedScope) {
+    const anchor = realOpeningIds[0];
+    for (const b of blocks) {
+      if (b.tree_is_heading || b.tree_zone === 'header_footer' || b.negative_scope === true) continue;
+      if (b.authoritative_ancestor_id) continue;
+      if (b.type === 'code' || b.layout === 'page_edge') continue;
+      b.authoritative_ancestor_id = anchor;
+      b.authoritative_zone = DELEGATED_IOC_ZONE;
+      b.tree_zone = DELEGATED_IOC_ZONE;
+      b.delegated_scope = true;
+      delegatedBlocks += 1;
+    }
+    pushTrace({ block_id: anchor, decision: 'delegate_empty_authoritative_scope', zone: DELEGATED_IOC_ZONE, blocks: delegatedBlocks });
+  }
+
   // MODE A requires a real (non-synthetic) publisher IOC/C2/sample heading.
   // Synthetic subgroup nesting under that heading is allowed, but synthetic-only
   // openings must not invent MODE A on a narrative (MODE B) document.
@@ -432,6 +490,10 @@ export function annotateSectionTree(doc, opts = {}) {
       real_authoritative_openings: realAuthoritativeOpenings,
       // Publisher-authoritative IOC inventory governs the document (MODE A).
       has_authoritative_scope: realAuthoritativeOpenings > 0,
+      // Every formal IOC section empty → body assertions carry authority.
+      delegated_scope: delegatedScope,
+      empty_authoritative_openings: delegatedScope ? realOpeningIds.slice(0, 8) : [],
+      delegated_blocks: delegatedBlocks,
       inferred_levels: inferredLevels,
       trace
     }

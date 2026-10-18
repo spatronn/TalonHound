@@ -78,6 +78,25 @@ export function canonicalizeIpv4Cidr(ip, prefix) {
   return `${intToIpv4(ipv4ToInt(host) & mask)}/${p}`;
 }
 
+/**
+ * Special-use / private-network names (RFC 6761 / 6762 / 8375, ICANN reserved
+ * `.internal`, and the never-delegated name-collision labels): a host under
+ * one of them resolves only inside a local network, never in public DNS, so
+ * it cannot be external threat infrastructure on its own ("c2.tuxbot.local").
+ */
+const SPECIAL_USE_LOCAL_SUFFIXES = Object.freeze([
+  'local', 'localhost', 'localdomain', 'internal', 'lan', 'intranet', 'corp', 'home', 'home.arpa'
+]);
+
+/**
+ * @param {string} host lowercase hostname (no scheme / port)
+ */
+export function isSpecialUseLocalName(host) {
+  const h = String(host || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!h) return false;
+  return SPECIAL_USE_LOCAL_SUFFIXES.some((s) => h === s || h.endsWith(`.${s}`));
+}
+
 export function isRfcExampleDomain(domain) {
   const d = String(domain || '').toLowerCase();
   if (RFC_EXAMPLE_DOMAINS.has(d)) return true;

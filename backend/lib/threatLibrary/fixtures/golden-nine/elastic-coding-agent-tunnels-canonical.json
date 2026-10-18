@@ -1,0 +1,1264 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/coding-agent-launchagent-tunnel-detection",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v1",
+  "section_tree_version": "tl-section-tree-v2",
+  "candidate_extraction_version": "tl-candidates-v29"
+ },
+ "title": "Coding agent security: Claude Code, tunnels and LaunchAgents",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Living off the coding agent: Two tales of tunnels and LaunchAgents",
+   "type": "heading",
+   "level": 1,
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Agent-parented reverse tunnels and LaunchAgents can expose a local admin app to the internet. Endpoint still needs to treat that as high severity even when the activity looks like vibe-coded ops, not confirmed malware.",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "August 07, 2026",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Mika AyensonJia Yu Chan",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "AI Security",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Coding agents such as Claude Code and Cursor are vendor-signed, used all day on developer laptops, and routinely open shells, call APIs, edit files, and install helpers. That makes GenAI-adjacent alerts challenging to investigate. The parent looks trusted, while the children can still look a lot like classic high-severity activity.",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "This article walks through one of those windows. On a macOS endpoint, Elastic Security endpoint telemetry showed shells under Claude Code that scripted a login to an ephemeral tunnel hostname, pulled application metrics, stood up a Cloudflare quick tunnel, and installed LaunchAgent persistence. Immediate children were often shells (zsh) and helpers under that ancestry, not Claude executing every binary itself.",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "The outcomes Endpoint cares about are still there. Credentials show up on the wire, along with reverse tunnels and LaunchAgents. The destinations and command shapes also line up with known free tunnel providers (localhost[.]run / lhr[.]life, trycloudflare, ngrok, etc.), a local loopback app pattern, and ordinary SaaS APIs. Put together, the same telemetry can read like a remote admin of a local dashboard with agent help, which is exactly why these alerts are hard to triage.",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Below we walk the multi-day suspicious activity and the 23 Jul window stage by stage, name the known dual-use tools, show which production rules fired, and describe challenges detection engineers and analysts encounter when investigating these alerts.",
+   "type": "paragraph",
+   "section": "Living off the coding agent: Two tales of tunnels and LaunchAgents"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 3,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Agent-parented reverse tunnels and LaunchAgents can expose a local admin app to the internet. Treat that as high severity even when it looks like vibe-coded ops, not confirmed malware.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Known free tunnel brokers (localhost[.]run / lhr[.]life, Cloudflare Quick Tunnels, ngrok) show up next to credentialed HTTP and LaunchAgents in the same session.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "The hard part for detection engineers is validation. Trusted coding-agent parents, dual-use destinations, and high-severity outcomes can all arrive in one alert pile.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "Coding agent activity analysis",
+   "type": "heading",
+   "level": 2,
+   "section": "Coding agent activity analysis"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Two hunt paths landed on the same host on July 23, 2026. One started from VirusTotal reputation on a domain contacted under the agent lineage. The other started from correlated endpoint behavior alerts, including the production rule Persistence via GenAI Tool. Together they rebuilt one sequence rather than a pile of unrelated noisy events.",
+   "type": "paragraph",
+   "section": "Coding agent activity analysis"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "That was not the first Elastic Defend signal on the host. Telemetry already showed event.code: malicious_file and behavior activity from July 20, 2026 onward. Most of it was tunnel and VPN-class binaries, noisy GenAI-adjacent alerts, followed by credential posts and LaunchAgent persistence the hunts highlighted.",
+   "type": "paragraph",
+   "section": "Coding agent activity analysis"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "macOS developer endpoint: Where this showed up",
+   "type": "heading",
+   "level": 3,
+   "section": "macOS developer endpoint: Where this showed up"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "The activity sits on a macOS developer endpoint where Claude Code (and in related cases Cursor) was already installed and in use. The practical class is a workstation that trusts signed coding agents to open shells, edit files, call APIs, and install helpers.",
+   "type": "paragraph",
+   "section": "macOS developer endpoint: Where this showed up"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "How the Claude Code session staged the chain",
+   "type": "heading",
+   "level": 3,
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "From telemetry, the session needed to run tooling with fewer approval prompts, reach a tunnel-published URL, expose a local service without inbound firewall changes, keep that path alive, and check related processes. Those steps show up as ordinary process, file, and network event types under a coding-agent parent.",
+   "type": "paragraph",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "Known dual-use tools in this window include localhost[.]run (free SSH tunnels on *.lhr[.]life), Cloudflare Quick Tunnels (*.trycloudflare[.]com / api.trycloudflare[.]com), and an ngrok binary. VirusTotal flags on broker apexes (root domain) remain useful hunt signals because those services get abused. In this session, the tunnels sit next to publish-localhost behavior and follow-on requests to /login and /api/summary on the public URL.",
+   "type": "paragraph",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "On this endpoint, the observed goals were as follows.",
+   "type": "paragraph",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "Run tooling through an approved coding agent with fewer human approval prompts",
+   "type": "list",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Authenticate over HTTP(S) to a tunnel-published URL and pull application metrics",
+   "type": "list",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Expose a local service to the internet without opening inbound firewall ports",
+   "type": "list",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "Keep a reverse tunnel alive across logout or reboot, polling that the public link stays up",
+   "type": "list",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "Check related processes while that access was being built",
+   "type": "list",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "Each goal shows up under a coding-agent parent. Immediate children were usually shells (zsh) under Claude Code, not Claude executing every binary itself. The raw alert shape still looks like living-off-the-agent activity. The destinations and command shapes give analysts more to work with when they open the case.",
+   "type": "paragraph",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "Observed progression on 23 Jul.",
+   "type": "paragraph",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "In the above image, a Claude Code session (Stage 1) parented credentialed HTTP against ephemeral tunnel hostnames and a metrics pull (Stage 2), a Cloudflare quick tunnel that published localhost (Stage 3), and LaunchAgent material that kept access alive (Stage 4). Stage 2 is where investigation gets interesting, with credentials on a free-tunnel URL under agent ancestry.",
+   "type": "paragraph",
+   "section": "How the Claude Code session staged the chain"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Related coding-agent parented cases",
+   "type": "heading",
+   "level": 3,
+   "section": "Related coding-agent parented cases"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "The tunnel and LaunchAgent window is one full chain. Separately, we also reviewed shorter cases on other hosts where a coding agent is still the execution parent.",
+   "type": "paragraph",
+   "section": "Related coding-agent parented cases"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Variant A: Claude Code as effective parent, with Apple-signed Python and osascript dropping and re-running JavaScript under /tmp (LOLBin staging).",
+   "type": "list",
+   "section": "Related coding-agent parented cases"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "Variant B: A Cursor agent session that tried a decrypted keychain dump filtered toward Linear and Model Context Protocol (MCP) OAuth material; endpoint controls blocked the dump in the case we reviewed (T1555.001).",
+   "type": "list",
+   "section": "Related coding-agent parented cases"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Variant C: Claude Code with permission bypass pulled an unsigned binary over plaintext HTTP, tried quarantine stripping and ad-hoc re-signing, and probed ~/.zshenv as a persistence canary.",
+   "type": "list",
+   "section": "Related coding-agent parented cases"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Observed activity flow",
+   "type": "heading",
+   "level": 2,
+   "section": "Observed activity flow"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "Days leading into the window",
+   "type": "heading",
+   "level": 3,
+   "section": "Days leading into the window"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Before the alerts on the July 23 session, the same host had already been noisy in",
+   "type": "paragraph",
+   "section": "Days leading into the window",
+   "line_group": "b041"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "Defend for several days:",
+   "type": "paragraph",
+   "section": "Days leading into the window",
+   "line_group": "b041"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "When (UTC) | Activity | Why it matters ¶ July 20, 2026 | malicious_file on tunnel/VPN-class binaries (pritunl-client, later wireguard-go) plus discovery-oriented SIEM alerts | Tunnel tooling lands on the host days before the Claude Code session ¶ July 21, 2026 | Production Suspicious Python Script Execution and Network Connection: zsh -> python3 /tmp/mcp_clean_landers.py -> <redacted domain>. Same day: cat touched Claude project memory under ~/.claude/projects/*/memory/MEMORY.md | Scripted analytics-style activity under a shell two days before the LaunchAgent window; durable agent memory touch outside usual Claude writers ¶ July 22, 2026 | Spike in GenAI or MCP Server Child Process Execution | Agent children get louder (often benign tooling); useful as timing and ancestry context ¶ July 23, 2026 | Credentialized HTTP to lhr[.]life / trycloudflare, cloudflared, LaunchAgents, plus malicious_file on ngrok (earliest under zsh, later also under launchd) | The multi-stage chain below; second tunnel binary appears the same day",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "July 20, 2026",
+      "malicious_file on tunnel/VPN-class binaries (pritunl-client, later wireguard-go) plus discovery-oriented SIEM alerts",
+      "Tunnel tooling lands on the host days before the Claude Code session"
+     ],
+     [
+      "July 21, 2026",
+      "Production Suspicious Python Script Execution and Network Connection: zsh -> python3 /tmp/mcp_clean_landers.py -> <redacted domain>. Same day: cat touched Claude project memory under ~/.claude/projects/*/memory/MEMORY.md",
+      "Scripted analytics-style activity under a shell two days before the LaunchAgent window; durable agent memory touch outside usual Claude writers"
+     ],
+     [
+      "July 22, 2026",
+      "Spike in GenAI or MCP Server Child Process Execution",
+      "Agent children get louder (often benign tooling); useful as timing and ancestry context"
+     ],
+     [
+      "July 23, 2026",
+      "Credentialized HTTP to lhr[.]life / trycloudflare, cloudflared, LaunchAgents, plus malicious_file on ngrok (earliest under zsh, later also under launchd)",
+      "The multi-stage chain below; second tunnel binary appears the same day"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "When (UTC)",
+     "Activity",
+     "Why it matters"
+    ]
+   },
+   "layout": "table",
+   "section": "Days leading into the window"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "Malware classifications on commercial VPN clients can be dual-use noise. What matters here is the sequence: tunnel binaries and rising agent-child volume for days, then agent-parented credential posts, reverse tunnels, and LaunchAgent persistence in one window.",
+   "type": "paragraph",
+   "section": "Days leading into the window"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "On July 21, 2026, we observed a process tree zsh -> python3 /tmp/mcp_clean_landers.py with an outbound HTTPS connection (analytics.<redacted>.dev). From the script shape, the calls appear related to a plaintext MCP-style analytics client request under a shell where its request bodies are JSON-RPC method calls to retrieve data, and not data being sent out.",
+   "type": "paragraph",
+   "section": "Days leading into the window"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "Discover view of Suspicious Python Script Execution and Network Connection with python3 under zsh.",
+   "type": "paragraph",
+   "section": "Days leading into the window"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "The same calendar day also showed a write to Claude project memory (MEMORY.md under ~/.claude/projects/*/memory) by a generic utility cat, not the Claude process. One plain reading is agent self-update of durable context (for example cat > MEMORY.md). The touch can sit hours away from other activity in the window.",
+   "type": "paragraph",
+   "section": "Days leading into the window"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "During the July 23rd session",
+   "type": "heading",
+   "level": 3,
+   "section": "During the July 23rd session"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "The July 23rd window starts with Claude Code already usable as a vendor-signed parent. Sessions in this window included permission-bypass flags such as --allow-dangerously-skip-permissions, so later tool calls needed fewer human clicks. Developers turn modes like that on for speed. From the endpoint's point of view, the parent still looks like a normal vendor binary. What matters is the flag set plus what the children do afterward.",
+   "type": "paragraph",
+   "section": "During the July 23rd session"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Stage 2 traffic included hosts under lhr[.]life and Cloudflare Quick Tunnel names (*.trycloudflare[.]com). lhr[.]life is the free subdomain space for localhost[.]run, an SSH-based free tunnel provider in the same class as Cloudflare Quick Tunnels and ngrok. Next to credential posts under Claude Code, these look like access plumbing for a published local service.",
+   "type": "paragraph",
+   "section": "During the July 23rd session"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "VirusTotal domain view for lhr[.]life. Multiple engines mark malicious or phishing, and community tags include potential C2.",
+   "type": "paragraph",
+   "section": "During the July 23rd session"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Live apex for lhr[.]life when no active tunnel is bound (\"no tunnel here\"). That is the unbound free-broker page. It does not clear the alert, and it does not confirm abuse by itself.",
+   "type": "paragraph",
+   "section": "During the July 23rd session"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "Credentialized HTTP(S) under the agent",
+   "type": "heading",
+   "level": 4,
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "With a shell under the agent, an outbound curl came next.",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "# Shape only (credentials redacted)",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b055"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "URL=\"https://<id>.lhr[.]life\"",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b055"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "# poll /login until HTTP 200 (проверка = \"check\")",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b055"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "curl -X POST \"$URL/login\" -d 'user=...&password=...'",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b055"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "curl \"$URL/api/summary?from=...&to=...\" | jq '{spend}'",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b055"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Discover view of process.parent.command_line for outbound curl to *.lhr[.]life on 23 Jul. Claude Code zsh shell-snapshot wrapper, credentialized POST to /login (credentials redacted), then a cookie-authenticated /api/summary pull filtered to spend.",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "This parent command line is a readiness loop. It polls /login until HTTP 200, authenticates, then pulls a {spend} summary. Session files under /tmp and status strings like проверка (\"check\") show up in the same wrapper. Response bodies were discarded (-o /dev/null) during auth checks. The public host is a localhost[.]run` free-tunnel URL.",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "curl -X POST 'https://<name>.trycloudflare[.]com/login' -d 'user=...&password=...'",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b062"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "curl 'https://<name>.trycloudflare[.]com/...' | jq '{spend, ads}'",
+   "type": "code",
+   "section": "Credentialized HTTP(S) under the agent",
+   "line_group": "b062"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Why this reads as suspicious at first glance: a credential is POSTed in plaintext over an anonymized free-tunnel URL under coding-agent ancestry, the loop-until-200 pattern resembles C2 check-in, and the Cyrillic status strings add apparent attribution weight. Same actions can be self-testing a published local app or credentialed access to an exposed service.",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "The sequence authenticates to a tunnel-published app URL and pulls metrics such as spend and ads. Credentials in process command lines under coding-agent ancestry still matter for Endpoint and for anyone opening the alert.",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "What we can show cleanly is agent-parented credentialized HTTP to a known free tunnel broker, plus reverse-tunnel and LaunchAgent follow-ons that can expose a local admin app. VT hits on the broker apex, and odd apex pages sit in that same dual-use bucket. They are part of the case file, not a final judgment. Production coverage that fired here includes Unusual Network Connection to Suspicious Top Level Domain.",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Unusual Network Connection to Suspicious Top Level Domain on 23 Jul. Destination [redacted].lhr[.]life (localhost[.]run free-tunnel subdomain).",
+   "type": "paragraph",
+   "section": "Credentialized HTTP(S) under the agent"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Publish localhost with a reverse tunnel",
+   "type": "heading",
+   "level": 4,
+   "section": "Publish localhost with a reverse tunnel"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "The same session started cloudflared against a local port through Cloudflare’s quick-tunnel control plane.",
+   "type": "paragraph",
+   "section": "Publish localhost with a reverse tunnel"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "# Reconstructed (no process.args captured), a typical quick-tunnel invocation looks like:",
+   "type": "code",
+   "section": "Publish localhost with a reverse tunnel",
+   "line_group": "b070"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "cloudflared tunnel --url http://localhost:<port>",
+   "type": "code",
+   "section": "Publish localhost with a reverse tunnel",
+   "line_group": "b070"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "# control-plane contact includes api.trycloudflare[.]com",
+   "type": "code",
+   "section": "Publish localhost with a reverse tunnel",
+   "line_group": "b070"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "The usual mechanics here are ingress. The local process opens an outbound control channel to the broker, the broker publishes a public URL, and remote clients reach a service on the laptop without classic port forwarding. cloudflared talking to api.trycloudflare[.]com is the control plane for that hole-punch. Together with the credentialized HTTP stage, the session publishes localhost and then exercises the public URL. The matching production alert was Unusual Network Connection to Suspicious Web Service.",
+   "type": "paragraph",
+   "section": "Publish localhost with a reverse tunnel"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Unusual Network Connection to Suspicious Web Service: cloudflared to api.trycloudflare[.]com (Cloudflare-signed binary).",
+   "type": "paragraph",
+   "section": "Publish localhost with a reverse tunnel"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "The same day, Defend also raised a malicious_file event on an ngrok binary in the project tree. The earliest hit in the window sat under a zsh parent; later activity also appeared under launchd. Another tunnel front beside cloudflared. VirusTotal labels the sample as adware/hacktool ngrok.",
+   "type": "paragraph",
+   "section": "Publish localhost with a reverse tunnel"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "VirusTotal detection view for the ngrok sample.",
+   "type": "paragraph",
+   "section": "Publish localhost with a reverse tunnel"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "LaunchAgents for the tunnel and a watchdog",
+   "type": "heading",
+   "level": 4,
+   "section": "LaunchAgents for the tunnel and a watchdog"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Under the same agent activity, LaunchAgent material was written and loaded: a watchdog agent configured with PlistBuddy and reloaded with launchctl bootstrap, alongside tunnel-keeper style agents in the same com.<vendor>.<app>.* family (server, ngrok, lhr, tunnel, watchdog). Program args and naming can point at keeping a local dashboard and its tunnels alive across sessions.",
+   "type": "paragraph",
+   "section": "LaunchAgents for the tunnel and a watchdog"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "PlistBuddy -c \"Set :StartInterval 60\" ~/Library/LaunchAgents/com.<vendor>.<app>.watchdog.plist",
+   "type": "code",
+   "section": "LaunchAgents for the tunnel and a watchdog",
+   "line_group": "b079"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "launchctl bootout gui/$(id -u)/com.<vendor>.<app>.watchdog",
+   "type": "code",
+   "section": "LaunchAgents for the tunnel and a watchdog",
+   "line_group": "b079"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "launchctl bootstrap gui/$(id -u)",
+   "type": "code",
+   "section": "LaunchAgents for the tunnel and a watchdog",
+   "line_group": "b079"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "~/Library/LaunchAgents/com.<vendor>.<app>.watchdog.plist",
+   "type": "code",
+   "section": "LaunchAgents for the tunnel and a watchdog",
+   "line_group": "b079"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "# then: curl -s -o /dev/null -w \"…: %{http_code}\"",
+   "type": "code",
+   "section": "LaunchAgents for the tunnel and a watchdog",
+   "line_group": "b079"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "https://<id>.trycloudflare[.]com/login (liveness)",
+   "type": "code",
+   "section": "LaunchAgents for the tunnel and a watchdog",
+   "line_group": "b079"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Shells and temp files disappear when the session ends. LaunchAgents with KeepAlive and a liveness loop do not. Installing LaunchAgents that keep a reverse tunnel (or the app behind it) alive should stay loud even when the parent is a trusted coding agent. This stage is where production rule Persistence via GenAI Tool fired.",
+   "type": "paragraph",
+   "section": "LaunchAgents for the tunnel and a watchdog"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "Persistence via GenAI Tool: zsh → PlistBuddy setting StartInterval on a LaunchAgent watchdog plist (path redacted).",
+   "type": "paragraph",
+   "section": "LaunchAgents for the tunnel and a watchdog"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "Process discovery in the same session",
+   "type": "heading",
+   "level": 4,
+   "section": "Process discovery in the same session"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "The session also ran process discovery helpers, for example pgrep patterns tied to related workloads. By itself, that is low severity. In sequence with the stages above, it can look like checking that related services were still up, rather than hunting defensive tools. Related production coverage included Process Discovery via Built-In Applications.",
+   "type": "paragraph",
+   "section": "Process discovery in the same session"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "The same host also triggered the GenAI or MCP Server Child Process Execution rule. That building block rule tracks GenAI parents spawning children, including routine tooling such as git status, but also more alarming commands like security find-generic-password -a <user> -w -s \"Claude Code-credentials\", a Keychain read that prints Claude Code’s OAuth token to STDOUT; but this is documented as expected Claude Code behavior.",
+   "type": "paragraph",
+   "section": "Process discovery in the same session"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Coding-agent parented activity through MITRE ATT&CK",
+   "type": "heading",
+   "level": 3,
+   "section": "Coding-agent parented activity through MITRE ATT&CK"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures. The mapping below describes technique shape in telemetry so hunters can pivot across similar activity.",
+   "type": "paragraph",
+   "section": "Coding-agent parented activity through MITRE ATT&CK"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 4,
+   "section": "Tactics"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. They are the tactical goal for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Persistence",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Defense Evasion",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 4,
+   "section": "Techniques"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Techniques represent how a tactical goal is achieved.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Command and Scripting Interpreter",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Application Layer Protocol: Web Protocols",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "Exfiltration Over Web Service",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Protocol Tunneling",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Create or Modify System Process: Launch Agent",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Process Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Credentials from Password Stores: Keychain (variant B)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Ingress Tool Transfer (variant C)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Detecting coding-agent parented chains",
+   "type": "heading",
+   "level": 2,
+   "section": "Detecting coding-agent parented chains"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Detection",
+   "type": "heading",
+   "level": 3,
+   "section": "Detection"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "The following detection rules and building-block alerts were observed throughout analysis of this host window (diagnostic-only alerts are omitted):",
+   "type": "paragraph",
+   "section": "Detection"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "Unusual Network Connection to Suspicious Top Level Domain",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Unusual Network Connection to Suspicious Web Service",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "GenAI or MCP Server Child Process Execution (building-block volume / ancestry)",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Process Discovery via Built-In Applications",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "No single production rule owns the full sequence. SIEM network rules catch reputation-bad or dual-use egress. Building blocks supply ancestry and discovery context. Correlate them with endpoint outcomes, especially when the parent is a trusted coding agent. Practical handling for windows like this:",
+   "type": "paragraph",
+   "section": "Detection"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Keep the high-severity outcomes loud. Credentialized HTTP, reverse tunnels, and LaunchAgents under coding-agent ancestry should not be auto-closed because Claude or Cursor is in the tree.",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Name the destination class early. localhost[.]run, Cloudflare Quick Tunnels, and ngrok hosts are dual-use. Record that before leaning on rare-TLD or VirusTotal labels alone.",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Prefer session context over single-event reputation. Readiness loops, publish-localhost followed by /login and /api/summary, and LaunchAgents that keep those tunnels up are stronger pivots than an apex page that says \"no tunnel here.\"",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "Separate volume from outcome. GenAI child-process building blocks are ancestry and timing context until secrets, tunnels, or persistence show up.",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Document both readings when the evidence supports them. The same chain can be a remote admin of a local dashboard or something more serious.",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Prevention",
+   "type": "heading",
+   "level": 3,
+   "section": "Prevention"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "The following Elastic Defend behavior prevention events were observed:",
+   "type": "paragraph",
+   "section": "Prevention"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Persistence via GenAI Tool",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Suspicious Python Script Execution and Network Connection",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "This window teeters between two readings that share the same telemetry shape. On one side, agent-parented credentialized HTTP, reverse tunnels, and LaunchAgents are exactly the outcomes Endpoint is supposed to surface. On the other, the destinations and command shapes line up with known free tunnel brokers and remote exercise of a local admin app. Reputation labels and unbound broker apex pages do not break that tie by themselves.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "That ambiguity is the GenAI detection-engineering problem, and it will get harder as coding agents stay in the trusted parent path for more of the work developers already do with shells, APIs, and helpers. The useful response is not to suppress the high-severity outcomes, and not to force every dual-use tunnel into a confirmed intrusion narrative. Keep the alerts, name the tool class, rebuild the session, and write down what the evidence can and cannot support.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "References",
+   "type": "heading",
+   "level": 2,
+   "section": "References"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "The following were referenced throughout the above research:",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Elastic Advances LLM Security with Standardized Fields and Integrations",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Embedding Security in LLM Workflows: Elastic's Proactive Approach",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "AI Security",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation",
+   "type": "heading",
+   "level": 3,
+   "section": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "April 21, 2026",
+   "type": "paragraph",
+   "section": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents",
+   "type": "paragraph",
+   "section": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "AI Security",
+   "type": "paragraph",
+   "section": "The Cost of Understanding: LLM-Driven Reverse Engineering vs Iterative LLM Obfuscation"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents",
+   "type": "heading",
+   "level": 3,
+   "section": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "September 19, 2025",
+   "type": "paragraph",
+   "section": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Carolina Beretta",
+   "type": "paragraph",
+   "section": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Elastic Advances LLM Security with Standardized Fields and Integrations",
+   "type": "paragraph",
+   "section": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "AI Security",
+   "type": "paragraph",
+   "section": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "Elastic Advances LLM Security with Standardized Fields and Integrations",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Advances LLM Security with Standardized Fields and Integrations"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "May 06, 2024",
+   "type": "paragraph",
+   "section": "Elastic Advances LLM Security with Standardized Fields and Integrations"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Mika Ayenson",
+   "type": "paragraph",
+   "section": "Elastic Advances LLM Security with Standardized Fields and Integrations"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "+4",
+   "type": "paragraph",
+   "section": "Elastic Advances LLM Security with Standardized Fields and Integrations"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Embedding Security in LLM Workflows: Elastic's Proactive Approach",
+   "type": "paragraph",
+   "section": "Elastic Advances LLM Security with Standardized Fields and Integrations"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "AI Security",
+   "type": "paragraph",
+   "section": "Elastic Advances LLM Security with Standardized Fields and Integrations"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Embedding Security in LLM Workflows: Elastic's Proactive Approach",
+   "type": "heading",
+   "level": 3,
+   "section": "Embedding Security in LLM Workflows: Elastic's Proactive Approach"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "April 25, 2024",
+   "type": "paragraph",
+   "section": "Embedding Security in LLM Workflows: Elastic's Proactive Approach"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Mika Ayenson",
+   "type": "paragraph",
+   "section": "Embedding Security in LLM Workflows: Elastic's Proactive Approach"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

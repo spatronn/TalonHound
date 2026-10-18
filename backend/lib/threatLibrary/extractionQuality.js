@@ -53,8 +53,14 @@ import { refangTextForExtraction } from './defang.js';
  * an Indicator domain with a weak, undelegated suffix (system identifiers read
  * as hosts). Check 5 also reads the occurrence text, not only the relation
  * marker, for a legitimate / benign description of an Indicator.
+ * v7 (nine-report audit): check 13 reports delegated authority (every formal
+ * IOC section empty, Indicators from body assertions); check 14 lists hash-
+ * shaped values kept as non-file digests; check 15 flags an Indicator the
+ * publisher both asserts and calls legitimate / dual-use; post-merge checks
+ * 16–18 (withPostMergeQuality) record rejected model quotes, unsupported model
+ * escalations and malicious-assessed non-members (MODE A suppression).
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v6';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v7';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -112,7 +118,19 @@ export const QUALITY_CODES = Object.freeze({
   /** Content-inferred indicator column of another hash type beside a declared hash column (check 11). */
   CONTENT_INFERRED_HASH_COLUMN: 'content_inferred_hash_column',
   /** An Indicator domain whose suffix is weak and not delegated (check 12). */
-  UNDELEGATED_SUFFIX_DOMAIN_INDICATOR: 'undelegated_suffix_domain_indicator'
+  UNDELEGATED_SUFFIX_DOMAIN_INDICATOR: 'undelegated_suffix_domain_indicator',
+  /** Every formal IOC section empty: Indicators come from delegated body assertions (check 13). */
+  DELEGATED_AUTHORITY_APPLIED: 'delegated_authority_applied',
+  /** Hash-shaped values the publisher labelled as non-file digests (check 14). */
+  NON_FILE_DIGEST_RECLASSIFIED: 'non_file_digest_reclassified',
+  /** An Indicator the publisher both asserts and calls legitimate / dual-use (check 15). */
+  PUBLISHER_STANCE_CONFLICT: 'publisher_stance_conflict',
+  /** Model evidence quotes not found verbatim in the document (post-merge check 16). */
+  AI_EVIDENCE_UNGROUNDED: 'ai_evidence_ungrounded',
+  /** Model malicious / suspicious labels without publisher support, not applied (check 17). */
+  AI_ESCALATION_UNSUPPORTED: 'ai_escalation_unsupported',
+  /** Candidates assessed malicious that are not report Indicators (check 18, explains suppression). */
+  MALICIOUS_ASSESSED_NON_MEMBERS: 'malicious_assessed_non_members'
 });
 
 /**
@@ -493,7 +511,14 @@ export function assessExtractionQuality(input) {
   };
   // A row the publisher itself calls a legitimate / benign component is
   // excluded on purpose (row-level benign assertion), not lost.
-  const deliberatelyExcluded = (c) => String(c.policy_decision || '') === 'context_only_benign_component';
+  // Reserved / loopback / link-local values (a YARA string "169.254.0.1") are
+  // never Indicators either, so a table holding them lost nothing.
+  const deliberatelyExcluded = (c) => [
+    'context_only_benign_component',
+    'context_only_reserved_address',
+    'context_only_non_actionable_local',
+    'context_only_rfc_example'
+  ].includes(String(c.policy_decision || ''));
   const blockFullyCaptured = (blockId, covered) => {
     const list = [...(iocByBlock.get(blockId) || [])];
     return list.length > 0 && list.every((c) => c.__member || deliberatelyExcluded(c) || (covered && coveredByMember(c)));
@@ -685,7 +710,9 @@ export function assessExtractionQuality(input) {
       (b.zone === 'explicit_ioc_section' || b.zone === 'sample_table' || b.zone === 'c2_section') &&
       (b.scope_opening_id === b.id || b.type === 'heading')
   );
-  if (hasHeadedAppendix) {
+  // Delegated scope (every headed appendix empty): body tables ARE the publisher
+  // inventory there; check 13 reports that case instead.
+  if (hasHeadedAppendix && diagnostics.scope_engine?.delegated_scope !== true) {
     for (const b of blocks) {
       if (b.type !== 'table' || !b.table || isChrome(b)) continue;
       // Tables already inside the publisher's headed IOC / C2 / sample appendix
@@ -802,6 +829,51 @@ export function assessExtractionQuality(input) {
         evidence: evidenceFor([b.id])
       });
     }
+  }
+
+  // --- 13. Delegated authority (every formal IOC section empty; section-tree) ---
+  const scopeEngine = diagnostics.scope_engine || {};
+  if (scopeEngine.delegated_scope === true) {
+    const delegatedMembers = candidates.filter((c) => c.__member &&
+      (c.occurrences || []).some((o) => o.zone === 'delegated_ioc_scope' && o.asserted === true));
+    push({
+      code: QUALITY_CODES.DELEGATED_AUTHORITY_APPLIED,
+      severity: 'warning',
+      explanation: 'Every formal Indicators-of-Compromise section of this report is empty (the publisher released its IOCs ' +
+        `elsewhere). ${delegatedMembers.length} Indicator(s) come from the publisher's own assertions in the body ` +
+        '(operational statements, endpoints, rows of network/indicator-typed table columns); narrative mentions stayed Context Only. ' +
+        "Review them, and attach the publisher's IOC file as a linked IOC Source when it is available.",
+      candidates: delegatedMembers.map(identity).sort(),
+      block_ids: [],
+      section: { heading: null, zone: 'delegated_ioc_scope' }
+    });
+  }
+
+  // --- 14. Non-file digests reclassified (build-id / certificate / vhash / key / trivial digest) ---
+  const digests = candidates.filter((c) => c.digest_kind);
+  if (digests.length) {
+    const kinds = [...new Set(digests.map((c) => c.digest_kind))].sort();
+    push({
+      code: QUALITY_CODES.NON_FILE_DIGEST_RECLASSIFIED,
+      severity: 'info',
+      explanation: `${digests.length} hash-shaped value(s) are labelled as ${kinds.join(', ')} by the publisher and were kept as ` +
+        'context, not as file-hash Indicators.',
+      candidates: digests.map((c) => `${c.digest_kind}:${c.normalized_value}`).sort(),
+      block_ids: digests.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+
+  // --- 15. Publisher stance conflict (legitimate / dual-use AND asserted) ---
+  const conflicts = candidates.filter((c) => c.__member && c.stance_conflict === true);
+  if (conflicts.length) {
+    push({
+      code: QUALITY_CODES.PUBLISHER_STANCE_CONFLICT,
+      severity: 'warning',
+      explanation: `${conflicts.length} Indicator(s) are asserted by the publisher in one place and described as legitimate / ` +
+        'dual-use / not inherently malicious in another; the assertion keeps membership — review the publisher stance.',
+      candidates: conflicts.map(identity).sort(),
+      block_ids: conflicts.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
   }
 
   warnings.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.code.localeCompare(b.code));
@@ -928,6 +1000,90 @@ export function withReplayMembershipDivergence(quality, input) {
     counts,
     warnings: warnings.slice(0, T.maxWarnings),
     warnings_total: (quality.warnings_total ?? (quality.warnings || []).length) + 1
+  };
+}
+
+const POST_MERGE_CODES = Object.freeze([
+  QUALITY_CODES.AI_EVIDENCE_UNGROUNDED,
+  QUALITY_CODES.AI_ESCALATION_UNSUPPORTED,
+  QUALITY_CODES.MALICIOUS_ASSESSED_NON_MEMBERS
+]);
+
+/**
+ * Checks 16–18 on the candidate set AFTER the model merge (pipeline and
+ * Refresh extraction): model quotes that were rejected because they are not
+ * in the document, model escalations that were not applied for lack of
+ * publisher support, and malicious-assessed candidates that stay outside the
+ * Indicators set (explains MODE A suppression). Diagnostic only.
+ * @param {object[]} candidates merged candidates
+ * @returns {object[]} warnings
+ */
+export function assessPostMergeQuality(candidates) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const out = [];
+  const rejected = list.filter((c) => c.ai_evidence_rejected);
+  if (rejected.length) {
+    out.push({
+      code: QUALITY_CODES.AI_EVIDENCE_UNGROUNDED,
+      severity: 'info',
+      explanation: `${rejected.length} model evidence quote(s) do not occur in the report text; the publisher excerpt was kept ` +
+        'and the model text is stored only as a rejected suggestion.',
+      candidates: rejected.map(identityOf).sort()
+    });
+  }
+  const unsupported = list.filter((c) => c.ai_classification && c.ai_classification.applied === false);
+  if (unsupported.length) {
+    out.push({
+      code: QUALITY_CODES.AI_ESCALATION_UNSUPPORTED,
+      severity: 'warning',
+      explanation: `${unsupported.length} model malicious / suspicious label(s) cite no publisher text naming the value and were not applied.`,
+      candidates: unsupported.map(identityOf).sort()
+    });
+  }
+  const suppressed = list.filter((c) =>
+    (c.assessment === 'malicious' || c.assessment === 'suspicious') && c.is_ioc !== false && !memberOf(c));
+  if (suppressed.length) {
+    out.push({
+      code: QUALITY_CODES.MALICIOUS_ASSESSED_NON_MEMBERS,
+      severity: 'info',
+      explanation: `${suppressed.length} candidate(s) are assessed malicious but are not report Indicators: the publisher curated ` +
+        'its IOC set (MODE A) and does not assert these values there. They stay visible under All for review.',
+      candidates: suppressed.map(identityOf).sort()
+    });
+  }
+  return out;
+}
+
+/**
+ * Quality record with checks 16–18 merged in (idempotent; counts / status recomputed).
+ * @param {object|null} quality
+ * @param {object[]} candidates merged candidates
+ */
+export function withPostMergeQuality(quality, candidates) {
+  if (!quality || typeof quality !== 'object') return quality;
+  const kept = (quality.warnings || []).filter((w) => !POST_MERGE_CODES.includes(w.code));
+  const added = assessPostMergeQuality(candidates).map((w) => ({
+    code: w.code,
+    severity: w.severity,
+    explanation: w.explanation,
+    candidates: w.candidates.slice(0, T.maxListedCandidates),
+    candidate_count: w.candidates.length,
+    block_ids: [],
+    section: null,
+    evidence: [],
+    extractor_version: quality.extractor_versions || null
+  }));
+  const warnings = [...kept, ...added]
+    .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.code.localeCompare(b.code));
+  const counts = { high: 0, warning: 0, info: 0 };
+  for (const w of warnings) counts[w.severity] = (counts[w.severity] || 0) + 1;
+  const removed = (quality.warnings || []).length - kept.length;
+  return {
+    ...quality,
+    status: counts.high ? 'high' : counts.warning ? 'warning' : counts.info ? 'info' : 'clean',
+    counts,
+    warnings: warnings.slice(0, T.maxWarnings),
+    warnings_total: Math.max(0, (quality.warnings_total ?? (quality.warnings || []).length) - removed) + added.length
   };
 }
 

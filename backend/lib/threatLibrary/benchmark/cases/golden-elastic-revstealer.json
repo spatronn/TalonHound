@@ -1,0 +1,104 @@
+{
+  "id": "golden-elastic-revstealer",
+  "title": "Elastic — REVSTEALER (IOC table; AES keys and config C2 host:port in body)",
+  "publisher": "Elastic Security Labs",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "crypto_key_hex",
+    "host_port_config",
+    "regression_nine_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-nine/elastic-revstealer-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/revstealer-credential-harvesting-infostealer",
+    "talonhound_report_id": "c7a8e7d7-fc2a-4c7c-833e-4f4d2f21bc44",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 nine-report audit): the publisher page was fetched and converted to text with a standalone outliner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. For KREMLIN the formal IOC section only links to the publisher GitHub release; ground truth = the release values that appear verbatim in the article. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (nine-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "4c897108e8e793d6904110928c996815c302d6975c9bc61162149e855a963d50",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "adc4aa652965396b52e79435ca54987ae9eb21bf5e67de5e9461b09655165ee4",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "14b2ac356ed75d10ef40bbaaa48e7dd9fff7de9719c2a43ad123fe843dd4e4e2",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "7c08cf409194056a8517865e5d3433d1499bb8262263b55b49b8b07d9d182fcb",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "13d7237d7289e67c2d806a65d52580b453ce4987acbe2c4c4d04833f55ebccfa",
+        "assertion": "explicit"
+      },
+      {
+        "type": "sha256",
+        "value": "c66d2b77b9e85c53391891212413ad9a99eb66f4b11c6a431e78884a5b2651e5",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "monitor5.roast-core85.click",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "config.hubdisplay.lol",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "health.journal-metric.lol",
+        "assertion": "explicit"
+      },
+      {
+        "type": "domain",
+        "value": "metric.gardenpark.click",
+        "assertion": "explicit"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "sha256",
+        "value": "f07666ac22dfa1a361b8a8576baf69eadaf15431db9f3c34e93334d8d2f8d691"
+      },
+      {
+        "type": "sha256",
+        "value": "5c30efd5b9ff75023c3813705f5c47feccc496f439b24b3e572db4c3b08dffe3"
+      },
+      {
+        "type": "sha256",
+        "value": "83f5b4ca629681abab2b9680472a304572a8c91b4a8ccc1189fbf58c6186db09"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

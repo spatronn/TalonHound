@@ -30,6 +30,7 @@ import { normalizeCandidateValue } from './candidateValue.js';
 import { parseIndicatorCell } from './tableSemantics.js';
 import { ipv4VersionContext } from './ipv4VersionContext.js';
 import {
+  annotateListStances,
   discoverDocumentIndicatorScope,
   isCredentialLabeledHex,
   isIndicatorRowShape,
@@ -46,6 +47,7 @@ import {
   validateUrlCandidate
 } from './observableTypeResolver.js';
 import { hexRunIsHostnameLabelFragment, ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
+import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest } from './digestSemantics.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
 import {
   buildRowObservation,
@@ -171,8 +173,15 @@ export {
  * reference context, not a row assertion; a weak-suffix dotted token on a
  * prose-led short line in a curated zone is not promoted to a domain
  * (tl-type-resolver-v9).
+ * v30 (nine-report audit): hex values the publisher labels as non-file digests
+ * (ELF build-id, certificate thumbprint / fingerprint, vhash / imphash / ssdeep,
+ * cryptographic keys) or digests of trivial inputs (sha256("123456")) are
+ * technical artifacts, never file-hash Indicators (digestSemantics.js);
+ * `host:port` carries its port; a URL literal stops at a `${` template
+ * interpolation (tl-type-resolver-v10); table rows record their own column
+ * header (delegated-scope authority).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v29';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v30';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -579,7 +588,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       surrounding_text: (extra.evidenceRowText || text)
         ? surroundingWindow(extra.evidenceRowText || text, focus, 140, extra.focusOrdinal || 0)
         : null,
-      typing_reason: extra.typingReason || null
+      typing_reason: extra.typingReason || null,
+      ...(block?.list_stance ? { list_stance: block.list_stance } : {})
     };
   }
 
@@ -728,6 +738,34 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         lastAddRejection = 'credential_labeled_hex';
         countReason(typeDiag.rejected_values, lastAddRejection);
         return null;
+      }
+      // Build-ids, certificate thumbprints, vhash / fuzzy hashes, keys and
+      // digests of trivial inputs share the hex shape but name no file: keep
+      // them as report context (technical artifact), never as a sample hash.
+      const digest = classifyHexDigest(line, n.normalizedValue);
+      if (NON_FILE_DIGEST_KINDS.has(digest.kind) && digest.kind !== DIGEST_KINDS.CREDENTIAL) {
+        countReason(typeDiag.excluded_reasons, `non_file_digest_${digest.kind}`);
+        const artifact = materialize({
+          candidateType: RESOLVED_TYPES.TECHNICAL_ARTIFACT,
+          normalizedValue: n.normalizedValue,
+          originalValue: extra.originalValue || n.originalValue,
+          n,
+          block,
+          extra,
+          typingMeta: {
+            resolved_type: RESOLVED_TYPES.TECHNICAL_ARTIFACT,
+            typing_reason: `non_file_digest_${digest.kind}`
+          },
+          isIoc: false,
+          artifactKind: digest.kind,
+          typingSignals: null,
+          syntaxGuess: n.candidateType
+        });
+        if (artifact) {
+          artifact.digest_kind = digest.kind;
+          artifact.digest_shape = n.candidateType;
+        }
+        return artifact;
       }
     }
     // IP/IPv6: reject when this block's only evidence is a numeric prefix of a
@@ -997,6 +1035,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   }
 
   const blocks = annotated.blocks || [];
+  // Publisher stance about a whole list ("These endpoints are legitimate …").
+  annotateListStances(blocks);
   // Format-agnostic "indicator row": PDF list rows, HTML <li>/<td>, or any line that is a single observable.
   const isObservableRow = (block) =>
     block.type === 'list_item' ||
@@ -1085,6 +1125,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           page: block.page ?? null,
           row_index: row.row_index,
           column_index: v.column_index,
+          // Publisher header of the value's own column ("Domain / IP", "URL").
+          column_header: columnLabels?.[v.column_index] || null,
           declared_type: v.declared_type || null,
           type_cell: row.type_cell,
           indicator_cell: v.indicator_cell,
@@ -1127,6 +1169,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           },
           explicitTable: Boolean(interp.explicit)
         });
+        if (assertedIoc && entry?.digest_kind && entry.candidate_type !== v.candidate_type) {
+          explicitTableAssertions.rememberReclassified(v.candidate_type, v.normalized_value, entry.candidate_type);
+        }
         if (assertedIoc && !entry) {
           explicitTableAssertions.rememberDropped(
             v.candidate_type,
@@ -1158,7 +1203,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     if (!text.trim()) continue;
     const spans = [];
     for (const m of text.matchAll(URL_RE)) {
-      const url = stripUrlTrailingPunct(m[0]);
+      // Code interpolation ends the literal URL: `…/read?domain=${encodeURIComponent(d)}`
+      // is the publisher URL "…/read?domain=" followed by a template expression.
+      const literal = m[0].split('${')[0];
+      const url = stripUrlTrailingPunct(literal);
       if (!url) continue;
       spans.push([m.index, m.index + url.length]);
       const host = hostnameFromUrl(url);
@@ -1345,10 +1393,16 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // no-over-derivation rule as a URL host). Email is not a candidate type,
       // so the domain stays a candidate but never a structural row assertion.
       const emailDomain = start > 0 && text[start - 1] === '@';
+      // `host.example:443`: keep the port as parsed endpoint context of the
+      // domain (the occurrence form stays standalone — a port alone asserts
+      // nothing about a hostname the way an ip:port endpoint does).
+      const portM = emailDomain ? null : /^:(\d{1,5})(?!\d)/.exec(text.slice(end));
+      const port = portM && Number(portM[1]) > 0 && Number(portM[1]) <= 65535 ? Number(portM[1]) : null;
       // Original spelling: identifier segmentation (Loader.Program.Main) is case-visible.
       add(m[0], 'domain', block, {
         form: emailDomain ? OCCURRENCE_FORMS.EMAIL_DOMAIN : standaloneForm,
-        originalValue: m[0]
+        originalValue: m[0],
+        ...(port != null ? { port } : {})
       });
     }
   }

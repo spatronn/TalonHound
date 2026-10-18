@@ -26,7 +26,7 @@ test('English HTML vendor report: IOC table authoritative, references context-on
         <tr><th>Type</th><th>Value</th></tr>
         <tr><td>URL</td><td>https://cdn-update.badhost-example.net/gate.php</td></tr>
         <tr><td>IP</td><td>203.0.113.21</td></tr>
-        <tr><td>SHA256</td><td>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</td></tr>
+        <tr><td>SHA256</td><td>9b74c9897bac770ffc029102a200c5de3c6e0dbd8a3f4f5e2c7d9e1b6a5f4c3d</td></tr>
         <tr><td>Domain</td><td>telemetry.badhost-example.net</td></tr>
       </table>
       <h2>References</h2>
@@ -48,7 +48,7 @@ test('English HTML vendor report: IOC table authoritative, references context-on
   assert.equal(gate.occurrence_count, 2, 'body mention + IOC table row aggregate');
   assert.equal(k.has('domain:cdn-update.badhost-example.net'), false, 'URL host not exploded');
 
-  for (const key of ['ip:203.0.113.21', 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855', 'domain:telemetry.badhost-example.net']) {
+  for (const key of ['ip:203.0.113.21', 'sha256:9b74c9897bac770ffc029102a200c5de3c6e0dbd8a3f4f5e2c7d9e1b6a5f4c3d', 'domain:telemetry.badhost-example.net']) {
     assert.equal(k.get(key)?.assessment, 'malicious', key);
     assert.equal(k.get(key)?.ai_needed, false, key);
   }
@@ -76,7 +76,7 @@ test('Turkish plain-text report: Göstergeler/Kaynaklar headings, IP:port with s
     'Arka kapı 203.0.113.9:8443\'e sabit bağlantı kurar ve komutları bekler.',
     'Göstergeler',
     'MD5',
-    'c4ca4238a0b923820dcc509a6f75849b',
+    '7f3d2a91c5e84b06d1f9a2c3e4b5d6f7',
     'c81e728d9d4c2f636f067f89cc14862c',
     'Komuta Kontrol',
     '203.0.113.9:8443',
@@ -102,7 +102,7 @@ test('Turkish plain-text report: Göstergeler/Kaynaklar headings, IP:port with s
   assert.equal(url.source_assertion, SOURCE_ASSERTIONS.EXPLICIT_C2);
   assert.equal(k.has('domain:indir.kotu-alan-ornek.com'), false);
 
-  assert.equal(k.get('md5:c4ca4238a0b923820dcc509a6f75849b').role, 'malware_sample');
+  assert.equal(k.get('md5:7f3d2a91c5e84b06d1f9a2c3e4b5d6f7').role, 'malware_sample');
   for (const ref of ['url:https://arastirma.ornek-firma.com.tr/rapor/2026', 'url:https://haber.ornek-medya.com/apt-analizi']) {
     assert.equal(k.get(ref).assessment, 'context_only', ref);
   }

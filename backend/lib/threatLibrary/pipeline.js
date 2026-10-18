@@ -51,7 +51,7 @@ import {
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { preserveAnalystCandidates } from './candidateAnalystState.js';
 import { preserveStoredIocLinks } from './iocMatch.js';
-import { withReplayMembershipDivergence } from './extractionQuality.js';
+import { withPostMergeQuality, withReplayMembershipDivergence } from './extractionQuality.js';
 import { createServiceLogger } from '../appLogger.js';
 import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
 import { groundAiPublisherEntities } from './publisherEntityGrounding.js';
@@ -556,11 +556,11 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     // Quality check 9 (same as Refresh extraction): only for this run's own
     // extraction; a reused candidate set keeps its stored quality record.
     if (freshExtraction && extractionDiagnostics?.quality) {
-      const quality = withReplayMembershipDivergence(extractionDiagnostics.quality, {
+      const quality = withPostMergeQuality(withReplayMembershipDivergence(extractionDiagnostics.quality, {
         deterministic: linked.candidates,
         final: resolved,
         previousRows
-      });
+      }), resolved);
       if (quality !== extractionDiagnostics.quality) extractionDiagnostics = { ...extractionDiagnostics, quality };
     }
     const savedCandidates = (await reconcileReportCandidates(pool, report.id, resolved)).rows;

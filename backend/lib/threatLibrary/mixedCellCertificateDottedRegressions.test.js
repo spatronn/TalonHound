@@ -50,9 +50,9 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contracts bumped for the six-report audit fixes', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v29');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v30');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v8');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v9');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v10');
 });
 
 // --- 1. Mixed cells -----------------------------------------------------------
@@ -256,7 +256,15 @@ test('quality: a content-inferred hash column beside a declared SHA-256 column w
 });
 
 test('quality: an Indicator domain with an undelegated suffix warns; special-use suffixes do not', () => {
-  const x = run(`<h2>Indicators of compromise</h2><ul><li>beacon.corp-mgmt.internalzone</li><li>198.51.100[.]24</li></ul>`);
+  // tl-candidates-v30: an undeclared list value with an undelegated suffix is a
+  // system identifier, never a domain Indicator (sd-pam.service under "Host Indicators").
+  const listed = run(`<h2>Indicators of compromise</h2><ul><li>beacon.corp-mgmt.internalzone</li><li>198.51.100[.]24</li></ul>`);
+  const undeclared = listed.candidates.find((c) => c.normalized_value === 'beacon.corp-mgmt.internalzone');
+  assert.equal(undeclared.policy_decision, 'ioc_excluded_undelegated_suffix');
+  assert.ok(!codes(listed).includes(QUALITY_CODES.UNDELEGATED_SUFFIX_DOMAIN_INDICATOR), codes(listed).join(','));
+  // A value the publisher typed "Domain" in an indicator table keeps membership, and check 12 warns.
+  const x = run(`<h2>Indicators of compromise</h2><table><thead><tr><th>Type</th><th>Value</th></tr></thead><tbody>
+<tr><td>Domain</td><td>beacon.corp-mgmt[.]internalzone</td></tr><tr><td>IP</td><td>198.51.100[.]24</td></tr></tbody></table>`);
   assert.ok(codes(x).includes(QUALITY_CODES.UNDELEGATED_SUFFIX_DOMAIN_INDICATOR), codes(x).join(','));
   const y = run(`<h2>Indicators of compromise</h2><ul><li>${'q'.repeat(56)}.onion</li><li>198.51.100[.]24</li></ul>`);
   assert.ok(!codes(y).includes(QUALITY_CODES.UNDELEGATED_SUFFIX_DOMAIN_INDICATOR), codes(y).join(','));

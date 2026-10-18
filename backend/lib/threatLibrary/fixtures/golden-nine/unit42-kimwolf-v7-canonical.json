@@ -1,0 +1,2439 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "site_names": [
+   "Unit 42"
+  ],
+  "source_url": "https://unit42.paloaltonetworks.com/kimwolf-v7-botnet-malware/",
+  "source_host": "unit42.paloaltonetworks.com",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v1",
+  "section_tree_version": "tl-section-tree-v2",
+  "candidate_extraction_version": "tl-candidates-v29"
+ },
+ "title": "Kimwolf v7: An Evolution of the Kimwolf Botnet",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": null
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "Malware",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Kimwolf v7: An Evolution of the Kimwolf Botnet",
+   "type": "heading",
+   "level": 1,
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "11",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "min read",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Related Products",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Advanced DNS SecurityAdvanced URL FilteringAdvanced WildFireCloud-Delivered Security ServicesIoT SecurityUnit 42 Incident Response",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "By:",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Asher Davila",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Chris Navarrete",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Doel Santos",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Published:",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "August 11, 2026",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Categories:",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "Malware",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Threat Research",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Tags:",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Android APK",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Ethereum",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "HTTP",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "IoT botnets",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "Kimwolf v7",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Linux",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "RPC",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Spoofing",
+   "type": "list",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "Kimwolf v7: An Evolution of the Kimwolf Botnet"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "Content Warning",
+   "type": "heading",
+   "level": 2,
+   "section": "Content Warning"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "We are providing a content warning because the following article contains usage of a racial slur by a threat actor, which Unit 42 does not condone in any instance. We have partially redacted the racial slur, but preserved some references to it in order to provide researchers with the ability to identify it and check IoCs as needed.",
+   "type": "paragraph",
+   "section": "Content Warning"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "Executive Summary",
+   "type": "heading",
+   "level": 2,
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "We identified a new version (v7) of the Kimwolf Android/internet-of-things (IoT) botnet. This version upgrades its distributed denial-of-service (DDoS) attack capabilities and the resilience of its command-and-control (C2) infrastructure. Kimwolf primarily affects Android TV boxes and set-top boxes.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "Kimwolf v7 adds an HTTP/2-based DDoS flood that constructs complete browser fingerprints. This makes attack traffic more difficult to distinguish from legitimate browsing.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "The threat’s binary includes five hard-coded public Ethereum-based endpoints for resolving Ethereum Name Service (ENS) domains. ENS is a blockchain-based naming system used to obtain C2 addresses.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Kimwolf also carries a hard-coded Tor .onion hidden service as a backup and a local proxy architecture for flexible routing between clearnet and Tor. The malware developers added this function to directly respond to C2 server takedown efforts in December 2025.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "We discovered this variant on Feb. 3, 2026, through threat hunting that followed public disclosures by XLab, Synthient, Infoblox, Cloudflare and others.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected through the following products and services:",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Advanced URL Filtering and Advanced DNS Security",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Advanced WildFire",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "Device Security",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "If you think you might have been compromised or have an urgent matter, contact the Unit 42 Incident Response team.",
+   "type": "paragraph",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "Related Unit 42 Topics | Malware, Botnet, DDoS",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Related Unit 42 Topics",
+      "Malware, Botnet, DDoS"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Background",
+   "type": "heading",
+   "level": 2,
+   "section": "Background"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "The Kimwolf botnet (also tracked as AISURU) has been active since August 2024. It initially targeted Linux IoT devices under the AISURU name. The botnet transitioned to Android TV boxes around August 2025.",
+   "type": "paragraph",
+   "section": "Background"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "This reflects two separate codebases under the same operators. AISURU covers the Linux IoT variants, and Kimwolf covers variants targeting Android.",
+   "type": "paragraph",
+   "section": "Background"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "Kimwolf spreads by misusing residential proxy services to reach unauthenticated Android Debug Bridge (ADB) instances on local networks. Some Android TV boxes ship with ADB enabled on port 5555. Once attackers tunnel through a proxy endpoint into the local network, they can install the malware without any authentication.",
+   "type": "paragraph",
+   "section": "Background"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "Kimwolf Sample Overview",
+   "type": "heading",
+   "level": 2,
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "The Kimwolf sample we analyzed as a baseline is a statically linked ARM Executable and Linkable Format (ELF) binary. The file was compiled with the Android Native Development Kit (NDK) using Clang and uses Bionic libc. It statically links BoringSSL for Transport Layer Security (TLS) operations and nghttp2 for HTTP/2 functionality.",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "The binary is stripped but retains some symbol information. It is not uncommon for malware authors to use racial slurs in their code. The Kimwolf malware family has historically included racial slurs. In our discussion of the v7 variant, we have partially redacted these slurs, but have left enough information present that defenders could identify the variant and check for IoCs.",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Previous Kimwolf builds used the internal version strings such as n[redacted]boxv4 and n[redacted]boxv5, establishing the naming pattern for the family. The version string n[redacted]boxv7, shown in Figure 1, identifies this sample as version 7. The binary creates a Unix domain socket @n[redacted]boxv7 to ensure only one instance runs at a time.",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "Figure 1. The n[redacted]boxv7 version string.",
+   "type": "caption",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "On execution, the malware masks its process name as",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "netd_service",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "to blend in with legitimate Android system processes.",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "We identified six ELF samples that we clustered together based on multiple indicators:",
+   "type": "paragraph",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "They share an identical ELF section layout produced by a common Android NDK build environment, and the same hard-coded set of Ethereum remote procedure call (RPC) endpoints",
+   "type": "list",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Overlapping C2 infrastructure within the same hosting provider",
+   "type": "list",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Consistent process-name masquerading behavior",
+   "type": "list",
+   "section": "Kimwolf Sample Overview"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "HTTP/2 Flood with Browser Fingerprint Spoofing",
+   "type": "heading",
+   "level": 2,
+   "section": "HTTP/2 Flood with Browser Fingerprint Spoofing"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "One of the most notable new capabilities in Kimwolf v7 is an HTTP/2 flood powered by the nghttp2 library. The function that performs the attack_case17_http2_flood constructs complete browser fingerprints. ​​This makes the flood traffic difficult to distinguish from legitimate browser requests.",
+   "type": "paragraph",
+   "section": "HTTP/2 Flood with Browser Fingerprint Spoofing"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Figure 2 shows the header construction logic in the decompiled binary.",
+   "type": "paragraph",
+   "section": "HTTP/2 Flood with Browser Fingerprint Spoofing"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Figure 2. Fingerprint header construction in build_http2_attack_headers.",
+   "type": "caption",
+   "section": "HTTP/2 Flood with Browser Fingerprint Spoofing"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Three-Tier C2 Infrastructure",
+   "type": "heading",
+   "level": 2,
+   "section": "Three-Tier C2 Infrastructure"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Kimwolf v7 uses a layered C2 resolution system designed to survive the domain takedowns that disrupted the botnet twice in December 2025.",
+   "type": "paragraph",
+   "section": "Three-Tier C2 Infrastructure"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "This isn't the last time operation of this malware faced disruption. On March 19, 2026, the U.S. Justice Department and international partners announced a court-authorized operation that seized C2 infrastructure used by the Aisuru, KimWolf, JackSkid and Mossad botnets.",
+   "type": "paragraph",
+   "section": "Three-Tier C2 Infrastructure"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Ethereum Name Service Resolution",
+   "type": "heading",
+   "level": 3,
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "The binary contains five hard-coded public Ethereum RPC endpoints stored in plaintext, shown in Figure 3:",
+   "type": "paragraph",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "hxxps[:]//0xrpc[.]io/eth",
+   "type": "list",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "hxxps[:]//eth.llamarpc[.]com",
+   "type": "list",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "hxxps[:]//ethereum-rpc.publicnode[.]com",
+   "type": "list",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "hxxps[:]//eth-protect.rpc.blxrbdn[.]com",
+   "type": "list",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "hxxps[:]//eth.merkle[.]io",
+   "type": "list",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "Figure 3. Hard-coded public Ethereum RPC endpoints.",
+   "type": "caption",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "These endpoints are legitimate public Ethereum RPC services. The malware misuses them to query ENS domain records and resolve C2 addresses. Organizations should monitor for unusual Ethereum RPC traffic from IoT and Android devices rather than blocking these endpoints outright.",
+   "type": "paragraph",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "The malware shuffles these endpoints using a pseudo-random number generator (PRNG) before each resolution attempt. The five-way redundancy makes blocking ENS-based C2 resolution harder.",
+   "type": "paragraph",
+   "section": "Ethereum Name Service Resolution"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "Operator RPC Facade",
+   "type": "heading",
+   "level": 3,
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "While the five public RPC endpoints in the baseline binary are third-party services, our infrastructure investigation identified a sixth endpoint that we assess with moderate confidence to be under the operator's control: eth[.]rpcuniverse[.]com.",
+   "type": "paragraph",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Several properties distinguish it from the legitimate providers:",
+   "type": "paragraph",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "The legitimate endpoints are established services with significant traffic and resolve to multiple anycast IP addresses across major cloud delivery network (CDN) and cloud providers",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "They have apex domains registered between 2005 and 2022",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "The rpcuniverse[.]com domain has no global traffic ranking",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "It resolves to a single IP address on a low-cost virtual private server (VPS) that was registered on Dec. 12, 2023",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Its TLS certificate first appeared on the hosting IP address days later",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "Reverse passive DNS shows the IP address hosts only rpcuniverse[.]com subdomains with no other tenants",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Two Kimwolf samples hardcode eth[.]rpcuniverse[.]com as an additional RPC endpoint alongside the five legitimate providers",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "Both ELF and Android APK variants contact the hosting IP address directly",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "We did not observe this direct-to-IP address contact pattern with any of the legitimate RPC endpoints",
+   "type": "list",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "We cannot confirm domain ownership. However, the dedicated single-tenant hosting, the timing of its registration relative to Kimwolf activity and its exclusive presence in Kimwolf binaries suggest it is an operator-controlled facade rather than a public service.",
+   "type": "paragraph",
+   "section": "Operator RPC Facade"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "Tor Hidden Service Backup",
+   "type": "heading",
+   "level": 2,
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "When ENS resolution fails, the v7 binary falls back to a hard-coded v3 Tor .onion address (edctgwib2n5l34t525zkxqzk5bqb6e5il2yiq5r6zu7gtlxa4uosn3qd[.]onion). Figure 4 shows the hard-coded address in the binary.",
+   "type": "paragraph",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Figure 4. Hard-coded .onion address.",
+   "type": "caption",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "A function (tor_proxy_state_machine) manages the protocol states. To do this, it performs the following activities:",
+   "type": "paragraph",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Sending the greeting (0x05 0x01 0x00)",
+   "type": "list",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Building a CONNECT request with domain type 0x03 and the 62-byte .onion address",
+   "type": "list",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Waiting for the response and performing a TLS handshake over the tunnel",
+   "type": "list",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Figure 5 shows the greeting and TLS handshake states.",
+   "type": "paragraph",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Figure 5. Greetings.",
+   "type": "caption",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Additionally, it uses a local proxy architecture. All C2 traffic routes through a local proxy at 127.0.0[.]1:23075 shown in Figure 6, regardless of whether it is destined for clearnet or Tor. This modular design allows the proxy component to be updated independently from the main bot binary. ​​",
+   "type": "paragraph",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Figure 6. Local proxy connection.",
+   "type": "caption",
+   "section": "Tor Hidden Service Backup"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "C2 Infrastructure Clustering",
+   "type": "heading",
+   "level": 2,
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Analysis of Kimwolf v7 samples revealed C2 connections to several IP addresses, including:",
+   "type": "paragraph",
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "212.193.31[.]119 and 212.193.31[.]122 on TCP port 13",
+   "type": "list",
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "212.193.31[.]92 and 212.193.31[.]158 on TCP port 443",
+   "type": "list",
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "None of these IP addresses had prior indicators of malicious activity or associations with public threat intelligence.",
+   "type": "paragraph",
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "During infrastructure analysis, we observed that these hosts presented the same SSH host key. Pivoting on that shared key revealed 22 total IP addresses within the same range, presenting the identical key between Dec. 18, 2025, and Feb. 3, 2026. No hosts outside this range shared the key.",
+   "type": "paragraph",
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "IP address 212.193.31[.]102 was the first host observed with this key on Dec. 18, 2025, and it was the seed from which the configuration propagated. The remaining 21 hosts appeared over the following six weeks, with the last addition on Jan. 31, 2026. All 22 hosts reside in AS202799, geolocated to Saint Petersburg, Russia.",
+   "type": "paragraph",
+   "section": "C2 Infrastructure Clustering"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "High-Performance UDP Flood",
+   "type": "heading",
+   "level": 3,
+   "section": "High-Performance UDP Flood"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Kimwolf implements a dedicated high-performance UDP flood function that uses a Xorshift256 PRNG seeded from /dev/urandom. It (prng_seed_from_urandom) reads 32 bytes (four 64-bit state words) to initialize the full 256-bit state. A SplitMix64 fallback initializer activates if /dev/urandom is unavailable.",
+   "type": "paragraph",
+   "section": "High-Performance UDP Flood"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "The flood function accelerates IP/UDP checksum computation with ARM NEON single instruction, multiple data (SIMD) instructions. The vectorized checksum loop processes four 16-bit halfwords simultaneously using VLD1.16, VADDW.U16 and VADD.I32 instructions.",
+   "type": "paragraph",
+   "section": "High-Performance UDP Flood"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "This optimization is tailored for the ARM processors found in Android TV boxes. It reduces per-packet checksum overhead to maximize throughput.",
+   "type": "paragraph",
+   "section": "High-Performance UDP Flood"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Figure 7 shows the NEON SIMD instructions in the disassembled binary.",
+   "type": "paragraph",
+   "section": "High-Performance UDP Flood"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Figure 7. NEON SIMD instructions.",
+   "type": "caption",
+   "section": "High-Performance UDP Flood"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Complete Attack Method Inventory",
+   "type": "heading",
+   "level": 2,
+   "section": "Complete Attack Method Inventory"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "The dispatch table supports 15 DDoS methods across Layers 3–7 of the Open Systems Interconnection (OSI) model. Cases 8, 11 and 13 are absent from the switch statement, suggesting they are either reserved for future use or were removed during consolidation from the 43 text-named methods in prior versions.",
+   "type": "paragraph",
+   "section": "Complete Attack Method Inventory"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Table 1 lists all 15 attack methods.",
+   "type": "paragraph",
+   "section": "Complete Attack Method Inventory"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "Case number | Function | Description ¶ 0 | attack_case0_tcp_socket_flood | TCP socket-based flood ¶ 1 | attack_case1_udp_flood_v1 | UDP flood variant 1 ¶ 2 | attack_case2_game_server_udp | Game server UDP flood (port 27015) ¶ 3 | attack_case3_dns_flood | DNS query flood ¶ 4 | attack_case4_udp_flood_v2 | UDP flood variant 2 ¶ 5 | attack_case5_tcp_syn_flood | TCP SYN flood ¶ 6 | attack_case6_tcp_ack_flood | TCP ACK flood ¶ 7 | a​​ttack_case7_tcp_synack_flood | TCP SYN-ACK flood ¶ 9 | attack_case9_udp_async_flood | Asynchronous UDP flood ¶ 10 | attack_case10_tcp_rst_flood | TCP RST flood ¶ 12 | udp_flood_attack | High-performance UDP flood (NEON SIMD) ¶ 14 | attack_case14_icmp_flood | ICMP flood ¶ 15 | attack_case15_tcp_connection_flood | epoll-based TCP connection flood ¶ 16 | attack_case16_tls_https_flood | TLS/HTTPS flood (BoringSSL) ¶ 17 | attack_case17_http2_flood | HTTP/2 flood with Chrome fingerprints (nghttp2)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Case number",
+      "Function",
+      "Description"
+     ],
+     [
+      "0",
+      "attack_case0_tcp_socket_flood",
+      "TCP socket-based flood"
+     ],
+     [
+      "1",
+      "attack_case1_udp_flood_v1",
+      "UDP flood variant 1"
+     ],
+     [
+      "2",
+      "attack_case2_game_server_udp",
+      "Game server UDP flood (port 27015)"
+     ],
+     [
+      "3",
+      "attack_case3_dns_flood",
+      "DNS query flood"
+     ],
+     [
+      "4",
+      "attack_case4_udp_flood_v2",
+      "UDP flood variant 2"
+     ],
+     [
+      "5",
+      "attack_case5_tcp_syn_flood",
+      "TCP SYN flood"
+     ],
+     [
+      "6",
+      "attack_case6_tcp_ack_flood",
+      "TCP ACK flood"
+     ],
+     [
+      "7",
+      "a​​ttack_case7_tcp_synack_flood",
+      "TCP SYN-ACK flood"
+     ],
+     [
+      "9",
+      "attack_case9_udp_async_flood",
+      "Asynchronous UDP flood"
+     ],
+     [
+      "10",
+      "attack_case10_tcp_rst_flood",
+      "TCP RST flood"
+     ],
+     [
+      "12",
+      "udp_flood_attack",
+      "High-performance UDP flood (NEON SIMD)"
+     ],
+     [
+      "14",
+      "attack_case14_icmp_flood",
+      "ICMP flood"
+     ],
+     [
+      "15",
+      "attack_case15_tcp_connection_flood",
+      "epoll-based TCP connection flood"
+     ],
+     [
+      "16",
+      "attack_case16_tls_https_flood",
+      "TLS/HTTPS flood (BoringSSL)"
+     ],
+     [
+      "17",
+      "attack_case17_http2_flood",
+      "HTTP/2 flood with Chrome fingerprints (nghttp2)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Complete Attack Method Inventory"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Table 1. Kimwolf v7 DDoS attack methods.",
+   "type": "paragraph",
+   "section": "Complete Attack Method Inventory"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "What Changed From Prior Versions",
+   "type": "heading",
+   "level": 2,
+   "section": "What Changed From Prior Versions"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "In Kimwolf v7, malware authors consolidated the attack count to 15 numbered methods. They removed all scanning, exploitation and brute-force functionality. The new additions target:",
+   "type": "paragraph",
+   "section": "What Changed From Prior Versions"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "DDoS stealth through HTTP/2 with browser fingerprinting",
+   "type": "list",
+   "section": "What Changed From Prior Versions"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "C2 resilience through ENS, Tor and the local proxy",
+   "type": "list",
+   "section": "What Changed From Prior Versions"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "The removal of the scanner and exploit modules suggests the operators have separated the propagation pipeline from the DDoS bot. External loaders now handle initial access while the Kimwolf binary handles attacks and proxy relay.",
+   "type": "paragraph",
+   "section": "What Changed From Prior Versions"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "The earliest dropped sample, targeting the x86 architecture with a Dirty COW exploit, suggests the family evolved from traditional Linux exploitation toward the current ADB-based Android propagation model. The transition from libn[redacted]kernel.so to the less conspicuous libdevice.so filename in November 2025, followed by a revert in December, indicates active operational security adjustments.",
+   "type": "paragraph",
+   "section": "What Changed From Prior Versions"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Android APK Variants",
+   "type": "heading",
+   "level": 2,
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Alongside the standalone ELF payloads, the Kimwolf operators distribute Android APK packages that bundle an ELF kernel payload inside a Java wrapper. We identified eight APK samples spanning October through December 2025, all sharing the component class systemservice0644.N[redacted]Kernel.",
+   "type": "paragraph",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "These APKs masquerade as a system service called SystemService. On execution, they probe for root access and execute the embedded ELF kernel with commands shown below in Figure 8.",
+   "type": "paragraph",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Figure 8. Commands used to execute the embedded ELF kernel.",
+   "type": "caption",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "The earliest build (October 2025) used the com. Android prefix and bundled three kernel variants in a single APK. By late October, the package name shifted to com.n2.systemservice0644, and the kernel was consolidated to a single binary. In November, the kernel filename changed from libn[redacted]kernel.so to libdevice.so, then reverted in the December builds.",
+   "type": "paragraph",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "Three signing certificates appear across the cluster:",
+   "type": "paragraph",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "The original Kimwolf APK certificate (C=CN, CN=a) used by the com.android.logcatd variants",
+   "type": "list",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "An Android Debug certificate used during development",
+   "type": "list",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "A self-signed certificate with subject C=XK, ST=lol, L=lol, O=lol, OU=lol, CN=lol (country code XK for Kosovo, all other fields set to lol) used by five of the eight N[redacted]Kernel APK files",
+   "type": "list",
+   "section": "Android APK Variants"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Dropped ELF Kernel Payloads",
+   "type": "heading",
+   "level": 3,
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "The APK wrapper drops one of three ELF kernel payloads, depending on the build. These are listed in Table 2.",
+   "type": "paragraph",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "SHA256 Hash | Filename | Architecture ¶ 9470c68f9b6fe5f90d61891b95623afd7b4298815b0f95e25610e1c09008dc24 | libn[redacted]kernel.so | ARM ¶ 8242443dfcec66e3fe04cbfa2fbd211ad34065ee07aa93813d792a437caab212 | libdevice.so | ARM ¶ 421111a57b0a4224c052fa4108d90429d579974b5b5111ed2e58516ba09422ca | libn[redacted]kernel.so (v1) | x86",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "SHA256 Hash",
+      "Filename",
+      "Architecture"
+     ],
+     [
+      "9470c68f9b6fe5f90d61891b95623afd7b4298815b0f95e25610e1c09008dc24",
+      "libn[redacted]kernel.so",
+      "ARM"
+     ],
+     [
+      "8242443dfcec66e3fe04cbfa2fbd211ad34065ee07aa93813d792a437caab212",
+      "libdevice.so",
+      "ARM"
+     ],
+     [
+      "421111a57b0a4224c052fa4108d90429d579974b5b5111ed2e58516ba09422ca",
+      "libn[redacted]kernel.so (v1)",
+      "x86"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Table 2. Dropped ELF kernel payloads.",
+   "type": "paragraph",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "The earliest sample (first seen Sept. 2, 2025) is notable for two reasons:",
+   "type": "paragraph",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "It targets x86 architecture rather than ARM",
+   "type": "list",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "This indicates that the botnet originally targeted x86 Linux systems before pivoting to ARM-based IoT and Android devices",
+   "type": "list",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "It drops a file named libcow.so, and renames its process to inetd to blend in with Unix network services",
+   "type": "list",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "The name libcow.so is likely a reference to the Dirty COW privilege escalation vulnerability (CVE-2016-5195)",
+   "type": "list",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "The libdevice.so sample renames its process to TVHelper, which explicitly targets Android TV set-top boxes by mimicking a legitimate TV helper service.",
+   "type": "paragraph",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "Neither the libn[redacted]kernel.so nor libdevice.so kernels embed the Ethereum RPC endpoints found in the standalone ELF builds. The C2 resolution layer resides in the outer APK wrapper or the standalone ELF binary, while the kernel handles lower-level bot operations.",
+   "type": "paragraph",
+   "section": "Dropped ELF Kernel Payloads"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "Kimwolf v7 is a focused evolution of an already large-scale botnet. The HTTP/2 flood with Chrome browser fingerprinting complicates application-layer DDoS mitigation, as attack traffic now mirrors legitimate browser behavior at the protocol and header level.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "The three-tier C2 system (Ethereum ENS, Tor .onion, local proxy) indicates that the operators are investing in infrastructure built to withstand takedown operations. Organizations should monitor for the following behavioral indicators of Kimwolf compromise on IoT and Android devices:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Outbound HTTPS connections to public Ethereum RPC endpoints (e.g., 0xrpc[.]io) from devices that typically do not interact with blockchain services",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "Tor circuit establishment or SOCKS5 proxy traffic from Android TV boxes or IoT devices",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "Connections to port 23075 on localhost",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "A process named netd_service running on consumer Android devices",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "Organizations should treat Android TV boxes as untrusted and segment them from enterprise networks. Disabling ADB or restricting it to USB-only access removes the primary propagation vector for this botnet.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "Palo Alto Networks customers are better protected through the following products and services:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "The Advanced WildFire machine-learning models and analysis techniques have been reviewed and updated in light of the indicators shared in this research,",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Advanced URL Filtering and Advanced DNS Security identify known domains and URLs associated with this activity as malicious.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Device Security is designed to proactively protect the entire device attack surface, from IT to IoT and OT, with a unified platform that helps deliver comprehensive visibility, actionable risk insights and adaptive security enforcement.",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "If you think you may have been compromised or have an urgent matter, get in touch with the Unit 42 Incident Response team or call:",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "North America: Toll Free: +1 (866) 486-4842 (866.4.UNIT42)",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "UK: +44.20.3743.3660",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Europe and Middle East: +31.20.299.3130",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "Asia: +65.6983.8730",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Japan: +81.50.1790.0200",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "Australia: +61.2.4062.7950",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "India: 000 800 050 45107",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "South Korea: +82.080.467.8774",
+   "type": "list",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Palo Alto Networks has shared these findings with our fellow Cyber Threat Alliance (CTA) members. CTA members use this intelligence to rapidly deploy protections to their customers and to systematically disrupt malicious cyber actors. Learn more about the Cyber Threat Alliance.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Indicators of Compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "SHA256 hash: 406647de09a0ffa279756b4ccb344b1b76a333320c5b50fd367901fa006cf0ff",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b167"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "MD5 hash: d759364844d78a728505fb0485c3adbc",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b167"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "File size: 1,720,108 bytes",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b167"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, statically linked, stripped",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b167"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "File description: Kimwolf v7 bot payload (baseline analyzed sample); version string n[recacted]boxv7",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b167"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "SHA256 hash: 345222bca004595977f971d76900b0c65fd9bf9d91c50cd0c5bf5a93f1ad9e49",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b172"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "MD5 hash: 036bcb62be72c4663b9564955f93b05f",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b172"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "File size: 1,712,624 bytes",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b172"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, statically linked, stripped",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b172"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "File description: Kimwolf v7 bot payload",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b172"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "SHA256 hash: 2ec2e85b0358e0c681cb5067489a9086ec97dbbf7e3c952dd9cd496b319d5af5",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b177"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "MD5 hash: 33faca1e0090f6b12eff703daf4606e4",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b177"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "File size: 1,720,108 bytes",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b177"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, statically linked, stripped",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b177"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "File description: Kimwolf v7 bot payload; hard codes eth.rpcuniverse[.]com in the binary",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b177"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "SHA256 hash: 951c94809aa6c7ab587125f9d4df30fa6a49ee0cbba76a4b7ceedaaa0e5dcd36",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b182"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "File type: Android APK",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b182"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "Package name: com.android.logcatd",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b182"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, statically linked, stripped",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b182"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "File description: Kimwolf Android variant; masquerades as system logcat daemon; includes TorService and BootReceiver persistence; contacts 23.94.221[.]104",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b182"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "SHA256 hash: f07821e313c16cbbd82def45094a22c8d474164051bdbc7648d6869e012014b4",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b187"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "File type: Android APK",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b187"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "Package name: com.android.logcatd",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b187"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "File type: ELF 32-bit LSB executable, ARM, statically linked, stripped",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b187"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "File description: Kimwolf Android variant; sibling of the above, same signing certificate and package; contacts 23.94.221[.]104",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b187"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "VHash: 76554ad09897ac723a850eaf8c525efa",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b192"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "Description: Structural hash shared by the three Kimwolf v7 ELF samples (5 total matches across VirusTotal)",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b192"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "APK signing certificate (SHA-1 thumbprint): 2a1d96f1b066877812587ac94f45f82dfff5f5f9",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b194"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "Subject: C=CN, CN=a",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b194"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "Description: Self-signed certificate used to sign both Kimwolf Android samples",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b194"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "TLS certificate (SHA256 hash): f3e8a55a2a3ea7c7b6676e90f4f49a2c55b13065b68ee50c51cc35fe2b5c3237",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b197"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "Issuer: Let's Encrypt",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b197"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "Description: Certificate issued for eth.rpcuniverse[.]com, observed on 23.94.221[.]104 between Dec. 13, 2023, and March 12, 2024",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b197"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "Domain: rpcuniverse[.]com",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b200"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "Description: Multi-chain RPC service; apex registered Dec. 9, 2023 (Namecheap); resolves to 23.94.221[.]104; hard-coded subdomain present in Kimwolf sample",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b200"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "Domain: eth.rpcuniverse[.]com",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b202"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "Description: RPC subdomain hard-coded in Kimwolf sample 2ec2e85b...",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b202"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Domain: avax.rpcuniverse[.]com",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b204"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "Description: RPC subdomain resolving to 23.94.221[.]104",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b204"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "IP address: 23.94.221[.]104",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b206"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "Description: Operator host (AS36352 RackNerd, Dallas); hosts rpcuniverse[.]com; contacted by Kimwolf ELF and APK samplesng",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b206"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "IP address:port: 212.193.31[.]158:443",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b208"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "Description: HTTPS C2 traffic (AS202799 SYSECT, Russia); offline after Jan. 31, 2026",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b208"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "IP address:port: 212.193.31[.]119:13",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b210"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "Description: C2 traffic",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b210"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "IP address:port: 212.193.31[.]122:13",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b212"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "Description: C2 traffic",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b212"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "IP address: 212.193.31[.]102",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b214"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "Description: C2 host (linked via shared SSH host key with .158",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b214"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "IP address:port: 212.193.31[.]92:443",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b216"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "Description: HTTPS C2 traffic (AS202799 SYSECT, Russia)",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b216"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "Tor hidden service: edctgwib2n5l34t525zkxqzk5bqb6e5il2yiq5r6zu7gtlxa4uosn3qd[.]onion",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b218"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "Description: v7 hidden-service C2 fallback",
+   "type": "paragraph",
+   "section": "Indicators of Compromise",
+   "line_group": "b218"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "Additional Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "Kimwolf Botnet Exposed – XLab",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "AISURU Botnet Technical Analysis – XLab",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "A Broken System Fueling Botnets – Synthient",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "Kimwolf Howls from Inside the Enterprise – Infoblox",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "The Kimwolf Botnet is Stalking Your Local Network – KrebsOnSecurity",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "Kimwolf Botnet Lurking in Corporate, Govt Networks – KrebsOnSecurity",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "KIMWOLF V7 IoT BOTNET EVOLUTION - Unit 42",
+   "type": "list",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "Updated August 13 2026 at 2:00 p.m. PT to add information on the U.S. Justice Department and international partner operation seizing C2 domains used by KimWolf and related botnets.",
+   "type": "paragraph",
+   "section": "Additional Resources"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "Tags",
+   "type": "heading",
+   "level": 3,
+   "section": "Tags"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "Android APK",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "Ethereum",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "HTTP",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "IoT botnets",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Kimwolf v7",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "Linux",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "RPC",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "Spoofing",
+   "type": "list",
+   "section": "Tags"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Threat Research Center",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "Next: The Permanent Threat: Analyzing Aeternum’s Blockchain-Based C2 Operations and Communications",
+   "type": "paragraph",
+   "section": "Tags"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Table of Contents",
+   "type": "heading",
+   "level": 3,
+   "section": "Table of Contents"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "Related Articles",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "The Permanent Threat: Analyzing Aeternum’s Blockchain-Based C2 Operations and Communications",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "Almost Half of Malware Samples Communicate Direct to IP",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "Related Malware Resources",
+   "type": "heading",
+   "level": 2,
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "October 15, 2026",
+   "type": "paragraph",
+   "section": "Related Malware Resources"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "LLM",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "Network security",
+   "type": "list",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "October 14, 2026",
+   "type": "paragraph",
+   "section": "AI-Powered Espionage Campaign Targets Government Linux Infrastructure"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant",
+   "type": "heading",
+   "level": 4,
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "Apache",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "CL-STA-0954",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "Logging",
+   "type": "list",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "October 6, 2026",
+   "type": "paragraph",
+   "section": "Unit 42 Uncovers PEERSTITCH, a Stealthy FortiGate Implant"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "Blinder Tunnel Campaign Targets Iraqi Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "Advanced Persistent Threat",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": "Agent Serpens",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "AppDomainManager",
+   "type": "list",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "September 29, 2026",
+   "type": "paragraph",
+   "section": "Blinder Tunnel Campaign Targets Iraqi Infrastructure"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": "OperTraitors: How Kubernetes Operators Betray Your Security Posture",
+   "type": "heading",
+   "level": 4,
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "AI",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "AI agents",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": "API",
+   "type": "list",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "Insights",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "September 16, 2026",
+   "type": "paragraph",
+   "section": "OperTraitors: How Kubernetes Operators Betray Your Security Posture"
+  },
+  {
+   "id": "b276",
+   "page": null,
+   "text": "Atomic macOS (AMOS) Stealer Activity",
+   "type": "heading",
+   "level": 4,
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b277",
+   "page": null,
+   "text": "MacOS",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b278",
+   "page": null,
+   "text": "Threat intelligence",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b279",
+   "page": null,
+   "text": "Unit 42",
+   "type": "list",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b280",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b281",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b282",
+   "page": null,
+   "text": "September 10, 2026",
+   "type": "paragraph",
+   "section": "Atomic macOS (AMOS) Stealer Activity"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE",
+   "type": "heading",
+   "level": 4,
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "API",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "Cryptographic",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "JSON",
+   "type": "list",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "September 9, 2026",
+   "type": "paragraph",
+   "section": "The Machine With Many Faces: Post-Exploitation Identity Misuse in SPIFFE/SPIRE"
+  },
+  {
+   "id": "b290",
+   "page": null,
+   "text": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure",
+   "type": "heading",
+   "level": 4,
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b291",
+   "page": null,
+   "text": "ARKTunnel",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b292",
+   "page": null,
+   "text": "C2",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b293",
+   "page": null,
+   "text": "CL-CRI-1171",
+   "type": "list",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b295",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "September 3, 2026",
+   "type": "paragraph",
+   "section": "Untracked Nightmares: The Threats Hiding Behind Commodity Infrastructure"
+  },
+  {
+   "id": "b297",
+   "page": null,
+   "text": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America",
+   "type": "heading",
+   "level": 4,
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b298",
+   "page": null,
+   "text": "Agentic AI",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "ChatGPT",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b300",
+   "page": null,
+   "text": "CL-CRI-1131",
+   "type": "list",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b301",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b302",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "August 31, 2026",
+   "type": "paragraph",
+   "section": "Attackers Expose Ongoing AI Tool Use Targeting Organizations in Latin America"
+  },
+  {
+   "id": "b304",
+   "page": null,
+   "text": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams",
+   "type": "heading",
+   "level": 4,
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b305",
+   "page": null,
+   "text": "Cloaked Ursa",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b306",
+   "page": null,
+   "text": "Entra ID",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b307",
+   "page": null,
+   "text": "Microsoft Teams",
+   "type": "list",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b308",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b309",
+   "page": null,
+   "text": "Threat Research",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b310",
+   "page": null,
+   "text": "August 25, 2026",
+   "type": "paragraph",
+   "section": "Spring Ring: An Inside Look at Voice Phishing Campaigns in Microsoft Teams"
+  },
+  {
+   "id": "b311",
+   "page": null,
+   "text": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution",
+   "type": "heading",
+   "level": 4,
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b312",
+   "page": null,
+   "text": "Backdoor",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b313",
+   "page": null,
+   "text": "Bitcoin",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b314",
+   "page": null,
+   "text": "DLL hijacking",
+   "type": "list",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  },
+  {
+   "id": "b315",
+   "page": null,
+   "text": "Read now",
+   "type": "paragraph",
+   "section": "The State of AI-Enabled Malware August 2026: From Brand Abuse to Agentic Execution"
+  }
+ ],
+ "language": "en-us"
+}
