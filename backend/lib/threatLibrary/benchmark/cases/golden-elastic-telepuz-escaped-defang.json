@@ -1,0 +1,271 @@
+{
+  "id": "golden-elastic-telepuz-escaped-defang",
+  "title": "Elastic — TELEPUZ (markdown-escaped \\[.\\] defang in IOC tables)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "escaped_defang",
+    "ioc_table",
+    "regression_ten_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-telepuz-escaped-defang-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/telepuz-maas-malware-clickfix",
+    "talonhound_report_id": "b1ed55fe-4663-4702-9f11-c7ed50d12dcc",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "The staging table renders every host as `name\\[.\\]tld` (escaped markdown defang). Body narrative values stay outside membership (MODE A).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "betalegenda.cfd"
+      },
+      {
+        "type": "domain",
+        "value": "bigblower.click"
+      },
+      {
+        "type": "domain",
+        "value": "cal.joycedoula.com.br"
+      },
+      {
+        "type": "domain",
+        "value": "cal.snehamumbai.org"
+      },
+      {
+        "type": "domain",
+        "value": "chubrik.sbs"
+      },
+      {
+        "type": "domain",
+        "value": "comicstar.lat"
+      },
+      {
+        "type": "domain",
+        "value": "hardendedom.shop"
+      },
+      {
+        "type": "domain",
+        "value": "hardendom.shop"
+      },
+      {
+        "type": "domain",
+        "value": "hardeneddom.shop"
+      },
+      {
+        "type": "domain",
+        "value": "hardenedom.shop"
+      },
+      {
+        "type": "domain",
+        "value": "hurgadatour.shop"
+      },
+      {
+        "type": "domain",
+        "value": "kidsko.shop"
+      },
+      {
+        "type": "domain",
+        "value": "krabsburger.xyz"
+      },
+      {
+        "type": "domain",
+        "value": "mamsites.lol"
+      },
+      {
+        "type": "domain",
+        "value": "mavpaprokla.lat"
+      },
+      {
+        "type": "domain",
+        "value": "mazaporka.shop"
+      },
+      {
+        "type": "domain",
+        "value": "momasites.com"
+      },
+      {
+        "type": "domain",
+        "value": "momasites.lol"
+      },
+      {
+        "type": "domain",
+        "value": "neblokirovka.as"
+      },
+      {
+        "type": "domain",
+        "value": "netblokir.asia"
+      },
+      {
+        "type": "domain",
+        "value": "netblokirovka.asia"
+      },
+      {
+        "type": "domain",
+        "value": "netlobikrovka.asia"
+      },
+      {
+        "type": "domain",
+        "value": "zewaplus.club"
+      },
+      {
+        "type": "ip",
+        "value": "172.67.165.144"
+      },
+      {
+        "type": "ip",
+        "value": "172.67.215.214"
+      },
+      {
+        "type": "sha256",
+        "value": "444f1c0c82b3f6cc31d685bac68b20edbde5722ce219af9cceab0c2a6537efc1"
+      },
+      {
+        "type": "sha256",
+        "value": "58aec6e3835aaf20f7b4a7e308b36a19e7454673a6f71783871e9bcf6cae8eed"
+      },
+      {
+        "type": "sha256",
+        "value": "9733a3f6409de81271f21993c7f8b9865ac9f5c68c3d4336e91afe6b312477eb"
+      },
+      {
+        "type": "sha256",
+        "value": "a955d7e2819d5fa8b5f879cb970e1a1a91327098a7383f2a03a5e1e7e19435e3"
+      },
+      {
+        "type": "sha256",
+        "value": "bf3b4e645a3c0c23f87c55971069014f7424ad14497371ee7567eff68ffaf343"
+      },
+      {
+        "type": "sha256",
+        "value": "ff791fe1532a2dc3b3c188a71bfd0177f973ef228e4d1dda1db6d3c4b0d62b3e"
+      },
+      {
+        "type": "url",
+        "value": "http://krabsburger.xyz/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://172.67.165.144/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://172.67.215.214/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://betalegenda.cfd/files/xK7mR9pL2nQw5tY8/kmwvogwx.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://bigblower.click/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://chubrik.sbs/files/xK7mR9pL2nQw5tY8/ygvfuyze.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://comicstar.lat/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://hardendedom.shop/files/lemetriawork/epuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://hardendom.shop/files/telemetry/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://hardeneddom.shop/files/telemetrywork/telepuz"
+      },
+      {
+        "type": "url",
+        "value": "https://hardenedom.shop/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://hurgadatour.shop/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://kidsko.shop/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://mamsites.lol/files/telemetrywork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://mavpaprokla.lat/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://mazaporka.shop/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://momasites.com/files/telemetrywork/telepuz"
+      },
+      {
+        "type": "url",
+        "value": "https://momasites.lol/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://neblokirovka.as/telemetry/network/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://netblokir.asia/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://netblokirovka.asia/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://netlobikrovka.asia/files/telemetriawork/telepuz.dll"
+      },
+      {
+        "type": "url",
+        "value": "https://zewaplus.club/files/telemetriawork/telepuz.dll"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "url",
+        "value": "t.me/chanadarkpart"
+      },
+      {
+        "type": "sha256",
+        "value": "580b441e2961739fd26e54e0a0ea08351cb10a51839519fc722cfa39ecd0c954"
+      },
+      {
+        "type": "sha256",
+        "value": "03fa348b70819296c958c842e7646b3b7efe5fa217ed5098143003c47995a746"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

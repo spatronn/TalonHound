@@ -1,0 +1,91 @@
+{
+  "id": "golden-elastic-tycoon2fa-detection",
+  "title": "Elastic — Tycoon 2FA detection engineering (no publisher IOCs, MODE B)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_b",
+    "detection_engineering",
+    "legitimate_services",
+    "urn_identifier",
+    "regression_ten_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-tycoon2fa-detection-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/tycoon-2fa-aitm-detection-engineering",
+    "talonhound_report_id": "34df52fd-5d7d-4fbf-8269-975adf25ad1d",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "A detection post: no malicious infrastructure is asserted. urn:ms-drs:<host> is a token audience identifier; Socket.IO is a library name.",
+      "mode": "B"
+    },
+    "indicators": [],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "enterpriseregistration.windows.net"
+      },
+      {
+        "type": "domain",
+        "value": "socket.io"
+      },
+      {
+        "type": "url",
+        "value": "login.microsoftonline.com/common/oauth2/token",
+        "ai_dependent": true
+      },
+      {
+        "type": "url",
+        "value": "https://www.google.com/accounts/OAuthLogin",
+        "ai_dependent": true
+      },
+      {
+        "type": "domain",
+        "value": "77185425430.apps.googleusercontent.com",
+        "ai_dependent": true
+      },
+      {
+        "type": "domain",
+        "value": "any.run",
+        "ai_dependent": true
+      },
+      {
+        "type": "domain",
+        "value": "storage.googleapis.com",
+        "ai_dependent": true
+      },
+      {
+        "type": "domain",
+        "value": "sites.google.com",
+        "ai_dependent": true
+      },
+      {
+        "type": "domain",
+        "value": "client.id",
+        "ai_dependent": true
+      },
+      {
+        "type": "domain",
+        "value": "device.id",
+        "ai_dependent": true
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

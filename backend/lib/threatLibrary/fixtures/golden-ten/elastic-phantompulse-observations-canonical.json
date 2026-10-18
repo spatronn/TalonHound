@@ -1,0 +1,3396 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/blockchain-c2-phantompulse-rat-sinkhole",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT",
+   "type": "heading",
+   "level": 1,
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Elastic Security Labs presents a detailed reverse-engineering analysis of PHANTOMPULSE, the long-lived RAT delivered to crypto-sector victims through the REF6598 intrusion set.",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "May 22, 2026",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Salim Bitam",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Elastic Security Labs's prior coverage of REF6598 documented an intrusion set whose Windows toolchain landed via Obsidian plugin abuse, escalated via an in-memory PE loader (PHANTOMPULL), and finished with a RAT (PHANTOMPULSE). That post focused on delivery. This post analyzes the final stage: PHANTOMPULSE, an implant that ships three process-injection techniques, resolves its C2 through Ethereum/Base/Optimism transaction inputs, and bypasses UAC via the public schuac technique. The analysis surfaces a sinkhole-able blockchain C2 channel, a unified hardware-breakpoint primitive that disables AMSI / WLDP / ETW and pervasive AI-assisted-development fingerprints in the implant's debug strings.",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE: anatomy of a hijackable blockchain-C2 RAT"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 2,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "PHANTOMPULSE implements three injection techniques adapted from recent public offensive-security PoCs.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "AMSI, WLDP, and ETW are bypassed via a single shared HWBP primitive",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "The blockchain C2 resolver has no sender verification, allowing a defender to override the C2 URL for every implant by posting a single transaction",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Strong AI-assisted-development indicators present in the binary",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "A note on AI-assisted development",
+   "type": "heading",
+   "level": 2,
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "PHANTOMPULSE bears strong fingerprints of AI coding assistance, visible throughout the debug strings.",
+   "type": "paragraph",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "The clearest tells:",
+   "type": "paragraph",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Structured step numbering in operational logs: [STEP 1] Staged mode — payload downloaded from C2 at runtime, [STEP 1/3] Scheduled Task (DotNetSvcUpdateTask, logon + every 3 min), [STEP 2/3] Boot Task (DotNetSvcCoreTask, INTERACTIVE_TOKEN + BootTrigger), [UNINSTALL 4/6] Removing persist_loader DLL + registry PE data..., [REPAIR] Reinstalling boot task (INTERACTIVE_TOKEN)....",
+   "type": "list",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "ENTER/DONE function tracing: \"[HEIS] encrypt_text_only ENTER\" / \"[HEIS] encrypt_text_only DONE\", \"KeylogResolveAPIs: ENTER\". The diagnostic style LLMs default to when generating new functions.",
+   "type": "list",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Verbose diagnostics: \"FindHostProcessEx: scan stats: total=%lu sessSkip=%lu openFail=%lu native=%lu wow64=%lu mapReject=%lu dbgReject=%lu sess=%lu\", \"ManualMap: thread hijacked and resumed — DLL injection via thread hijack complete\". Self-explanatory output, unusually talkative for malware.",
+   "type": "list",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Em dashes in C strings: \"elevate: FAIL — no deployed DLL path\", \">>> .elevate: NOT proxy — spawning trusted host to handle elevation\".",
+   "type": "list",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "AI generated strings in the binary",
+   "type": "paragraph",
+   "section": "A note on AI-assisted development"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "Execution chain",
+   "type": "heading",
+   "level": 2,
+   "section": "Execution chain"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "MainEntryLogic is the orchestration function that runs the full initialization sequence before entering the C2 loop:",
+   "type": "paragraph",
+   "section": "Execution chain"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "start",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "└─ WinMain",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "└─ MainEntryLogic",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "1. DynInit // Bootstrap API resolution",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "2. ElevationStateCheck // \".elevate\" marker detection, routes by token elevation state",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "3. SingleInstanceCheck // XOR-decrypted mutex, exit if already running",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "4. EvasionInit // Direct syscalls + ETW HWBP",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "5. SyscallResolverInit // CPUID + hash-based kernel32 resolution",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "6. SleepMaskInit // Sleep obfuscation setup",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "7. ComputeMachineID // DJB2(module name) ^ volume serial",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "8. IsRunningHollowed // Process hollowing self-check",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "9. CollectSysInfo // CPU, GPU, RAM, OS, AV, apps",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "10. FilelessPersist // Drop stub DLL, registry artifact",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "11. InstallPersistence // Three scheduled tasks via COM ITaskService",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "12. C2Loop_Init → C2Loop_Main",
+   "type": "code",
+   "section": "Execution chain",
+   "line_group": "b025"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "At startup, the implant DJB2-hashes the user name and computer name and looks each up in a precomputed table. A match exits the process. Brute-forcing the table against public anti-sandbox wordlists recovered 20 of the 61 entries: WDAGUtilityAccount (Windows Defender Application Guard), several DESKTOP-XXXXXXX default-VM names, and the Joe Sandbox personas (abby, patex, george, john, lisa, frank, RDhJ0CNFevzX).",
+   "type": "paragraph",
+   "section": "Execution chain"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Defense evasion",
+   "type": "heading",
+   "level": 2,
+   "section": "Defense evasion"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "Direct syscalls and API wrappers",
+   "type": "heading",
+   "level": 3,
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "PHANTOMPULSE resolves ntdll functions by walking PEB→Ldr with DJB2 hashes, extracts System Service Numbers (SSNs) from each NT function's prologue, and builds private syscall stubs. These stubs are wrapped in higher-level helpers used throughout the rest of the implant:",
+   "type": "paragraph",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "NtCreateFile_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "NtWriteFile_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "NtClose_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "NtCreateSection_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "NtMapViewOfSection_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "NtProtectVirtualMemory_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "NtWriteVirtualMemory_Wrap",
+   "type": "list",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "The rest of the implant calls these wrappers instead of kernel32/ntdll exports, defeating user-mode ntdll hooks (IAT replacements, inline detours, or trampoline patches) that EDR products inject into the documented API surface.",
+   "type": "paragraph",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "A single helper function routes every disk write through NtCreateFile + NtWriteFile directly, with delete-and-retry on access errors.",
+   "type": "paragraph",
+   "section": "Direct syscalls and API wrappers"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "String and config obfuscation",
+   "type": "heading",
+   "level": 3,
+   "section": "String and config obfuscation"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "PHANTOMPULSE uses four XOR layers for different artifacts:",
+   "type": "paragraph",
+   "section": "String and config obfuscation"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "What | Key | Where the key lives ¶ C2 fallback URL, mutex, drop-path filenames | 16-byte: F7 7C 8E 40 DF C1 7B E5 E7 4D 86 79 D5 B3 53 41 | Embedded in .rdata ¶ Blockchain provider hostnames (UTF-16 LE) | 8-byte: 5A 3C 7E 1D 9F 2B 4E 8A | Embedded in .rdata ¶ COM Elevation Moniker, keylog file payload | 0xE95CA237, computed at runtime to keep the constant out of .rdata | Computed, not stored ¶ C2 URL pulled from blockchain transaction input | The resolver wallet address itself | Reused from the public lookup key",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "C2 fallback URL, mutex, drop-path filenames",
+      "16-byte: F7 7C 8E 40 DF C1 7B E5 E7 4D 86 79 D5 B3 53 41",
+      "Embedded in .rdata"
+     ],
+     [
+      "Blockchain provider hostnames (UTF-16 LE)",
+      "8-byte: 5A 3C 7E 1D 9F 2B 4E 8A",
+      "Embedded in .rdata"
+     ],
+     [
+      "COM Elevation Moniker, keylog file payload",
+      "0xE95CA237, computed at runtime to keep the constant out of .rdata",
+      "Computed, not stored"
+     ],
+     [
+      "C2 URL pulled from blockchain transaction input",
+      "The resolver wallet address itself",
+      "Reused from the public lookup key"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "What",
+     "Key",
+     "Where the key lives"
+    ]
+   },
+   "layout": "table",
+   "section": "String and config obfuscation"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "String dexoring stub",
+   "type": "paragraph",
+   "section": "String and config obfuscation"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "AMSI, WLDP, and ETW bypass via hardware breakpoints",
+   "type": "heading",
+   "level": 3,
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "PHANTOMPULSE disables AMSI, the Windows Lockdown Policy code-trust check, and ETW telemetry through a single shared primitive: a hardware breakpoint planted on each API entry, intercepted by a vectored exception handler that fakes the return value without inline patching.",
+   "type": "paragraph",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "Slot | Target API | Spoofed return (RAX) ¶ DR0 | WldpQueryDynamicCodeTrust | 0 (S_OK) ¶ DR1 | AmsiScanBuffer | 0x80070057 (E_INVALIDARG) ¶ DR2 | EtwEventWrite | 0 (STATUS_SUCCESS)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "DR0",
+      "WldpQueryDynamicCodeTrust",
+      "0 (S_OK)"
+     ],
+     [
+      "DR1",
+      "AmsiScanBuffer",
+      "0x80070057 (E_INVALIDARG)"
+     ],
+     [
+      "DR2",
+      "EtwEventWrite",
+      "0 (STATUS_SUCCESS)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Slot",
+     "Target API",
+     "Spoofed return (RAX)"
+    ]
+   },
+   "layout": "table",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Hardware breakpoint setup function",
+   "type": "paragraph",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "The mechanism, step by step:",
+   "type": "paragraph",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "The implant resolves the target API. AMSI and WLDP go through LoadLibraryA + hash-based export lookup; ETW uses a PEB→Ldr walk since ntdll is already loaded.",
+   "type": "list",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "The HWBP descriptor (target API address, mode, spoofed return value) is written into one of four 40-byte slots in a global slot table.",
+   "type": "list",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "A helper thread suspends the target thread, calls NtGetContextThread / NtSetContextThread to write DR0–DR3 + DR7, then resumes. (If the implant's vectored exception handler is already installed, an in-process STATUS_BREAKPOINT is raised instead, letting the VEH read the slot table and program the DRs without a helper thread.)",
+   "type": "list",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "When the protected API is called, the CPU raises Debug Exception on the function's first instruction.",
+   "type": "list",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "The implant's vectored exception handler intercepts the Debug Exception, walks its 4-slot table to find the firing address, and modifies the thread context: CONTEXT.Rax is set to the per-slot spoofed return value, CONTEXT.Rip is redirected to a pre-stored \"skip\" thunk that returns to the caller.",
+   "type": "list",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "The handler returns EXCEPTION_CONTINUE_EXECUTION. The caller sees the spoofed RAX as if the API had run.",
+   "type": "list",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Exception handler: BREAKPOINT STATUS",
+   "type": "paragraph",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "The dispatcher serves two paths. One handler (VEH_Dispatcher) processes both the implant's own RaiseException(STATUS_BREAKPOINT) calls (used to seed and re-program the DR registers from the slot table) and the STATUS_SINGLE_STEP exceptions that fire when a protected API is called. The exception code drives the branch: STATUS_BREAKPOINT triggers DR programming, STATUS_SINGLE_STEP triggers the spoof.",
+   "type": "paragraph",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "The handler is also not registered directly. AddVectoredExceptionHandler receives a tiny JMP thunk allocated at runtime in a fresh MEM_PRIVATE page (VirtualAlloc + VirtualProtect to PAGE_EXECUTE_READ). The thunk is a JMP [RIP-relative] indirect jump (6-byte opcode FF 25 00 00 00 00) followed inline by the dispatcher's address. Because no bytes are ever written to AmsiScanBuffer, WldpQueryDynamicCodeTrust, or EtwEventWrite, signature-based detection that scans for prologue patches misses this entirely.",
+   "type": "paragraph",
+   "section": "AMSI, WLDP, and ETW bypass via hardware breakpoints"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "Build variant: active and dormant subsystems",
+   "type": "heading",
+   "level": 3,
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "Several subsystems exist in the binary as code or strings, but are not active in this build. This is a stripped-down build of a larger codebase.",
+   "type": "paragraph",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "NTDLL unhooking: Debug strings for an unhooking subsystem live in .rdata (UnhookNtdll: ntdll base = %p, applied %d relocation fixups to .text), but nothing references them. Dead in this variant.",
+   "type": "list",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Registry-resident PE blob loader: earlier builds stored the next-stage PE inside the registry. This build does not, but the uninstall routine still cleans up the legacy registry blob.",
+   "type": "list",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "COM hijack persistence: never installed by this build. Cleanup logic for it remains in the uninstall routine.",
+   "type": "list",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "Print monitor persistence: same pattern as COM hijack; install path absent, uninstall path retained.",
+   "type": "list",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "The last three (registry blob loader, COM hijack, print monitor) show the opposite pattern: cleanup logic with no install logic, retained for backward compatibility against older deployments.",
+   "type": "paragraph",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Feature | payloads build | Evidence ¶ Direct syscalls (SSN extraction) | Active | SSN extraction + stub generation confirmed ¶ AMSI / WLDP / ETW HWBP bypass | Active | DR0/DR1/DR2 via shared helper-thread primitive ¶ Three-way process injection | Active | PhantomInject, DbgNexum, ManualMap are all functional ¶ Blockchain C2 resolution | Active | Three Blockscout providers queried ¶ NTDLL unhooking | Dead code | Strings present, zero code references ¶ HEIS encryption | Disabled | Code encrypt/decrypt stubbed ¶ Registry-resident PE blob loader | Legacy only | Only cleaned during uninstall ¶ COM hijack persistence | Legacy only | Cleaned during uninstall, never installed ¶ Print monitor persistence | Legacy only | Cleaned during uninstall, never installed ¶ Decoy strings | Active | 4 unreferenced decoy strings in .rdata",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Direct syscalls (SSN extraction)",
+      "Active",
+      "SSN extraction + stub generation confirmed"
+     ],
+     [
+      "AMSI / WLDP / ETW HWBP bypass",
+      "Active",
+      "DR0/DR1/DR2 via shared helper-thread primitive"
+     ],
+     [
+      "Three-way process injection",
+      "Active",
+      "PhantomInject, DbgNexum, ManualMap are all functional"
+     ],
+     [
+      "Blockchain C2 resolution",
+      "Active",
+      "Three Blockscout providers queried"
+     ],
+     [
+      "NTDLL unhooking",
+      "Dead code",
+      "Strings present, zero code references"
+     ],
+     [
+      "HEIS encryption",
+      "Disabled",
+      "Code encrypt/decrypt stubbed"
+     ],
+     [
+      "Registry-resident PE blob loader",
+      "Legacy only",
+      "Only cleaned during uninstall"
+     ],
+     [
+      "COM hijack persistence",
+      "Legacy only",
+      "Cleaned during uninstall, never installed"
+     ],
+     [
+      "Print monitor persistence",
+      "Legacy only",
+      "Cleaned during uninstall, never installed"
+     ],
+     [
+      "Decoy strings",
+      "Active",
+      "4 unreferenced decoy strings in .rdata"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Feature",
+     "payloads build",
+     "Evidence"
+    ]
+   },
+   "layout": "table",
+   "section": "Build variant: active and dormant subsystems"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "Command and control",
+   "type": "heading",
+   "level": 2,
+   "section": "Command and control"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Blockchain C2 resolution",
+   "type": "heading",
+   "level": 3,
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "PHANTOMPULSE decentralizes C2 lookup through three Blockscout providers:",
+   "type": "paragraph",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "eth.blockscout[.]com (Ethereum L1)",
+   "type": "list",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "base.blockscout[.]com (Base L2)",
+   "type": "list",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "optimism.blockscout[.]com (Optimism L2)",
+   "type": "list",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "The wallet address 0xc117688c530b660e15085bF3A2B664117d8672aA is XOR-decrypted from storage with a 16-byte key. For each provider, the implant issues an HTTPS GET (port 443, SSL cert errors ignored), pulls the input field of the latest transaction, hex-decodes it, XOR-decrypts with the wallet address bytes as the key, and validates that the result begins with http. On total failure, it falls back to the hardcoded URL https://panel.fefea22134[.]net.",
+   "type": "paragraph",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "C2 dexoring/decoding validation part 1",
+   "type": "paragraph",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "The resolver does not verify the sender of the transaction. It only checks that the latest decoded input starts with http. Anyone can submit a transaction to that wallet with their own URL XOR-encoded under the wallet bytes, and every PHANTOMPULSE instance of that campaign that polls afterward resolves to that URL. For network defenders, this is a viable sinkhole at the cost of one transaction.",
+   "type": "paragraph",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "C2 dexoring/decoding validation part 2",
+   "type": "paragraph",
+   "section": "Blockchain C2 resolution"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "Endpoints and heartbeat",
+   "type": "heading",
+   "level": 3,
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Five API paths are constructed at runtime, re-encrypted in memory with a per-session key:",
+   "type": "paragraph",
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Path | Method | Content-Type | Purpose ¶ /v1/telemetry/report | POST | application/json | Heartbeat with full system telemetry ¶ /v1/telemetry/tasks/<machine_id> | GET |  | Command fetch ¶ /v1/telemetry/upload/ | POST | image/bmp | Screenshot / file upload ¶ /v1/telemetry/result | POST | application/json | Command result delivery ¶ /v1/telemetry/keylog/ | POST | text/plain | Keylog data upload",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "/v1/telemetry/report",
+      "POST",
+      "application/json",
+      "Heartbeat with full system telemetry"
+     ],
+     [
+      "/v1/telemetry/tasks/<machine_id>",
+      "GET",
+      "",
+      "Command fetch"
+     ],
+     [
+      "/v1/telemetry/upload/",
+      "POST",
+      "image/bmp",
+      "Screenshot / file upload"
+     ],
+     [
+      "/v1/telemetry/result",
+      "POST",
+      "application/json",
+      "Command result delivery"
+     ],
+     [
+      "/v1/telemetry/keylog/",
+      "POST",
+      "text/plain",
+      "Keylog data upload"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Path",
+     "Method",
+     "Content-Type",
+     "Purpose"
+    ]
+   },
+   "layout": "table",
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "The heartbeat sends a full system profile as JSON:",
+   "type": "paragraph",
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "\"machine_id\": \"<uint32>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "\"status\": \"online\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "\"cpu\": \"<model>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "\"gpu\": \"<description>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "\"ram_mb\": \"<uint32>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "\"os\": \"<version>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "\"username\": \"<user>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "\"computer_name\": \"<name>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "\"cores\": \"<uint32>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "\"screen_w\": \"<int>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "\"screen_h\": \"<int>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "\"privilege\": \"<user|admin|admin_nouac|system>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "\"build\": \"payloads\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "\"public_ip\": \"<ip>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "\"av_list\": [\"<av1>\", \"<av2>\"],",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "\"apps\": [\"<app1>\", \"<app2>\"],",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "\"last_cmd\": \"<cmd>\",",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "\"last_cmd_result\": \"<result>\"",
+   "type": "code",
+   "section": "Endpoints and heartbeat",
+   "line_group": "b093"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Building heartbeat JSON document",
+   "type": "paragraph",
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Two response fields are parsed: \"status\":\"deleted\" triggers full uninstall; \"ip\":\"<value>\" populates the public-IP cache, but only if local discovery (ipif[.]org / icanhazip[.]com/ checkip.amazonaws[.]com) hasn't already filled it.",
+   "type": "paragraph",
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Parsing heartbeat response",
+   "type": "paragraph",
+   "section": "Endpoints and heartbeat"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "Loop cadence and resilience",
+   "type": "heading",
+   "level": 3,
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Sleep: uniform random in [20, 40] seconds",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "Self-healing: runs at iteration 2, then every 10th iteration",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Health-monitor tick: first call after the implant comes online, then every 5th iteration thereafter. Populates a local system-info struct (CPU%, RAM, OS version, uptime, computer name).",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Failure threshold: 10 consecutive heartbeat failures trigger a self-restart for stuck SSL/TLS recovery",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Re-resolution: on failure, blockchain re-resolution runs; if the resolved URL changes, the failure counter resets",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Public IP: api4.ipify[.]org → ipv4.icanhazip[.]com → checkip.amazonaws[.]com",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Connectivity check: probes microsoft[.]com, google[.]com, cloudflare[.]com, github[.]com",
+   "type": "list",
+   "section": "Loop cadence and resilience"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "Command dispatch",
+   "type": "heading",
+   "level": 2,
+   "section": "Command dispatch"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "The command dispatcher routes commands by DJB2 hash. Eight commands total:",
+   "type": "paragraph",
+   "section": "Command dispatch"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Command dispatch function",
+   "type": "paragraph",
+   "section": "Command dispatch"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Hash | Command | Behavior ¶ 0x04CF1142 | inject | Inject shellcode/DLL/EXE. Routes by type: shellcode → PhantomInject; DLL → ManualMap; EXE → DbgNexum. The AMSI and WLDP HWBP bypasses are installed on the first inject call (the ETW HWBP is already in place from EvasionInit). ¶ 0x7C95D91A | drop | Drop the file to the disk and execute. Supports DLL, EXE, shellcode (APC injection), and MSI payloads. ¶ 0x9A37F083 | screenshot | GDI capture, downscale to 960px wide, upload as BMP. ¶ 0x08DEDEF0 | keylog | Start or stop the inline keylogger. ¶ 0x4EE251FF | uninstall | 6-step cleanup and termination. ¶ 0x65CCC50B | elevate | UAC bypass via the schuac technique (IElevatedFactoryServer::ServerCreateElevatedObject(CLSID_TaskScheduler)); registers a transient elevated task that relaunches the implant. ¶ 0xB3B5B880 | downgrade | SYSTEM → elevated admin transition. ¶ 0x20CE3BC8 | (self-restart) | Cascading self-terminate: NtTerminateProcess(-1, 0) direct syscall first; if that fails to resolve, falls back to ExitProcess(0). Persistence relaunches the implant on the next scheduled task tick. Operationally equivalent to a soft restart.",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "0x04CF1142",
+      "inject",
+      "Inject shellcode/DLL/EXE. Routes by type: shellcode → PhantomInject; DLL → ManualMap; EXE → DbgNexum. The AMSI and WLDP HWBP bypasses are installed on the first inject call (the ETW HWBP is already in place from EvasionInit)."
+     ],
+     [
+      "0x7C95D91A",
+      "drop",
+      "Drop the file to the disk and execute. Supports DLL, EXE, shellcode (APC injection), and MSI payloads."
+     ],
+     [
+      "0x9A37F083",
+      "screenshot",
+      "GDI capture, downscale to 960px wide, upload as BMP."
+     ],
+     [
+      "0x08DEDEF0",
+      "keylog",
+      "Start or stop the inline keylogger."
+     ],
+     [
+      "0x4EE251FF",
+      "uninstall",
+      "6-step cleanup and termination."
+     ],
+     [
+      "0x65CCC50B",
+      "elevate",
+      "UAC bypass via the schuac technique (IElevatedFactoryServer::ServerCreateElevatedObject(CLSID_TaskScheduler)); registers a transient elevated task that relaunches the implant."
+     ],
+     [
+      "0xB3B5B880",
+      "downgrade",
+      "SYSTEM → elevated admin transition."
+     ],
+     [
+      "0x20CE3BC8",
+      "(self-restart)",
+      "Cascading self-terminate: NtTerminateProcess(-1, 0) direct syscall first; if that fails to resolve, falls back to ExitProcess(0). Persistence relaunches the implant on the next scheduled task tick. Operationally equivalent to a soft restart."
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Hash",
+     "Command",
+     "Behavior"
+    ]
+   },
+   "layout": "table",
+   "section": "Command dispatch"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "The eighth handler has no debug log naming it. It self-terminates; the scheduled task relaunches the implant on the next tick. The lack of LLM-style scaffolding (debug strings) makes this one of the few handlers in the binary that appears to be added by the human author rather than LLM-generated.",
+   "type": "paragraph",
+   "section": "Command dispatch"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Injection techniques",
+   "type": "heading",
+   "level": 2,
+   "section": "Injection techniques"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "PHANTOMPULSE ships three injection techniques, one per payload type. The inject C2 command routes shellcode to PhantomInject, DLLs to ManualMap, and EXEs to DbgNexum.",
+   "type": "paragraph",
+   "section": "Injection techniques"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "Inject command switch case",
+   "type": "paragraph",
+   "section": "Injection techniques"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "The AMSI/WLDP hardware-breakpoint bypasses are installed on the first inject call, before any injector runs.",
+   "type": "paragraph",
+   "section": "Injection techniques"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "Payload type | Injector | Strategy ¶ Shellcode | PhantomInject | Module stomping in dbghelp.dll via SEC_IMAGE ¶ EXE | DbgNexum | Debug-API state machine ¶ DLL | ManualMap | Full PE manual mapping",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Shellcode",
+      "PhantomInject",
+      "Module stomping in dbghelp.dll via SEC_IMAGE"
+     ],
+     [
+      "EXE",
+      "DbgNexum",
+      "Debug-API state machine"
+     ],
+     [
+      "DLL",
+      "ManualMap",
+      "Full PE manual mapping"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Payload type",
+     "Injector",
+     "Strategy"
+    ]
+   },
+   "layout": "table",
+   "section": "Injection techniques"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "PhantomInject: module stomping into dbghelp.dll",
+   "type": "heading",
+   "level": 3,
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Module stomping avoids MEM_PRIVATE allocation by mapping a legitimate Windows DLL as SEC_IMAGE and overwriting .text:",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Acquires SeDebugPrivilege (via OpenProcessToken / LookupPrivilegeValueW / AdjustTokenPrivileges), then walks the process snapshot for one of seven host-process candidates (case-insensitive match). Tried in priority order: sihost.exe, taskhostw.exe, backgroundTaskHost.exe, RuntimeBroker.exe, dllhost.exe, ctfmon.exe, explorer.exe.",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Opens dbghelp.dll via NtOpenFile, creates SEC_IMAGE section, maps into target via NtMapViewOfSection",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "PhantomInject dll stomping",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Parses the local copy for .text RVA and size, then frees it",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Selects and suspends a thread, captures context",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Builds an 82-byte save-call-restore trampoline",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Writes shellcode + trampoline into .text of the mapped DLL",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Flips protection to PAGE_EXECUTE_READ",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "Repoints RIP to the trampoline, resumes thread",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "To a memory scanner, the result looks like a thread executing inside legitimate dbghelp.dll, a file-backed image region with the right file path, section name, and first-page hash.",
+   "type": "paragraph",
+   "section": "PhantomInject: module stomping into dbghelp.dll"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "DbgNexum: debug API as an execution controller",
+   "type": "heading",
+   "level": 3,
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "DbgNexum handles EXE payloads. Rather than writing executable code into the target up front, it uses the Windows debug API to drive execution one exception at a time: a ROP chain whose gadgets are full Windows APIs in the target.",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "The technique is not original to PHANTOMPULSE. It is a verbatim lift of dis0rder0x00/DbgNexum, a public proof of concept published on GitHub on 2026-01-04. The operator kept the published technique name (\"DbgNexum\") in the implant's debug strings unchanged, and the inner state machine is a 1:1 match: the same bait API, section name, gadget chain, and constants. PHANTOMPULSE wraps the lifted x64 core with operational scaffolding the PoC does not have: host-process selection (FindHostProcessEx), a fallback that spawns a fresh SysWOW64\\cmd.exe / rundll32.exe / notepad.exe, a custom PE-loading bootstrap (so it can carry full EXEs instead of raw shellcode), and a separate WoW64 cross-architecture variant.",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "For native x64 payloads, the implant pre-stages the PE, the bootstrap stub, and the trampoline config inside a named file-mapping section. The section name is the literal two-byte string \"MZ\", the implant attaches with DebugActiveProcess and creates a remote thread on FileTimeToSystemTime with a hardware breakpoint on DR0.",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "DbgNexum creates file mapping",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "When the bait hits the breakpoint, a state machine drives the target through this API chain:",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "Redirect RIP to DbgBreakPoint+1 with the trap flag set; the resulting single-step exception bridges into the rest of the chain.",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "LocalAlloc(LMEM_ZEROINIT, 3), allocate the 3-byte name buffer.",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "memcpy(buf, kernel32_base, 2), copy \"MZ\" from kernel32.dll's DOS header into the buffer.",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "memset(stack+40, 0, 8): zero a stack arg slot.",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "OpenFileMappingA(0x1F, FALSE, \"MZ\"), open the prepared section with full section-mapping access.",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "MapViewOfFile(...), map it into the target.",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "Redirect RIP to mapped_base + 0x400, the bootstrap stub. This is the only stage logged directly: DbgNexumLoop64: stage 6 -> stub at %llx, base=%llx. (The PoC redirects to mapped_base + 0 for raw shellcode; PHANTOMPULSE adds the +0x400 offset to land on its custom PE loader.)",
+   "type": "list",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "Each transition intercepts the next debug event, restores RSP, clears the trap flag, modifies RIP and the argument registers (RCX, RDX, R8, R9) for the next call, and continues the debuggee. DR0 is reused as an execute hardware breakpoint on each saved return address, so no inline patches or WriteProcessMemory against the target are needed. From the kernel's view, all that happened was a thread inside kernel32.dll calling LocalAlloc, OpenFileMappingA, and MapViewOfFile.",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "The cross-architecture path (PE32 from a 64-bit implant) is a PHANTOMPULSE-only variant the public PoC does not have. It takes a shortcut: the implant walks the target's PEB.Ldr via NtReadVirtualMemory (using ProcessWow64Information to pick the 32-bit or 64-bit PEB layout) to find a DLL with a callable entry point, then pre-maps a section containing a 32-bit loader stub and trampoline into both processes via NtCreateSection + NtMapViewOfSection. The redirect is just two stages: bait at RtlExitUserThread, then a DbgBreakPoint-mediated single step jumps RIP to the trampoline. There is no API chain on this path because the section is already mapped on both sides, so OpenFileMappingA/MapViewOfFile aren't needed.",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Cross-arch host selection runs through FindHostProcessEx, which excludes critical system processes (csrss.exe, lsass.exe, smss.exe, winlogon.exe, services.exe, wininit.exe, svchost.exe, MsMpEng.exe) and falls back to spawning a fresh SysWOW64\\cmd.exe / rundll32.exe / notepad.exe if no usable WoW64 host is found.",
+   "type": "paragraph",
+   "section": "DbgNexum: debug API as an execution controller"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "ManualMap: full PE mapper",
+   "type": "heading",
+   "level": 3,
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "ManualMap handles DLL payloads with a complete PE manual mapping implementation:",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "Validates MZ/PE signature; rejects PE32 in the x64 host path (debug-log: \"PE32 DLL in x64 host is impossible\")",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Allocates SizeOfImage in the target via NtAllocateVirtualMemory",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "Copies headers and sections to a local staging buffer",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Applies base relocations (IMAGE_REL_BASED_DIR64, IMAGE_REL_BASED_HIGHLOW)",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Resolves imports via LoadLibraryA + GetProcAddress",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "Wipes PE headers (zeros SizeOfHeaders bytes)",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "ManualMap PE headers wiping",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "Writes the staged image into the remote allocation",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "Sets per-section memory protection",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Builds a 137-byte trampoline in a separate 0x2000-byte remote allocation (set to PAGE_EXECUTE_READ):",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "The full trampoline shellcode gist contains the complete bytes.",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "ManualMap trampoline write",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "10. Hijacks a thread via suspend / get-context / set-context",
+   "type": "paragraph",
+   "section": "ManualMap: full PE mapper"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Privilege escalation",
+   "type": "heading",
+   "level": 2,
+   "section": "Privilege escalation"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "The elevate command is a UAC bypass via the schuac technique (IElevatedFactoryServer::ServerCreateElevatedObject(CLSID_TaskScheduler)), published as UACME issue #129 by zcgonvh, currently under the ID 74.",
+   "type": "paragraph",
+   "section": "Privilege escalation"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "screenshot showing the ID of the privilege escalation technique under UACME",
+   "type": "paragraph",
+   "section": "Privilege escalation"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "Mechanism",
+   "type": "heading",
+   "level": 3,
+   "section": "Mechanism"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "MaintenanceUI.dll's CMaintenanceUIVirtualFactory (CLSID {A6BFEA43-501F-456F-A845-983D3AD7B8F0}) is registered with an Elevation registry key, so the OS hands non-admin callers an elevated instance. Its IElevatedFactoryServer interface exposes ServerCreateElevatedObject(rclsid, riid, ppv), which the elevated server uses to instantiate any other CLSID under its elevated context. PHANTOMPULSE feeds it CLSID_TaskScheduler, gets back an elevated ITaskService, and uses that service to register a HighestAvailable-RunLevel task that re-launches the implant.",
+   "type": "paragraph",
+   "section": "Mechanism"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "The elevate C2 command",
+   "type": "heading",
+   "level": 3,
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "Inside ProcessCommands, the elevate handler:",
+   "type": "paragraph",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "Builds the task action. The command is <system_dir>\\rundll32.exe with arguments \\\"<deployed_dll>\\\",DllRegisterServer. The user identifier is COMPUTERNAME\\USERNAME from GetEnvironmentVariableW. ![Elevate command call][/assets/images/blockchain-c2-phantompulse-rat-sinkhole/image17.png]",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "Writes the .elevate marker as a single byte (\"1\", 0x31), not encoded parameters. The write goes through NtCreateFile + NtWriteFile to bypass user-mode hooks. The marker is just a presence flag; the elevation parameters travel inside the task definition the implant is about to register.",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "XOR-decrypts the COM Elevation Moniker at runtime, 66 bytes from .rdata xored against seed 0xE95CA237, which decodes to Elevation:Administrator!new:{A6BFEA43-501F-456F-A845-983D3AD7B8F0}.",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "Calls CoGetObject(moniker, &BIND_OPTS3{dwClassContext=CLSCTX_LOCAL_SERVER}, IID_IElevatedFactoryServer, &factory) to get an elevated IElevatedFactoryServer*, then factory->ServerCreateElevatedObject(CLSID_TaskScheduler, IID_ITaskService, &elevatedTaskService) to get an elevated ITaskService* that inherits the elevation.",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "Registers a transient task DotNetSvcElevateTask at HighestAvailable RunLevel with the rundll32 action above.",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "Deletes any pre-existing non-elevated persistent tasks so the old low-IL persistence cannot race the elevated relaunch.",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "Calls ITaskService::Run on the transient task and deletes it immediately afterward. Releases the single-instance mutex and exits the medium-IL implant.",
+   "type": "list",
+   "section": "The elevate C2 command"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "Fallback retry via proxy rundll32",
+   "type": "heading",
+   "level": 3,
+   "section": "Fallback retry via proxy rundll32"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "If the CoGetObject / RegisterTask chain fails, a fallback path takes over. A separate startup path spawns a fresh rundll32.exe \"<deployed_dll>\",DllRegisterServer directly via CreateProcessW, with retries (\">>> .elevate redirect attempt %d\"). Inside that rundll32 the implant detects isProxy=1, elevated=0 and retries the schuac sequence with three registration variants (ELEVATED+INTERACTIVE+user, ELEVATED+INTERACTIVE, INTERACTIVE). On success, the elevated task fires and the elevated relaunch takes over. On exhaustion, the proxy logs \">>> Phase 1: all registration methods failed, cleaning marker\" and exits.",
+   "type": "paragraph",
+   "section": "Fallback retry via proxy rundll32"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "Elevated rundll32 relaunch",
+   "type": "heading",
+   "level": 3,
+   "section": "Elevated rundll32 relaunch"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "When the transient task fires, svchost.exe (Schedule) launches rundll32.exe \"<deployed_dll>\",DllRegisterServer under a fresh high-IL token. The implant's DllRegisterServer export runs as the entry; at startup it sees the .elevate marker and a high-IL token and routes to the elevated path:",
+   "type": "paragraph",
+   "section": "Elevated rundll32 relaunch"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "Reads and deletes the .elevate marker.",
+   "type": "list",
+   "section": "Elevated rundll32 relaunch"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "Reinstalls persistence under elevated context, including the boot task DotNetSvcCoreTask under \\Microsoft\\Windows\\NetFramework\\, registered with INTERACTIVE_TOKEN + BootTrigger, which requires admin to register.",
+   "type": "list",
+   "section": "Elevated rundll32 relaunch"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "Continues normal implant operation as a high-IL service.",
+   "type": "list",
+   "section": "Elevated rundll32 relaunch"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "Marker-state routing",
+   "type": "heading",
+   "level": 3,
+   "section": "Marker-state routing"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "At every startup, MainEntryLogic calls GetFileAttributesW on the .elevate path. If it returns INVALID_FILE_ATTRIBUTES, the implant skips all elevation logic and starts normally. If the marker exists, the implant gathers two more facts: whether the current process is a rundll32.exe/regsvr32.exe proxy, and whether the token is elevated, then routes on the combination:",
+   "type": "paragraph",
+   "section": "Marker-state routing"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "Marker | Proxy | Elevated | What happens ¶ absent | n/a | n/a | normal startup, no special routing ¶ present | no | no | spawn proxy rundll32 to retry the schuac chain, then exit ¶ present | yes | no | retry schuac inside the rundll32; on exhaustion delete marker and exit ¶ present | * | yes | delete marker, reinstall persistence with the boot task, continue as high-IL",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "absent",
+      "n/a",
+      "n/a",
+      "normal startup, no special routing"
+     ],
+     [
+      "present",
+      "no",
+      "no",
+      "spawn proxy rundll32 to retry the schuac chain, then exit"
+     ],
+     [
+      "present",
+      "yes",
+      "no",
+      "retry schuac inside the rundll32; on exhaustion delete marker and exit"
+     ],
+     [
+      "present",
+      "*",
+      "yes",
+      "delete marker, reinstall persistence with the boot task, continue as high-IL"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Marker",
+     "Proxy",
+     "Elevated",
+     "What happens"
+    ]
+   },
+   "layout": "table",
+   "section": "Marker-state routing"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "The marker file's contents are never read, its presence alone drives the routing.",
+   "type": "paragraph",
+   "section": "Marker-state routing"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "Elastic Security Labs' Exploring Windows UAC Bypasses covers detection patterns for the IElevatedFactoryServer class of bypass directly.",
+   "type": "paragraph",
+   "section": "Marker-state routing"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "Persistence",
+   "type": "heading",
+   "level": 2,
+   "section": "Persistence"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "Three scheduled tasks",
+   "type": "heading",
+   "level": 3,
+   "section": "Three scheduled tasks"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "PHANTOMPULSE installs three scheduled tasks via the COM ITaskService interface, each executing rundll32.exe \"<stub_dll>\",DllRegisterServer:",
+   "type": "paragraph",
+   "section": "Three scheduled tasks"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Task | Trigger | Interval | RunLevel ¶ DotNetSvcUpdateTask | User Logon + Time | 3 min | Standard ¶ DotNetSvcCoreTask | Boot + Time | 15 min | HighestAvailable + Hidden ¶ DotNetSvcUserTask | User Logon | On logon | Standard",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "DotNetSvcUpdateTask",
+      "User Logon + Time",
+      "3 min",
+      "Standard"
+     ],
+     [
+      "DotNetSvcCoreTask",
+      "Boot + Time",
+      "15 min",
+      "HighestAvailable + Hidden"
+     ],
+     [
+      "DotNetSvcUserTask",
+      "User Logon",
+      "On logon",
+      "Standard"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Task",
+     "Trigger",
+     "Interval",
+     "RunLevel"
+    ]
+   },
+   "layout": "table",
+   "section": "Three scheduled tasks"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "Persistance install start",
+   "type": "paragraph",
+   "section": "Three scheduled tasks"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "The boot task lives under \\Microsoft\\Windows\\NetFramework\\ to blend with legitimate .NET maintenance tasks. Its full XML body is embedded in .rdata, not constructed at runtime. Signatures on this literal blob are durable across builds.",
+   "type": "paragraph",
+   "section": "Three scheduled tasks"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "Installation tries multiple RegisterTask fallback variants per task, combining INTERACTIVE_TOKEN and S4U logon types with different user-identifier formats (COMPUTER\\User, SID, short username). The exact order of attempts depends on the implant's privilege context (SYSTEM, admin, or standard user); failures fall through to the next variant until one succeeds.",
+   "type": "paragraph",
+   "section": "Three scheduled tasks"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "Stub DLL drop",
+   "type": "heading",
+   "level": 3,
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "The deployed agent lives encrypted and compressed inside the EXE's own .rdata. FilelessPersist decrypts it on demand and writes the result to disk via (NtCreateFile + NtWriteFile).",
+   "type": "paragraph",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "Decryption is two stages:",
+   "type": "paragraph",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "XOR-decode a blob against a rotating 16-byte key at (decoded[i] = blob[i] ^ key[i & 0xF], with decoded[0] = 0x1E as a hard-coded first byte that primes the LZNT1 chunk header).",
+   "type": "list",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "RtlDecompressBuffer(COMPRESSION_FORMAT_LZNT1, ...) on the decoded buffer, which is a DLL (svcagent.dll).",
+   "type": "list",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "Drop paths in priority order, falling through on access errors:",
+   "type": "paragraph",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "%ProgramData%\\AssetMon\\svcagent.dll (primary)",
+   "type": "list",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "%APPDATA%\\AssetMon\\svcagent.dll",
+   "type": "list",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "%TEMP%\\svcagent.dll",
+   "type": "list",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "A redundant %ProgramData% \"sleeper\" copy at a separate path",
+   "type": "list",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "Analysts can reproduce the deployed DLL offline by reading the two regions above out of the EXE, applying the XOR loop, and feeding the result to RtlDecompressBuffer (or any LZNT1 implementation) as seen in the CyberChef screenshot below.",
+   "type": "paragraph",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "Cyberchef decrypting the DLL",
+   "type": "paragraph",
+   "section": "Stub DLL drop"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "DLL sideload migration",
+   "type": "heading",
+   "level": 3,
+   "section": "DLL sideload migration"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "A block inside SetupRegistryPE (logged with the MigrateSideload / MigrateLegacySideloads debug-string prefixes) enumerates running processes and their executable directories, hunting for diagcore.dll. When found, it overwrites the file with the current stub via CopyFileW.",
+   "type": "paragraph",
+   "section": "DLL sideload migration"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "Self-healing",
+   "type": "heading",
+   "level": 3,
+   "section": "Self-healing"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "Self-healing runs on iteration 2 of the C2 loop and every 10th iteration thereafter, gated on a deferred-persist flag being clear. The check order:",
+   "type": "paragraph",
+   "section": "Self-healing",
+   "line_group": "b223"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "Self healing start",
+   "type": "paragraph",
+   "section": "Self-healing",
+   "line_group": "b223"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "Registry-persistence check first. CheckRegistryPersistence runs at the top of the block. If it reports unhealthy, the implant immediately re-runs FilelessPersist (re-decrypts and re-drops the stub DLL) and InstallPersistence (re-registers the task triggers).",
+   "type": "list",
+   "section": "Self-healing"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "Task verification. SelfHealCheckTasks then verifies the three persistence tasks (DotNetSvcUpdateTask, DotNetSvcCoreTask, DotNetSvcUserTask) and reinstalls any that are missing. The boot task check is gated on SYSTEM-or-admin context; non-privileged callers skip it.",
+   "type": "list",
+   "section": "Self-healing"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "AV inventory refresh. DetectInstalledAV runs at the end to refresh the operator-visible AV product list.",
+   "type": "list",
+   "section": "Self-healing"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "The privilege gating matters for eviction. From a non-elevated context, the boot-task check is skipped, so the boot task is not inspected during cleanup. Full eviction requires removing all three tasks plus the registry artifact in one window from an elevated context.",
+   "type": "paragraph",
+   "section": "Self-healing"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "Beyond the iteration-based self-heal, the implant carries a deferred-persist mechanism keyed off a single flag. On heartbeat-success paths in C2Loop_Main, once the heartbeat-success counter exceeds one with the flag set, the implant re-runs FilelessPersist + InstallPersistence and clears the flag. This gives PHANTOMPULSE a second persistence-repair path that fires on a different trigger than the iteration-based self-heal.",
+   "type": "paragraph",
+   "section": "Self-healing"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "Collection",
+   "type": "heading",
+   "level": 2,
+   "section": "Collection"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "Inline keylogger with clipboard monitoring",
+   "type": "heading",
+   "level": 3,
+   "section": "Inline keylogger with clipboard monitoring"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "The keylogger runs inline in the C2 loop with no dedicated thread. It resolves APIs from user32.dll at runtime:",
+   "type": "paragraph",
+   "section": "Inline keylogger with clipboard monitoring"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "API | Purpose ¶ GetAsyncKeyState | Polling key state ¶ GetForegroundWindow | Active window detection ¶ GetWindowTextA | Window title capture ¶ MapVirtualKeyA / ToUnicode | Key translation ¶ GetClipboardSequenceNumber | Clipboard change detection ¶ OpenClipboard / GetClipboardData | Clipboard reading (CF_UNICODETEXT)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "GetAsyncKeyState",
+      "Polling key state"
+     ],
+     [
+      "GetForegroundWindow",
+      "Active window detection"
+     ],
+     [
+      "GetWindowTextA",
+      "Window title capture"
+     ],
+     [
+      "MapVirtualKeyA / ToUnicode",
+      "Key translation"
+     ],
+     [
+      "GetClipboardSequenceNumber",
+      "Clipboard change detection"
+     ],
+     [
+      "OpenClipboard / GetClipboardData",
+      "Clipboard reading (CF_UNICODETEXT)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "API",
+     "Purpose"
+    ]
+   },
+   "layout": "table",
+   "section": "Inline keylogger with clipboard monitoring"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Keylogger function",
+   "type": "paragraph",
+   "section": "Inline keylogger with clipboard monitoring"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "The log file is XOR-encrypted with the 0xE95CA237 seed. Uploads send only the delta to avoid retransmission.",
+   "type": "paragraph",
+   "section": "Inline keylogger with clipboard monitoring"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "Screenshot",
+   "type": "heading",
+   "level": 3,
+   "section": "Screenshot"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "Screenshots use GDI APIs resolved by hash. If desktop width exceeds 960 px, the image is downscaled before upload. The raw BMP is built in memory and uploaded with Content-Type: image/bmp. Triggered on-demand by the screenshot C2 command (hash 0x9A37F083).",
+   "type": "paragraph",
+   "section": "Screenshot"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Screenshot function",
+   "type": "paragraph",
+   "section": "Screenshot"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "System reconnaissance",
+   "type": "heading",
+   "level": 3,
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Recon data the implant gathers:",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "Data | Source ¶ CPU | Registry: ProcessorNameString ¶ GPU | Registry display adapter DriverDesc (filters \"Microsoft Basic\") ¶ RAM | GlobalMemoryStatusEx ¶ OS | RtlGetVersion with build-to-version mapping (Win7 through Win11, Server 2008 through Server 2025) ¶ Username | GetUserNameW with fallback to LookupAccountSidW from explorer.exe token ¶ Privilege | Token elevation type: user, admin, admin_nouac, system ¶ AV | DetectInstalledAV matches running processes against a hardcoded list of ~25–30 AV vendor process names ¶ Apps | DetectInstalledApps checks a curated 19-name targeted-app list ¶ Firewall state | Reads SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\{Domain,Standard,Public}Profile to record per-profile enabled state ¶ Services | Running-service count via service enumeration ¶ Machine ID | DJB2(module name) ^ volume serial ¶ Public IP | Multi-API HTTPS chain",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "CPU",
+      "Registry: ProcessorNameString"
+     ],
+     [
+      "GPU",
+      "Registry display adapter DriverDesc (filters \"Microsoft Basic\")"
+     ],
+     [
+      "RAM",
+      "GlobalMemoryStatusEx"
+     ],
+     [
+      "OS",
+      "RtlGetVersion with build-to-version mapping (Win7 through Win11, Server 2008 through Server 2025)"
+     ],
+     [
+      "Username",
+      "GetUserNameW with fallback to LookupAccountSidW from explorer.exe token"
+     ],
+     [
+      "Privilege",
+      "Token elevation type: user, admin, admin_nouac, system"
+     ],
+     [
+      "AV",
+      "DetectInstalledAV matches running processes against a hardcoded list of ~25–30 AV vendor process names"
+     ],
+     [
+      "Apps",
+      "DetectInstalledApps checks a curated 19-name targeted-app list"
+     ],
+     [
+      "Firewall state",
+      "Reads SYSTEM\\CurrentControlSet\\Services\\SharedAccess\\Parameters\\FirewallPolicy\\{Domain,Standard,Public}Profile to record per-profile enabled state"
+     ],
+     [
+      "Services",
+      "Running-service count via service enumeration"
+     ],
+     [
+      "Machine ID",
+      "DJB2(module name) ^ volume serial"
+     ],
+     [
+      "Public IP",
+      "Multi-API HTTPS chain"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Data",
+     "Source"
+    ]
+   },
+   "layout": "table",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "System reconnaissance",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "The AV-detection list is unusually broad, covering standard Western consumer AV products such as Defender, Norton, McAfee, Avast, AVG, Avira, Bitdefender, ESET, F-Secure, G Data, Kaspersky, Panda, Sophos, Trend Micro, VIPRE, Webroot, ZoneAlarm, Comodo along with EDR vendors (CrowdStrike, SentinelOne, Cylance, Malwarebytes, HitmanPro) are all covered. The implant also probes for AhnLab V3 (South Korean), Qihoo 360 / 360 Total Security and Tencent QQPC (Chinese), and K7 Computing (Indian). The Asian-AV inclusion is uncommon for Western-targeted commodity stealers and consistent with an implant designed for victims across multiple regional markets.",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "The implant also checks for a curated list of 19 high-value applications by name and flags matches in the heartbeat (App detection: found %d apps):",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "Category | Targets ¶ Cryptocurrency wallets | ledger, trezor, bitcoin-core, electrum, exodus, atomic, guarda ¶ Messengers | telegram, discord, signal, viber, slack, whatsapp ¶ Mail clients | thunderbird, outlook ¶ 2FA app | authy ¶ File transfer / SSH | filezilla, winscp ¶ Gaming | steam",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Cryptocurrency wallets",
+      "ledger, trezor, bitcoin-core, electrum, exodus, atomic, guarda"
+     ],
+     [
+      "Messengers",
+      "telegram, discord, signal, viber, slack, whatsapp"
+     ],
+     [
+      "Mail clients",
+      "thunderbird, outlook"
+     ],
+     [
+      "2FA app",
+      "authy"
+     ],
+     [
+      "File transfer / SSH",
+      "filezilla, winscp"
+     ],
+     [
+      "Gaming",
+      "steam"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Category",
+     "Targets"
+    ]
+   },
+   "layout": "table",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "The detection function (DetectInstalledApps) does not scan the registry or enumerate processes. It expands three environment-variable roots (%LOCALAPPDATA%, %APPDATA%, %ProgramFiles(x86)%), concatenates a hardcoded UTF-16 relative-path suffix per app (e.g. \\Telegram Desktop\\, \\Authy Desktop\\, \\Ledger Live\\, \\@trezor\\trezor-suite\\, \\Steam\\steam.exe), and calls GetFileAttributesW on each path. A non-error return means the app is installed, and the name is recorded in the heartbeat results buffer.",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "List of Targeted apps",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "PHANTOMPULSE itself does not extract data from any of these. The list is target reconnaissance for follow-on tasking. The operator sees in the heartbeat which high-value applications a given victim has and decides what specialized payload to push next via inject or drop.",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "No wallet, browser, messenger, or credential stealer functionality was identified in the analyzed sample; the targeting list is purely a presence-check feeding the operator's decision tree.",
+   "type": "paragraph",
+   "section": "System reconnaissance"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "Uninstall",
+   "type": "heading",
+   "level": 2,
+   "section": "Uninstall"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "A 6-step cleanup, triggered by the uninstall command, by \"status\":\"deleted\" in a heartbeat response, or by a kill flag in the registry:",
+   "type": "paragraph",
+   "section": "Uninstall"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "Step | Action ¶ 1/6 | Write kill flag to HKCU + HKLM, kill host process ¶ 2/6 | Remove all 3 scheduled tasks via COM + CreateProcessW fallback ¶ 3/6 | Remove legacy registry: NTLoad value, COM hijack keys, print monitor keys ¶ 4/6 | Delete stub DLLs, sleeper logs, registry PE blob, ProgramData directories ¶ 5/6 | Delete install path and self path from disk ¶ 6/6 | Terminate residual healthmon.exe and any rundll32.exe instances hosting svcagent.dll",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "1/6",
+      "Write kill flag to HKCU + HKLM, kill host process"
+     ],
+     [
+      "2/6",
+      "Remove all 3 scheduled tasks via COM + CreateProcessW fallback"
+     ],
+     [
+      "3/6",
+      "Remove legacy registry: NTLoad value, COM hijack keys, print monitor keys"
+     ],
+     [
+      "4/6",
+      "Delete stub DLLs, sleeper logs, registry PE blob, ProgramData directories"
+     ],
+     [
+      "5/6",
+      "Delete install path and self path from disk"
+     ],
+     [
+      "6/6",
+      "Terminate residual healthmon.exe and any rundll32.exe instances hosting svcagent.dll"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Step",
+     "Action"
+    ]
+   },
+   "layout": "table",
+   "section": "Uninstall"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "Step 3 reveals the legacy persistence techniques: cleanup logic for COM hijack and print monitor keys that this build never installs.",
+   "type": "paragraph",
+   "section": "Uninstall"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "Removing persistance through uninstall command",
+   "type": "paragraph",
+   "section": "Uninstall"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": "Attribution",
+   "type": "heading",
+   "level": 2,
+   "section": "Attribution"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "PHANTOMPULSE's tradecraft, targeting, and infrastructure choices align with the DPRK-aligned crypto-targeting intrusion clusters that include Lazarus, BlueNoroff, UNC5342 (Contagious Interview), and APT38. Multiple independent dimensions match recent public reporting on those clusters.",
+   "type": "paragraph",
+   "section": "Attribution"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "Signals aligning with DPRK reporting:",
+   "type": "paragraph",
+   "section": "Attribution"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "Blockchain-resolved C2 via transaction input fields matches the dead-drop-resolver pattern Mandiant attributes to UNC5342 (Contagious Interview) in DPRK Adopts EtherHiding. PHANTOMPULSE's specifics (wallet-byte XOR, multi-chain Blockscout) are not a 1:1 fingerprint, but the technique class is now DPRK-tagged.",
+   "type": "list",
+   "section": "Attribution"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "Desktop crypto-wallet enumeration set (ledger, trezor, bitcoin-core, electrum, exodus, atomic, guarda) closely matches Unit 42's RustDoor / Koi Stealer for macOS targeting list, which is DPRK-attributed.",
+   "type": "list",
+   "section": "Attribution"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "Cross-platform Windows + macOS implants for the same victim profile (the prior REF6598 post documented a macOS sibling with C2 at 0x666[.]info and a Telegram fallback at t[.]me/ax03bot) is a BlueNoroff signature.",
+   "type": "list",
+   "section": "Attribution"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "Telegram and messenger targeting is specifically a BlueNoroff specialty per Arctic Wolf BlueNoroff coverage.",
+   "type": "list",
+   "section": "Attribution"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "type": "heading",
+   "level": 2,
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "The XOR scheme used by the blockchain resolver leaks a stable 2-byte signature defenders can hunt against the entire chain, not just one wallet.",
+   "type": "paragraph",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": "Two facts combine: every C2 URL begins with ht (from http:// or https://), and the XOR key is the wallet's ASCII address verbatim, so its first two key bytes are always the literal characters 0 and x. XOR-ing ht against 0x yields \\x58 \\x0c. Every encrypted input field produced by a PHANTOMPULSE-style resolver, on any chain, signed by any related wallet, begins with the four hex characters 580c.",
+   "type": "paragraph",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "This converts the hunt from monitoring one wallet into sweeping the chain for the signature. Public Ethereum, Base, and Optimism transaction data is queryable via BigQuery, Dune, or full archive nodes. A query against the public Ethereum transactions dataset for input values starting with 0x580c, scoped to a recent block-timestamp window, surfaces previously-unknown resolver wallets used by the same codebase. Each match is validated by decoding with the sender wallet's ASCII address as the key: a real C2 URL begins with http after decoding. The following CyberChef recipe can be used to decrypt the C2 URL.",
+   "type": "paragraph",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": "SELECT",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "block_timestamp AS block_time,",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "from_address AS `from`,",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": "to_address AS `to`,",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "input AS data",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "FROM `bigquery-public-data.crypto_ethereum.transactions`",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": "WHERE block_timestamp >= '2026-04-01 00:00:00'",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "AND input LIKE '0x580c%'",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "ORDER BY block_timestamp DESC",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "LIMIT 10000;",
+   "type": "code",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature",
+   "line_group": "b266"
+  },
+  {
+   "id": "b276",
+   "page": null,
+   "text": "Bigquery on Etherium transactions",
+   "type": "paragraph",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b277",
+   "page": null,
+   "text": "CyberChef can decrypt the input data to reveal the domain, as shown in the screenshot below.",
+   "type": "paragraph",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b278",
+   "page": null,
+   "text": "Cyberchef to decrypt the C2",
+   "type": "paragraph",
+   "section": "Hunting for new C2 domains via the resolver wallet's known-plaintext signature"
+  },
+  {
+   "id": "b279",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b280",
+   "page": null,
+   "text": "PHANTOMPULSE is engineered from published components: module stomping, debug-API state machines, manual mapping, hardware-breakpoint AMSI/WLDP/ETW bypass, scheduled-task persistence, and blockchain C2. The combination and the hardening that ties it together point to a mature codebase under active development. The durable signals are behavioral and are covered by Elastic's behavioral protections for REF6598.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b281",
+   "page": null,
+   "text": "PHANTOMPULSE and MITRE ATT&CK",
+   "type": "heading",
+   "level": 2,
+   "section": "PHANTOMPULSE and MITRE ATT&CK"
+  },
+  {
+   "id": "b282",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that advanced persistent threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "PHANTOMPULSE and MITRE ATT&CK"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary's tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "Initial Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "Persistence",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "Privilege Escalation",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "Defense Evasion",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b290",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b291",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b292",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b293",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b295",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b297",
+   "page": null,
+   "text": "Phishing: Spearphishing via Service",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b298",
+   "page": null,
+   "text": "Command and Scripting Interpreter: PowerShell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "Process Injection",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b300",
+   "page": null,
+   "text": "Process Injection: DLL Injection",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b301",
+   "page": null,
+   "text": "System Binary Proxy Execution: Msiexec",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b302",
+   "page": null,
+   "text": "System Binary Proxy Execution: Rundll32",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "Scheduled Task/Job: Scheduled Task",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b304",
+   "page": null,
+   "text": "Boot or Logon Autostart Execution",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b305",
+   "page": null,
+   "text": "Modify Registry",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b306",
+   "page": null,
+   "text": "Impair Defenses: Disable or Modify Tools",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b307",
+   "page": null,
+   "text": "Indicator Removal: File Deletion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b308",
+   "page": null,
+   "text": "System Information Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b309",
+   "page": null,
+   "text": "System Owner/User Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b310",
+   "page": null,
+   "text": "Process Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b311",
+   "page": null,
+   "text": "Software Discovery: Security Software Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b312",
+   "page": null,
+   "text": "Input Capture: Keylogging",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b313",
+   "page": null,
+   "text": "Clipboard Data",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b314",
+   "page": null,
+   "text": "Screen Capture",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b315",
+   "page": null,
+   "text": "Exfiltration Over C2 Channel",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b316",
+   "page": null,
+   "text": "Application Layer Protocol: Web Protocols",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b317",
+   "page": null,
+   "text": "Web Service",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b318",
+   "page": null,
+   "text": "Encrypted Channel",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b319",
+   "page": null,
+   "text": "Obfuscated Files or Information",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b320",
+   "page": null,
+   "text": "Deobfuscate/Decode Files or Information",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b321",
+   "page": null,
+   "text": "Access Token Manipulation",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b322",
+   "page": null,
+   "text": "Abuse Elevation Control Mechanism: Bypass User Account Control",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b323",
+   "page": null,
+   "text": "Native API",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b324",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: Time Based Evasion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b325",
+   "page": null,
+   "text": "Hijack Execution Flow: DLL Side-Loading",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b326",
+   "page": null,
+   "text": "Reflective Code Loading",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b327",
+   "page": null,
+   "text": "Remediating",
+   "type": "heading",
+   "level": 2,
+   "section": "Remediating"
+  },
+  {
+   "id": "b328",
+   "page": null,
+   "text": "YARA",
+   "type": "heading",
+   "level": 3,
+   "section": "YARA"
+  },
+  {
+   "id": "b329",
+   "page": null,
+   "text": "Elastic Security has created YARA rules to identify this activity.",
+   "type": "paragraph",
+   "section": "YARA"
+  },
+  {
+   "id": "b330",
+   "page": null,
+   "text": "Windows.Trojan.PhantomPulse",
+   "type": "list",
+   "section": "YARA"
+  },
+  {
+   "id": "b331",
+   "page": null,
+   "text": "Observations",
+   "type": "heading",
+   "level": 2,
+   "section": "Observations"
+  },
+  {
+   "id": "b332",
+   "page": null,
+   "text": "Observable | Type | Name | Reference ¶ 33dacf9f854f636216e5062ca252df8e5bed652efd78b86512f5b868b11ee70f | SHA-256 | PHANTOMPULSE RAT | Final payload ¶ 70bbb38b70fd836d66e8166ec27be9aa8535b3876596fc80c45e3de4ce327980 | SHA-256 | syncobs.exe | PHANTOMPULL loader ¶ def66275fa3baffb16e6e4ae0297861d9790ae7161fbc271a2ba05d121f13c70 | SHA-256 | Go beacon | GTESTIC_WIN check-in ¶ panel.fefea22134[.]net | domain | C2 panel | PHANTOMPULSE hardcoded fallback ¶ fea22134[.]net | domain | C2 domain | Encrypted in binary ¶ 195.3.222[.]251 | ipv4-addr | Staging server | PowerShell/loader delivery ¶ 0xc117688c530b660e15085bF3A2B664117d8672aA | crypto-wallet | Blockchain C2 wallet | ETH/Base/Optimism ¶ 0x38796B8479fDAE0A72e5E7e326c87a637D0Cbc0E | crypto-wallet | Funding wallet | C2 resolution funding ¶ eth.blockscout[.]com | domain | Blockchain provider | C2 URL resolution ¶ base.blockscout[.]com | domain | Blockchain provider | C2 URL resolution ¶ optimism.blockscout[.]com | domain | Blockchain provider | C2 URL resolution ¶ hVNBUORXNiFLhYYh | mutex | Single instance | XOR-decrypted ¶ svcagent.dll | file-name | Stub DLL | Persistence payload ¶ AssetMon | directory | Stub DLL directory | %ProgramData% or %APPDATA% ¶ healthmon.exe | file-name | Dropper | Original executable name ¶ diagcore.dll | file-name | Legacy sideload DLL | Migrated by MigrateSideload ¶ .elevate | file-name | Elevation marker | Routes the elevated relaunch ¶ DotNetSvcUpdateTask | scheduled-task | Primary persistence | 3-min interval ¶ DotNetSvcCoreTask | scheduled-task | SYSTEM persistence | 15-min, hidden ¶ DotNetSvcUserTask | scheduled-task | User persistence | Logon trigger ¶ EdgeWebViewUpdateTask | scheduled-task | Legacy task | Cleaned during uninstall ¶ \\Microsoft\\Windows\\NetFramework\\DotNetSvcCoreTask | task-uri | Boot task path | Hidden scheduled task ¶ Elevation:Administrator!new:{A6BFEA43-501F-456F-A845-983D3AD7B8F0} | com-moniker | UAC bypass | Elevated ITaskService ¶ 0x666[.]info | domain | macOS C2 | macOS dropper ¶ t[.]me/ax03bot | url | Telegram fallback | macOS C2 dead-drop ¶ thoroughly-publisher-troy-clara[.]trycloudflare[.]com | domain | Prior C2 | Cloudflare Tunnel",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "33dacf9f854f636216e5062ca252df8e5bed652efd78b86512f5b868b11ee70f",
+      "SHA-256",
+      "PHANTOMPULSE RAT",
+      "Final payload"
+     ],
+     [
+      "70bbb38b70fd836d66e8166ec27be9aa8535b3876596fc80c45e3de4ce327980",
+      "SHA-256",
+      "syncobs.exe",
+      "PHANTOMPULL loader"
+     ],
+     [
+      "def66275fa3baffb16e6e4ae0297861d9790ae7161fbc271a2ba05d121f13c70",
+      "SHA-256",
+      "Go beacon",
+      "GTESTIC_WIN check-in"
+     ],
+     [
+      "panel.fefea22134[.]net",
+      "domain",
+      "C2 panel",
+      "PHANTOMPULSE hardcoded fallback"
+     ],
+     [
+      "fea22134[.]net",
+      "domain",
+      "C2 domain",
+      "Encrypted in binary"
+     ],
+     [
+      "195.3.222[.]251",
+      "ipv4-addr",
+      "Staging server",
+      "PowerShell/loader delivery"
+     ],
+     [
+      "0xc117688c530b660e15085bF3A2B664117d8672aA",
+      "crypto-wallet",
+      "Blockchain C2 wallet",
+      "ETH/Base/Optimism"
+     ],
+     [
+      "0x38796B8479fDAE0A72e5E7e326c87a637D0Cbc0E",
+      "crypto-wallet",
+      "Funding wallet",
+      "C2 resolution funding"
+     ],
+     [
+      "eth.blockscout[.]com",
+      "domain",
+      "Blockchain provider",
+      "C2 URL resolution"
+     ],
+     [
+      "base.blockscout[.]com",
+      "domain",
+      "Blockchain provider",
+      "C2 URL resolution"
+     ],
+     [
+      "optimism.blockscout[.]com",
+      "domain",
+      "Blockchain provider",
+      "C2 URL resolution"
+     ],
+     [
+      "hVNBUORXNiFLhYYh",
+      "mutex",
+      "Single instance",
+      "XOR-decrypted"
+     ],
+     [
+      "svcagent.dll",
+      "file-name",
+      "Stub DLL",
+      "Persistence payload"
+     ],
+     [
+      "AssetMon",
+      "directory",
+      "Stub DLL directory",
+      "%ProgramData% or %APPDATA%"
+     ],
+     [
+      "healthmon.exe",
+      "file-name",
+      "Dropper",
+      "Original executable name"
+     ],
+     [
+      "diagcore.dll",
+      "file-name",
+      "Legacy sideload DLL",
+      "Migrated by MigrateSideload"
+     ],
+     [
+      ".elevate",
+      "file-name",
+      "Elevation marker",
+      "Routes the elevated relaunch"
+     ],
+     [
+      "DotNetSvcUpdateTask",
+      "scheduled-task",
+      "Primary persistence",
+      "3-min interval"
+     ],
+     [
+      "DotNetSvcCoreTask",
+      "scheduled-task",
+      "SYSTEM persistence",
+      "15-min, hidden"
+     ],
+     [
+      "DotNetSvcUserTask",
+      "scheduled-task",
+      "User persistence",
+      "Logon trigger"
+     ],
+     [
+      "EdgeWebViewUpdateTask",
+      "scheduled-task",
+      "Legacy task",
+      "Cleaned during uninstall"
+     ],
+     [
+      "\\Microsoft\\Windows\\NetFramework\\DotNetSvcCoreTask",
+      "task-uri",
+      "Boot task path",
+      "Hidden scheduled task"
+     ],
+     [
+      "Elevation:Administrator!new:{A6BFEA43-501F-456F-A845-983D3AD7B8F0}",
+      "com-moniker",
+      "UAC bypass",
+      "Elevated ITaskService"
+     ],
+     [
+      "0x666[.]info",
+      "domain",
+      "macOS C2",
+      "macOS dropper"
+     ],
+     [
+      "t[.]me/ax03bot",
+      "url",
+      "Telegram fallback",
+      "macOS C2 dead-drop"
+     ],
+     [
+      "thoroughly-publisher-troy-clara[.]trycloudflare[.]com",
+      "domain",
+      "Prior C2",
+      "Cloudflare Tunnel"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Observable",
+     "Type",
+     "Name",
+     "Reference"
+    ]
+   },
+   "layout": "table",
+   "section": "Observations"
+  },
+  {
+   "id": "b333",
+   "page": null,
+   "text": "References",
+   "type": "heading",
+   "level": 2,
+   "section": "References"
+  },
+  {
+   "id": "b334",
+   "page": null,
+   "text": "Prior reporting and toolkits referenced in this analysis:",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b335",
+   "page": null,
+   "text": "Phantom in the vault: Obsidian abused to deliver PhantomPulse RAT",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b336",
+   "page": null,
+   "text": "Blockscout Ethereum Explorer",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b337",
+   "page": null,
+   "text": "DPRK Adopts EtherHiding",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b338",
+   "page": null,
+   "text": "Contagious Interview / fake-recruiter targeting of crypto-sector developers",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b339",
+   "page": null,
+   "text": "RustDoor and Koi Stealer for macOS",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b340",
+   "page": null,
+   "text": "BeaverTail and OtterCookie evolution",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b341",
+   "page": null,
+   "text": "DbgNexum proof-of-concept",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b342",
+   "page": null,
+   "text": "UACME issue #129: schuac UAC bypass",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b343",
+   "page": null,
+   "text": "Exploring Windows UAC Bypasses",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b344",
+   "page": null,
+   "text": "Memory Patching AMSI Bypass",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b345",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b346",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b347",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b348",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b349",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b350",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b351",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b352",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b353",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b354",
+   "page": null,
+   "text": "Malware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b355",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "heading",
+   "level": 3,
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b356",
+   "page": null,
+   "text": "September 14, 2026",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b357",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b358",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b359",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b360",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b361",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b362",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b363",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b364",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b365",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b366",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b367",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b368",
+   "page": null,
+   "text": "July 16, 2026",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b369",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b370",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b371",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b372",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "heading",
+   "level": 3,
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b373",
+   "page": null,
+   "text": "July 08, 2026",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b374",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b375",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b376",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b377",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

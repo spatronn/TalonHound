@@ -1,0 +1,1959 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.sentinelone.com/labs/dont-call-us-well-call-your-apis-tradertraitor-backdoors-resurface-on-victim-with-no-crypto-ties/",
+  "source_host": "www.sentinelone.com",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties | SentinelOne",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "LABScon",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "16 min read",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Updated Sep 21, 2026",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties",
+   "type": "heading",
+   "level": 1,
+   "section": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "North Korean operators built a foothold on a DevOps engineer's Mac in a campaign whose job interview lures deliver malware via Terraform lock files.",
+   "type": "paragraph",
+   "section": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "By",
+   "type": "paragraph",
+   "section": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Albert Priego",
+   "type": "paragraph",
+   "section": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "& Alex Delamotte",
+   "type": "paragraph",
+   "section": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "& Matej Havranek",
+   "type": "paragraph",
+   "section": "Don’t Call Us, We’ll Call Your APIs | TraderTraitor Backdoors Resurface on Victim With No Crypto Ties"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Executive Summary",
+   "type": "heading",
+   "level": 2,
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Following disclosure of the TraderTraitor attack against LayerZero Labs in April 2026, SentinelOne identified an additional victim with the same macOS backdoors.",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Our analysis explores the mechanics of these backdoors and the expanded targeting against a victim in the IT services sector with no relationship to cryptocurrency trading.",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "We also identified more weaponized GitHub repositories from the social engineering schemes used to target job seekers in these campaigns.",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "This report expands on how Terraform lock files enable the delivery of malware from custom Terraform provider registries controlled by the attackers.",
+   "type": "list",
+   "section": "Executive Summary"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Overview",
+   "type": "heading",
+   "level": 2,
+   "section": "Overview"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Throughout 2026, the financially motivated DPRK state-sponsored Lazarus subgroup TraderTraitor (aka UNC4899, PUKCHONG, Jade Sleet) has engaged in campaigns targeting entities involved in cryptocurrency trading, including a high-profile attack disclosed in April where USD 292 million was stolen from KelpDAO through a compromise of LayerZero.",
+   "type": "paragraph",
+   "section": "Overview"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "KelpDAO is a decentralized finance (DeFi) protocol that supports restaking Ethereum; LayerZero Labs provides services with the capability to exchange cryptocurrency across different blockchain platforms.",
+   "type": "paragraph",
+   "section": "Overview"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "TraderTraitor compromised LayerZero Labs and determined methods to create a fake cryptocurrency minting event, which the attacker combined with a DDoS against validation servers so that compromised servers would approve an illegitimate mint event, leading to the massive theft.",
+   "type": "paragraph",
+   "section": "Overview"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Following the public disclosure of this breach, SentinelOne identified an additional victim infected with the macOS backdoors, FLATROOF (aka macOS.Gaslight) and ROOFDECK, which were first observed in the LayerZero Labs attack.",
+   "type": "paragraph",
+   "section": "Overview"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Unlike the previous high-profile victim, this target was a much smaller organization in the IT services industry. Our investigation revealed insights into what happens when this threat actor compromises a smaller organization that we believe ultimately yielded insufficient value to sustain the intrusion.",
+   "type": "paragraph",
+   "section": "Overview"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Weaponized Terraform Coding Projects",
+   "type": "heading",
+   "level": 2,
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Each campaign related to this wave of activity uses social engineering via fake job interview lures, a traditional Contagious Interview approach common among DPRK actors. The attacker makes contact with job seekers from the company that is ultimately compromised; the GitHub profile of each targeted job seeker we identified falls into DevOps or cryptocurrency/FinTech engineering projects.",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "The GitHub repository themes for coding project lures are designed as infrastructure engineering projects related to the company that the DPRK actors are posing as. By pivoting from the gtn-candidate-repo repository shared by LayerZero Labs in their incident report, we identified additional lures, which included references to the companies Northwind and Novacart.",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "It is unclear if these were fabricated companies used by the threat actor, or if they were posing as hiring teams from real companies with these names; one Northwind example describes it as an ecommerce company launching in the near future. Other repository names that we identified include:",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Northwind-IAC",
+   "type": "list",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "novacart-interview",
+   "type": "list",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "terraform-candidate-repo",
+   "type": "list",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Interview task from a GitHub repository containing a weaponized .terraform.lock.hcl file",
+   "type": "caption",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "The repositories contain a weaponized .terraform.lock.hcl file in the coding project with a custom provider that points to a domain controlled by the attacker. We identified three malicious provider domains across multiple repositories:",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "registry.hashicorp-aws[.]com",
+   "type": "code",
+   "section": "Weaponized Terraform Coding Projects",
+   "line_group": "b030"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "registry.hashicorp-aws[.]io",
+   "type": "code",
+   "section": "Weaponized Terraform Coding Projects",
+   "line_group": "b030"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "registry.hashicorp-terraform[.]io",
+   "type": "code",
+   "section": "Weaponized Terraform Coding Projects",
+   "line_group": "b030"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "When the victim runs terraform init with the weaponized lockfile in place, Terraform treats the custom provider as the source of truth, resulting in Terraform downloading and executing the malicious provider modules.",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Developer awareness can lead to friction against this type of attack: in one repository, the candidate being interviewed added a note saying that they removed a typosquatted provider from the project’s original lock file, which may suggest they thought the interviewer was testing for their security awareness.",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Weaponized .terraform.lock.hcl file using a typosquatted provider domain in the weaponized GitHub repository",
+   "type": "caption",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "According to the LayerZero Labs report, the attackers installed the FLATROOF and ROOFDECK macOS backdoors after an employee installed a weaponized interview coding project on their company workstation. TraderTraitor used the backdoors to collect API keys from the organization and to escalate privileges to expand into the victim’s Amazon Web Services and Google Cloud Platform environments.",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "While we lack insight into many of the subsequent infections resulting from the GitHub repositories we located, SentinelOne identified an unrelated victim by hunting through our telemetry for the macOS backdoors observed in the LayerZero Labs attack.",
+   "type": "paragraph",
+   "section": "Weaponized Terraform Coding Projects"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Additional Victim",
+   "type": "heading",
+   "level": 2,
+   "section": "Additional Victim"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "The Victim",
+   "type": "heading",
+   "level": 3,
+   "section": "The Victim"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "The affected organization is an IT services provider based in India and unaffiliated with cryptocurrency. One endpoint was involved: an Apple Silicon MacBook belonging to a DevOps engineer. The engineer ran Terraform and Ansible against AWS, OVH and OpenStack on most working days, and the machine held cloud credentials and source control access: much like LayerZero Labs’ “Developer1”. Individuals whose social media profile advertises infrastructure or DevOps work are candidates for this type of attack, and the value of the target is whatever their laptop can reach.",
+   "type": "paragraph",
+   "section": "The Victim"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Infection Timeline",
+   "type": "heading",
+   "level": 3,
+   "section": "Infection Timeline"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "According to our telemetry on this host, both backdoors were on disk as far back as March 18, so we cannot prove how they were delivered. They remained dormant until March 29, when beaconing and host activity began.",
+   "type": "paragraph",
+   "section": "Infection Timeline"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Timestamp (UTC) | Activity | Detail / evidence ¶ 2026-03-18 | FLATROOF + ROOFDECK presence | FLATROOF and ROOFDECK hashes found on the victim machine according to telemetry data ¶ 2026-03-25 to 2026-03-28 | Dormant phase | Cursor in active daily use. No malicious activity seen. ¶ 2026-03-29 05:00:41 | Workspace open | Developer opens ~/DevOps-Automation/cloudshield in Cursor ¶ 2026-03-29 05:00:46 | Shells spawn | Cursor integrated terminal spawns login shells (zsh -l) + Node hosts ¶ 2026-03-29 05:00:53 | First Observed Execution | Cursor launches both implants: nohup …/SystemUpdate –type=renderer and nohup …/iSync –type=renderer ¶ 2026-03-29 05:00:55 | C2 connection | SystemUpdate => technicais (176[.]97.114.232), iSync => hubpage (45[.]11.59.140), Telegram at 05:00:58 ¶ 2026-03-29 05:00:58 | Implant re-arm | xattr -rd com.apple.quarantine + chmod +x on iSync (GatekeeperBypass) ¶ 2026-03-30 to 2026-04-19 | Steady beaconing | Gated on Cursor sessions; FLATROOF/ROOFDECK beacon only while Cursor runs (quiet when Cursor is off) ¶ 2026-04-13 | GitHub lure | Developer clones terraform-candidate-repo via GitHub Desktop ¶ 2026-04-14 18:25 | Implant re-arm | FLATROOF re-arms ROOFDECK (re-strips quarantine, chmod +x) ¶ 2026-04-20 08:48:59 | Stage 3 staging | ROOFDECK stages from 85[.]137.56.10, retrieves 3rd-stage loginwindow (one day after LayerZero Labs’ public statement) ¶ 2026-04-20 08:49:38 | Stage 3 C2 connection | loginwindow online => grenight[.]com (85[.]137.56.245) ¶ 2026-04-20 13:15:11 | Anti-forensics | loginwindow deletes both original implants (rm -f) ¶ 2026-05-03 to 2026-06-01 | Stage 3 resumes | loginwindow keeps beaconing to grenight[.]com (85[.]137.56.245) ¶ 2026-06-01 06:08 | Last observed C2 | Final loginwindow beacon to grenight[.]com in the collected telemetry",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Timestamp (UTC)",
+      "Activity",
+      "Detail / evidence"
+     ],
+     [
+      "2026-03-18",
+      "FLATROOF + ROOFDECK presence",
+      "FLATROOF and ROOFDECK hashes found on the victim machine according to telemetry data"
+     ],
+     [
+      "2026-03-25 to 2026-03-28",
+      "Dormant phase",
+      "Cursor in active daily use. No malicious activity seen."
+     ],
+     [
+      "2026-03-29 05:00:41",
+      "Workspace open",
+      "Developer opens ~/DevOps-Automation/cloudshield in Cursor"
+     ],
+     [
+      "2026-03-29 05:00:46",
+      "Shells spawn",
+      "Cursor integrated terminal spawns login shells (zsh -l) + Node hosts"
+     ],
+     [
+      "2026-03-29 05:00:53",
+      "First Observed Execution",
+      "Cursor launches both implants: nohup …/SystemUpdate –type=renderer and nohup …/iSync –type=renderer"
+     ],
+     [
+      "2026-03-29 05:00:55",
+      "C2 connection",
+      "SystemUpdate => technicais (176[.]97.114.232), iSync => hubpage (45[.]11.59.140), Telegram at 05:00:58"
+     ],
+     [
+      "2026-03-29 05:00:58",
+      "Implant re-arm",
+      "xattr -rd com.apple.quarantine + chmod +x on iSync (GatekeeperBypass)"
+     ],
+     [
+      "2026-03-30 to 2026-04-19",
+      "Steady beaconing",
+      "Gated on Cursor sessions; FLATROOF/ROOFDECK beacon only while Cursor runs (quiet when Cursor is off)"
+     ],
+     [
+      "2026-04-13",
+      "GitHub lure",
+      "Developer clones terraform-candidate-repo via GitHub Desktop"
+     ],
+     [
+      "2026-04-14 18:25",
+      "Implant re-arm",
+      "FLATROOF re-arms ROOFDECK (re-strips quarantine, chmod +x)"
+     ],
+     [
+      "2026-04-20 08:48:59",
+      "Stage 3 staging",
+      "ROOFDECK stages from 85[.]137.56.10, retrieves 3rd-stage loginwindow (one day after LayerZero Labs’ public statement)"
+     ],
+     [
+      "2026-04-20 08:49:38",
+      "Stage 3 C2 connection",
+      "loginwindow online => grenight[.]com (85[.]137.56.245)"
+     ],
+     [
+      "2026-04-20 13:15:11",
+      "Anti-forensics",
+      "loginwindow deletes both original implants (rm -f)"
+     ],
+     [
+      "2026-05-03 to 2026-06-01",
+      "Stage 3 resumes",
+      "loginwindow keeps beaconing to grenight[.]com (85[.]137.56.245)"
+     ],
+     [
+      "2026-06-01 06:08",
+      "Last observed C2",
+      "Final loginwindow beacon to grenight[.]com in the collected telemetry"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Infection Timeline"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "The implants were first launched by Cursor on March 29, seconds after the cloudshield workspace was opened.",
+   "type": "paragraph",
+   "section": "Infection Timeline"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "Timestamp (UTC) | Activity Type | Detail ¶ 2026-03-29 05:00:41 | Process Creation | Cursor Helper (node), first reference to the cloudshield workspace ¶ 2026-03-29 05:00:45 | File Creation | ~/.cursor/projects/…-cloudshield/terminals/1.txt (integrated terminal) ¶ 2026-03-29 05:00:46 | Process Creation | bash –init-file …/shellIntegration-bash.sh ¶ 2026-03-29 05:00:47 | Process Creation | zsh -l (login shell => sources ~/.zshrc/.zprofile) ¶ 2026-03-29 05:00:53 | Process Creation | Cursor (parent launchd) => nohup …/com.apple.iTunesCloud/SystemUpdate –type=renderer ¶ 2026-03-29 05:00:53 | Process Creation | Cursor (parent launchd) => nohup …/com.apple.internal.ck/iSync –type=renderer",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Timestamp (UTC)",
+      "Activity Type",
+      "Detail"
+     ],
+     [
+      "2026-03-29 05:00:41",
+      "Process Creation",
+      "Cursor Helper (node), first reference to the cloudshield workspace"
+     ],
+     [
+      "2026-03-29 05:00:45",
+      "File Creation",
+      "~/.cursor/projects/…-cloudshield/terminals/1.txt (integrated terminal)"
+     ],
+     [
+      "2026-03-29 05:00:46",
+      "Process Creation",
+      "bash –init-file …/shellIntegration-bash.sh"
+     ],
+     [
+      "2026-03-29 05:00:47",
+      "Process Creation",
+      "zsh -l (login shell => sources ~/.zshrc/.zprofile)"
+     ],
+     [
+      "2026-03-29 05:00:53",
+      "Process Creation",
+      "Cursor (parent launchd) => nohup …/com.apple.iTunesCloud/SystemUpdate –type=renderer"
+     ],
+     [
+      "2026-03-29 05:00:53",
+      "Process Creation",
+      "Cursor (parent launchd) => nohup …/com.apple.internal.ck/iSync –type=renderer"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Infection Timeline"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "macOS Malware",
+   "type": "heading",
+   "level": 2,
+   "section": "macOS Malware"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "We observed two malware families being deployed in the compromise, identical to the ones described in the LayerZero Labs attack, named FLATROOF and ROOFDECK (by LayerZero Labs and Mandiant). Both are ARM64 backdoors for macOS written in Rust.",
+   "type": "paragraph",
+   "section": "macOS Malware"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "FLATROOF",
+   "type": "heading",
+   "level": 3,
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "We observed the FLATROOF backdoor deployed under the name SystemUpdate to ~/Library/com.apple.iTunesCloud/SystemUpdate. It is likely intended for initial data collection from the victim machine and to deploy secondary payloads.",
+   "type": "paragraph",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Immediately after starting, FLATROOF suppresses Gatekeeper by removing the com.apple.quarantine attribute from ROOFDECK and sets the executable bit on it; the second implant runs with no signature check and no user prompt.",
+   "type": "paragraph",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "xattr -rd com.apple.quarantine .../com.apple.internal.ck/iSync",
+   "type": "code",
+   "section": "FLATROOF",
+   "line_group": "b051"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "chmod +x .../com.apple.internal.ck/iSync",
+   "type": "code",
+   "section": "FLATROOF",
+   "line_group": "b051"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "A detailed analysis of FLATROOF (aka macOS.Gaslight) was published by SentinelLABS in June 2026. Here, we present a short summary of the backdoor’s capabilities as denoted by its supported C2 commands:",
+   "type": "paragraph",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Verb | Function ¶ help | Show command help ¶ id | Identify the implant to the operator ¶ shell | Execute a shell command via execvp, with posix_spawnp available as an alternative spawn path ¶ kill | Terminate a target process by PID ¶ upload | Exfiltrate a file via the Telegram file-attach mechanism ¶ stop | Halt the implant",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Verb",
+      "Function"
+     ],
+     [
+      "help",
+      "Show command help"
+     ],
+     [
+      "id",
+      "Identify the implant to the operator"
+     ],
+     [
+      "shell",
+      "Execute a shell command via execvp, with posix_spawnp available as an alternative spawn path"
+     ],
+     [
+      "kill",
+      "Terminate a target process by PID"
+     ],
+     [
+      "upload",
+      "Exfiltrate a file via the Telegram file-attach mechanism"
+     ],
+     [
+      "stop",
+      "Halt the implant"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "The backdoor also carries a data-harvesting Python module, used to gather the following data and exfiltrate them over Telegram using a built-in Telegram bot token:",
+   "type": "paragraph",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Chrome, Brave, Firefox, and Safari browser data",
+   "type": "list",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Terminal command histories",
+   "type": "list",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Installed application listings",
+   "type": "list",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "A running-process snapshot via ps aux",
+   "type": "list",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "System hardware and software profile via system_profiler",
+   "type": "list",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "A raw copy of login.keychain-db",
+   "type": "list",
+   "section": "FLATROOF"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "ROOFDECK",
+   "type": "heading",
+   "level": 3,
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "ROOFDECK acts as a more sophisticated backdoor with broader reconnaissance and lateral movement capabilities. We observed it dropped under the name iSync to ~/Library/com.apple.internal.ck/iSync.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "It is clear from the design of the implant that it is intended to be used as an additional deployment after initial foothold and control are established, since it needs a pre-existing configuration file containing at minimum a Nostr public key of an attacker-controlled profile to allow it to connect to its C2 server for the first time.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "ROOFDECK uses a local configuration file ~/.config/.repl_history to store C2 URLs and keys and to set beaconing behavior.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Field | Type | Meaning ¶ server_url | string | Resolved/overridden C2 URL (blank until dead-drop resolution) ¶ connection_type | string http|ws | Transport selector (HTTPS /app_version vs pipe-airway WebSocket) ¶ nostr_public_keys | array of strings | Operator Nostr identity pubkey(s) used for the dead-drop lookup ¶ recovery_url | string | Fallback/recovery endpoint (bootstrap if primary C2 is lost) ¶ pastebin_key | string | Key/paste id for a Pastebin-style dead-drop (secondary resolver) ¶ rsa_private_key | string | An RSA private key provisioned into the agent ¶ config_path_macos | string | Relative path override for the config location on macOS ¶ interval | integer (seconds) | Beacon/poll interval",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Field",
+      "Type",
+      "Meaning"
+     ],
+     [
+      "server_url",
+      "string",
+      "Resolved/overridden C2 URL (blank until dead-drop resolution)"
+     ],
+     [
+      "connection_type",
+      "string http|ws",
+      "Transport selector (HTTPS /app_version vs pipe-airway WebSocket)"
+     ],
+     [
+      "nostr_public_keys",
+      "array of strings",
+      "Operator Nostr identity pubkey(s) used for the dead-drop lookup"
+     ],
+     [
+      "recovery_url",
+      "string",
+      "Fallback/recovery endpoint (bootstrap if primary C2 is lost)"
+     ],
+     [
+      "pastebin_key",
+      "string",
+      "Key/paste id for a Pastebin-style dead-drop (secondary resolver)"
+     ],
+     [
+      "rsa_private_key",
+      "string",
+      "An RSA private key provisioned into the agent"
+     ],
+     [
+      "config_path_macos",
+      "string",
+      "Relative path override for the config location on macOS"
+     ],
+     [
+      "interval",
+      "integer (seconds)",
+      "Beacon/poll interval"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Upon first execution, it pulls live Nostr relays from api.nostr[.]watch/v1/online and combines them with a hardcoded relay list belonging to legitimate Nostr services, then searches the relays for an operator’s profile on the Nostr network based on a public profile key given in the configuration file nostr_public_keys. When found, it reads the website field of the profile and uses that as its C2 URL. TraderTraitor has previously used Nostr.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "The following is a list of Nostr relays used for operator profile discovery:",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "wss://relay.damus[.]io",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "wss://nos[.]lol",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "wss://nostr[.]mom",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "wss://relay.snort[.]social",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "wss://offchain[.]pub",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "wss://relay.nostr[.]band",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "wss://nostr.oxtr[.]dev",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "wss://nostr[.]wine",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b069"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "Persistence was achieved via a plist entry ~/Library/LaunchAgents/loginwindow.plist, with a dynamically specified application identifier string. It uses a hardcoded --type=renderer parameter to make the implant process appear legitimate.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Plist used for persistence, <IDENTIFIER> and <EXECUTABLE_PATH> are inserted at runtime",
+   "type": "caption",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "ROOFDECK supports a wide variety of C2 commands for managing the implant, performing reconnaissance, exfiltrating data and executing attacker code. The C2 endpoint is hardcoded as /app_version. Polling for commands is done via HTTPS with a custom pinned TLS certificate embedded in the implant, shown below.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Interestingly, the malware author used default metadata settings with mkcert, which exposed that they are running on a Linux QEMU-based VM using the username ub. We identified multiple domains using a certificate containing this certificate CN (listed in the Indicators of Compromise section).",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "Subject = Issuer (self-signed):",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "O = mkcert development CA",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "OU = ub@ub-Standard-PC-Q35-ICH9-2009",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "CN = mkcert ub@ub-Standard-PC-Q35-ICH9-2009",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Serial: 1CD6D13FF15ADBF7A42025D10EC99B4A",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "Key: RSA 3072-bit",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "Validity: 2025-06-20 11:06:53 UTC -> 2035-06-20 11:06:53 UTC (10-year mkcert default)",
+   "type": "code",
+   "section": "ROOFDECK",
+   "line_group": "b081"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "ROOFDECK commands are signed with the operator’s private key and their integrity is verified using an embedded public key before execution. The command functionalities are separated into distinct handlers in the source code. The implant re-implements many common shell commands related to directory and file operations, another tactic often used in more sophisticated North Korea-aligned toolsets, including Lazarus’ LightlessCan.",
+   "type": "paragraph",
+   "section": "ROOFDECK"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "Session & Control",
+   "type": "heading",
+   "level": 3,
+   "section": "Session & Control"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Command | Handler | Description / interesting elements ¶ session | — | Manages the C2 session lifecycle (agent registration/keying, connect, tasking loop). ¶ config | modules/config.rs | config <key> — sets runtime config live and persists to the configuration file. Lets the operator re-point C2/transport after deployment. ¶ sleep | — | sleep [-r] <seconds> — sleeps N seconds or for a random interval (-r) ¶ tasks | modules/task.rs | Manages background tasks (ongoing command executions), listing and canceling them. Task states: PENDING/RUNNING/COMPLETED/FAILED/DOWNLOADING/UPLOADING. ¶ app_version | — | Pulls signed+encrypted commands from the HTTPS /app_version endpoint; RSA-2048-verified before an EncryptedCommand is decrypted into an AgentCommand. Doubles as version/update check and a fallback tasking channel. ¶ persist | — | persist <add|remove|check>. add installs the ~/Library/LaunchAgents/<com.*>.plist (Chrome-renderer masquerade, RunAtLoad); remove deletes it; check reports Is enabled: <bool>. ¶ update | — | update <url> — downloads a new binary and self-updates. ¶ destroy | modules/recovery.rs | Self-destruct — uninstalls persistence, config and binary (guarded by a yes confirmation token).",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Command",
+      "Handler",
+      "Description / interesting elements"
+     ],
+     [
+      "session",
+      "—",
+      "Manages the C2 session lifecycle (agent registration/keying, connect, tasking loop)."
+     ],
+     [
+      "config",
+      "modules/config.rs",
+      "config <key> — sets runtime config live and persists to the configuration file. Lets the operator re-point C2/transport after deployment."
+     ],
+     [
+      "sleep",
+      "—",
+      "sleep [-r] <seconds> — sleeps N seconds or for a random interval (-r)"
+     ],
+     [
+      "tasks",
+      "modules/task.rs",
+      "Manages background tasks (ongoing command executions), listing and canceling them. Task states: PENDING/RUNNING/COMPLETED/FAILED/DOWNLOADING/UPLOADING."
+     ],
+     [
+      "app_version",
+      "—",
+      "Pulls signed+encrypted commands from the HTTPS /app_version endpoint; RSA-2048-verified before an EncryptedCommand is decrypted into an AgentCommand. Doubles as version/update check and a fallback tasking channel."
+     ],
+     [
+      "persist",
+      "—",
+      "persist <add|remove|check>. add installs the ~/Library/LaunchAgents/<com.*>.plist (Chrome-renderer masquerade, RunAtLoad); remove deletes it; check reports Is enabled: <bool>."
+     ],
+     [
+      "update",
+      "—",
+      "update <url> — downloads a new binary and self-updates."
+     ],
+     [
+      "destroy",
+      "modules/recovery.rs",
+      "Self-destruct — uninstalls persistence, config and binary (guarded by a yes confirmation token)."
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Session & Control"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Execution",
+   "type": "heading",
+   "level": 3,
+   "section": "Execution"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Command | Handler | Description / interesting elements ¶ run | handlers/run.rs | run <command> [background] — spawns an arbitrary program (native posix_spawnp/execvp), returns output; supports a background mode (long-running task tracked via tasks). ¶ shell | handlers/shell.rs | Interactive shell via a PTY (openpty), streamed over the C2 transport. ¶ rssh | handlers/rssh.rs | Reverse shell — starts/stops a stateful reverse shell back to the operator. ¶ kill | handlers/kill.rs | Terminates a process by PID.",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Command",
+      "Handler",
+      "Description / interesting elements"
+     ],
+     [
+      "run",
+      "handlers/run.rs",
+      "run <command> [background] — spawns an arbitrary program (native posix_spawnp/execvp), returns output; supports a background mode (long-running task tracked via tasks)."
+     ],
+     [
+      "shell",
+      "handlers/shell.rs",
+      "Interactive shell via a PTY (openpty), streamed over the C2 transport."
+     ],
+     [
+      "rssh",
+      "handlers/rssh.rs",
+      "Reverse shell — starts/stops a stateful reverse shell back to the operator."
+     ],
+     [
+      "kill",
+      "handlers/kill.rs",
+      "Terminates a process by PID."
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Execution"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "File system / data",
+   "type": "heading",
+   "level": 3,
+   "section": "File system / data"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Command | Handler | Description / interesting elements ¶ cd / pwd | — | Change / print the agent’s working directory. ¶ ls | handlers/ls.rs | Directory listing (names, sizes, timestamps, permissions). ¶ find | handlers/find.rs | Recursive file search under a src root by pattern, returning matching files, used to locate high-value data (wallets, keys, docs) for exfiltration. ¶ cat / tail | handlers/tail.rs | Read a whole file / tail the end of a file (e.g., logs). ¶ stat | — | Show file metadata (size, mode, owner, timestamps). ¶ cp / mv / rm | — | Copy (copyfile/fclonefileat) / move (rename) / delete (unlink) files. ¶ mkdir / mkfile | — | Create directory / create (write) a file — used to drop payloads or write staged data. ¶ chmod / chown | — | Change file permissions / ownership (chmod/chown). ¶ zip / unzip | — | Create/extract archives incl. AES-encrypted zips (zip 4.3.0, zipcrypto/aes.rs). Used to stage encrypted exfiltration bundles or unpack downloaded archives (eg. next stage payloads).",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Command",
+      "Handler",
+      "Description / interesting elements"
+     ],
+     [
+      "cd / pwd",
+      "—",
+      "Change / print the agent’s working directory."
+     ],
+     [
+      "ls",
+      "handlers/ls.rs",
+      "Directory listing (names, sizes, timestamps, permissions)."
+     ],
+     [
+      "find",
+      "handlers/find.rs",
+      "Recursive file search under a src root by pattern, returning matching files, used to locate high-value data (wallets, keys, docs) for exfiltration."
+     ],
+     [
+      "cat / tail",
+      "handlers/tail.rs",
+      "Read a whole file / tail the end of a file (e.g., logs)."
+     ],
+     [
+      "stat",
+      "—",
+      "Show file metadata (size, mode, owner, timestamps)."
+     ],
+     [
+      "cp / mv / rm",
+      "—",
+      "Copy (copyfile/fclonefileat) / move (rename) / delete (unlink) files."
+     ],
+     [
+      "mkdir / mkfile",
+      "—",
+      "Create directory / create (write) a file — used to drop payloads or write staged data."
+     ],
+     [
+      "chmod / chown",
+      "—",
+      "Change file permissions / ownership (chmod/chown)."
+     ],
+     [
+      "zip / unzip",
+      "—",
+      "Create/extract archives incl. AES-encrypted zips (zip 4.3.0, zipcrypto/aes.rs). Used to stage encrypted exfiltration bundles or unpack downloaded archives (eg. next stage payloads)."
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "File system / data"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Transfer",
+   "type": "heading",
+   "level": 3,
+   "section": "Transfer"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Command | Handler | Description / interesting elements ¶ upload | handlers/upload.rs | Exfiltrates a local file to the C2. ¶ wget | handlers/wget.rs | Downloads a file from a URL to disk (reqwest), second-stage/tool delivery.",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Command",
+      "Handler",
+      "Description / interesting elements"
+     ],
+     [
+      "upload",
+      "handlers/upload.rs",
+      "Exfiltrates a local file to the C2."
+     ],
+     [
+      "wget",
+      "handlers/wget.rs",
+      "Downloads a file from a URL to disk (reqwest), second-stage/tool delivery."
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Transfer"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Reconnaissance / surveillance",
+   "type": "heading",
+   "level": 3,
+   "section": "Reconnaissance / surveillance"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Command | Handler | Description / interesting elements ¶ info | handlers/info.rs | Aggregate host fingerprint: OS/version, hostname/user (whoami), hardware IDs (IOKit), geo-IP (api.myip.com). ¶ whoami / uname / uptime / lscpu | — | Current user / OS+kernel (uname) / uptime / CPU info (host_processor_info). ¶ df | handlers/df.rs | Disk/volume usage and mounted filesystems (getfsstat, CFURL volume keys). ¶ ps | handlers/ps.rs | Process listing (proc_listallpids/proc_pidinfo/proc_pid_rusage). ¶ clipboard | — | Reads and writes the macOS clipboard (NSPasteboardTypeString). Can capture copied secrets (passwords, seed phrases, 2FA) and plant content (e.g., swap a copied crypto address). ¶ screenshot | — | Not implemented yet. Handler returns “Screenshot command is not implemented yet.”",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Command",
+      "Handler",
+      "Description / interesting elements"
+     ],
+     [
+      "info",
+      "handlers/info.rs",
+      "Aggregate host fingerprint: OS/version, hostname/user (whoami), hardware IDs (IOKit), geo-IP (api.myip.com)."
+     ],
+     [
+      "whoami / uname / uptime / lscpu",
+      "—",
+      "Current user / OS+kernel (uname) / uptime / CPU info (host_processor_info)."
+     ],
+     [
+      "df",
+      "handlers/df.rs",
+      "Disk/volume usage and mounted filesystems (getfsstat, CFURL volume keys)."
+     ],
+     [
+      "ps",
+      "handlers/ps.rs",
+      "Process listing (proc_listallpids/proc_pidinfo/proc_pid_rusage)."
+     ],
+     [
+      "clipboard",
+      "—",
+      "Reads and writes the macOS clipboard (NSPasteboardTypeString). Can capture copied secrets (passwords, seed phrases, 2FA) and plant content (e.g., swap a copied crypto address)."
+     ],
+     [
+      "screenshot",
+      "—",
+      "Not implemented yet. Handler returns “Screenshot command is not implemented yet.”"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Reconnaissance / surveillance"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "All C2 commands are signed on the server side by an attacker-controlled private key. The public key is embedded in the ROOFDECK payload and is used to verify the origin and integrity of the issued commands before executing them.",
+   "type": "paragraph",
+   "section": "Reconnaissance / surveillance"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "-----BEGIN RSA PUBLIC KEY-----",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "MIIBCgKCAQEAzan/EObUVxXNfPHdkDyCVR0AC9apleciK9ZQw+neWo6q+wvAhnLp",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Pe7FZLomuwntUgI3afLDblgw9t19Kh7w/8CVwFncxh4PdqtdYno4teQ6fDLKXSWa",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "ZBG7zZ9R22jxPpiY70XKilXJuds34q7pfzVfbLvLTmTWyTtcyrOnRSCOwEHP/gHX",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "0gX+8sdX7go6O37WwzB4zNvThS+E7hG+fVfrgEaH7IUi3RY9esuBS50UomfYefO3",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "dK1aDMDWIwVj1skacPR9LazEc6PSGjSXxzI/N2xcpP9QKXn/Pk6r9fBzudhBL3Mw",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "vWyNi03JbZGtGFiy6Wai6heJqgY7pF1PAQIDAQAB",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "-----END RSA PUBLIC KEY-----",
+   "type": "code",
+   "section": "Reconnaissance / surveillance",
+   "line_group": "b100"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Another version of ROOFDECK",
+   "type": "heading",
+   "level": 3,
+   "section": "Another version of ROOFDECK"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "On April 20, one day after LayerZero Labs’ first public announcement of the KelpDAO incident, the attackers deployed a new version of ROOFDECK to the compromised machine (SHA-1: 5728b11d30586bbfc1d8bd12df1c722a06e767a2, path ~/Library/com.apple.appleaccountd/loginwindow) as an executable named loginwindow.",
+   "type": "paragraph",
+   "section": "Another version of ROOFDECK"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "After the new version initialized and started beaconing, the attackers used it to remove the old ROOFDECK and FLATROOF binaries. This new ROOFDECK was functionally identical to the previous one, but with stripped symbols and debug information, likely intended to more effectively evade detection. We can only speculate whether this was a reaction to LayerZero Labs’ publication, but the timing is nevertheless interesting.",
+   "type": "paragraph",
+   "section": "Another version of ROOFDECK"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "After the update, we observed intermittent beaconing activity to a new C2 server, grenight[.]com, until June 1. On June 17, the loginwindow binary was moved to Trash.",
+   "type": "paragraph",
+   "section": "Another version of ROOFDECK"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "DPRK-aligned actors like TraderTraitor are leaning heavily into targeting developers to establish a foothold in a network, increasingly through fake job interviews. The incident we investigated shows that not every organization they infiltrate will become a viable target for a massive cryptocurrency theft.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "These groups’ initial access efforts include targeting third parties and their software supply chain, which is where much of the industry’s exposure has moved, putting the developer endpoint at the center of the defense. Endpoints used for development carry access to cloud, pipelines and source code, which makes monitoring and protection a high priority for organizations. These campaigns use purpose-built development environments aimed at one engineer at a time, paired with backdoored Terraform builds that differ for each victim.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Recommendations",
+   "type": "heading",
+   "level": 2,
+   "section": "Recommendations"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "For organizations:",
+   "type": "paragraph",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "We recommend flagging engineers with cloud engineering permissions and source control access as a sensitive group for endpoint security monitoring.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Look for unsigned binaries executing from the home directory, integrated development environment (IDE) child processes that are not signed IDE components, and outbound TLS from either.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Reports of interview take-home assignments and unsolicited repositories from these users are worth following up as well, since telemetry alone will not show that a recruiter sent one.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Consider company policy that prevents using corporate workstations for external job interviews and consider how to enforce this type of policy.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Educating developers with sensitive access is crucial: the weaponized Terraform provider domain was removed by one job seeker who flagged the typosquatted domain as suspicious. Organizations should add content to their security awareness training programs to highlight the risks of using projects with unknown origins as well as the nature of employees being targeted by threat actors to compromise the organization.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "For developers:",
+   "type": "paragraph",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Before running a coding project containing a .terraform.lock.hcl file, ensure that the provider registry belongs to known good domains: anything that is not a known namespace following registry.terraform.io, the official provider domain, should be treated as suspect.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Malicious packages can also be hosted on the official provider registry domain, so it is important to investigate the source of all packages when using an included lockfile. Terraform’s official registry supports browsing modules and providers, and modules contain a link to its source code.",
+   "type": "list",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "This report is being published alongside a presentation at LABScon 2026, Don’t Call Us, We’ll Call Your APIs: Anatomy of an Expanding DPRK Multi-Cloud Intrusion. SentinelOne thanks Google and Mandiant for their partnership in providing technical details on this threat actor’s tools and techniques, and Nick Simonian for collaborating on this research.",
+   "type": "paragraph",
+   "section": "Recommendations"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Indicators of Compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "Indicators of Compromise"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "IoCs (additional victim)",
+   "type": "heading",
+   "level": 3,
+   "section": "IoCs (additional victim)"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Type | IOC | What it is ¶ SHA1 | 02df07a173ab03b82a4fb6a08973fff8b1467f28 | FLATROOF (SystemUpdate) ¶ SHA1 | c491d477dbe0ae04e9aed9dbe237144c03f73ec4 | ROOFDECK (iSync) ¶ SHA1 | 5728b11d30586bbfc1d8bd12df1c722a06e767a2 | Stripped ROOFDECK (loginwindow) ¶ Domain | technicais.sytes[.]net | FLATROOF C2 ¶ Domain | storage.hubpage[.]cloud | ROOFDECK C2 ¶ Domain | grenight[.]com | ROOFDECK C2 ¶ IP | 176.97.114[.]232 | FLATROOF C2 (technicais.sytes[.]net) ¶ IP | 45.11.59[.]140 | ROOFDECK C2 (storage.hubpage[.]cloud) ¶ IP | 85.137.56[.]245 | ROOFDECK C2 (grenight[.]com) ¶ IP | 85.137.56[.]10 | ROOFDECK staging server ¶ Path | ~/Library/com.apple.iTunesCloud/SystemUpdate | FLATROOF binary filepath ¶ Path | ~/Library/com.apple.internal.ck/iSync | ROOFDECK binary filepath ¶ Path | ~/Library/com.apple.appleaccountd/loginwindow | Stripped ROOFDECK binary filepath ¶ File | /private/tmp/.pipe-airway | ROOFDECK IPC pipe ¶ File | $TMPDIR/tmp*.lock | FLATROOF lock file ¶ Workspace | ~/DevOps-Automation/cloudshield | Malicious workspace filepath",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Type",
+      "IOC",
+      "What it is"
+     ],
+     [
+      "SHA1",
+      "02df07a173ab03b82a4fb6a08973fff8b1467f28",
+      "FLATROOF (SystemUpdate)"
+     ],
+     [
+      "SHA1",
+      "c491d477dbe0ae04e9aed9dbe237144c03f73ec4",
+      "ROOFDECK (iSync)"
+     ],
+     [
+      "SHA1",
+      "5728b11d30586bbfc1d8bd12df1c722a06e767a2",
+      "Stripped ROOFDECK (loginwindow)"
+     ],
+     [
+      "Domain",
+      "technicais.sytes[.]net",
+      "FLATROOF C2"
+     ],
+     [
+      "Domain",
+      "storage.hubpage[.]cloud",
+      "ROOFDECK C2"
+     ],
+     [
+      "Domain",
+      "grenight[.]com",
+      "ROOFDECK C2"
+     ],
+     [
+      "IP",
+      "176.97.114[.]232",
+      "FLATROOF C2 (technicais.sytes[.]net)"
+     ],
+     [
+      "IP",
+      "45.11.59[.]140",
+      "ROOFDECK C2 (storage.hubpage[.]cloud)"
+     ],
+     [
+      "IP",
+      "85.137.56[.]245",
+      "ROOFDECK C2 (grenight[.]com)"
+     ],
+     [
+      "IP",
+      "85.137.56[.]10",
+      "ROOFDECK staging server"
+     ],
+     [
+      "Path",
+      "~/Library/com.apple.iTunesCloud/SystemUpdate",
+      "FLATROOF binary filepath"
+     ],
+     [
+      "Path",
+      "~/Library/com.apple.internal.ck/iSync",
+      "ROOFDECK binary filepath"
+     ],
+     [
+      "Path",
+      "~/Library/com.apple.appleaccountd/loginwindow",
+      "Stripped ROOFDECK binary filepath"
+     ],
+     [
+      "File",
+      "/private/tmp/.pipe-airway",
+      "ROOFDECK IPC pipe"
+     ],
+     [
+      "File",
+      "$TMPDIR/tmp*.lock",
+      "FLATROOF lock file"
+     ],
+     [
+      "Workspace",
+      "~/DevOps-Automation/cloudshield",
+      "Malicious workspace filepath"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "IoCs (additional victim)"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "Custom certificate used for TLS communication",
+   "type": "heading",
+   "level": 3,
+   "section": "Custom certificate used for TLS communication"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Type | Value ¶ SHA-256 | 4b2d3e8ccce8920a6d01e7d02b84236545a20e5f754b3eec253f8b416b731daa ¶ SHA-1 | 4ad92bf92ee614b05c340ce17bef7b6ef5a25e82 ¶ Serial | 1cd6d13ff15adbf7a42025d10ec99b4a ¶ Subject/Issuer | O=mkcert development CA, OU=ub@ub-Standard-PC-Q35-ICH9-2009, CN=mkcert ub@ub-Standard-PC-Q35-ICH9-2009 ¶ Validity | 2025-06-20 → 2035-06-20",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Type",
+      "Value"
+     ],
+     [
+      "SHA-256",
+      "4b2d3e8ccce8920a6d01e7d02b84236545a20e5f754b3eec253f8b416b731daa"
+     ],
+     [
+      "SHA-1",
+      "4ad92bf92ee614b05c340ce17bef7b6ef5a25e82"
+     ],
+     [
+      "Serial",
+      "1cd6d13ff15adbf7a42025d10ec99b4a"
+     ],
+     [
+      "Subject/Issuer",
+      "O=mkcert development CA, OU=ub@ub-Standard-PC-Q35-ICH9-2009, CN=mkcert ub@ub-Standard-PC-Q35-ICH9-2009"
+     ],
+     [
+      "Validity",
+      "2025-06-20 → 2035-06-20"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Custom certificate used for TLS communication"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "Host IoCs – ROOFDECK",
+   "type": "heading",
+   "level": 3,
+   "section": "Host IoCs – ROOFDECK"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "Type | Value ¶ Persistence | ~/Library/LaunchAgents/*.plist (Label prefix com., ProgramArguments contains –type=renderer, RunAtLoad=true) ¶ Config file | $HOME/.config/.repl_history",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Type",
+      "Value"
+     ],
+     [
+      "Persistence",
+      "~/Library/LaunchAgents/*.plist (Label prefix com., ProgramArguments contains –type=renderer, RunAtLoad=true)"
+     ],
+     [
+      "Config file",
+      "$HOME/.config/.repl_history"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Host IoCs – ROOFDECK"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Network IoCs – ROOFDECK",
+   "type": "heading",
+   "level": 3,
+   "section": "Network IoCs – ROOFDECK"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Type | Value ¶ HTTPS tasking endpoint | /app_version (host resolved at runtime)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Type",
+      "Value"
+     ],
+     [
+      "HTTPS tasking endpoint",
+      "/app_version (host resolved at runtime)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Network IoCs – ROOFDECK"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Certificate Domains related to “ub” user",
+   "type": "heading",
+   "level": 3,
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "185-66-91-112.cprapid[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "213-111-146-132.cprapid[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "anesthesiaschool[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "app.heyhay[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "dela.servehttp[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "galaxy-royal[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "game.galaxy-royal[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "grenight[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "heyhay[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "mactroubleshoots[.]pro",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "mx01.galaxy-royal[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "ns4.galaxy-royal[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "storage.hubpage[.]cloud",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "tinklify[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "update.heyhay[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "vaimage[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "wss.sytes[.]net",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "www.anesthesiaschool[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "www.freehealth[.]lat",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "www.heyhay[.]online",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "www.mactroubleshoots[.]pro",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "www.tinklify[.]com",
+   "type": "table",
+   "section": "Certificate Domains related to “ub” user"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Coding Challenge Repositories",
+   "type": "heading",
+   "level": 3,
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "hashicorp-aws[.]com Provider:",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "https://github.com/exubient0/terraform-candidate-repo/blob/main/.terraform.lock.hcl | Weaponized Terraform lock file ¶ https://github.com/radupopa369/gtn-candidate-repo/blob/feat/three-tier-infrastructure/live/.terraform.lock.hcl | Weaponized Terraform lock file",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "https://github.com/exubient0/terraform-candidate-repo/blob/main/.terraform.lock.hcl",
+      "Weaponized Terraform lock file"
+     ],
+     [
+      "https://github.com/radupopa369/gtn-candidate-repo/blob/feat/three-tier-infrastructure/live/.terraform.lock.hcl",
+      "Weaponized Terraform lock file"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "hashicorp-aws[.]io Provider:",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "https://github.com/chainstacker/Northwind-IAC/blob/930e5be6d34511bedbfb0d762bd08fffe64e9630/aws/us-east-1/prod/northwind/global/vpc/.terraform.lock.hcl | Weaponized Terraform lock file ¶ https://github.com/RyanLRay/Technical-Assessments/blob/19af09ebe8b7ad03419677dda515507dd099bc39/README.md?plain=1#L175 | README with references to the weaponized provider domain",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "https://github.com/chainstacker/Northwind-IAC/blob/930e5be6d34511bedbfb0d762bd08fffe64e9630/aws/us-east-1/prod/northwind/global/vpc/.terraform.lock.hcl",
+      "Weaponized Terraform lock file"
+     ],
+     [
+      "https://github.com/RyanLRay/Technical-Assessments/blob/19af09ebe8b7ad03419677dda515507dd099bc39/README.md?plain=1#L175",
+      "README with references to the weaponized provider domain"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "hashicorp-terraform[.]io Provider:",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "https://github.com/Steed-LHV/assessment | README with references to the weaponized provider domain",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "https://github.com/Steed-LHV/assessment",
+      "README with references to the weaponized provider domain"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": null
+   },
+   "layout": "table",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Explore",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "LABScon Replay | Does This Look Infected 2 (APT41)",
+   "type": "list",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "17 min read",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "May 18, 2023",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "LABScon Replay | The Mystery of Metador",
+   "type": "list",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "25 min read",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Dec 1, 2022",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "LABScon Replay | Quiver – Using Cutting Edge ML to Detect Interesting Command Lines for Hunters",
+   "type": "list",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "24 min read",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "Jun 26, 2023",
+   "type": "paragraph",
+   "section": "Coding Challenge Repositories"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Related Articles",
+   "type": "heading",
+   "level": 2,
+   "section": "Related Articles"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "LABScon 25 min read LABScon Replay | Are Digital Technologies Eroding the Principle of Distinction in War?",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "LABScon 14 min read LABScon Replay | InkySquid: The Missing Arsenal",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "LABScon 2 min read LABScon25 Replay | Please Connect to the Foreign Entity to Enhance Your User Experience",
+   "type": "list",
+   "section": "Related Articles"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "LABScon 24 min read LABScon Replay | Demystifying Threats to Satellite Communications in Critical Infrastructure",
+   "type": "list",
+   "section": "Related Articles"
+  }
+ ],
+ "language": "en"
+}

@@ -14,7 +14,7 @@
  */
 
 import { collapseLetterSpacing, isObservableOnlyLine } from './pdfLayout.js';
-import { refangTextForExtraction } from './defang.js';
+import { looksDefanged, refangTextForExtraction } from './defang.js';
 import { FILE_EXT_HINT, hasDelegatedDnsSuffix, suffixStrength, validateUrlCandidate } from './observableTypeResolver.js';
 
 /**
@@ -118,6 +118,25 @@ const C2_INTENT_RE =
 
 const IOC_INTENT_RE =
   /\b(?:iocs?|indicators?\s+of\s+compromise|compromise\s+indicators?|network\s+indicators?|host\s+indicators?|file\s+indicators?|technical\s+indicators?|atomic\s+indicators?|detection\s+data|observables?)\b|威胁指标|妥协指标|göstergeler|indicadores/i;
+
+/**
+ * Headings that title an indicator inventory only when the section proves it:
+ * "Observations" heads an `Observable | Type | …` IOC table in some vendor
+ * templates and a narrative findings section in others. Callers confirm it
+ * structurally (a declared-type IOC table directly under the heading) before
+ * granting authority; the heading alone never opens an IOC scope.
+ */
+const QUALIFIED_IOC_INVENTORY_HEADING_RE =
+  /^(?:(?:key|technical|network|host|file|related|additional)\s+)?observations?\s*(?:[:：\-–—|(]|$)/i;
+
+/**
+ * @param {string} text heading text
+ */
+export function isQualifiedIocInventoryHeading(text) {
+  const t = collapseLetterSpacing(String(text || '').trim());
+  if (!t || t.length > 80) return false;
+  return QUALIFIED_IOC_INVENTORY_HEADING_RE.test(t);
+}
 
 const OPERATIONAL_INFRA_RE =
   /\b(?:vpn\s+nodes?|admin(?:istrative)?\s+(?:nodes?|infrastructure)|(?:ip|ipv4|ipv6)\s+(?:address\s+)?ranges?|address\s+ranges?|malicious\s+infrastructure|threat\s+infrastructure|operator\s+infrastructure|admin(?:istering|istration)\b.{0,48}(?:infrastructure|nodes?|ranges?)|(?:infrastructure|nodes?|ranges?).{0,48}admin(?:istering|istration)?)\b|基础设施|运营节点/i;
@@ -358,6 +377,39 @@ function statesNonMaliciousStance(window) {
   return DUAL_USE_RE.test(rest) && !BENIGN_NEGATION_RE.test(rest);
 }
 
+/**
+ * A row / list lead-in that names its value as a third-party provider or
+ * service the operation relies on ("Blockchain provider", "public resolver",
+ * "through three Blockscout providers:") rather than as attacker
+ * infrastructure. A malicious role for the value itself ("C2 server",
+ * "staging server", "phishing domain", "attacker-controlled") keeps the
+ * assertion; so does any spoof / abuse cue of the value.
+ *
+ * Row descriptor: a category-qualified provider ("Blockchain provider", "DNS
+ * resolver", "block explorer") or an explicitly third-party / public service.
+ * A bare "service" / "platform" ("a port 8001 service", "shared service",
+ * "exposed AI-related services") says nothing about who operates the value.
+ */
+const PROVIDER_ROLE_NOUN_RE =
+  /(?<![\w.-])(?:(?:blockchain|rpc|dns|doh|cdn|ip[\s-]?lookup|ip[\s-]?geolocation|geolocation|block|wallet)\s+(?:providers?|explorers?|resolvers?|apis?)|(?:public|legitimate|third[\s-]party|commercial)\s+(?:[\w-]+\s+)?(?:providers?|services?|platforms?|explorers?|resolvers?|apis?))(?![\w.-])/i;
+// List lead-in object phrase ("through three Blockscout providers:"): the
+// grammar already scopes the noun to the listed values.
+const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?)(?![\w.-])/i;
+const MALICIOUS_VALUE_ROLE_RE =
+  /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
+
+/**
+ * @param {string} window row / lead-in text with this value masked as OBSERVABLE
+ * @param {{ lead?: boolean }} [opts] lead: the text is a list lead-in object phrase
+ */
+export function namesProviderService(window, opts = {}) {
+  const t = String(window || '');
+  if (!(opts.lead ? PROVIDER_LEAD_NOUN_RE : PROVIDER_ROLE_NOUN_RE).test(t)) return false;
+  if (MALICIOUS_VALUE_ROLE_RE.test(t)) return false;
+  if (STANCE_OVERRIDE_RE.test(t)) return false;
+  return true;
+}
+
 /** Another hash / URL / IP token: the boundary of the window that describes this observable. */
 const FOREIGN_OBSERVABLE_TOKEN_RE =
   /\b[a-f0-9]{32}\b|\b[a-f0-9]{40}\b|\b[a-f0-9]{64}\b|\b(?:hxxps?|https?):\/\/\S+|\b(?:\d{1,3}\.){3}\d{1,3}\b|\bURL\b|\bIP\b/gi;
@@ -405,6 +457,14 @@ export function describesBenignComponent(masked) {
   return false;
 }
 
+/** Verbs / prepositions that introduce the object phrase of a list lead-in. */
+const LEAD_OBJECT_SPLIT_RE =
+  /\b(?:through|via|using|uses|use|from|on|with|quer(?:y|ies|ied)|contacts?|relies\s+on|rel(?:y|ies)\s+on|leverag\w*|abus\w*)\b/i;
+
+/** A lead-in whose last noun phrase names the listed items as providers / services. */
+const PROVIDER_LIST_LEAD_RE =
+  /\b(?:providers?|services?|explorers?|resolvers?|platforms?)\s*(?:[(（][^)）]*[)）])?\s*[:：]?\s*$/i;
+
 /** "These endpoints are …" / "The above domains are …": a sentence about the preceding list. */
 const LIST_ANAPHORA_RE =
   /^\s*(?:these|those|the\s+(?:above|listed|preceding|following)|all\s+(?:of\s+)?(?:these|the\s+above))\s+(?:\w+\s+){0,3}?(?:endpoints?|domains?|urls?|uris?|services?|hosts?|hostnames?|addresses|ips?|servers?|providers?|resolvers?|sites?|platforms?|nodes?)\b/i;
@@ -429,13 +489,20 @@ export function annotateListStances(blocks) {
   // Only lists whose rows are bare observables (an inventory the sentence can
   // describe as a whole); prose bullets argue, they are not a value list.
   const isListBlock = (b) => b && (b.type === 'list_item' || b.type === 'list' || b.layout === 'observable_row') &&
-    (b.layout === 'observable_row' || isIndicatorValueLine(String(b.text || '')) || isObservableListLine(String(b.text || '')));
+    (b.layout === 'observable_row' || isIndicatorValueLine(String(b.text || '')) || isObservableListLine(String(b.text || '')) ||
+      isAnnotatedIndicatorRowLine(String(b.text || '')));
   const isCaption = (b) => b && (b.type === 'caption' || /^\s*(?:figure|fig\.|table|image)\s*\d+/i.test(String(b.text || '')));
   const stanceOf = (text) => {
     const s = firstSentence(text);
     if (!s || CONTRASTIVE_STANCE_RE.test(s)) return false;
     if (BENIGN_COMPONENT_RE.test(s) && !BENIGN_NEGATION_RE.test(s)) return true;
-    return statesNonMaliciousStance(s);
+    if (statesNonMaliciousStance(s)) return true;
+    // "… C2 lookup through three Blockscout providers:" names the listed values
+    // as the providers relied on. Only the object phrase is read; the sentence
+    // subject is the malware itself.
+    if (!/[:：]\s*$/.test(String(text || '').trim()) || !PROVIDER_LIST_LEAD_RE.test(s)) return false;
+    const objectPhrase = s.split(LEAD_OBJECT_SPLIT_RE).pop();
+    return namesProviderService(objectPhrase, { lead: true });
   };
   for (let i = 0; i < list.length; i += 1) {
     if (!isListBlock(list[i]) || isListBlock(list[i - 1])) continue;
@@ -866,6 +933,40 @@ export function isDetectionAlertCaption(masked) {
 }
 
 /**
+ * The value is the legitimate service whose traffic the malware intercepts
+ * ("a handler intercepts /x.js from OBSERVABLE and substitutes …"): a victim /
+ * target service, not infrastructure the operator owns.
+ */
+const INTERCEPTED_SERVICE_RE =
+  /\b(?:intercept\w*|hooks?|hooked|hooking)\b(?:[^.;]|\.(?!\s|$)){0,80}?\b(?:from|responses?\s+(?:of|from)|traffic\s+(?:to|from|for)|requests?\s+(?:to|for))\s+(?:the\s+)?(?:legitimate\s+|genuine\s+|official\s+)?OBSERVABLE/i;
+
+/**
+ * A bibliography entry written in the body: "[3] View8 (original): <url>".
+ * The entry is a numbered citation whose title precedes the live link.
+ */
+const CITATION_ENTRY_RE = /^\s*[\[(]\d{1,3}[\])]\s*[^\s:][^:\n]{0,160}:\s*OBSERVABLE\s*[.;]?\s*$/i;
+/** "<url> [7]": a link carrying the publisher's own citation marker. */
+const TRAILING_CITATION_MARKER_RE = /OBSERVABLE\s*\[\d{1,3}\]/;
+/** The publisher's own published tooling / material ("Our toolkit is publicly available at <url>"). */
+const OWN_RESOURCE_RE =
+  /\b(?:our|my)\s+(?:[\w-]+\s+){0,3}?(?:toolkit|tools?|repositor(?:y|ies)|repo|scripts?|code|datasets?|plugins?|project|materials?|decompiler|deobfuscator)\b[^.]{0,80}?\b(?:(?:publicly\s+)?available|published|hosted|released|shared)\b/i;
+
+/**
+ * True when a fanged URL occurrence outside any IOC scope is a citation: a
+ * numbered reference entry, a link followed by the publisher's citation
+ * marker, or a pointer to the publisher's own released tooling.
+ * @param {string} masked surrounding text with the value masked as OBSERVABLE
+ * @param {string} original original spelling
+ */
+function isCitationReference(masked, original) {
+  if (!/^https?:\/\//i.test(String(original || '').trim())) return false;
+  const t = String(masked || '').trim();
+  if (CITATION_ENTRY_RE.test(t)) return true;
+  if (TRAILING_CITATION_MARKER_RE.test(t)) return true;
+  return OWN_RESOURCE_RE.test(t) && /OBSERVABLE/.test(t);
+}
+
+/**
  * Semantic relation of one occurrence to the observable it contains, with the
  * marker that produced it.
  *
@@ -899,6 +1000,15 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   }
 
   const form = String(opts.form || '');
+  // A numbered citation / the publisher's own tooling link in the body is a
+  // reference, never an Indicator (MODE A or B). IOC scopes are left alone:
+  // a numbered IOC list there is an inventory, and defanged values never qualify.
+  if (!authoritative && !looksDefanged(String(opts.original || '')) && form === 'url') {
+    const refangedBlock = refangTextForExtraction(String(surroundingText || ''));
+    if (isCitationReference(maskObservable(refangedBlock, [opts.value, opts.original].filter(Boolean)), opts.original || opts.value)) {
+      return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'citation', authoritative: false, structural_row: false };
+    }
+  }
   // Endpoint forms (ip:port) assert by shape. Table rows assert only inside a
   // publisher-curated section (or after an explicit typed/header-labelled
   // table upgraded the block zone). A narrative dense IP grid must not become
@@ -915,6 +1025,12 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // or abuse cue in the same row window keeps the row assertion.
     if (structuralRow && form !== 'ip_port' && describesBenignComponent(full)) {
       return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
+    }
+    // A typed table row whose own descriptor cells call the value a provider /
+    // service ("<host> | domain | Blockchain provider | C2 URL resolution")
+    // lists infrastructure the malware relies on, not infrastructure it owns.
+    if (structuralRow && form === 'table_row' && namesProviderService(full.replace(/\bOBSERVABLE\b/g, ' '))) {
+      return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
     }
     return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'structural_row', authoritative, structural_row: true };
   }
@@ -935,6 +1051,10 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   // served by infrastructure — an operational reading, never "provider".
   if (HOSTED_OBJECT_RE.test(text) || HOSTED_OBJECT_RE.test(full)) {
     return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'operational', authoritative, structural_row: false };
+  }
+
+  if (INTERCEPTED_SERVICE_RE.test(text) && !STANCE_OVERRIDE_RE.test(text)) {
+    return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: false };
   }
 
   const operational = OPERATIONAL_RELATION_RE.test(text);
@@ -1105,7 +1225,7 @@ export function attachOccurrenceRelations(candidate) {
     // Source assertion = publisher-curated section AND (row placement OR an
     // operational clause). Zone alone is never an assertion.
     // A row that names the value as a benign component asserts nothing malicious.
-    o.asserted = detail.marker !== 'benign' && detail.authoritative && (detail.structural_row || detail.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
+    o.asserted = detail.marker !== 'benign' && detail.marker !== 'provider' && detail.authoritative && (detail.structural_row || detail.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
   }
   candidate.source_relation = strongestSourceRelation(candidate);
   return candidate;

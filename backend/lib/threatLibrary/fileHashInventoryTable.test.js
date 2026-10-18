@@ -22,10 +22,10 @@ import {
 } from './tableSemantics.js';
 import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 
-assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v13');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v30');
+assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v14');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v31');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v8');
-assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v10');
+assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v11');
 
 const LEGIT_EXE = 'd98f568496512e4f98670c61c97cb07a';
 const MAL_DLL = 'aa3086be652c8b20b0b29b2730d57119';

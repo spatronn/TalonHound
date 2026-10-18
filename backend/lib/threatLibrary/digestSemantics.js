@@ -50,7 +50,7 @@ const KIND_PATTERNS = [
   [DIGEST_KINDS.BUILD_ID, /(?:^|[^a-z0-9])(?:gnu[\s_-]*)?build[\s_-]*id(?:\[[^\]]*\])?(?:[^a-z0-9]|$)/i],
   [
     DIGEST_KINDS.CERTIFICATE,
-    /(?:^|[^a-z0-9])(?:certificates?|certs?|x\.?509|thumbprints?|signing\s+(?:cert|key|identity)|code[\s-]*signing|ja[34]s?|jarm)(?:[^a-z0-9]|$)/i
+    /(?:^|[^a-z0-9])(?:certificates?|certs?|x\.?509|thumbprints?|signing\s+(?:cert|key|identity)|code[\s-]*signing|ja[34]s?|jarm|serial(?:\s*(?:number|no\.?|#))?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.SIMILARITY,
@@ -65,6 +65,15 @@ const KIND_PATTERNS = [
     /(?:^|[^a-z0-9])(?:auth(?:entication)?[\s_-]*token|access[\s_-]*token|refresh[\s_-]*token|api[\s_-]*key|bearer(?:\s+token)?|password|passwd|passphrase|credentials?|bot[\s_-]*token|token)(?:[^a-z0-9]|$)/i
   ]
 ];
+
+/** A label that is only a digest algorithm / generic digest word ("SHA-256", "SHA1 hash:", "Fingerprint"). */
+const ALGORITHM_ONLY_LABEL_RE =
+  /^[\s|:=\-–—(]*(?:md5|sha-?(?:1|224|256|384|512)|sha-?3(?:-\d+)?|hash|digest|fingerprint|value)(?:\s+(?:hash|digest|value))?[\s|:=\-–—)]*$/i;
+
+/** A key noun that closes the label right before the value ("with the key (", "Key:"). */
+const BARE_KEY_LABEL_RE = /(?:^|[^a-z0-9])keys?\s*[(:=\[]?\s*$/i;
+/** Registry / run keys name a location, not key material. */
+const REGISTRY_KEY_LABEL_RE = /\b(?:run|runonce|registry|reg|hkcu|hklm|hkey_[a-z_]+|autorun|startup)\s+keys?\s*[(:=\[]?\s*$/i;
 
 /** File / sample nouns: a label that names the file keeps the hash reading. */
 const FILE_NOUN_RE =
@@ -135,12 +144,29 @@ export function digestLabelWindow(text, value) {
  * @param {string} value hex value
  * @returns {{ kind: string, label: string, reason: string }}
  */
-export function classifyHexDigest(text, value) {
+export function classifyHexDigest(text, value, opts = {}) {
   const known = wellKnownDigest(value);
   if (known) {
     return { kind: DIGEST_KINDS.WELL_KNOWN, label: '', reason: `digest_of_trivial_input_${known.algorithm}` };
   }
   const label = digestLabelWindow(text, value);
+  const own = classifyLabel(label, { bareKey: /^[0-9a-f]{16,}$/i.test(String(value || '').trim()) });
+  if (own.kind !== DIGEST_KINDS.FILE || own.reason === 'file_noun_after_label') return own;
+  // A table row labelled only by its algorithm ("SHA-256 | <v>") names no
+  // subject itself; the table's caption / heading does ("Custom
+  // certificate used for TLS communication"). A file noun on the row or in the
+  // scope label keeps the file-hash reading.
+  const scope = String(opts.scopeLabel || '').trim();
+  if (scope && own.reason === 'file_label' && ALGORITHM_ONLY_LABEL_RE.test(label) && !FILE_NOUN_RE.test(scope)) {
+    const fromScope = classifyLabel(scope.slice(0, 160));
+    if (fromScope.kind !== DIGEST_KINDS.FILE && fromScope.kind !== DIGEST_KINDS.CREDENTIAL) {
+      return { kind: fromScope.kind, label, reason: `${fromScope.kind}_scope_label` };
+    }
+  }
+  return own;
+}
+
+function classifyLabel(label, opts = {}) {
   if (!label.trim()) return { kind: DIGEST_KINDS.FILE, label, reason: 'unlabelled' };
   let best = null;
   for (const [kind, re] of KIND_PATTERNS) {
@@ -149,7 +175,13 @@ export function classifyHexDigest(text, value) {
     const at = all[all.length - 1].index;
     if (!best || at > best.at) best = { kind, at };
   }
-  if (!best) return { kind: DIGEST_KINDS.FILE, label, reason: 'file_label' };
+  if (!best) {
+    // "… with the key (<hex>)", "Key: <hex>": a bare key noun closing the label.
+    if (opts.bareKey === true && BARE_KEY_LABEL_RE.test(label) && !REGISTRY_KEY_LABEL_RE.test(label) && !FILE_NOUN_RE.test(label)) {
+      return { kind: DIGEST_KINDS.CRYPTO_KEY, label, reason: `${DIGEST_KINDS.CRYPTO_KEY}_label` };
+    }
+    return { kind: DIGEST_KINDS.FILE, label, reason: 'file_label' };
+  }
   // A file noun after the non-file noun names the file ("certificate-signed sample SHA256:").
   if (FILE_NOUN_RE.test(label.slice(best.at + 1))) return { kind: DIGEST_KINDS.FILE, label, reason: 'file_noun_after_label' };
   return { kind: best.kind, label, reason: `${best.kind}_label` };

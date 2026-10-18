@@ -17,7 +17,9 @@ import {
   isIndicatorRowShape,
   isIndicatorValueLine,
   isObservableListLine,
+  isQualifiedIocInventoryHeading,
   RECORD_FIELD_LINE_RE,
+  SECTION_ROLES,
   zoneForSectionRole
 } from './indicatorScope.js';
 
@@ -91,8 +93,11 @@ import {
  * random. A colon record label ("Docro extension path:") whose short run still
  * lists indicator rows keeps scope, and "SHA256 hash: <hash> File size: …"
  * merged on one line is one indicator row (Unit 42 PPI report, 25 misses).
+ * v14 (ten-report audit): a qualified inventory heading ("Observations") opens
+ * an IOC section only when its first table is a declared-type IOC table
+ * (indicator column + observable-type column); otherwise it stays narrative.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v13';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v14';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -561,6 +566,45 @@ function nextContentBlock(blocks, i, chromeIds) {
 }
 
 /**
+ * Structural confirmation for a qualified inventory heading ("Observations"):
+ * the first table of the section it opens (up to the next heading, past at
+ * most a few lead-in paragraphs) is a self-proving IOC table — an indicator
+ * column plus a declared observable-type column. Prose, a descriptive table or
+ * a table without a declared type column never confirms it.
+ * @param {object[]} blocks
+ * @param {number} i heading index
+ * @param {Set<string>} chromeIds
+ */
+export function sectionLeadsWithDeclaredIocTable(blocks, i, chromeIds, limit = 4) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
+    const n = blocks[j];
+    if (!n || n.layout === 'page_edge' || chromeIds?.has?.(n.id)) continue;
+    if (n.type === 'heading') return false;
+    seen += 1;
+    if (n.type !== 'table' || !n.table) continue;
+    const interp = interpretIocTable(n, { inAuthoritativeScope: false });
+    return interp.kind === 'ioc_table' && interp.explicit === true && interp.declared_type_column != null;
+  }
+  return false;
+}
+
+/**
+ * Zone for a qualified inventory heading confirmed by its section content, or
+ * null. Shared by the linear zone pass and the section-tree annotator.
+ * @param {string} text heading text
+ * @param {object[]} blocks
+ * @param {number} i heading index
+ * @param {Set<string>} chromeIds
+ * @returns {{ zone: string, role: string }|null}
+ */
+export function confirmedQualifiedIocHeading(text, blocks, i, chromeIds) {
+  if (!isQualifiedIocInventoryHeading(text)) return null;
+  if (!sectionLeadsWithDeclaredIocTable(blocks, i, chromeIds)) return null;
+  return { zone: 'explicit_ioc_section', role: SECTION_ROLES.IOC_APPENDIX };
+}
+
+/**
  * Structural confirmation for a descriptive indicator heading: the section it
  * opens (up to the next real heading) must contain at least one indicator
  * structure block. A heading that only introduces prose is not an appendix.
@@ -866,6 +910,14 @@ export function annotateDocumentZones(doc, opts = {}) {
     const descriptiveForm = indicatorHeading?.form === INDICATOR_HEADING_FORMS.DESCRIPTIVE_SUFFIX;
     let headingZone = isHeadingLike ? classifyHeadingText(headingText, { isHeading: b.type === 'heading' }) : null;
     let headingRole = isHeadingLike ? classifySectionRole(headingText) : null;
+    if (isHeadingLike && !headingZone) {
+      const qualified = confirmedQualifiedIocHeading(headingText, blocks, i, footerIds);
+      if (qualified) {
+        trace({ block_id: b.id, decision: 'qualified_ioc_heading_confirmed', heading: headingText.slice(0, 120), zone: qualified.zone });
+        headingZone = qualified.zone;
+        headingRole = qualified.role;
+      }
+    }
     const isRealHeading = b.type === 'heading' && !pageEdge && !isRepeatedChrome;
     const labelHeading = isRealHeading ? typeLabelHeading(text) : null;
 

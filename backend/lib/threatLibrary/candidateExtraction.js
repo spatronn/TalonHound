@@ -180,8 +180,17 @@ export {
  * `host:port` carries its port; a URL literal stops at a `${` template
  * interpolation (tl-type-resolver-v10); table rows record their own column
  * header (delegated-scope authority).
+ * v31 (ten-report audit): markdown-escaped bracket defang (`host\[.\]tld`,
+ * `hxxps\[:\]//`) refangs like `[.]`; a table row labelled only by its digest
+ * algorithm ("SHA-256") takes the subject from the table caption / heading
+ * ("Custom certificate …"); a "Serial" (number) row is a certificate
+ * identifier and a bare "key" label a cryptographic key, never file hashes;
+ * numbered citation entries and the publisher's own tooling links are
+ * references; a typed row / list lead-in naming its value a provider or
+ * service, or prose naming the service whose traffic is intercepted, is a
+ * provider relation (tl-type-resolver-v11, tl-zones-v14, tl-section-tree-v4).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v30';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v31';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -742,7 +751,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // Build-ids, certificate thumbprints, vhash / fuzzy hashes, keys and
       // digests of trivial inputs share the hex shape but name no file: keep
       // them as report context (technical artifact), never as a sample hash.
-      const digest = classifyHexDigest(line, n.normalizedValue);
+      // Table rows: the caption / section heading names the subject a bare
+      // algorithm label leaves open ("Custom certificate …" > "SHA-256 | <v>").
+      const scopeLabel = block?.type === 'table' ? block?.table?.caption || block?.section || null : null;
+      const digest = classifyHexDigest(line, n.normalizedValue, { scopeLabel });
       if (NON_FILE_DIGEST_KINDS.has(digest.kind) && digest.kind !== DIGEST_KINDS.CREDENTIAL) {
         countReason(typeDiag.excluded_reasons, `non_file_digest_${digest.kind}`);
         const artifact = materialize({

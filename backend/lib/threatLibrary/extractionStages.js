@@ -315,7 +315,8 @@ export function extractReportCandidates(report, document) {
     candidates,
     diagnostics: extracted.diagnostics,
     sourceHost,
-    zonesVersion: extracted.annotated?.meta?.zones_version || null
+    zonesVersion: extracted.annotated?.meta?.zones_version || null,
+    documentMeta: stamped.meta
   });
 
   // Optional shadow diagnostics (independent of authoritative engine).

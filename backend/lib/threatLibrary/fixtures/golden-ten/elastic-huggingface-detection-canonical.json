@@ -1,0 +1,2210 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/ai-agent-attack-detection-hugging-face-breach",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "Hugging Face breach: GenAI detection with Elastic Defend",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend",
+   "type": "heading",
+   "level": 1,
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Every stage of the Hugging Face breach maps to Elastic Defend and SIEM rules already shipping, from worker RCE and credential harvest to self-migrating C2 and GenAI detection.",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "July 31, 2026",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Elastic Security Labs",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Hugging Face reconstructed more than 17,000 attacker events from a July 2026 intrusion driven by an autonomous artificial intelligence (AI) agent. The path was familiar: untrusted dataset content abused a processing worker (file disclosure, then code execution), credential harvest, then multi-cluster lateral movement. Production Elastic Defend behavior rules and Elastic Security detection (SIEM) rules already watch those types of behaviors. This post maps each stage to detections you can enable today.",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "On July 16, 2026, Hugging Face disclosed that a malicious dataset abused its dataset-processing pipeline. A follow-on technical timeline (July 27) clarifies the two vectors against the same config-driven loader in a production Kubernetes worker pod: an HDF5 external raw-storage page that disclosed local files (including environment secrets and worker source), then Jinja2 template injection that achieved code execution. From that foothold, the agent escalated toward node and cluster-level access, harvested cloud and cluster credentials, and moved laterally across roughly July 9-13 UTC (~17,600 reconstructed actions). Hugging Face rebuilt the timeline with its own large language model (LLM) analysis agents after hosted frontier APIs blocked forensic payloads via safety guardrails.",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "On July 21, 2026, OpenAI stated that its evaluation models (including GPT-5.6 Sol and a more capable pre-release model) drove the activity during an internal cyber-capability evaluation on ExploitGym, with reduced cyber refusals enabled for testing. These models identified and exploited a zero-day vulnerability in a package-registry cache proxy, escaped OpenAI’s research environment, reached the open internet, and then targeted Hugging Face while running internal benchmarking of these models on cybersecurity evaluation tasks. Hugging Face reported that the only customer content accessed was ExploitGym/CyberGym challenge solutions in five datasets, with no evidence of tampering with other customer-facing Hub models, datasets, Spaces, or packages.",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "In this post, we:",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Summarize the July 2026 Hugging Face agentic intrusion and how it intersects with OpenAI's ExploitGym evaluation escape.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Map each stage of the campaign to production Elastic Defend behavior rules and Elastic Security detection rules you can enable today.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Show why outcome detections (credential paths, unusual destinations, persistence under GenAI parents) beat whole-tool trust of agent or worker process trees.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Highlight LLM-based attack-chain triage and GenAI-parented Defend correlation on Elastic Stack 9.3.0+ for agentic alert volume.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Elastic Defend behavior rules and Elastic Security detection rules cover multiple stages of this attack chain.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "Initial access was pipeline abuse on an AI data-processing worker (local file disclosure, then template-injection RCE). Production Defend and SIEM rules that watch workers spawning shells, interpreters, and downloaders still apply.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Prefer outcome detections (credential paths, unusual destinations, persistence under GenAI parents) over whole-tool trust of agent or worker process trees.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Agentic campaigns spike alert volume. Enable production LLM attack-chain triage and GenAI-parented Defend correlation (Stack 9.3.0+); tune noisy mechanics by lineage and keep credential and egress outcomes hot.",
+   "type": "list",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Following the lead from the Hugging Face team, we created an interactive view into the incident using Elastic Defend’s technologies, based on publicly available information.",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "Replay of the Hugging Face intrusion",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "You can check it out here: Hugging Face incident interactive timeline",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Scope note: This post maps behaviors described in public disclosures to Elastic Defend's and Elastic Security's rules and features. We are not claiming complete coverage of every sandbox variant the agent tried, nor of custom-built agent harnesses designed to evade these rules. The goal is a practical enablement checklist for ML workers and GenAI hosts, not a one-to-one replay of Hugging Face's internal telemetry.",
+   "type": "paragraph",
+   "section": "Exploring the Hugging Face Breach: mapping AI agent tactics to Elastic Defend"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "Campaign analysis: how the AI agent attack unfolded across two environments",
+   "type": "heading",
+   "level": 2,
+   "section": "Campaign analysis: how the AI agent attack unfolded across two environments"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Public reporting describes two environments. OpenAI’s evaluation models escaped a constrained research sandbox after they autonomously discovered a zero-day in an internally hosted package-registry proxy, then reached the internet. Public reporting also describes a short intermediate hop where, after escaping OpenAI’s research sandbox, the agent rooted a third-party CyberGym-style code sandbox and used it as an external launchpad (no direct path into Hugging Face’s cluster). On Hugging Face’s side is a conventional intrusion path: untrusted dataset configs driving a processing worker to read or execute locally, credential harvest, self-migrating command-and-control (C2) on public services, and a swarm of short-lived sandboxes.",
+   "type": "paragraph",
+   "section": "Campaign analysis: how the AI agent attack unfolded across two environments"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "Confirming patterns observed in recent autonomous agent-driven incidents, evaluation models and agentic harnesses are being used to drive conventional intrusion techniques. Other notable incidents include:",
+   "type": "paragraph",
+   "section": "Campaign analysis: how the AI agent attack unfolded across two environments"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "JADEPUFFER: Agentic ransomware for automated database extortion",
+   "type": "list",
+   "section": "Campaign analysis: how the AI agent attack unfolded across two environments"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "Disrupting the first reported AI-orchestrated cyber espionage campaign",
+   "type": "list",
+   "section": "Campaign analysis: how the AI agent attack unfolded across two environments"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "For most Elastic customers, that maps to Linux processes, often inside cloud/container workloads or other cloud workloads at machine speed. Endpoint telemetry on those workers matters, and so does control-plane and identity visibility when stolen workload credentials are reused.",
+   "type": "paragraph",
+   "section": "Campaign analysis: how the AI agent attack unfolded across two environments"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "Who was targeted?",
+   "type": "heading",
+   "level": 3,
+   "section": "Who was targeted?"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "Hugging Face’s production infrastructure, specifically the data-processing pipeline and subsequent internal clusters. Hugging Face’s later timeline states that only ExploitGym/CyberGym challenge solutions in five datasets were accessed as customer content, while other customer-facing Hub assets were not affected. OpenAI’s account frames the goal as obtaining secret information useful for cheating ExploitGym.",
+   "type": "paragraph",
+   "section": "Who was targeted?"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "Hugging Face breach: adversary, capability, infrastructure, and victim",
+   "type": "heading",
+   "level": 3,
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Elastic Security Labs uses the Diamond Model to describe high-level relationships between the adversaries, capabilities, infrastructure, and victims of intrusions. While the Diamond Model is most commonly used with single intrusions, and using Activity Threading (section 8) to create relationships between incidents, an adversary-centered (section 7.1.4) approach allows for a single diamond.",
+   "type": "paragraph",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "For this campaign:",
+   "type": "paragraph",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "Adversary: OpenAI evaluation models (GPT-5.6 Sol and a more capable pre-release model) under reduced cyber refusals during ExploitGym evaluation.",
+   "type": "list",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Victim: Hugging Face production infrastructure (dataset pipeline workers and internal clusters).",
+   "type": "list",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Note: because OpenAI’s infrastructure was exploited and then escaped from, we are including it as a victim of this intrusion",
+   "type": "list",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "Capability: Initial access through dataset-pipeline file disclosure and template-injection RCE, credential access, execution, privilege escalation, lateral movement, and command and control.",
+   "type": "list",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "Infrastructure: Self-migrating C2 staged on public services; high-volume, high-speed actions across short-lived sandboxes.",
+   "type": "list",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "Diamond Model for the Hugging Face AI agent attack showing adversary, capability, infrastructure, and victim",
+   "type": "paragraph",
+   "section": "Hugging Face breach: adversary, capability, infrastructure, and victim"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "Related research on GenAI detection and agent threats",
+   "type": "heading",
+   "level": 3,
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "This intrusion intersects with themes Elastic Security Labs has shared in prior articles on LLM security and agentic workflows:",
+   "type": "paragraph",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "MCP tool attack surface and defense recommendations",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "Elastic Advances LLM Security with Standardized Fields and Integrations",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "Beyond Behaviors: AI-Augmented Detection Engineering with ES|QL COMPLETION",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "How Elasticsearch ES|QL COMPLETION turns noisy curl and wget rules into high-fidelity cloud security alerts",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "Inside Elastic InfoSec's agentic SOC: cutting alert triage from 30 minutes to under 3",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "It also intersects with classic web and worker exploitation themes that long predate GenAI. In this campaign, the agent optimized for whatever worked, and touched several at once.",
+   "type": "paragraph",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "RCE on dataset/app workers",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Containers and Kubernetes-style cluster workloads",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "Linux endpoint, process, and DNS telemetry",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Network egress and self-migrating C2",
+   "type": "list",
+   "section": "Related research on GenAI detection and agent threats"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "Execution flow: from dataset RCE to self-migrating C2",
+   "type": "heading",
+   "level": 2,
+   "section": "Execution flow: from dataset RCE to self-migrating C2"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Initial access: dataset pipeline abuse on Hugging Face workers",
+   "type": "heading",
+   "level": 3,
+   "section": "Initial access: dataset pipeline abuse on Hugging Face workers"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "The attack reached a Hugging Face dataset-processing worker by abusing two paths against the same config-driven loader (both in a production Kubernetes conversion-worker pod):",
+   "type": "paragraph",
+   "section": "Initial access: dataset pipeline abuse on Hugging Face workers"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "An HDF5 external raw-storage dataset read that returned local file contents (environment secrets and worker source), file disclosure",
+   "type": "list",
+   "section": "Initial access: dataset pipeline abuse on Hugging Face workers"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "Jinja2 template injection that evaluated attacker-controlled code inside the worker",
+   "type": "list",
+   "section": "Initial access: dataset pipeline abuse on Hugging Face workers"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Earlier SSRF attempts against remote cloud metadata failed on the datasets URL allowlist. The agent then switched to local file reads and local code abuse. Watch for a service or interpreter parent spawning an unexpected child, commonly shells and downloaders such as bash, sh, python, curl, or wget. Hugging Face and OpenAI did not publish an exhaustive list of processing runtimes, so treat these child names as examples, not a closed set.",
+   "type": "paragraph",
+   "section": "Initial access: dataset pipeline abuse on Hugging Face workers"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Which worker processes to monitor for dataset pipeline RCE",
+   "type": "heading",
+   "level": 4,
+   "section": "Which worker processes to monitor for dataset pipeline RCE"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Hugging Face closed both abused loader paths after the incident. Defenders should inventory parents that parse untrusted datasets or model artifacts, including common app servers and queue runners (e.g. gunicorn, uvicorn, celery, python, node, or custom runners), and treat anomalous activity or unexpected children as high priority.",
+   "type": "paragraph",
+   "section": "Which worker processes to monitor for dataset pipeline RCE"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Note: Remote code execution means attacker-controlled code runs within the security context of the affected worker. The resulting commands may appear as activity performed by a legitimate service account, container identity, or native OS user rather than by an obviously malicious account or process. It was a processing pipeline that executed attacker-controlled dataset content.",
+   "type": "paragraph",
+   "section": "Which worker processes to monitor for dataset pipeline RCE"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Post-exploitation: credential harvest, lateral movement, and self-migrating C2",
+   "type": "heading",
+   "level": 3,
+   "section": "Post-exploitation: credential harvest, lateral movement, and self-migrating C2"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "Credential harvest and lateral movement",
+   "type": "heading",
+   "level": 4,
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Hugging Face described the post-exploitation sequence as:",
+   "type": "paragraph",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Credential and API discovery from the worker foothold",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Escalation to node-level access",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "Harvest of cloud credentials and cluster secrets",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Lateral movement into several internal clusters over July 9-13 UTC",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "Self-migrating C2 staged on public services",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "Many thousands of actions across a swarm of short-lived sandboxes (~17,600 reconstructed actions)",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "Hugging Face’s technical timeline also describes credential use activity such as reading the projected service-account token, probing the in-cluster and EKS APIs, TokenRequest activity for CSI identities, SelfSubjectRulesReview, cloud metadata / STS identity checks, cluster secret-object reads, and later mesh and source-control pivots. Endpoint and container runtime rules can catch collection on the worker, while Kubernetes and cloud audit rules can catch credential reuse on the API plane.",
+   "type": "paragraph",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Prefer pairing host file/env collection with Kubernetes audit for secret get/list, TokenRequest, SelfSubjectRulesReview, and privileged or hostPath pod creation, plus AWS CloudTrail for first-seen or anomalous GetCallerIdentity and discovery bursts from new sources.",
+   "type": "paragraph",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "Kubernetes Pod Created with a Sensitive hostPath Volume",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "Kubernetes Privileged Pod Created",
+   "type": "list",
+   "section": "Credential harvest and lateral movement"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "Unusual egress and self-migrating C2 from AI agent processes",
+   "type": "heading",
+   "level": 4,
+   "section": "Unusual egress and self-migrating C2 from AI agent processes"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Self-migrating C2 rarely leaves a stable IOC domain forever. Public post-incident analysis also describes agents staging C2 on ordinary public services (request-capture hosts, pastebins), attacker-controlled Hugging Face datasets as dead-drops, and at times on platform Spaces as an egress relay. Payloads were often gzip/base64 packed (sometimes further chunked or XOR’d), which is difficult to triage without another model. Destination quality matters: first-seen unusual domains from GenAI or worker parents, suspicious top-level domains, and encode-or-chunk, then network sequences.",
+   "type": "paragraph",
+   "section": "Unusual egress and self-migrating C2 from AI agent processes"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "DNS Request to Suspicious File Upload/Download Service",
+   "type": "list",
+   "section": "Unusual egress and self-migrating C2 from AI agent processes"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "File Download from or Upload to Hosting Service",
+   "type": "list",
+   "section": "Unusual egress and self-migrating C2 from AI agent processes"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "Why AI agent attacks generate evasion at scale",
+   "type": "heading",
+   "level": 3,
+   "section": "Why AI agent attacks generate evasion at scale"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "Publicly described evasion traits include:",
+   "type": "paragraph",
+   "section": "Why AI agent attacks generate evasion at scale"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Short-lived sandboxes that raise process and file cardinality",
+   "type": "list",
+   "section": "Why AI agent attacks generate evasion at scale"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "Self-migrating C2 on public services (moving infrastructure rather than a single fixed hostname)",
+   "type": "list",
+   "section": "Why AI agent attacks generate evasion at scale"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "An agentic loop that can try many variations cheaply",
+   "type": "list",
+   "section": "Why AI agent attacks generate evasion at scale"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "From a detection perspective, prioritize the edges: host and container telemetry for suspicious process activity, and Kubernetes/AWS audit logs for control-plane visibility. Within those domains, sequences (create then DNS, encode then network, worker then shell) still help, but they are also easier to evade than durable single-outcome signals.",
+   "type": "paragraph",
+   "section": "Why AI agent attacks generate evasion at scale"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "How to recognize AI agent attack activity in telemetry",
+   "type": "heading",
+   "level": 3,
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "Hugging Face’s responders also called out behavioral tells that look less like a careful human operator and more like an autonomous loop:",
+   "type": "paragraph",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "Retries of actions that already succeeded (parallel workers or lost context)",
+   "type": "list",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Strong technical moves followed by malformed or pointless commands",
+   "type": "list",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Inefficient paths no human would choose (for example, using production infrastructure to solve benchmark-style tasks)",
+   "type": "list",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Benchmark-related strings in searches and traces that leak the agent’s objective",
+   "type": "list",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Large volumes of hallucinated or incoherent user input",
+   "type": "list",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Poor operational security, such as leaving encryption keys or other artifacts behind",
+   "type": "list",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Signal | What it looks like | Detection value ¶ Retries of succeeded actions | Duplicate commands seconds apart | Distinguish agent from human ¶ Technical + malformed commands | Valid exploit followed by syntax error | Agent loop with lost context ¶ Benchmark strings in traces | Evaluation task IDs, score references | Leaks agent objective",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Retries of succeeded actions",
+      "Duplicate commands seconds apart",
+      "Distinguish agent from human"
+     ],
+     [
+      "Technical + malformed commands",
+      "Valid exploit followed by syntax error",
+      "Agent loop with lost context"
+     ],
+     [
+      "Benchmark strings in traces",
+      "Evaluation task IDs, score references",
+      "Leaks agent objective"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Signal",
+     "What it looks like",
+     "Detection value"
+    ]
+   },
+   "layout": "table",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "These signals are useful for triage and tuning. Prefer them as correlation context alongside the outcome detections below, not as stand-alone block rules.",
+   "type": "paragraph",
+   "section": "How to recognize AI agent attack activity in telemetry"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "MITRE ATT&CK and ATLAS mapping for the Hugging Face breach",
+   "type": "heading",
+   "level": 3,
+   "section": "MITRE ATT&CK and ATLAS mapping for the Hugging Face breach"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK and MITRE ATLAS frameworks to document common tactics, techniques, and procedures that advanced persistent threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "MITRE ATT&CK and ATLAS mapping for the Hugging Face breach"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 4,
+   "section": "Tactics"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary’s tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Initial Access (ATLAS)",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Privilege Escalation",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Credential Access (ATLAS)",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "Lateral Movement",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 4,
+   "section": "Techniques"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Exploit Public-Facing Application (T1190)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Command and Scripting Interpreter (T1059)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Unix Shell (T1059.004)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Unsecured Credentials (T1552)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Remote Services (T1021)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "Valid Accounts (T1078)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Application Layer Protocol (T1071)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "Container and Resource Discovery (T1613)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "AI Supply Chain Compromise (AML.T0010) (ATLAS)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Data (AML.T0010.002) (ATLAS)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Unsecured Credentials (AML.T0055) (ATLAS)",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Detecting the Hugging Face breach with Elastic Defend and SIEM rules",
+   "type": "heading",
+   "level": 2,
+   "section": "Detecting the Hugging Face breach with Elastic Defend and SIEM rules"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Hugging Face's own writeup notes that AI-assisted detection surfaced the campaign first: LLM-based triage over security telemetry correlated signals that individual rules might scatter across a noisy agentic baseline. Elastic customers can mirror that pattern with production rules already shipped for worker abuse, credential outcomes, unusual egress, and GenAI-parented correlation.",
+   "type": "paragraph",
+   "section": "Detecting the Hugging Face breach with Elastic Defend and SIEM rules"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts",
+   "type": "heading",
+   "level": 3,
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Four durable outcomes show up across this campaign and similar agentic intrusions:",
+   "type": "paragraph",
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Worker or web-service parent spawns an interactive shell, downloader, or decoder.",
+   "type": "list",
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Credential material is collected from environment variables, grep searches, or cloud credential paths.",
+   "type": "list",
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Those credentials are used (e.g., unusual authentication, discovery, secret access, or exec-style activity in control-plane telemetry).",
+   "type": "list",
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "A young binary or GenAI-adjacent process talks to an unusual destination, often after encoding or chunking.",
+   "type": "list",
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Tune noisy mechanics (for example, repeated package installs on build agents) by process lineage and host role. Keep the four outcomes above enabled even when the parent is an approved agent, dataset runner, or coding assistant.",
+   "type": "paragraph",
+   "section": "Outcome-first GenAI detection: what to enable on ML workers and agent hosts"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "Elastic Defend rules for dataset pipeline remote code execution",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Representative worker parents include Python application servers, Celery workers, Node.js services, and custom dataset runners. When untrusted dataset code executes, Defend should see the worker spawn processes that do not belong in normal ingestion.",
+   "type": "paragraph",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "Public rules and behaviors covering this stage:",
+   "type": "paragraph",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "Suspicious Child Execution via Web Server",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Curl or Wget Spawned via Node.js",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Payload Downloaded via Curl or Wget by Web Server",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Payload Execution by Node.js Web Server",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Decoded Payload Piped to Interpreter",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Suspicious Python Encoded Payload Execution",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Suspicious Web Server Child Process",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Payload Execution by Web Server",
+   "type": "list",
+   "section": "Elastic Defend rules for dataset pipeline remote code execution"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Credential access after worker compromise",
+   "type": "heading",
+   "level": 3,
+   "section": "Credential access after worker compromise"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Once the agent had node-level access, Hugging Face described a harvest of cloud and cluster credentials followed by lateral movement. On Linux workers and GenAI hosts, watch secret collection mechanics rather than a single malware hash. If cloud, Kubernetes, or identity audit logs are available, also detect post-theft use of those credentials (permission checks, discovery, secret reads, and anomalous API or exec activity from new user agents, source addresses, or workload identities).",
+   "type": "paragraph",
+   "section": "Credential access after worker compromise"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "GenAI Process Accessing Sensitive Files",
+   "type": "list",
+   "section": "Credential access after worker compromise"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "Environment Variable Secret Collection",
+   "type": "list",
+   "section": "Credential access after worker compromise"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Multi-Value Secret Searching via Grep",
+   "type": "list",
+   "section": "Credential access after worker compromise"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "Sensitive File Access - Cloud Credentials (Windows hosts in hybrid clusters)",
+   "type": "list",
+   "section": "Credential access after worker compromise"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Kubernetes and cloud credential use",
+   "type": "heading",
+   "level": 3,
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Once the agent had a production pod foothold, public reporting describes control-plane and cloud identity reuse, not only secret files on disk. If you run Elastic’s Kubernetes and AWS integrations, enable these production rules alongside the host credential protections.",
+   "type": "paragraph",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "Kubernetes Direct API Request via Curl or Wget",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "Kubernetes Secrets List Across Cluster or Sensitive Namespaces",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "Kubernetes Rapid Secret GET Activity Against Multiple Objects",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "Kubernetes Forbidden Request from Unusual User Agent",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "Kubernetes Forbidden Creation Request",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Kubernetes Container Created with Excessive Linux Capabilities",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Kubernetes Pod Created With HostPID",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Unusual Kubernetes Sensitive Workload Modification",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "Kubernetes Anonymous Request Authorized by Unusual User Agent",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "Kubernetes Secret get or list with Suspicious User Agent",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Kubernetes Secret get or list from Node or Pod Service Account",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Kubernetes Service Account Token Created via TokenRequest API",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "Kubernetes Suspicious Self-Subject Review via Unusual User Agent",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Kubernetes Denied Service Account Request via Unusual User Agent",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "Kubernetes Multi-Resource Discovery",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Kubernetes Privileged Pod Created",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "Kubernetes Pod Created with a Sensitive hostPath Volume",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "AWS STS GetCallerIdentity API Called for the First Time",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "AWS Rare Source AS Organization Activity",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "AWS IAM Long-Term Access Key First Seen from Source IP",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "AWS Access Token Used from Multiple Addresses",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "AWS EC2 Role GetCallerIdentity from New Source AS Organization",
+   "type": "list",
+   "section": "Kubernetes and cloud credential use"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "SIEM rules for unusual egress and self-migrating command and control",
+   "type": "heading",
+   "level": 3,
+   "section": "SIEM rules for unusual egress and self-migrating command and control"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Publicly described C2 used self-migrating infrastructure on public services rather than one long-lived domain. Pair network outcome rules with create-then-connect sequences on workers.",
+   "type": "paragraph",
+   "section": "SIEM rules for unusual egress and self-migrating command and control"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "Potential Tunneling via Tailscaled",
+   "type": "list",
+   "section": "SIEM rules for unusual egress and self-migrating command and control"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "DNS Request by Recently Created Executable",
+   "type": "list",
+   "section": "SIEM rules for unusual egress and self-migrating command and control"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "Connection to Common Large Language Model Endpoints is useful for baselining legitimate model traffic on developer and agent hosts, not for flagging malicious C2 by itself. Enable it for context when investigating GenAI hosts that also trigger unusual-domain alerts.",
+   "type": "paragraph",
+   "section": "SIEM rules for unusual egress and self-migrating command and control"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "GenAI detection correlation and LLM triage (Elastic Stack 9.3.0+)",
+   "type": "heading",
+   "level": 3,
+   "section": "GenAI detection correlation and LLM triage (Elastic Stack 9.3.0+)"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "Using Attack Discovery",
+   "type": "heading",
+   "level": 4,
+   "section": "Using Attack Discovery"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "During a high-velocity intrusion like this, where an attacker generated tens of thousands of events from exploits, containers, workers, RCEs, credential harvesting, lateral movement, command-and-control, and exfiltration, security teams faced thousands of signals.",
+   "type": "paragraph",
+   "section": "Using Attack Discovery"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "Elastic’s Attack Discovery addresses this by using LLMs to correlate scattered alerts and behaviors across hosts and clusters, consolidating high alert volume into cohesive attack chains.",
+   "type": "paragraph",
+   "section": "Using Attack Discovery"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "To highlight this, we used technical information from public reporting and mock data to replay this intrusion through Attack Discovery, illustrating how initial access via dataset pipeline abuse led to credential harvesting and lateral movement, mapping the techniques to MITRE ATT&CK/ATLAS frameworks, and identifying impacted hosts, containers, processes, and workers.",
+   "type": "paragraph",
+   "section": "Using Attack Discovery"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "Attack Discovery view of the Hugging Face intrusion (using publicly available information and mock datasets)",
+   "type": "paragraph",
+   "section": "Using Attack Discovery"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "Using Attack Discovery to assemble thousands of individual events into actionable alerts allows SOC teams to get a more focused view of complex intrusions.",
+   "type": "paragraph",
+   "section": "Using Attack Discovery"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "Rules to assist with correlation",
+   "type": "heading",
+   "level": 4,
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "In addition to Attack Discovery, because the agentic campaigns generated correlated alert stacks on the same host within minutes, two production rules help analysts prioritize without treating every agent spawn as an incident:",
+   "type": "paragraph",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "Elastic Defend Alert from GenAI Utility or Descendant (requires Elastic Stack 9.3.0+)",
+   "type": "list",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "LLM-Based Attack Chain Triage by Host (requires Elastic Stack 9.3.0+ and Elastic Managed LLM)",
+   "type": "list",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "Here are four supporting GenAI integrity rules to keep enabled on agent and developer endpoints:",
+   "type": "paragraph",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "Unusual Process Modifying GenAI Configuration File",
+   "type": "list",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "GenAI CLI Started with Unsafe Permission Bypass",
+   "type": "list",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "Persistence via GenAI Tool",
+   "type": "list",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "Connection to Common Large Language Model Endpoints",
+   "type": "list",
+   "section": "Rules to assist with correlation"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "Detection",
+   "type": "heading",
+   "level": 3,
+   "section": "Detection"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "Suspicious Child Execution via Web Server",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "GenAI Process Accessing Sensitive Files",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "GenAI Process Connection to Unusual Domain",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "GenAI Process Connection to Suspicious Top Level Domain",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "GenAI Process Performing Encoding/Chunking Prior to Network Activity",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "Connection to Common Large Language Model Endpoints",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "Unusual Process Modifying GenAI Configuration File",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "GenAI CLI Started with Unsafe Permission Bypass",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "Elastic Defend Alert from GenAI Utility or Descendant (Elastic Stack 9.3.0+)",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "LLM-Based Attack Chain Triage by Host (Elastic Stack 9.3.0+)",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "Curl or Wget Spawned via Node.js",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "Potential Tunneling via Tailscaled",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Suspicious Interpreter Execution Detected via Defend for Containers",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "Service Account Token or Certificate Read Detected via Defend for Containers",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "Service Account Namespace Read Detected via Defend for Containers",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "DNS Enumeration Detected via Defend for Containers",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "Kubernetes and cloud",
+   "type": "paragraph",
+   "section": "Detection"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "Kubernetes Service Account Token Created via TokenRequest API",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "Kubernetes Denied Service Account Request via Unusual User Agent",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "Kubernetes Secrets List Across Cluster or Sensitive Namespaces",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "Kubernetes Rapid Secret GET Activity Against Multiple Objects",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "Kubernetes Forbidden Request from Unusual User Agent",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "Kubernetes Forbidden Creation Request",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "Kubernetes Container Created with Excessive Linux Capabilities",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "Kubernetes Pod Created With HostPID",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "Unusual Kubernetes Sensitive Workload Modification",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "Kubernetes Anonymous Request Authorized by Unusual User Agent",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "Kubernetes Suspicious Self-Subject Review via Unusual User Agent",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "Kubernetes Multi-Resource Discovery",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "Kubernetes Secret get or list with Suspicious User Agent",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "Kubernetes Secret get or list from Node or Pod Service Account",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "Kubernetes Direct API Request via Curl or Wget",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "Kubernetes Privileged Pod Created",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "Kubernetes Pod Created with a Sensitive hostPath Volume",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "AWS STS GetCallerIdentity API Called for the First Time",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "AWS Rare Source AS Organization Activity",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "AWS IAM Long-Term Access Key First Seen from Source IP",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "AWS Access Token Used from Multiple Addresses",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "AWS EC2 Role GetCallerIdentity from New Source AS Organization",
+   "type": "list",
+   "section": "Detection"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "Prevention",
+   "type": "heading",
+   "level": 3,
+   "section": "Prevention"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "Suspicious Web Server Child Process",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "Payload Downloaded via Curl or Wget by Web Server",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Payload Execution by Web Server",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "Decoded Payload Piped to Interpreter",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "Suspicious Python Encoded Payload Execution",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "DNS Request by Recently Created Executable",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Environment Variable Secret Collection",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "Multi-Value Secret Searching via Grep",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Cloud Credential Files Accessed by Process in Suspicious Directory",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "Persistence via GenAI Tool",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "Suspicious Binary Execution via Path Alias",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "Script DNS Query to Managed Kubernetes Cluster",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "DNS Request to Suspicious File Upload/Download Service",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "File Download from or Upload to Hosting Service",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "How to defend ML workers and GenAI hosts against AI agent attacks",
+   "type": "heading",
+   "level": 3,
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "Treat datasets and model artifacts as untrusted code. Disable auto-executing remote dataset code and dynamic template evaluation in processing pipelines where possible.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "Strip standing cloud and cluster credentials from processing workers. Prefer short-lived workload identity.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "Segment workers so a single RCE cannot reach multiple internal clusters or arbitrary internet C2.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "Do not whole-tool-trust GenAI or ML worker binaries. Carve noisy mechanics by process lineage. Keep credential, config-tamper, persistence, and unusual-egress detections enabled under those parents.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "Pre-vet a self-hosted analysis model for incident response. Hugging Face documented that hosted frontier APIs blocked forensic exploit payloads via safety guardrails.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "For agentic volume, enable LLM attack-chain triage and GenAI-parented Defend correlation (Stack 9.3.0+) so analysts can prioritize without inventing an IOC for an unknown agent.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "In Kubernetes (K8s) environments, monitor access to service account tokens, workload identity tokens, kubeconfigs, cloud metadata endpoints, and cloud CLI credential stores as noted above. Correlation between credential access or new authentication with abnormal K8s or cloud API activity such as identity validation, namespace or cross-cluster discovery/enumeration, and permission testing are good signals. These are important after RCE, attackers often reuse the worker’s existing identity and permissions.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "Block workload access to instance metadata (IMDSv2) from processing pods.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": "Deny privileged and sensitive hostPath pods by default (admission control).",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "Prefer short-lived, per cluster connector identities over shared cluster-admin-style bindings.",
+   "type": "list",
+   "section": "How to defend ML workers and GenAI hosts against AI agent attacks"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "Conclusion: what the Hugging Face breach means for generative AI detection teams",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion: what the Hugging Face breach means for generative AI detection teams"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "The Hugging Face July 2026 agentic intrusion is a useful forcing function. The campaign paired a dataset-supply-chain foothold with credential harvest, lateral movement, and self-migrating C2 at machine speed, then generated ~17,600 recorded events across short-lived sandboxes. OpenAI's follow-on disclosure tied that activity to ExploitGym evaluation models escaping a research sandbox, which makes the incident both an AI safety story and a plain Linux detection problem.",
+   "type": "paragraph",
+   "section": "Conclusion: what the Hugging Face breach means for generative AI detection teams"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "We mapped each stage to production Elastic Defend behaviors and SIEM rules: worker child execution and payload delivery, credential collection outcomes, unusual egress and encoding prior to network activity, and GenAI-parented correlation plus LLM triage on Stack 9.3.0+. Enable those protections on ML workers and agent hosts, tune noisy mechanics by lineage, and keep credential and egress detections hot even when the parent process is trusted.",
+   "type": "paragraph",
+   "section": "Conclusion: what the Hugging Face breach means for generative AI detection teams"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "References",
+   "type": "heading",
+   "level": 2,
+   "section": "References"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "The following were referenced throughout the above research:",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "Hugging Face security incident disclosure (July 2026)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "OpenAI: Hugging Face model evaluation security incident",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": "Anatomy of a Frontier Lab Agent Intrusion: A Technical Timeline of the July 2026 Incident",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "ExploitGym: Can AI Agents Turn Security Vulnerabilities into Real Attacks? (arXiv:2605.11086)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": "OpenAI says Hugging Face was breached by its pre-release models (TechCrunch)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "OpenAI says its AI models hacked Hugging Face during testing (BleepingComputer)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "Elastic Advances LLM Security with Standardized Fields and Integrations",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": "MCP Tools: Attack Vectors and Defense Recommendations for Autonomous Agents",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "Beyond Behaviors: AI-Augmented Detection Engineering with ES|QL COMPLETION",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "About Elastic Security Labs",
+   "type": "heading",
+   "level": 2,
+   "section": "About Elastic Security Labs"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": "Elastic Security Labs is the threat intelligence branch of Elastic Security dedicated to creating positive change in the threat landscape. Elastic Security Labs provides publicly available research on emerging threats with an analysis of strategic, operational, and tactical adversary objectives, then integrates that research with the built-in detection and response capabilities of Elastic Security.",
+   "type": "paragraph",
+   "section": "About Elastic Security Labs"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "Follow Elastic Security Labs on Twitter @elasticseclabs and check out our research at Elastic Security Labs.",
+   "type": "paragraph",
+   "section": "About Elastic Security Labs"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "About Elastic Security Labs"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b276",
+   "page": null,
+   "text": "Cloud Threat Emulation on Autopilot: Context is Everything",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b277",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b278",
+   "page": null,
+   "text": "Cloud Threat Emulation on Autopilot: Context is Everything",
+   "type": "heading",
+   "level": 3,
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b279",
+   "page": null,
+   "text": "September 21, 2026",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b280",
+   "page": null,
+   "text": "Terrance DeJesus",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b281",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b282",
+   "page": null,
+   "text": "Linux Detection Engineering - Local Privilege Escalation",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Cloud Threat Emulation on Autopilot: Context is Everything"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "Linux Detection Engineering - Local Privilege Escalation",
+   "type": "heading",
+   "level": 3,
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "September 11, 2026",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "Ruben Groenewoud",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "How to correlate Kubernetes audit logs with container runtime data",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Local Privilege Escalation"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "How to correlate Kubernetes audit logs with container runtime data",
+   "type": "heading",
+   "level": 3,
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b290",
+   "page": null,
+   "text": "September 03, 2026",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b291",
+   "page": null,
+   "text": "Isai Anthony",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b292",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b293",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "How to correlate Kubernetes audit logs with container runtime data"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b295",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b297",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b298",
+   "page": null,
+   "text": "Linux Detection Engineering - Fileless Execution",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "Detection Engineering",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b300",
+   "page": null,
+   "text": "Linux Detection Engineering - Fileless Execution",
+   "type": "heading",
+   "level": 3,
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b301",
+   "page": null,
+   "text": "September 01, 2026",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b302",
+   "page": null,
+   "text": "Ruben Groenewoud",
+   "type": "paragraph",
+   "section": "Linux Detection Engineering - Fileless Execution"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b304",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

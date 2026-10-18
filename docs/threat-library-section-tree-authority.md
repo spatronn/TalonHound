@@ -31,7 +31,7 @@ docker compose exec -T backend node scripts/section-tree-authority-compare.js --
 Candidates and diagnostics stamp:
 
 - `scope_engine` / `scope_engine_version` (`tl-scope-engine-section-tree-v2`)
-- `section_tree_version` (`tl-section-tree-v3`)
+- `section_tree_version` (`tl-section-tree-v4`)
 
 ## Architecture
 
@@ -81,3 +81,19 @@ uncited or cites real publisher text naming the value; `evidence.ai_classificati
 model said, whether publisher text supports it and whether it was applied. A publisher legitimate /
 dual-use / "not inherently malicious" stance wins over model labels unless another occurrence
 asserts the value; that conflict is recorded (`stance_conflict`, quality check 15).
+
+## Qualified inventory headings (tl-section-tree-v4 / tl-zones-v14)
+
+Some vendor templates title their IOC table "Observations" (an `Observable | Type | Name |
+Reference` table), others use the same word for a narrative findings section. A qualified inventory
+heading ("Observations", "Key observations") opens an IOC section only when the first table of its
+section, before the next heading, is a self-proving IOC table: an indicator column plus a declared
+observable-type column (`interpretIocTable` `explicit` with `declared_type_column`). Prose, a
+descriptive table or a value table without a type column leaves it narrative, so the heading alone
+never sets MODE A. Both engines share the check (`confirmedQualifiedIocHeading`).
+
+Inside such a table, a row whose own descriptor cells name the value a category-qualified provider
+("Blockchain provider", "DNS resolver") or an explicitly public / legitimate / third-party service is
+a provider relation and asserts nothing; a C2, staging, operational, lookalike or weaponized role
+keeps the row assertion. A list whose lead-in object phrase names the listed values as providers /
+explorers / resolvers ("… through three Blockscout providers:") carries the same stance.

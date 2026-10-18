@@ -1,0 +1,96 @@
+{
+  "id": "golden-elastic-oxloader-observations",
+  "title": "Elastic — OXLOADER / CASTLESTEALER (\"Observations\" heading + escaped defang)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "observations_heading",
+    "escaped_defang",
+    "crypto_key_hex",
+    "regression_ten_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-oxloader-observations-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/oxloader-malware-loader-infostealer",
+    "talonhound_report_id": "916b604d-ec11-4c43-bc8d-2e85aef15510",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "\"Observations\" heads the publisher Observable|Type|Name|Reference table, so the report is MODE A. The two Storj payload URLs are body narrative assertions the publisher left out of its table: non-members under MODE A (policy verdict, ten-report audit). 6E0A…8F is the Chaskey key (\"with the key (…)\"), not a file hash.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "app.miloyannopoulos.com"
+      },
+      {
+        "type": "domain",
+        "value": "node-js.prentiva99.info"
+      },
+      {
+        "type": "ip",
+        "value": "89.124.115.82"
+      },
+      {
+        "type": "ip",
+        "value": "89.124.95.161"
+      },
+      {
+        "type": "sha256",
+        "value": "39019279686c820c3af5684012a0085a7e2109f612c9fab886dd0577ace5b5c6"
+      },
+      {
+        "type": "sha256",
+        "value": "4ec9d9d4d10ad78fc6d7bda7cb17d52984878ccd2dd4302fd1cef152313b9741"
+      },
+      {
+        "type": "sha256",
+        "value": "9a9939dff297997732aaade9b243d695632cbd64033c5fbcb9de3d09b7e6c28d"
+      },
+      {
+        "type": "sha256",
+        "value": "c85f2765a6c3c3f3907c17e57df12f8f68826f74bff3bbfd272af50666d065fe"
+      },
+      {
+        "type": "sha256",
+        "value": "de4f51649ec1a33071854aefe93ffb3fc225e19f802d8dd914676dd5dfef2615"
+      },
+      {
+        "type": "sha256",
+        "value": "fdfc7831e5c24cfa80152860dfe8c056ba079f7df1393bf6bb7b18ed974eda37"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "url",
+        "value": "link.storjshare.io/raw/jux4e4ky5mruo4jkxsssp42sau4q/ruslan/BATPackageBuilderSetup.bat"
+      },
+      {
+        "type": "url",
+        "value": "link.storjshare.io/raw/jwwvr4oskkkjsgevt774ta62ehya/ruslan/aBsvwbdas.exe"
+      },
+      {
+        "type": "md5",
+        "value": "6e0a1f8f77f7011561f6f9ca96b71b8f"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

@@ -21,6 +21,7 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { textDescribesValueAsBenign } from './indicatorScope.js';
 import { hasDelegatedDnsSuffix, suffixStrength } from './observableTypeResolver.js';
 import { refangTextForExtraction } from './defang.js';
+import { annotateSectionTree } from './sectionTree/annotate.js';
 
 /**
  * Bump when a check, a reason code or a threshold changes.
@@ -59,8 +60,10 @@ import { refangTextForExtraction } from './defang.js';
  * publisher both asserts and calls legitimate / dual-use; post-merge checks
  * 16–18 (withPostMergeQuality) record rejected model quotes, unsupported model
  * escalations and malicious-assessed non-members (MODE A suppression).
+ * v8 (ten-report audit): under the section-tree engine, check 6 treats a
+ * discovery block nested under a publisher IOC heading as governed by it.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v7';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v8';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -630,6 +633,19 @@ export function assessExtractionQuality(input) {
     if (strong && b.scope_opening_id === b.id) opener = { level: Number(b.level) || null };
     else if (opener && b.type === 'heading' && !strong && Number(b.level) && (!opener.level || Number(b.level) <= opener.level)) opener = null;
     if (opener) governed.add(b.id);
+  }
+  // Section-tree engine: membership authority follows heading ancestry, so a
+  // discovery block nested under a publisher IOC heading (an H3 subgroup of the
+  // "Indicators of Compromise" H2) is governed by that heading even where the
+  // linear zone pass closed and re-opened the zone.
+  if (diagnostics.scope_engine?.engine === 'section_tree' && blocks.length) {
+    try {
+      for (const tb of annotateSectionTree({ blocks, meta: input?.documentMeta || {} }).blocks || []) {
+        if (tb?.id && tb.authoritative_ancestor_id) governed.add(tb.id);
+      }
+    } catch {
+      // Diagnostics only: fall back to the linear reading.
+    }
   }
   const isDiscoveryBlock = (b) => Boolean(b) && !b.scope_opening_id && !governed.has(b.id) &&
     STRUCTURAL_DISCOVERY_REASONS.has(String(b.zone_reason || ''));

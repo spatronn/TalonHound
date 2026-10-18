@@ -100,6 +100,11 @@ function isBenignComponentOnly(candidate) {
       occ.some((o) => o.relation_marker === 'detection_alert')) {
     return true;
   }
+  // Only citation entries / the publisher's own tooling links (and excluded zones).
+  if (occ.length && occ.every((o) => o.relation_marker === 'citation' || o.relation_marker === 'excluded_zone') &&
+      occ.some((o) => o.relation_marker === 'citation')) {
+    return true;
+  }
   if (!occ.length || !occ.some((o) => o.relation_marker === 'benign')) return false;
   // The publisher's own stance (legitimate / dual-use / not inherently
   // malicious) decides unless another occurrence asserts the value: an

