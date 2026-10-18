@@ -189,12 +189,15 @@ export function classifyCreateEligibility(candidate) {
     };
   }
 
+  // Approve is the creation gate. `unknown` means the model did not decide —
+  // analyst approval still materializes the IOC. `benign` stays blocked even
+  // when approved; context_only / invalid are already excluded above.
   const assessment = String(candidate.assessment || '').toLowerCase();
-  if (!['malicious', 'suspicious'].includes(assessment)) {
+  if (assessment === 'benign') {
     return {
       eligible: false,
       outcome: PROMOTION_OUTCOMES.NOT_APPLICABLE,
-      detail: 'Assessment is not malicious or suspicious.'
+      detail: 'Benign indicators are not created as IOC records.'
     };
   }
 

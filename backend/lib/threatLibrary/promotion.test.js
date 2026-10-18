@@ -34,6 +34,18 @@ test('approved new supported IP is eligible for create', () => {
   assert.equal(r.outcome, PROMOTION_OUTCOMES.WILL_CREATE);
 });
 
+test('approved + unknown assessment is eligible (analyst approval is the gate)', () => {
+  const r = classifyCreateEligibility(cand({ assessment: 'unknown' }));
+  assert.equal(r.eligible, true);
+  assert.equal(r.outcome, PROMOTION_OUTCOMES.WILL_CREATE);
+});
+
+test('approved + benign stays not_applicable', () => {
+  const r = classifyCreateEligibility(cand({ assessment: 'benign' }));
+  assert.equal(r.eligible, false);
+  assert.equal(r.outcome, PROMOTION_OUTCOMES.NOT_APPLICABLE);
+});
+
 test('pending is not eligible and does not create', () => {
   const r = classifyCreateEligibility(cand({ review_status: 'pending' }));
   assert.equal(r.eligible, false);

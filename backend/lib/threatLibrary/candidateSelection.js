@@ -184,7 +184,8 @@ function classifyCreateOutcome(candidate) {
   if (!isUnionReportIndicatorMember(c)) return 'not_applicable';
   if (!PROMOTABLE_TYPES.has(type)) return 'unsupported';
   if (review !== 'approved' && review !== 'created_ioc') return 'not_approved';
-  if (assessment !== 'malicious' && assessment !== 'suspicious') return 'not_applicable';
+  // Mirror promotion.classifyCreateEligibility: approved + unknown is creatable.
+  if (assessment === 'benign') return 'not_applicable';
   if (c.matched_ioc_id || review === 'created_ioc' || state === 'existing' || lower(c.promotion_outcome) === 'created') {
     return 'already_existing';
   }
@@ -194,7 +195,9 @@ function classifyCreateOutcome(candidate) {
 function iocResultOutcome(candidate) {
   const persisted = lower(candidate?.promotion_outcome);
   if (persisted === 'created' || persisted === 'already_existing') return persisted;
-  if (classifyCreateOutcome(candidate) === 'already_existing') return 'already_existing';
+  const live = classifyCreateOutcome(candidate);
+  if (live === 'already_existing') return 'already_existing';
+  if (live === 'will_create') return null;
   return persisted && persisted !== 'will_create' ? persisted : null;
 }
 
