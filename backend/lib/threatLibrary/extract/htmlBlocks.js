@@ -23,11 +23,15 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v5: real heading elements nested inside list items (`<ul><li><h3>…`)
  * emit as `heading` blocks with their DOM level instead of flattening into
  * list text — appendix subgroup labels such as "C2" keep heading semantics.
- * v6: hyperlinks inside content blocks are preserved as structured
+ * v6: Cloudflare-obfuscated addresses (`data-cfemail`, rendered "[email
+ * protected]") are decoded to the publisher's text before parsing.
+ * v7: hyperlinks inside content blocks are preserved as structured
  * `links: [{ href, text }]` so destination-only anchors ("can be found here")
  * remain available to section-tree authority and IOC Source discovery.
+ * Document extractor contract is threat_library_html_v7 so Refresh rebuilds
+ * retained HTML under the links contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v6';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v7';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -65,11 +69,44 @@ const CAPTION_TAGS = new Set(['caption', 'figcaption']);
 /** Containers we descend into; direct text inside them forms paragraphs. */
 const CONTAINER_TAGS = new Set(['div', 'section', 'article', 'main', 'body', 'html', 'aside', 'header', 'details', 'figure', 'form', 'fieldset', 'center', 'font', 'span', 'label', 'legend', 'hgroup', 'ul', 'ol', 'dl', 'menu', 'li', 'tbody', 'thead', 'tfoot', 'tr', 'td', 'th']);
 
+/** Cloudflare email obfuscation: `<a|span … data-cfemail="HEX">[email protected]</a|span>`. */
+const CF_EMAIL_ELEMENT_RE = /<(a|span)\b([^>]*?)\bdata-cfemail\s*=\s*["']([0-9a-f]+)["']([^>]*)>[\s\S]*?<\/\1\s*>/gi;
+const EMAIL_SHAPE_RE = /^[^\s@<>"'&]+@[^\s@<>"'&]+$/;
+
+/**
+ * Decode one Cloudflare `data-cfemail` payload: the first byte is the XOR key
+ * of the remaining bytes. Returns null when the result is not an address.
+ * @param {string} hex
+ */
+export function decodeCloudflareEmail(hex) {
+  const h = String(hex || '');
+  if (h.length < 4 || h.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(h)) return null;
+  const key = parseInt(h.slice(0, 2), 16);
+  let out = '';
+  for (let i = 2; i < h.length; i += 2) out += String.fromCharCode(parseInt(h.slice(i, i + 2), 16) ^ key);
+  return EMAIL_SHAPE_RE.test(out) ? out : null;
+}
+
+/**
+ * Restore the publisher's text where Cloudflare replaced an address with
+ * "[email protected]" (the real value is only in `data-cfemail`). Anything
+ * that does not decode to an address is left untouched.
+ * @param {string} html
+ */
+export function decodeCloudflareEmails(html) {
+  const s = String(html || '');
+  if (!/data-cfemail/i.test(s)) return s;
+  return s.replace(CF_EMAIL_ELEMENT_RE, (whole, _tag, _a, hex) => {
+    const email = decodeCloudflareEmail(hex);
+    return email ? email.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : whole;
+  });
+}
+
 /**
  * @param {string} html
  */
 export function parseHtml(html) {
-  return parseDocument(String(html || ''), { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true });
+  return parseDocument(decodeCloudflareEmails(html), { decodeEntities: true, lowerCaseTags: true, lowerCaseAttributeNames: true });
 }
 
 function isElement(node) {

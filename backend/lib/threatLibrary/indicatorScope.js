@@ -144,7 +144,7 @@ const OPERATIONAL_INFRA_RE =
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 
 const REFERENCE_INTENT_RE =
-  /^(?:references?|bibliography|contact|contacts|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|参考链接|参考文献|相关链接|联系方式/i;
+  /^(?:references?|bibliography|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|^contact(?:s|ing)?(?:\s+(?:us|information|info|details|the\s+(?:authors?|team|researchers?)|our\s+team))?\s*[:.!]?\s*$|参考链接|参考文献|相关链接|联系方式/i;
 
 /**
  * Surrounding prose that names a reporting / law-enforcement contact channel
@@ -351,6 +351,15 @@ const STANCE_OVERRIDE_RE =
   /\b(?:attacker[- ]controlled|actor[- ]controlled|operated\s+by\s+(?:the\s+)?(?:threat\s+)?(?:actors?|attackers?|operators?|group)|registered\s+by\s+(?:the\s+)?(?:threat\s+)?(?:actors?|attackers?)|malicious\s+(?:domain|server|host|infrastructure|url|ip|site|c2)|fake|typo-?squat\w*|look-?alike|impersonat\w*|spoof\w*|phishing)\b/i;
 
 /** Contrast with other values: the stance words are about those, not this one. */
+/**
+ * A trailing clause that locates the malicious logic in another named
+ * component ("all malicious logic is contained within the JAR", "the malicious
+ * code resides in the side-loaded DLL"). Never matches when it names the
+ * observable itself.
+ */
+const MALICE_ELSEWHERE_RE =
+  /[,;]?\s*(?:while\s+|whereas\s+|and\s+|but\s+)?(?:all|the|any)\s+(?:of\s+the\s+)?malicious\s+(?:logic|code|functionality|behaviou?r|content)\s+(?:is|are|was|were|resides?|lives?|sits?)\s+(?:entirely\s+|only\s+|solely\s+)?(?:contained\s+|located\s+|embedded\s+|implemented\s+)?(?:with)?in(?:side)?\s+(?:the\s+|a\s+|an\s+)?(?!\s*OBSERVABLE)[^.;!?]*?(?=$|[.;!?])/gi;
+
 const CONTRASTIVE_STANCE_RE =
   /\b(?:alongside|unlike|besides|other\s+than|apart\s+from|in\s+addition\s+to|in\s+contrast|whereas|rather\s+than|instead\s+of|beyond\s+the)\b|\bwhile\s+the\s+(?:[\w-]+\s+){0,10}?(?:are|were|is|was)\b/i;
 
@@ -440,7 +449,10 @@ export function describesBenignComponent(masked) {
   if (sentenceEnd >= 0) end = Math.min(end, sentenceEnd);
   const foreign = after.slice(0, end).search(FOREIGN_OBSERVABLE_TOKEN_RE);
   if (foreign >= 0) end = foreign;
-  const window = `${before.slice(start)} OBSERVABLE ${after.slice(0, end)}`;
+  // "…, all malicious logic is contained within the JAR": a clause that places
+  // the malice in ANOTHER component confirms this one's legitimate stance; it
+  // is not a malicious cue about this value.
+  const window = `${before.slice(start)} OBSERVABLE ${after.slice(0, end)}`.replace(MALICE_ELSEWHERE_RE, ' ');
   if (BENIGN_COMPONENT_RE.test(window) && !BENIGN_NEGATION_RE.test(window) && !CONTRASTIVE_STANCE_RE.test(window)) return true;
   if (statesNonMaliciousStance(window)) return true;
   // The next sentence may still describe this value ("… (This domain is not
@@ -882,9 +894,44 @@ function structuralRowOf(occ) {
   return zr === 'observable_list' || zr === 'cidr_list' || zr === 'ioc_table';
 }
 
-/** Malware-artifact nouns that make a prose hash the publisher's sample. */
+/**
+ * Malware-artifact nouns that make a prose hash the publisher's sample. The
+ * delivery containers of a payload ("a ZIP archive named X.zip (SHA-256: H)",
+ * "the JAR file (SHA-256: H)") name the analysed artifact the same way; a
+ * legitimate / signed stance is read first and still wins. The container must
+ * be named as a file ("ZIP archive", "archive named …", "JAR file"): a bare
+ * "archive" is also a service name ("an Internet Archive file").
+ */
 const SAMPLE_SUBJECT_RE =
-  /\b(?:samples?|scripts?|loaders?|installers?|droppers?|payloads?|implants?|backdoors?|stealers?|rats?|trojans?|malware|binar(?:y|ies)|executables?|dlls?|variants?|stagers?|reimplementation|wave\s+[a-z0-9])\b/i;
+  /\b(?:samples?|scripts?|loaders?|installers?|droppers?|payloads?|implants?|backdoors?|stealers?|rats?|trojans?|malware|binar(?:y|ies)|executables?|dlls?|variants?|stagers?|reimplementation|(?:zip|rar|7z|7-zip|tar|gz|iso|cab|password[- ]protected)\s+(?:archives?|files?)|archives?\s+(?:named|called|titled)|jar\s+(?:files?|archives?|payloads?)|wave\s+[a-z0-9])\b/i;
+
+/**
+ * A publisher list labelled by the operator's role, inside a curated IOC
+ * section ("Specific operator-side IPs observed: X (…) and Y (…)", "Attacker
+ * domains: X, Y"). The role word is required: "Legitimate IPs observed:" or
+ * "Victim hosts:" assert nothing. Read on the whole sentence (the coordinated
+ * second value has no words of its own).
+ */
+const ROLE_ENUMERATION_RE =
+  /\b(?:operators?|attackers?|actors?|adversar(?:y|ies)|threat[- ]actors?|malicious|c2|c&c|campaign|intrusion|kit)(?:[- ](?:side|controlled|owned|operated|used))?\s+(?:[\w-]+\s+){0,2}?(?:ips?|ip\s+addresses|addresses|domains?|hosts?|hostnames?|urls?|servers?|nodes?|infrastructure|hashes|samples|files)\s+(?:(?:were|was|are|is)\s+)?(?:observed|seen|used|identified|included|noted|recorded|attributed)?\s*[:：](?:[^.;!?]|\.(?=\S)){0,240}?OBSERVABLE/i;
+
+/**
+ * The operator hands the value to the victim ("the threat actor pasted a URL
+ * into the Teams chat: X", "the attacker sent a link to X"): delivery
+ * infrastructure. Actor subject + delivery verb + link / file object, and the
+ * value inside the same sentence.
+ */
+const ACTOR_DELIVERY_RE =
+  /\b(?:threat\s+actors?|attackers?|operators?|adversar(?:y|ies)|intruders?|the\s+actors?)(?:\(s\))?\s+(?:\w+\s+){0,2}?(?:pasted|sent|shared|posted|delivered|messaged|dropped)\s+(?:a|an|the)\s+(?:[\w-]+\s+){0,2}?(?:url|link|lure|file|payload|archive|attachment)s?\b(?:[^.;!?]|\.(?=\S)){0,100}?OBSERVABLE/i;
+
+/**
+ * The value is named a lookalike / typosquat / impersonation host. Direction
+ * matters: the role noun must govern this value ("the lookalike domain, X",
+ * "X, a typosquatted domain", "X … and several other lookalike domains"),
+ * never the organisation it imitates ("a lookalike of X", "impersonating X").
+ */
+const LOOKALIKE_ROLE_RE =
+  /\b(?:look-?alike|typo-?squat(?:ted|ting)?|impersonation|spoofed)\s+(?:domains?|sites?|websites?|hosts?|hostnames?|urls?)\s*[,:(–—-]?\s*["'“”‘’`]?\s*OBSERVABLE|OBSERVABLE\s*["'“”‘’`]?\s*[,(]?\s*(?:is\s+|was\s+)?(?:a|an|the)\s+(?:look-?alike|typo-?squat(?:ted|ting)?|spoofed)\s+(?:domains?|sites?|websites?|hosts?)\b|OBSERVABLE\s*["'“”‘’`]?(?:[^.;!?]|\.(?=\S)){0,160}?\b(?:other|similar|additional|more)\s+(?:look-?alike|typo-?squat(?:ted|ting)?|impersonation|spoofed)\s+(?:domains?|sites?|websites?)\b/i;
 
 /**
  * The sentence holding OBSERVABLE, plus a short record label right before it
@@ -1055,6 +1102,17 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
 
   if (INTERCEPTED_SERVICE_RE.test(text) && !STANCE_OVERRIDE_RE.test(text)) {
     return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: false };
+  }
+
+  // A lookalike / impersonation host is attacker infrastructure by role, in
+  // any zone (the role noun has to govern this exact value).
+  if ((LOOKALIKE_ROLE_RE.test(text) || LOOKALIKE_ROLE_RE.test(full) || ACTOR_DELIVERY_RE.test(full)) && !describesBenignComponent(full)) {
+    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'operational', authoritative, structural_row: false };
+  }
+  // Inside a curated / delegated IOC scope, a list the publisher labels by the
+  // operator's role enumerates Indicators.
+  if (authoritative && ROLE_ENUMERATION_RE.test(full) && !describesBenignComponent(full)) {
+    return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'operational', authoritative, structural_row: false };
   }
 
   const operational = OPERATIONAL_RELATION_RE.test(text);

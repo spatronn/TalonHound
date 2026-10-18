@@ -56,13 +56,14 @@ function snapshot({ report = reportRow(), candidates = [candidate(1), candidate(
   return { report, candidates, entities, relationships, artifacts: [{ id: 1, sha256: 'abc' }], jobs: [{ id: 1, status: 'done' }] };
 }
 
-function fakePool({ report = reportRow(), snap = snapshot() } = {}) {
+function fakePool({ report = reportRow(), snap = snapshot(), linkedCandidateIds = [] } = {}) {
   const queries = [];
   return {
     queries,
     query: async (sql, params = []) => {
       const n = String(sql).replace(/\s+/g, ' ').trim();
       queries.push({ sql: n, params: [...params] });
+      if (n.includes('FROM threat_report_candidate_source_links l')) return { rows: linkedCandidateIds.map((id) => ({ candidate_id: id })) };
       if (n.includes('FROM threat_reports WHERE public_id = $1::uuid AND deleted_at IS NULL')) return { rows: report ? [report] : [] };
       if (n.includes('FROM threat_reports WHERE id = $1 AND deleted_at IS NULL')) return { rows: report ? [report] : [] };
       if (n.includes('FROM threat_report_candidates WHERE report_id = $1')) return { rows: snap.candidates };
@@ -191,10 +192,40 @@ test('loadThreatReportForMcp: fixed query count (report + snapshot), no per-indi
   const out = await loadThreatReportForMcp(pool, { id: REPORT_ID, indicator_limit: 500 });
   assert.equal(out.status, 200);
   assert.equal(out.body.indicators.returned, 300);
-  // getReportByPublicId + snapshot (6) + tags; MITRE rows are never read
-  assert.equal(pool.queries.length, 8);
+  // getReportByPublicId + snapshot (6) + linked-source provenance + tags; MITRE rows are never read
+  assert.equal(pool.queries.length, 9);
   assert.equal(pool.queries.some((q) => /mitre/i.test(q.sql)), false);
   assert.equal(pool.queries.some((q) => /^(INSERT|UPDATE|DELETE)/i.test(q.sql)), false);
+});
+
+test('loadThreatReportForMcp: linked-only counts read link provenance (parity with linkedSourceIndicatorMembershipSql)', async () => {
+  // Nimbus RAT shape (30293): pastebin + two hashes are original-document
+  // narrative non-members that the attached publisher IOC file links; the
+  // Sheets C2 URL exists only in the linked file. SQL counts 4 linked-only.
+  const narrative = {
+    source_assertion: 'body_mention', assessment: 'malicious', review_status: 'pending', match_state: 'new',
+    matched_ioc_id: null, matched_ioc_observable_type: null, has_original_document_occurrence: true, section: 'report_body',
+    evidence: {
+      source_assertion: 'body_mention', policy_decision: 'body_mention', document_has_authoritative_scope: true,
+      occurrences: [{ block_id: 'b1', zone: 'report_body', occurrence_kind: 'narrative_mention', asserted: false }]
+    }
+  };
+  const cands = [
+    candidate(1, { ...narrative, candidate_type: 'url', normalized_value: 'pastebin.com/G6jA0PLU' }),
+    candidate(2, { ...narrative, candidate_type: 'sha256', normalized_value: '9e5b1e10ad6904d3f5b48d38470cd57263974640a27d13cf793ef026d3d6b886' }),
+    candidate(3, { ...narrative, candidate_type: 'sha256', normalized_value: '91e523a46f3bb860ac2e5800b7e1ec89d75a2408410b9cd25eebc17c8d7a92bc' }),
+    candidate(4, { candidate_type: 'url', normalized_value: 'docs.google.com/spreadsheets/d/x/export?format=csv', source_assertion: 'linked_source_ioc', review_status: 'pending', match_state: 'new', matched_ioc_id: null, has_original_document_occurrence: false }),
+    candidate(5, { ...narrative, candidate_type: 'domain', normalized_value: 'googleapis.com', assessment: 'context_only', is_ioc: false, source_assertion: 'reference_only' })
+  ];
+  const withoutLinks = await loadThreatReportForMcp(fakePool({ snap: snapshot({ candidates: cands }) }), { id: REPORT_ID });
+  assert.equal(withoutLinks.body.counts.linked_only, 1);
+  const pool = fakePool({ snap: snapshot({ candidates: cands }), linkedCandidateIds: [501, 502, 503, 504, 505] });
+  const out = await loadThreatReportForMcp(pool, { id: REPORT_ID });
+  assert.equal(out.body.counts.indicators, 0);
+  assert.equal(out.body.counts.linked_only, 4);
+  assert.equal(out.body.counts.total_unique, 4);
+  // A Context Only row stays out of the union even when the linked file names it.
+  assert.equal(out.body.counts.context_only, 1);
 });
 
 test('loadThreatReportForMcp: invalid id, not found, not ready, deleted', async () => {

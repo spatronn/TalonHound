@@ -34,7 +34,7 @@ import { selectHtmlTitle } from './titleSelection.js';
  * v6: score article/main roots; prefer denser main over thin card articles;
  * always compare structured content-root fallback against thin incumbents.
  */
-// v7: structured block.links from htmlBlocks v6 (destination-only href anchors).
+// v7: structured block.links from htmlBlocks v7 (destination-only href anchors).
 export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v7';
 export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
 

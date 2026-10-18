@@ -1,0 +1,102 @@
+{
+  "id": "golden-esentire-unc6692-edgecution",
+  "title": "www.esentire.com - Email Bombing, IT Impersonation, Quick Assist, and Edgecution: Breaking Down UNC6692's Tra",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "ioc_table",
+    "cloudflare_email",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-unc6692-edgecution-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/email-bombing-it-impersonation-quick-assist-and-edgecution-breaking-down-unc6692s-tradecraft",
+    "talonhound_report_id": "f7a2cfc0-aee2-48c6-b553-a34ce933996d",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Type | Value | Description IOC table (MODE A); Teams account rows are emails (unsupported type).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "d1jp293q9tvi92.cloudfront.net"
+      },
+      {
+        "type": "domain",
+        "value": "d23l50n6ubud7p.cloudfront.net"
+      },
+      {
+        "type": "domain",
+        "value": "d2g6dl71gua1qa.cloudfront.net"
+      },
+      {
+        "type": "domain",
+        "value": "d3434apz0x8t7d.cloudfront.net"
+      },
+      {
+        "type": "domain",
+        "value": "d385m5skczp5q5.cloudfront.net"
+      },
+      {
+        "type": "domain",
+        "value": "d3nh8sl98s2554.cloudfront.net"
+      },
+      {
+        "type": "domain",
+        "value": "d7xpwoah6gdv2.cloudfront.net"
+      },
+      {
+        "type": "url",
+        "value": "https://app5805.s3.us-east-1.amazonaws.com/js/patch3265343.a"
+      },
+      {
+        "type": "url",
+        "value": "https://app7040.s3.us-east-1.amazonaws.com/patch.html"
+      },
+      {
+        "type": "url",
+        "value": "https://app7570.s3.us-east-1.amazonaws.com/js/set36418917.a"
+      },
+      {
+        "type": "url",
+        "value": "https://app7570.s3.us-east-1.amazonaws.com/js/set36418917.ahk"
+      },
+      {
+        "type": "url",
+        "value": "https://app7570.s3.us-east-1.amazonaws.com/js/set36418917.exe"
+      },
+      {
+        "type": "url",
+        "value": "https://cloud3043.s3.us-east-1.amazonaws.com/patch.html"
+      },
+      {
+        "type": "url",
+        "value": "https://cloud48949.s3.us-east-1.amazonaws.com/patch.html"
+      },
+      {
+        "type": "url",
+        "value": "https://cloud9069.s3.us-east-1.amazonaws.com/patch.html"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

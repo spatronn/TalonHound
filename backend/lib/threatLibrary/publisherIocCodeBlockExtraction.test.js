@@ -55,8 +55,8 @@ const isMember = (c) => Boolean(c) && isActionableReviewIndicator(reviewRow(c));
 const membersOf = (cands) => cands.filter((c) => isMember(c));
 
 test('contract: html v4 + candidates v15', () => {
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v6');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v31');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v7');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v32');
 });
 
 test('preTextLinesOf keeps author newlines inside fenced code', () => {

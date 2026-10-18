@@ -26,6 +26,7 @@ import {
 } from '../indicatorScope.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
 import { refangTextForExtraction } from '../defang.js';
+import { interpretIocTable } from '../tableSemantics.js';
 import {
   EXTERNAL_IOC_POINTER_RE,
   blockIsExternalIocReference
@@ -105,9 +106,19 @@ export const EXTERNAL_POINTER_RE = EXTERNAL_IOC_POINTER_RE;
 const OBSERVABLE_GLOBAL_RE = new RegExp(OBSERVABLE_RE.source, 'gi');
 
 /**
+ * A sentence that names observables only to say they are legitimate or cannot
+ * be blocked ("Blocking docs.google.com or googleapis.com is not viable",
+ * "… are legitimate Google services"). Those names describe the environment,
+ * not an inventory the publisher curated.
+ */
+const NON_INVENTORY_STANCE_RE =
+  /\b(?:block(?:ing|ed)?|deny(?:ing)?|blacklist(?:ing)?|blocklist(?:ing)?|filter(?:ing)?)\b[^.;]{0,160}?\b(?:is|are|would\s+be|isn['’]t|aren['’]t)\s+(?:not\s+)?(?:viable|feasible|practical|possible|realistic|recommended|an\s+option)\b|\b(?:legitimate|benign|trusted|well-known)\s+(?:[\w-]+\s+){0,3}?(?:services?|platforms?|providers?|domains?|infrastructure|apis?|endpoints?|cdns?)\b/i;
+
+/**
  * Content that lists at least one observable (an inventory), as opposed to a
  * pointer sentence such as "These indicators are also available for download
- * here." or "IOCs are listed in our GitHub repository: <url>".
+ * here." or "IOCs are listed in our GitHub repository: <url>", or a prose
+ * sentence that names services only to call them legitimate / unblockable.
  * @param {object} b annotated content block
  */
 function hasObservableInventory(b) {
@@ -121,7 +132,31 @@ function hasObservableInventory(b) {
   const hits = urls.length + (rest.match(OBSERVABLE_GLOBAL_RE) || []).length;
   if (!hits) return false;
   if (b.type !== 'table' && hits <= 1 && EXTERNAL_POINTER_RE.test(t)) return false;
+  if (
+    b.type !== 'table' &&
+    !isIndicatorValueLine(t) &&
+    !isObservableListLine(t) &&
+    !isAnnotatedIndicatorRowLine(t) &&
+    NON_INVENTORY_STANCE_RE.test(refanged)
+  ) {
+    return false;
+  }
   return true;
+}
+
+/**
+ * A table that is a publisher indicator inventory: it has an indicator column
+ * whose cells parse as observables. A descriptive table under a C2 heading
+ * ("Endpoint | Method | Description", "Channel | Authentication | Poll") is
+ * technical content and never opens C2 authority. A table block without a
+ * parsed grid falls back to "carries an observable".
+ * @param {object} b
+ */
+function isInventoryTable(b) {
+  if (b.table && Array.isArray(b.table.rows) && b.table.rows.length) {
+    return interpretIocTable(b, { inAuthoritativeScope: true }).kind === 'ioc_table';
+  }
+  return OBSERVABLE_RE.test(refangTextForExtraction(textOf(b)));
 }
 
 function lookAheadInventory(blocks, i, chromeIds, depth = 4) {
@@ -137,8 +172,9 @@ function lookAheadInventory(blocks, i, chromeIds, depth = 4) {
 }
 
 /**
- * Strong inventory look-ahead for C2 / operational openings: tables, list rows,
- * and annotated value lines — not prose that merely mentions an observable.
+ * Strong inventory look-ahead for C2 / operational openings: IOC tables, list
+ * rows, and annotated value lines — not prose that merely mentions an
+ * observable, and not a descriptive technical table.
  */
 function lookAheadStrongInventory(blocks, i, chromeIds, depth = 6) {
   let seen = 0;
@@ -147,7 +183,11 @@ function lookAheadStrongInventory(blocks, i, chromeIds, depth = 6) {
     if (isChrome(b, chromeIds)) continue;
     if (b.type === 'heading') return false;
     seen += 1;
-    if (b.type === 'table' || b.layout === 'observable_row') return true;
+    if (b.layout === 'observable_row') return true;
+    if (b.type === 'table') {
+      if (isInventoryTable(b)) return true;
+      continue;
+    }
     const t = textOf(b);
     if (!t) continue;
     // HTTP/API examples are technical prose, not publisher IOC inventory.

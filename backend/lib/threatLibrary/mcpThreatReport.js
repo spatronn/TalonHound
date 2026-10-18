@@ -14,7 +14,7 @@
  * `relationships` state an explicit link.
  */
 
-import { getReportByPublicId, loadReportSnapshot } from './store.js';
+import { getReportByPublicId, loadReportLinkedSourceCandidateIds, loadReportSnapshot } from './store.js';
 import { loadReportTags } from './reportTags.js';
 import { serializePublicationDate } from './publicationDate.js';
 import { TLP_DISPLAY } from './constants.js';
@@ -171,6 +171,19 @@ export function serializeThreatReport(snapshot, page = {}) {
 }
 
 /**
+ * Mark candidates that have linked IOC Source provenance
+ * (`has_linked_source_occurrence`), the input the JS membership predicates
+ * share with `linkedSourceIndicatorMembershipSql`.
+ * @param {object[]} candidates
+ * @param {Set<string>} linkedIds candidate ids (as strings) with a source link
+ */
+export function withLinkedSourceProvenance(candidates, linkedIds) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  if (!linkedIds || !linkedIds.size) return list;
+  return list.map((c) => (linkedIds.has(String(c.id)) ? { ...c, has_linked_source_occurrence: true } : c));
+}
+
+/**
  * Resolve + read + serialize. Returns the MCP service outcome envelope.
  * Errors propagate (store failure is a failure, never an empty report).
  */
@@ -188,6 +201,11 @@ export async function loadThreatReportForMcp(pool, { id, indicator_limit, indica
     return { status: 409, error: { code: codes.REPORT_NOT_READY || 'REPORT_NOT_READY', message: `Threat report is not readable yet (import_status=${report.import_status})` } };
   }
   const snapshot = await loadReportSnapshot(pool, report.id);
+  // Linked IOC Source provenance lives in its own table; without it the JS
+  // bucket predicates under-count linked-only Indicators against the SQL
+  // counts the UI list shows.
+  const linked = await loadReportLinkedSourceCandidateIds(pool, report.id);
+  snapshot.candidates = withLinkedSourceProvenance(snapshot.candidates, linked);
   snapshot.tags = await loadReportTags(pool, report.id);
   return { status: 200, body: serializeThreatReport(snapshot, { limit: indicator_limit, offset: indicator_offset }) };
 }

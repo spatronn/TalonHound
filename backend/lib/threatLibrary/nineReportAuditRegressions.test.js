@@ -61,10 +61,10 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v31');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v11');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v4');
-  assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v2');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v32');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v12');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v5');
+  assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
 });
 
 // ---------------------------------------------------------------- C. digests

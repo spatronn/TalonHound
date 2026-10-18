@@ -1,0 +1,111 @@
+{
+  "id": "golden-esentire-nimbus-rat-delegated",
+  "title": "www.esentire.com - Nimbus RAT: How Threat Actors Are Abusing Microsoft Teams and Google Drive to Deploy a Jav",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "delegated_scope",
+    "empty_authoritative_section",
+    "descriptive_c2_table",
+    "legitimate_binary",
+    "redaction",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-nimbus-rat-delegated-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/nimbus-rat-how-threat-actors-are-abusing-microsoft-teams-and-google-drive-to-deploy-a-java-rat",
+    "talonhound_report_id": "c210f027-6520-4779-9d34-1ed277a2bdc2",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Pointer-only IOC section; the \"Google-Based Command and Control\" topic holds only a descriptive channel table and provider prose, so the body delegates: pastebin instruction URL, ZIP and JAR payload hashes. The javaw.exe hash is the legitimate Oracle-signed runtime.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "sha256",
+        "value": "91e523a46f3bb860ac2e5800b7e1ec89d75a2408410b9cd25eebc17c8d7a92bc"
+      },
+      {
+        "type": "sha256",
+        "value": "9e5b1e10ad6904d3f5b48d38470cd57263974640a27d13cf793ef026d3d6b886"
+      },
+      {
+        "type": "url",
+        "value": "pastebin.com/G6jA0PLU"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "sha256",
+        "value": "99813f3d0625e880158c68039c0e2fbf488db0be3db77cd1ce6d382644193f0e"
+      }
+    ],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "googleapis.com"
+      },
+      {
+        "type": "domain",
+        "value": "docs.google.com"
+      },
+      {
+        "type": "domain",
+        "value": "my.sharepoint.com"
+      }
+    ],
+    "ambiguous": [
+      {
+        "type": "domain",
+        "value": "system-clean.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      },
+      {
+        "type": "domain",
+        "value": "helpdock.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      },
+      {
+        "type": "domain",
+        "value": "info-secure.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      },
+      {
+        "type": "domain",
+        "value": "serviceprohub.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      },
+      {
+        "type": "domain",
+        "value": "scanseq.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      },
+      {
+        "type": "domain",
+        "value": "scan-security.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      },
+      {
+        "type": "domain",
+        "value": "updt-scansecurity.top",
+        "rationale": "Example naming of attacker sender domains in prose; the publisher IOC file lists only the *.top pattern."
+      }
+    ],
+    "sections": []
+  }
+}

@@ -39,8 +39,8 @@ const HREF_ONLY_WITH_INTERNAL = `<!doctype html><html><body><article>
   <p>Operators also used fijothi[.]com as a backend.</p>
 </article></body></html>`;
 
-test('htmlBlocks v6 preserves destination-only href on the pointer paragraph', () => {
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v6');
+test('htmlBlocks v7 preserves destination-only href on the pointer paragraph', () => {
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v7');
   const doc = extractGenericArticleDocument(HREF_ONLY_HTML, { url: REPORT_URL });
   const pointer = doc.blocks.find((b) => /can be found/i.test(b.text || ''));
   assert.ok(pointer, 'pointer paragraph present');

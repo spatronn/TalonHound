@@ -1,0 +1,55 @@
+{
+  "id": "golden-esentire-kong-rat-nested-c2",
+  "title": "www.esentire.com - Multi-Stage SEO Poisoning Campaign Targets Chinese-Speaking Developers with Kong RAT",
+  "publisher": "www.esentire.com",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "nested_c2_veto",
+    "policy_d3",
+    "regression_twelve_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-twelve/esentire-kong-rat-nested-c2-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.esentire.com/blog/multi-stage-seo-poisoning-campaign-targets-chinese-speaking-developers-with-kong-rat",
+    "talonhound_report_id": "cfc2a1d5-b7de-42b2-84c8-3b27cd692892",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 twelve-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually, and eSentire external IOC files were used as corroboration only. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (twelve-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Pointer-only IOC section, but a nested body C2 subsection holds the beacon URL, so delegation is vetoed under the written policy (D.3); ground truth = that C2 subsection only. Setupexe.exe is the publisher-described legitimate Microsoft-signed rc.exe.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "kkwinapp.oss-cn-hongkong.aliyuncs.com"
+      },
+      {
+        "type": "url",
+        "value": "https://kkwinapp.oss-cn-hongkong.aliyuncs.com/dow/upload?log="
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [
+      {
+        "type": "sha256",
+        "value": "736b2c5782fca75a85379181bcf1d3a719a14cacd938d053c03b16041059dd8f"
+      }
+    ],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

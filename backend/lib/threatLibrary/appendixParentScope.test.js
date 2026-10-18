@@ -24,8 +24,8 @@ import { SOURCE_ASSERTIONS } from './evidencePolicy.js';
 const SOURCE = 'https://research.example/blog/appendix-parent-scope/';
 
 test('appendix parent scope contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v14');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v31');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v32');
 });
 
 function htmlDoc(inner) {
