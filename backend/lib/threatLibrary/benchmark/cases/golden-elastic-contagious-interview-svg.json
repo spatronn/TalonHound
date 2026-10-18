@@ -1,0 +1,109 @@
+{
+  "id": "golden-elastic-contagious-interview-svg",
+  "title": "Elastic — Contagious Interview SVG steganography (Observables table)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "observables_table"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-contagious-interview-svg-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/contagious-interview-malware-svg-steganography",
+    "talonhound_report_id": "8b4fcf0e-4561-4fc8-b2cf-d0373705ee6c",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Observables table only (MODE A). socket.io in the Reference column is a library name.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "controller.rightwidth.dev"
+      },
+      {
+        "type": "domain",
+        "value": "file.rightwidth.dev"
+      },
+      {
+        "type": "domain",
+        "value": "ldb.rightwidth.dev"
+      },
+      {
+        "type": "domain",
+        "value": "rightwidth.dev"
+      },
+      {
+        "type": "domain",
+        "value": "upload.rightwidth.dev"
+      },
+      {
+        "type": "ip",
+        "value": "188.40.64.61"
+      },
+      {
+        "type": "ip",
+        "value": "195.26.248.212"
+      },
+      {
+        "type": "sha256",
+        "value": "3e6360f83a95540aa2176d279ca4694513afb1e5116a7ffe591c6b5bcf3b9c3c"
+      },
+      {
+        "type": "sha256",
+        "value": "4e7639045b4a64de60bfb6312951a5c3dffbd3fb04b84837663242ed27f09864"
+      },
+      {
+        "type": "sha256",
+        "value": "54bf36910d81ab516037cb3d69d7c85190f90aa0da9e58617799c1fc738dc5a9"
+      },
+      {
+        "type": "sha256",
+        "value": "8e571d58794b9b44ae53c2c67bedef72c500e8adbb80aab7a5c263adcba55b1e"
+      },
+      {
+        "type": "sha256",
+        "value": "96357529d17c4690826d5d4c74deac51743a5388733b3f04004d898f0635ef20"
+      },
+      {
+        "type": "sha256",
+        "value": "9df01d242ef46adfedf8c35cb7cc67b1d27d7dc4a1ce74ab32e984090d579886"
+      },
+      {
+        "type": "sha256",
+        "value": "c5aed4c063d4970a03250778da8041da9e0c83d8f22d2f1994da0ad72567ebd9"
+      },
+      {
+        "type": "sha256",
+        "value": "cc97517f80f567977300450de11e9a0be53f52657525a20b1091c99fe9e45730"
+      },
+      {
+        "type": "sha256",
+        "value": "fb94b2caee2c40635448a98ba0118421e19a400e74ccff73315f8fa42351f53f"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "socket.io"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

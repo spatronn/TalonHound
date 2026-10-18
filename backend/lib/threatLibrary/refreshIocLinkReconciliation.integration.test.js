@@ -425,7 +425,7 @@ test('explicit promote_to_ioc survives an applied refresh: classification, decis
     assert.equal(indicators([row]).includes(PREFIX), true, 'still an Indicator after refresh');
 
     const quality = (await storedReport(s.report.id)).analysis_progress.extraction_diagnostics.quality;
-    assert.equal(quality.version, 'tl-quality-v7');
+    assert.equal(quality.version, 'tl-quality-v8');
     const w = quality.warnings.find((x) => x.code === 'analyst_state_membership_divergence');
     assert.ok(w, 'the override is recorded as a divergence');
     assert.equal(w.severity, 'info', 'an explicit analyst promotion is a note, not a warning');

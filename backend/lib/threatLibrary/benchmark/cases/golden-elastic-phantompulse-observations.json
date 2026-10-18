@@ -1,0 +1,95 @@
+{
+  "id": "golden-elastic-phantompulse-observations",
+  "title": "Elastic — PHANTOMPULSE (\"Observations\" table; Blockscout resolver providers)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "observations_heading",
+    "provider_services",
+    "regression_ten_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-phantompulse-observations-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/blockchain-c2-phantompulse-rat-sinkhole",
+    "talonhound_report_id": "aab5be7e-eadb-4b2d-9ca0-abbc97cd51ae",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Blockscout hosts are public block explorers the RAT queries (\"Blockchain provider\"); the C2 / staging rows and the hardcoded fallback URL are Indicators.",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "0x666.info"
+      },
+      {
+        "type": "domain",
+        "value": "fea22134.net"
+      },
+      {
+        "type": "domain",
+        "value": "panel.fefea22134.net"
+      },
+      {
+        "type": "domain",
+        "value": "thoroughly-publisher-troy-clara.trycloudflare.com"
+      },
+      {
+        "type": "ip",
+        "value": "195.3.222.251"
+      },
+      {
+        "type": "sha256",
+        "value": "33dacf9f854f636216e5062ca252df8e5bed652efd78b86512f5b868b11ee70f"
+      },
+      {
+        "type": "sha256",
+        "value": "70bbb38b70fd836d66e8166ec27be9aa8535b3876596fc80c45e3de4ce327980"
+      },
+      {
+        "type": "sha256",
+        "value": "def66275fa3baffb16e6e4ae0297861d9790ae7161fbc271a2ba05d121f13c70"
+      },
+      {
+        "type": "url",
+        "value": "https://panel.fefea22134.net/"
+      },
+      {
+        "type": "url",
+        "value": "t.me/ax03bot"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "domain",
+        "value": "eth.blockscout.com"
+      },
+      {
+        "type": "domain",
+        "value": "base.blockscout.com"
+      },
+      {
+        "type": "domain",
+        "value": "optimism.blockscout.com"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

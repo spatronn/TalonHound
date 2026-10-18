@@ -20,6 +20,7 @@
 
 import { AUDIT_ACTION, AUDIT_ENTITY } from './auditConstants.js';
 import { ASSOCIATION_KIND, ENTITY_KIND, normalizeAttributionLabelKey, resolveCatalogEntity } from './iocSourceAttributions.js';
+import { unescapeMarkdownDefang } from './threatLibrary/defang.js';
 
 export const DIRECT_EVIDENCE_FEED_KEY = 'publisher-report';
 export const DIRECT_EVIDENCE_REF_TYPE = 'publisher_report';
@@ -39,8 +40,8 @@ export const DIRECT_EVIDENCE_STATUS = Object.freeze({
 
 /** Undo common report defanging ("example[.]com", "hxxps://"). */
 export function refang(raw) {
-  return String(raw ?? '')
-    .trim()
+  return unescapeMarkdownDefang(String(raw ?? '')
+    .trim())
     .replace(/\[\.\]|\(\.\)|\{\.\}|\[dot\]/gi, '.')
     .replace(/\[:\]/g, ':')
     .replace(/^hxxp(s?):\/\//i, 'http$1://');

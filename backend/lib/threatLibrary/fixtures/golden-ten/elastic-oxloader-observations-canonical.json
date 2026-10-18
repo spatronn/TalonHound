@@ -1,0 +1,1382 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/oxloader-malware-loader-infostealer",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "OXLOADER: new loader evading detection to drop infostealer",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER",
+   "type": "heading",
+   "level": 1,
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Find out how a new obfuscated loader evades static detection using .reloc section abuse, five anti-VM/language checks and MBA obfuscation to deliver infostealer malware via Google Ads.",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "June 19, 2026",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Daniel StepanicJia Yu Chan",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "A previously undocumented Windows loader tracked as OXLOADER is delivering the CASTLESTEALER infostealer via malicious Google Ads, with low detection rates across static engines and sandbox detonations. The loader uses several obfuscation layers (control-flow flattening, opaque predicates, mixed Boolean-Arithmetic), self-modifying decryption stubs, and abuses the Windows .reloc section to stage shellcode.",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Elastic Security Labs identified OXLOADER in an active campaign targeting one of our customers; CIS-region and Russian-language exclusions point to a financially motivated, Russian-speaking threat actor. We have found no prior public reporting on this family.",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 2,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Elastic Security Labs discovers new loader (OXLOADER)",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "OXLOADER observed in campaigns distributing CASTLESTEALER via malicious Google Ads",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "CIS-region exclusion and Russian language checks suggest a Russian-speaking, financially motivated threat actor",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "Low detection rates across static engines and sandbox detonations",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "Elastic Defend stops the entire attack chain using advanced prevention capabilities",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "How malvertising delivered OXLOADER to victims",
+   "type": "heading",
+   "level": 2,
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "OXLOADER is distributed via malicious Google Ads impersonating Node.js. Victims are redirected through an intermediary domain to a Storj-hosted batch script, which downloads and executes OXLOADER.",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "The infection began when the user searched for an lts version of node.js and clicked a sponsored result leading to node-js[.]prentiva99[.]info, a malicious landing page designed to impersonate a legitimate Node.js deployment platform. The threat actor operated a Google Ads campaign targeting US-based victims; the ad was last shown on Apr 23, 2026, and the site is now offline. The advertiser was registered under the verified name ВОЛОДИМИР ТЕРЕЩЕНКО, based in Ukraine. Whether this reflects the actual operator, a front account, or a purchased identity remains unclear. On May 14, 2026, the advertiser along with their associated ad campaigns were removed from Google entirely.",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Advertiser’s profile on Google Ads Transparency Center",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Upon interaction, the user was redirected through app[.]miloyannopoulos[.]com/download?subid1=download, which responded with a 302 Found to the payload URL link[.]storjshare[.]io/raw/jux4e4ky5mruo4jkxsssp42sau4q/ruslan/BATPackageBuilderSetup.bat. This delivered a Windows batch script, hosted on Storj’s legitimate link-sharing service, which the threat actor abused to evade domain-based reputation filtering.",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "The batch script displays a fake software installation wizard UI, immediately downloads the next-stage executable from the Storj URL link.storjshare[.]io/raw/jwwvr4oskkkjsgevt774ta62ehya/ruslan/aBsvwbdas.exe via PowerShell, and launches it with -Verb RunAs to trigger a UAC elevation prompt.",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "Batch script downloading and launching OXLOADER",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "Following execution of the Batch script, Elastic Defend detected malicious behavior (policy was set to detect only), triggering multiple behavioral rules including Microsoft Common Language Runtime Loaded from Suspicious Memory, hinting at a .NET-based payload consistent with CASTLESTEALER.",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Elastic Defend alerts triggered upon script execution",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "The following is the execution graph of the attack chain from payload download to CASTLESTEALER deployment.",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Infection chain",
+   "type": "paragraph",
+   "section": "How malvertising delivered OXLOADER to victims"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "OXLOADER malware loader: technical analysis",
+   "type": "heading",
+   "level": 2,
+   "section": "OXLOADER malware loader: technical analysis"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "The first OXLOADER sample our team analyzed masquerades as the popular tool, API Monitor from rohitab.com. Due to the heavy presence of legitimate code and code-hiding techniques, this loader is able to fly under the radar against static file analyzers.",
+   "type": "paragraph",
+   "section": "OXLOADER malware loader: technical analysis"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "VirusTotal showing small number of detections",
+   "type": "paragraph",
+   "section": "OXLOADER malware loader: technical analysis"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "How OXLOADER unpacks itself at runtime",
+   "type": "heading",
+   "level": 3,
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "The malware begins executing during the CRT initializer phase, before any user code is run. The CRT function cinit() invokes initterm(), which walks the C++ initializer table (__xc_a → __xc_z) calling each entry. The malware developer has hijacked one of these entries, pointing to a function that makes a RegisterClipboardFormatW() call before tail-jumping into the first decryption stub.",
+   "type": "paragraph",
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "Malicious code started through CRT initialization",
+   "type": "paragraph",
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "The loader uses self-modifying techniques with several decryption stubs to unroll itself. Below is an example of a decryption stub being patched in during runtime, before jumping to it.",
+   "type": "paragraph",
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Small decryption stub patched in",
+   "type": "paragraph",
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "After the patching has taken place, the loader decrypts a 28,233-byte region. Each byte is decrypted with a single-byte XOR key that updates after every iteration: the just-decrypted plaintext byte is added to the key, which is then used to decrypt the next byte. This similar decryption routine runs three times in total, each over a different region.",
+   "type": "paragraph",
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "Rolling-XOR decryption of next-stage code",
+   "type": "paragraph",
+   "section": "How OXLOADER unpacks itself at runtime"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "Obfuscation techniques used to evade static detection",
+   "type": "heading",
+   "level": 3,
+   "section": "Obfuscation techniques used to evade static detection"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "OXLOADER breaks automated function-boundary detection in binary analysis tooling such as IDA Pro using four layered obfuscation techniques: control-flow flattening (CFF), mixed Boolean-Arithmetic (MBA), opaque predicates, and function chunking across non-contiguous code regions. Functions are stitched together with unconditional jumps, and some regions are reached through indirect jumps whose target addresses are computed at runtime via MBA arithmetic. The result is that IDA Pro cannot reliably reconstruct function boundaries, requiring manual fixes.",
+   "type": "paragraph",
+   "section": "Obfuscation techniques used to evade static detection"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "Control-flow flattening with nested MBA arithmetic example",
+   "type": "paragraph",
+   "section": "Obfuscation techniques used to evade static detection"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "The loader decrypts various strings at runtime using the following string decryption algorithm:",
+   "type": "paragraph",
+   "section": "Obfuscation techniques used to evade static detection"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "uint32_t obf_xor_a1_with_a2_plus_33FDA(uint32_t a1, uint32_t a2) {",
+   "type": "code",
+   "section": "Obfuscation techniques used to evade static detection",
+   "line_group": "b042"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "return a1 ^ (a2 + 0x33FDA);",
+   "type": "code",
+   "section": "Obfuscation techniques used to evade static detection",
+   "line_group": "b042"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "After the code is fully unpacked/decrypted, the malware combines this string decryption function with an Adler-32 API hashing algorithm to dynamically resolve its imports.",
+   "type": "paragraph",
+   "section": "Obfuscation techniques used to evade static detection"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "String decryption and API resolving",
+   "type": "paragraph",
+   "section": "Obfuscation techniques used to evade static detection"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "How does OXLOADER evade sandbox and VM detection?",
+   "type": "heading",
+   "level": 3,
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "After resolving its APIs, OXLOADER performs various checks to ensure the machine executes in a clean environment, avoiding execution in sandbox environments.",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Check | Method | Threshold ¶ Emulation | WNetAddConnection2W with malformed resource | Expects ERROR_BAD_NAME (0x43) ¶ CPU count | Process environment check | ≥ 3 CPUs ¶ RAM | GlobalMemoryStatusEx | ≥ 3 GB physical memory ¶ Display refresh rate | WMI Win32_VideoController query | ≥ 20 Hz ¶ Geographic region | GetUserGeoID | Excludes CIS GEOIDs",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Emulation",
+      "WNetAddConnection2W with malformed resource",
+      "Expects ERROR_BAD_NAME (0x43)"
+     ],
+     [
+      "CPU count",
+      "Process environment check",
+      "≥ 3 CPUs"
+     ],
+     [
+      "RAM",
+      "GlobalMemoryStatusEx",
+      "≥ 3 GB physical memory"
+     ],
+     [
+      "Display refresh rate",
+      "WMI Win32_VideoController query",
+      "≥ 20 Hz"
+     ],
+     [
+      "Geographic region",
+      "GetUserGeoID",
+      "Excludes CIS GEOIDs"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Check",
+     "Method",
+     "Threshold"
+    ]
+   },
+   "layout": "table",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "The first check attempts to connect to a deliberately malformed network resource (*72s@1s) using mpr!WNetAddConnection2W. This technique appears to defeat emulation/sandboxes that may hook or return a successful connection unconditionally. The malware developer verifies this call by accessing the TEB directly to retrieve the LastErrorValue. The loader expects this error code to be ERROR_BAD_NAME (0x43), if the error code is anything other than this value, the malware takes the failure branch and stops execution.",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Emulation check via WNetAddConnection2W",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "The second check is an anti-sandbox test based on the processor count: the loader requires the host to have at least 3 CPUs to continue. Many sandboxes and analysis VMs are provisioned with one or two CPUs to conserve resources, so this threshold filters out these automated analysis environments.",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Anti-sandbox check using CPU count",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "The next check uses GlobalMemoryStatusEx() to verify that the host has at least 3 GB of available physical memory.",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Anti-sandbox check based on RAM",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "A further check uses WMI to query the system display's refresh rate, executing the WQL statement SELECT CurrentRefreshRate FROM Win32_VideoController and comparing the returned value (in Hertz) against a threshold of 20. Physical monitors usually report around 60 Hz or higher, while headless and default-virtualized configurations typically report 0 or 1, and values below 20 cause the loader to abort.",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Anti-sandbox check based on refresh rate",
+   "type": "paragraph",
+   "section": "How does OXLOADER evade sandbox and VM detection?"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Geographic and language exclusions",
+   "type": "heading",
+   "level": 3,
+   "section": "Geographic and language exclusions"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "The final two checks halt execution if the host is located in a CIS country or configured for the Russian language. The first check in this category uses GetUserGeoID to retrieve the system’s geographic region and compares it against a hardcoded list of CIS country GEOIDs.",
+   "type": "paragraph",
+   "section": "Geographic and language exclusions"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "CIS country exclusion list",
+   "type": "paragraph",
+   "section": "Geographic and language exclusions"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "The second check uses GetUserDefaultUILanguage and matches against LANGID (0x419 - Russian, Russia), the standard configuration for a Russian language Windows installation.",
+   "type": "paragraph",
+   "section": "Geographic and language exclusions"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Russian language exclusion",
+   "type": "paragraph",
+   "section": "Geographic and language exclusions"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Shellcode staging via .reloc section and OCX file",
+   "type": "heading",
+   "level": 3,
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "After all the checks have passed, the malware makes a copy of the Windows DirectUI Engine DLL (C:\\Windows\\System32\\dui70.dll), storing it in a temporary location using a randomly generated name with the .ocx extension (PFHemkxVk.ocx). This extension choice inspired the OXLOADER family name.",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Newly dropped DLL copied from dui70.dll",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "OXLOADER then creates a new section named (.xtext) in this target DLL (PFHemkxVk.ocx).",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "New section highlighted via PE Bear",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "This new section (.xtext) is configured with RWX (read/write/execute) protections in preparation to store and execute the next stage of the malicious code.",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "PE Bear showing newly added section with characteristics",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "This updated DLL (PFHemkxVk.ocx) is then loaded into the existing loader process via LoadLibraryA.",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Process Hacker showing new loaded module",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "In a normal Windows executable, the .reloc section contains a table of IMAGE_BASE_RELOCATION blocks that the Windows loader applies to patch absolute addresses when the image is loaded at an address other than its preferred base. In this sample, the malware developer is using",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file",
+   "line_group": "b071"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "the .reloc section to house malicious code instead of the base relocation entries. This is a strong static-analysis red flag: legitimate toolchains do not emit code into the .reloc section.",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file",
+   "line_group": "b071"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "PE-bear showing code/instructions inside .reloc section",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "This shellcode from the .reloc section is then copied to the newly created section (.xtext) in the OCX file, and the loader then calls this code.",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "Shellcode copied from .reloc section",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "As observed previously, there is another decryption stub used to unpack this next stage.",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "Self-modifying instructions from .xtext section",
+   "type": "paragraph",
+   "section": "Shellcode staging via .reloc section and OCX file"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "In-memory infostealer delivery via DonutLoader and .NET assembly",
+   "type": "heading",
+   "level": 3,
+   "section": "In-memory infostealer delivery via DonutLoader and .NET assembly"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "This next-stage shellcode is a payload configured from DonutLoader, an open-source shellcode generator used to wrap .NET assemblies, DLLs, and EXEs into position-independent shellcode (PIC) for in-memory execution. During unpacking, the shellcode decrypts the loader's embedded configuration and execution context using the Chaskey-LTS block cipher in CTR mode with the key (6E0A1F8F77F7011561F6F9CA96B71B8F) and IV (956C6128E9362E075F8D006C93616A66).",
+   "type": "paragraph",
+   "section": "In-memory infostealer delivery via DonutLoader and .NET assembly"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "DonutLoader shellcode after decryption",
+   "type": "paragraph",
+   "section": "In-memory infostealer delivery via DonutLoader and .NET assembly"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "After the decryption, the payload is decompressed via aPLib then bootstrapped through DonutLoader’s RunPE() function. The final payload is a newly discovered information stealer by Huntress called CASTLESTEALER. This attribution is based on the same AES key used for C2 communications found between 0xDEADBEEF markers in a previous sample.",
+   "type": "paragraph",
+   "section": "In-memory infostealer delivery via DonutLoader and .NET assembly"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "Same AES key used in CASTLESTEALER sample",
+   "type": "paragraph",
+   "section": "In-memory infostealer delivery via DonutLoader and .NET assembly"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Second OXLOADER variant: same loader, different masqueraded program",
+   "type": "heading",
+   "level": 2,
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "A second OXLOADER variant masquerades as a Node.js installer rather than API Monitor, but uses the identical loader mechanism.",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "On May 13, 2026, we discovered that the redirector endpoint app.miloyannopoulos[.]com/download responded with one of two Location header fields, chosen at random:",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "https://link.storjshare[.]io/raw/jv5uebuqwzfpmtahj34q753ptykq/node/BATPackageBulderSetup.bat",
+   "type": "list",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "https://link.storjshare[.]io/raw/jvsmdybqmvwep2oawbobp6ub7aza/node/node-v24.15.0-x64-86.exe",
+   "type": "list",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "The Batch installation script (BATPackageBulderSetup.bat, with a typo for “Builder”) remained mostly identical. The only difference was that the Storj payload link now pointed to a different binary named node-v24.15.0-x64-86.exe.",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "Batch script with a different embedded link pointing to OXLOADER",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "The payload attempts to masquerade itself as benign CMake code while retaining “node” in the filename, likely to keep the lure theme intact. We believe the earlier “API Monitor” sample was likely a distribution error by the operator.",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "VirusTotal with small amounts of detection",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Upon execution, we noticed the same pattern: indirect jumps used for in-memory self-decryption, followed by the loading of mpr.dll and a call to WNetAddConnection2W. We confirmed that it is the identical loader mechanism discussed previously, and this sample also loads CASTLESTEALER.",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Loader behavior caught through a TinyTracer run",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Below is a snippet where the self-decryption occurs. Dummy CMake-related strings appear to be passed as arguments to a function call, which patches a small decryption stub into memory immediately after the call site. Execution then jumps to the stub to decrypt subsequent instructions, and this process repeats 2 more times until the main malware body is decrypted.",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Identical self-decryption mechanism as the first sample",
+   "type": "paragraph",
+   "section": "Second OXLOADER variant: same loader, different masqueraded program"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Conclusion: why defenders should track OXLOADER",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion: why defenders should track OXLOADER"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "OXLOADER is in an early operational phase, but the engineering behind it suggests this family is worth watching. The code obfuscation, anti-VM measures, benign-looking code used to masquerade its binaries, and unique staging techniques reflect deliberate engineering choices to evade analysis. That investment is paying off, resulting in low detection rates across static engines and detonation runs, giving OXLOADER a window to operate before it gets hunted down.",
+   "type": "paragraph",
+   "section": "Conclusion: why defenders should track OXLOADER"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "REF8372 through MITRE ATT&CK",
+   "type": "heading",
+   "level": 2,
+   "section": "REF8372 through MITRE ATT&CK"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "REF8372 through MITRE ATT&CK"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary’s tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Resource Development",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Initial Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "Defense Evasion",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Acquire Infrastructure: Malvertising",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Stage Capabilities: Upload Malware",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "User Execution: Malicious File",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Command and Scripting Interpreter: PowerShell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "Abuse Elevation Control Mechanism: Bypass User Account Control",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Obfuscated Files or Information: Encrypted/Encoded File",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Deobfuscate/Decode Files or Information",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Obfuscated Files or Information: Embedded Payloads",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Masquerading: Match Legitimate Name or Location",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Hijack Execution Flow: DLL Side-Loading",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: System Checks",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "System Location Discovery: System Language Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Reflective Code Loading",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Remediating REF8372",
+   "type": "heading",
+   "level": 2,
+   "section": "Remediating REF8372"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Prevention",
+   "type": "heading",
+   "level": 3,
+   "section": "Prevention"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Potential Browser Information Discovery",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "Potential Evasion with Hardware Breakpoints",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "Suspicious Thread Context Manipulation",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "VirtualAlloc API Call from an Unsigned DLL",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "Suspicious Remote Memory Allocation",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "Execution from Suspicious Stack Trailing Bytes",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Microsoft Common Language Runtime Loaded from Suspicious Memory",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Suspicious PowerShell Execution",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Module Stomping from a Copied Library",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "YARA",
+   "type": "heading",
+   "level": 3,
+   "section": "YARA"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "Elastic Security has created YARA rules to identify this activity.",
+   "type": "paragraph",
+   "section": "YARA"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "Windows.Trojan.OxLoader",
+   "type": "list",
+   "section": "YARA"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Windows.Trojan.CastleStealer",
+   "type": "list",
+   "section": "YARA"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "Observations",
+   "type": "heading",
+   "level": 2,
+   "section": "Observations"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "The following observables were discussed in this research.",
+   "type": "paragraph",
+   "section": "Observations"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "Observable | Type | Name | Reference ¶ node-js\\[.\\]prentiva99\\[.\\]info | domain-name |  | Malvertising landing page ¶ app\\[.\\]miloyannopoulos\\[.\\]com | domain-name |  | Malvertising Redirector ¶ fdfc7831e5c24cfa80152860dfe8c056ba079f7df1393bf6bb7b18ed974eda37 | SHA-256 | BATPackageBuilderSetup.bat | OXLOADER downloader & launcher ¶ de4f51649ec1a33071854aefe93ffb3fc225e19f802d8dd914676dd5dfef2615 | SHA-256 | BATPackageBulderSetup.bat | OXLOADER downloader & launcher ¶ 9a9939dff297997732aaade9b243d695632cbd64033c5fbcb9de3d09b7e6c28d | SHA-256 | apimonitor-x64.exe | OXLOADER ¶ c85f2765a6c3c3f3907c17e57df12f8f68826f74bff3bbfd272af50666d065fe | SHA-256 | node-v24.15.0-x64-86.exe | OXLOADER ¶ 4ec9d9d4d10ad78fc6d7bda7cb17d52984878ccd2dd4302fd1cef152313b9741 | SHA-256 |  | CASTLESTEALER ¶ 39019279686c820c3af5684012a0085a7e2109f612c9fab886dd0577ace5b5c6 | SHA-256 |  | CASTLESTEALER ¶ 89.124.95\\[.\\]161 | ipv4 |  | CASTLESTEALER C2 ¶ 89.124.115\\[.\\]82 | ipv4 |  | CASTLESTEALER C2",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "node-js\\[.\\]prentiva99\\[.\\]info",
+      "domain-name",
+      "",
+      "Malvertising landing page"
+     ],
+     [
+      "app\\[.\\]miloyannopoulos\\[.\\]com",
+      "domain-name",
+      "",
+      "Malvertising Redirector"
+     ],
+     [
+      "fdfc7831e5c24cfa80152860dfe8c056ba079f7df1393bf6bb7b18ed974eda37",
+      "SHA-256",
+      "BATPackageBuilderSetup.bat",
+      "OXLOADER downloader & launcher"
+     ],
+     [
+      "de4f51649ec1a33071854aefe93ffb3fc225e19f802d8dd914676dd5dfef2615",
+      "SHA-256",
+      "BATPackageBulderSetup.bat",
+      "OXLOADER downloader & launcher"
+     ],
+     [
+      "9a9939dff297997732aaade9b243d695632cbd64033c5fbcb9de3d09b7e6c28d",
+      "SHA-256",
+      "apimonitor-x64.exe",
+      "OXLOADER"
+     ],
+     [
+      "c85f2765a6c3c3f3907c17e57df12f8f68826f74bff3bbfd272af50666d065fe",
+      "SHA-256",
+      "node-v24.15.0-x64-86.exe",
+      "OXLOADER"
+     ],
+     [
+      "4ec9d9d4d10ad78fc6d7bda7cb17d52984878ccd2dd4302fd1cef152313b9741",
+      "SHA-256",
+      "",
+      "CASTLESTEALER"
+     ],
+     [
+      "39019279686c820c3af5684012a0085a7e2109f612c9fab886dd0577ace5b5c6",
+      "SHA-256",
+      "",
+      "CASTLESTEALER"
+     ],
+     [
+      "89.124.95\\[.\\]161",
+      "ipv4",
+      "",
+      "CASTLESTEALER C2"
+     ],
+     [
+      "89.124.115\\[.\\]82",
+      "ipv4",
+      "",
+      "CASTLESTEALER C2"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Observable",
+     "Type",
+     "Name",
+     "Reference"
+    ]
+   },
+   "layout": "table",
+   "section": "Observations"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "Observations"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "Malware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "heading",
+   "level": 3,
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "September 14, 2026",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "July 16, 2026",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "heading",
+   "level": 3,
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "July 08, 2026",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

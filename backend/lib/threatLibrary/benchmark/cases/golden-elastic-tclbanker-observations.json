@@ -1,0 +1,111 @@
+{
+  "id": "golden-elastic-tclbanker-observations",
+  "title": "Elastic — TCLBANKER (\"Observations\" table + C2 configuration block)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "observations_heading",
+    "c2_config",
+    "regression_ten_report_audit"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-tclbanker-observations-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/tclbanker-brazilian-banking-trojan",
+    "talonhound_report_id": "f9038763-71f0-4acc-bc5f-dd29f459e159",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Observations table plus the three URLs of the C2 Command Table configuration. Body-only narrative values stay outside membership (MODE A).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "afonsoferragista.com"
+      },
+      {
+        "type": "domain",
+        "value": "arquivos-omie.com"
+      },
+      {
+        "type": "domain",
+        "value": "campanha1-api.ef971a42.workers.dev"
+      },
+      {
+        "type": "domain",
+        "value": "doccompartilhe.com"
+      },
+      {
+        "type": "domain",
+        "value": "documentos-online.com"
+      },
+      {
+        "type": "domain",
+        "value": "documents.ef971a42.workers.dev"
+      },
+      {
+        "type": "domain",
+        "value": "mxtestacionamentos.com"
+      },
+      {
+        "type": "domain",
+        "value": "recebamais.com"
+      },
+      {
+        "type": "sha256",
+        "value": "63beb7372098c03baab77e0dfc8e5dca5e0a7420f382708a4df79bed2d900394"
+      },
+      {
+        "type": "sha256",
+        "value": "668f932433a24bbae89d60b24eee4a24808fc741f62c5a3043bb7c9152342f40"
+      },
+      {
+        "type": "sha256",
+        "value": "701d51b7be8b034c860bf97847bd59a87dca8481c4625328813746964995b626"
+      },
+      {
+        "type": "sha256",
+        "value": "8a174aa70a4396547045aef6c69eb0259bae1706880f4375af71085eeb537059"
+      },
+      {
+        "type": "url",
+        "value": "https://arquivos-omie.com/"
+      },
+      {
+        "type": "url",
+        "value": "https://campanha1-api.ef971a42.workers.dev/api/campaign"
+      },
+      {
+        "type": "url",
+        "value": "https://documents.ef971a42.workers.dev/file"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      {
+        "type": "ip",
+        "value": "191.96.224.96"
+      },
+      {
+        "type": "url",
+        "value": "https://campanha1-api.ef971a42.workers.dev/api/installs"
+      }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

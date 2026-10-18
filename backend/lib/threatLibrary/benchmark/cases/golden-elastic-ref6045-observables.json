@@ -1,0 +1,304 @@
+{
+  "id": "golden-elastic-ref6045-observables",
+  "title": "Elastic — REF6045 SCMBANKER (Observables table)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_a",
+    "observables_table"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-ref6045-observables-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/mexican-banking-fraud-scmbanker-ref6045",
+    "talonhound_report_id": "35aee12d-0dc8-46fe-92a2-9922cca50c5c",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "Observables table (MODE A).",
+      "mode": "A"
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "bancaporinternetbbmx.online"
+      },
+      {
+        "type": "domain",
+        "value": "gestionmontelavaria2026.online"
+      },
+      {
+        "type": "domain",
+        "value": "monteviral2026.duckdns.org"
+      },
+      {
+        "type": "domain",
+        "value": "negratomasa2026.online"
+      },
+      {
+        "type": "domain",
+        "value": "osogransd.online"
+      },
+      {
+        "type": "domain",
+        "value": "ratonvaquero2026.online"
+      },
+      {
+        "type": "domain",
+        "value": "ssinvestigaciones.com"
+      },
+      {
+        "type": "ip",
+        "value": "185.242.246.169"
+      },
+      {
+        "type": "ip",
+        "value": "216.250.112.100"
+      },
+      {
+        "type": "ip",
+        "value": "68.211.161.46"
+      },
+      {
+        "type": "sha256",
+        "value": "0315d4a7bc14654ad66d4c2b98920b92ca18cbc231b3ce5fba1fcac70b828e19"
+      },
+      {
+        "type": "sha256",
+        "value": "0ec9b518f84b6bdc0e843b89fa755522ec67db862414ad16bdcaa8c2be25485c"
+      },
+      {
+        "type": "sha256",
+        "value": "13bfd0f695cea1d6ae570a7ca056ffe930467be73a26f29f95209618f383bd2d"
+      },
+      {
+        "type": "sha256",
+        "value": "26f906a2a4276b1968a8ce956a7b342aa9bc26f60d32c14668223877f569fb3f"
+      },
+      {
+        "type": "sha256",
+        "value": "30ff24faad80184bb43660a8bd317df99a8d09d31bae3b446aaa876543f2620f"
+      },
+      {
+        "type": "sha256",
+        "value": "32d981b3e7c36aa7030cfd9ee412bff742e00b36c39c80634b2681f89de4a487"
+      },
+      {
+        "type": "sha256",
+        "value": "345e8a90b7b762b065333cd068811d88086d157be713d89bdf200c927645f3d8"
+      },
+      {
+        "type": "sha256",
+        "value": "3d9015429d65276869ceb9c91f10d6474b1098042db75949c49b9f1682c1f3ae"
+      },
+      {
+        "type": "sha256",
+        "value": "4b7b35b921d7615b7a82a42c379560d1b0c5a74c81311a269874195ba2744f2d"
+      },
+      {
+        "type": "sha256",
+        "value": "4d9c160ebb44507b11f0e6421f691900284f25b5530a23d9fd50de0ae01663ca"
+      },
+      {
+        "type": "sha256",
+        "value": "526287a40aad1b218228cdd1f459ad3b93f858585048347644d597c6ab19515a"
+      },
+      {
+        "type": "sha256",
+        "value": "554f1aefeb698995501751328c2f9fe93f02a680679fba3dd15f1ed93d46bf1b"
+      },
+      {
+        "type": "sha256",
+        "value": "566f4bfdfea54129b8528d50cae187a9030e2f2787749add4b0db22ac35ea581"
+      },
+      {
+        "type": "sha256",
+        "value": "5bc85b604eb37ffa1e67c57f4744b55ef876a1ab442e2a2440550ef0922aeec7"
+      },
+      {
+        "type": "sha256",
+        "value": "5c7ab9e90b05804d07e9d803f85462bc1a44d0726256bad28219984ee2b5772f"
+      },
+      {
+        "type": "sha256",
+        "value": "5d17645548a44fe39d3cc816ffa3933321c1eb8b08a8f4348e3cd82f25112c81"
+      },
+      {
+        "type": "sha256",
+        "value": "685d29ce8a550feb3a9e1d1c5926ec5e927615cf34aab62c108a812a1eb6737c"
+      },
+      {
+        "type": "sha256",
+        "value": "6c8ba7127a83431432e85946976c18bb3f3e9bf9def68aae572cd1d9d73604c7"
+      },
+      {
+        "type": "sha256",
+        "value": "6dcd7fdd5e088d98d861cbd1cb74a7b83ae5508f4dbb617413bcbe7fbc8a82e2"
+      },
+      {
+        "type": "sha256",
+        "value": "70140aa236d630a7d5ed08be3dafcccea9a8b0eec6dadf8c1cf1b96d8f608609"
+      },
+      {
+        "type": "sha256",
+        "value": "81a4512db985359ed361755da58a1177b07632b5aee951c68a6ace54f4d0534b"
+      },
+      {
+        "type": "sha256",
+        "value": "882d582e85d5bb7abbdde791a2d52e3b1bb7dd7f79c20318ce64b74249221fdb"
+      },
+      {
+        "type": "sha256",
+        "value": "8c87ea94401fa97d3743a87604e088d1a29c7b06cf9673623941a42da68452a6"
+      },
+      {
+        "type": "sha256",
+        "value": "b30cb0aa977aacdab94d2ef503186c8f0b2fc10d7cf0d7c7c0ada70c127dc7e8"
+      },
+      {
+        "type": "sha256",
+        "value": "cd7b179dd98848a02b9a1d4ebfeee26cdbb317b4ad53eb50786e18515b0cf804"
+      },
+      {
+        "type": "sha256",
+        "value": "eea08fbf3720d638af1d313d3ce369708b77d7891379d5c5871dd7f36667ed0c"
+      },
+      {
+        "type": "sha256",
+        "value": "ff3555154e91e42490cc722b6c7f3c4c91654b7ef53a35d0719ffb89accf1b27"
+      },
+      {
+        "type": "url",
+        "value": "http://185.242.246.169/dashboard2/recData.php"
+      },
+      {
+        "type": "url",
+        "value": "http://216.250.112.100/validation.txt"
+      },
+      {
+        "type": "url",
+        "value": "http://68.211.161.46/"
+      },
+      {
+        "type": "url",
+        "value": "http://68.211.161.46/driver.html?off"
+      },
+      {
+        "type": "url",
+        "value": "http://68.211.161.46/files/"
+      },
+      {
+        "type": "url",
+        "value": "http://68.211.161.46/validation.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://185.242.246.169/b/editor.php"
+      },
+      {
+        "type": "url",
+        "value": "https://bancaporinternetbbmx.online/"
+      },
+      {
+        "type": "url",
+        "value": "https://gestionmontelavaria2026.online/b/editor.php"
+      },
+      {
+        "type": "url",
+        "value": "https://gestionmontelavaria2026.online/dashboard2/recData.php"
+      },
+      {
+        "type": "url",
+        "value": "https://monteviral2026.duckdns.org/"
+      },
+      {
+        "type": "url",
+        "value": "https://monteviral2026.duckdns.org/files/"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/a/teleavisos.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/a/telekeylogger.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/b/clabes.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/b/editor.php"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/b/keysnegativas.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/b/listadebancos.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/b/tarjetas.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/b/urlsscams.txt"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/dashboard2/avisos2.php"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/dashboard2/imagenes.php"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/dashboard2/logs.php"
+      },
+      {
+        "type": "url",
+        "value": "https://negratomasa2026.online/dashboard2/recData.php"
+      },
+      {
+        "type": "url",
+        "value": "https://osogransd.online/"
+      },
+      {
+        "type": "url",
+        "value": "https://osogransd.online/files/"
+      },
+      {
+        "type": "url",
+        "value": "https://ratonvaquero2026.online/"
+      },
+      {
+        "type": "url",
+        "value": "https://ratonvaquero2026.online/files/"
+      },
+      {
+        "type": "url",
+        "value": "https://ww.ssinvestigaciones.com/login3.php"
+      }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

@@ -58,8 +58,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * unfilled template placeholder (`/{campaignId}`, `%7Bid%7D`) is rejected as
  * `template_placeholder`; `.md` joins the file-extension collisions
  * (README.md, MEMORY.md) that stay context-decided.
+ * v11 (ten-report audit): a dotted name inside a URN (`urn:ms-drs:<host>`) is
+ * an identifier; product styling `Socket.IO` (capitalised word + all-caps
+ * suffix) is a code / product shape.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v10';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v11';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -362,6 +365,9 @@ export function hasCodeIdentifierShape(raw, opts = {}) {
   if (segments.some((s) => s.includes('_') && !dnsUnderscore(s))) return true;
   if (segments.some((s) => /[a-z][A-Z]/.test(s) || /^[A-Z][a-z0-9]+[A-Z]/.test(s))) return true; // camelCase / PascalCase segment
   if (segments.every((s) => /^[A-Z0-9]+$/.test(s))) return false; // EVIL.COM
+  // Product / library name styling: a capitalised word plus an all-caps
+  // suffix (Socket.IO, Draw.IO). Hostnames are not written in two cases.
+  if (segments.length === 2 && /^[A-Z][a-z]{2,}$/.test(segments[0]) && /^[A-Z]{2,}$/.test(segments[1])) return true;
   const firstUpper = /^[A-Z]/.test(segments[0]);
   const later = segments.slice(1);
   const laterUpper = later.filter((s) => /^[A-Z]/.test(s)).length;
@@ -374,6 +380,9 @@ export function hasCodeIdentifierShape(raw, opts = {}) {
   }
   return false; // Exploit.in — brand-style capital on the first label only
 }
+
+/** `urn:<nid>:` (plus further NSS segments) right before the token. */
+const URN_PREFIX_BEFORE_RE = /\burn:[a-z0-9][a-z0-9-]{0,31}:(?:[^\s:]+:)*$/i;
 
 /** Row lead that only labels / enumerates the value ("C2:", "Domain -", "1.", "•"). */
 const ROW_LABEL_LEAD_RE = /(?:[:：|=>→\-–—]|^\s*(?:[-*•·▪]|\(?\d{1,3}[.)]|\[\d{1,3}\]))\s*$/;
@@ -697,6 +706,11 @@ export function resolveDottedToken(raw, ctx = {}) {
     }
     // else fall through — FILE_EXT / other rules decide
   }
+
+  // URN namespace-specific string (`urn:ms-drs:enterpriseregistration.windows.net`,
+  // a token audience / resource identifier): the dotted name identifies a
+  // resource inside the URN; nothing connects to it as written.
+  if (URN_PREFIX_BEFORE_RE.test(before)) return out('technical_artifact', 'urn_identifier');
 
   // 2. Parser knowledge: exact URL host / URL path basename.
   if (basenames.has(lower)) return out('technical_artifact', 'url_path_basename');

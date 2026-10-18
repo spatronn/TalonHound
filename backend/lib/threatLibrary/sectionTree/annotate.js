@@ -11,6 +11,7 @@
 
 import {
   classifyHeadingText,
+  confirmedQualifiedIocHeading,
   DELEGATED_IOC_ZONE,
   STRONG_IOC_ZONES,
   NEGATIVE_ZONES,
@@ -169,11 +170,16 @@ function headingLevel(b, stack) {
   return 2;
 }
 
-function zoneForHeading(text, isRealHeading) {
+function zoneForHeading(text, isRealHeading, blocks, i, chromeIds) {
   const role = classifySectionRole(text);
   const fromRole = zoneForSectionRole(role);
   if (fromRole) return { zone: fromRole, role };
   const z = classifyHeadingText(text, { isHeading: isRealHeading });
+  if (!z) {
+    // "Observations" opens an IOC scope only when a declared-type IOC table follows.
+    const qualified = confirmedQualifiedIocHeading(text, blocks, i, chromeIds);
+    if (qualified) return qualified;
+  }
   return { zone: z, role: role || null };
 }
 
@@ -259,7 +265,7 @@ export function annotateSectionTree(doc, opts = {}) {
       continue;
     }
 
-    const { zone, role } = zoneForHeading(t, isRealHeading);
+    const { zone, role } = zoneForHeading(t, isRealHeading, blocks, i, chromeIds);
     const level = headingLevel(b, stack);
     const parentAuth = nearestAuthoritative(stack);
     const groupLabel = GROUP_LABEL_RE.test(t);

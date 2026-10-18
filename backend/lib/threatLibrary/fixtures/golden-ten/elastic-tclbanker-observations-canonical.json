@@ -1,0 +1,3248 @@
+{
+ "meta": {
+  "adapter": "generic_html",
+  "extractor": "threat_library_html_v6",
+  "source_url": "https://www.elastic.co/security-labs/threat-command/tclbanker-brazilian-banking-trojan",
+  "source_host": "www.elastic.co",
+  "content_root": "main",
+  "scope_engine": "section_tree",
+  "scope_engine_version": "tl-scope-engine-section-tree-v2",
+  "section_tree_version": "tl-section-tree-v3",
+  "candidate_extraction_version": "tl-candidates-v30"
+ },
+ "title": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook",
+ "blocks": [
+  {
+   "id": "b001",
+   "page": null,
+   "text": "Threat Command",
+   "type": "paragraph",
+   "section": null
+  },
+  {
+   "id": "b002",
+   "page": null,
+   "text": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook",
+   "type": "heading",
+   "level": 1,
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b003",
+   "page": null,
+   "text": "REF3076 uses a trojanized Logitech installer to deploy TCLBANKER, a Brazilian banking trojan with environment-gated payloads, WPF fraud overlays, and self-propagating WhatsApp and Outlook worm modules.",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b004",
+   "page": null,
+   "text": "May 07, 2026",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b005",
+   "page": null,
+   "text": "Jia Yu ChanDaniel StepanicSeth GoodwinTerrance DeJesus",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b006",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b007",
+   "page": null,
+   "text": "Jump to",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b008",
+   "page": null,
+   "text": "Share",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b009",
+   "page": null,
+   "text": "Elastic Security Labs identified a new Brazilian banking trojan that we are tracking as TCLBANKER, a malware family we assess is a major update of the MAVERICK/SORVEPOTEL family. The campaign, tracked as REF3076, features a loader with robust anti-analysis capabilities that deploys two embedded .NET Reactor-protected modules: a full-featured banking trojan and a worm module for self-propagation.",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b010",
+   "page": null,
+   "text": "The banking trojan monitors the victim's browser address bar via UI Automation, targeting 59 Brazilian banking, fintech, and cryptocurrency domains. Beyond the usual remote access commands, its most notable capability is a WPF-based full-screen overlay framework designed for operator-driven social engineering.",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b011",
+   "page": null,
+   "text": "A second module handles distribution through spam agents, of which we recovered two variants: a WhatsApp worm that hijacks authenticated browser sessions to message the victim's contacts, and an Outlook email bot that sends phishing emails through the victim's own accounts via COM automation.",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b012",
+   "page": null,
+   "text": "Through this report, we provide a detailed technical breakdown of each stage.",
+   "type": "paragraph",
+   "section": "TCLBANKER: Brazilian Banking Trojan Spreading via WhatsApp and Outlook"
+  },
+  {
+   "id": "b013",
+   "page": null,
+   "text": "Key takeaways",
+   "type": "heading",
+   "level": 2,
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b014",
+   "page": null,
+   "text": "TCLBANKER uses environment-gated payload decryption; incorrect environments, such as sandboxes, silently fail to decrypt the payload",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b015",
+   "page": null,
+   "text": "A comprehensive watchdog subsystem continuously monitors for analysis tools, debuggers, instrumentation frameworks, and integrity violations throughout execution",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b016",
+   "page": null,
+   "text": "The banking trojan targets 59 Brazilian banking, fintech, and cryptocurrency domains, activating a WebSocket C2 session when a victim navigates to a monitored site",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b017",
+   "page": null,
+   "text": "A WPF-based full-screen overlay framework enables operator-driven social engineering, including credential harvesting, vishing wait screens, and fake Windows Update stalls, while hiding overlays from screen capture tools",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b018",
+   "page": null,
+   "text": "Worm modules propagate the malware: a WhatsApp bot and an Outlook email bot",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b019",
+   "page": null,
+   "text": "All C2 and distribution infrastructure is hosted on Cloudflare Workers under a single account, with developer artifacts (debug logging paths, test process names) and an incomplete phishing page, suggesting the campaign was identified in an early operational stage",
+   "type": "list",
+   "section": "Key takeaways"
+  },
+  {
+   "id": "b020",
+   "page": null,
+   "text": "Delivery",
+   "type": "heading",
+   "level": 2,
+   "section": "Delivery"
+  },
+  {
+   "id": "b021",
+   "page": null,
+   "text": "TCLBANKER is a Brazilian banking trojan that contains a dynamic infection chain with a heavy anti-analysis loading component that can deploy two embedded payloads (worm, banker). The observed infection chain bundles a malicious MSI installer inside a ZIP file. These MSI installer packages are abusing a signed Logitech program called Logi AI Prompt Builder.",
+   "type": "paragraph",
+   "section": "Delivery"
+  },
+  {
+   "id": "b022",
+   "page": null,
+   "text": "MSI install dialog",
+   "type": "paragraph",
+   "section": "Delivery"
+  },
+  {
+   "id": "b023",
+   "page": null,
+   "text": "TCLBANKER abuses DLL sideloading against LogiAiPromptBuilder.exe, a legitimate Logitech application built on the Flutter framework. The malicious DLL screen_retriever_plugin.dll masquerades as a legitimate Flutter plugin of the same name and is loaded automatically when the host application starts.",
+   "type": "paragraph",
+   "section": "Delivery"
+  },
+  {
+   "id": "b024",
+   "page": null,
+   "text": "File directory contents showing a malicious DLL",
+   "type": "paragraph",
+   "section": "Delivery"
+  },
+  {
+   "id": "b025",
+   "page": null,
+   "text": "After the MSI installation, the malicious DLL is immediately loaded and starts at the DllMain entry point.",
+   "type": "paragraph",
+   "section": "Delivery"
+  },
+  {
+   "id": "b026",
+   "page": null,
+   "text": "Loader",
+   "type": "heading",
+   "level": 2,
+   "section": "Loader"
+  },
+  {
+   "id": "b027",
+   "page": null,
+   "text": "The loader component for TCLBANKER is packed with features, including anti-debugging features, anti-analysis checks, string encryption, system language checks, ETW patching, and a watchdog capability. While it has many features, it lacks depth and has references to older malware analysis tooling. It’s not entirely clear whether the developer used LLM-assisted workflows, but our team wouldn’t be surprised if that were the case.",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b028",
+   "page": null,
+   "text": "At the beginning of the execution, TCLBANKER aligns the corresponding .NET assembly payloads based on whether the string (--renderer=sw) is used in the command-line. Within its main loader function, it first performs allow-list/blocklist operations based on how the DLL was loaded. The malicious DLL will only execute if the host process comes from the following two processes:",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b029",
+   "page": null,
+   "text": "logiaipromptbuilder.exe",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b030",
+   "page": null,
+   "text": "tclloader.exe (Possible reference to developer string during testing)",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b031",
+   "page": null,
+   "text": "If the DLL was loaded by the following processes, it will refuse to run. These processes are traditionally used by analysts to load and debug DLLs.",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b032",
+   "page": null,
+   "text": "rundll32.exe",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b033",
+   "page": null,
+   "text": "regsvr32.exe",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b034",
+   "page": null,
+   "text": "dllhost.exe",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b035",
+   "page": null,
+   "text": "svchost.exe",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b036",
+   "page": null,
+   "text": "Next, TCLBBANKER removes any user-mode hooking by replacing ntdll.dll from disk. For more evasion, the malware generates the following syscall trampolines used later:",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b037",
+   "page": null,
+   "text": "NtQueryInformationProcess",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b038",
+   "page": null,
+   "text": "NtSetInformationThread",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b039",
+   "page": null,
+   "text": "NtSetInformationProcess",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b040",
+   "page": null,
+   "text": "NtTerminateProcess",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b041",
+   "page": null,
+   "text": "NtAllocateVirtualMemory",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b042",
+   "page": null,
+   "text": "NtProtectVirtualMemory",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b043",
+   "page": null,
+   "text": "After installing syscall stubs, the malware patches EtwEventWrite in ntdll.dll with the classic xor eax, eax; ret to disable user-mode ETW telemetry.",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b044",
+   "page": null,
+   "text": "Patching via EtwEventWrite",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b045",
+   "page": null,
+   "text": "TCLBANKER performs an initial sandbox check by capturing a start tick using GetTickCount64(), sleeping for 500 ms, and measuring the elapsed time. If fewer than 450 ms have actually passed, the malware bails — this detects sandboxes or emulation frameworks that hook Sleep to return immediately..",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b046",
+   "page": null,
+   "text": "Sandbox check",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b047",
+   "page": null,
+   "text": "One of the more interesting features of TCLBANKER is an enumeration function that generates three fingerprints based on the following criteria:",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b048",
+   "page": null,
+   "text": "Anti-debugging checks",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b049",
+   "page": null,
+   "text": "System disk information and memory checks",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b050",
+   "page": null,
+   "text": "Language checks",
+   "type": "list",
+   "section": "Loader"
+  },
+  {
+   "id": "b051",
+   "page": null,
+   "text": "The developer uses magic constants assigned to “clean” paths for each category, then performs an XOR against each one to generate the environment hash. This environment hash value is significant because it affects downstream decryption of the embedded payload.",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b052",
+   "page": null,
+   "text": "Environmental hashing function",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b053",
+   "page": null,
+   "text": "For example, if a debugger is present, it will produce an incorrect hash, so when the malware attempts to derive the decryption keys from the hash, the payload will not decrypt correctly, and TCLBANKER will stop executing.",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b054",
+   "page": null,
+   "text": "Decryption derivation function using gated hash value",
+   "type": "paragraph",
+   "section": "Loader"
+  },
+  {
+   "id": "b055",
+   "page": null,
+   "text": "Anti-debugging checks",
+   "type": "heading",
+   "level": 2,
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b056",
+   "page": null,
+   "text": "TCLBANKER implements six different anti-debugging checks:",
+   "type": "paragraph",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b057",
+   "page": null,
+   "text": "Identify the debugger through the Peb->BeingDebugged flag",
+   "type": "list",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b058",
+   "page": null,
+   "text": "Checks heap-tail/heap-free/check-heap flags set when a process is launched under a debugger",
+   "type": "list",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b059",
+   "page": null,
+   "text": "Leverages NtQueryInformationProcess() using ProcessDebugPort",
+   "type": "list",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b060",
+   "page": null,
+   "text": "Uses NtQueryInformationProcess() using ProcessDebugObjectHandle",
+   "type": "list",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b061",
+   "page": null,
+   "text": "Hardware breakpoint detection via the debug registers (DR0-DR3)",
+   "type": "list",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b062",
+   "page": null,
+   "text": "Measures the elapsed time using QueryPerformanceCounter() deltas and RDTSC cycle counts",
+   "type": "list",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b063",
+   "page": null,
+   "text": "Anti-debugging checks with calculation",
+   "type": "paragraph",
+   "section": "Anti-debugging checks"
+  },
+  {
+   "id": "b064",
+   "page": null,
+   "text": "System information checks",
+   "type": "heading",
+   "level": 2,
+   "section": "System information checks"
+  },
+  {
+   "id": "b065",
+   "page": null,
+   "text": "TCLBANKER has the following five different checks based on virtualization, system, and user information:",
+   "type": "paragraph",
+   "section": "System information checks"
+  },
+  {
+   "id": "b066",
+   "page": null,
+   "text": "Checks for virtualization software using vendor signature",
+   "type": "list",
+   "section": "System information checks"
+  },
+  {
+   "id": "b067",
+   "page": null,
+   "text": "Hypervisor | Vendor signature ¶ VMware | VMwareVMware ¶ VirtualBox | VBoxVBoxVBox ¶ KVM | KVMKVMKVM ¶ Xen | XenVMMXenVMM ¶ Parallels | prl hyperv ¶ QEMU/TCG | TCGTCGTCGTCG",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "VMware",
+      "VMwareVMware"
+     ],
+     [
+      "VirtualBox",
+      "VBoxVBoxVBox"
+     ],
+     [
+      "KVM",
+      "KVMKVMKVM"
+     ],
+     [
+      "Xen",
+      "XenVMMXenVMM"
+     ],
+     [
+      "Parallels",
+      "prl hyperv"
+     ],
+     [
+      "QEMU/TCG",
+      "TCGTCGTCGTCG"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Hypervisor",
+     "Vendor signature"
+    ]
+   },
+   "layout": "table",
+   "section": "System information checks"
+  },
+  {
+   "id": "b068",
+   "page": null,
+   "text": "Verify the root system drive (C:\\\\) via GetDiskFreeSpaceExW() has at least 64 GB",
+   "type": "list",
+   "section": "System information checks"
+  },
+  {
+   "id": "b069",
+   "page": null,
+   "text": "Calls GlobalMemoryStatusEx() to verify the system has more than 2 GB of RAM",
+   "type": "list",
+   "section": "System information checks"
+  },
+  {
+   "id": "b070",
+   "page": null,
+   "text": "Checks for 2 or CPU processors via GetSystemInfo()",
+   "type": "list",
+   "section": "System information checks"
+  },
+  {
+   "id": "b071",
+   "page": null,
+   "text": "Checks for generic sandbox/malware usernames",
+   "type": "list",
+   "section": "System information checks"
+  },
+  {
+   "id": "b072",
+   "page": null,
+   "text": "sandbox, malware, virus, sample, john doe, currentuser",
+   "type": "list",
+   "section": "System information checks"
+  },
+  {
+   "id": "b073",
+   "page": null,
+   "text": "System enumeration checks",
+   "type": "paragraph",
+   "section": "System information checks"
+  },
+  {
+   "id": "b074",
+   "page": null,
+   "text": "Language checks",
+   "type": "heading",
+   "level": 2,
+   "section": "Language checks"
+  },
+  {
+   "id": "b075",
+   "page": null,
+   "text": "For the last environment fingerprint check, TCLBANKER retrieves geographical information of the infected machine using GetUserGeoID(), targeting Brazilian users based on the geographical ID (0x20). A second locale check via GetUserDefaultLCID() also ensures the user's default language is Brazilian Portuguese (pt-BR, LANGID 0x0416).",
+   "type": "paragraph",
+   "section": "Language checks"
+  },
+  {
+   "id": "b076",
+   "page": null,
+   "text": "Language check targeting Brazilian users",
+   "type": "paragraph",
+   "section": "Language checks"
+  },
+  {
+   "id": "b077",
+   "page": null,
+   "text": "After these sets of checks, TCLBANKER will either bail out of execution if anything is detected or, if not, produce another anti-debugging check by patching DbgUiRemoteBreakin(). The malware patches its first byte to a ret instruction so that any attempt to remotely break into the process does nothing — the injected thread immediately returns, and the target keeps running, unsuspended.",
+   "type": "paragraph",
+   "section": "Language checks"
+  },
+  {
+   "id": "b078",
+   "page": null,
+   "text": "Patching `DbgUiRemoteBreakin`",
+   "type": "paragraph",
+   "section": "Language checks"
+  },
+  {
+   "id": "b079",
+   "page": null,
+   "text": "After this, the malware derives an AES-256 CBC key and IV by using hard-coded constants from the .rdata section along with the environmental hash calculated earlier. TCLBanker uses BCryptDecrypt() to decrypt the embedded payload, then decompresses via RtlDecompressBuffer using the LZNT1 compression algorithm.",
+   "type": "paragraph",
+   "section": "Language checks"
+  },
+  {
+   "id": "b080",
+   "page": null,
+   "text": "Once the respective payload is decrypted, TCLBANKER initializes COM via CoInitializeEx() and uses the CLR hosting APIs to load the .NET runtime in-process. Before launching the payload entry point, TCLBanker creates two new threads: one serves as the watchdog, and the other monitors the watchdog thread as a heartbeat check.",
+   "type": "paragraph",
+   "section": "Language checks"
+  },
+  {
+   "id": "b081",
+   "page": null,
+   "text": "Watchdog",
+   "type": "heading",
+   "level": 2,
+   "section": "Watchdog"
+  },
+  {
+   "id": "b082",
+   "page": null,
+   "text": "TCLBANKER has a comprehensive watchdog feature that targets various analysis tools, including disassemblers, debuggers, instrumentation products, anti-virus products, and sandbox products. This section will outline the various techniques used by this feature:",
+   "type": "paragraph",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b083",
+   "page": null,
+   "text": "Debugger check via PEB→BeingDebugged",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b084",
+   "page": null,
+   "text": "Watches for hardware breakpoints DR0/DR1/DR2/DR3",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b085",
+   "page": null,
+   "text": "Checks Windows functions (BCryptDecrypt(), BCryptOpenAlgorithmProvider()) for in-line hooks by scanning the first 12 bytes of each function",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b086",
+   "page": null,
+   "text": "Monitors for instrumentation tools and related strings (frida, cydia, user-path injection, hook framework)",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b087",
+   "page": null,
+   "text": "Reviews all kernel named pipes searching for frida or linjector",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b088",
+   "page": null,
+   "text": "Performs process enumeration via CreateToolhelp32Snapshot() targeting the following process names:",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b089",
+   "page": null,
+   "text": "frida, de4dot, dnspy, megadumper, extremedumper, processhacker, x64dbg, x32dbg, pe-sieve, scylla, Ilspy, dotpeek, netreactorslayer, cheatengine",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b090",
+   "page": null,
+   "text": "Targeted process names decrypted by TCLBANKER",
+   "type": "paragraph",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b091",
+   "page": null,
+   "text": "Employs Windows title detection via GetWindowTextW() with these titles:",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b092",
+   "page": null,
+   "text": "x64dbg, x32dbg, ida -, ida pro, ghidra, dnspy, megadumper, extremedumper, processhacker, ollydbg, windbg)_, pe_sieve, scylla",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b093",
+   "page": null,
+   "text": "Identifies analyst tooling based on the following window class names via FindWindowW():",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b094",
+   "page": null,
+   "text": "IDATopLevelWindow, idaabortwndclass, TIdaWindow, x64dbg, x32dbg, OLLYDBG, WinDbgFrameClass, ProcessHacker, SystemInformer, CheatEngine, HxdClass",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b095",
+   "page": null,
+   "text": "Checks for the following loaded modules",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b096",
+   "page": null,
+   "text": "dbeng.dll, dbgcore.dll, SbieDll.dll, snxhk.dll, cmdvrt32.dll, cmdvrt64.dll, cuckoomon.dll, pstorec.dll, vmcheck.dll, wpespy.dll",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b097",
+   "page": null,
+   "text": "Targets the following mutexes and events:",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b098",
+   "page": null,
+   "text": "Ida_trusted_idbs, IDA_COMM_PIPE_, Local\\\\x64dbg, Local\\\\x32dbg, Frida, YOURAPPNAMEHERE",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b099",
+   "page": null,
+   "text": "Performs CRC32 integrity check on the .text section to prevent any tampering",
+   "type": "list",
+   "section": "Watchdog"
+  },
+  {
+   "id": "b100",
+   "page": null,
+   "text": "Banking Trojan Module",
+   "type": "heading",
+   "level": 2,
+   "section": "Banking Trojan Module"
+  },
+  {
+   "id": "b101",
+   "page": null,
+   "text": "Tcl.Agent is a banking trojan, the main component of the chain. It is .NET Reactor-protected, and although we failed to deobfuscate it using available open-source tooling such as de4dot and NETReactorSlayer, we managed to statically deobfuscate this stage up to a satisfiable state using a custom deobfuscation pipeline to tackle .NET Reactor’s string encryption, control flow flattening, IL mutation, delegate proxies, and encrypted method bodies (Necrobit). Although it is a new malware, much of the code structure still follows ESET’s LATAM banking trojan implementation blueprint, published in 2020.",
+   "type": "paragraph",
+   "section": "Banking Trojan Module"
+  },
+  {
+   "id": "b102",
+   "page": null,
+   "text": "At start, the malware performs geofencing, requiring >= 2 of the following indicators to match Brazil; otherwise, it exits immediately if not on a Brazilian machine:",
+   "type": "paragraph",
+   "section": "Banking Trojan Module"
+  },
+  {
+   "id": "b103",
+   "page": null,
+   "text": "Check | Implementation ¶ Region Code | new RegionInfo(CultureInfo.CurrentCulture.LCID).TwoLetterISORegionName == \"BR\" ¶ Timezone | TimeZoneInfo.Local.BaseUtcOffset.TotalHours: if >= -5.0, check if == -2.0 ¶ LCID | CultureInfo.CurrentCulture.LCID == 1046 (Portuguese-Brazil) ¶ Keyboard | GetKeyboardLayoutList() - check each layout: (ToInt32() & 0xFFFF) == 1046",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "Region Code",
+      "new RegionInfo(CultureInfo.CurrentCulture.LCID).TwoLetterISORegionName == \"BR\""
+     ],
+     [
+      "Timezone",
+      "TimeZoneInfo.Local.BaseUtcOffset.TotalHours: if >= -5.0, check if == -2.0"
+     ],
+     [
+      "LCID",
+      "CultureInfo.CurrentCulture.LCID == 1046 (Portuguese-Brazil)"
+     ],
+     [
+      "Keyboard",
+      "GetKeyboardLayoutList() - check each layout: (ToInt32() & 0xFFFF) == 1046"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Check",
+     "Implementation"
+    ]
+   },
+   "layout": "table",
+   "section": "Banking Trojan Module"
+  },
+  {
+   "id": "b104",
+   "page": null,
+   "text": "Installation and Persistence",
+   "type": "heading",
+   "level": 2,
+   "section": "Installation and Persistence"
+  },
+  {
+   "id": "b105",
+   "page": null,
+   "text": "On the first run, the malware copies the entire application directory into %LocalAppData%\\LogiAI. It computes a SHA-256 hash over all .dll and .exe files in the source directory and writes it to a .version marker file. On subsequent runs, it compares hashes to skip redundant copies. After copying, it launches the new instance from the install path and exits.",
+   "type": "paragraph",
+   "section": "Installation and Persistence"
+  },
+  {
+   "id": "b106",
+   "page": null,
+   "text": "It creates a scheduled task named RuntimeOptimizeService using COM interop with the Task Scheduler (CLSID 0F87369F-A4E5-4CFC-BD3E-73E6154572DD). The task is configured as hidden, enabled, with no execution time limit, allowed on battery, start-when-available, and fires on a logon trigger (type 9) scoped to the current user. It registers with TASK_CREATE_OR_UPDATE and TASK_LOGON_SERVICE_ACCOUNT.",
+   "type": "paragraph",
+   "section": "Installation and Persistence"
+  },
+  {
+   "id": "b107",
+   "page": null,
+   "text": "Register task for persistence",
+   "type": "paragraph",
+   "section": "Installation and Persistence"
+  },
+  {
+   "id": "b108",
+   "page": null,
+   "text": "After persistence is established, the agent sends a first-run POST beacon to https://campanha1-api.ef971a42.workers[.]dev/api/installs with the agentId (MachineName-UserName), MachineName, UserName (redundant), and the OS version. The request is authenticated with a hardcoded campaign authentication token 0d21613a-2609-45fc-83ff-d0feaa0c891f. The newer variant adds debug logging around this call (C:\\temp\\tcl-debug.txt), a developer artifact that inadvertently exposes agent presence on disk.",
+   "type": "paragraph",
+   "section": "Installation and Persistence"
+  },
+  {
+   "id": "b109",
+   "page": null,
+   "text": "Initial beacon to indicate successful installation",
+   "type": "paragraph",
+   "section": "Installation and Persistence"
+  },
+  {
+   "id": "b110",
+   "page": null,
+   "text": "Self-Update",
+   "type": "heading",
+   "level": 2,
+   "section": "Self-Update"
+  },
+  {
+   "id": "b111",
+   "page": null,
+   "text": "The agent implements a hash-based self-update gate that runs early in the startup pipeline. It reads a local version hash from flutter_engine.cfg in its install directory (migrating from a legacy version.hash filename if present), then fetches the current hash from the file server endpoint documents.ef971a42.workers[.]dev/api/version using a truncated User-Agent string (Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36.",
+   "type": "paragraph",
+   "section": "Self-Update"
+  },
+  {
+   "id": "b112",
+   "page": null,
+   "text": "The response is parsed for the \"hash\" key. If the remote hash matches the local hash, execution continues normally. On first install, the remote hash is written to disk, and execution proceeds without updating.",
+   "type": "paragraph",
+   "section": "Self-Update"
+  },
+  {
+   "id": "b113",
+   "page": null,
+   "text": "Self-update hash check against the file server",
+   "type": "paragraph",
+   "section": "Self-Update"
+  },
+  {
+   "id": "b114",
+   "page": null,
+   "text": "When a hash mismatch is detected, the agent downloads the update payload from documents.ef971a42.workers[.]dev/api/update as an MSI to %TEMP%\\update_{8hexchars}.msi, authenticated with Bearer token b7ba9e80-0d04-4d9e-b217-c8b3cce335a2.",
+   "type": "paragraph",
+   "section": "Self-Update"
+  },
+  {
+   "id": "b115",
+   "page": null,
+   "text": "Download updated payload",
+   "type": "paragraph",
+   "section": "Self-Update"
+  },
+  {
+   "id": "b116",
+   "page": null,
+   "text": "The download is validated against a 100KB minimum size as a sanity check. The agent then writes a self-deleting batch script to %TEMP% that polls the tasklist until the current process exits, executes msiexec /i /qn REINSTALLMODE=amus for silent installation, and deletes itself. The batch file is launched via a hidden cmd.exe process before the agent terminates, handing off execution to the updated payload.",
+   "type": "paragraph",
+   "section": "Self-Update"
+  },
+  {
+   "id": "b117",
+   "page": null,
+   "text": "Browser URL Monitor and C2 Session Initialization",
+   "type": "heading",
+   "level": 2,
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b118",
+   "page": null,
+   "text": "Every second, the malware agent calls a browser URL monitor function that reads the foreground browser's address bar via UI Automation. It calls GetForegroundWindow, resolves the owning process, checks the process name against Chrome, Firefox, Microsoft Edge, Brave, Opera, and Vivaldi, then uses AutomationElement.FromHandle -> FindFirst(Descendants, ControlType.Edit) -> ValuePattern.Current.Value to extract the URL, similar to this Stack Overflow implementation.",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b119",
+   "page": null,
+   "text": "Browser URL monitor via UI Automation",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b120",
+   "page": null,
+   "text": "The extracted URL is matched against a fixed list of targeted banks embedded in the binary, encoded via XOR with a 16-byte key and base64 encoding.",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b121",
+   "page": null,
+   "text": "Encrypted bank/fintech/crypto domains",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b122",
+   "page": null,
+   "text": "This GitHub Gist contains a list of 59 targeted domains, including Brazilian banking, fintech platforms, and cryptocurrency exchanges, grouped by the target IDs appended to each decrypted domain.",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b123",
+   "page": null,
+   "text": "When a match hits, the domain target ID is passed to the next state, which initializes the official C2 communication by establishing a WebSocket connection to wss://mxtestacionamentos[.]com/ws. The OnConnect handler fires, sending a registration packet containing the agent ID (a random GUID at runtime), MachineName, UserName, machine info, timestamp, domain target ID (so the C2 knows which website the victim opened), and a signature.",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b124",
+   "page": null,
+   "text": "To produce a handshake signature, HMAC-SHA256 is used to sign the victim identifier (agent ID, MachineName, UserName, OSVersion, timestamp) using the campaign GUID 70e4f943-e323-4484-97d7-35401bf6812c as the key.",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b125",
+   "page": null,
+   "text": "Signature generation for the session initialization handshake",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b126",
+   "page": null,
+   "text": "The server then responds with a registration acknowledgment, officially starting the session, and enters the command dispatch loop. At session start, a Task Manager killer is fired every 500ms to prevent the victim from inspecting or terminating the agent's process.",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b127",
+   "page": null,
+   "text": "Killing Task Manager",
+   "type": "paragraph",
+   "section": "Browser URL Monitor and C2 Session Initialization"
+  },
+  {
+   "id": "b128",
+   "page": null,
+   "text": "C2 Command Table",
+   "type": "heading",
+   "level": 2,
+   "section": "C2 Command Table"
+  },
+  {
+   "id": "b129",
+   "page": null,
+   "text": "A capability summarization is described through the opcode table below:",
+   "type": "paragraph",
+   "section": "C2 Command Table"
+  },
+  {
+   "id": "b130",
+   "page": null,
+   "text": "Opcode | Purpose ¶ 2 | Registration ACK, start the Task Manager killer ¶ 4 | Graceful WebSocket disconnect ¶ 5 | Suicide: Kill all sibling processes and exit ¶ 6 | Forced reboot (shutdown.exe /r /t 0 /f) ¶ 7 | Suicide-then-Uninstall: kill all processes with the same host binary name except itself (siblings) → uninstall → exit ¶ 16 | Screenshot ¶ 17 | Start streaming the screen ¶ 18 | Stop streaming the screen ¶ 19 | Set screen capture quality (1-100) ¶ 20 | Enumerate monitors ¶ 32 | Mouse move (X, Y, MonitorIndex) ¶ 33 | Mouse click through overlay: parse {X,Y,Button,MonitorIndex} → translate to absolute desktop coords → find the implant's own overlay window covering that point → punch a 2x2 region hole in the overlay at that pixel → SetCursorPos + SendInput mouse-down/up (which lands on whatever real desktop content is underneath the overlay). ¶ 34 | Mouse scroll (Delta, SendInput) ¶ 35 | Key tap (KeyCode, SendInput) ¶ 37 | Key down (KeyCode, SendInput) ¶ 38 | Key up (KeyCode, SendInput) ¶ 39 | Start keylogger (WH_KEYBOARD_LL hook) ¶ 40 | Flush keylogger, exfil to C2 ¶ 41 | Clipboard hijack (Clipboard.SetText) ¶ 48 | File system directory listing ¶ 65 | Get running processes information ¶ 67 | Shell command execution (cmd.exe /c) ¶ 80 | Enumerate all visible windows ¶ 81 | Window manager: Kill process of a window / minimize window / restore window / bring window to foreground / close window / move window to another monitor ¶ 83 | Show stall overlay: either progress-steps or fake Windows Update screen ¶ 84 | Teardown overlay ¶ 85 | Toggle screen capture immunity. Enables/disables WDA_EXCLUDEFROMCAPTURE on all overlay windows to hide them from screen sharing / screenshots. ¶ 86 | Refresh overlay content ¶ 87 | Show cutout overlay: pin external window inside overlay with visible region cutout ¶ 96 | Show credential prompt overlay",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "2",
+      "Registration ACK, start the Task Manager killer"
+     ],
+     [
+      "4",
+      "Graceful WebSocket disconnect"
+     ],
+     [
+      "5",
+      "Suicide: Kill all sibling processes and exit"
+     ],
+     [
+      "6",
+      "Forced reboot (shutdown.exe /r /t 0 /f)"
+     ],
+     [
+      "7",
+      "Suicide-then-Uninstall: kill all processes with the same host binary name except itself (siblings) → uninstall → exit"
+     ],
+     [
+      "16",
+      "Screenshot"
+     ],
+     [
+      "17",
+      "Start streaming the screen"
+     ],
+     [
+      "18",
+      "Stop streaming the screen"
+     ],
+     [
+      "19",
+      "Set screen capture quality (1-100)"
+     ],
+     [
+      "20",
+      "Enumerate monitors"
+     ],
+     [
+      "32",
+      "Mouse move (X, Y, MonitorIndex)"
+     ],
+     [
+      "33",
+      "Mouse click through overlay: parse {X,Y,Button,MonitorIndex} → translate to absolute desktop coords → find the implant's own overlay window covering that point → punch a 2x2 region hole in the overlay at that pixel → SetCursorPos + SendInput mouse-down/up (which lands on whatever real desktop content is underneath the overlay)."
+     ],
+     [
+      "34",
+      "Mouse scroll (Delta, SendInput)"
+     ],
+     [
+      "35",
+      "Key tap (KeyCode, SendInput)"
+     ],
+     [
+      "37",
+      "Key down (KeyCode, SendInput)"
+     ],
+     [
+      "38",
+      "Key up (KeyCode, SendInput)"
+     ],
+     [
+      "39",
+      "Start keylogger (WH_KEYBOARD_LL hook)"
+     ],
+     [
+      "40",
+      "Flush keylogger, exfil to C2"
+     ],
+     [
+      "41",
+      "Clipboard hijack (Clipboard.SetText)"
+     ],
+     [
+      "48",
+      "File system directory listing"
+     ],
+     [
+      "65",
+      "Get running processes information"
+     ],
+     [
+      "67",
+      "Shell command execution (cmd.exe /c)"
+     ],
+     [
+      "80",
+      "Enumerate all visible windows"
+     ],
+     [
+      "81",
+      "Window manager: Kill process of a window / minimize window / restore window / bring window to foreground / close window / move window to another monitor"
+     ],
+     [
+      "83",
+      "Show stall overlay: either progress-steps or fake Windows Update screen"
+     ],
+     [
+      "84",
+      "Teardown overlay"
+     ],
+     [
+      "85",
+      "Toggle screen capture immunity. Enables/disables WDA_EXCLUDEFROMCAPTURE on all overlay windows to hide them from screen sharing / screenshots."
+     ],
+     [
+      "86",
+      "Refresh overlay content"
+     ],
+     [
+      "87",
+      "Show cutout overlay: pin external window inside overlay with visible region cutout"
+     ],
+     [
+      "96",
+      "Show credential prompt overlay"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Opcode",
+     "Purpose"
+    ]
+   },
+   "layout": "table",
+   "section": "C2 Command Table"
+  },
+  {
+   "id": "b131",
+   "page": null,
+   "text": "Social Engineering UI Framework",
+   "type": "heading",
+   "level": 2,
+   "section": "Social Engineering UI Framework"
+  },
+  {
+   "id": "b132",
+   "page": null,
+   "text": "A more interesting capability of the banking trojan is a WPF-based full-screen overlay subsystem that orchestrates bank-themed fraud flows during active C2 sessions.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Framework"
+  },
+  {
+   "id": "b133",
+   "page": null,
+   "text": "Overlay Lifecycle",
+   "type": "heading",
+   "level": 3,
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b134",
+   "page": null,
+   "text": "The overlay manager spawns one full-screen WPF window per monitor. Windows are configured as borderless, topmost, and hidden from the taskbar (WindowStyle.None, Topmost = true, ShowInTaskbar = false), with a custom Closing handle that refuses dismissal until an internal flag is flipped by the operator through the overlay teardown command, preventing the windows from being closed.",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b135",
+   "page": null,
+   "text": "Social engineering overlay settings",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b136",
+   "page": null,
+   "text": "Overlay window close prevention",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b137",
+   "page": null,
+   "text": "At startup, the manager captures a PNG screenshot of every display via CopyFromScreen as the overlay backdrop, creating a “frozen desktop” look. Depending on the currently active overlay, the victim perceives their real desktop environment behind it.",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b138",
+   "page": null,
+   "text": "A 500ms timer continuously reapplies HWND_TOPMOST via SetWindowPos to defeat any window attempting to surface above the overlay.",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b139",
+   "page": null,
+   "text": "Overlay \"always on top\" setting",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b140",
+   "page": null,
+   "text": "In addition, an anti-capture feature calls SetWindowDisplayAffinity with WDA_EXCLUDEFROMCAPTURE, rendering the overlay invisible to any screen-capturing tools, allowing the operator to see through their own overlay through the screenshot and screenstreaming commands.",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b141",
+   "page": null,
+   "text": "Disable screen capture to detect overlays",
+   "type": "paragraph",
+   "section": "Overlay Lifecycle"
+  },
+  {
+   "id": "b142",
+   "page": null,
+   "text": "Input Blocker",
+   "type": "heading",
+   "level": 3,
+   "section": "Input Blocker"
+  },
+  {
+   "id": "b143",
+   "page": null,
+   "text": "On the primary monitor, two hooks are installed: WH_KEYBOARD_LL and WH_MOUSE_LL. Both hooks check their respective injected flags (LLKHF_INJECTED for keyboard, LLMHF_INJECTED for mouse), allowing input injected via SendInput by the operator’s remote commands to pass through untouched. The keyboard hook swallows Tab, Escape, Alt+F4, Win keys, PrintScreen, Ctrl, Alt, and all navigation keys; the mouse hook blocks right-click, middle-click, and scroll, but allows left-click and movement, so the victim can still interact with the overlay prompts.",
+   "type": "paragraph",
+   "section": "Input Blocker"
+  },
+  {
+   "id": "b144",
+   "page": null,
+   "text": "Input blocker initialization and hook function for blocking mouse input",
+   "type": "paragraph",
+   "section": "Input Blocker"
+  },
+  {
+   "id": "b145",
+   "page": null,
+   "text": "Social Engineering UI Builders",
+   "type": "heading",
+   "level": 3,
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b146",
+   "page": null,
+   "text": "Five interchangeable content renderers plug into the overlay framework:",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b147",
+   "page": null,
+   "text": "Credential Prompt: Supports three input modes, selected based on the operator's request parameters.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b148",
+   "page": null,
+   "text": "Phone mode applies real-time Brazilian format masking ((##) ####-#### for 10-digit landlines, (##) #####-#### for 11-digit mobiles) with max 11 digits.",
+   "type": "list",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b149",
+   "page": null,
+   "text": "Virtual keypad mode renders an on-screen numeric keypad (buttons 0–9 plus \"limpar\"/clear), displaying input as bullet characters to mimic PIN entry.",
+   "type": "list",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b150",
+   "page": null,
+   "text": "Default mode accepts plain text with a configurable max length.",
+   "type": "list",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b151",
+   "page": null,
+   "text": "All modes run input through a quality validator that algorithmically rejects same-digit sequences (000000) and ascending/descending runs (123456, 654321) to prevent victims from entering throwaway values.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b152",
+   "page": null,
+   "text": "The submit action fires the captured values to the C2.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b153",
+   "page": null,
+   "text": "User-entered values for Credential Prompt sent to C2",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b154",
+   "page": null,
+   "text": "Vishing Wait Screen: Triggers after the victim submits their phone number in the credential prompt. Displays \"Estamos entrando em contato\" (\"We are getting in touch\") with a central image “breathing” animation and three dots with staggered opacity animations (300ms offset per dot) producing a \"connecting\" visual. The operator or an accomplice can then call the victim's real phone, impersonating bank security staff.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b155",
+   "page": null,
+   "text": "Displayed text on Vishing Wait Screen",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b156",
+   "page": null,
+   "text": "Progress Steps: A fully operator-templated stall screen displaying a list of fake processing steps with a randomized animation. Step durations are randomized to total approximately 15 minutes. A timer advances through each step sequentially, visually marking completed steps, highlighting the current one, and dimming the remaining ones. When all steps are complete, the sequence resets to an earlier position with new randomized timings and continues.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b157",
+   "page": null,
+   "text": "Fake Windows Update: An alternative stall screen mimicking the Windows 10/11 update-restart screen. Renders a solid #0078D7 (Windows accent blue) background with a five-ellipse spinning indicator arranged in a circle. A percentage readout jumps by a random 25–35% at randomly selected 50–81-second intervals to mimic the irregular progress behavior of real Windows Updates. Default subtitle: \"Trabalhando em atualizacoes\" (\"Working on updates\").",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b158",
+   "page": null,
+   "text": "Windows \"Working on Updates\" stall overlay",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b159",
+   "page": null,
+   "text": "Cutout Overlay: Cuts a rectangular hole in the full-screen overlay, exposing the underlying application window. The operator specifies hole dimensions via opcode 87, in which the overlay manager builds a themed card with a transparent-border placeholder, computes its screen coordinates post-layout, and cuts a matching region hole using CreateRectRgn + CombineRgn(RGN_DIFF) + SetWindowRgn. The target window is repositioned underneath the hole. The result is a real application window framed within the overlay, and the victim interacts with the actual application while the surrounding overlay provides deceptive context.",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b160",
+   "page": null,
+   "text": "Window Region hole cutting to support Cutout Overlays",
+   "type": "paragraph",
+   "section": "Social Engineering UI Builders"
+  },
+  {
+   "id": "b161",
+   "page": null,
+   "text": "Worm module",
+   "type": "heading",
+   "level": 2,
+   "section": "Worm module"
+  },
+  {
+   "id": "b162",
+   "page": null,
+   "text": "The second module invoked by the loader is Tcl.WppBot, is designed to propagate spam and phishing messages at scale, to distribute TCLBANKER. Two distinct agent types were recovered from two different loaders and analyzed:",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b163",
+   "page": null,
+   "text": "A WhatsApp worm that hijacks browser sessions",
+   "type": "list",
+   "section": "Worm module"
+  },
+  {
+   "id": "b164",
+   "page": null,
+   "text": "An Outlook email bot that abuses Microsoft Outlook through COM interop",
+   "type": "list",
+   "section": "Worm module"
+  },
+  {
+   "id": "b165",
+   "page": null,
+   "text": "Tcl.WppBot is also .NET Reactor-protected with the same version used to protect Tcl.Agent, and so we also managed to statically deobfuscate payloads in this stage.",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b166",
+   "page": null,
+   "text": "Both agents share the same C2 backend, authentication credentials, and operational infrastructure. The C2 URL and API key are decrypted at startup using XOR decryption with a hardcoded key.",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b167",
+   "page": null,
+   "text": "C2 URL: campanha1-api.ef971a42.workers[.]dev (Cloudflare Workers app)",
+   "type": "list",
+   "section": "Worm module"
+  },
+  {
+   "id": "b168",
+   "page": null,
+   "text": "API key / Bearer token: 0d21613a-2609-45fc-83ff-d0feaa0c891f",
+   "type": "list",
+   "section": "Worm module"
+  },
+  {
+   "id": "b169",
+   "page": null,
+   "text": "Encrypted C2 and API key",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b170",
+   "page": null,
+   "text": "The C2 serves a single superset campaign configuration object via the https://campanha1-api.ef971a42.workers[.]dev/api/campaign endpoint. Each agent variant deserializes the full object but only reads the fields relevant to its channel.",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b171",
+   "page": null,
+   "text": "Captured configuration:",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b172",
+   "page": null,
+   "text": "message : Ola tudo bem?",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b173",
+   "page": null,
+   "text": "Preciso de um orÃ§amento, estarei encaminhado caso tenha os produtos por favor me retorne para",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b174",
+   "page": null,
+   "text": "darmos continuidade no atendimento.",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b175",
+   "page": null,
+   "text": "https://arquivos-omie[.]com ð",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b176",
+   "page": null,
+   "text": "âï¸*IMPORTANTE*: Este orÃ§amento foi otimizado para visualizaÃ§Ã£o em Computadores Desktop,",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b177",
+   "page": null,
+   "text": "pois o mesmo necessita de visualizador de excel, word ou pdf.",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b178",
+   "page": null,
+   "text": "fileUrl : https://documents.ef971a42.workers[.]dev/file",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b179",
+   "page": null,
+   "text": "delayMin : 1",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b180",
+   "page": null,
+   "text": "delayMax : 3",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b181",
+   "page": null,
+   "text": "maxPerSession : 3000",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b182",
+   "page": null,
+   "text": "updatedAt : 2026-04-17T15:54:07.003Z",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b183",
+   "page": null,
+   "text": "type : gmail",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b184",
+   "page": null,
+   "text": "subject : Prezado(a), NFe disponÃ­vel para impressÃ£o",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b185",
+   "page": null,
+   "text": "emailMessage : <!DOCTYPE html>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b186",
+   "page": null,
+   "text": "<html lang=\"pt-BR\">",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b187",
+   "page": null,
+   "text": "<head>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b188",
+   "page": null,
+   "text": "<meta charset=\"UTF-8\">",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b189",
+   "page": null,
+   "text": "<title>Nota Fiscal DisponÃ­vel</title>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b190",
+   "page": null,
+   "text": "<style>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b191",
+   "page": null,
+   "text": "body {",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b192",
+   "page": null,
+   "text": "font-family: Arial, sans-serif;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b193",
+   "page": null,
+   "text": "margin: 20px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b194",
+   "page": null,
+   "text": "padding: 0;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b195",
+   "page": null,
+   "text": "text-align: center;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b196",
+   "page": null,
+   "text": "background-color: #f4f4f4; /* Cor de fundo mais clara */",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b197",
+   "page": null,
+   "text": "color: #333; /* Cor do texto ajustada para ser visÃ­vel */",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b198",
+   "page": null,
+   "text": "h1 {",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b199",
+   "page": null,
+   "text": "font-size: 24px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b200",
+   "page": null,
+   "text": "margin-bottom: 20px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b201",
+   "page": null,
+   "text": "font-weight: normal; /* TÃ­tulo sem negrito */",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b202",
+   "page": null,
+   "text": "p {",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b203",
+   "page": null,
+   "text": "font-size: 16px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b204",
+   "page": null,
+   "text": "margin-bottom: 20px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b205",
+   "page": null,
+   "text": "line-height: 1.6;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b206",
+   "page": null,
+   "text": "color: #333; /* Garantir que o texto esteja visÃ­vel */",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b207",
+   "page": null,
+   "text": ".btn {",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b208",
+   "page": null,
+   "text": "background-color: #007BFF;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b209",
+   "page": null,
+   "text": "color: #fff;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b210",
+   "page": null,
+   "text": "padding: 10px 20px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b211",
+   "page": null,
+   "text": "border: none;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b212",
+   "page": null,
+   "text": "border-radius: 5px;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b213",
+   "page": null,
+   "text": "cursor: pointer;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b214",
+   "page": null,
+   "text": ".btn:hover {",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b215",
+   "page": null,
+   "text": "background-color: #0056b3;",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b216",
+   "page": null,
+   "text": "</style>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b217",
+   "page": null,
+   "text": "</head>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b218",
+   "page": null,
+   "text": "<body>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b219",
+   "page": null,
+   "text": "<h1>Prezado(a)</h1>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b220",
+   "page": null,
+   "text": "<p>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b221",
+   "page": null,
+   "text": "Sua Nota Fiscal EletrÃ´nica (NFe) estÃ¡ disponÃ­vel e pronta para ser acessada.",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b222",
+   "page": null,
+   "text": "Para facilitar, basta clicar no botÃ£o abaixo para abrir o documento.",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b223",
+   "page": null,
+   "text": "</p>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b224",
+   "page": null,
+   "text": "<p>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b225",
+   "page": null,
+   "text": "Caso tenha alguma dÃºvida sobre os detalhes da nota ou precise de alguma alteraÃ§Ã£o, por",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b226",
+   "page": null,
+   "text": "favor, entre em contato conosco.",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b227",
+   "page": null,
+   "text": "</p>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b228",
+   "page": null,
+   "text": "<a href=\"https://arquivos-omie[.]com\" target=\"_blank\">",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b229",
+   "page": null,
+   "text": "<button class=\"btn\">Abrir Nota Fiscal</button>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b230",
+   "page": null,
+   "text": "</a>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b231",
+   "page": null,
+   "text": "<p>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b232",
+   "page": null,
+   "text": "Agradecemos pela confianÃ§a e ficamos Ã disposiÃ§Ã£o para qualquer outra necessidade.",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b233",
+   "page": null,
+   "text": "</p>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b234",
+   "page": null,
+   "text": "</body>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b235",
+   "page": null,
+   "text": "</html>",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b236",
+   "page": null,
+   "text": "emailDelayMin : 30",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b237",
+   "page": null,
+   "text": "emailDelayMax : 90",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b238",
+   "page": null,
+   "text": "emailMaxPerSession : 100",
+   "type": "code",
+   "section": "Worm module",
+   "line_group": "b172"
+  },
+  {
+   "id": "b239",
+   "page": null,
+   "text": "The same Cloudflare account ef971a42 also hosts the payload delivery CDN (domain for fileUrl in the configuration object) at documents.ef971a42.workers[.]dev. Accessible through the /file endpoint, it currently serves a zip file containing the TCLBANKER-trojanized LogiAI Prompt Builder MSI. This infrastructure decision allows the operator to rapidly redeploy infrastructure without maintaining dedicated servers.",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b240",
+   "page": null,
+   "text": "Zip file containing TCLBANKER grabbed from the file server",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b241",
+   "page": null,
+   "text": "As of the time of writing, the phishing domain arquivos-omie[.]com identified in the configuration above, created on 2026-04-15, is not at an operable state (Welcome! This portal is currently undergoing scheduled maintenance. Please try again later.) The campaign could be in its early operational stages or staged for tasking. This domain is also named to impersonate a popular Brazilian Enterprise Resource Planning (ERP) suite.",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b242",
+   "page": null,
+   "text": "Phishing page under maintenance",
+   "type": "paragraph",
+   "section": "Worm module"
+  },
+  {
+   "id": "b243",
+   "page": null,
+   "text": "Agent 1: WhatsApp Bot",
+   "type": "heading",
+   "level": 2,
+   "section": "Agent 1: WhatsApp Bot"
+  },
+  {
+   "id": "b244",
+   "page": null,
+   "text": "The WhatsApp agent silently takes over the victim’s authenticated WhatsApp Web session to send spam messages and distribute TCLBANKER to Brazilian contacts.",
+   "type": "paragraph",
+   "section": "Agent 1: WhatsApp Bot"
+  },
+  {
+   "id": "b245",
+   "page": null,
+   "text": "Session Hijacking",
+   "type": "heading",
+   "level": 3,
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b246",
+   "page": null,
+   "text": "The malware starts by discovering Chromium-based browsers on the target system, then scanning both the App Paths registry entries and common installation directories for Chrome, Edge, Brave, Opera, and Vivaldi. It then walks each browser's user profiles (e.g., \"Default,\" \"Profile 1,\" etc.), looking for evidence of an active WhatsApp Web session. A profile is flagged as having an authenticated session if its IndexedDB storage contains the WhatsApp Web LevelDB directory at <profile_dir>/IndexedDB/https_web.whatsapp[.]com_0.indexeddb.leveldb/.",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b247",
+   "page": null,
+   "text": "Then each profile is sent to the profile-cloning and session-hijacking function.",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b248",
+   "page": null,
+   "text": "WhatsApp Web profile cloning and session hijacking",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b249",
+   "page": null,
+   "text": "For each qualifying profile, the malware clones it to a temporary directory at %TEMP%\\<GUID>\\, copying only the files needed to resume the WhatsApp Web session: IndexedDB, Local Storage, Session Storage, databases, Web Data, Login Data, and Cookies. It then launches a headless Chromium instance via Selenium WebDriver, with --user-data-dir pointing at the cloned profile.",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b250",
+   "page": null,
+   "text": "The matching chromedriver.exe is resolved at runtime by a disguised Selenium Manager binary dropped at %TEMP%\\msvc-rt14\\bin\\hostfxr.exe, which is invoked with --browser chrome --output json and returns the path of a chromedriver compatible with the victim's installed Chrome version.",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b251",
+   "page": null,
+   "text": "Chromedriver path resolved",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b252",
+   "page": null,
+   "text": "Immediately after launch, the malware injects JavaScript to bypass bot-detection frameworks by hiding navigator.webdriver, populates chrome.runtime, reconciles the Notification.permission / permissions.query state mismatch, fakes a non-empty navigator.plugins array, and sets navigator.languages to ['pt-BR', 'pt', 'en-US', 'en'] to match the target demographic.",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b253",
+   "page": null,
+   "text": "Object.defineProperty(navigator, 'webdriver', {",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b254",
+   "page": null,
+   "text": "get: () = > undefined",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b255",
+   "page": null,
+   "text": ");",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b256",
+   "page": null,
+   "text": "delete navigator.__proto__.webdriver;",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b257",
+   "page": null,
+   "text": "if (window.chrome) {",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b258",
+   "page": null,
+   "text": "window.chrome.runtime = window.chrome.runtime || {};",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b259",
+   "page": null,
+   "text": "const origQuery = window.navigator.permissions.query;",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b260",
+   "page": null,
+   "text": "window.navigator.permissions.query = (p) = > (",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b261",
+   "page": null,
+   "text": "p.name == = 'notifications' ?",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b262",
+   "page": null,
+   "text": "Promise.resolve( {",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b263",
+   "page": null,
+   "text": "state: Notification.permission",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b264",
+   "page": null,
+   "text": ") :",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b265",
+   "page": null,
+   "text": "origQuery(p)",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b266",
+   "page": null,
+   "text": ");",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b267",
+   "page": null,
+   "text": "Object.defineProperty(navigator, 'plugins', {",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b268",
+   "page": null,
+   "text": "get: () = > [1, 2, 3, 4, 5], }",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b269",
+   "page": null,
+   "text": ");",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b270",
+   "page": null,
+   "text": "Object.defineProperty(navigator, 'languages', {",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b271",
+   "page": null,
+   "text": "get: () = > ['pt-BR', 'pt', 'en-US', 'en'], }",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b272",
+   "page": null,
+   "text": ");",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b273",
+   "page": null,
+   "text": "window.navigator.chrome = {",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b274",
+   "page": null,
+   "text": "runtime: {}",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b275",
+   "page": null,
+   "text": "};",
+   "type": "code",
+   "section": "Session Hijacking",
+   "line_group": "b253"
+  },
+  {
+   "id": "b276",
+   "page": null,
+   "text": "With the cloned profile loaded, the browser navigates to web.whatsapp[.]com, and the malware waits up to 45 seconds to observe the resulting page state. If the chat interface appears (the cloned IndexedDB was valid and the session resumed without a QR scan), it injects an embedded WA-JS (WPPConnect) library and waits for WPP.contact.list and WPP.chat.sendTextMessage to become callable before starting the campaign dispatch loop. If the QR code prompt is shown instead, the engine returns \"qr_code\" without attempting injection, then tries the next candidate profile.",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b277",
+   "page": null,
+   "text": "Attempt to load WhatsApp session that does not require QR code verification",
+   "type": "paragraph",
+   "section": "Session Hijacking"
+  },
+  {
+   "id": "b278",
+   "page": null,
+   "text": "Spam Functionality",
+   "type": "heading",
+   "level": 3,
+   "section": "Spam Functionality"
+  },
+  {
+   "id": "b279",
+   "page": null,
+   "text": "Once the injection succeeds, the malware retrieves the active campaign from the C2 endpoint https://campanha1-api.ef971a42.workers[.]dev/api/campaign, which supplies the message body, optional attachment URL, caption, and timing parameters. TCLBANKER is then downloaded from the file server at https://documents.ef971a42.workers[.]dev/file and reconstructed in the browser context as a File object, without being dropped to disk.",
+   "type": "paragraph",
+   "section": "Spam Functionality"
+  },
+  {
+   "id": "b280",
+   "page": null,
+   "text": "The malware then calls WPP.contact.list to harvest the victim's address book, filters out groups, broadcasts, and non-Brazilian numbers, and begins dispatching messages through WPP.chat.sendTextMessage and sendFileMessage. The malware reports progress to the C2 endpoint /api/progress after each batch, and polls /api/control for remote pause or resend commands from the operator.",
+   "type": "paragraph",
+   "section": "Spam Functionality"
+  },
+  {
+   "id": "b281",
+   "page": null,
+   "text": "Agent 2: Outlook Email Bot",
+   "type": "heading",
+   "level": 2,
+   "section": "Agent 2: Outlook Email Bot"
+  },
+  {
+   "id": "b282",
+   "page": null,
+   "text": "The Outlook agent is an email spambot that abuses the victim’s installed Microsoft Outlook application to send phishing emails from the victim’s email address, making them harder to detect as spam than emails sent from attacker-controlled infrastructure.",
+   "type": "paragraph",
+   "section": "Agent 2: Outlook Email Bot"
+  },
+  {
+   "id": "b283",
+   "page": null,
+   "text": "Outlook Discovery & COM Attachment",
+   "type": "heading",
+   "level": 3,
+   "section": "Outlook Discovery & COM Attachment"
+  },
+  {
+   "id": "b284",
+   "page": null,
+   "text": "If OUTLOOK.EXE is not already running, it attempts to locate the installation in App Paths registry entries and known installation directories and launches it in a new process. The malware then attaches to the process via COM interop: Marshal.GetActiveObject(\"Outlook.Application\"), and validates that it has at least one email account configured.",
+   "type": "paragraph",
+   "section": "Outlook Discovery & COM Attachment"
+  },
+  {
+   "id": "b285",
+   "page": null,
+   "text": "Contact Harvesting",
+   "type": "heading",
+   "level": 3,
+   "section": "Contact Harvesting"
+  },
+  {
+   "id": "b286",
+   "page": null,
+   "text": "The malware then drops a PowerShell script, %TEMP%\\oc<guid>.ps1, that harvests contacts via Outlook COM from a separate process. It harvests contacts from two sources: first, it reads the default Contacts folder for all contact entries, extracting email addresses and full names from each contact item. Second, it iterates every store’s root folders to find inbox-like folders, sorts inbox messages by latest, and extracts sender email addresses and names before writing them to a .txt file in email|name format.",
+   "type": "paragraph",
+   "section": "Contact Harvesting"
+  },
+  {
+   "id": "b287",
+   "page": null,
+   "text": "Outlook contact harvesting for potential spam victims",
+   "type": "paragraph",
+   "section": "Contact Harvesting"
+  },
+  {
+   "id": "b288",
+   "page": null,
+   "text": "For each candidate email, additional filtering is done to maximize deliverability.",
+   "type": "paragraph",
+   "section": "Contact Harvesting"
+  },
+  {
+   "id": "b289",
+   "page": null,
+   "text": "Code related to filtering potential spam victim emails",
+   "type": "paragraph",
+   "section": "Contact Harvesting"
+  },
+  {
+   "id": "b290",
+   "page": null,
+   "text": "Spam Functionality",
+   "type": "heading",
+   "level": 3,
+   "section": "Spam Functionality"
+  },
+  {
+   "id": "b291",
+   "page": null,
+   "text": "Similar to the WhatsApp bot, the malware retrieves the active campaign from https://campanha1-api.ef971a42.workers[.]dev/api/campaign, then sends emails through the victim's own Outlook accounts via COM automation. Each email is constructed via outlookApp.CreateItem(0) (MailItem) with the recipient in To, the campaign subject line, and the campaign content emailMessage, sent using the victim's actual account via SendUsingAccount.",
+   "type": "paragraph",
+   "section": "Spam Functionality"
+  },
+  {
+   "id": "b292",
+   "page": null,
+   "text": "Between sends, the agent applies a randomized delay and periodically checks the C2 control endpoint /api/control for pause or resend commands, and reports progress to /api/progress.",
+   "type": "paragraph",
+   "section": "Spam Functionality"
+  },
+  {
+   "id": "b293",
+   "page": null,
+   "text": "Infrastructure",
+   "type": "heading",
+   "level": 2,
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b294",
+   "page": null,
+   "text": "The REF3076 actors have leveraged the worker[.]dev Cloudflare Serverless infrastructure for C2 and file hosting. This decision allows them to inherit any trust victims might already have in Cloudflare and to rotate infrastructure quickly as needed.",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b295",
+   "page": null,
+   "text": "Pivoting on the body-hash (91fafaa1240676afe5c55d931261e3798797c408) of the phishing site above (arquivos-omie[.]com), we were able to identify additional domains that are likely being prepared for weaponization:",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b296",
+   "page": null,
+   "text": "Domain | First Seen | Info | ASN (Providor) ¶ arquivos-omie[.]com | 2026-04-17 | Squatting - Brazilian SaaS for SMBs | AS 13335 (Cloudflare) ¶ documentos-online[.]com | 2026-04-11 | Generic | AS 13335 (Cloudflare) ¶ afonsoferragista[.]com | 2026-04-22 | Hardware store - Likely used in a B2B lure | AS 13335 (Cloudflare) ¶ doccompartilhe[.]com | 2026-04-15 | Generic - “Shared a document” | AS 13335 (Cloudflare) ¶ recebamais[.]com | 2026-04-20 | Squatting - Brazilian credit/loan brokerage | AS 13335 (Cloudflare)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "arquivos-omie[.]com",
+      "2026-04-17",
+      "Squatting - Brazilian SaaS for SMBs",
+      "AS 13335 (Cloudflare)"
+     ],
+     [
+      "documentos-online[.]com",
+      "2026-04-11",
+      "Generic",
+      "AS 13335 (Cloudflare)"
+     ],
+     [
+      "afonsoferragista[.]com",
+      "2026-04-22",
+      "Hardware store - Likely used in a B2B lure",
+      "AS 13335 (Cloudflare)"
+     ],
+     [
+      "doccompartilhe[.]com",
+      "2026-04-15",
+      "Generic - “Shared a document”",
+      "AS 13335 (Cloudflare)"
+     ],
+     [
+      "recebamais[.]com",
+      "2026-04-20",
+      "Squatting - Brazilian credit/loan brokerage",
+      "AS 13335 (Cloudflare)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Domain",
+     "First Seen",
+     "Info",
+     "ASN (Providor)"
+    ]
+   },
+   "layout": "table",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b297",
+   "page": null,
+   "text": "More Brazilian phishing infrastructure was discovered after a broader pivot in the banner title (Portal Corporativo), but it’s unclear whether it was directly related to REF3076 or to other actors in the Latin American banking trojan ecosystem. Notably, one cluster leveraged the Cloudflare pages[.]dev free static-site hosting product.",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b298",
+   "page": null,
+   "text": "The C2 domain mxtestacionamentos[.]com previously pointed to a Brazilian-hosted IP 191.96.224[.]96.",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b299",
+   "page": null,
+   "text": "Validin timeline of C2 A records",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b300",
+   "page": null,
+   "text": "Last year, this IP concurrently hosted a REF3076 C2 domain, a REF3076 phishing domain, and a domain previously associated with the Water Saci campaign and SORVEPOTEL/MAVERICK malware by TrendMicro (saogeraldoshiping[.]com).",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b301",
+   "page": null,
+   "text": "Validin timeline of A records associated with 191.96.224[.]96",
+   "type": "paragraph",
+   "section": "Infrastructure"
+  },
+  {
+   "id": "b302",
+   "page": null,
+   "text": "Conclusion",
+   "type": "heading",
+   "level": 2,
+   "section": "Conclusion"
+  },
+  {
+   "id": "b303",
+   "page": null,
+   "text": "TCLBANKER reflects a broader maturation happening across the Brazilian banking trojan ecosystem. Techniques that were once the hallmark of more sophisticated threat actors: environment-gated payload decryption, direct syscall generation, real-time social engineering orchestration over WebSocket, are now being packaged into commodity crimeware. The barrier to entry continues to drop, especially when powerful LLMs are readily accessible for code generation.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b304",
+   "page": null,
+   "text": "The inclusion of self-propagating worm modules marks a notable shift in this space. The campaign inherits the trust and deliverability of legitimate communications by hijacking victims' WhatsApp sessions and Outlook accounts. This is a distribution model that traditional email gateways and reputation-based defenses are ill-equipped to catch. As Latin American banking trojans continue to adopt these self-spreading mechanisms, organizations should expect the volume and reach of these campaigns to scale accordingly.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b305",
+   "page": null,
+   "text": "Developer artifacts throughout the chain, including debug logging paths, test process names, and a phishing site still under construction, suggest REF3076 is in its early operational stages. This is a campaign still being built out, not wound down.",
+   "type": "paragraph",
+   "section": "Conclusion"
+  },
+  {
+   "id": "b306",
+   "page": null,
+   "text": "REF3076 through MITRE ATT&CK",
+   "type": "heading",
+   "level": 2,
+   "section": "REF3076 through MITRE ATT&CK"
+  },
+  {
+   "id": "b307",
+   "page": null,
+   "text": "Elastic uses the MITRE ATT&CK framework to document common tactics, techniques, and procedures that threats use against enterprise networks.",
+   "type": "paragraph",
+   "section": "REF3076 through MITRE ATT&CK"
+  },
+  {
+   "id": "b308",
+   "page": null,
+   "text": "Tactics",
+   "type": "heading",
+   "level": 3,
+   "section": "Tactics"
+  },
+  {
+   "id": "b309",
+   "page": null,
+   "text": "Tactics represent the why of a technique or sub-technique. It is the adversary’s tactical goal: the reason for performing an action.",
+   "type": "paragraph",
+   "section": "Tactics"
+  },
+  {
+   "id": "b310",
+   "page": null,
+   "text": "Initial Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b311",
+   "page": null,
+   "text": "Execution",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b312",
+   "page": null,
+   "text": "Persistence",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b313",
+   "page": null,
+   "text": "Defense Evasion",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b314",
+   "page": null,
+   "text": "Credential Access",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b315",
+   "page": null,
+   "text": "Discovery",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b316",
+   "page": null,
+   "text": "Collection",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b317",
+   "page": null,
+   "text": "Command and Control",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b318",
+   "page": null,
+   "text": "Exfiltration",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b319",
+   "page": null,
+   "text": "Impact",
+   "type": "list",
+   "section": "Tactics"
+  },
+  {
+   "id": "b320",
+   "page": null,
+   "text": "Techniques",
+   "type": "heading",
+   "level": 3,
+   "section": "Techniques"
+  },
+  {
+   "id": "b321",
+   "page": null,
+   "text": "Techniques represent how an adversary achieves a tactical goal by performing an action.",
+   "type": "paragraph",
+   "section": "Techniques"
+  },
+  {
+   "id": "b322",
+   "page": null,
+   "text": "Phishing: Spearphishing Attachment",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b323",
+   "page": null,
+   "text": "System Binary Proxy Execution: Msiexec",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b324",
+   "page": null,
+   "text": "Hijack Execution Flow: DLL Side-Loading",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b325",
+   "page": null,
+   "text": "Command and Scripting Interpreter: PowerShell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b326",
+   "page": null,
+   "text": "Command and Scripting Interpreter: Windows Command Shell",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b327",
+   "page": null,
+   "text": "Scheduled Task/Job: Scheduled Task",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b328",
+   "page": null,
+   "text": "Deobfuscate/Decode Files or Information",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b329",
+   "page": null,
+   "text": "Obfuscated Files or Information",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b330",
+   "page": null,
+   "text": "Debugger Evasion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b331",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: System Checks",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b332",
+   "page": null,
+   "text": "Virtualization/Sandbox Evasion: Time Based Evasion",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b333",
+   "page": null,
+   "text": "Impair Defenses: Disable or Modify Tools",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b334",
+   "page": null,
+   "text": "Native API",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b335",
+   "page": null,
+   "text": "Process Injection",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b336",
+   "page": null,
+   "text": "Process Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b337",
+   "page": null,
+   "text": "Application Window Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b338",
+   "page": null,
+   "text": "System Information Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b339",
+   "page": null,
+   "text": "System Location Discovery: System Language Discovery",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b340",
+   "page": null,
+   "text": "Screen Capture",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b341",
+   "page": null,
+   "text": "Input Capture: Keylogging",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b342",
+   "page": null,
+   "text": "Clipboard Data",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b343",
+   "page": null,
+   "text": "Input Capture: Web Portal Capture",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b344",
+   "page": null,
+   "text": "Browser Session Hijacking",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b345",
+   "page": null,
+   "text": "Application Layer Protocol: Web Protocols",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b346",
+   "page": null,
+   "text": "Web Service",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b347",
+   "page": null,
+   "text": "Ingress Tool Transfer",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b348",
+   "page": null,
+   "text": "Email Collection: Local Email Collection",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b349",
+   "page": null,
+   "text": "System Shutdown/Reboot",
+   "type": "list",
+   "section": "Techniques"
+  },
+  {
+   "id": "b350",
+   "page": null,
+   "text": "Remediating REF3076",
+   "type": "heading",
+   "level": 2,
+   "section": "Remediating REF3076"
+  },
+  {
+   "id": "b351",
+   "page": null,
+   "text": "Prevention",
+   "type": "heading",
+   "level": 3,
+   "section": "Prevention"
+  },
+  {
+   "id": "b352",
+   "page": null,
+   "text": "NTDLL Memory Protection Change via Unsigned DLL",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b353",
+   "page": null,
+   "text": "NTDLL library loaded for a second time",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b354",
+   "page": null,
+   "text": "Potential NTDLL Memory Unhooking",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b355",
+   "page": null,
+   "text": "Parallel NTDLL Loaded from Unbacked Memory",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b356",
+   "page": null,
+   "text": "Suspicious Windows Core Module Change",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b357",
+   "page": null,
+   "text": "AMSI Bypass via Unbacked Memory",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b358",
+   "page": null,
+   "text": "Potential AMSI Bypass via SetThreadContext",
+   "type": "list",
+   "section": "Prevention"
+  },
+  {
+   "id": "b359",
+   "page": null,
+   "text": "YARA",
+   "type": "heading",
+   "level": 4,
+   "section": "YARA"
+  },
+  {
+   "id": "b360",
+   "page": null,
+   "text": "Elastic Security has created YARA rules to identify this activity.",
+   "type": "paragraph",
+   "section": "YARA"
+  },
+  {
+   "id": "b361",
+   "page": null,
+   "text": "Windows.Trojan.TCLBanker",
+   "type": "list",
+   "section": "YARA"
+  },
+  {
+   "id": "b362",
+   "page": null,
+   "text": "Observations",
+   "type": "heading",
+   "level": 2,
+   "section": "Observations"
+  },
+  {
+   "id": "b363",
+   "page": null,
+   "text": "The following observables were discussed in this research.",
+   "type": "paragraph",
+   "section": "Observations"
+  },
+  {
+   "id": "b364",
+   "page": null,
+   "text": "Observable | Type | Name | Reference ¶ 701d51b7be8b034c860bf97847bd59a87dca8481c4625328813746964995b626 | SHA-256 | screen_retriever_plugin.dll | TCLBanker loader component ¶ 8a174aa70a4396547045aef6c69eb0259bae1706880f4375af71085eeb537059 | SHA-256 | screen_retriever_plugin.dll | TCLBanker loader component ¶ 668f932433a24bbae89d60b24eee4a24808fc741f62c5a3043bb7c9152342f40 | SHA-256 | screen_retriever_plugin.dll | TCLBanker loader component ¶ 63beb7372098c03baab77e0dfc8e5dca5e0a7420f382708a4df79bed2d900394 | SHA-256 | XXL_21042026-181516.zip | TCLBanker initial ZIP file ¶ campanha1-api.ef971a42[.]workers.dev | domain-name |  | TCLBanker C2 ¶ mxtestacionamentos[.]com | domain-name |  | TCLBanker C2 ¶ documents.ef971a42.workers[.]dev | domain-name |  | TCLBanker file server ¶ arquivos-omie[.]com | domain-name |  | TCLBanker phishing page (under development) ¶ documentos-online[.]com | domain-name |  | TCLBanker phishing page (under development) ¶ afonsoferragista[.]com | domain-name |  | TCLBanker phishing page (under development) ¶ doccompartilhe[.]com | domain-name |  | TCLBanker phishing page (under development) ¶ recebamais[.]com | domain-name |  | TCLBanker phishing page (under development)",
+   "type": "table",
+   "table": {
+    "rows": [
+     [
+      "701d51b7be8b034c860bf97847bd59a87dca8481c4625328813746964995b626",
+      "SHA-256",
+      "screen_retriever_plugin.dll",
+      "TCLBanker loader component"
+     ],
+     [
+      "8a174aa70a4396547045aef6c69eb0259bae1706880f4375af71085eeb537059",
+      "SHA-256",
+      "screen_retriever_plugin.dll",
+      "TCLBanker loader component"
+     ],
+     [
+      "668f932433a24bbae89d60b24eee4a24808fc741f62c5a3043bb7c9152342f40",
+      "SHA-256",
+      "screen_retriever_plugin.dll",
+      "TCLBanker loader component"
+     ],
+     [
+      "63beb7372098c03baab77e0dfc8e5dca5e0a7420f382708a4df79bed2d900394",
+      "SHA-256",
+      "XXL_21042026-181516.zip",
+      "TCLBanker initial ZIP file"
+     ],
+     [
+      "campanha1-api.ef971a42[.]workers.dev",
+      "domain-name",
+      "",
+      "TCLBanker C2"
+     ],
+     [
+      "mxtestacionamentos[.]com",
+      "domain-name",
+      "",
+      "TCLBanker C2"
+     ],
+     [
+      "documents.ef971a42.workers[.]dev",
+      "domain-name",
+      "",
+      "TCLBanker file server"
+     ],
+     [
+      "arquivos-omie[.]com",
+      "domain-name",
+      "",
+      "TCLBanker phishing page (under development)"
+     ],
+     [
+      "documentos-online[.]com",
+      "domain-name",
+      "",
+      "TCLBanker phishing page (under development)"
+     ],
+     [
+      "afonsoferragista[.]com",
+      "domain-name",
+      "",
+      "TCLBanker phishing page (under development)"
+     ],
+     [
+      "doccompartilhe[.]com",
+      "domain-name",
+      "",
+      "TCLBanker phishing page (under development)"
+     ],
+     [
+      "recebamais[.]com",
+      "domain-name",
+      "",
+      "TCLBanker phishing page (under development)"
+     ]
+    ],
+    "source": "html_dom",
+    "caption": null,
+    "headers": [
+     "Observable",
+     "Type",
+     "Name",
+     "Reference"
+    ]
+   },
+   "layout": "table",
+   "section": "Observations"
+  },
+  {
+   "id": "b365",
+   "page": null,
+   "text": "Report an issue",
+   "type": "paragraph",
+   "section": "Observations"
+  },
+  {
+   "id": "b366",
+   "page": null,
+   "text": "Related Content",
+   "type": "heading",
+   "level": 3,
+   "section": "Related Content"
+  },
+  {
+   "id": "b367",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b368",
+   "page": null,
+   "text": "Malware AnalysisThreat IntelligenceAI Security",
+   "type": "paragraph",
+   "section": "Related Content"
+  },
+  {
+   "id": "b369",
+   "page": null,
+   "text": "Auditing the auditor: Unmasking Apex Accelerator",
+   "type": "heading",
+   "level": 3,
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b370",
+   "page": null,
+   "text": "October 12, 2026",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b371",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b372",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b373",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b374",
+   "page": null,
+   "text": "Malware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "Auditing the auditor: Unmasking Apex Accelerator"
+  },
+  {
+   "id": "b375",
+   "page": null,
+   "text": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions",
+   "type": "heading",
+   "level": 3,
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b376",
+   "page": null,
+   "text": "September 14, 2026",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b377",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b378",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b379",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b380",
+   "page": null,
+   "text": "Detection EngineeringMalware AnalysisThreat Intelligence",
+   "type": "paragraph",
+   "section": "The extension you never installed: KREMLIN forges Chrome's own integrity checks to steal banking sessions"
+  },
+  {
+   "id": "b381",
+   "page": null,
+   "text": "REVSTEALER ramps up: analysis of up-and-coming infostealer",
+   "type": "heading",
+   "level": 3,
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b382",
+   "page": null,
+   "text": "September 02, 2026",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b383",
+   "page": null,
+   "text": "Daniel Stepanic",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b384",
+   "page": null,
+   "text": "+2",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b385",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b386",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "REVSTEALER ramps up: analysis of up-and-coming infostealer"
+  },
+  {
+   "id": "b387",
+   "page": null,
+   "text": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains",
+   "type": "heading",
+   "level": 3,
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b388",
+   "page": null,
+   "text": "July 16, 2026",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b389",
+   "page": null,
+   "text": "Cyril François",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b390",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b391",
+   "page": null,
+   "text": "Malware Analysis",
+   "type": "paragraph",
+   "section": "TELEPUZ: a modular MaaS malware spreading via CLICKFIX-VIDAR chains"
+  },
+  {
+   "id": "b392",
+   "page": null,
+   "text": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit",
+   "type": "heading",
+   "level": 3,
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b393",
+   "page": null,
+   "text": "July 08, 2026",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b394",
+   "page": null,
+   "text": "Jia Yu Chan",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b395",
+   "page": null,
+   "text": "+1",
+   "type": "paragraph",
+   "section": "ClickFix to Cash-Out: Anatomy of a Mexican Banking-Fraud Toolkit"
+  },
+  {
+   "id": "b396",
+   "page": null,
+   "text": "Elastic Security Labs Newsletter",
+   "type": "heading",
+   "level": 3,
+   "section": "Elastic Security Labs Newsletter"
+  },
+  {
+   "id": "b397",
+   "page": null,
+   "text": "Follow Elastic Security Labs on",
+   "type": "paragraph",
+   "section": "Elastic Security Labs Newsletter"
+  }
+ ],
+ "language": "en"
+}

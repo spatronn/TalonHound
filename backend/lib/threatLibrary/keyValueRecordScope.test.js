@@ -73,7 +73,7 @@ function run() {
 }
 
 test('key-value record contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v13');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v14');
 });
 
 test('record field lines are never label headings; section labels still are', () => {

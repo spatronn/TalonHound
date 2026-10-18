@@ -1,0 +1,39 @@
+{
+  "id": "golden-elastic-huggingface-detection",
+  "title": "Elastic — Hugging Face breach detection mapping (no publisher IOCs)",
+  "publisher": "www.elastic.co",
+  "format": "html",
+  "tags": [
+    "golden_report",
+    "mode_b",
+    "detection_engineering"
+  ],
+  "source": {
+    "kind": "canonical",
+    "path": "../../fixtures/golden-ten/elastic-huggingface-detection-canonical.json"
+  },
+  "source_reference": {
+    "url": "https://www.elastic.co/security-labs/threat-command/ai-agent-attack-detection-hugging-face-breach",
+    "talonhound_report_id": "22ecae06-011c-419c-9edd-00bdf3808dfa",
+    "fixture": "stored production canonical document (threat_library_html_v6) of the audited report, unmodified (2026-10-18 export).",
+    "distribution": {
+      "basis": "public_web_publication",
+      "verified_at": "2026-10-18"
+    }
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher reading (2026-10-18 ten-report audit): the live publisher page was fetched and converted to text with a standalone outliner and observable scanner (no TalonHound zone/scope/typing/classification code); every IOC section, table and body inventory was read manually. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (ten-report audit, 2026-10-18)",
+      "verified_at": "2026-10-18",
+      "notes": "No publisher IOCs.",
+      "mode": "B"
+    },
+    "indicators": [],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": []
+  }
+}

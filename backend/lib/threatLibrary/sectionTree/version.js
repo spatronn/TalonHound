@@ -6,8 +6,10 @@
  * Structural annotation contract (block ancestry / section paths).
  * v3: every real formal IOC section empty (pointer-only, "available for
  * download here") → body blocks join the delegated scope (`delegated_ioc_scope`).
+ * v4: a qualified inventory heading ("Observations") is an IOC section only
+ * when a declared-type IOC table leads its content (shared with tl-zones-v14).
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v3';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v4';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';
