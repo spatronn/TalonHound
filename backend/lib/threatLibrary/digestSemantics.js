@@ -157,7 +157,10 @@ export function classifyHexDigest(text, value, opts = {}) {
   // certificate used for TLS communication"). A file noun on the row or in the
   // scope label keeps the file-hash reading.
   const scope = String(opts.scopeLabel || '').trim();
-  if (scope && own.reason === 'file_label' && ALGORITHM_ONLY_LABEL_RE.test(label) && !FILE_NOUN_RE.test(scope)) {
+  // An unlabelled value (a bare list item) takes its subject from the scope
+  // label the same way an algorithm-only row label does.
+  const scopeGoverns = own.reason === 'unlabelled' || (own.reason === 'file_label' && ALGORITHM_ONLY_LABEL_RE.test(label));
+  if (scope && scopeGoverns && !FILE_NOUN_RE.test(scope)) {
     const fromScope = classifyLabel(scope.slice(0, 160));
     if (fromScope.kind !== DIGEST_KINDS.FILE && fromScope.kind !== DIGEST_KINDS.CREDENTIAL) {
       return { kind: fromScope.kind, label, reason: `${fromScope.kind}_scope_label` };

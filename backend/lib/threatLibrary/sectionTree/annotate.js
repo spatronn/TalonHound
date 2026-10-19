@@ -171,6 +171,10 @@ function lookAheadInventory(blocks, i, chromeIds, depth = 4) {
   return false;
 }
 
+/** A label whose whole text is a formal IOC-section title. */
+const FORMAL_IOC_TITLE_LABEL_RE =
+  /^(?:indicators?\s+of\s+compromise|iocs?|indicators?)(?:\s*\((?:iocs?|ioc's)\))?\s*[:：]?$/i;
+
 /**
  * Strong inventory look-ahead for C2 / operational openings: IOC tables, list
  * rows, and annotated value lines — not prose that merely mentions an
@@ -472,7 +476,15 @@ export function annotateSectionTree(doc, opts = {}) {
       authoritativeOpenings += 1;
       // Count independently of the bounded trace buffer — late appendix headings
       // must still establish MODE A on long documents.
-      if (!node.synthetic && node.zone && AUTHORITATIVE.has(node.zone)) {
+      // A paragraph label that IS a formal IOC-section title ("Indicators of
+      // Compromise (IoCs)") on a template without heading elements, followed
+      // by a real inventory, is the publisher's IOC appendix (tl-section-tree-v6):
+      // it establishes MODE A like a heading. Any other synthetic label never
+      // invents MODE A.
+      const formalLabelAppendix =
+        node.synthetic && node.zone === 'explicit_ioc_section' && FORMAL_IOC_TITLE_LABEL_RE.test(t.trim()) &&
+        lookAheadStrongInventory(blocks, i, chromeIds, 8);
+      if ((!node.synthetic || formalLabelAppendix) && node.zone && AUTHORITATIVE.has(node.zone)) {
         realAuthoritativeOpenings += 1;
         realOpeningIds.push(node.id);
       }

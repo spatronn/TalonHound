@@ -2,6 +2,7 @@
  * Threat Library HTTP routes.
  */
 
+import { loadLinkedIocSourceSummary, withLinkedSourceQuality } from '../lib/threatLibrary/iocSources/linkedSourceStatus.js';
 import multer from 'multer';
 import { isAdminRole, requireRole, ROLES } from '../lib/rbac.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from '../lib/auditConstants.js';
@@ -517,8 +518,18 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       } catch {
         sourceLinksByCandidate = new Map();
       }
+      const reportBody = publicReport(await reportWithDetail(snap.report));
+      try {
+        // Publisher-declared IOC packs not yet extracted leave Linked / Union
+        // incomplete: overlay the gap on the stored quality record (read-only).
+        const linkedSources = await loadLinkedIocSourceSummary(pool, report.id);
+        reportBody.linked_ioc_sources = linkedSources;
+        reportBody.extraction_quality = withLinkedSourceQuality(reportBody.extraction_quality, linkedSources);
+      } catch {
+        /* non-fatal: detail still renders without the overlay */
+      }
       return res.json({
-        report: publicReport(await reportWithDetail(snap.report)),
+        report: reportBody,
         candidates: snap.candidates.map((c) => ({
           id: c.id,
           public_id: c.public_id,

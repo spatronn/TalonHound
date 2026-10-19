@@ -32,9 +32,9 @@ import {
 } from './pdfLayout.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v32');
-assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v7');
-assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v7');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v33');
+assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v8');
+assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v8');
 assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v6');
 

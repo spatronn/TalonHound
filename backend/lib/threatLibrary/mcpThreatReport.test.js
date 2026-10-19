@@ -192,8 +192,9 @@ test('loadThreatReportForMcp: fixed query count (report + snapshot), no per-indi
   const out = await loadThreatReportForMcp(pool, { id: REPORT_ID, indicator_limit: 500 });
   assert.equal(out.status, 200);
   assert.equal(out.body.indicators.returned, 300);
-  // getReportByPublicId + snapshot (6) + linked-source provenance + tags; MITRE rows are never read
-  assert.equal(pool.queries.length, 9);
+  // getReportByPublicId + snapshot (6) + linked-source provenance + tags +
+  // linked IOC Source lifecycle summary (one query); MITRE rows are never read
+  assert.equal(pool.queries.length, 10);
   assert.equal(pool.queries.some((q) => /mitre/i.test(q.sql)), false);
   assert.equal(pool.queries.some((q) => /^(INSERT|UPDATE|DELETE)/i.test(q.sql)), false);
 });

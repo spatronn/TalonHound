@@ -31,7 +31,7 @@ docker compose exec -T backend node scripts/section-tree-authority-compare.js --
 Candidates and diagnostics stamp:
 
 - `scope_engine` / `scope_engine_version` (`tl-scope-engine-section-tree-v3`)
-- `section_tree_version` (`tl-section-tree-v5`)
+- `section_tree_version` (`tl-section-tree-v6`)
 
 ## Architecture
 
@@ -91,6 +91,32 @@ What counts as "non-empty" (tl-section-tree-v5):
 Values that never become hosts in any scope: a hostname tail after `-` or a redaction placeholder
 (`<REDACTED>-my.sharepoint.com` → no `my.sharepoint.com`), and managed-runtime namespaces
 (`javax.tools`, `java.net.*`, `System.Net.*`; tl-type-resolver-v12).
+
+## Paragraph-label IOC appendices (tl-section-tree-v6)
+
+Some templates render every section title as a paragraph (no heading elements).
+A paragraph label whose whole text is a formal IOC-section title ("Indicators of
+Compromise (IoCs)", "IOCs") followed by a real inventory within the next blocks
+is the publisher's IOC appendix and establishes MODE A like a heading. Any other
+synthetic label never invents MODE A. Quality (`tl-quality-v9`) reports the MODE
+the section tree decided — the one membership uses — so the UI / MCP mode and the
+candidate rows always agree.
+
+## Publisher stances that cover a row, a list or the report (tl-candidates-v33)
+
+- A table row stating outright that its subject is "not malicious" covers every
+  value of the row (MD5 / SHA1 / SHA256 of one file), not only the adjacent cell.
+- A sub-heading naming its values legitimate ("Hashes of X (the legitimate
+  software used to distribute Y)") covers the value lines under it.
+- A list lead-in naming certificate fingerprints / thumbprints decides the
+  digest kind of its unlabelled items (non-file digests, never sample hashes).
+- A numbered footnote line holding only a live link ("1 https://…") after an
+  IOC table is a citation.
+- A report-level disclaimer ("… should not be treated as standalone malicious
+  indicators") is a document stance: values the publisher does not separately
+  assert are Context Only, in MODE B too. A model escalation of a network
+  observable needs a publisher assertion (threat vocabulary in the sentence that
+  names it, tl-evidence-integrity-v2), never a mere mention.
 
 ## Role-labelled lists in IOC sections (tl-candidates-v32)
 

@@ -28,10 +28,13 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v7: hyperlinks inside content blocks are preserved as structured
  * `links: [{ href, text }]` so destination-only anchors ("can be found here")
  * remain available to section-tree authority and IOC Source discovery.
- * Document extractor contract is threat_library_html_v7 so Refresh rebuilds
- * retained HTML under the links contract.
+ * v8: a table / list / pre nested behind inline wrappers inside a paragraph
+ * (`<p><span style><table>`) is emitted as its own block instead of being
+ * flattened into paragraph text (the rows lost their cell boundaries).
+ * Document extractor contract is threat_library_html_v8 so Refresh rebuilds
+ * retained HTML under the nested-table contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v7';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v8';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -115,6 +118,28 @@ function isElement(node) {
 
 function tagOf(node) {
   return isElement(node) ? String(node.name || '').toLowerCase() : '';
+}
+
+const NESTED_BLOCK_TAGS = new Set(['table', 'ul', 'ol', 'pre']);
+// Inline wrappers a publisher CMS may put between a paragraph and a block
+// element; a nested <p> / heading is not descended (it walks on its own).
+const INLINE_WRAPPER_TAGS = new Set(['span', 'font', 'strong', 'b', 'em', 'i', 'u', 'small', 'big', 'mark', 'a', 'sub', 'sup', 'div', 'center', 'section']);
+
+/**
+ * Whether a paragraph-level node wraps a block element (directly or behind
+ * inline wrappers, bounded depth).
+ * @param {object} node
+ * @param {number} [depth]
+ */
+function hasNestedBlockElement(node, depth = 0) {
+  if (depth > 6) return false;
+  for (const c of node?.children || []) {
+    if (!isElement(c)) continue;
+    const t = tagOf(c);
+    if (NESTED_BLOCK_TAGS.has(t)) return true;
+    if (INLINE_WRAPPER_TAGS.has(t) && hasNestedBlockElement(c, depth + 1)) return true;
+  }
+  return false;
 }
 
 function attr(node, name) {
@@ -444,9 +469,10 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
     }
     if (PARAGRAPH_TAGS.has(tag)) {
       flushPending();
-      // A paragraph may still wrap block children (lists, tables inside <blockquote>).
-      const hasBlockChild = (node.children || []).some((c) => isElement(c) && (tagOf(c) === 'table' || tagOf(c) === 'ul' || tagOf(c) === 'ol' || tagOf(c) === 'pre'));
-      if (!hasBlockChild) {
+      // A paragraph may still wrap block children (lists, tables inside <blockquote>),
+      // also behind inline wrappers (`<p><span style><table>`, v8): a table
+      // flattened into paragraph text loses its rows and cell boundaries.
+      if (!hasNestedBlockElement(node)) {
         pushLines('paragraph', textLinesOf(node), collectHyperlinks(node, baseUrl));
         return;
       }

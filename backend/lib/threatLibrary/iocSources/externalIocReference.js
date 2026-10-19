@@ -51,19 +51,82 @@ function collectUrlPathCues(urlHay) {
 }
 
 /**
- * Score a candidate external IOC reference destination.
- * @returns {{ score: number, matchedCues: string[], hasTextEvidence: boolean }}
+ * Lookup / sandbox / search services: a link there names one indicator's
+ * report page (opentip, VirusTotal, urlscan …), never a publisher IOC pack.
+ */
+const LOOKUP_SERVICE_HOST_RE =
+  /(?:^|\.)(?:opentip\.kaspersky\.com|virustotal\.com|urlscan\.io|otx\.alienvault\.com|threatfox\.abuse\.ch|bazaar\.abuse\.ch|urlhaus\.abuse\.ch|shodan\.io|censys\.io|search\.censys\.io|hybrid-analysis\.com|any\.run|app\.any\.run|tria\.ge|joesandbox\.com|threatbook\.(?:cn|io)|x\.threatbook\.(?:cn|com)|exchange\.xforce\.ibmcloud\.com|talosintelligence\.com|abuseipdb\.com|whois\.domaintools\.com|google\.com|bing\.com|akismet\.com|gravatar\.com|wordpress\.com|addtoany\.com|twitter\.com|x\.com|linkedin\.com|facebook\.com|youtube\.com|t\.me|reddit\.com)$/i;
+/** File extensions that are payloads / archives / code, never an IOC data pack. */
+const NON_PACK_FILE_EXT_RE = /\.(?:zip|7z|rar|gz|tgz|tar|bz2|xz|exe|msi|dll|dmg|pkg|apk|ipa|deb|rpm|iso|img|bin|jar|js|mjs|ts|py|ps1|sh|bat|vbs|hta|lnk|docx?|xlsx?|pptx?|png|jpe?g|gif|svg|webp|mp4|mov)$/i;
+/** Data-pack file extensions (a linked file must be one of these to qualify). */
+const PACK_FILE_EXT_RE = /\.(?:txt|csv|json|stix|misp|xml|ioc|md|adoc|yml|yaml|sha256|sha1|md5|tsv|pdf)$/i;
+/** Indicator nouns in the anchor's own sentence. */
+const LOCAL_IOC_NOUN_RE = /\b(?:iocs?|indicators?|observables?)\b/i;
+/** The link text is itself an observable (a per-indicator lookup link). */
+const OBSERVABLE_LINK_TEXT_RE =
+  /^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}|(?:\d{1,3}(?:\[?\.\]?)){3}\d{1,3}|(?:[a-z0-9-]+(?:\[\.\]|\.))+[a-z]{2,63})$/i;
+
+/**
+ * Score a candidate external IOC reference destination (tl-ioc-source-discovery-v2).
+ *
+ * Evidence is ANCHOR-LOCAL: the link text and the sentence / block around it.
+ * An IOC section heading adds weight but never validates a link by itself —
+ * tag pages, author links, "Cancel", next / previous posts and per-indicator
+ * lookup links that happen to sit under an "Indicators of compromise" heading
+ * are not IOC packs.
+ * @returns {{ score: number, matchedCues: string[], hasTextEvidence: boolean, rejected?: string }}
  */
 export function scoreIocSourceCandidate({ href, linkText, surrounding, headingText, reportHost }) {
   // Strip absolute URLs from prose before cue / pointer matching so a bare
   // https://github.com/... hostname cannot satisfy "… available … github …".
-  const proseForCues = `${linkText || ''} ${surrounding || ''} ${headingText || ''}`.replace(/https?:\/\/\S+/gi, ' ');
-  const textHay = normalizeHay(proseForCues);
+  const localProse = `${linkText || ''} ${surrounding || ''}`.replace(/https?:\/\/\S+/gi, ' ');
+  const textHay = normalizeHay(localProse);
   const urlHay = normalizeHay(href);
   const textCues = collectTextCues(textHay);
   const pathCues = collectUrlPathCues(urlHay);
   const matchedCues = [...textCues, ...pathCues];
+  const none = (rejected) => ({ score: 0, matchedCues, hasTextEvidence: false, ...(rejected ? { rejected } : {}) });
   let score = 0;
+
+  let u;
+  try {
+    u = new URL(href);
+  } catch {
+    return none('unparseable_url');
+  }
+  if (!/^https?:$/i.test(u.protocol)) return none('unsupported_scheme');
+  const host = u.hostname.toLowerCase().replace(/^www\./, '');
+  const path = decodeURIComponent(u.pathname || '/');
+  const lastSegment = path.split('/').filter(Boolean).pop() || '';
+
+  if (LOOKUP_SERVICE_HOST_RE.test(host)) return none('lookup_or_social_service');
+  const linkLabel = String(linkText || '').trim();
+  if (OBSERVABLE_LINK_TEXT_RE.test(linkLabel) && !PACK_FILE_EXT_RE.test(linkLabel)) return none('per_indicator_link');
+  if (NON_PACK_FILE_EXT_RE.test(lastSegment)) return none('non_pack_file');
+  const isGitHost = host === 'github.com' || host === 'raw.githubusercontent.com' || host === 'gitlab.com';
+  // A file inside a code host must be a data pack (txt / csv / json / README …).
+  if (isGitHost && /\/(?:blob|raw)\//.test(path) && !PACK_FILE_EXT_RE.test(lastSegment)) return none('non_pack_file');
+
+  const pointer = EXTERNAL_IOC_POINTER_RE.test(localProse);
+  const hasIocHeading = Boolean(headingText && IOC_HEADING_RE.test(headingText));
+  const hasStrongPath = pathCues.some((c) => /url:\/(?:ioc|iocs|indicators?)\//.test(c)) || (isGitHost && /(?:^|[-_/])iocs?(?:[-_/.]|$)/i.test(path));
+  // Anchor-local evidence: an IOC-dataset phrase, or a pointer sentence that
+  // names indicators ("These indicators are available for download here").
+  const localEvidence = textCues.length > 0 || (pointer && LOCAL_IOC_NOUN_RE.test(localProse));
+
+  // Same-site links (navigation, tags, authors, other posts) qualify only as
+  // a data file the anchor itself presents as an IOC pack.
+  if (reportHost) {
+    const rh = String(reportHost).toLowerCase().replace(/^www\./, '');
+    const sameSite = host === rh || host.endsWith(`.${rh}`) || rh.endsWith(`.${host}`);
+    if (sameSite && !(localEvidence && PACK_FILE_EXT_RE.test(lastSegment))) return none('same_site_navigation');
+  }
+  if (!localEvidence && !(hasStrongPath && pointer)) return none('no_anchor_local_evidence');
+  // Outside a code host the destination itself must look like a data pack
+  // (a pack file or an IOC path): a product page, an advisory, another blog
+  // post or a WHOIS page is a citation, whatever the sentence says.
+  const iocPath = /(?:^|\/)(?:iocs?|indicators?)(?:[-_./]|$)/i.test(path);
+  if (!isGitHost && !PACK_FILE_EXT_RE.test(lastSegment) && !iocPath) return none('destination_not_a_pack');
 
   for (const cue of textCues) {
     score += cue.length >= 18 ? 4 : cue.length >= 12 ? 3 : 2;
@@ -71,66 +134,27 @@ export function scoreIocSourceCandidate({ href, linkText, surrounding, headingTe
   for (const _cue of pathCues) {
     score += 3;
   }
-
-  const pointer = EXTERNAL_IOC_POINTER_RE.test(proseForCues);
   if (pointer) {
     score += 6;
     matchedCues.push('external_pointer');
   }
-
-  if (headingText && IOC_HEADING_RE.test(headingText)) {
+  if (hasIocHeading) {
     score += 5;
     matchedCues.push('ioc_heading');
   }
-
-  let hostOk = false;
-  try {
-    const u = new URL(href);
-    const host = u.hostname.toLowerCase().replace(/^www\./, '');
-    hostOk = true;
-
-    if (host === 'github.com' || host === 'raw.githubusercontent.com' || host === 'gitlab.com') {
-      if (/\/(?:ioc|iocs|indicators?)(?:\/|$)/i.test(u.pathname)) {
-        score += 5;
-        matchedCues.push('host_ioc_path');
-      } else if (textCues.length || pointer) {
-        score += 2;
-        matchedCues.push('host_with_text_evidence');
-      }
+  if (isGitHost) {
+    if (/\/(?:ioc|iocs|indicators?)(?:\/|$)/i.test(path)) {
+      score += 5;
+      matchedCues.push('host_ioc_path');
+    } else {
+      score += 2;
+      matchedCues.push('host_with_text_evidence');
     }
-
-    if (reportHost) {
-      const rh = String(reportHost).toLowerCase().replace(/^www\./, '');
-      if (host === rh || host.endsWith(`.${rh}`) || rh.endsWith(`.${host}`)) {
-        if (textCues.length || pointer || pathCues.length) score += 2;
-      }
-    }
-
-    if (/\b(twitter|x\.com|linkedin|facebook|youtube|mailto:)\b/i.test(href)) score -= 10;
-    if (/\/(about|careers|privacy|terms|login|contact|blog\/?$)\b/i.test(u.pathname) && !textCues.length && !pointer) {
-      score -= 5;
-    }
-    if (
-      (host === 'github.com' || host === 'gitlab.com') &&
-      /^\/[^/]+\/[^/]+\/?$/.test(u.pathname) &&
-      !textCues.length &&
-      !pointer
-    ) {
-      score = 0;
-    }
-  } catch {
-    return { score: 0, matchedCues: [], hasTextEvidence: false };
   }
-
-  if (!hostOk) return { score: 0, matchedCues: [], hasTextEvidence: false };
-
-  const hasIocHeading = Boolean(headingText && IOC_HEADING_RE.test(headingText));
-  const hasStrongPath = pathCues.some((c) => /url:\/(?:ioc|iocs|indicators?)\//.test(c));
-  const hasTextEvidence = textCues.length > 0 || hasIocHeading || hasStrongPath;
-  if (!hasTextEvidence) {
-    return { score: 0, matchedCues, hasTextEvidence: false };
+  if (PACK_FILE_EXT_RE.test(lastSegment)) {
+    score += 2;
+    matchedCues.push('pack_file_extension');
   }
-
   return { score, matchedCues, hasTextEvidence: true };
 }
 

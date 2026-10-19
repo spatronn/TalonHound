@@ -63,18 +63,23 @@ const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(
 const has = (x, type, value) => x.candidates.some((c) => c.candidate_type === type && c.normalized_value === value);
 const delegated = (x) => x.diagnostics?.scope_engine?.delegated_scope === true;
 
+// An empty formal IOC section whose only sentence names NO concrete external
+// dataset: the body assertions are delegated. (A pointer to a concrete pack —
+// "can be found here" → github …/campaign.txt — suppresses delegation since
+// tl-section-tree-v5 / PR #25; the linked IOC Source owns that pack, see the
+// pointer test below and iocSources/hrefAuthorityConsistency.test.js.)
 const POINTER_IOC_SECTION = `<h2>Indicators of Compromise</h2>
-<p>Indicators of Compromise can be found here <a href="https://github.com/vendor/iocs/blob/main/campaign.txt">here</a>.</p>
+<p>Indicators of Compromise are available to customers on request.</p>
 <h2>References</h2>
 <ul><li>https://learn.vendor.example/docs/device-code</li></ul>`;
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v32');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v12');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v33');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v13');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v5');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v6');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v7');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
 });
 
 // --- A. C2 authority needs an IOC inventory; provider prose does not veto ----
@@ -110,6 +115,18 @@ ${POINTER_IOC_SECTION}`);
   assert.equal(modeA(x), true);
   assert.equal(delegated(x), true);
   assert.deepEqual(members(x), ['url:pastebin.com/AbC123xy']);
+});
+
+test('A. a pointer to a concrete external IOC pack suppresses delegation (the linked source owns the pack)', () => {
+  const x = run(`<h2>Stage 3: Instruction sheet</h2>
+<p>Rather than typing commands, the threat actor pasted a URL into the chat: pastebin[.]com/AbC123xy.</p>
+<h2>Indicators of Compromise</h2>
+<p>Indicators of Compromise can be found here <a href="https://github.com/vendor/iocs/blob/main/campaign.txt">here</a>.</p>
+<h2>References</h2>
+<ul><li>https://learn.vendor.example/docs/device-code</li></ul>`);
+  assert.equal(delegated(x), false);
+  assert.equal(x.diagnostics?.scope_engine?.external_ioc_pointer, true);
+  assert.deepEqual(members(x), []);
 });
 
 test('A. a C2 heading over a real IOC table keeps its authority', () => {

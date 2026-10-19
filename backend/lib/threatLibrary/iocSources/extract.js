@@ -11,7 +11,7 @@ import { IOC_SOURCE_FETCH, LINKED_SOURCE_IOC_ASSERTION } from './constants.js';
 import { fetchIocSourceUrl, publicFetchError } from './fetchSafe.js';
 import { enumerateGitHubIocSource, parseGitHubUrl, resolveGitHubCommitSha } from './github.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
-import { guardSourceUrl } from './inspect.js';
+import { guardSourceUrl, loadReportScopeContext } from './inspect.js';
 import {
   listSourceFiles,
   loadOriginalIndicatorKeys,
@@ -91,6 +91,17 @@ export async function extractIocSource(pool, source, deps = {}) {
       }
     }
 
+    // A repository root is never enumerated here: its campaign folder is
+    // resolved and listed only by inspection.
+    if (gh && gh.kind === 'dir' && !String(gh.path || '').replace(/^\/+|\/+$/g, '') && !selected.length) {
+      await transitionSource(pool, source, 'fail_extract', {
+        error_code: 'campaign_scope_unresolved',
+        error_detail: 'Repository root without an inspected campaign folder; inspect the source first'
+      });
+      return { ok: false, code: 'campaign_scope_unresolved' };
+    }
+    const reportScope = await loadReportScopeContext(pool, source.report_id);
+
     if ((!selected.length || !files.length) && gh) {
       const listing = await enumerateGitHubIocSource(source.canonical_url || source.original_url, deps);
       if (!listing.ok) {
@@ -139,7 +150,8 @@ export async function extractIocSource(pool, source, deps = {}) {
           url,
           path: file.path,
           sourcePublicId: source.public_id,
-          pdfToDocument: pdfToCanonicalDocument
+          pdfToDocument: pdfToCanonicalDocument,
+          reportScope
         });
         parseResults.push({ ...parsed, path: file.path });
         fileUpdates.push({

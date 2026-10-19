@@ -170,7 +170,9 @@ export function discoverIocSourcesFromText(text, opts = {}) {
 
 /**
  * Persist discovery results for a report (idempotent by canonical_url).
- * Never reactivates dismissed sources. Never attaches or extracts.
+ * Insert-only: an existing row — discovered, inspected, extracted or dismissed
+ * by an analyst — is never rewritten by a re-run of analysis / refresh.
+ * Never attaches or extracts.
  * @param {import('pg').Pool} pool
  * @param {number} reportId
  * @param {Array<object>} discovered
@@ -189,20 +191,8 @@ export async function upsertDiscoveredSources(pool, reportId, discovered) {
          report_id, original_url, canonical_url, source_type, discovery_method,
          discovery_evidence, lifecycle_status
        ) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
-       ON CONFLICT (report_id, canonical_url) DO UPDATE SET
-         discovery_evidence = CASE
-           WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN threat_report_ioc_sources.discovery_evidence
-           ELSE EXCLUDED.discovery_evidence
-         END,
-         original_url = CASE
-           WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN threat_report_ioc_sources.original_url
-           ELSE EXCLUDED.original_url
-         END,
-         updated_at = CASE
-           WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN threat_report_ioc_sources.updated_at
-           ELSE NOW()
-         END
-       RETURNING (xmax = 0) AS inserted, lifecycle_status`,
+       ON CONFLICT (report_id, canonical_url) DO NOTHING
+       RETURNING id`,
       [
         reportId,
         item.original_url || canonical,
@@ -213,7 +203,7 @@ export async function upsertDiscoveredSources(pool, reportId, discovered) {
         IOC_SOURCE_LIFECYCLE.DISCOVERED
       ]
     );
-    if (rows[0]?.inserted) results.inserted += 1;
+    if (rows.length) results.inserted += 1;
     else results.unchanged += 1;
   }
   return results;

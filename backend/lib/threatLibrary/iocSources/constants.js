@@ -52,6 +52,7 @@ export const IOC_SOURCE_ELIGIBLE_EXTENSIONS = Object.freeze([
   '.htm',
   '.pdf',
   '.md',
+  '.adoc',
   '.ioc',
   '.yml',
   '.yaml',

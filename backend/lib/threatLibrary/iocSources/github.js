@@ -8,6 +8,8 @@ import { fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fet
 
 const GITHUB_TREE_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/(?:tree|blob)\/([^/]+)\/(.+?)\/?$/i;
 const GITHUB_REPO_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/?$/i;
+// Branch root: github.com/<owner>/<repo>/tree/<ref>/ (no folder) — a repository root.
+const GITHUB_TREE_ROOT_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/?$/i;
 const GITHUB_RAW_RE = /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i;
 
 /**
@@ -31,6 +33,10 @@ export function parseGitHubUrl(url) {
       path: decodeURIComponent(m[4])
     };
   }
+  m = href.match(GITHUB_TREE_ROOT_RE);
+  if (m) {
+    return { kind: 'dir', owner: m[1], repo: m[2].replace(/\.git$/i, ''), ref: m[3], path: '' };
+  }
   m = href.match(GITHUB_REPO_RE);
   if (m) {
     return { kind: 'dir', owner: m[1], repo: m[2].replace(/\.git$/i, ''), ref: 'HEAD', path: '' };
@@ -41,7 +47,10 @@ export function parseGitHubUrl(url) {
 export function isEligibleIocFilePath(path) {
   const p = String(path || '').toLowerCase();
   if (!p || p.endsWith('/')) return false;
-  // Skip obvious non-IOC noise
+  // Skip obvious non-IOC noise. A folder README (AsciiDoc / Markdown) is the
+  // publisher's IOC table for that campaign (ESET malware-ioc); it is parsed
+  // only under campaign scoping (campaignScope.js), never as free text.
+  if (/(^|\/)readme\.(?:adoc|asciidoc|md|markdown)$/i.test(p)) return true;
   if (/(^|\/)(readme|license|changelog|contributing)(\.|$)/i.test(p)) return false;
   return IOC_SOURCE_ELIGIBLE_EXTENSIONS.some((ext) => p.endsWith(ext));
 }
@@ -150,6 +159,11 @@ export async function enumerateGitHubIocSource(url, deps = {}) {
     };
   }
 
+  // A repository root is never enumerated: the caller must resolve the
+  // campaign folder first (campaignScope.resolveGitHubCampaignFolder).
+  if (!String(parsed.path || '').replace(/^\/+|\/+$/g, '')) {
+    return { ok: false, code: 'repository_root_requires_scope', message: 'A repository root is not an IOC pack; resolve the campaign folder first' };
+  }
   // Directory listing via Contents API — query by pinned commit when resolved.
   const apiUrl = contentsApiUrl(parsed.owner, parsed.repo, parsed.path || '', pinRef);
   const policy = validateIocSourceUrl(apiUrl);
@@ -253,4 +267,61 @@ export async function enumerateGitHubIocSource(url, deps = {}) {
     files,
     skipped_entries: skipped
   };
+}
+
+/**
+ * Bounded GitHub I/O for campaign-folder resolution (contents API listing and
+ * raw file read), behind the same fetch / destination guards as inspection.
+ * @param {{ owner: string, repo: string, ref: string }} gh
+ * @param {{ fetchImpl?: Function, destinationGuard?: Function }} [deps]
+ */
+export function gitHubScopeIo(gh, deps = {}) {
+  const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'TalonHound-ThreatLibrary' };
+  return {
+    async listDir(path) {
+      const apiUrl = contentsApiUrl(gh.owner, gh.repo, String(path || ''), gh.ref);
+      if (!validateIocSourceUrl(apiUrl).ok) return [];
+      try {
+        const fetched = await fetchIocSourceUrl(apiUrl, {
+          fetchImpl: deps.fetchImpl,
+          destinationGuard: deps.destinationGuard,
+          headers,
+          maxBytes: Math.min(IOC_SOURCE_FETCH.MAX_BYTES, 1_048_576)
+        });
+        const items = JSON.parse(fetched.body);
+        return Array.isArray(items)
+          ? items.map((i) => ({ name: String(i.name || ''), type: String(i.type || ''), path: String(i.path || i.name || '') }))
+          : [];
+      } catch {
+        return [];
+      }
+    },
+    async readFile(path) {
+      const url = rawUrl(gh.owner, gh.repo, gh.ref, String(path || ''));
+      if (!validateIocSourceUrl(url).ok) return null;
+      try {
+        const fetched = await fetchIocSourceUrl(url, {
+          fetchImpl: deps.fetchImpl,
+          destinationGuard: deps.destinationGuard,
+          maxBytes: IOC_SOURCE_FETCH.GITHUB_MAX_FILE_BYTES
+        });
+        return fetched.body;
+      } catch {
+        return null;
+      }
+    }
+  };
+}
+
+/**
+ * GitHub web URL of a folder inside the repository a parsed URL points to.
+ * @param {{ owner: string, repo: string, ref: string }} gh
+ * @param {string} path
+ */
+export function gitHubFolderUrl(gh, path) {
+  return `https://github.com/${gh.owner}/${gh.repo}/tree/${gh.ref}/${String(path || '')
+    .replace(/^\/+|\/+$/g, '')
+    .split('/')
+    .map(encodeURIComponent)
+    .join('/')}`;
 }

@@ -114,6 +114,17 @@ function isBenignComponentOnly(candidate) {
 }
 
 /**
+ * The publisher disclaimed the report's observables as indicators (document
+ * stance, `publisher_disclaimer`) and no occurrence of this value asserts it.
+ * @param {object} candidate annotated candidate
+ */
+function isDisclaimedUnasserted(candidate) {
+  if (candidate.publisher_disclaimer !== true) return false;
+  const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
+  return occ.every((o) => o.asserted !== true && o.relation_marker !== 'operational' && o.relation_marker !== 'structural_row');
+}
+
+/**
  * Publisher stance and assertion disagree about the same value: one
  * occurrence calls it legitimate / dual-use, another asserts it. The
  * assertion keeps membership; the conflict is recorded for review.
@@ -398,7 +409,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   const hasAuthoritativeScope = candidate.document_has_authoritative_scope === true;
   const explicit = summary.hasStrong;
   const reportSource = candidate.is_report_source === true;
-  const benignComponent = !explicit && isBenignComponentOnly(candidate);
+  const benignComponent = !explicit && (isBenignComponentOnly(candidate) || isDisclaimedUnasserted(candidate));
   candidate.stance_conflict = hasStanceConflict(candidate) || undefined;
   const proseForModel =
     !explicit && hasAuthoritativeScope && relation !== SOURCE_RELATIONS.OPERATIONAL_MALICIOUS && isUndecidedProseSampleHash(candidate);
@@ -763,6 +774,7 @@ export function buildCandidateEvidenceRecord(c) {
     // Hex value read as a non-file digest (build-id / certificate / vhash / key …).
     ...(c.digest_kind ? { digest_kind: c.digest_kind, digest_shape: c.digest_shape || null } : {}),
     ...(c.stance_conflict === true ? { stance_conflict: true } : {}),
+    ...(c.publisher_disclaimer === true ? { publisher_disclaimer: true } : {}),
     // Immutable deterministic publisher anchor + the model's separate output
     // (evidenceIntegrity): the model never silently replaces publisher text.
     ...(c.publisher_evidence && typeof c.publisher_evidence === 'object'

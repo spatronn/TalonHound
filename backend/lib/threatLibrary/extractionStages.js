@@ -35,6 +35,7 @@ import { readArtifactBuffer } from './artifactStore.js';
 import {
   ESCALATING_ASSESSMENTS,
   EVIDENCE_INTEGRITY_VERSION,
+  documentDisclaimsIndicators,
   groundAiCandidateUpdate,
   indexDocumentBlocks
 } from './evidenceIntegrity.js';
@@ -310,6 +311,19 @@ export function extractReportCandidates(report, document) {
     };
   }
 
+  // Report-level publisher disclaimer ("… should not be treated as standalone
+  // malicious indicators", tl-candidates-v33): the publisher's stance covers
+  // every value it does not separately assert (indicator row, operational
+  // clause, endpoint) — in MODE B too, where any mention is otherwise a member.
+  if (documentDisclaimsIndicators(stamped)) {
+    for (const c of candidates) {
+      c.publisher_disclaimer = true;
+      applyEvidencePolicy(c);
+    }
+    extracted.diagnostics = extracted.diagnostics || {};
+    extracted.diagnostics.publisher_disclaimer = true;
+  }
+
   // Quality warnings after authority remap so they reflect the active engine.
   extracted.diagnostics.quality = assessExtractionQuality({
     blocks: extracted.annotated?.blocks || [],
@@ -380,6 +394,7 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
   // Publisher-evidence integrity: model quotes / blocks / escalations are
   // checked against the canonical document (when one is supplied).
   const blocks = opts.document ? indexDocumentBlocks(opts.document) : null;
+  const disclaimer = opts.document ? documentDisclaimsIndicators(opts.document) : false;
   for (const u of aiValue?.candidate_updates || []) {
     const key = `${u.candidate_type}\0${u.normalized_value}`;
     const existing = byKey.get(key);
@@ -392,7 +407,7 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
     if (!existing.publisher_evidence) {
       existing.publisher_evidence = { text: existing.evidence_text || null, block_id: existing.block_id || null };
     }
-    const grounding = blocks ? groundAiCandidateUpdate(existing, u, blocks) : null;
+    const grounding = blocks ? groundAiCandidateUpdate(existing, u, blocks, { disclaimer }) : null;
     const escalates = ESCALATING_ASSESSMENTS.has(String(u.assessment || '').toLowerCase());
     // An unsupported model claim never escalates a candidate: a malicious /
     // suspicious label needs real publisher text naming the value. Demotions
@@ -409,6 +424,9 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
       role: u.role || null,
       confidence: u.confidence ?? null,
       supported: grounding ? grounding.supported : null,
+      ...(grounding && grounding.supported === false
+        ? { unsupported_reason: grounding.publisher_disclaimer ? 'publisher_disclaimer' : grounding.assertive === false ? 'no_publisher_assertion' : 'ungrounded_citation' }
+        : {}),
       applied: applyAssessment,
       integrity_version: EVIDENCE_INTEGRITY_VERSION
     };

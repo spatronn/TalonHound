@@ -64,8 +64,12 @@ import { isValidIpAddress } from '../publicIp.js';
  * v12 (twelve-report audit): managed-runtime standard-library namespaces
  * (`javax.*`, `jakarta.*`, `java.<std>.*`, `System.<BCL>.*`) are code
  * identifiers even when the last label is a real TLD (`javax.tools`).
+ * v13 (31-report audit): a call glued to the token with an empty / identifier
+ * argument (`reg.run(None)`) is code whatever the suffix; a scheme-less URL
+ * whose host carries a port (`host.example:8080/path`) is a URL that keeps
+ * its port.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v12';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v13';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -487,7 +491,10 @@ export function classifyPathLikeShape(refanged) {
   if (RELATIVE_PATH_RE.test(head)) return 'relative_path';
   if (head.includes('/')) {
     const host = head.split('/')[0];
-    if (isHostnameSyntax(host) || isValidIpAddress(host.split(':')[0])) return 'scheme_less_url';
+    // "host:8080/path": a publisher-typed scheme-less URL keeps its port
+    // (tl-type-resolver-v13); the host part alone must be hostname-shaped.
+    const hostNoPort = host.replace(/:\d{1,5}$/, '');
+    if (isHostnameSyntax(host) || isHostnameSyntax(hostNoPort) || isValidIpAddress(host.split(':')[0])) return 'scheme_less_url';
     return 'other';
   }
   return 'other';
@@ -581,6 +588,9 @@ export function validateUrlCandidate(raw) {
     if (trailing) return { ok: false, resolved_type: 'invalid', reason: 'url_followed_by_prose', trailing_text: trailing };
     const hostPart = head.split('/')[0];
     const host = hostPart.split(':')[0].toLowerCase();
+    const portMatch = hostPart.match(/:(\d{1,5})$/);
+    const port = portMatch && Number(portMatch[1]) >= 1 && Number(portMatch[1]) <= 65535 ? Number(portMatch[1]) : null;
+    if (portMatch && port == null) return { ok: false, resolved_type: 'invalid', reason: 'invalid_port' };
     const hostIsIp = isValidIpAddress(host);
     if (!hostIsIp) {
       const labels = host.split('.');
@@ -596,7 +606,7 @@ export function validateUrlCandidate(raw) {
       url: stripTrailingPunct(head),
       host,
       host_kind: hostIsIp ? 'ip' : 'domain',
-      port: null
+      port
     };
   }
   return { ok: false, resolved_type: 'invalid', reason: 'not_url_shaped' };
@@ -767,6 +777,11 @@ export function resolveDottedToken(raw, ctx = {}) {
   //     `Foo.Bar.run(x)`) is code, not a hostname — unless the suffix is a
   //     DNS-shaped one ("evil.com(443)" stays a host with a port note).
   if (/^\s*\(/.test(after) && strength !== 'strong') return out('technical_artifact', 'code_call');
+  // A call glued to the token with an empty / identifier / literal argument
+  // (`reg.run(None)`, `app.run()`, `obj.get("k")`) is code even when the last
+  // label is a real TLD (v13); a port note ("evil.com(443)") or spaced prose
+  // ("evil.com (C2)") keeps the host reading.
+  if (/^\((?:\s*\)|\s*(?:[A-Za-z_$][\w$.]*\s*[,)]|["'`[{]))/.test(after)) return out('technical_artifact', 'code_call');
 
   // 5. Inline label right at the token decides before generic clause words.
   if (inlineArtifact) return out('technical_artifact', artifactReasonFrom(before, 'inline_artifact_label'), true);

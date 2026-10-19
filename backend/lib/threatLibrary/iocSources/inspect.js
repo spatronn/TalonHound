@@ -3,7 +3,8 @@
  */
 
 import { pdfToCanonicalDocument } from '../pdfIngest.js';
-import { enumerateGitHubIocSource, parseGitHubUrl } from './github.js';
+import { enumerateGitHubIocSource, gitHubFolderUrl, gitHubScopeIo, parseGitHubUrl } from './github.js';
+import { IOC_SOURCE_SCOPE_VERSION, isFolderHashListPath, isReadmePath, resolveGitHubCampaignFolder } from './campaignScope.js';
 import { BLOCKING_FETCH_CODES, fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fetchSafe.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
 import {
@@ -27,6 +28,46 @@ export async function guardSourceUrl(source, deps) {
   if (typeof deps?.destinationGuard !== 'function') return { ok: true };
   const verdict = await deps.destinationGuard(source.canonical_url || source.original_url);
   return verdict && verdict.ok === false ? verdict : { ok: true };
+}
+
+/**
+ * Report context a linked pack is scoped against: the report URL, its title
+ * and its section headings (distinctive campaign names). Reads only.
+ * @param {import('pg').Pool} pool
+ * @param {number} reportId
+ */
+export async function loadReportScopeContext(pool, reportId) {
+  const { rows } = await pool.query(
+    `SELECT title, source_url, canonical_document FROM threat_reports WHERE id = $1`,
+    [reportId]
+  );
+  const r = rows[0] || {};
+  const blocks = Array.isArray(r.canonical_document?.blocks) ? r.canonical_document.blocks : [];
+  return {
+    reportUrl: r.source_url || null,
+    reportTitle: r.title || null,
+    headings: blocks.filter((b) => b?.type === 'heading').map((b) => String(b.text || '')).slice(0, 200)
+  };
+}
+
+/**
+ * Folder files to ingest under campaign scope: when the folder README is a
+ * multi-campaign index, folder-wide hash lists cannot be attributed to this
+ * report and are deselected (kept listed with the reason).
+ * @param {object[]} fileRows
+ * @param {object[]} parseResults
+ */
+export function applyCampaignFileSelection(fileRows, parseResults) {
+  const multi = parseResults.some((r) => isReadmePath(r.path || '') && r.scope?.multi_campaign === true);
+  if (!multi) return { fileRows, parseResults, deselected: [] };
+  const deselected = [];
+  const rows = fileRows.map((f) => {
+    if (!isFolderHashListPath(f.path)) return f;
+    deselected.push(f.path);
+    return { ...f, selected: false, parse_status: 'skipped', error_detail: 'multi_campaign_folder_hash_list: not attributable to this report' };
+  });
+  const results = parseResults.filter((r) => !deselected.includes(r.path));
+  return { fileRows: rows, parseResults: results, deselected };
 }
 
 /**
@@ -59,9 +100,34 @@ export async function inspectIocSource(pool, source, deps = {}) {
   const originalKeys = await loadOriginalIndicatorKeys(pool, source.report_id);
   const otherKeys = await loadOtherLinkedKeys(pool, source.report_id, source.id);
 
+  const reportScope = await loadReportScopeContext(pool, source.report_id);
+
   try {
     if (gh) {
-      const listing = await enumerateGitHubIocSource(source.canonical_url || source.original_url, deps);
+      // A repository root is never an IOC pack: resolve the campaign folder
+      // from the report's own names, corroborated by a README that links the
+      // report; otherwise nothing is ingested (tl-ioc-source-scope-v1).
+      let packUrl = source.canonical_url || source.original_url;
+      let resolvedScope = null;
+      if (gh.kind === 'dir' && !String(gh.path || '').replace(/^\/+|\/+$/g, '')) {
+        const resolution = await resolveGitHubCampaignFolder(gh, reportScope, gitHubScopeIo(gh, deps));
+        if (!resolution.ok) {
+          await transitionSource(pool, source, 'unsupported', {
+            error_code: 'campaign_scope_unresolved',
+            error_detail: `Repository root: no campaign folder corroborated for this report (${resolution.reason})`,
+            preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, ...resolution } }
+          });
+          return { ok: false, code: 'campaign_scope_unresolved' };
+        }
+        packUrl = gitHubFolderUrl(gh, resolution.path);
+        resolvedScope = {
+          repository_root: true,
+          resolved_path: resolution.path,
+          reason: resolution.reason,
+          candidates_checked: resolution.candidates_checked
+        };
+      }
+      const listing = await enumerateGitHubIocSource(packUrl, deps);
       if (!listing.ok) {
         const action = listing.code === 'blocked_url' ? 'block' : listing.code?.includes('unsupported') ? 'unsupported' : 'fail_inspect';
         await transitionSource(pool, source, action, {
@@ -87,7 +153,8 @@ export async function inspectIocSource(pool, source, deps = {}) {
             url: file.download_url,
             path: file.path,
             sourcePublicId: source.public_id,
-            pdfToDocument: pdfToCanonicalDocument
+            pdfToDocument: pdfToCanonicalDocument,
+            reportScope
           });
           parseResults.push({ ...parsed, path: file.path });
           fileRows.push({
@@ -112,17 +179,25 @@ export async function inspectIocSource(pool, source, deps = {}) {
         }
       }
 
-      await replaceSourceFiles(pool, source.id, fileRows);
+      const scoped = applyCampaignFileSelection(fileRows, parseResults);
+      await replaceSourceFiles(pool, source.id, scoped.fileRows);
+      const readme = parseResults.find((r) => isReadmePath(r.path || '') && r.scope);
       const preview = {
-        ...buildPreviewFromParses(parseResults, {
+        ...buildPreviewFromParses(scoped.parseResults, {
           originalKeys,
           otherLinkedKeys: otherKeys
         }),
+        scope: {
+          version: IOC_SOURCE_SCOPE_VERSION,
+          ...(resolvedScope || {}),
+          ...(readme?.scope ? { readme: readme.scope } : {}),
+          ...(scoped.deselected.length ? { deselected_files: scoped.deselected } : {})
+        },
         // Keep original branch/tag alongside resolved commit SHA in repo_revision.
         ...(listing.repo_ref ? { repo_ref: listing.repo_ref } : {})
       };
 
-      if (!fileRows.some((f) => f.parse_status === 'ok')) {
+      if (!scoped.fileRows.some((f) => f.parse_status === 'ok' && f.selected !== false)) {
         await transitionSource(pool, source, 'unsupported', {
           preview,
           source_type: listing.source_type,
@@ -159,7 +234,8 @@ export async function inspectIocSource(pool, source, deps = {}) {
       url: fetched.finalUrl,
       path: null,
       sourcePublicId: source.public_id,
-      pdfToDocument: pdfToCanonicalDocument
+      pdfToDocument: pdfToCanonicalDocument,
+      reportScope
     });
 
     if (!parsed.ok) {

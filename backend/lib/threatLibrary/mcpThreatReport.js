@@ -14,6 +14,7 @@
  * `relationships` state an explicit link.
  */
 
+import { loadLinkedIocSourceSummary, withLinkedSourceQuality } from './iocSources/linkedSourceStatus.js';
 import { getReportByPublicId, loadReportLinkedSourceCandidateIds, loadReportSnapshot } from './store.js';
 import { loadReportTags } from './reportTags.js';
 import { serializePublicationDate } from './publicationDate.js';
@@ -146,13 +147,15 @@ export function serializeThreatReport(snapshot, page = {}) {
       total_unique: buckets.total_unique ?? buckets.indicators,
       linked_only: buckets.linked_only ?? 0,
       context_only: buckets.context_only,
+      // Publisher-declared linked IOC Sources by lifecycle (declared / extracted / pending / unresolved).
+      ...(snapshot.linkedSources ? { linked_ioc_sources: snapshot.linkedSources } : {}),
       entities: entities.length,
       relationships: relationships.length
     },
     // Read-only extraction quality signal (status / counts / reason codes):
     // a warning means the Indicators set may be incomplete or include a
     // suspicious row; it never changes membership. null for older reports.
-    extraction_quality: extractionQualitySummary(storedExtractionQuality(r)),
+    extraction_quality: extractionQualitySummary(withLinkedSourceQuality(storedExtractionQuality(r), snapshot.linkedSources || null)),
     // Paged candidate roster (All), not the Indicators membership filter.
     indicators: {
       total: candidates.length,
@@ -207,5 +210,10 @@ export async function loadThreatReportForMcp(pool, { id, indicator_limit, indica
   const linked = await loadReportLinkedSourceCandidateIds(pool, report.id);
   snapshot.candidates = withLinkedSourceProvenance(snapshot.candidates, linked);
   snapshot.tags = await loadReportTags(pool, report.id);
+  try {
+    snapshot.linkedSources = await loadLinkedIocSourceSummary(pool, report.id);
+  } catch {
+    snapshot.linkedSources = null;
+  }
   return { status: 200, body: serializeThreatReport(snapshot, { limit: indicator_limit, offset: indicator_offset }) };
 }

@@ -35,7 +35,8 @@ import { selectHtmlTitle } from './titleSelection.js';
  * always compare structured content-root fallback against thin incumbents.
  */
 // v7: structured block.links from htmlBlocks v7 (destination-only href anchors).
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v7';
+// v8: tables nested behind inline wrappers inside <p> stay table blocks (htmlBlocks v8).
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v8';
 export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */
