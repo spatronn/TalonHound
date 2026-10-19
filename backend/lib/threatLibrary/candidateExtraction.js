@@ -201,8 +201,18 @@ export {
  * a hostname tail after "-" or a redaction placeholder is never derived; a
  * key-value "SHA256 | <hex>" row declares its type in the delegated scope
  * (tl-scope-engine-section-tree-v3).
+ * v33 (31-report audit): a declared hash column types only exact digests
+ * (an IP / label under "SHA256" falls back to its own syntax); stacked
+ * sub-tables (a mid-table "IP Address | Notes" header row) re-declare the
+ * column types; spaced / mixed-bracket defang ("x [.]com", "ssd[.}png")
+ * refangs and unresolved residue is rejected; a list lead-in names the
+ * digest kind of its items (certificate fingerprints); a row stating "not
+ * malicious" and a legitimate-stance sub-heading cover every value of the
+ * row / list; a numbered footnote link is a citation; a report-level
+ * publisher disclaimer ("should not be treated as … indicators") is a
+ * document stance; a "no longer infected" remark is a remediated stance.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v32';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v33';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -522,6 +532,25 @@ function relatedValuesFromDescription(description) {
  * @param {{ sourceUrl?: string|null }} [opts]
  * @returns {{ candidates: object[], diagnostics: object, annotated: object }}
  */
+/**
+ * block id → lead-in text of the list the block belongs to: the paragraph
+ * immediately before a run of list blocks when it ends with a colon.
+ * @param {object[]} blocks
+ */
+function listLeadInsByBlock(blocks) {
+  const out = new Map();
+  let leadIn = null;
+  for (const b of blocks) {
+    if (b?.type === 'list') {
+      if (leadIn) out.set(b.id, leadIn);
+      continue;
+    }
+    const t = String(b?.text || '').trim();
+    leadIn = (b?.type === 'paragraph' || b?.type === 'heading') && t.length <= 200 && /:\s*$/.test(t) ? t : null;
+  }
+  return out;
+}
+
 export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const sourceUrl = opts.sourceUrl || doc.meta?.source_url || doc.meta?.sourceUrl || null;
   let sourceHost = '';
@@ -534,6 +563,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   const annotated = annotateDocumentZones(doc, { sourceUrl, sourceHost });
   const documentScope = discoverDocumentIndicatorScope(annotated.blocks || []);
+  // The lead-in sentence a publisher writes above a list ("Certificate
+  // SHA-256 Hashes for Fingerprints and Corresponding Hosts:") names the
+  // subject of its unlabelled items (tl-candidates-v33): it is the digest
+  // scope of every list item up to the next non-list block.
+  const listLeadIns = listLeadInsByBlock(annotated.blocks || []);
   /** @type {Map<string, object>} */
   const byKey = new Map();
   const urlPathBasenames = new Set();
@@ -783,7 +817,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // them as report context (technical artifact), never as a sample hash.
       // Table rows: the caption / section heading names the subject a bare
       // algorithm label leaves open ("Custom certificate …" > "SHA-256 | <v>").
-      const scopeLabel = block?.type === 'table' ? block?.table?.caption || block?.section || null : null;
+      const scopeLabel = block?.type === 'table'
+        ? block?.table?.caption || block?.section || null
+        : block?.type === 'list' ? listLeadIns.get(block.id) || null : null;
       const digest = classifyHexDigest(line, n.normalizedValue, { scopeLabel });
       if (NON_FILE_DIGEST_KINDS.has(digest.kind) && digest.kind !== DIGEST_KINDS.CREDENTIAL) {
         countReason(typeDiag.excluded_reasons, `non_file_digest_${digest.kind}`);

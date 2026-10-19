@@ -9,6 +9,23 @@ const HXXP_RE = /\bhxxps?(?::\/\/|\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
 // http[://], http[:]//, http[:][//]
 const SCHEME_BRACKET_RE = /\b(https?)(?:\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
 const BRACKET_DOT_RE = /\[\.\]|\(\.\)|\{\.\}/g;
+// Publisher variants of the bracketed dot between two hostname characters
+// (tl-defang-v2): whitespace inside the brackets ("evil[ . ]com"), a single
+// space on ONE side ("sfrclak [.]com", "evil[.] com") and mismatched square /
+// curly pairs ("ssd[.}png"). Hostname characters are required on both sides;
+// a dot spaced on both sides ("a [.] b") or a parenthesised dot with outer
+// whitespace ("item (.) list") is prose and stays untouched.
+const BRACKET_DOT_LEFT_SPACE_RE = /([A-Za-z0-9-]) ?[[{] *\. *[\]}](?=[A-Za-z0-9-])/g;
+const BRACKET_DOT_RIGHT_SPACE_RE = /([A-Za-z0-9-])[[{] *\. *[\]}] ?(?=[A-Za-z0-9-])/g;
+/** Bracketed-dot defang residue left in a value after refanging. */
+export const DEFANG_RESIDUE_RE = /[[({] *\. *[\])}]|\[ *\.|\. *\]|\{ *\.|\. *\}/;
+
+function refangDots(text) {
+  return String(text || '')
+    .replace(BRACKET_DOT_LEFT_SPACE_RE, '$1.')
+    .replace(BRACKET_DOT_RIGHT_SPACE_RE, '$1.')
+    .replace(BRACKET_DOT_RE, '.');
+}
 const BRACKET_COLON_RE = /\[:\]|\(:\)|\{:\}/g;
 // Markdown-escaped bracket defang emitted verbatim by some CMSes inside code
 // spans: `evil\[.\]com`, `hxxps\[:\]//`, `evil\[.]com`. Only the escape of a
@@ -34,7 +51,7 @@ export function refangObservable(value) {
   let v = String(value || '').trim();
   if (!v) return '';
   v = refangSchemes(unescapeMarkdownDefang(v));
-  v = v.replace(BRACKET_DOT_RE, '.');
+  v = refangDots(v);
   v = v.replace(BRACKET_COLON_RE, ':');
   // meow:// → http:// (rare vendor defang)
   v = v.replace(/\bmeow:\/\//gi, 'http://');
@@ -48,7 +65,7 @@ export function refangObservable(value) {
  */
 export function refangTextForExtraction(text) {
   let t = refangSchemes(unescapeMarkdownDefang(text));
-  t = t.replace(BRACKET_DOT_RE, '.');
+  t = refangDots(t);
   t = t.replace(BRACKET_COLON_RE, ':');
   t = t.replace(/\bmeow:\/\//gi, 'http://');
   return t;

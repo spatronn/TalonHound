@@ -32,7 +32,13 @@ test('github URL parse and eligible files', () => {
   assert.equal(dir.kind, 'dir');
   assert.equal(dir.owner, 'gendigitalinc');
   assert.equal(isEligibleIocFilePath('domains.txt'), true);
-  assert.equal(isEligibleIocFilePath('README.md'), false);
+  // A folder README is eligible: it is parsed only under campaign scoping
+  // (campaignScope.js) — a README not tied to the report contributes nothing.
+  assert.equal(isEligibleIocFilePath('README.md'), true);
+  assert.equal(isEligibleIocFilePath('oceanlotus/README.adoc'), true);
+  assert.equal(isEligibleIocFilePath('README'), false);
+  assert.equal(isEligibleIocFilePath('LICENSE'), false);
+  assert.equal(isEligibleIocFilePath('CHANGELOG.md'), false);
   assert.equal(isEligibleIocFilePath('nested/hashes.csv'), true);
   assert.equal(isEligibleIocFilePath('samples.sha256'), true);
   assert.equal(isEligibleIocFilePath('samples.sha1'), true);

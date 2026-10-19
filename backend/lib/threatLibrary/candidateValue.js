@@ -9,7 +9,7 @@ import { normalizeObservable } from '../observable-normalization.js';
 import { normalizeIpAddress, isValidIpAddress, validatePublicIp } from '../publicIp.js';
 import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
 import { inferObservableType } from '../manualIocCreate.js';
-import { refangObservable } from './defang.js';
+import { DEFANG_RESIDUE_RE, refangObservable } from './defang.js';
 import {
   classifyPathLikeShape,
   isHostnameSyntax,
@@ -128,6 +128,10 @@ export function normalizeCandidateValue(raw, hintType = null) {
   // Separators and punctuation ("/" between two technique ids, "./", "--")
   // name nothing: an observable always carries a letter or digit.
   if (!HAS_ALPHANUMERIC_RE.test(refanged)) return { ok: false, error: 'no_alphanumeric' };
+  // A defang form the refanger does not recognise must not be "normalised"
+  // into a different value (URL serialisation percent-encodes the residue:
+  // "ssd[.}png" -> "ssd[.%7Dpng"). Unresolved residue is rejected.
+  if (DEFANG_RESIDUE_RE.test(refanged)) return { ok: false, error: 'defang_residue' };
 
   if (hintType === 'cve' || /^CVE-\d{4}-\d{4,7}$/i.test(refanged)) {
     return {
@@ -252,7 +256,10 @@ export function normalizeCandidateValue(raw, hintType = null) {
       ok: true,
       candidateType: RESOLVED_TYPES.URL,
       originalValue: String(raw).trim(),
-      normalizedValue: normalizeObservable('url', v.url),
+      // A scheme-less "host:port/path" must not be read by WHATWG URL as
+      // scheme "host:" (normalizeObservable would emit "host://port/path");
+      // scheme-less values keep their publisher spelling, no scheme invented.
+      normalizedValue: /^[a-z][a-z0-9+.-]*:\/\//i.test(v.url) ? normalizeObservable('url', v.url) : v.url,
       isIoc: true,
       resolvedType: RESOLVED_TYPES.URL,
       typingReason: v.reason,
@@ -262,7 +269,11 @@ export function normalizeCandidateValue(raw, hintType = null) {
 
   if (inferred === 'hash' || hintType === 'md5' || hintType === 'sha1' || hintType === 'sha256') {
     const normalized = normalizeHashValue(refanged);
-    const exact = inferExactHashType(normalized) || (hintType && ['md5', 'sha1', 'sha256'].includes(hintType) ? hintType : null);
+    // A declared hash column is evidence, not authority: only a value of an
+    // exact digest shape is a hash. "104.21.80.1", "IP Address" or a 41-hex
+    // typo under a "SHA256" header is not (tl-candidates-v33); the caller
+    // falls back to the value's own syntax.
+    const exact = inferExactHashType(normalized);
     if (!exact) return { ok: false, error: 'invalid_hash' };
     return {
       ok: true,

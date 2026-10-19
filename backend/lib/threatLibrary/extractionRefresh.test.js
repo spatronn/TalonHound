@@ -1011,7 +1011,7 @@ test('a later analyst Context Only / Ignore of a created IOC identity survives r
   assert.equal(demoted.matched_ioc_id, 3445485, 'the global IOC link is not touched');
 });
 
-/** A document link the retired automatic discovery would have turned into an IOC Source row. */
+/** A publisher IOC-pack pointer selective discovery records as a `discovered` row. */
 function withIocPackLink(db) {
   const doc = db.report.canonical_document;
   db.report.canonical_document = {
@@ -1020,20 +1020,33 @@ function withIocPackLink(db) {
   };
 }
 
-test('IOC Sources are manual-only: retry, re-run AI and refresh never read or write IOC Source rows', async (t) => {
+// Selective discovery (PR #25) may INSERT a `discovered` row for a publisher
+// IOC pack; nothing else: an existing source row is never rewritten (insert-
+// only, ON CONFLICT DO NOTHING), and no job ever attaches / inspects /
+// extracts / updates / deletes a source (manualOnly.test.js).
+const sourceWrites = (db) => db.sql.filter((q) => /threat_report_ioc_sources/.test(q) && !/^\s*SELECT/i.test(q));
+const assertDiscoveryInsertOnly = (db, label) => {
+  for (const q of sourceWrites(db)) {
+    assert.match(q, /INSERT INTO threat_report_ioc_sources/, `${label}: only discovery inserts`);
+    assert.match(q, /ON CONFLICT \(report_id, canonical_url\) DO NOTHING/, `${label}: an existing source row is never rewritten`);
+  }
+  assert.equal(db.sql.some((q) => /(UPDATE|DELETE FROM)\s+threat_report_ioc_sources/i.test(q)), false, `${label}: no source update / delete`);
+};
+
+test('IOC Sources: retry, re-run AI and refresh only insert discovered rows — never update, inspect, attach or extract', async (t) => {
   for (const jobType of ['retry', 'rerun_ai']) {
     const { db, pool } = await seedAnalyzedReport({ previousContract: 'tl-candidates-v13' });
     withIocPackLink(db);
     db.jobs[0].job_type = jobType;
     const { result } = await runAiJob(pool, jobType);
     assert.equal(result.ok, true, `${jobType}: ${JSON.stringify(result)}`);
-    assert.deepEqual(db.sql.filter((q) => /threat_report_ioc_sources/.test(q)), [], `${jobType} touched IOC Sources`);
+    assertDiscoveryInsertOnly(db, jobType);
   }
   const { deps } = noAiSpies(t);
   const { db, pool } = await seedAnalyzedReport();
   withIocPackLink(db);
   assert.equal((await refresh(pool, deps)).ok, true);
-  assert.deepEqual(db.sql.filter((q) => /threat_report_ioc_sources/.test(q)), [], 'refresh touched IOC Sources');
+  assertDiscoveryInsertOnly(db, 'refresh');
 });
 
 test('refresh re-applies publisher-entity grounding: the publisher promoted to a campaign is unlinked, others kept, no AI', async (t) => {

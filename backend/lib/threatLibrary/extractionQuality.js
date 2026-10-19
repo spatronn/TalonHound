@@ -62,8 +62,11 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * escalations and malicious-assessed non-members (MODE A suppression).
  * v8 (ten-report audit): under the section-tree engine, check 6 treats a
  * discovery block nested under a publisher IOC heading as governed by it.
+ * v9 (31-report audit): under the section-tree engine the reported MODE is
+ * the tree's authoritative-scope decision (the one membership uses), not the
+ * legacy linear document scope.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v8';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v9';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -307,8 +310,14 @@ export function assessExtractionQuality(input) {
     ...c,
     __member: isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })
   }));
-  const modeA = candidates.some((c) => c.document_has_authoritative_scope === true)
-    || diagnostics.document_scope?.has_authoritative_indicator_scope === true;
+  // MODE as membership sees it: under the section-tree engine the tree decides
+  // (the legacy linear scope may disagree, tl-quality-v9); candidates carry the
+  // same flag. Legacy keeps the linear document scope.
+  const sectionTreeMode = diagnostics.scope_engine?.engine === 'section_tree' && diagnostics.scope_engine?.fallback !== true &&
+    typeof diagnostics.scope_engine?.has_authoritative_scope === 'boolean';
+  const modeA = candidates.some((c) => c.document_has_authoritative_scope === true) ||
+    (sectionTreeMode ? diagnostics.scope_engine.has_authoritative_scope === true
+      : diagnostics.document_scope?.has_authoritative_indicator_scope === true);
   const blockById = new Map(blocks.map((b) => [b.id, b]));
   const denseBlocks = new Set(blocks.filter(isObservableDenseBlock).map((b) => b.id));
   const rowLike = (o) => isRowOccurrence(o) || denseBlocks.has(o?.block_id);

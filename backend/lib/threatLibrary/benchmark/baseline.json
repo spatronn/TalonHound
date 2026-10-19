@@ -1,12 +1,12 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v32",
+    "candidates": "tl-candidates-v33",
     "zones": "tl-zones-v15",
     "tables": "tl-table-v8",
-    "type_resolver": "tl-type-resolver-v12",
-    "html": "threat_library_html_v6",
+    "type_resolver": "tl-type-resolver-v13",
+    "html": "threat_library_html_v8",
     "pdf": "threat_library_pdf_v6",
-    "quality": "tl-quality-v8",
+    "quality": "tl-quality-v9",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
@@ -24,7 +24,7 @@
       "recall": 1,
       "f1": 1
     },
-    "candidate_extraction_recall": 1,
+    "candidate_extraction_recall": 0.9993,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
     "assertion_accuracy": 0.9647,
@@ -118,7 +118,6 @@
     },
     "golden-checkpoint-jsceal-appendix-b": {
       "members": [
-        "domain:console.info",
         "domain:cursor.click",
         "domain:iapi.kraken.com",
         "ip:1.1.1.1",

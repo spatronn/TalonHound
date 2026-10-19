@@ -471,6 +471,44 @@ discovery and section-tree authority. An empty formal IOC section that
 explicitly points at an external pack does **not** delegate Indicator authority
 into the article body. Discovery still never attaches or extracts.
 
+**Discovery precision (tl-ioc-source-discovery-v2).** Evidence is anchor-local:
+the link text and its own sentence / block. An IOC section heading adds weight
+but never validates a link by itself, so tag / author pages, "Cancel", next /
+previous posts and comment-policy links that sit after an IOC heading are not
+sources. Never accepted: lookup / sandbox / search services (opentip, VirusTotal,
+urlscan …) and per-indicator links whose text is the observable; payload,
+archive and code files (`.zip`, `.exe`, `.js` …); same-site navigation unless
+the anchor presents a data file as an IOC pack; and, outside a code host, any
+destination that is not a data file or an IOC path (product pages, advisories,
+other blog posts). Discovery is insert-only: an existing row (discovered,
+inspected, extracted or dismissed) is never rewritten by analysis, retry or
+refresh.
+
+**Campaign scope (tl-ioc-source-scope-v1).** A linked pack contributes only what
+the publisher ties to this report:
+
+- A folder `README.adoc` / `README.md` (ESET `malware-ioc` style) is read
+  structurally — AsciiDoc headings and `|===` tables — never as flat text, so a
+  "Hosting provider" cell stays a column.
+- A README must link the report (or carry a section titled like it). A
+  multi-campaign README contributes only that section; its folder-wide hash
+  lists (`samples.*`) are deselected because they cannot be attributed. A README
+  not tied to the report contributes nothing (`campaign_scope_unresolved`).
+- MITRE ATT&CK / reference sections and links to the publisher's own articles
+  are never linked indicators.
+- A repository root is never enumerated. The campaign folder is resolved from
+  the report's own distinctive names (title words, proper-name headings such as
+  `UAC-0099`) within bounded breadth / depth and accepted only when its README
+  links the report; otherwise the source is `unsupported` with
+  `campaign_scope_unresolved`.
+- A publisher remediation note ("no longer infected") is a remediated stance:
+  the value is Context Only.
+
+Report detail and MCP `get_threat_report` overlay a read-time
+`linked_ioc_source_not_ingested` quality warning (and `linked_ioc_sources`
+lifecycle counts) while a publisher-declared source is not extracted: Linked
+and Union are incomplete until the analyst inspects and extracts it.
+
 **Counts (must stay aligned across UI, API, MCP, SQL):**
 
 | Count | Meaning |

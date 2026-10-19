@@ -550,6 +550,35 @@ const MULTI_VALUE_CELL_MAX_TOKENS = 500;
  * mentions one domain has non-observable words and never scores.
  * @param {string} cellText
  */
+const SUBHEADER_EXTRA_LABEL_RE = /^(?:notes?|comments?|remarks?|context|other(?:\s+iocs?|\s+indicators?)?)$/;
+
+/**
+ * A mid-table row that only carries column labels — the header of the next
+ * stacked sub-table. Returns per-indicator-column declarations
+ * (Map index → { declared, label }) or null when the row is data.
+ * @param {string[]} cells
+ * @param {Array<{ index: number }>} indicatorCols
+ */
+function subHeaderRowDeclarations(cells, indicatorCols) {
+  const nonEmpty = cells.map((c, idx) => ({ idx, text: String(c || '').trim() })).filter((c) => c.text);
+  if (!nonEmpty.length) return null;
+  for (const c of nonEmpty) {
+    if (c.text.length > 48 || cellIsObservable(c.text)) return null;
+    const norm = normalizeHeaderLabel(c.text);
+    if (!headerIntent(c.text) && !parseDeclaredType(c.text) && !SUBHEADER_EXTRA_LABEL_RE.test(norm)) return null;
+  }
+  const out = new Map();
+  let labelledIndicator = false;
+  for (const col of indicatorCols) {
+    const label = String(cells[col.index] || '').trim();
+    if (!label) continue;
+    const declared = parseDeclaredType(label);
+    if (declared || headerIntent(label) === 'indicator' || SUBHEADER_EXTRA_LABEL_RE.test(normalizeHeaderLabel(label))) labelledIndicator = true;
+    out.set(col.index, { declared: declared || null, label });
+  }
+  return labelledIndicator ? out : null;
+}
+
 function cellIsObservable(cellText) {
   const refanged = refangObservable(String(cellText || '').replace(/\s+/g, ' ').trim());
   if (!refanged) return null;
@@ -911,9 +940,19 @@ export function interpretIocTable(block, opts = {}) {
     rejectionReasons[reason] = (rejectionReasons[reason] || 0) + 1;
     result.rows.push({ ...row, status: 'rejected', reason });
   };
+  // Stacked sub-tables: a later row made only of column labels ("IP Address |
+  // Notes", "Domain/URL | Notes" under an initial "SHA256 | Notes" header)
+  // starts a new group whose labels declare the indicator columns' types.
+  let segmentDeclared = null;
   for (let i = 0; i < rows.length; i += 1) {
     const cells = rows[i];
     result.stats.rows_seen += 1;
+    const subheader = subHeaderRowDeclarations(cells, indicatorCols);
+    if (subheader) {
+      segmentDeclared = subheader;
+      reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [] }, 'subheader_row');
+      continue;
+    }
     const declaredRow = typeCol ? parseDeclaredType(cells[typeCol.index]) : null;
     const description = descCols.map((c) => String(cells[c.index] || '').trim()).filter(Boolean).join(' · ') || null;
     const row = {
@@ -930,8 +969,10 @@ export function interpretIocTable(block, opts = {}) {
     for (const col of indicatorCols) {
       const cell = String(cells[col.index] || '');
       if (!cell.trim()) continue;
-      const declared = col.declared_type || declaredRow;
-      const typeLabel = (typeCol ? String(cells[typeCol.index] || '').trim() : '') || col.header || null;
+      const segment = segmentDeclared && segmentDeclared.has(col.index) ? segmentDeclared.get(col.index) : undefined;
+      const declared = segment !== undefined ? segment.declared || declaredRow : col.declared_type || declaredRow;
+      const typeLabel =
+        (typeCol ? String(cells[typeCol.index] || '').trim() : '') || (segment !== undefined ? segment.label : col.header) || null;
       const parsed = parseIndicatorCell(cell, declared, { typeLabel });
       for (const v of parsed.values) {
         row.values.push({

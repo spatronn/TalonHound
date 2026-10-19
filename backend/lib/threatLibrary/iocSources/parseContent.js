@@ -7,6 +7,12 @@ import { extractCandidatesFromDocument } from '../candidateExtraction.js';
 import { htmlToCanonicalDocument, plainTextToCanonicalDocument } from '../urlIngest.js';
 import { LINKED_SOURCE_IOC_ASSERTION } from './constants.js';
 import { guessTypeFromUrl } from './sourceType.js';
+import {
+  asciidocToCanonicalDocument,
+  isPublisherReferenceCandidate,
+  isReadmePath,
+  selectCampaignScope
+} from './campaignScope.js';
 
 /**
  * @param {string} contentType
@@ -18,6 +24,7 @@ export function detectSourceFormat({ contentType, url, path }) {
   const name = String(path || url || '').toLowerCase();
   if (ct === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
   if (ct === 'application/json' || name.endsWith('.json')) return 'json';
+  if (name.endsWith('.adoc') || name.endsWith('.asciidoc')) return 'asciidoc';
   if (ct === 'text/csv' || name.endsWith('.csv')) return 'csv';
   if (ct.includes('html') || name.endsWith('.html') || name.endsWith('.htm')) return 'html';
   if (
@@ -169,6 +176,8 @@ export async function parseIocSourceContent(input) {
     }
   } else if (format === 'html') {
     document = htmlToCanonicalDocument(input.body || '', { url: input.url, finalUrl: input.url });
+  } else if (format === 'asciidoc') {
+    document = asciidocToCanonicalDocument(input.body || '', { title: input.path || 'IOC source', sourceUrl: input.url });
   } else if (format === 'json') {
     const asText = jsonIndicatorsToText(input.body || '');
     if (!asText) {
@@ -194,10 +203,36 @@ export async function parseIocSourceContent(input) {
     return { ok: false, code: 'parse_failed', format, message: 'No document produced', candidates: [], warnings };
   }
 
+  // Campaign scope (tl-ioc-source-scope-v1): a folder README holds IOCs only
+  // for the campaign that links / names this report. A README that cannot be
+  // tied to the report contributes nothing.
+  let scope = null;
+  if (isReadmePath(input.path || input.url || '')) {
+    const selected = selectCampaignScope(document, input.reportScope || {});
+    scope = {
+      status: selected.status,
+      multi_campaign: selected.multi_campaign,
+      section_heading: selected.section_heading,
+      excluded_sections: selected.excluded_sections.slice(0, 20)
+    };
+    if (selected.status === 'unresolved' || !selected.document) {
+      return {
+        ok: false,
+        code: 'campaign_scope_unresolved',
+        format,
+        message: 'The README is not tied to this report (no section links or names it)',
+        candidates: [],
+        warnings,
+        scope
+      };
+    }
+    document = selected.document;
+  }
+
   const candidates = candidatesFromDocument(document, {
     sourcePublicId: input.sourcePublicId,
     filePath: input.path
-  });
+  }).filter((c) => !isPublisherReferenceCandidate(c, input.reportScope || {}));
 
   const typeBreakdown = {};
   for (const c of candidates) {
@@ -212,7 +247,8 @@ export async function parseIocSourceContent(input) {
     raw_count: candidates.length,
     unique_count: candidates.length,
     type_breakdown: typeBreakdown,
-    warnings
+    warnings,
+    ...(scope ? { scope } : {})
   };
 }
 

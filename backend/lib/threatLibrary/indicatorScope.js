@@ -342,6 +342,8 @@ const BENIGN_NEGATION_RE =
  * contains the word "malicious" itself, so it is matched — and removed —
  * before the maliciousness-cue check runs on the rest of the window.
  */
+const REMEDIATED_STANCE_RE =
+  /\bno\s+longer\s+(?:infected|compromised|malicious|backdoored|trojani[sz]ed|weaponi[sz]ed|(?:hosting|serving|distributing)\s+(?:the\s+)?(?:malware|payloads?|backdoors?|malicious\s+\w+))\b/i;
 const HEDGED_NOT_MALICIOUS_RE =
   /\b(?:not|never|isn['’]?t|aren['’]?t|wasn['’]?t)\s+(?:(?:inherently|necessarily|itself|by\s+itself|in\s+itself|per\s+se|confirmed|known|considered|deemed|proven|believed|thought|assessed)\s+)?(?:(?:as|to\s+be)\s+)?(?:malicious|harmful|attacker[- ]controlled)\b|\bdoes\s+not\s+(?:confirm|indicate|prove|imply)\s+(?:abuse|malicious\w*|compromise)\b/gi;
 const DUAL_USE_RE =
@@ -360,6 +362,8 @@ const STANCE_OVERRIDE_RE =
 const MALICE_ELSEWHERE_RE =
   /[,;]?\s*(?:while\s+|whereas\s+|and\s+|but\s+)?(?:all|the|any)\s+(?:of\s+the\s+)?malicious\s+(?:logic|code|functionality|behaviou?r|content)\s+(?:is|are|was|were|resides?|lives?|sits?)\s+(?:entirely\s+|only\s+|solely\s+)?(?:contained\s+|located\s+|embedded\s+|implemented\s+)?(?:with)?in(?:side)?\s+(?:the\s+|a\s+|an\s+)?(?!\s*OBSERVABLE)[^.;!?]*?(?=$|[.;!?])/gi;
 
+/** An outright (unhedged) row statement that the row's subject is not malicious. */
+const ROW_NOT_MALICIOUS_RE = /(?<![\w-])(?:not|non)[\s-]malicious(?![\w-])/i;
 const CONTRASTIVE_STANCE_RE =
   /\b(?:alongside|unlike|besides|other\s+than|apart\s+from|in\s+addition\s+to|in\s+contrast|whereas|rather\s+than|instead\s+of|beyond\s+the)\b|\bwhile\s+the\s+(?:[\w-]+\s+){0,10}?(?:are|were|is|was)\b/i;
 
@@ -377,6 +381,9 @@ function statesNonMaliciousStance(window) {
   // "X … alongside the five legitimate providers" / "unlike the public
   // endpoints, X …": the benign words describe the OTHER values.
   if (CONTRASTIVE_STANCE_RE.test(window)) return false;
+  // The publisher states the value was remediated ("GitHub repo (no longer
+  // infected with backdoor)"): historical context, not a live indicator.
+  if (REMEDIATED_STANCE_RE.test(window)) return true;
   const hedge = HEDGED_NOT_MALICIOUS_RE.test(window);
   HEDGED_NOT_MALICIOUS_RE.lastIndex = 0;
   const rest = window.replace(HEDGED_NOT_MALICIOUS_RE, ' ');
@@ -503,6 +510,10 @@ export function annotateListStances(blocks) {
   const isListBlock = (b) => b && (b.type === 'list_item' || b.type === 'list' || b.layout === 'observable_row') &&
     (b.layout === 'observable_row' || isIndicatorValueLine(String(b.text || '')) || isObservableListLine(String(b.text || '')) ||
       isAnnotatedIndicatorRowLine(String(b.text || '')));
+  // Value-only paragraph lines (one observable per <br>-split line) are the
+  // same inventory shape as list items when a stance heading introduces them.
+  const isValueLine = (b) => b && b.type === 'paragraph' &&
+    (isIndicatorValueLine(String(b.text || '')) || isObservableListLine(String(b.text || '')));
   const isCaption = (b) => b && (b.type === 'caption' || /^\s*(?:figure|fig\.|table|image)\s*\d+/i.test(String(b.text || '')));
   const stanceOf = (text) => {
     const s = firstSentence(text);
@@ -517,6 +528,17 @@ export function annotateListStances(blocks) {
     return namesProviderService(objectPhrase, { lead: true });
   };
   for (let i = 0; i < list.length; i += 1) {
+    // Paragraph value lines directly under a sub-heading: heading stance only.
+    if (isValueLine(list[i]) && list[i - 1]?.type === 'heading' && !isListBlock(list[i])) {
+      const h = String(list[i - 1].text || '');
+      let j = i;
+      while (j + 1 < list.length && isValueLine(list[j + 1])) j += 1;
+      if (BENIGN_COMPONENT_RE.test(h) && !BENIGN_NEGATION_RE.test(h) && !CONTRASTIVE_STANCE_RE.test(h)) {
+        for (let k = i; k <= j; k += 1) list[k].list_stance = 'non_malicious';
+      }
+      i = j;
+      continue;
+    }
     if (!isListBlock(list[i]) || isListBlock(list[i - 1])) continue;
     let j = i;
     while (j + 1 < list.length && isListBlock(list[j + 1])) j += 1;
@@ -525,12 +547,18 @@ export function annotateListStances(blocks) {
     let next = j + 1;
     while (next < list.length && isCaption(list[next])) next += 1;
     const leadText = lead >= 0 && list[lead]?.type !== 'heading' ? list[lead].text : '';
+    // A sub-heading right above the list that names its values legitimate
+    // ("Hashes of TWCore (the legitimate software used to distribute X)"),
+    // tl-candidates-v33: the heading is the list's stance.
+    const headingText = lead >= 0 && list[lead]?.type === 'heading' ? String(list[lead].text || '') : '';
+    const heading_stance = Boolean(headingText) && BENIGN_COMPONENT_RE.test(headingText) &&
+      !BENIGN_NEGATION_RE.test(headingText) && !CONTRASTIVE_STANCE_RE.test(headingText);
     const nextText = next < list.length && list[next]?.type !== 'heading' ? list[next].text : '';
     // A lead-in that names the class ("legitimate services such as:") or an
     // anaphoric follow-up sentence about "these endpoints".
     const lead_stance = /[:：]\s*$/.test(String(leadText || '').trim()) && stanceOf(leadText);
     const next_stance = LIST_ANAPHORA_RE.test(String(nextText || '')) && stanceOf(nextText);
-    if (lead_stance || next_stance) {
+    if (lead_stance || next_stance || heading_stance) {
       for (let k = i; k <= j; k += 1) list[k].list_stance = 'non_malicious';
     }
     i = j;
@@ -992,6 +1020,8 @@ const INTERCEPTED_SERVICE_RE =
  * The entry is a numbered citation whose title precedes the live link.
  */
 const CITATION_ENTRY_RE = /^\s*[\[(]\d{1,3}[\])]\s*[^\s:][^:\n]{0,160}:\s*OBSERVABLE\s*[.;]?\s*$/i;
+/** "1 <url>" / "[2] <url>": a footnote line holding only the link. */
+const FOOTNOTE_URL_LINE_RE = /^\s*(?:\d{1,2}|\[\d{1,2}\]|\^\d{1,2})\s+OBSERVABLE\s*$/;
 /** "<url> [7]": a link carrying the publisher's own citation marker. */
 const TRAILING_CITATION_MARKER_RE = /OBSERVABLE\s*\[\d{1,3}\]/;
 /** The publisher's own published tooling / material ("Our toolkit is publicly available at <url>"). */
@@ -1056,6 +1086,16 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
       return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'citation', authoritative: false, structural_row: false };
     }
   }
+  // A numbered footnote line that is only a live (fanged) link — "1 https://…"
+  // under an IOC table whose values the publisher defanged — is the
+  // reference list of the article, in any zone (tl-candidates-v33). A
+  // numbered IOC row ("1. hxxp://evil[.]com") is defanged and never matches.
+  if (form === 'url' && !looksDefanged(String(opts.original || ''))) {
+    const line = maskObservable(refangTextForExtraction(String(surroundingText || '')), [opts.value, opts.original].filter(Boolean));
+    if (FOOTNOTE_URL_LINE_RE.test(line)) {
+      return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'citation', authoritative: false, structural_row: false };
+    }
+  }
   // Endpoint forms (ip:port) assert by shape. Table rows assert only inside a
   // publisher-curated section (or after an explicit typed/header-labelled
   // table upgraded the block zone). A narrative dense IP grid must not become
@@ -1071,6 +1111,13 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // host beside the malicious DLL — not as an Indicator. Any maliciousness
     // or abuse cue in the same row window keeps the row assertion.
     if (structuralRow && form !== 'ip_port' && describesBenignComponent(full)) {
+      return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
+    }
+    // A table row that states outright that its subject is not malicious
+    // ("Legitimate Windows binary used to sideload the loader. Not malicious.")
+    // covers EVERY value of the row — the MD5 / SHA1 / SHA256 of one file —
+    // not only the cell next to the statement (tl-candidates-v33).
+    if (structuralRow && form === 'table_row' && ROW_NOT_MALICIOUS_RE.test(full)) {
       return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
     }
     // A typed table row whose own descriptor cells call the value a provider /
