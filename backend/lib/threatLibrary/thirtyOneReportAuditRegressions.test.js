@@ -1,5 +1,5 @@
 /**
- * 31-report audit regressions (tl-candidates-v33 / threat_library_html_v8 /
+ * 31-report audit regressions (tl-candidates-v34 / threat_library_html_v8 /
  * tl-type-resolver-v13 / tl-section-tree-v6 / tl-quality-v9 /
  * tl-evidence-integrity-v2 / tl-ioc-source-scope-v1). Generic shapes of the
  * confirmed production defects, with synthetic values — no publisher, report
@@ -20,6 +20,8 @@
  *       a model escalation needs a publisher assertion, not a mention.
  * RC-10 IOC Source discovery is anchor-local and precise; linked packs are
  *       campaign-scoped; repository roots are resolved, never walked.
+ * RC-11 (30301 / MacSync): a path IOC never authorizes a broader origin URL;
+ *       an inventory-listed root that coexists with path siblings stays an Indicator.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,7 +78,7 @@ const members = (x) => x.candidates.filter((c) => isReportIndicatorMember(persis
 const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(persisted(c)));
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v33');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v34');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v8');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v13');
@@ -417,4 +419,50 @@ test('RC-10. an un-ingested publisher pack overlays a quality warning at read ti
   assert.equal(q.warnings[0].code, LINKED_SOURCE_NOT_INGESTED_CODE);
   const done = withLinkedSourceQuality({ status: 'clean', warnings: [] }, summarizeLinkedIocSources([{ lifecycle_status: 'extracted' }]));
   assert.equal(done.status, 'clean');
+});
+
+test('RC-10. OpenTIP lookups, same-site tags, and comment chrome never register as IOC Sources', () => {
+  const html = `<html><body><article>
+<h2>Indicators of Compromise</h2>
+<p>Stage one loader ${M1}</p>
+<p>URL hxxps://toria[.]app/ hxxps://docsend.appstore.com[.]mx/dcc737d157ef4271/stage2.enc</p>
+<p>MD5 <a href="https://opentip.kaspersky.com/${M1}?icid=gl_sl_opentip-lnk">${M1}</a></p>
+<p><a href="https://opentip.kaspersky.com/hxxps%3a%2f%2fdocsend.appstore.com.mx?icid=gl_sl">lookup</a></p>
+<ul>
+<li><a href="https://securelist.example/tag/apple-macos">Apple MacOS</a></li>
+<li><a href="https://securelist.example/tag/infostealers">Infostealers</a></li>
+<li><a href="https://securelist.example/macsync-new-version/121383?replytocom=3582213">Reply</a></li>
+</ul>
+<p>This site uses Akismet. <a href="https://akismet.com/privacy">Privacy</a>.</p>
+</article></body></html>`;
+  const found = discoverIocSourcesFromHtml(html, { reportUrl: 'https://securelist.example/macsync-new-version/121383/' });
+  assert.deepEqual(found, []);
+});
+
+// --- RC-11: origin URL authority (30301 MacSync shape) ------------------------------
+
+test('RC-11. path IOCs do not authorize a C2-chrome origin; inventory-listed roots stay', () => {
+  const inner = `<h2>Indicators of compromise</h2>
+<p>Stage one loader</p>
+<p>${M1}</p>
+<p>${'a'.repeat(31)}5</p>
+<p>URL</p>
+<p>hxxps://toria[.]app/</p>
+<p>hxxps://toria.apple03cloudstore[.]com/</p>
+<p>hxxps://toria.apple03cloudstore[.]com/e3c1a6b00bc31e14/stage2.enc</p>
+<p>hxxps://docsend.appstore.com[.]mx/dcc737d157ef4271/stage2.enc</p>
+<p>hxxps://docsend.appstore.com[.]mx/dcc737d157ef4271/CoreUpdate.pkg.enc</p>
+<p>hxxps://docsend.appstore.com[.]mx/dcc737d157ef4271/Helper.pkg.enc</p>
+<h3>C2</h3>
+<p>hxxps://docsend.appstore[.]com[.]mx</p>
+<p>hxxps://toria.apple03cloudstore[.]com</p>`;
+  const got = members(run(inner));
+  assert.equal(got.includes('url:https://docsend.appstore.com.mx/'), false, 'C2-chrome docsend origin demoted');
+  assert.equal(got.includes('url:https://toria.apple03cloudstore.com/'), true, 'inventory toria root kept');
+  assert.equal(got.includes('url:https://toria.app/'), true);
+  assert.equal(got.includes('url:https://docsend.appstore.com.mx/dcc737d157ef4271/stage2.enc'), true);
+  assert.equal(got.includes('url:https://docsend.appstore.com.mx/dcc737d157ef4271/CoreUpdate.pkg.enc'), true);
+  assert.equal(got.includes('url:https://docsend.appstore.com.mx/dcc737d157ef4271/Helper.pkg.enc'), true);
+  assert.equal(got.includes('url:https://toria.apple03cloudstore.com/e3c1a6b00bc31e14/stage2.enc'), true);
+  assert.equal(got.includes(`md5:${M1}`), true);
 });

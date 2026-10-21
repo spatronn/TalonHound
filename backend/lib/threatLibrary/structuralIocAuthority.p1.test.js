@@ -32,7 +32,7 @@ import {
 } from './pdfLayout.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v33');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v34');
 assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v8');
 assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v8');
@@ -274,7 +274,7 @@ test('independently asserted directory URL without a longer sibling stays an Ind
   assert.equal(member(find(cands, 'domain', 'evil-c2.example')), true);
 });
 
-test('root URL with trailing slash is not treated as an incomplete path prefix', () => {
+test('IOC-list root URL with a path sibling stays an Indicator', () => {
   const html = `<article>
 <h2>Indicators of compromise</h2>
 <ul>
@@ -289,8 +289,29 @@ test('root URL with trailing slash is not treated as an incomplete path prefix',
   });
   assert.equal(r.ok, true);
   const cands = extractCandidatesFromDocument(annotateDocumentZones(r.document));
-  assert.equal(member(find(cands, 'url', 'http://malware-drop.example/')), true, 'root path kept');
+  assert.equal(member(find(cands, 'url', 'http://malware-drop.example/')), true, 'inventory root kept');
   assert.equal(member(find(cands, 'url', 'http://malware-drop.example/stage2.bin')), true);
+});
+
+test('C2-chrome origin is not an Indicator when only path URLs are in the IOC inventory', () => {
+  const html = `<article>
+<h2>Indicators of compromise</h2>
+<p>URL</p>
+<p>hxxps://drop.vendor-pack[.]example/stage2.enc</p>
+<p>hxxps://drop.vendor-pack[.]example/Helper.pkg.enc</p>
+<h3>C2</h3>
+<p>hxxps://drop.vendor-pack[.]example</p>
+</article>`;
+  const r = extractCanonicalDocumentFromHtml(html, {
+    url: 'https://research.example/root-chrome',
+    finalUrl: 'https://research.example/root-chrome',
+    httpStatus: 200
+  });
+  assert.equal(r.ok, true);
+  const cands = extractCandidatesFromDocument(annotateDocumentZones(r.document));
+  assert.equal(member(find(cands, 'url', 'https://drop.vendor-pack.example/')), false, 'C2-chrome origin demoted');
+  assert.equal(member(find(cands, 'url', 'https://drop.vendor-pack.example/stage2.enc')), true);
+  assert.equal(member(find(cands, 'url', 'https://drop.vendor-pack.example/Helper.pkg.enc')), true);
 });
 
 test('body Threat Infrastructure table values are not Indicators when appendix exists', () => {

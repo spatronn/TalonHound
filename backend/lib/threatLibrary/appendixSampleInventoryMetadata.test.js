@@ -28,7 +28,7 @@ const H5 = '4504006d1911057be42435d4625f03d83c4d0b7b6898d14beb9cdeba6cf667b9';
 
 test('sample inventory metadata contracts', () => {
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v33');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v34');
 });
 
 test('isArticleMetadataListItem rejects File size / type inventory rows', () => {
