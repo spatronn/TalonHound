@@ -211,8 +211,11 @@ export {
  * row / list; a numbered footnote link is a citation; a report-level
  * publisher disclaimer ("should not be treated as … indicators") is a
  * document stance; a "no longer infected" remark is a remediated stance.
+ * v34: an origin URL (pathname "/") with a longer same-origin sibling is an
+ * incomplete prefix unless the publisher also listed that origin in an
+ * explicit IOC inventory — path IOCs never authorize a broader root alone.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v33';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v34';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -228,9 +231,17 @@ function samePublisherHostFamily(a, b) {
   return na === nb || na.endsWith(`.${nb}`) || nb.endsWith(`.${na}`);
 }
 
+/** True when the candidate was also written in an explicit IOC inventory. */
+function hasExplicitIocSectionOccurrence(entry) {
+  return (entry.occurrences || []).some((o) => o.zone === 'explicit_ioc_section');
+}
+
 /**
  * Mark URL candidates that are incomplete path prefixes of a longer sibling
  * URL in the same document (e.g. http://host:443/t/ vs …/t/a779ab).
+ * An origin URL (pathname "/") with a longer same-origin sibling is incomplete
+ * unless the publisher also listed that origin in an explicit IOC inventory —
+ * path IOCs never authorize a broader root alone (tl-candidates-v34).
  * @param {Map<string, object>} byKey
  */
 function markIncompleteUrlPrefixes(byKey) {
@@ -244,11 +255,16 @@ function markIncompleteUrlPrefixes(byKey) {
     } catch {
       continue;
     }
-    if (!pathname || pathname === '/') continue;
+    if (!pathname) continue;
     const longer = urls.some(
       (b) => b !== a && String(b.normalized_value).startsWith(av) && String(b.normalized_value).length > av.length
     );
-    if (longer) a.incomplete_url_prefix = true;
+    if (!longer) continue;
+    if (pathname === '/') {
+      if (!hasExplicitIocSectionOccurrence(a)) a.incomplete_url_prefix = true;
+      continue;
+    }
+    a.incomplete_url_prefix = true;
   }
 }
 
