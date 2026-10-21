@@ -260,13 +260,24 @@ export function reportIndicatorMembershipSql(alias = 'c') {
 
 /**
  * SQL: candidate has at least one linked IOC source provenance row.
+ * Without an alias the outer row is qualified by table name: a bare `id`
+ * inside the subquery would bind to the link row's own `lsl.id`.
  */
 export function linkedSourceOccurrenceSql(alias = 'c') {
-  const p = alias ? `${alias}.` : '';
+  const ref = alias || 'threat_report_candidates';
   return `EXISTS (
     SELECT 1 FROM threat_report_candidate_source_links lsl
-    WHERE lsl.candidate_id = ${p}id
+    WHERE lsl.candidate_id = ${ref}.id
   )`;
+}
+
+/**
+ * Select-list column carrying linked IOC Source provenance as
+ * `has_linked_source_occurrence`, the field the JS membership predicates read,
+ * so rows loaded for review / Create IOCs / Finalize agree with the SQL gates.
+ */
+export function linkedSourceProvenanceColumnSql(alias = 'c') {
+  return `${linkedSourceOccurrenceSql(alias)} AS has_linked_source_occurrence`;
 }
 
 /**

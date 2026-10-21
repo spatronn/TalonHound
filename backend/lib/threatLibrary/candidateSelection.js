@@ -18,7 +18,8 @@ import {
   isPublisherAssertedReportIoc,
   isReportIndicatorMember,
   isUnionReportIndicatorMember,
-  hasAuthoritativePublisherIocScope
+  hasAuthoritativePublisherIocScope,
+  linkedSourceProvenanceColumnSql
 } from './indicatorMembership.js';
 
 export const SELECTION_TABS = Object.freeze([
@@ -368,7 +369,7 @@ export function eligibleCandidateIds(action, rows) {
  */
 export async function loadSelectionScope(pool, reportId, selection) {
   const { rows } = await pool.query(
-    `SELECT * FROM threat_report_candidates
+    `SELECT *, ${linkedSourceProvenanceColumnSql('')} FROM threat_report_candidates
      WHERE report_id = $1
      ORDER BY id`,
     [reportId]
