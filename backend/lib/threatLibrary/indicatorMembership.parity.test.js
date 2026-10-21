@@ -21,7 +21,10 @@ import {
   reportIndicatorMembershipSql,
   isContextOnlySql,
   countCandidateBuckets,
-  publisherAuthoritativeIocMembershipSql
+  publisherAuthoritativeIocMembershipSql,
+  linkedSourceOccurrenceSql,
+  linkedSourceProvenanceColumnSql,
+  reviewActionableIndicatorSql
 } from './indicatorMembership.js';
 
 // Repository sibling frontend, TALONHOUND_FRONTEND_DIR, or a module copied to
@@ -168,4 +171,13 @@ test('publisherAuthoritativeIocMembershipSql is composed into reportIndicatorMem
   assert.match(sql, /explicit_operational_infrastructure/);
   assert.match(sql, /jsonb_array_elements/);
   assert.equal(typeof publisherAuthoritativeIocMembershipSql('c'), 'string');
+});
+
+test('linked-source EXISTS correlates to the candidate row with or without an alias', () => {
+  assert.match(linkedSourceOccurrenceSql('c'), /lsl\.candidate_id = c\.id/);
+  assert.match(linkedSourceOccurrenceSql(''), /lsl\.candidate_id = threat_report_candidates\.id/);
+  // A bare `id` inside the subquery would bind to lsl.id, not the candidate.
+  assert.doesNotMatch(linkedSourceOccurrenceSql(''), /=\s*id\b/);
+  assert.match(reviewActionableIndicatorSql(''), /threat_report_candidates\.id/);
+  assert.match(linkedSourceProvenanceColumnSql(''), /AS has_linked_source_occurrence$/);
 });

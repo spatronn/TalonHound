@@ -188,3 +188,28 @@ test('finalize succeeds when only context-only rows remain pending-shaped', asyn
   assert.equal(result.ok, true);
   assert.ok(pool.writes.some((w) => /UPDATE threat_reports/.test(w.sql)));
 });
+
+test('review, Create IOCs and Finalize loads carry linked IOC Source provenance', async () => {
+  const linkedOnly = cand({
+    id: 5,
+    review_status: 'pending',
+    source_assertion: 'body_mention',
+    has_linked_source_occurrence: true,
+    evidence: {
+      document_has_authoritative_scope: true,
+      source_assertion: 'body_mention',
+      occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }]
+    }
+  });
+  const pool = fakePool(report, { candidates: [linkedOnly] });
+  const result = await finalizeReport(pool, 9);
+  assert.equal(result.code, 'pending_review_remaining');
+  assert.equal(result.pending_count, 1);
+  await applyCandidateReviewActions(pool, 9, { action: 'approve', candidateIds: [5] });
+  await applyCandidateReviewActions(pool, 9, { action: 'create_iocs', candidateIds: [5] });
+  const loads = pool.queries.filter((q) => /^\s*SELECT/i.test(q.sql) && /FROM threat_report_candidates/.test(q.sql));
+  assert.ok(loads.length >= 3);
+  for (const q of loads) assert.match(q.sql, /AS has_linked_source_occurrence/);
+  const update = pool.writes.find((w) => /UPDATE threat_report_candidates SET review_status = 'approved'/.test(w.sql));
+  assert.match(update.sql, /lsl\.candidate_id = threat_report_candidates\.id/);
+});

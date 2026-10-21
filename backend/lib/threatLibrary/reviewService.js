@@ -49,6 +49,11 @@ import {
   parseReviewSelection,
   selectionConflictResult
 } from './candidateSelection.js';
+import { linkedSourceProvenanceColumnSql } from './indicatorMembership.js';
+
+// Linked IOC Source provenance for JS membership on rows loaded here; the
+// approve UPDATE gates on the same link-table EXISTS.
+const LINKED_PROVENANCE_SQL = linkedSourceProvenanceColumnSql('');
 
 async function findIocByTypeAndValue(pool, observableType, observable) {
   const type = String(observableType || '').toLowerCase();
@@ -128,7 +133,7 @@ async function emitAudit(opts, event) {
  */
 async function selectHighConfidenceIds(pool, reportId) {
   const { rows } = await pool.query(
-    `SELECT * FROM threat_report_candidates
+    `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates
      WHERE report_id = $1
        AND assessment = 'malicious'
        AND confidence IS NOT NULL AND confidence >= $2
@@ -287,7 +292,7 @@ async function applyAllMatchingSelection(pool, report, parsed, opts) {
 
 async function applyStatusChange(db, report, ids, action) {
   const { rows: selectedBefore } = await db.query(
-    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc, source_assertion, evidence
+    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc, source_assertion, evidence, ${LINKED_PROVENANCE_SQL}
      FROM threat_report_candidates
      WHERE report_id = $1 AND id = ANY($2::bigint[])`,
     [report.id, ids]
@@ -363,7 +368,7 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
   // Pre-update snapshot of the selection: the grouped audit event reports
   // changed vs already-in-state counts and the type distribution from it.
   const { rows: selectedBefore } = await pool.query(
-    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc, source_assertion, evidence
+    `SELECT id, candidate_type, review_status, assessment, match_state, is_ioc, source_assertion, evidence, ${LINKED_PROVENANCE_SQL}
      FROM threat_report_candidates
      WHERE report_id = $1 AND id = ANY($2::bigint[])`,
     [reportId, ids]
@@ -428,7 +433,7 @@ async function promoteContextOnlyCandidate(pool, report, ids, opts) {
   }
   const candidateId = ids[0];
   const { rows } = await pool.query(
-    `SELECT * FROM threat_report_candidates WHERE report_id = $1 AND id = ANY($2::bigint[])`,
+    `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates WHERE report_id = $1 AND id = ANY($2::bigint[])`,
     [report.id, [candidateId]]
   );
   const candidate = rows.find((r) => Number(r.id) === Number(candidateId)) || null;
@@ -462,7 +467,7 @@ async function promoteContextOnlyCandidate(pool, report, ids, opts) {
          evidence = COALESCE(evidence, '{}'::jsonb) || $3::jsonb,
          updated_at = NOW()
      WHERE report_id = $1 AND id = $2
-     RETURNING *`,
+     RETURNING *, ${LINKED_PROVENANCE_SQL}`,
     [report.id, candidateId, JSON.stringify(evidencePatch)]
   );
   const promoted = promotedRows?.[0] || null;
@@ -489,7 +494,7 @@ async function createIocsFromCandidates(pool, report, ids, opts, preloaded = nul
   const candidates = Array.isArray(preloaded)
     ? preloaded
     : (await pool.query(
-      `SELECT * FROM threat_report_candidates
+      `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates
        WHERE report_id = $1 AND id = ANY($2::bigint[])`,
       [report.id, ids]
     )).rows;
@@ -708,7 +713,7 @@ export async function finalizeReport(pool, reportId, opts = {}) {
   if (!isFinalizeAllowed(report)) return reviewNotReadyError(report);
 
   const { rows: candidates } = await pool.query(
-    `SELECT * FROM threat_report_candidates WHERE report_id = $1`,
+    `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates WHERE report_id = $1`,
     [reportId]
   );
   const pendingCount = candidates.filter((c) => isPendingActionableCandidate(c)).length;
