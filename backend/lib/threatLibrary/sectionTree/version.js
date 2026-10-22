@@ -21,8 +21,13 @@
  * v6 (31-report audit): a paragraph label that IS a formal IOC-section title
  * ("Indicators of Compromise (IoCs)") on a template without heading elements,
  * followed by a real inventory, establishes MODE A like a heading.
+ * v7 (22-report adjudication): a real heading whose own lead-in paragraph
+ * declares that this / the following section adds, lists or contains
+ * indicators opens publisher indicator scope with delegated-authority reading
+ * (operational clauses, sample statements, endpoints and rows assert; passing
+ * mentions do not).
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v6';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v7';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';

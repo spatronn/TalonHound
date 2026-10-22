@@ -260,10 +260,17 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
               // Delegated scope: only publisher-typed inventory placements are
               // rows; everything else is read for its relation (operational
               // clause / sample statement) and never asserts by shape alone.
-              const row = !isHttpExampleLine(text) && delegatedStructuralRow(c, next, text, value);
+              // A section whose lead-in declares it lists indicators (tl-section-
+              // tree-v7): its observables are the publisher's assertions —
+              // download commands and config dumps included — unless the text
+              // calls the value benign / legitimate.
+              const declared = block?.declared_indicator_section === true;
+              const row = declared
+                ? !textDescribesValueAsBenign(text, [value].filter(Boolean))
+                : !isHttpExampleLine(text) && delegatedStructuralRow(c, next, text, value);
               next.structural_row = row;
               next.row_shape = row;
-              next.zone_reason = 'section_tree_delegated_scope';
+              next.zone_reason = declared ? 'section_tree_declared_indicator_section' : 'section_tree_delegated_scope';
               delete next.asserted;
               delegatedOccurrences += 1;
               remappedOccurrences += 1;

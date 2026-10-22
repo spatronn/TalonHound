@@ -55,7 +55,7 @@ const values = (x) => x.candidates.map((c) => `${c.candidate_type}:${c.normalize
 const BODY = '<h2>Technical Analysis</h2><p>The loader decrypts its configuration and contacts the operator infrastructure listed below.</p>';
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v35');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v36');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v14');
 });
 

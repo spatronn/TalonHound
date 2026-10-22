@@ -230,6 +230,27 @@ function zoneForHeading(text, isRealHeading, blocks, i, chromeIds) {
   return { zone: z, role: role || null };
 }
 
+/**
+ * The section's own lead-in says it is an indicator section: "the following
+ * section adds new indicators …", "this appendix lists the IOCs …". A pointer
+ * at indicators elsewhere ("the indicators listed below") does not qualify.
+ */
+const DECLARED_INDICATOR_SECTION_RE =
+  /\b(?:this|the\s+following|the\s+below)\s+(?:section|appendix|table|list)\b[^.]{0,60}?\b(?:adds?|lists?|contains?|provides?|includes?|presents?)\b[^.]{0,30}?\b(?:indicators?|iocs?)\b/i;
+
+/** One of the first two content blocks after heading `i` is a declaring paragraph. */
+function declaresIndicatorSection(blocks, i, chromeIds) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < 2; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') return false;
+    seen += 1;
+    if (b.type === 'paragraph' && DECLARED_INDICATOR_SECTION_RE.test(textOf(b))) return true;
+  }
+  return false;
+}
+
 function nearestAuthoritative(stack) {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     if (stack[i].authoritative && AUTHORITATIVE.has(stack[i].zone)) return stack[i];
@@ -255,6 +276,8 @@ function annotateContentFields(b, stack) {
   b.section_path_ids = stack.map((s) => s.id);
   b.authoritative_ancestor_id = auth?.id || null;
   b.authoritative_zone = auth?.zone || null;
+  // Content of a section the publisher declared to be indicators.
+  b.declared_indicator_section = auth?.declared === true;
   if (auth?.zone) {
     b.tree_zone = auth.zone;
     b.negative_scope = false;
@@ -312,7 +335,16 @@ export function annotateSectionTree(doc, opts = {}) {
       continue;
     }
 
-    const { zone, role } = zoneForHeading(t, isRealHeading, blocks, i, chromeIds);
+    let { zone, role } = zoneForHeading(t, isRealHeading, blocks, i, chromeIds);
+    if (
+      isRealHeading &&
+      !(zone && (AUTHORITATIVE.has(zone) || NEGATIVE_ZONES.has(zone))) &&
+      declaresIndicatorSection(blocks, i, chromeIds)
+    ) {
+      zone = DELEGATED_IOC_ZONE;
+      role = 'declared_indicator_section';
+      pushTrace({ block_id: b.id, decision: 'open_declared_indicator_section', zone, reason: 'lead_in_declares_indicators' });
+    }
     const level = headingLevel(b, stack);
     const parentAuth = nearestAuthoritative(stack);
     const groupLabel = GROUP_LABEL_RE.test(t);
@@ -469,7 +501,9 @@ export function annotateSectionTree(doc, opts = {}) {
       zone: effectiveZone || null,
       role: role || null,
       authoritative: Boolean(effectiveZone && AUTHORITATIVE.has(effectiveZone)),
-      synthetic: !isRealHeading
+      synthetic: !isRealHeading,
+      // Subgroups nested in a declared indicator section keep its reading.
+      declared: role === 'declared_indicator_section' || (inheritAuth && parentAuth?.declared === true)
     };
     stack.push(node);
     if (node.authoritative) {

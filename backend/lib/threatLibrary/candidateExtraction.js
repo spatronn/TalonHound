@@ -222,8 +222,10 @@ export {
  * own type label names a mutex is a mutex artifact, never a file hash; an
  * absolute URL glued into code inside a typed IOC-table cell is that row's
  * observable (tableSemantics); "label: ftp://host" rows assert the host.
+ * v36: membership follows tl-section-tree-v7 — a section whose lead-in
+ * declares it adds / lists indicators is publisher indicator scope.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v35';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v36';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
