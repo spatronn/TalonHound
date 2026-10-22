@@ -68,8 +68,13 @@ import { isValidIpAddress } from '../publicIp.js';
  * argument (`reg.run(None)`) is code whatever the suffix; a scheme-less URL
  * whose host carries a port (`host.example:8080/path`) is a URL that keeps
  * its port.
+ * v14 (22-report audit): a scheme-less URL host may end in any delegated (PSL)
+ * TLD that is not a file extension / code word (`files.host.moe/x.dll`);
+ * unexpanded `$NAME$` / `%NAME%` / `<name>` / `[Name]` placeholders make a URL
+ * a template; URL boundaries are parenthesis-balanced, a "(?…)" / "(#…)"
+ * optional-part annotation and an escaped closing quote are not URL text.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v13';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v14';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -192,6 +197,23 @@ export function parseArtifactTypeLabel(label) {
     if (fam.re.test(norm)) return { kind: fam.kind };
   }
   return null;
+}
+
+/** Mutex vocabulary directly before a value ("creating a mutex X", "Mutex: X"). */
+const MUTEX_LABEL_BEFORE_RE =
+  /(?:mutex(?:es)?|mutant|semaphore)(?:\s+(?:names?|named|called|value|is|was))?\s*[:：=]?\s*["'“‘`(\[]?\s*$/i;
+
+/**
+ * True when the publisher names this hex value a mutex inline, right before
+ * the value on its own line. A mutex name is never a file digest.
+ * @param {string} line
+ * @param {string} value
+ */
+export function isMutexLabeledValue(line, value) {
+  const t = String(line || '');
+  const idx = t.toLowerCase().indexOf(String(value || '').toLowerCase());
+  if (idx <= 0) return false;
+  return MUTEX_LABEL_BEFORE_RE.test(t.slice(Math.max(0, idx - 48), idx));
 }
 
 /**
@@ -507,6 +529,58 @@ const ELIDED_VALUE_RE = /…|\[\s*(?:\.{2,}|…)\s*\]|\(\s*(?:\.{2,}|…)\s*\)/;
 const TEMPLATE_PLACEHOLDER_RE = /\$?\{[A-Za-z_][\w.-]{0,40}(?:\}|$)|%7B[A-Za-z_][\w.-]{0,40}(?:%7D|$)/i;
 
 /**
+ * Placeholders that only mean "unexpanded" once the value is URL-shaped
+ * (tl-type-resolver-v14): $FILE_NAME$, %NAME%, <file>, %3Cid%3E, /[VictimGUID]/.
+ * `%APPDATA%\x.exe` stays a filesystem path. `%NAME%` needs a non-hex
+ * character so percent-encoding (`%ABC%20`) never reads as a variable; `$5`
+ * (a price) is not `$NAME$`.
+ */
+const URL_TEMPLATE_PLACEHOLDER_RE = new RegExp([
+  /\$[A-Za-z_]\w{1,40}\$/.source,
+  /%(?=\w*[G-Zg-z_])[A-Za-z_]\w{2,40}%/.source,
+  /<[A-Za-z_][\w.-]{0,40}>/.source,
+  /%3C[A-Za-z_][\w.-]{0,40}%3E/.source,
+  /\/\[[A-Za-z_][\w.-]{2,40}(?:\]|$)/.source
+].join('|'), 'i');
+
+/**
+ * Parenthesis-balanced URL boundary (tl-type-resolver-v14). Publishers wrap
+ * URLs in prose parentheses, annotate an optional query as "(?…)", and quote
+ * URLs inside code with escaped quotes; none of that is URL text. Balanced
+ * path parentheses ("report_(final).pdf", "/admin/(login)") are kept.
+ * @param {string} urlish candidate URL text (refanged, no surrounding spaces)
+ */
+export function trimUrlBoundary(urlish) {
+  let v = String(urlish || '');
+  // Escaped closing quote inside code: `\"https://host/x\"`.
+  v = v.replace(/\\+["'`].*$|\\+$/, '');
+  // "(?…)" / "(#…)": an optional query / fragment annotation, never URL syntax.
+  const note = v.search(/\([?#]/);
+  if (note > 0) v = v.slice(0, note);
+  for (;;) {
+    const before = v;
+    v = v.replace(/[,.;:!?\]。，；‘’“”«»'"]+$/, '');
+    const opens = (v.match(/\(/g) || []).length;
+    const closes = (v.match(/\)/g) || []).length;
+    if (v.endsWith(')') && closes > opens) v = v.slice(0, -1);
+    else if (opens > closes) {
+      // An unmatched "(": everything from it on is prose or a delimiter.
+      let depth = 0;
+      let cut = -1;
+      for (let i = v.length - 1; i >= 0; i -= 1) {
+        if (v[i] === ')') depth += 1;
+        else if (v[i] === '(') {
+          if (depth === 0) { cut = i; break; }
+          depth -= 1;
+        }
+      }
+      if (cut > 0) v = v.slice(0, cut);
+    }
+    if (v === before) return v;
+  }
+}
+
+/**
  * Validate a candidate URL value. Only an absolute URL (scheme + valid host)
  * is a network URL; relative paths, routes and filesystem paths are kept as
  * non-network artifacts with the path and any prose-stated port preserved as
@@ -554,12 +628,16 @@ export function validateUrlCandidate(raw) {
     };
   }
 
+  if ((shape === 'absolute_url' || shape === 'scheme_less_url') && URL_TEMPLATE_PLACEHOLDER_RE.test(refanged)) {
+    return { ok: false, resolved_type: 'invalid', reason: 'template_placeholder' };
+  }
+
   if (shape === 'absolute_url') {
     if (trailing) {
       // Prose after the URL token: caller must split; never absorb it into the value.
       return { ok: false, resolved_type: 'invalid', reason: 'url_followed_by_prose', normalized_path: stripTrailingPunct(head), trailing_text: trailing, port: portFromProse(trailing) };
     }
-    const url = stripTrailingPunct(head);
+    const url = trimUrlBoundary(head);
     if (!ABSOLUTE_URL_RE.test(url)) return { ok: false, resolved_type: 'invalid', reason: 'unsupported_scheme_or_shape' };
     let parsed;
     try {
@@ -594,8 +672,12 @@ export function validateUrlCandidate(raw) {
     const hostIsIp = isValidIpAddress(host);
     if (!hostIsIp) {
       const labels = host.split('.');
-      // Scheme-less host/path is only a URL when the host part is unambiguously DNS-shaped.
-      if (suffixStrength(labels) !== 'strong') {
+      // Scheme-less host/path is only a URL when the host part is unambiguously
+      // DNS-shaped: a common / country suffix, or any other delegated (PSL)
+      // TLD that is neither a file extension nor a code word, spelled like a
+      // hostname rather than a mixed-case identifier (tl-type-resolver-v14).
+      const strength = suffixStrength(labels);
+      if (strength !== 'strong' && !(strength === 'plausible' && !hasCodeIdentifierShape(hostPart.split(':')[0]))) {
         return { ok: false, resolved_type: 'invalid', reason: 'scheme_less_url_host_not_dns_shaped' };
       }
     }
@@ -603,7 +685,7 @@ export function validateUrlCandidate(raw) {
       ok: true,
       resolved_type: RESOLVED_TYPES.URL,
       reason: 'scheme_less_url_with_dns_host',
-      url: stripTrailingPunct(head),
+      url: trimUrlBoundary(head),
       host,
       host_kind: hostIsIp ? 'ip' : 'domain',
       port

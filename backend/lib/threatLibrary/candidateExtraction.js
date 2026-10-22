@@ -43,6 +43,9 @@ import {
   RESOLVED_TYPES,
   buildTypeResolutionRecord,
   hasDelegatedDnsSuffix,
+  isMutexLabeledValue,
+  parseArtifactTypeLabel,
+  trimUrlBoundary,
   validateCanonicalIocValue,
   validateUrlCandidate
 } from './observableTypeResolver.js';
@@ -214,8 +217,13 @@ export {
  * v34: an origin URL (pathname "/") with a longer same-origin sibling is an
  * incomplete prefix unless the publisher also listed that origin in an
  * explicit IOC inventory — path IOCs never authorize a broader root alone.
+ * v35: URL boundaries are parenthesis-balanced (a "(?…)" optional-part note
+ * and an escaped closing quote are not URL text); a hash-shaped value whose
+ * own type label names a mutex is a mutex artifact, never a file hash; an
+ * absolute URL glued into code inside a typed IOC-table cell is that row's
+ * observable (tableSemantics); "label: ftp://host" rows assert the host.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v34';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v35';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -405,13 +413,15 @@ const IPV6_RE =
 const IPV6_LOOPBACK_RE = /(?<![0-9a-fA-F:])::1(?![0-9a-fA-F:])/g;
 // Typographic quotes / guillemets never occur raw inside a URL (they are
 // percent-encoded); in prose they close a quoted URL ("“https://x/y.exe”").
-const URL_RE = /\bhttps?:\/\/[^\s<>"'`)\]‘’“”«»]+/gi;
+// ")" is matched and then balanced by trimUrlBoundary, so path parentheses
+// ("report_(final).pdf") survive while prose / annotation parentheses do not.
+const URL_RE = /\bhttps?:\/\/[^\s<>"'`\]‘’“”«»]+/gi;
 /**
  * Scheme-less network resource: DNS-shaped host + path ("js.cache-mcp.com/layer.js").
  * The publisher gave no scheme, so none is invented: the exact host/path is
  * the value. Not preceded by a scheme separator, "@" or another label.
  */
-const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`)\]，。；‘’“”«»]+)/gi;
+const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`\]，。；‘’“”«»]+)/gi;
 const URL_SCHEME_PREFIX_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
 
@@ -449,10 +459,6 @@ export const OCCURRENCE_FORMS = Object.freeze({
   /** Domain part of an email address: parsed metadata of that address, never a row. */
   EMAIL_DOMAIN: 'email_domain'
 });
-
-function stripUrlTrailingPunct(urlish) {
-  return String(urlish || '').replace(/[),.;:!?\]。，；‘’“”«»]+$/g, '');
-}
 
 /**
  * The publisher's own spelling of a refanged token (defanged host dots kept),
@@ -827,6 +833,28 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         lastAddRejection = 'credential_labeled_hex';
         countReason(typeDiag.rejected_values, lastAddRejection);
         return null;
+      }
+      // The value's own type label (sub-heading / table type cell) names a
+      // mutex: a hex mutex name is not a file digest, whatever its length.
+      // Only the mutex family is decisive — "Configuration" / "Registry"
+      // headings can sit over genuine file hashes. A declared hash type wins.
+      const ownLabel = extra.typeLabel || block?.type_label || null;
+      const declaredHash = /^(?:md5|sha1|sha256|hash)$/.test(String(extra.declaredType || block?.declared_type_label || ''));
+      if (!declaredHash && ((ownLabel && parseArtifactTypeLabel(ownLabel)?.kind === 'mutex') || isMutexLabeledValue(line, n.normalizedValue))) {
+        countReason(typeDiag.excluded_reasons, 'mutex_type_label');
+        return materialize({
+          candidateType: RESOLVED_TYPES.TECHNICAL_ARTIFACT,
+          normalizedValue: n.normalizedValue,
+          originalValue: extra.originalValue || n.originalValue,
+          n,
+          block,
+          extra,
+          typingMeta: { resolved_type: RESOLVED_TYPES.TECHNICAL_ARTIFACT, typing_reason: 'mutex_type_label' },
+          isIoc: false,
+          artifactKind: 'mutex',
+          typingSignals: null,
+          syntaxGuess: n.candidateType
+        });
       }
       // Build-ids, certificate thumbprints, vhash / fuzzy hashes, keys and
       // digests of trivial inputs share the hex shape but name no file: keep
@@ -1300,7 +1328,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // Code interpolation ends the literal URL: `…/read?domain=${encodeURIComponent(d)}`
       // is the publisher URL "…/read?domain=" followed by a template expression.
       const literal = m[0].split('${')[0];
-      const url = stripUrlTrailingPunct(literal);
+      const url = trimUrlBoundary(literal);
       if (!url) continue;
       spans.push([m.index, m.index + url.length]);
       const host = hostnameFromUrl(url);
@@ -1330,7 +1358,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // becomes a domain / artifact of its own.
     for (const m of text.matchAll(HOST_PATH_RE)) {
       const start = m.index;
-      const raw = stripUrlTrailingPunct(m[0]);
+      const raw = trimUrlBoundary(m[0]);
       if (!raw || insideAnySpan(spans, start, start + raw.length)) continue;
       const v = validateUrlCandidate(raw);
       if (!v.ok || v.reason !== 'scheme_less_url_with_dns_host' || v.host_kind !== 'domain') {

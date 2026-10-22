@@ -15,7 +15,7 @@
 
 import { collapseLetterSpacing, isObservableOnlyLine } from './pdfLayout.js';
 import { looksDefanged, refangTextForExtraction } from './defang.js';
-import { FILE_EXT_HINT, hasDelegatedDnsSuffix, suffixStrength, validateUrlCandidate } from './observableTypeResolver.js';
+import { FILE_EXT_HINT, hasDelegatedDnsSuffix, suffixStrength, trimUrlBoundary, validateUrlCandidate } from './observableTypeResolver.js';
 
 /**
  * True when a dotted token is a filename-shaped annotation (loader.exe,
@@ -638,6 +638,22 @@ const RECORD_FIELD_PREFIX_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]`, 'i
 const OTHER_OBSERVABLE_RE =
   /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
 
+/** Separator-only tokens between values on one publisher row. */
+const ROW_SEPARATOR_TOKEN_RE = /^(?:[-–—=]+>?|→|⇒|:)$/;
+
+/**
+ * Trailing row punctuation off one token; URL-shaped tokens keep balanced
+ * path parentheses ("…/admin/(login)") through the shared URL boundary.
+ * @param {string} tok
+ */
+function cleanRowToken(tok) {
+  const t = String(tok || '');
+  return t.includes('/') ? trimUrlBoundary(t) : t.replace(/[.,;:)\]。，；]+$/g, '');
+}
+
+/** Network schemes that are not an Indicator URL type; the host they carry is. */
+const NON_HTTP_NETWORK_SCHEME_RE = /^(?:ftps?|sftp|scp|smb|ssh|telnet|tcp|udp|irc|ldaps?):\/\//i;
+
 const OBSERVABLE_TOKEN_RE =
   /^(?:https?:\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
 
@@ -689,7 +705,9 @@ export function isAnnotatedIndicatorRowLine(text) {
   const tokens = t.split(/\s+/).filter(Boolean);
   if (tokens.length < 1 || tokens.length > 6) return false;
   for (const tok of tokens) {
-    const clean = tok.replace(/[.,;:)\]。，；]+$/g, '');
+    // "FTP Server: ftp://host": a non-HTTP network scheme only carries its
+    // host (FTP URLs are not an Indicator type); the host is the row value.
+    const clean = cleanRowToken(tok).replace(NON_HTTP_NETWORK_SCHEME_RE, '');
     if (!clean) continue;
     const looksObservable =
       /^[a-f0-9]{32}$/i.test(clean) ||
@@ -714,12 +732,13 @@ export function isAnnotatedIndicatorRowLine(text) {
 export function isObservableListLine(text) {
   const t = refangTextForExtraction(String(text || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
   if (!t || t.length > 2000) return false;
-  const tokens = t.split(/[\s,;|，；]+/).filter(Boolean);
+  // Pure separators between values ("<hash> – <url>", "a → b") are layout.
+  const tokens = t.split(/[\s,;|，；]+/).filter((tok) => tok && !ROW_SEPARATOR_TOKEN_RE.test(tok));
   if (!tokens.length) return false;
   // "filename HASH" rows are one hash indicator with a file annotation, not a
   // two-token observable list (otherwise loader.exe / wg-ca.crt become domains).
   return tokens.every((tok) => {
-    const clean = tok.replace(/[.,;)\]。，；]+$/, '');
+    const clean = cleanRowToken(tok);
     if (isSchemeLessUrlToken(clean)) return true;
     if (isFilenameShapedToken(clean)) return false;
     return OBSERVABLE_TOKEN_RE.test(clean);
