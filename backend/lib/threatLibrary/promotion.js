@@ -116,7 +116,29 @@ export function classifyPromoteEligibility(candidate) {
       detail: type === 'cidr' ? CIDR_UNSUPPORTED_DETAIL : `Type ${type || 'unknown'} cannot be stored as an IOC record.`
     };
   }
+  // Promote re-classifies and then runs Create IOCs, which only materializes
+  // report Indicators. Decide on the row as it would be after promotion, before
+  // anything is written: a MODE A narrative value outside the publisher's IOC
+  // scope can never be created, so promoting it would half-apply.
+  if (!isUnionReportIndicatorMember(asPromotedRow(candidate))) {
+    return {
+      ok: false,
+      code: 'promote_outside_publisher_scope',
+      detail: 'The publisher curated its IOC set and this value is outside it; promotion cannot create an IOC for it.'
+    };
+  }
   return { ok: true };
+}
+
+/** The review fields promote_to_ioc writes, applied to a copy (never persisted). */
+function asPromotedRow(candidate) {
+  return {
+    ...candidate,
+    review_status: 'approved',
+    assessment: 'suspicious',
+    is_ioc: true,
+    match_state: candidate.matched_ioc_id ? 'existing' : 'new'
+  };
 }
 
 export function isContextOrIgnored(candidate) {
