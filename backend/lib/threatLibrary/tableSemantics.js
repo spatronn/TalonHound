@@ -20,7 +20,21 @@
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
 import { resolveDottedTokenType } from './candidateTyping.js';
-import { NON_NETWORK_RESOLVED_TYPES } from './observableTypeResolver.js';
+import { NON_NETWORK_RESOLVED_TYPES, trimUrlBoundary } from './observableTypeResolver.js';
+
+/**
+ * The absolute http(s) URL embedded after other text in one whitespace-free
+ * token (a call argument or quoted string in a command cell), boundary-trimmed.
+ * @param {string} token refanged cell token
+ * @returns {string|null}
+ */
+function embeddedAbsoluteUrl(token) {
+  const t = String(token || '');
+  const at = t.search(/https?:\/\//i);
+  if (at <= 0) return null;
+  const url = trimUrlBoundary(t.slice(at).replace(/["'`].*$/, ''));
+  return /^https?:\/\/[^/\s]+/i.test(url) ? url : null;
+}
 
 /**
  * v3: dense headerless observable grids (e.g. a narrative table of public
@@ -336,6 +350,16 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
         const retry = parseToken(stripped, declared, ctx);
         if (retry?.ok) {
           tok = stripped;
+          parsed = retry;
+        }
+      }
+      // A URL glued into code ("…DownloadString('https://h/x.ps1')"): only the
+      // absolute URL span is the value — never the call around it.
+      const embedded = parsed?.ok ? null : embeddedAbsoluteUrl(rawTok);
+      if (embedded) {
+        const retry = parseToken(embedded, declared, ctx);
+        if (retry?.ok && retry.candidate_type === 'url') {
+          tok = embedded;
           parsed = retry;
         }
       }

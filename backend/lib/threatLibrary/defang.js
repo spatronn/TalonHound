@@ -37,6 +37,16 @@ export function unescapeMarkdownDefang(text) {
   return String(text || '').replace(MD_ESCAPED_DEFANG_RE, (_, a, b) => `[${a ?? b}]`);
 }
 
+/**
+ * Zero-width / invisible format characters (ZWSP, ZWNJ, ZWJ, word joiner,
+ * BOM, soft hyphen) pasted into publisher HTML: never part of an observable,
+ * and they must not glue a label to a value ("Server: ​ftp://host").
+ * @param {string} text
+ */
+export function stripInvisibleFormatChars(text) {
+  return String(text || '').replace(/[­​-‍⁠﻿]/g, '');
+}
+
 function refangSchemes(text) {
   return String(text || '')
     .replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'))
@@ -48,7 +58,7 @@ function refangSchemes(text) {
  * @param {string} value
  */
 export function refangObservable(value) {
-  let v = String(value || '').trim();
+  let v = stripInvisibleFormatChars(String(value || '')).trim();
   if (!v) return '';
   v = refangSchemes(unescapeMarkdownDefang(v));
   v = refangDots(v);
@@ -64,7 +74,7 @@ export function refangObservable(value) {
  * @param {string} text
  */
 export function refangTextForExtraction(text) {
-  let t = refangSchemes(unescapeMarkdownDefang(text));
+  let t = refangSchemes(unescapeMarkdownDefang(stripInvisibleFormatChars(String(text ?? ''))));
   t = refangDots(t);
   t = t.replace(BRACKET_COLON_RE, ':');
   t = t.replace(/\bmeow:\/\//gi, 'http://');
