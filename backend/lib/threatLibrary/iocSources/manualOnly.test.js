@@ -87,9 +87,18 @@ test('the Add Source URL route stays the manual creation entry point and checks 
 });
 
 test('IOC Source lifecycle stamps the analyst public id that resolveActor returns (publicId)', () => {
+  // Approve/dismiss live in analystActions (shared by HTTP + MCP); the route
+  // only resolves the actor and delegates. The stamp must still use
+  // resolveActor's publicId (not public_id alone).
   const routes = read(path.join(backendRoot, 'routes/threatLibrary.js'));
+  const actions = read(path.join(here, 'analystActions.js'));
+  assert.match(routes, /approveLinkedIocSource\(/);
+  assert.match(routes, /dismissLinkedIocSource\(/);
   assert.doesNotMatch(routes, /(requestedBy|_by): actor\?\.public_id/, 'resolveActor exposes publicId, not public_id');
-  assert.match(routes, /approved_by: actorPublicId\(actor\)/);
-  assert.match(routes, /dismissed_by: actorPublicId\(actor\)/);
+  assert.doesNotMatch(actions, /(approved_by|dismissed_by): actor\?\.public_id/);
+  assert.match(actions, /approved_by: actorPublicId\(opts\.actor\)/);
+  assert.match(actions, /dismissed_by: actorPublicId\(opts\.actor\)/);
+  assert.match(actions, /function actorPublicId\(actor\) \{\s*return actor\?\.publicId \|\| actor\?\.public_id \|\| null;/);
+  // Route-local queue jobs still use the same publicId helper for requestedBy.
   assert.match(routes, /function actorPublicId\(actor\) \{\s*return actor\?\.publicId \|\| actor\?\.public_id \|\| null;/);
 });
