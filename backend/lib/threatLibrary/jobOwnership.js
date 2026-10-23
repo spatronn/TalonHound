@@ -63,21 +63,31 @@ export function startJobHeartbeat(pool, { jobId, ownerToken, onLost, intervalMs 
     log.warn('job ownership lost', { jobId, reason });
     try { onLost(reason); } catch { /* ignore */ }
   };
+  // Stop before a recovery pass could consider this owner stale — whether the
+  // heartbeat failed or is still hanging.
+  const lossDeadlineMs = Math.max(intervalMs, staleMs - 2 * intervalMs);
+  let beating = false;
   const timer = setInterval(async () => {
     if (stopped || lost) return;
+    if (Date.now() - lastConfirmedAt >= lossDeadlineMs) {
+      fireLost('heartbeat_unconfirmed');
+      return;
+    }
+    if (beating) return;
+    beating = true;
     try {
       const res = await pool.query(
         `UPDATE threat_library_jobs SET heartbeat_at = NOW()
          WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'`,
         [jobId, ownerToken]
       );
-      if (stopped) return;
+      if (stopped || lost) return;
       if (!res.rowCount) fireLost('owner_changed_or_job_ended');
       else lastConfirmedAt = Date.now();
     } catch (err) {
-      // Stop before a recovery pass could consider this owner stale.
-      if (Date.now() - lastConfirmedAt > staleMs - 2 * intervalMs) fireLost('heartbeat_unconfirmed');
-      else log.warn('job heartbeat failed; retrying', { jobId, error: err?.message });
+      log.warn('job heartbeat failed; retrying', { jobId, error: err?.message });
+    } finally {
+      beating = false;
     }
   }, intervalMs);
   if (typeof timer.unref === 'function') timer.unref();

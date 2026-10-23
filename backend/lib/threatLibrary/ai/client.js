@@ -22,6 +22,15 @@ const log = createServiceLogger('threat-library-ai');
 /** Bound on waiting for a cancelled request's socket to close before the slot is released. */
 export const CANCEL_CLOSE_WAIT_MS = 5000;
 
+/**
+ * When a cancelled request's socket close is not confirmed within
+ * CANCEL_CLOSE_WAIT_MS, the slot stays held (its lease keeps heartbeating)
+ * until the close is observed or this bound passes, so the next holder never
+ * overlaps a request the provider may still be executing. The caller is not
+ * blocked: the error is reported immediately.
+ */
+export const CANCEL_UNCONFIRMED_HOLD_MS = 60_000;
+
 /** Provider-side queue time (ms) above which a slot holder reports residual contention. */
 export const PROVIDER_CONTENTION_THRESHOLD_MS = 5000;
 
@@ -421,6 +430,7 @@ export function providerQueueMs(metrics) {
 }
 
 const KNOWN_FAILURE_CODES = new Set(Object.values(AI_FAILURE_CODES));
+const PENDING_CLOSE = Symbol('pendingClose');
 
 function mapTransportError(err) {
   if (err?.code && KNOWN_FAILURE_CODES.has(err.code)) return err;
@@ -524,11 +534,30 @@ export async function callAiProvider(settings, messages, hooks = {}) {
   }
 
   try {
-    return await executeProviderCall(settings, messages, hooks, { policy, endpoint, lease, slotWaitMs, telemetry });
-  } finally {
-    // executeProviderCall has already aborted and awaited the socket close on
-    // failure, so the next holder never overlaps a still-running request.
+    const result = await executeProviderCall(settings, messages, hooks, { policy, endpoint, lease, slotWaitMs, telemetry });
     if (lease) await lease.release();
+    return result;
+  } catch (err) {
+    if (lease) {
+      // executeProviderCall aborted the request and waited for the socket to
+      // close. Unconfirmed close: keep the slot until it is (bounded).
+      const pendingClose = err?.[PENDING_CLOSE];
+      if (err?.timing?.cancel_outcome === 'unconfirmed' && pendingClose) {
+        const holdMs = Number(policy.cancel_unconfirmed_hold_ms) || CANCEL_UNCONFIRMED_HOLD_MS;
+        let timer;
+        Promise.race([
+          pendingClose.then(() => 'closed', () => 'closed'),
+          new Promise((resolve) => { timer = setTimeout(() => resolve('hold_expired'), holdMs); })
+        ]).then((outcome) => {
+          clearTimeout(timer);
+          log.warn('inference slot released after unconfirmed cancellation', { ...telemetry, outcome });
+          return lease.release();
+        }).catch(() => {});
+      } else {
+        await lease.release();
+      }
+    }
+    throw err;
   }
 }
 
@@ -688,7 +717,10 @@ async function executeProviderCall(settings, messages, hooks, ctx) {
     // releases the inference slot): abort destroys the socket, the provider
     // sees the close and drops the work.
     if (!controller.signal.aborted) controller.abort(err);
-    const cancelOutcome = await waitForClose(call?.closed, CANCEL_CLOSE_WAIT_MS);
+    const cancelOutcome = await waitForClose(call?.closed, Number(policy.cancel_close_wait_ms) || CANCEL_CLOSE_WAIT_MS);
+    if (cancelOutcome === 'unconfirmed' && call?.closed) {
+      Object.defineProperty(err, PENDING_CLOSE, { value: call.closed, enumerable: false, configurable: true });
+    }
     err.timing = {
       ...(err.timing || {}),
       total_ms: Date.now() - requestStartedAt,

@@ -202,8 +202,20 @@ export function createInferenceScheduler(pool, options = {}) {
         try { cb(capacityError(AI_FAILURE_CODES.AI_CAPACITY_LEASE_LOST, undefined, { lease_lost_reason: reason })); } catch { /* ignore */ }
       }
     };
+    // The row expires for other processes at (last confirmed renewal +
+    // holdLeaseMs). Give the slot up two heartbeats before that, whether the
+    // renewal failed or is still hanging (pool exhausted, network stall), so
+    // two holders never overlap.
+    const lossDeadlineMs = Math.max(cfg.heartbeatMs, cfg.holdLeaseMs - 2 * cfg.heartbeatMs);
+    let renewing = false;
     const timer = setInterval(async () => {
       if (released || lost) return;
+      if (Date.now() - lastConfirmedAt >= lossDeadlineMs) {
+        markLost('heartbeat_unconfirmed');
+        return;
+      }
+      if (renewing) return; // never stack renewals behind a slow query
+      renewing = true;
       try {
         const res = await pool.query(
           `UPDATE threat_library_ai_capacity_leases
@@ -211,13 +223,13 @@ export function createInferenceScheduler(pool, options = {}) {
            WHERE token = $1::uuid AND state = 'holding'`,
           [token, cfg.holdLeaseMs]
         );
-        if (released) return;
+        if (released || lost) return;
         if (!res.rowCount) markLost('lease_row_missing');
         else lastConfirmedAt = Date.now();
       } catch (err) {
-        // Give up before the row can expire for others (expiry = last confirm + holdLeaseMs).
-        if (Date.now() - lastConfirmedAt > cfg.holdLeaseMs - cfg.heartbeatMs) markLost('heartbeat_unconfirmed');
-        else log.warn('AI capacity heartbeat failed; retrying', { error: err?.message });
+        log.warn('AI capacity heartbeat failed; retrying', { error: err?.message });
+      } finally {
+        renewing = false;
       }
     }, cfg.heartbeatMs);
     if (typeof timer.unref === 'function') timer.unref();

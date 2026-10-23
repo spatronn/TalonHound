@@ -268,3 +268,69 @@ test('queue position is reported to waiters (progress UI) and snapshot shows liv
     await cleanup(resourceKey);
   }
 });
+
+/** Pool whose lease-renewal queries fail or hang on demand; everything else is real. */
+function faultyRenewalPool(mode) {
+  return {
+    connect: () => pool.connect(),
+    query: (sql, params) => {
+      if (mode.value && /SET lease_expires_at = NOW\(\)[\s\S]*state = 'holding'/.test(String(sql)) && !/SET state = 'holding'/.test(String(sql))) {
+        if (mode.value === 'throw') return Promise.reject(new Error('connection terminated'));
+        if (mode.value === 'hang') return new Promise(() => {});
+      }
+      return pool.query(sql, params);
+    }
+  };
+}
+
+for (const fault of ['throw', 'hang']) {
+  test(`lease renewal ${fault === 'throw' ? 'failing' : 'hanging'}: the holder gives the slot up before its lease can expire for others`, opts, async () => {
+    const resourceKey = key();
+    const mode = { value: null };
+    const holderScheduler = createInferenceScheduler(faultyRenewalPool(mode), FAST);
+    const other = createInferenceScheduler(pool, FAST);
+    try {
+      const holder = await holderScheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000 });
+      const acquiredAt = Date.now();
+      mode.value = fault;
+      let lostAt = null;
+      holder.onLost(() => { lostAt = Date.now(); });
+      // A competitor polls the whole time; it can only get the slot once the row expires.
+      const competitor = other.acquire({ resourceKey, capacity: 1, maxWaitMs: 10_000 });
+      const lease = await competitor;
+      const otherAt = Date.now();
+      assert.ok(lostAt, 'holder learned it lost the lease');
+      assert.ok(lostAt < otherAt, `loss (${lostAt - acquiredAt}ms) precedes the competitor's grant (${otherAt - acquiredAt}ms)`);
+      assert.ok(otherAt - lostAt >= FAST.heartbeatMs, 'at least one heartbeat of margin');
+      await lease.release();
+      mode.value = null;
+      await holder.release();
+    } finally {
+      await cleanup(resourceKey);
+    }
+  });
+}
+
+test('sustained contention: three reports issuing back-to-back requests are served round-robin, none starves', opts, async () => {
+  const resourceKey = key();
+  const scheduler = createInferenceScheduler(pool, FAST);
+  const grants = [];
+  try {
+    await Promise.all(['A', 'B', 'C'].map(async (report, idx) => {
+      await sleep(idx * 30);
+      for (let n = 0; n < 5; n += 1) {
+        const lease = await scheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 20_000, reportId: idx });
+        grants.push(report);
+        await sleep(25);
+        await lease.release(); // immediately re-queues for its next chunk
+      }
+    }));
+    assert.equal(grants.length, 15);
+    // Once all three are queued, no report is granted twice in a row while others wait.
+    const steady = grants.slice(2, 12);
+    for (let i = 1; i < steady.length; i += 1) assert.notEqual(steady[i], steady[i - 1], `grants ${grants.join('')}`);
+    for (const r of ['A', 'B', 'C']) assert.equal(grants.filter((g) => g === r).length, 5);
+  } finally {
+    await cleanup(resourceKey);
+  }
+});

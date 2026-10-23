@@ -242,3 +242,40 @@ test('residual provider contention while holding the slot is detected and report
     await ollama.close();
   }
 });
+
+test('unconfirmed cancellation: the slot stays held until the socket close is seen (bounded), caller not blocked', async () => {
+  const scheduler = createMemoryInferenceScheduler();
+  let closeSocket;
+  // A transport whose request never answers and whose socket close is delayed.
+  const stuckTransport = () => ({
+    response: new Promise(() => {}),
+    closed: new Promise((resolve) => { closeSocket = () => resolve('closed'); })
+  });
+  const p = policy({ first_token_timeout_ms: 100, cancel_close_wait_ms: 50, cancel_unconfirmed_hold_ms: 5000 });
+  const started = Date.now();
+  const err = await callAiProvider(settings('http://127.0.0.1:9'), MSG, { policy: p, scheduler, transport: stuckTransport }).catch((e) => e);
+  assert.equal(err.code, AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
+  assert.equal(err.timing.cancel_outcome, 'unconfirmed');
+  assert.ok(Date.now() - started < 1000, 'the error is reported without waiting for the hold');
+  assert.equal(scheduler.stats().holding, 1, 'slot still held: the provider may still be executing');
+  // The next request must wait until the close is observed.
+  let nextAcquiredAt = null;
+  const next = scheduler.acquire({ capacity: 1, maxWaitMs: 5000 }).then((lease) => { nextAcquiredAt = Date.now(); return lease; });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(nextAcquiredAt, null);
+  const closedAt = Date.now();
+  closeSocket();
+  const lease = await next;
+  assert.ok(nextAcquiredAt >= closedAt);
+  await lease.release();
+});
+
+test('unconfirmed cancellation with no close ever: the slot is released after the bounded hold', async () => {
+  const scheduler = createMemoryInferenceScheduler();
+  const neverClosed = () => ({ response: new Promise(() => {}), closed: new Promise(() => {}) });
+  const p = policy({ first_token_timeout_ms: 100, cancel_close_wait_ms: 50, cancel_unconfirmed_hold_ms: 300 });
+  await callAiProvider(settings('http://127.0.0.1:9'), MSG, { policy: p, scheduler, transport: neverClosed }).catch(() => {});
+  assert.equal(scheduler.stats().holding, 1);
+  await new Promise((r) => setTimeout(r, 450));
+  assert.equal(scheduler.stats().holding, 0, 'no permanent leak');
+});

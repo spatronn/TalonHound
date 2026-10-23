@@ -387,3 +387,82 @@ test('two reports analysed concurrently through the gate: both succeed, provider
     await ollama.close();
   }
 });
+
+test('job heartbeat hanging (no error): ownership loss is declared before a recovery pass could take the job', opts, async () => {
+  const { report } = await newReport();
+  const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+  const token = crypto.randomUUID();
+  await claimJobOwnership(pool, { jobId: job.id, ownerToken: token });
+  const hangingPool = { query: () => new Promise(() => {}) };
+  const staleMs = 600;
+  const intervalMs = 50;
+  let lostAt = null;
+  const started = Date.now();
+  const hb = startJobHeartbeat(hangingPool, { jobId: job.id, ownerToken: token, intervalMs, staleMs, onLost: () => { lostAt = Date.now(); } });
+  await sleep(staleMs + 100);
+  hb.stop();
+  assert.ok(lostAt, 'loss declared even though the heartbeat query never returned');
+  assert.ok(lostAt - started < staleMs, `declared after ${lostAt - started}ms, stale window ${staleMs}ms`);
+});
+
+test('dispatch: two unclaimed pipeline jobs of one report are never both claimed in one pass', opts, async () => {
+  const { report } = await newReport();
+  const a = await createJob(pool, { reportId: report.id, jobType: 'retry' });
+  const b = await createJob(pool, { reportId: report.id, jobType: 'refresh_extraction' });
+  const enqueued = [];
+  await dispatchQueuedThreatLibraryAnalyses(pool, { enqueue: async (job) => { enqueued.push(job.id); return { id: `bull-${job.id}` }; }, limitOverride: 4 });
+  const mine = enqueued.filter((id) => id === a.id || id === b.id);
+  assert.deepEqual(mine, [a.id], 'oldest claimed, the duplicate waits');
+  // While the first is claimed, a later pass does not start the second either.
+  await dispatchQueuedThreatLibraryAnalyses(pool, { enqueue: async (job) => { enqueued.push(job.id); return { id: `bull-${job.id}` }; }, limitOverride: 4 });
+  assert.ok(!enqueued.includes(b.id));
+});
+
+for (const takeoverAt of ['mid_chunks', 'during_synthesis']) {
+  test(`stale owner (${takeoverAt}): after another worker takes the job, the old run writes no candidates, entities or terminal status`, opts, async () => {
+    const { report, extracted } = await newReport('pending');
+    const before = await candidateSnapshot(report.id);
+    const chunks = buildAnalysisChunks(extracted.document, { maxInputChars: 1000 });
+    assert.ok(chunks.length >= 2);
+    const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+    const mine = crypto.randomUUID();
+    await claimJobOwnership(pool, { jobId: job.id, ownerToken: mine });
+    // Request number at which another worker takes over (stalled-owner takeover).
+    const takeoverRequest = takeoverAt === 'mid_chunks' ? 1 : chunks.length + 1;
+    const ollama = await startMockOllama({
+      capacity: 1,
+      plan: (r) => {
+        if (r.id === takeoverRequest) {
+          pool.query(`UPDATE threat_library_jobs SET owner_token = $2::uuid, heartbeat_at = NOW() WHERE id = $1`, [job.id, crypto.randomUUID()]).catch(() => {});
+        }
+        return { promptEvalMs: 40, genMs: 10 };
+      }
+    });
+    await pool.query(
+      `UPDATE threat_library_ai_settings SET enabled = true, provider = 'ollama', base_url = $1, model = 'qwen3.5:9b', max_input_chars = 1000, max_concurrent_ai_requests = 1 WHERE id = 1`,
+      [ollama.baseUrl]
+    );
+    const scheduler = createInferenceScheduler(pool, { pollMs: 25, waitLeaseMs: 1000, holdLeaseMs: 3000, heartbeatMs: 500 });
+    // The worker's fence (threat-library-worker.js assertOwnership).
+    const assertOwnership = async () => {
+      const owned = await pool.query(`SELECT 1 FROM threat_library_jobs WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'`, [job.id, mine]);
+      if (!owned.rowCount) throw Object.assign(new Error('lost'), { code: 'job_ownership_lost' });
+    };
+    try {
+      const result = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze', assertOwnership }, { inferenceScheduler: scheduler });
+      assert.equal(result.ok, false, JSON.stringify(result));
+      assert.equal(result.interrupted, true);
+      assert.equal(result.code, 'job_ownership_lost');
+      const rep = (await pool.query(`SELECT analysis_status, failure_code, finalized_at FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+      assert.ok(!['failed', 'review_required'].includes(rep.analysis_status), `status ${rep.analysis_status}`);
+      assert.equal(rep.failure_code, null);
+      assert.equal(rep.finalized_at, null);
+      assert.deepEqual(await candidateSnapshot(report.id), before, 'no candidate writes from the stale owner');
+      assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM threat_report_entities WHERE report_id = $1`, [report.id])).rows[0].n, 0);
+      const jobRow = (await pool.query(`SELECT status FROM threat_library_jobs WHERE id = $1`, [job.id])).rows[0];
+      assert.equal(jobRow.status, 'running', 'the new owner keeps the job');
+    } finally {
+      await ollama.close();
+    }
+  });
+}

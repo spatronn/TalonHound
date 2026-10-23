@@ -1250,11 +1250,17 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       : { jobType: mode, restoreStatus, ...(membershipPolicy ? { membershipPolicy } : {}) };
     let jobRow = null;
     try {
-      jobRow = await createJob(pool, {
+      // Same per-report serialization as Retry: never a second live pipeline job.
+      const exclusive = await createExclusivePipelineJob(pool, {
         reportId: report.id,
         jobType: mode,
         requestedBy: (await actorOf(req))?.publicId
       });
+      if (!exclusive.created) {
+        // A concurrent request created the job first; it owns the report status.
+        return alreadyRunning(await getReportByPublicId(pool, req.params.publicId));
+      }
+      jobRow = exclusive.job;
       await scheduleAnalysis(report.id, jobRow, dispatch, progress);
     } catch (err) {
       // Nothing ran: the committed report state is untouched, hand it back.

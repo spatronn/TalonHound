@@ -242,7 +242,13 @@ export async function dispatchQueuedThreatLibraryAnalyses(pool, opts = {}) {
       [ANALYSIS_JOB_TYPES, available, REPORT_PIPELINE_JOB_TYPES, OCCUPIED_JOB_STATUSES]
     );
 
+    // Two unclaimed pipeline jobs of one report can both be in this snapshot
+    // (legacy rows, a creator outside createExclusivePipelineJob): claim one.
+    const claimedReports = new Set();
     for (const job of candidates) {
+      const pipelineJob = REPORT_PIPELINE_JOB_TYPES.includes(job.job_type);
+      if (pipelineJob && claimedReports.has(job.report_id)) continue;
+      if (pipelineJob) claimedReports.add(job.report_id);
       const extra = dispatchExtraFromJob(job);
       const bull = await enqueue({ ...job, ...extra });
       if (!bull?.id && bull?.id !== 0) {

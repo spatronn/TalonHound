@@ -138,6 +138,16 @@ const worker = new Worker(
       ownerToken,
       onLost: () => controller.abort(aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST))
     });
+    // Write fence for the pipeline: confirms in PostgreSQL that this delivery
+    // still owns the job before chunk calls and before persistent writes.
+    const assertOwnership = async () => {
+      if (heartbeat.lost) throw aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
+      const owned = await pool.query(
+        `SELECT 1 FROM threat_library_jobs WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'`,
+        [jobId, ownerToken]
+      );
+      if (!owned.rowCount) throw aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
+    };
     try {
       const result = await runThreatLibraryJob(pool, {
         reportId,
@@ -149,7 +159,8 @@ const worker = new Worker(
         restoreStatus: job.data?.restoreStatus,
         membershipPolicy: job.data?.membershipPolicy,
         jobPayload: job.data?.jobPayload,
-        signal: controller.signal
+        signal: controller.signal,
+        assertOwnership
       });
       log.info('job finished', { bullmqJobId: job.id, reportId, mode, ok: result?.ok === true, code: result?.code });
       if (result?.interrupted) {

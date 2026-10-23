@@ -88,6 +88,21 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     if (ctx.signal.aborted) abort.abort(ctx.signal.reason);
     else ctx.signal.addEventListener('abort', () => abort.abort(ctx.signal.reason), { once: true });
   }
+  // Ownership fence (worker-provided): before each chunk, before post-AI
+  // persistence and before any terminal status write, a run whose job moved
+  // to another owner stops instead of writing. Absent in tests / tools.
+  const ensureOwned = async () => {
+    if (typeof ctx.assertOwnership === 'function') await ctx.assertOwnership();
+  };
+  const stillOwned = async () => {
+    try {
+      await ensureOwned();
+      return true;
+    } catch (err) {
+      if (err?.code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST) return false;
+      return true; // a failed check (DB down) must not hide the original failure
+    }
+  };
   // `null` disables the gate (tests / tools); default is the shared scheduler.
   const inferenceScheduler = deps.inferenceScheduler === undefined ? getInferenceScheduler(pool) : deps.inferenceScheduler;
   const analysisStartedAt = Date.now();
@@ -439,7 +454,10 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           scheduler: inferenceScheduler,
           transport: deps.transport,
           reportId: report.id,
-          shouldCancel: async () => isAnalysisCancelRequested(pool, report.id),
+          shouldCancel: async () => {
+            await ensureOwned();
+            return isAnalysisCancelRequested(pool, report.id);
+          },
           loadCompletedChunk: async (chunkKey) =>
             loadCompletedChunkResult(pool, report.id, runId, chunkKey),
           saveChunkResult: async (chunk, result, meta) =>
@@ -484,11 +502,12 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       // No in-flight "analyzing" progress write may land after the terminal status below.
       await progressGate.close();
       const code = aiErr.code || 'ai_failed';
-      if (isInterruptionCode(code)) {
+      if (isInterruptionCode(code) || !(await stillOwned())) {
         // Shutdown / ownership loss: leave report and job rows to the worker
         // (requeue) or to the job's new owner. Checkpoints stay intact.
-        log.warn('AI analysis interrupted', { reportId: report.id, code });
-        return { ok: false, code, interrupted: true, error: aiErr.message };
+        const interruption = isInterruptionCode(code) ? code : AI_FAILURE_CODES.JOB_OWNERSHIP_LOST;
+        log.warn('AI analysis interrupted', { reportId: report.id, code: interruption, ai_code: code });
+        return { ok: false, code: interruption, interrupted: true, error: aiErr.message };
       }
       if (code !== AI_FAILURE_CODES.JOB_CANCELLED) {
         // best-effort mark current chunk failed is handled inside analyze when save fails
@@ -567,6 +586,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
 
     // Merge AI candidate updates onto the deterministic set (never the reverse).
     // AI identities are untrusted: IPv4 carved from a hostname prefix is dropped.
+    // Last point before candidate / entity / status writes.
+    await ensureOwned();
     candidates = mergeAiCandidateUpdates(candidates, aiValue, { document });
 
     // --- Match local IOCs ---
@@ -641,6 +662,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     const latestReport = (await getReportById(pool, report.id)) || report;
     const tlpResolution = resolveEffectiveTlp({ report: latestReport, document, aiHint: aiValue.tlp || null });
 
+    await ensureOwned();
     await updateReportStatus(pool, report.id, {
       title: document.title || report.title,
       language: aiValue.language || document.language || report.language,
@@ -711,6 +733,11 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     log.info('matching complete', { reportId: report.id, ...summary });
     return { ok: true, summary };
   } catch (err) {
+    if (isInterruptionCode(err?.code) || !(await stillOwned())) {
+      const code = isInterruptionCode(err?.code) ? err.code : AI_FAILURE_CODES.JOB_OWNERSHIP_LOST;
+      log.warn('pipeline interrupted; no terminal state written', { reportId: ctx.reportId, code, error: err?.message });
+      return { ok: false, code, interrupted: true, error: err?.message };
+    }
     const stage = resolvePipelineFailureStage(err);
     const failureDetails = {
       ...(err.fetchMeta && typeof err.fetchMeta === 'object' ? { fetch: err.fetchMeta } : {}),
