@@ -22,6 +22,7 @@ import {
   resolveThreatLibraryWorkerConcurrency
 } from './lib/threatLibrary/analysisConcurrency.js';
 import { claimJobOwnership, startJobHeartbeat, requeueOwnedJob } from './lib/threatLibrary/jobOwnership.js';
+import { createFencedDb } from './lib/threatLibrary/jobFence.js';
 import { maybeScheduleAutoRetry } from './lib/threatLibrary/autoRetry.js';
 import { buildRetryProgress } from './lib/threatLibrary/retryState.js';
 import { AI_FAILURE_CODES, aiFailure } from './lib/threatLibrary/ai/timeouts.js';
@@ -60,6 +61,8 @@ const concurrency = resolveThreatLibraryWorkerConcurrency();
 const workerStartedAt = Date.now();
 /** jobId → { controller, ownerToken } for jobs this process is running. */
 const activeRuns = new Map();
+/** BullMQ job id → owner token, so the `failed` handler writes only as that owner. */
+const ownerByDelivery = new Map();
 let shuttingDown = false;
 
 async function dispatchQueuedAnalyses() {
@@ -133,21 +136,14 @@ const worker = new Worker(
     });
     const controller = new AbortController();
     activeRuns.set(jobId, { controller, ownerToken });
+    ownerByDelivery.set(String(job.id), ownerToken);
+    let rethrowing = false;
     const heartbeat = startJobHeartbeat(pool, {
       jobId,
       ownerToken,
       onLost: () => controller.abort(aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST))
     });
-    // Write fence for the pipeline: confirms in PostgreSQL that this delivery
-    // still owns the job before chunk calls and before persistent writes.
-    const assertOwnership = async () => {
-      if (heartbeat.lost) throw aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
-      const owned = await pool.query(
-        `SELECT 1 FROM threat_library_jobs WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'`,
-        [jobId, ownerToken]
-      );
-      if (!owned.rowCount) throw aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
-    };
+
     try {
       const result = await runThreatLibraryJob(pool, {
         reportId,
@@ -160,7 +156,9 @@ const worker = new Worker(
         membershipPolicy: job.data?.membershipPolicy,
         jobPayload: job.data?.jobPayload,
         signal: controller.signal,
-        assertOwnership
+        // Every pipeline write is fenced on (jobId, ownerToken) in the same
+        // transaction (jobFence.js): a run that lost the job commits nothing.
+        fence: { jobId, ownerToken }
       });
       log.info('job finished', { bullmqJobId: job.id, reportId, mode, ok: result?.ok === true, code: result?.code });
       if (result?.interrupted) {
@@ -191,7 +189,17 @@ const worker = new Worker(
         }
       }
       return result;
+    } catch (err) {
+      if (err?.code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST) {
+        // A fenced write found the job owned by another worker: nothing was
+        // committed; the new owner reports the outcome.
+        log.warn('job ownership lost during the run; yielding', { bullmqJobId: job.id, reportId, jobId });
+        return { ok: false, code: err.code, interrupted: true };
+      }
+      rethrowing = true; // the `failed` handler records it as this owner
+      throw err;
     } finally {
+      if (!rethrowing) ownerByDelivery.delete(String(job.id));
       heartbeat.stop();
       activeRuns.delete(jobId);
       await releaseSlotAndDispatch(mode, { bullmqJobId: job.id, reportId, jobId });
@@ -209,11 +217,20 @@ worker.on('failed', async (job, err) => {
   const reportId = Number(job?.data?.reportId);
   const jobId = Number(job?.data?.jobId);
   if (reportId && jobId) {
+    const ownerToken = ownerByDelivery.get(String(job?.id));
+    ownerByDelivery.delete(String(job?.id));
     try {
+      if (!ownerToken) {
+        // Failed before this delivery owned the job (e.g. the claim itself
+        // failed): it is not ours to mark; recovery re-queues a stale claim.
+        throw Object.assign(new Error('delivery never owned the job'), { code: 'not_owner' });
+      }
+      // Fenced: never mark a job (or its report) that another worker now owns.
+      const db = createFencedDb(pool, { jobId, ownerToken });
       const failedMode = String(job?.data?.jobType || job?.name || '');
       const report = await getReportById(pool, reportId);
       if (!isIocSourceJobMode(failedMode) && report && report.analysis_status === 'analyzing') {
-        await updateReportStatus(pool, reportId, {
+        await updateReportStatus(db, reportId, {
           analysis_status: 'failed',
           import_status: 'failed',
           failure_stage: 'analyzing',
@@ -221,7 +238,7 @@ worker.on('failed', async (job, err) => {
           failure_reason: err?.message || 'Threat Library worker failed'
         });
       }
-      await updateJob(pool, jobId, {
+      await updateJob(db, jobId, {
         status: 'failed',
         stage: isIocSourceJobMode(failedMode) ? failedMode : 'analyzing',
         error_message: err?.message || 'worker failed'
@@ -236,7 +253,11 @@ worker.on('failed', async (job, err) => {
         });
       }
     } catch (e) {
-      log.warn('failed to mark report after worker failure', { error: e?.message });
+      if (e?.code === 'not_owner' || e?.code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST) {
+        log.warn('worker failure not recorded: job is not owned by this delivery', { bullmqJobId: job?.id, jobId, code: e.code });
+      } else {
+        log.warn('failed to mark report after worker failure', { error: e?.message });
+      }
     }
     await releaseSlotAndDispatch('worker_failed', { bullmqJobId: job?.id, reportId, jobId });
   }

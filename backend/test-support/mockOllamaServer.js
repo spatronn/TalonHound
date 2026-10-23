@@ -13,7 +13,10 @@
  *
  * Per-request behaviour comes from `plan(request)`, which may return
  * { promptEvalMs, genMs, content, chunks, fault } where fault is one of
- * 'hang_headers' | 'stall_after_first' | 'disconnect_mid_stream' | 'http_503'.
+ * 'hang_headers' | 'stall_after_first' | 'disconnect_mid_stream' | 'http_503',
+ * and `ignoreCancel: true` to model a provider that keeps executing after the
+ * client disconnects (lost FIN / provider bug): the request holds its
+ * execution slot until it finishes on its own.
  */
 
 import http from 'node:http';
@@ -72,6 +75,9 @@ export async function startMockOllama(options = {}) {
       requests.push(record);
       const p = { promptEvalMs: 20, genMs: 50, chunks: 4, content: DEFAULT_CONTENT, ...(plan(record, body) || {}) };
       let finished = false;
+      const write = (chunk) => {
+        if (!res.destroyed && !res.writableEnded) res.write(chunk);
+      };
       const job = {
         cancelled: false,
         async run() {
@@ -93,7 +99,7 @@ export async function startMockOllama(options = {}) {
             record.outcome = 'http_503';
             return;
           }
-          res.writeHead(200, { 'content-type': 'application/x-ndjson' });
+          if (!res.destroyed) res.writeHead(200, { 'content-type': 'application/x-ndjson' });
           record.headersAt = Date.now();
           const content = String(p.content);
           const n = Math.max(1, p.chunks);
@@ -101,7 +107,7 @@ export async function startMockOllama(options = {}) {
           const evalStart = Date.now();
           for (let i = 0; i < n; i += 1) {
             if (job.cancelled) return;
-            res.write(`${JSON.stringify({ message: { content: content.slice(i * size, (i + 1) * size) }, done: false })}\n`);
+            write(`${JSON.stringify({ message: { content: content.slice(i * size, (i + 1) * size) }, done: false })}\n`);
             if (i === 0 && p.fault === 'stall_after_first') {
               await new Promise((resolve) => res.once('close', resolve));
               return;
@@ -116,6 +122,12 @@ export async function startMockOllama(options = {}) {
           }
           if (job.cancelled) return;
           const now = Date.now();
+          if (res.destroyed) {
+            finished = true;
+            record.endedAt = now;
+            record.outcome = 'completed_after_client_left';
+            return;
+          }
           res.end(
             `${JSON.stringify({
               message: { content: '' },
@@ -135,6 +147,11 @@ export async function startMockOllama(options = {}) {
         }
       };
       res.once('close', () => {
+        if (!finished && p.ignoreCancel) {
+          record.clientClosedEarly = true;
+          record.clientClosedAt = Date.now();
+          return; // keeps executing (or stays queued) regardless
+        }
         if (!finished) {
           job.cancelled = true;
           record.clientClosedEarly = true;

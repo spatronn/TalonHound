@@ -7,6 +7,10 @@
 --    waiting or holding AI request, FIFO by id per provider endpoint. Rows are
 --    short-lived leases with an expiry, so a crashed process frees its slot
 --    without manual cleanup. No PostgreSQL connection is held during inference.
+--    A slot whose cancelled request may still be executing on the provider is
+--    quarantined (quarantined_at): it stays occupied until a probe confirms
+--    the provider is idle (verify_after paces probes) or its worst-case bound
+--    expires.
 -- 2. threat_library_ai_settings: per-endpoint AI request capacity, the
 --    cumulative capacity-wait budget, a per-request execution limit and the
 --    bounded automatic retry count. NULL keeps the provider default.
@@ -30,8 +34,14 @@ CREATE TABLE IF NOT EXISTS public.threat_library_ai_capacity_leases (
     lease_expires_at timestamptz NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     acquired_at timestamptz,
+    quarantined_at timestamptz,
+    verify_after timestamptz,
     CONSTRAINT uq_tl_ai_capacity_leases_token UNIQUE (token)
 );
+
+ALTER TABLE public.threat_library_ai_capacity_leases
+  ADD COLUMN IF NOT EXISTS quarantined_at timestamptz,
+  ADD COLUMN IF NOT EXISTS verify_after timestamptz;
 
 CREATE INDEX IF NOT EXISTS idx_tl_ai_capacity_leases_resource
   ON public.threat_library_ai_capacity_leases (resource_key, state, id);

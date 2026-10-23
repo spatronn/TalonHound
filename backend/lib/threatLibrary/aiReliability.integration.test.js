@@ -13,6 +13,7 @@ import { extractReportCandidates } from './extractionStages.js';
 import { buildLayoutVariant } from './benchmark/layoutVariants.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { claimJobOwnership, startJobHeartbeat, requeueOwnedJob } from './jobOwnership.js';
+import { createFencedDb } from './jobFence.js';
 import {
   createExclusivePipelineJob,
   dispatchQueuedThreatLibraryAnalyses,
@@ -443,13 +444,9 @@ for (const takeoverAt of ['mid_chunks', 'during_synthesis']) {
       [ollama.baseUrl]
     );
     const scheduler = createInferenceScheduler(pool, { pollMs: 25, waitLeaseMs: 1000, holdLeaseMs: 3000, heartbeatMs: 500 });
-    // The worker's fence (threat-library-worker.js assertOwnership).
-    const assertOwnership = async () => {
-      const owned = await pool.query(`SELECT 1 FROM threat_library_jobs WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'`, [job.id, mine]);
-      if (!owned.rowCount) throw Object.assign(new Error('lost'), { code: 'job_ownership_lost' });
-    };
     try {
-      const result = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze', assertOwnership }, { inferenceScheduler: scheduler });
+      // The worker's fence (threat-library-worker.js): every write is fenced on (job, owner token).
+      const result = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze', fence: { jobId: job.id, ownerToken: mine } }, { inferenceScheduler: scheduler });
       assert.equal(result.ok, false, JSON.stringify(result));
       assert.equal(result.interrupted, true);
       assert.equal(result.code, 'job_ownership_lost');
@@ -466,3 +463,171 @@ for (const takeoverAt of ['mid_chunks', 'during_synthesis']) {
     }
   });
 }
+
+// ------------------------------------------------------- atomic fencing
+
+test('fence: a takeover during a fenced transaction waits for it; afterwards the stale owner can commit nothing', opts, async () => {
+  const { report } = await newReport('analyzing');
+  const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+  const a = crypto.randomUUID();
+  const b = crypto.randomUUID();
+  await claimJobOwnership(pool, { jobId: job.id, ownerToken: a });
+  await pool.query(`UPDATE threat_library_jobs SET heartbeat_at = NOW() - INTERVAL '10 minutes' WHERE id = $1`, [job.id]); // A looks stale
+  const fenced = createFencedDb(pool, { jobId: job.id, ownerToken: a });
+
+  let releaseTxn;
+  const txnHeld = new Promise((r) => { releaseTxn = r; });
+  let takeoverDoneAt = null;
+  let txnCommittedAt = null;
+  const txn = fenced.transaction(async (tx) => {
+    await tx.query(`UPDATE threat_reports SET summary = 'written by A inside the fence' WHERE id = $1`, [report.id]);
+    await txnHeld;
+    txnCommittedAt = Date.now();
+  });
+  await sleep(50);
+  const takeover = claimJobOwnership(pool, { jobId: job.id, ownerToken: b }).then((row) => { takeoverDoneAt = Date.now(); return row; });
+  await sleep(300);
+  assert.equal(takeoverDoneAt, null, 'the takeover blocks on the fenced transaction (job-row lock)');
+  releaseTxn();
+  await txn;
+  const claimed = await takeover;
+  assert.ok(takeoverDoneAt >= txnCommittedAt, 'serialized: the takeover completes after the fenced commit');
+  assert.equal(claimed.owner_token, b);
+
+  // A is now stale: every kind of fenced write is refused and nothing lands.
+  const attempts = [
+    () => fenced.query(`UPDATE threat_reports SET summary = 'stale' WHERE id = $1`, [report.id]),
+    () => saveAnalysisChunkResult(fenced, report.id, crypto.randomUUID(), { chunk_index: 0, chunk_key: 'chunk-001', block_ids: [] }, { summary: 'stale' }, {}),
+    () => fenced.transaction((tx) => tx.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [report.id])),
+    async () => {
+      const client = await fenced.connect();
+      try {
+        await client.query('BEGIN');
+      } finally {
+        client.release();
+      }
+    }
+  ];
+  for (const attempt of attempts) {
+    const err = await attempt().catch((e) => e);
+    assert.equal(err?.code, 'job_ownership_lost');
+  }
+  const rep = (await pool.query(`SELECT summary FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+  assert.equal(rep.summary, 'written by A inside the fence', 'only the pre-takeover write exists');
+  assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM threat_library_analysis_chunks WHERE report_id = $1`, [report.id])).rows[0].n, 0);
+  assert.ok((await pool.query(`SELECT COUNT(*)::int AS n FROM threat_report_candidates WHERE report_id = $1`, [report.id])).rows[0].n > 0);
+});
+
+/** Pool that runs `onReconcileLock` right after the outcome transaction locks the candidate rows. */
+function persistenceRacingPool(onReconcileLock) {
+  let fired = false;
+  return {
+    query: (...args) => pool.query(...args),
+    connect: async () => {
+      const client = await pool.connect();
+      return {
+        query: async (sql, params) => {
+          const res = await client.query(sql, params);
+          if (!fired && /FROM threat_report_candidates WHERE report_id = \$1 ORDER BY id FOR UPDATE/.test(String(sql))) {
+            fired = true;
+            await onReconcileLock();
+          }
+          return res;
+        },
+        release: (...args) => client.release(...args)
+      };
+    }
+  };
+}
+
+async function fenceScenario() {
+  const { report } = await newReport('pending');
+  const before = await candidateSnapshot(report.id);
+  const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+  const mine = crypto.randomUUID();
+  await claimJobOwnership(pool, { jobId: job.id, ownerToken: mine });
+  const ollama = await startMockOllama({ capacity: 1, plan: () => ({ promptEvalMs: 5, genMs: 5 }) });
+  await pool.query(
+    `UPDATE threat_library_ai_settings SET enabled = true, provider = 'ollama', base_url = $1, model = 'qwen3.5:9b', max_input_chars = 1000, max_concurrent_ai_requests = 1 WHERE id = 1`,
+    [ollama.baseUrl]
+  );
+  const scheduler = createInferenceScheduler(pool, { pollMs: 25, waitLeaseMs: 1000, holdLeaseMs: 3000, heartbeatMs: 500 });
+  return { report, before, job, mine, ollama, scheduler };
+}
+
+test('fence: ownership moves immediately before persistence (after the last AI call): nothing is written', opts, async () => {
+  const { report, before, job, mine, ollama, scheduler } = await fenceScenario();
+  const other = crypto.randomUUID();
+  try {
+    const { analyzeThreatDocument: realAnalyze } = await import('./ai/analyze.js');
+    const result = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze', fence: { jobId: job.id, ownerToken: mine } }, {
+      inferenceScheduler: scheduler,
+      analyzeThreatDocument: async (...args) => {
+        const out = await realAnalyze(...args);
+        // A new owner commits its takeover between the AI stage and the outcome writes.
+        await claimJobOwnership(pool, { jobId: job.id, ownerToken: other, staleMs: 0 });
+        return out;
+      }
+    });
+    assert.equal(result.interrupted, true, JSON.stringify(result));
+    assert.equal(result.code, 'job_ownership_lost');
+    assert.deepEqual(await candidateSnapshot(report.id), before, 'no candidate writes');
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM threat_report_entities WHERE report_id = $1`, [report.id])).rows[0].n, 0);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM threat_report_tags WHERE report_id = $1`, [report.id])).rows[0].n, 0, 'no tag writes');
+    const rep = (await pool.query(`SELECT analysis_status, failure_code FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+    assert.notEqual(rep.analysis_status, 'review_required');
+    assert.notEqual(rep.analysis_status, 'failed');
+    const jobRow = (await pool.query(`SELECT status, owner_token FROM threat_library_jobs WHERE id = $1`, [job.id])).rows[0];
+    assert.equal(jobRow.status, 'running');
+    assert.equal(jobRow.owner_token, other);
+  } finally {
+    await ollama.close();
+  }
+});
+
+test('fence: a takeover attempted during the outcome transaction waits, then finds the job completed (one owner, whole outcome)', opts, async () => {
+  const { report, before, job, mine, ollama, scheduler } = await fenceScenario();
+  const other = crypto.randomUUID();
+  let takeoverPromise = null;
+  let takeoverResult;
+  const racing = persistenceRacingPool(async () => {
+    takeoverPromise = claimJobOwnership(pool, { jobId: job.id, ownerToken: other, staleMs: 0 }).then((row) => { takeoverResult = row; });
+    await sleep(200); // the takeover is blocked on the job-row lock meanwhile
+  });
+  try {
+    const result = await runAnalysisPipeline(racing, { reportId: report.id, jobId: job.id, jobType: 'analyze', fence: { jobId: job.id, ownerToken: mine } }, { inferenceScheduler: scheduler });
+    assert.ok(takeoverPromise, 'the race point was reached');
+    await takeoverPromise;
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(takeoverResult, null, 'the takeover found the job completed and claimed nothing');
+    const jobRow = (await pool.query(`SELECT status, owner_token FROM threat_library_jobs WHERE id = $1`, [job.id])).rows[0];
+    assert.equal(jobRow.status, 'completed');
+    assert.equal(jobRow.owner_token, mine);
+    const rep = (await pool.query(`SELECT analysis_status FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+    assert.equal(rep.analysis_status, 'review_required', 'the fenced outcome committed whole');
+    assert.deepEqual((await candidateSnapshot(report.id)).map((r) => [r.id, r.review_status]), before.map((r) => [r.id, r.review_status]));
+  } finally {
+    await ollama.close();
+  }
+});
+
+test('fence: a stale owner\'s progress write after a takeover stops the run without writing', opts, async () => {
+  const { report, job, mine, ollama, scheduler } = await fenceScenario();
+  const other = crypto.randomUUID();
+  const { analyzeThreatDocument: realAnalyze } = await import('./ai/analyze.js');
+  try {
+    const result = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze', fence: { jobId: job.id, ownerToken: mine } }, {
+      inferenceScheduler: scheduler,
+      analyzeThreatDocument: async (settings, input, hooks) => {
+        await claimJobOwnership(pool, { jobId: job.id, ownerToken: other, staleMs: 0 });
+        await hooks.onProgress({ stage: 'analyzing', analysis_chunks_total: 3 }); // refused by the fence
+        return realAnalyze(settings, input, hooks);
+      }
+    });
+    assert.equal(result.interrupted, true, JSON.stringify(result));
+    const rep = (await pool.query(`SELECT analysis_progress FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+    assert.notEqual(rep.analysis_progress?.analysis_chunks_total, 3, 'the stale progress write did not land');
+  } finally {
+    await ollama.close();
+  }
+});

@@ -23,13 +23,87 @@ const log = createServiceLogger('threat-library-ai');
 export const CANCEL_CLOSE_WAIT_MS = 5000;
 
 /**
- * When a cancelled request's socket close is not confirmed within
- * CANCEL_CLOSE_WAIT_MS, the slot stays held (its lease keeps heartbeating)
- * until the close is observed or this bound passes, so the next holder never
- * overlaps a request the provider may still be executing. The caller is not
- * blocked: the error is reported immediately.
+ * Idle probe (quarantine release): budget for a 1-token request to start
+ * streaming. Served within it ⇒ the provider has a free execution slot.
+ * Covers a cold model load (≤ 8s measured) with margin.
  */
-export const CANCEL_UNCONFIRMED_HOLD_MS = 60_000;
+export const IDLE_PROBE_TIMEOUT_MS = 20_000;
+
+/**
+ * Failures after which the provider has certainly finished with the request:
+ * it answered with an error status / error line. Everything else that happens
+ * after the request was sent (our timeouts, cancellation, shutdown, lost
+ * lease or ownership, resets) leaves provider-side termination unproven.
+ */
+const PROVIDER_FINISHED_CODES = new Set([AI_FAILURE_CODES.PROVIDER_HTTP_ERROR, AI_FAILURE_CODES.MODEL_NOT_FOUND, AI_FAILURE_CODES.CONTEXT_TOO_LARGE]);
+
+/**
+ * Quarantine instead of release: a local (capacity-limited) provider, the
+ * request reached it, and nothing proves the provider stopped executing it.
+ * Closing the socket is not proof — a lost FIN or a provider that ignores
+ * the disconnect keeps generating.
+ * @param {Error & { code?: string, timing?: object }} err
+ * @param {object} policy
+ */
+export function requiresSlotQuarantine(err, policy) {
+  if (!policy?.is_local) return false;
+  if (err?.timing?.request_sent !== true) return false;
+  return !PROVIDER_FINISHED_CODES.has(err?.code);
+}
+
+/**
+ * Prove the provider can serve a request right now: a 1-token request, sent
+ * from inside the quarantined slot, must start streaming within the budget.
+ * A provider still executing an abandoned request queues it instead.
+ * @param {object} settings
+ * @param {object} policy
+ * @param {Function} transport
+ * @returns {Promise<boolean>}
+ */
+export async function verifyProviderIdle(settings, policy, transport = nodeHttpTransport) {
+  const endpoint = resolveProviderEndpoint(settings);
+  const budgetMs = Number(policy?.idle_probe_timeout_ms) || IDLE_PROBE_TIMEOUT_MS;
+  const messages = [{ role: 'user', content: 'Reply with OK.' }];
+  let body;
+  const headers = { 'content-type': 'application/json' };
+  if (endpoint.kind === 'ollama_stream') {
+    body = { model: settings.model, stream: true, think: false, keep_alive: '15m', options: { temperature: 0, num_predict: 1 }, messages };
+  } else if (endpoint.kind === 'anthropic_stream') {
+    headers['x-api-key'] = String(settings.api_key || '');
+    headers['anthropic-version'] = '2023-06-01';
+    body = { model: settings.model, max_tokens: 1, stream: true, messages };
+  } else {
+    if (settings.api_key) headers.authorization = `Bearer ${settings.api_key}`;
+    body = { model: settings.model, max_tokens: 1, stream: true, messages };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT)), budgetMs);
+  let call = null;
+  try {
+    call = transport(endpoint.url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+      connectTimeoutMs: policy?.connection_timeout_ms
+    });
+    const res = await call.response;
+    if (!res.ok) return false;
+    const reader = res.body?.getReader?.();
+    if (reader) {
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+    if (!controller.signal.aborted) controller.abort(aiFailure(AI_FAILURE_CODES.JOB_CANCELLED));
+  }
+}
 
 /** Provider-side queue time (ms) above which a slot holder reports residual contention. */
 export const PROVIDER_CONTENTION_THRESHOLD_MS = 5000;
@@ -136,6 +210,14 @@ export async function consumeProviderStream(body, opts) {
 
   const reader = body.getReader();
   const decoder = new TextDecoder();
+  // Activity callbacks are fire-and-forget (the stream must not wait on a
+  // progress write); a rejection must never become an unhandled rejection.
+  const notifyActivity = (info) => {
+    try {
+      const pending = opts.onActivity?.(info);
+      if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+    } catch { /* progress is best-effort */ }
+  };
   let buffer = '';
   let text = '';
   let thinking = 0;
@@ -202,9 +284,9 @@ export async function consumeProviderStream(body, opts) {
       if (!gotFirst) {
         gotFirst = true;
         firstTokenAt = Date.now();
-        opts.onActivity?.({ bytes: value.byteLength, firstToken: true });
+        notifyActivity({ bytes: value.byteLength, firstToken: true });
       } else {
-        opts.onActivity?.({ bytes: value.byteLength, firstToken: false });
+        notifyActivity({ bytes: value.byteLength, firstToken: false });
       }
       lastActivity = Date.now();
 
@@ -430,7 +512,6 @@ export function providerQueueMs(metrics) {
 }
 
 const KNOWN_FAILURE_CODES = new Set(Object.values(AI_FAILURE_CODES));
-const PENDING_CLOSE = Symbol('pendingClose');
 
 function mapTransportError(err) {
   if (err?.code && KNOWN_FAILURE_CODES.has(err.code)) return err;
@@ -517,7 +598,9 @@ export async function callAiProvider(settings, messages, hooks = {}) {
         signal: hooks.signal,
         purpose: hooks.purpose,
         reportId: hooks.reportId,
-        onWaiting: hooks.onCapacityWait
+        onWaiting: hooks.onCapacityWait,
+        // A waiter at the head of the queue probes quarantined slots.
+        verifyIdle: () => verifyProviderIdle(settings, policy, hooks.transport || nodeHttpTransport)
       });
     } catch (err) {
       const failure = mapTransportError(err);
@@ -539,20 +622,22 @@ export async function callAiProvider(settings, messages, hooks = {}) {
     return result;
   } catch (err) {
     if (lease) {
-      // executeProviderCall aborted the request and waited for the socket to
-      // close. Unconfirmed close: keep the slot until it is (bounded).
-      const pendingClose = err?.[PENDING_CLOSE];
-      if (err?.timing?.cancel_outcome === 'unconfirmed' && pendingClose) {
-        const holdMs = Number(policy.cancel_unconfirmed_hold_ms) || CANCEL_UNCONFIRMED_HOLD_MS;
-        let timer;
-        Promise.race([
-          pendingClose.then(() => 'closed', () => 'closed'),
-          new Promise((resolve) => { timer = setTimeout(() => resolve('hold_expired'), holdMs); })
-        ]).then((outcome) => {
-          clearTimeout(timer);
-          log.warn('inference slot released after unconfirmed cancellation', { ...telemetry, outcome });
-          return lease.release();
-        }).catch(() => {});
+      if (requiresSlotQuarantine(err, policy) && typeof lease.quarantine === 'function') {
+        // The provider may still be executing the aborted request: the slot
+        // stays occupied until it is verified idle, at most until the
+        // request's worst-case execution bound (from when it was sent).
+        const startedAt = Number(err.timing?.request_started_at) || Date.now();
+        const holdMs = Math.max(1000, startedAt + policy.provider_execution_timeout_ms - Date.now());
+        await lease.quarantine({ holdMs, reason: err.code });
+        err.timing = { ...(err.timing || {}), slot_quarantined: true };
+        // First probe right away (background; the caller gets its error now).
+        // Later probes come from whichever waiter reaches the head of the queue.
+        if (typeof hooks.scheduler?.verifyQuarantine === 'function') {
+          const resourceKey = inferenceResourceKey(settings);
+          hooks.scheduler
+            .verifyQuarantine(resourceKey, () => verifyProviderIdle(settings, policy, hooks.transport || nodeHttpTransport))
+            .catch(() => {});
+        }
       } else {
         await lease.release();
       }
@@ -718,9 +803,6 @@ async function executeProviderCall(settings, messages, hooks, ctx) {
     // sees the close and drops the work.
     if (!controller.signal.aborted) controller.abort(err);
     const cancelOutcome = await waitForClose(call?.closed, Number(policy.cancel_close_wait_ms) || CANCEL_CLOSE_WAIT_MS);
-    if (cancelOutcome === 'unconfirmed' && call?.closed) {
-      Object.defineProperty(err, PENDING_CLOSE, { value: call.closed, enumerable: false, configurable: true });
-    }
     err.timing = {
       ...(err.timing || {}),
       total_ms: Date.now() - requestStartedAt,
@@ -729,7 +811,10 @@ async function executeProviderCall(settings, messages, hooks, ctx) {
       output_chars: stats.partial_output_chars ?? 0,
       provider: endpoint.kind,
       ...slotTiming,
-      cancel_outcome: cancelOutcome
+      cancel_outcome: cancelOutcome,
+      request_started_at: requestStartedAt,
+      // Did any of the request reach the provider? (connect failures: no.)
+      request_sent: typeof call?.sent === 'function' ? call.sent() === true : Boolean(call)
     };
     if (cancelOutcome === 'unconfirmed') {
       log.warn('cancelled AI request socket did not confirm close', { ...telemetry, code: err.code });

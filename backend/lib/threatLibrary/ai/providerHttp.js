@@ -12,6 +12,8 @@
  * A transport is `(url, init) => { response, closed }`:
  *  - response: Promise of a fetch-like `{ ok, status, body: ReadableStream, text() }`
  *  - closed:   Promise that settles once the underlying socket is released
+ *  - sent():   true once the request was written to the connection (the
+ *              provider may be executing it); false for connect failures
  * `init` = { method, headers, body, signal, connectTimeoutMs }.
  */
 
@@ -29,6 +31,7 @@ export function nodeHttpTransport(url, init = {}) {
   const mod = target.protocol === 'https:' ? https : http;
   const payload = init.body == null ? '' : String(init.body);
   let req;
+  let written = false;
   let settleClosed;
   const closed = new Promise((resolve) => {
     settleClosed = resolve;
@@ -70,6 +73,9 @@ export function nodeHttpTransport(url, init = {}) {
         socket.once(connectEvent, clearConnectTimer);
       }
     });
+    req.once('finish', () => {
+      written = true;
+    });
     req.once('close', () => {
       clearConnectTimer();
       settleClosed('closed');
@@ -101,7 +107,7 @@ export function nodeHttpTransport(url, init = {}) {
     req.end(payload);
   });
 
-  return { response, closed };
+  return { response, closed, sent: () => written };
 }
 
 /**
@@ -124,6 +130,7 @@ export function fetchTransport(fetchFn) {
       () => 'closed',
       () => 'closed'
     );
-    return { response, closed };
+    // A fetch stub cannot tell; assume the request reached the provider.
+    return { response, closed, sent: () => true };
   };
 }

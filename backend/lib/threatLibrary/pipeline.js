@@ -13,6 +13,7 @@ import {
 } from './candidateExtraction.js';
 import { analyzeThreatDocument } from './ai/providers.js';
 import { getInferenceScheduler } from './ai/inferenceScheduler.js';
+import { createFencedDb } from './jobFence.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
 import { normalizeEntityName } from './constants.js';
@@ -69,9 +70,11 @@ const log = createServiceLogger('threat-library');
  * and `rerun_ai` jobs; `refresh_extraction` never reaches this function
  * (jobRunner.js routes it to the AI-free extractionRefresh.js).
  * @param {import('pg').Pool} pool
- * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean, jobType?: string, newAnalysisRun?: boolean, signal?: AbortSignal }} ctx
+ * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean, jobType?: string, newAnalysisRun?: boolean, signal?: AbortSignal, fence?: { jobId: number, ownerToken: string } }} ctx
  *   ctx.signal: the worker aborts it on shutdown / lost job ownership; the run
  *   then stops without writing report state (the worker requeues or yields).
+ *   ctx.fence: every write of the run is ownership-fenced (jobFence.js) — a
+ *   worker that lost the job can no longer commit anything.
  * @param {{ analyzeThreatDocument?: Function, inferenceScheduler?: object|null, transport?: Function }} [deps] provider seam (tests)
  */
 export async function runAnalysisPipeline(pool, ctx, deps = {}) {
@@ -80,6 +83,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     throw Object.assign(new Error('refresh_extraction jobs never run the AI pipeline'), { code: 'invalid_job_mode' });
   }
   const analyze = deps.analyzeThreatDocument || analyzeThreatDocument;
+  const rawPool = pool;
+  if (ctx.fence) pool = createFencedDb(rawPool, ctx.fence);
   const report = await getReportById(pool, ctx.reportId);
   if (!report) throw Object.assign(new Error('Report not found'), { code: 'not_found' });
 
@@ -92,6 +97,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
   // persistence and before any terminal status write, a run whose job moved
   // to another owner stops instead of writing. Absent in tests / tools.
   const ensureOwned = async () => {
+    if (typeof pool.assertOwned === 'function') await pool.assertOwned();
     if (typeof ctx.assertOwnership === 'function') await ctx.assertOwnership();
   };
   const stillOwned = async () => {
@@ -429,20 +435,32 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     let vulnerabilityGrounding = null;
     let publisherEntityGrounding = null;
     const progressGate = createProgressGate(async (progress) => {
-      if (await isAnalysisCancelRequested(pool, report.id)) {
-        abort.abort();
+      // Progress is best-effort and must never reject: provider stream
+      // callbacks do not await it (an unhandled rejection would crash the
+      // worker). A fenced write that finds the job owned by another worker
+      // stops this run instead.
+      try {
+        if (await isAnalysisCancelRequested(pool, report.id)) {
+          abort.abort();
+        }
+        await updateJob(pool, ctx.jobId, {
+          status: 'running',
+          stage: 'analyzing',
+          progress
+        });
+        await updateReportStatus(pool, report.id, {
+          analysis_status: 'analyzing',
+          import_status: 'processing',
+          analysis_progress: mergeAnalysisProgress(progressCarry, progress),
+          analysis_run_id: runId
+        });
+      } catch (err) {
+        if (err?.code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST) {
+          if (!abort.signal.aborted) abort.abort(err);
+        } else {
+          log.warn('analysis progress write failed (non-fatal)', { reportId: report.id, error: err?.message });
+        }
       }
-      await updateJob(pool, ctx.jobId, {
-        status: 'running',
-        stage: 'analyzing',
-        progress
-      });
-      await updateReportStatus(pool, report.id, {
-        analysis_status: 'analyzing',
-        import_status: 'processing',
-        analysis_progress: mergeAnalysisProgress(progressCarry, progress),
-        analysis_run_id: runId
-      });
     });
     try {
       const ai = await analyze(
@@ -607,125 +625,136 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       }), resolved);
       if (quality !== extractionDiagnostics.quality) extractionDiagnostics = { ...extractionDiagnostics, quality };
     }
-    const savedCandidates = (await reconcileReportCandidates(pool, report.id, resolved)).rows;
-
-    // Clear prior entity links/relationships for this report before re-applying (idempotent finalize)
-    await pool.query(`DELETE FROM threat_report_entities WHERE report_id = $1`, [report.id]);
-    await pool.query(`DELETE FROM threat_relationships WHERE report_id = $1`, [report.id]);
-
-    const entityByRef = new Map();
-    for (const e of aiValue.entities || []) {
-      const row = await upsertEntity(pool, e);
-      await linkReportEntity(pool, report.id, row.id, {
-        confidence: e.confidence,
-        evidence_text: e.evidence_text,
-        block_id: e.evidence_block_ids?.[0] || null
-      });
-      const known = entityByRef.get(normalizeEntityName(e.name));
-      const names = [...new Set([...(known?.names || []), row.name, e.name, ...(e.aliases || [])].filter(Boolean))];
-      const entry = { ...row, names };
-      entityByRef.set(normalizeEntityName(e.name), entry);
-      entityByRef.set(e.name, entry);
-    }
-
-    const candByKey = new Map(
-      savedCandidates.map((c) => [`${c.candidate_type}:${c.normalized_value}`, c])
-    );
-    const { rows: relRows, rejected: relRejected } = buildValidatedRelationships({
-      relationships: aiValue.relationships || [],
-      entityByRef,
-      candByKey,
-      document,
-      report
-    });
-    if (relRejected.length) {
-      log.info('relationships rejected by policy', {
-        reportId: report.id,
-        accepted: relRows.length,
-        rejected: relRejected.length,
-        reasons: relRejected.reduce((acc, r) => ({ ...acc, [r.reason]: (acc[r.reason] || 0) + 1 }), {})
-      });
-    }
-    await replaceRelationships(pool, report.id, relRows);
-
+    // Report tags are fenced statement by statement (their unique-violation
+    // recovery needs autocommit); they do not depend on the rows below.
     let reportIntelligence = null;
     try {
       reportIntelligence = await persistReportIntelligence(pool, report.id, aiValue, { log });
     } catch (err) {
+      if (err?.code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST) throw err;
       log.warn('report intelligence persist failed (non-fatal)', { reportId: report.id, error: err.message });
       reportIntelligence = { error: err.message };
     }
 
-    // Effective TLP: manual override > explicit marking in the document >
-    // safe default. The model's `tlp` is recorded as a hint only — a
-    // sharing restriction is never inferred from subject matter.
-    const latestReport = (await getReportById(pool, report.id)) || report;
-    const tlpResolution = resolveEffectiveTlp({ report: latestReport, document, aiHint: aiValue.tlp || null });
+    // The analysis outcome commits atomically: candidate reconcile, entities,
+    // relationships, the review_required transition and job completion. With
+    // a fence, the whole transaction holds the job-row lock, so it commits
+    // only while this worker owns the job.
+    const persistOutcome = (fn) => (typeof pool.transaction === 'function' ? pool.transaction(fn) : fn(pool));
+    await persistOutcome(async (db) => {
+      const savedCandidates = (await reconcileReportCandidates(db, report.id, resolved)).rows;
 
-    await ensureOwned();
-    await updateReportStatus(pool, report.id, {
-      title: document.title || report.title,
-      language: aiValue.language || document.language || report.language,
-      tlp: tlpResolution.tlp,
-      tlp_source: tlpResolution.tlp_source,
-      confidence: aiValue.confidence ?? null,
-      report_type: aiValue.report_type || null,
-      summary: aiValue.summary || null,
-      candidate_summary: summary,
-      ai_result: {
-        tlp: {
-          effective: tlpResolution.tlp,
-          source: tlpResolution.tlp_source,
-          detected: tlpResolution.detection,
-          ai_hint: tlpResolution.ai_hint
+      // Clear prior entity links/relationships for this report before re-applying (idempotent finalize)
+      await db.query(`DELETE FROM threat_report_entities WHERE report_id = $1`, [report.id]);
+      await db.query(`DELETE FROM threat_relationships WHERE report_id = $1`, [report.id]);
+
+      const entityByRef = new Map();
+      for (const e of aiValue.entities || []) {
+        const row = await upsertEntity(db, e);
+        await linkReportEntity(db, report.id, row.id, {
+          confidence: e.confidence,
+          evidence_text: e.evidence_text,
+          block_id: e.evidence_block_ids?.[0] || null
+        });
+        const known = entityByRef.get(normalizeEntityName(e.name));
+        const names = [...new Set([...(known?.names || []), row.name, e.name, ...(e.aliases || [])].filter(Boolean))];
+        const entry = { ...row, names };
+        entityByRef.set(normalizeEntityName(e.name), entry);
+        entityByRef.set(e.name, entry);
+      }
+
+      const candByKey = new Map(
+        savedCandidates.map((c) => [`${c.candidate_type}:${c.normalized_value}`, c])
+      );
+      const { rows: relRows, rejected: relRejected } = buildValidatedRelationships({
+        relationships: aiValue.relationships || [],
+        entityByRef,
+        candByKey,
+        document,
+        report
+      });
+      if (relRejected.length) {
+        log.info('relationships rejected by policy', {
+          reportId: report.id,
+          accepted: relRows.length,
+          rejected: relRejected.length,
+          reasons: relRejected.reduce((acc, r) => ({ ...acc, [r.reason]: (acc[r.reason] || 0) + 1 }), {})
+        });
+      }
+      await replaceRelationships(db, report.id, relRows);
+
+
+      // Effective TLP: manual override > explicit marking in the document >
+      // safe default. The model's `tlp` is recorded as a hint only — a
+      // sharing restriction is never inferred from subject matter.
+      const latestReport = (await getReportById(pool, report.id)) || report;
+      const tlpResolution = resolveEffectiveTlp({ report: latestReport, document, aiHint: aiValue.tlp || null });
+
+      await updateReportStatus(db, report.id, {
+        title: document.title || report.title,
+        language: aiValue.language || document.language || report.language,
+        tlp: tlpResolution.tlp,
+        tlp_source: tlpResolution.tlp_source,
+        confidence: aiValue.confidence ?? null,
+        report_type: aiValue.report_type || null,
+        summary: aiValue.summary || null,
+        candidate_summary: summary,
+        ai_result: {
+          tlp: {
+            effective: tlpResolution.tlp,
+            source: tlpResolution.tlp_source,
+            detected: tlpResolution.detection,
+            ai_hint: tlpResolution.ai_hint
+          },
+          publication_date: publicationDate,
+          entity_count: (aiValue.entities || []).length,
+          relationship_count: relRows.length,
+          candidate_update_count: (aiValue.candidate_updates || []).length,
+          report_intelligence: reportIntelligence,
+          ai_calls: aiMeta?.ai_calls ?? null,
+          chunks_total: aiMeta?.chunks_total ?? null,
+          chunks_from_cache: aiMeta?.chunks_from_cache ?? null,
+          prompt_chars_total: aiMeta?.prompt_chars_total ?? null,
+          elapsed_ms: aiMeta?.elapsed_ms ?? null,
+          synthesis: aiMeta?.synthesis ?? null,
+          vulnerability_grounding: vulnerabilityGrounding,
+          publisher_entity_grounding: publisherEntityGrounding
         },
-        publication_date: publicationDate,
-        entity_count: (aiValue.entities || []).length,
-        relationship_count: relRows.length,
-        candidate_update_count: (aiValue.candidate_updates || []).length,
-        report_intelligence: reportIntelligence,
-        ai_calls: aiMeta?.ai_calls ?? null,
-        chunks_total: aiMeta?.chunks_total ?? null,
-        chunks_from_cache: aiMeta?.chunks_from_cache ?? null,
-        prompt_chars_total: aiMeta?.prompt_chars_total ?? null,
-        elapsed_ms: aiMeta?.elapsed_ms ?? null,
-        synthesis: aiMeta?.synthesis ?? null,
-        vulnerability_grounding: vulnerabilityGrounding,
-        publisher_entity_grounding: publisherEntityGrounding
-      },
-      canonical_document: document,
-      analysis_status: 'review_required',
-      import_status: 'review_required',
-      analysis_progress: {
-        stage: 'review_required',
-        completed: true,
-        candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
-        document_extractor: document.meta?.extractor || null,
-        schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
-        extraction_diagnostics: compactExtractionDiagnostics(extractionDiagnostics),
-        analysis_chunks_total: aiMeta?.chunks_total ?? null,
-        analysis_chunks_completed: aiMeta?.chunks_total ?? null,
-        ai_calls: aiMeta?.ai_calls ?? null,
-        ai_needed_candidates: aiMeta?.ai_needed_candidates ?? null,
-        elapsed_ms: aiMeta?.elapsed_ms ?? null,
-        timing: Array.isArray(aiMeta?.timing) ? aiMeta.timing.slice(-24) : []
-      },
-      clear_failure: true,
-      clear_cancel: true
-    });
+        canonical_document: document,
+        analysis_status: 'review_required',
+        import_status: 'review_required',
+        analysis_progress: {
+          stage: 'review_required',
+          completed: true,
+          candidate_extraction_version: THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION,
+          document_extractor: document.meta?.extractor || null,
+          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+          extraction_diagnostics: compactExtractionDiagnostics(extractionDiagnostics),
+          analysis_chunks_total: aiMeta?.chunks_total ?? null,
+          analysis_chunks_completed: aiMeta?.chunks_total ?? null,
+          ai_calls: aiMeta?.ai_calls ?? null,
+          ai_needed_candidates: aiMeta?.ai_needed_candidates ?? null,
+          elapsed_ms: aiMeta?.elapsed_ms ?? null,
+          timing: Array.isArray(aiMeta?.timing) ? aiMeta.timing.slice(-24) : []
+        },
+        clear_failure: true,
+        clear_cancel: true
+      });
 
-    // Fix progress meta from analyze if present on ai object - we stored value only
-    await updateJob(pool, ctx.jobId, {
-      status: 'completed',
-      stage: 'review_required',
-      progress: { stage: 'review_required', summary }
+      // Fix progress meta from analyze if present on ai object - we stored value only
+      await updateJob(db, ctx.jobId, {
+        status: 'completed',
+        stage: 'review_required',
+        progress: { stage: 'review_required', summary }
+      });
     });
 
     // Selective Additional IOC Source discovery (rows only — never fetch/attach).
     // Explicit publisher IOC references become `discovered` for analyst inspect/approve.
     try {
       const { runIocSourceDiscoveryForReport } = await import('./iocSources/runDiscovery.js');
-      await runIocSourceDiscoveryForReport(pool, { ...report, canonical_document: document }, { logger: log });
+      // After completion: the job is no longer running, so this is not fenced.
+      await runIocSourceDiscoveryForReport(rawPool, { ...report, canonical_document: document }, { logger: log });
     } catch (err) {
       log.warn('ioc source discovery failed (non-fatal)', { reportId: report.id, error: err.message });
     }
@@ -762,20 +791,29 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         /* non-fatal */
       }
     }
-    await updateReportStatus(pool, ctx.reportId, {
-      analysis_status: 'failed',
-      import_status: 'failed',
-      failure_stage: stage,
-      failure_code: err.code || null,
-      failure_reason: err.message || 'Pipeline failed',
-      failure_details: Object.keys(failureDetails).length ? failureDetails : undefined
-    });
-    await updateJob(pool, ctx.jobId, {
-      status: 'failed',
-      stage,
-      error_message: err.message || 'Pipeline failed',
-      progress: { stage, failure_code: err.code || null, ...failureDetails }
-    });
+    try {
+      await updateReportStatus(pool, ctx.reportId, {
+        analysis_status: 'failed',
+        import_status: 'failed',
+        failure_stage: stage,
+        failure_code: err.code || null,
+        failure_reason: err.message || 'Pipeline failed',
+        failure_details: Object.keys(failureDetails).length ? failureDetails : undefined
+      });
+      await updateJob(pool, ctx.jobId, {
+        status: 'failed',
+        stage,
+        error_message: err.message || 'Pipeline failed',
+        progress: { stage, failure_code: err.code || null, ...failureDetails }
+      });
+    } catch (writeErr) {
+      // The fence refused the failure write: the job moved to another owner.
+      if (writeErr?.code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST) {
+        log.warn('pipeline interrupted; no terminal state written', { reportId: ctx.reportId, code: writeErr.code, error: err?.message });
+        return { ok: false, code: writeErr.code, interrupted: true, error: err?.message };
+      }
+      throw writeErr;
+    }
     log.warn('pipeline failed', { reportId: ctx.reportId, stage: err.code || stage, error: err.message });
     return { ok: false, error: err.message, code: err.code };
   }
