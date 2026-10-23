@@ -8,6 +8,7 @@ import {
   AI_FAILURE_CODES,
   AI_FAILURE_MESSAGES,
   resolveAiTimeoutPolicy,
+  coerceOptionalSettingNumber,
   inferenceResourceKey,
   isTransientAiFailure
 } from './timeouts.js';
@@ -16,6 +17,30 @@ import { analyzeThreatDocument } from './analyze.js';
 import { createCanonicalDocument } from '../canonicalDocument.js';
 import { parseAiSchedulingSetting } from '../analysisConcurrency.js';
 import { autoRetryDelayMs, decideAutoRetry, AUTO_RETRY_BASE_DELAY_MS, AUTO_RETRY_MAX_DELAY_MS } from '../autoRetry.js';
+
+/** Production-shaped Ollama row after migration 049 (scheduling columns NULL). */
+function productionNullSchedulingRow(overrides = {}) {
+  return {
+    id: 1,
+    enabled: true,
+    provider: 'ollama',
+    base_url: 'http://192.168.1.8:11434',
+    model: 'qwen3.5:9b',
+    api_key: '',
+    timeout_ms: 300000,
+    max_input_chars: 60000,
+    connection_timeout_ms: 30000,
+    first_token_timeout_ms: 300000,
+    inactivity_timeout_ms: 300000,
+    total_analysis_timeout_ms: 1800000,
+    max_concurrent_report_analyses: 2,
+    max_concurrent_ai_requests: null,
+    capacity_wait_timeout_ms: null,
+    provider_execution_timeout_ms: null,
+    auto_retry_max_attempts: null,
+    ...overrides
+  };
+}
 
 test('policy defaults: local Ollama gets capacity 1 (measured serial host), hosted providers 4', () => {
   const local = resolveAiTimeoutPolicy({ provider: 'ollama', base_url: 'http://192.168.1.8:11434' });
@@ -27,7 +52,118 @@ test('policy defaults: local Ollama gets capacity 1 (measured serial host), host
   assert.equal(local.total_analysis_timeout_ms, 1_800_000, 'active ceiling unchanged');
   const hosted = resolveAiTimeoutPolicy({ provider: 'openai', base_url: null });
   assert.equal(hosted.max_concurrent_ai_requests, 4);
+  assert.equal(hosted.capacity_wait_timeout_ms, 900_000);
+  assert.equal(hosted.provider_execution_timeout_ms, 600_000);
+  assert.equal(hosted.auto_retry_max_attempts, 2);
   assert.ok(hosted.capacity_wait_timeout_ms < local.capacity_wait_timeout_ms);
+});
+
+test('policy: SQL NULL / undefined / omitted scheduling columns use local defaults (prod 37c5b53 regression)', () => {
+  // Pre-fix bug: Number(null)===0 clamped to range mins (10s / 30s / 0 retries).
+  assert.equal(Number(null), 0, 'documents the JS footgun this fix addresses');
+
+  const fromNullRow = resolveAiTimeoutPolicy(productionNullSchedulingRow());
+  assert.equal(fromNullRow.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(fromNullRow.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(fromNullRow.auto_retry_max_attempts, 2);
+  assert.equal(fromNullRow.max_concurrent_ai_requests, 1);
+  assert.equal(fromNullRow.is_local, true);
+
+  const fromUndefined = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    base_url: 'http://192.168.1.8:11434',
+    capacity_wait_timeout_ms: undefined,
+    provider_execution_timeout_ms: undefined,
+    auto_retry_max_attempts: undefined,
+    max_concurrent_ai_requests: undefined
+  });
+  assert.equal(fromUndefined.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(fromUndefined.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(fromUndefined.auto_retry_max_attempts, 2);
+
+  const omitted = resolveAiTimeoutPolicy({ provider: 'ollama', base_url: 'http://192.168.1.8:11434' });
+  assert.equal(omitted.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(omitted.auto_retry_max_attempts, 2);
+
+  // Hosted NULL scheduling must not collapse to local mins either.
+  const hostedNull = resolveAiTimeoutPolicy({
+    provider: 'openai',
+    max_concurrent_ai_requests: null,
+    capacity_wait_timeout_ms: null,
+    provider_execution_timeout_ms: null,
+    auto_retry_max_attempts: null
+  });
+  assert.equal(hostedNull.max_concurrent_ai_requests, 4);
+  assert.equal(hostedNull.capacity_wait_timeout_ms, 900_000);
+  assert.equal(hostedNull.provider_execution_timeout_ms, 600_000);
+  assert.equal(hostedNull.auto_retry_max_attempts, 2);
+});
+
+test('policy: empty string and invalid input use defaults; explicit zero disables auto-retry', () => {
+  const empty = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    base_url: 'http://192.168.1.8:11434',
+    capacity_wait_timeout_ms: '',
+    provider_execution_timeout_ms: '   ',
+    auto_retry_max_attempts: '',
+    max_concurrent_ai_requests: ''
+  });
+  assert.equal(empty.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(empty.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(empty.auto_retry_max_attempts, 2);
+  assert.equal(empty.max_concurrent_ai_requests, 1);
+
+  const invalid = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    base_url: 'http://192.168.1.8:11434',
+    capacity_wait_timeout_ms: 'not-a-number',
+    provider_execution_timeout_ms: false,
+    auto_retry_max_attempts: 'x',
+    max_concurrent_ai_requests: NaN
+  });
+  assert.equal(invalid.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(invalid.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(invalid.auto_retry_max_attempts, 2);
+  assert.equal(invalid.max_concurrent_ai_requests, 1);
+
+  const zeroRetry = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    base_url: 'http://192.168.1.8:11434',
+    auto_retry_max_attempts: 0
+  });
+  assert.equal(zeroRetry.auto_retry_max_attempts, 0);
+  assert.equal(
+    decideAutoRetry({ jobType: 'analyze', code: 'first_token_timeout', previousAttempt: 0, maxAttempts: zeroRetry.auto_retry_max_attempts }).retry,
+    false,
+    'explicit 0 still disables automatic retry'
+  );
+});
+
+test('policy: numeric strings and in-range positives are preserved; out-of-range clamps', () => {
+  const strings = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    base_url: 'http://192.168.1.8:11434',
+    max_concurrent_ai_requests: '2',
+    capacity_wait_timeout_ms: '120000',
+    provider_execution_timeout_ms: '600000',
+    auto_retry_max_attempts: '1'
+  });
+  assert.equal(strings.max_concurrent_ai_requests, 2);
+  assert.equal(strings.capacity_wait_timeout_ms, 120_000);
+  assert.equal(strings.provider_execution_timeout_ms, 600_000);
+  assert.equal(strings.auto_retry_max_attempts, 1);
+
+  const positive = resolveAiTimeoutPolicy({
+    provider: 'ollama',
+    max_concurrent_ai_requests: 3,
+    capacity_wait_timeout_ms: 60_000,
+    provider_execution_timeout_ms: 90_000,
+    auto_retry_max_attempts: 2
+  });
+  assert.equal(positive.max_concurrent_ai_requests, 3);
+  assert.equal(positive.capacity_wait_timeout_ms, 60_000);
+  assert.equal(positive.provider_execution_timeout_ms, 90_000);
+  assert.equal(positive.auto_retry_max_attempts, 2);
 });
 
 test('policy: configured scheduling values are honoured and clamped', () => {
@@ -36,6 +172,31 @@ test('policy: configured scheduling values are honoured and clamped', () => {
   assert.equal(p.capacity_wait_timeout_ms, 10_000);
   assert.equal(p.provider_execution_timeout_ms, 7_200_000);
   assert.equal(p.auto_retry_max_attempts, 5);
+});
+
+test('coerceOptionalSettingNumber: null/empty absent; zero kept; invalid NaN', () => {
+  assert.equal(coerceOptionalSettingNumber(null), null);
+  assert.equal(coerceOptionalSettingNumber(undefined), null);
+  assert.equal(coerceOptionalSettingNumber(''), null);
+  assert.equal(coerceOptionalSettingNumber('  '), null);
+  assert.equal(coerceOptionalSettingNumber(0), 0);
+  assert.equal(coerceOptionalSettingNumber('0'), 0);
+  assert.equal(coerceOptionalSettingNumber(120000), 120000);
+  assert.equal(coerceOptionalSettingNumber('120000'), 120000);
+  assert.ok(Number.isNaN(coerceOptionalSettingNumber('abc')));
+  assert.ok(Number.isNaN(coerceOptionalSettingNumber(false)));
+  assert.ok(Number.isNaN(coerceOptionalSettingNumber(true)));
+});
+
+test('maskAiSettingsForClient + resolveAiTimeoutPolicy: persisted NULL row exposes effective local defaults', () => {
+  const masked = maskAiSettingsForClient(productionNullSchedulingRow());
+  assert.equal(masked.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(masked.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(masked.auto_retry_max_attempts, 2);
+  assert.equal(masked.max_concurrent_ai_requests, 1);
+  assert.equal(masked.timeout_policy.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(masked.timeout_policy.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(masked.timeout_policy.auto_retry_max_attempts, 2);
 });
 
 test('capacity is per provider endpoint: models on the same host share it, trailing slash/case do not split it', () => {

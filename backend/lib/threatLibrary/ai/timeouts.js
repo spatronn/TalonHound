@@ -137,9 +137,46 @@ export function isLocalAiProvider(settings) {
   return isLikelyLocalAiBaseUrl(settings.base_url);
 }
 
-function clamp(n, min, max, fallback) {
+/**
+ * Coerce a persisted / client setting to a finite number, or `null` when the
+ * value means "absent → use provider default".
+ *
+ * Critical: `Number(null) === 0` in JavaScript. SQL NULL columns from
+ * migration 049 must not be treated as zero (which then clamps to the
+ * range minimum — e.g. 10s capacity wait instead of the 1h local default).
+ * Empty strings are also absent. Explicit numeric zero is preserved
+ * (needed for `auto_retry_max_attempts = 0`).
+ *
+ * @param {unknown} n
+ * @returns {number|null} finite number, or null when absent
+ */
+export function coerceOptionalSettingNumber(n) {
+  if (n === null || n === undefined) return null;
+  if (typeof n === 'string') {
+    const trimmed = n.trim();
+    if (trimmed === '') return null;
+    // Accept decimal strings for ms fields; integer validation for write
+    // paths lives in parseAiSchedulingSetting.
+    if (!/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(trimmed)) return Number.NaN;
+    const v = Number(trimmed);
+    return Number.isFinite(v) ? v : Number.NaN;
+  }
+  if (typeof n === 'boolean') return Number.NaN;
   const v = Number(n);
-  if (!Number.isFinite(v)) return fallback;
+  return Number.isFinite(v) ? v : Number.NaN;
+}
+
+/**
+ * Clamp a setting into [min, max], using `fallback` when the value is
+ * absent (null / undefined / empty) or non-numeric.
+ * @param {unknown} n
+ * @param {number} min
+ * @param {number} max
+ * @param {number} fallback
+ */
+function clamp(n, min, max, fallback) {
+  const v = coerceOptionalSettingNumber(n);
+  if (v === null || !Number.isFinite(v)) return fallback;
   return Math.min(max, Math.max(min, v));
 }
 
