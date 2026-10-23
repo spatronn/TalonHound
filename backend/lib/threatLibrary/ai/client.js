@@ -77,7 +77,17 @@ export async function verifyProviderIdle(settings, policy, transport = nodeHttpT
     body = { model: settings.model, max_tokens: 1, stream: true, messages };
   }
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT)), budgetMs);
+  // The probe bounds itself: even a transport that ignored the abort could
+  // never leave a quarantined slot stuck "being verified".
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
+      controller.abort(err);
+      reject(err);
+    }, budgetMs);
+  });
+  expired.catch(() => {});
   let call = null;
   try {
     call = transport(endpoint.url, {
@@ -87,12 +97,12 @@ export async function verifyProviderIdle(settings, policy, transport = nodeHttpT
       signal: controller.signal,
       connectTimeoutMs: policy?.connection_timeout_ms
     });
-    const res = await call.response;
+    const res = await Promise.race([call.response, expired]);
     if (!res.ok) return false;
     const reader = res.body?.getReader?.();
     if (reader) {
       while (true) {
-        const { done } = await reader.read();
+        const { done } = await Promise.race([reader.read(), expired]);
         if (done) break;
       }
     }
@@ -600,7 +610,11 @@ export async function callAiProvider(settings, messages, hooks = {}) {
         reportId: hooks.reportId,
         onWaiting: hooks.onCapacityWait,
         // A waiter at the head of the queue probes quarantined slots.
-        verifyIdle: () => verifyProviderIdle(settings, policy, hooks.transport || nodeHttpTransport)
+        verifyIdle: () => verifyProviderIdle(settings, policy, hooks.transport || nodeHttpTransport),
+        // Local providers are fail-closed: an expired or unverified slot is
+        // never handed out by time (inferenceScheduler.js).
+        failClosed: policy.is_local === true,
+        maxExecutionMs: policy.provider_execution_timeout_ms
       });
     } catch (err) {
       const failure = mapTransportError(err);
@@ -627,7 +641,8 @@ export async function callAiProvider(settings, messages, hooks = {}) {
         // stays occupied until it is verified idle, at most until the
         // request's worst-case execution bound (from when it was sent).
         const startedAt = Number(err.timing?.request_started_at) || Date.now();
-        const holdMs = Math.max(1000, startedAt + policy.provider_execution_timeout_ms - Date.now());
+        const floorMs = Math.min(1000, policy.provider_execution_timeout_ms);
+        const holdMs = Math.max(floorMs, startedAt + policy.provider_execution_timeout_ms - Date.now());
         await lease.quarantine({ holdMs, reason: err.code });
         err.timing = { ...(err.timing || {}), slot_quarantined: true };
         // First probe right away (background; the caller gets its error now).

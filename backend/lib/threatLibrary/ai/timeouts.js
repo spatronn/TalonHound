@@ -26,6 +26,9 @@ export const AI_FAILURE_CODES = Object.freeze({
   AI_CAPACITY_WAIT_TIMEOUT: 'ai_capacity_wait_timeout',
   AI_CAPACITY_UNAVAILABLE: 'ai_capacity_unavailable',
   AI_CAPACITY_LEASE_LOST: 'ai_capacity_lease_lost',
+  // Capacity held by a request whose provider-side termination is unverified
+  // past its worst-case bound: fail fast instead of risking an overlap.
+  AI_CAPACITY_QUARANTINED: 'ai_capacity_quarantined',
   PROVIDER_EXECUTION_TIMEOUT: 'provider_execution_timeout',
   // Job ownership (jobOwnership.js): the run stops without writing report state.
   JOB_OWNERSHIP_LOST: 'job_ownership_lost',
@@ -53,6 +56,7 @@ export const AI_FAILURE_MESSAGES = Object.freeze({
   [AI_FAILURE_CODES.AI_CAPACITY_WAIT_TIMEOUT]: 'Waited too long for AI capacity (other analyses were using the AI provider)',
   [AI_FAILURE_CODES.AI_CAPACITY_UNAVAILABLE]: 'AI capacity scheduler is unavailable',
   [AI_FAILURE_CODES.AI_CAPACITY_LEASE_LOST]: 'AI capacity lease was lost while the request was running',
+  [AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED]: 'AI capacity is held: the provider has not confirmed that an abandoned request finished',
   [AI_FAILURE_CODES.PROVIDER_EXECUTION_TIMEOUT]: 'AI provider request exceeded the per-request execution limit',
   [AI_FAILURE_CODES.JOB_OWNERSHIP_LOST]: 'Analysis ownership moved to another worker',
   [AI_FAILURE_CODES.WORKER_SHUTDOWN]: 'Analysis was interrupted by a worker shutdown and will resume'
@@ -75,6 +79,7 @@ export function isTransientAiFailure(code, httpStatus) {
     case AI_FAILURE_CODES.PROVIDER_UNREACHABLE:
     case AI_FAILURE_CODES.AI_CAPACITY_UNAVAILABLE:
     case AI_FAILURE_CODES.AI_CAPACITY_LEASE_LOST:
+    case AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED:
       return true;
     case AI_FAILURE_CODES.PROVIDER_HTTP_ERROR:
       return Number(httpStatus) >= 500 || Number(httpStatus) === 429;

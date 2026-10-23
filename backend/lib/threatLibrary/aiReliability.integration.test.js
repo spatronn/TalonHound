@@ -14,6 +14,9 @@ import { buildLayoutVariant } from './benchmark/layoutVariants.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { claimJobOwnership, startJobHeartbeat, requeueOwnedJob } from './jobOwnership.js';
 import { createFencedDb } from './jobFence.js';
+import { runExtractionRefresh } from './extractionRefresh.js';
+import { probeQuarantinedCapacity } from './ai/capacityRecovery.js';
+import { inferenceResourceKey } from './ai/timeouts.js';
 import {
   createExclusivePipelineJob,
   dispatchQueuedThreatLibraryAnalyses,
@@ -630,4 +633,131 @@ test('fence: a stale owner\'s progress write after a takeover stops the run with
   } finally {
     await ollama.close();
   }
+});
+
+// ----------------------------------------- refresh extraction + recovery
+
+async function refreshableJob() {
+  const { report } = await newReport('review_required');
+  await pool.query(`UPDATE threat_reports SET import_status = 'ready' WHERE id = $1`, [report.id]);
+  const job = await createJob(pool, { reportId: report.id, jobType: 'refresh_extraction' });
+  const owner = crypto.randomUUID();
+  await claimJobOwnership(pool, { jobId: job.id, ownerToken: owner });
+  return { report, job, owner, restoreStatus: { analysis_status: 'review_required', import_status: 'ready' } };
+}
+
+test('refresh extraction under the fence: the live owner completes normally (reconcile, drift re-check, status)', opts, async () => {
+  const { report, job, owner, restoreStatus } = await refreshableJob();
+  const before = await candidateSnapshot(report.id);
+  const res = await runExtractionRefresh(pool, { reportId: report.id, jobId: job.id, restoreStatus, fence: { jobId: job.id, ownerToken: owner } });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const jobRow = (await pool.query(`SELECT status FROM threat_library_jobs WHERE id = $1`, [job.id])).rows[0];
+  assert.equal(jobRow.status, 'completed');
+  const after = await candidateSnapshot(report.id);
+  assert.deepEqual(after.map((r) => [r.id, r.review_status]), before.map((r) => [r.id, r.review_status]), 'analyst state untouched');
+});
+
+test('refresh extraction: a refresh whose job was taken over (stalled worker, recovery re-dispatch) commits nothing', opts, async () => {
+  const { report, job, owner, restoreStatus } = await refreshableJob();
+  await pool.query(`UPDATE threat_reports SET summary = 'before' WHERE id = $1`, [report.id]);
+  const before = await candidateSnapshot(report.id);
+  const progressBefore = (await pool.query(`SELECT analysis_progress FROM threat_reports WHERE id = $1`, [report.id])).rows[0].analysis_progress;
+  // Recovery re-dispatched the job to another worker while this one was stalled.
+  await claimJobOwnership(pool, { jobId: job.id, ownerToken: crypto.randomUUID(), staleMs: 0 });
+  const err = await runExtractionRefresh(pool, { reportId: report.id, jobId: job.id, restoreStatus, fence: { jobId: job.id, ownerToken: owner } })
+    .then((r) => r, (e) => e);
+  assert.equal(err?.code ?? err?.code, 'job_ownership_lost', JSON.stringify(err?.message || err));
+  assert.deepEqual(await candidateSnapshot(report.id), before, 'no candidate writes');
+  const rep = (await pool.query(`SELECT summary, analysis_progress FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+  assert.equal(rep.summary, 'before');
+  assert.deepEqual(rep.analysis_progress, progressBefore, 'no status / progress writes');
+  const jobRow = (await pool.query(`SELECT status FROM threat_library_jobs WHERE id = $1`, [job.id])).rows[0];
+  assert.equal(jobRow.status, 'running', 'the new owner keeps the job');
+});
+
+test('refresh extraction: a takeover attempted during its candidate reconcile waits, then finds the job completed', opts, async () => {
+  const { report, job, owner, restoreStatus } = await refreshableJob();
+  let takeoverPromise = null;
+  let takeoverResult;
+  const racing = persistenceRacingPool(async () => {
+    takeoverPromise = claimJobOwnership(pool, { jobId: job.id, ownerToken: crypto.randomUUID(), staleMs: 0 }).then((row) => { takeoverResult = row; });
+    await sleep(200);
+  });
+  const res = await runExtractionRefresh(racing, { reportId: report.id, jobId: job.id, restoreStatus, fence: { jobId: job.id, ownerToken: owner } });
+  assert.ok(takeoverPromise, 'the race point was reached');
+  await takeoverPromise;
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal(takeoverResult, null, 'the job was already completed: nothing to take over');
+  const jobRow = (await pool.query(`SELECT status, owner_token FROM threat_library_jobs WHERE id = $1`, [job.id])).rows[0];
+  assert.equal(jobRow.status, 'completed');
+  assert.equal(jobRow.owner_token, owner);
+});
+
+test('worker safety net: quarantined capacity is probed with nobody waiting; kept while the provider is busy, released once idle', opts, async () => {
+  const ollama = await startMockOllama({
+    capacity: 1,
+    plan: (r) => (r.user === 'still running' ? { promptEvalMs: 800, genMs: 50, ignoreCancel: true } : { promptEvalMs: 5, genMs: 5 })
+  });
+  await pool.query(
+    `UPDATE threat_library_ai_settings SET enabled = true, provider = 'ollama', base_url = $1, model = 'qwen3.5:9b', max_concurrent_ai_requests = 1 WHERE id = 1`,
+    [ollama.baseUrl]
+  );
+  const scheduler = createInferenceScheduler(pool, { pollMs: 25, waitLeaseMs: 1000, holdLeaseMs: 3000, heartbeatMs: 500, verifyIntervalMs: 50 });
+  const settings = (await pool.query('SELECT * FROM threat_library_ai_settings WHERE id = 1')).rows[0];
+  const resourceKey = inferenceResourceKey(settings);
+  const probePolicy = { connection_timeout_ms: 1000, idle_probe_timeout_ms: 200 };
+  try {
+    const lease = await scheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000, failClosed: true });
+    await lease.quarantine({ holdMs: 60_000 });
+    // The abandoned request is still executing on the provider (~850ms).
+    const { nodeHttpTransport } = await import('./ai/providerHttp.js');
+    const running = nodeHttpTransport(`${ollama.baseUrl}/api/chat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model: 'qwen3.5:9b', messages: [{ role: 'user', content: 'still running' }] })
+    });
+    await sleep(50);
+    assert.equal(await probeQuarantinedCapacity(pool, scheduler, { policy: probePolicy }), 'still_busy');
+    assert.equal((await scheduler.snapshot(resourceKey)).quarantined, 1, 'kept while busy');
+    const res = await running.response;
+    for await (const _ of res.body) { /* drain until the provider finishes */ }
+    await sleep(80); // next verify interval
+    assert.equal(await probeQuarantinedCapacity(pool, scheduler, { policy: probePolicy }), 'released');
+    assert.equal((await scheduler.snapshot(resourceKey)).quarantined, 0);
+  } finally {
+    await pool.query('DELETE FROM threat_library_ai_capacity_leases WHERE resource_key = $1', [resourceKey]);
+    await ollama.close();
+  }
+});
+
+test('refresh extraction under the fence still aborts on a concurrent analyst review (drift re-check inside the locked transaction)', opts, async () => {
+  const { report, job, owner, restoreStatus } = await refreshableJob();
+  const target = (await candidateSnapshot(report.id))[0].id;
+  let raced = false;
+  const racing = {
+    query: (...args) => pool.query(...args),
+    connect: async () => {
+      const client = await pool.connect();
+      return {
+        query: async (sql, params) => {
+          if (!raced && /FROM threat_report_candidates WHERE report_id = \$1 ORDER BY id FOR UPDATE/.test(String(sql))) {
+            raced = true;
+            // An analyst decision committed on another connection just before the row lock.
+            await pool.query(`UPDATE threat_report_candidates SET review_status = 'ignored', updated_at = NOW() WHERE id = $1`, [target]);
+          }
+          return client.query(sql, params);
+        },
+        release: (...a) => client.release(...a)
+      };
+    }
+  };
+  const before = (await pool.query(`SELECT summary, canonical_document FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+  const res = await runExtractionRefresh(racing, { reportId: report.id, jobId: job.id, restoreStatus, fence: { jobId: job.id, ownerToken: owner } }).catch((e) => e);
+  assert.ok(raced, 'the race point was reached');
+  assert.equal(res?.ok, false, JSON.stringify(res));
+  assert.equal(res.code, 'refresh_candidates_changed_concurrently');
+  const row = (await candidateSnapshot(report.id)).find((r) => r.id === target);
+  assert.equal(row.review_status, 'ignored', 'the analyst decision stands');
+  const after = (await pool.query(`SELECT summary, canonical_document FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+  assert.deepEqual(after, before, 'the refresh outcome was rolled back whole');
 });

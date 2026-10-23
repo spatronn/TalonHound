@@ -5,7 +5,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { callAiProvider } from './client.js';
+import { callAiProvider, verifyProviderIdle } from './client.js';
 import { AI_FAILURE_CODES, aiFailure, isTransientAiFailure } from './timeouts.js';
 import { startMockOllama } from '../../../test-support/mockOllamaServer.js';
 import { createMemoryInferenceScheduler } from '../../../test-support/memoryInferenceScheduler.js';
@@ -297,20 +297,67 @@ for (const mode of ['quarantine', 'legacy_release']) {
   });
 }
 
-test('quarantine is bounded: a provider that never proves idle frees the slot at the worst-case execution bound', async () => {
+test('fail-closed: past its bound an unverified quarantine is never freed by time; waiters fail fast, a probe or an admin release recovers', async () => {
   const scheduler = createMemoryInferenceScheduler();
   const stuck = () => ({ response: new Promise(() => {}), closed: new Promise(() => {}), sent: () => true });
-  const p = policy({ first_token_timeout_ms: 100, cancel_close_wait_ms: 30, idle_probe_timeout_ms: 50, provider_execution_timeout_ms: 600 });
+  const p = policy({ first_token_timeout_ms: 100, cancel_close_wait_ms: 30, idle_probe_timeout_ms: 50, provider_execution_timeout_ms: 300 });
   const started = Date.now();
   const err = await callAiProvider(settings('http://127.0.0.1:9'), MSG, { policy: p, scheduler, transport: stuck }).catch((e) => e);
   assert.equal(err.timing.cancel_outcome, 'unconfirmed');
   assert.ok(Date.now() - started < 500, 'the caller is not blocked by the quarantine');
+  await new Promise((r) => setTimeout(r, 450)); // well past the worst-case bound
+  assert.equal(scheduler.stats().quarantined, 1, 'not released by time');
+  assert.equal(scheduler.stats().holding, 1);
+  // A new request fails fast with the explicit state; nothing is sent to the provider.
+  let sent = 0;
+  const counting = () => { sent += 1; return stuck(); };
+  const t0 = Date.now();
+  const blocked = await callAiProvider(settings('http://127.0.0.1:9'), MSG, { policy: p, scheduler, transport: counting, capacityWaitBudgetMs: 60_000 }).catch((e) => e);
+  assert.equal(blocked.code, AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED);
+  assert.ok(Date.now() - t0 < 1000, 'bounded: fails fast instead of waiting its 60s budget');
+  assert.equal(sent, 0, 'no inference request was sent while capacity is unverified');
+  assert.equal(isTransientAiFailure(blocked.code), true, 'eligible for bounded automatic retry');
+  // Recovery 1: a probe that is served releases it.
+  assert.equal(await scheduler.verifyQuarantine('k', async () => true), 'released');
+  assert.equal(scheduler.stats().holding, 0);
+  // Recovery 2: an administrator release.
+  await callAiProvider(settings('http://127.0.0.1:9'), MSG, { policy: p, scheduler, transport: stuck }).catch(() => {});
   assert.equal(scheduler.stats().quarantined, 1);
-  const lease = await scheduler.acquire({ capacity: 1, maxWaitMs: 5000, verifyIdle: async () => false });
-  const grantedAfter = Date.now() - started;
-  assert.ok(grantedAfter >= 550, `slot held until the bound (${grantedAfter}ms)`);
-  assert.ok(grantedAfter < 2000, 'and no longer: no deadlock');
-  await lease.release();
+  assert.equal(await scheduler.releaseQuarantined(), 1);
+  assert.equal(scheduler.stats().holding, 0);
+});
+
+test('adversarial: the provider ignores cancellation and keeps generating past the worst-case bound — no overlap, explicit unavailability, recovery once it stops', async () => {
+  // The abandoned request runs ~1.4s on the provider; the configured worst-case bound is 300ms.
+  const ollama = await startMockOllama({
+    capacity: 1,
+    plan: (r) => {
+      if (isProbe(r)) return { promptEvalMs: 5, genMs: 5 };
+      if (r.user === 'abandoned') return { promptEvalMs: 400, genMs: 1000, ignoreCancel: true };
+      return { promptEvalMs: 20, genMs: 40 };
+    }
+  });
+  const scheduler = createMemoryInferenceScheduler();
+  const p = policy({ first_token_timeout_ms: 200, idle_probe_timeout_ms: 100, provider_execution_timeout_ms: 300 });
+  try {
+    const err = await callAiProvider(settings(ollama.baseUrl), { system: 's', user: 'abandoned' }, { policy: p, scheduler }).catch((e) => e);
+    assert.equal(err.code, AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
+    await new Promise((r) => setTimeout(r, 450)); // bound passed; the provider is still generating
+    const abandoned = ollama.requests.find((r) => r.user === 'abandoned');
+    assert.equal(abandoned.endedAt, null, 'precondition: the provider is still executing the abandoned request');
+    const during = await callAiProvider(settings(ollama.baseUrl), MSG, { policy: p, scheduler }).catch((e) => e);
+    assert.equal(during.code, AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED, 'explicit unavailability, not reuse');
+    assert.equal(ollama.requests.filter((r) => r.user === 'u').length, 0, 'nothing overlapped the running generation');
+    // Once the provider finishes, a probe is served and capacity returns.
+    assert.ok(await waitFor(() => abandoned.endedAt != null, 3000));
+    assert.equal(await scheduler.verifyQuarantine('k', () => verifyProviderIdle(settings(ollama.baseUrl), p)), 'released');
+    const after = await callAiProvider(settings(ollama.baseUrl), MSG, { policy: p, scheduler });
+    const next = ollama.requests.find((r) => r.user === 'u');
+    assert.ok(after.text);
+    assert.ok(next.startedAt >= abandoned.endedAt, 'no overlap');
+  } finally {
+    await ollama.close();
+  }
 });
 
 test('no quarantine when nothing reached the provider or the provider answered itself', async () => {

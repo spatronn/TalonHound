@@ -72,6 +72,7 @@ import {
 import { createServiceLogger } from '../appLogger.js';
 import { compactExtractionQuality, storedExtractionQuality, withPostMergeQuality, withReplayMembershipDivergence } from './extractionQuality.js';
 import { preserveStoredIocLinks } from './iocMatch.js';
+import { createFencedDb } from './jobFence.js';
 import {
   REFRESH_GUARD_DECISIONS,
   buildRefreshMembershipDiff,
@@ -428,6 +429,16 @@ export async function previewExtractionRefresh(pool, report, opts = {}) {
  * @param {{ reportId: number, jobId: number, restoreStatus?: object, membershipPolicy?: object }} ctx
  */
 export async function runExtractionRefresh(pool, ctx) {
+  // Worker-run refreshes are ownership-fenced like the AI pipeline
+  // (jobFence.js): a refresh whose job was taken over (stalled worker,
+  // recovery re-dispatch) commits nothing. Candidate reconcile keeps its own
+  // candidate-row locks and drift re-check against concurrent review.
+  const rawPool = pool;
+  if (ctx?.fence) pool = createFencedDb(rawPool, ctx.fence);
+  // Fenced runs commit the protected outcome (candidate reconcile with its
+  // drift re-check, publication date, grounding, final status, job
+  // completion) as one transaction holding the job-row fence.
+  let refreshTx = null;
   const report = await getReportById(pool, ctx.reportId);
   if (!report) throw Object.assign(new Error('Report not found'), { code: 'not_found' });
 
@@ -492,8 +503,11 @@ export async function runExtractionRefresh(pool, ctx) {
     // aborts with nothing written), and the guard is re-evaluated against the
     // locked state and link provenance (the accepted preview fingerprint is
     // checked again there).
+    refreshTx = pool.fenced ? await pool.connect() : null;
+    const db = refreshTx || pool;
+    if (refreshTx) await refreshTx.query('BEGIN');
     let lockedGuard = { diff: membershipDiff, guard };
-    const persisted = await reconcileReportCandidates(pool, report.id, refreshed.candidates, {
+    const persisted = await reconcileReportCandidates(db, report.id, refreshed.candidates, {
       beforeWrite: async (lockedRows, client) => {
         const drift = candidateSnapshotDrift(previousRows, lockedRows);
         if (drift.length) {
@@ -513,11 +527,21 @@ export async function runExtractionRefresh(pool, ctx) {
 
     // Publication date is written only for an applied refresh (this run's
     // extraction read the stored date; a blocked or aborted refresh writes nothing).
-    await applyPublicationDate(pool, report, { document, sourceHtml });
+    // applyPublicationDate is non-fatal (it swallows its errors): inside the
+    // transaction a failed statement is rolled back to this savepoint.
+    if (refreshTx) await refreshTx.query('SAVEPOINT tl_refresh_publication_date');
+    const publication = await applyPublicationDate(db, report, { document, sourceHtml });
+    if (refreshTx) {
+      await refreshTx.query(
+        String(publication?.reason || '').startsWith('error:')
+          ? 'ROLLBACK TO SAVEPOINT tl_refresh_publication_date'
+          : 'RELEASE SAVEPOINT tl_refresh_publication_date'
+      );
+    }
     const outcome = resolveRefreshOutcomeStatus(restore, persisted);
-    const grounding = await applyStoredVulnerabilityGrounding(pool, report, refreshed.document);
+    const grounding = await applyStoredVulnerabilityGrounding(db, report, refreshed.document);
     const publisherGrounding = await applyStoredPublisherEntityGrounding(
-      pool,
+      db,
       { ...report, summary: grounding.summary ?? report.summary },
       refreshed.document
     );
@@ -552,7 +576,7 @@ export async function runExtractionRefresh(pool, ctx) {
       membership_diff: compactLockedDiff
     };
 
-    await updateReportStatus(pool, report.id, {
+    await updateReportStatus(db, report.id, {
       canonical_document: refreshed.document,
       candidate_summary: refreshed.summary,
       ...(titleUpdate.changed ? { title: titleUpdate.title } : {}),
@@ -570,17 +594,23 @@ export async function runExtractionRefresh(pool, ctx) {
       },
       clear_cancel: true
     });
-    await updateJob(pool, ctx.jobId, {
+    await updateJob(db, ctx.jobId, {
       status: 'completed',
       stage: outcome.analysis_status,
       progress: { stage: outcome.analysis_status, mode: MODE, dispatch, summary: refreshed.summary, refresh: result }
     });
+    if (refreshTx) {
+      await refreshTx.query('COMMIT');
+      refreshTx.release();
+      refreshTx = null;
+    }
 
     // Idempotent selective discovery: upsert discovered rows only (never attach).
     try {
       const { runIocSourceDiscoveryForReport } = await import('./iocSources/runDiscovery.js');
+      // After completion: the job is no longer running, so this is not fenced.
       await runIocSourceDiscoveryForReport(
-        pool,
+        rawPool,
         {
           ...report,
           canonical_document: refreshed.document,
@@ -626,6 +656,12 @@ export async function runExtractionRefresh(pool, ctx) {
       }
     };
   } catch (err) {
+    if (refreshTx) {
+      // The outcome transaction rolls back whole: nothing of it was written.
+      try { await refreshTx.query('ROLLBACK'); } catch { /* ignore */ }
+      refreshTx.release();
+      refreshTx = null;
+    }
     // The guard re-evaluated against the locked rows blocked: the write
     // transaction rolled back, so this is an ordinary blocked refresh.
     if (err?.code === REFRESH_BLOCKED_CODE && err.lockedGuard) {

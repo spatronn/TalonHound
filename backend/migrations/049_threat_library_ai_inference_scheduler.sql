@@ -9,8 +9,12 @@
 --    without manual cleanup. No PostgreSQL connection is held during inference.
 --    A slot whose cancelled request may still be executing on the provider is
 --    quarantined (quarantined_at): it stays occupied until a probe confirms
---    the provider is idle (verify_after paces probes) or its worst-case bound
---    expires.
+--    the provider is idle (verify_after paces probes). Local providers are
+--    fail-closed (fail_closed): an expired holding lease (crash, database
+--    outage, partition) becomes a quarantine instead of free capacity, and
+--    a quarantine past its worst-case bound (max_execution_ms) is never
+--    released by time — only by a successful probe or an audited
+--    administrator release.
 -- 2. threat_library_ai_settings: per-endpoint AI request capacity, the
 --    cumulative capacity-wait budget, a per-request execution limit and the
 --    bounded automatic retry count. NULL keeps the provider default.
@@ -36,12 +40,16 @@ CREATE TABLE IF NOT EXISTS public.threat_library_ai_capacity_leases (
     acquired_at timestamptz,
     quarantined_at timestamptz,
     verify_after timestamptz,
+    fail_closed boolean NOT NULL DEFAULT false,
+    max_execution_ms integer,
     CONSTRAINT uq_tl_ai_capacity_leases_token UNIQUE (token)
 );
 
 ALTER TABLE public.threat_library_ai_capacity_leases
   ADD COLUMN IF NOT EXISTS quarantined_at timestamptz,
-  ADD COLUMN IF NOT EXISTS verify_after timestamptz;
+  ADD COLUMN IF NOT EXISTS verify_after timestamptz,
+  ADD COLUMN IF NOT EXISTS fail_closed boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS max_execution_ms integer;
 
 CREATE INDEX IF NOT EXISTS idx_tl_ai_capacity_leases_resource
   ON public.threat_library_ai_capacity_leases (resource_key, state, id);

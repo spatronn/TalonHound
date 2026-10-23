@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
+import { useAppConfirm } from '../../lib/appChromeContext.jsx';
 import { ui } from './styles.js';
 import {
   MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
@@ -52,6 +53,9 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [settings, setSettings] = useState(null);
+  const [capacity, setCapacity] = useState(null);
+  const [releasing, setReleasing] = useState(false);
+  const requestConfirm = useAppConfirm();
   const [form, setForm] = useState({
     enabled: false,
     provider: 'openai_compatible',
@@ -75,6 +79,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
       const { data } = await api.get('/threat-library/ai-settings');
       const s = data?.settings || null;
       setSettings(s);
+      setCapacity(data?.inference_capacity || null);
       setForm((f) => ({
         ...f,
         enabled: s?.enabled === true,
@@ -173,6 +178,29 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
       setError(err?.response?.data?.message || 'Failed to clear API key');
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function releaseQuarantinedCapacity() {
+    const ok = await requestConfirm({
+      title: 'Release quarantined AI capacity?',
+      description:
+        'Only after confirming the AI provider has no request still running (for example after restarting Ollama). Releasing while it is still generating makes new analyses queue behind it.',
+      confirmLabel: 'Release',
+      cancelLabel: 'Cancel'
+    });
+    if (!ok) return;
+    setReleasing(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await api.post('/threat-library/ai-settings/release-quarantined-capacity', { confirm: true });
+      setSuccess(`Released ${Number(data?.released) || 0} quarantined AI slot(s).`);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to release quarantined AI capacity');
+    } finally {
+      setReleasing(false);
     }
   }
 
@@ -420,6 +448,21 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
                 </button>
               ) : null}
             </div>
+            {capacity?.quarantined > 0 ? (
+              <div style={{ ...ui.error, marginTop: 14 }} data-testid="ai-capacity-quarantined">
+                <strong style={{ display: 'block', marginBottom: 4 }}>
+                  AI capacity held: {capacity.quarantined} of {capacity.capacity} slot(s)
+                  {capacity.oldest_quarantined_at ? ` since ${formatUserDateTime(capacity.oldest_quarantined_at)}` : ''}
+                </strong>
+                The provider has not confirmed that a cancelled request finished. The slot is released automatically once a test request is served
+                {capacity.unverified > 0 ? '; until then new analyses fail with ai_capacity_quarantined.' : '.'}
+                <div style={{ marginTop: 10 }}>
+                  <button type="button" style={ui.btnDanger} disabled={releasing} onClick={() => releaseQuarantinedCapacity().catch(() => {})}>
+                    {releasing ? 'Releasing…' : 'Release quarantined capacity'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>

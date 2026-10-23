@@ -66,3 +66,12 @@ test('AI settings expose the provider capacity, capacity wait, execution limit a
   }
   assert.doesNotMatch(src, /Allows local model load time before the first token/);
 });
+
+test('quarantined AI capacity: explained to analysts, visible to admins with an audited, confirmed release', () => {
+  const lines = describeAnalysisFailureDetail({ failure_code: 'ai_capacity_quarantined', failure_details: {} });
+  assert.ok(lines.some((l) => /has not confirmed that an earlier cancelled request finished/.test(l)));
+  const src = readFileSync(new URL('./ThreatLibraryAiSettings.jsx', import.meta.url), 'utf8');
+  assert.match(src, /release-quarantined-capacity', \{ confirm: true \}/);
+  assert.match(src, /requestConfirm\(\{/);
+  assert.match(src, /data-testid="ai-capacity-quarantined"/);
+});

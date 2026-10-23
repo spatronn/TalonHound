@@ -548,7 +548,8 @@ const AI_FAILURE_HINTS = Object.freeze({
   provider_execution_timeout: 'A single AI request exceeded the per-request execution limit.',
   ai_capacity_wait_timeout: 'Other analyses kept the AI provider busy for longer than the capacity wait limit. Retry once the queue is shorter.',
   ai_capacity_unavailable: 'The AI capacity scheduler could not reach the database.',
-  ai_capacity_lease_lost: 'The analysis lost its AI slot while running (database connectivity).'
+  ai_capacity_lease_lost: 'The analysis lost its AI slot while running (database connectivity).',
+  ai_capacity_quarantined: 'The AI provider has not confirmed that an earlier cancelled request finished, so its capacity is held. It frees itself once the provider answers a test request; an administrator can release it in AI Settings.'
 });
 
 export const PAGE_SIZES = Object.freeze([25, 50, 100]);

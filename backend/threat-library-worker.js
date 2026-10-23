@@ -23,6 +23,8 @@ import {
 } from './lib/threatLibrary/analysisConcurrency.js';
 import { claimJobOwnership, startJobHeartbeat, requeueOwnedJob } from './lib/threatLibrary/jobOwnership.js';
 import { createFencedDb } from './lib/threatLibrary/jobFence.js';
+import { getInferenceScheduler } from './lib/threatLibrary/ai/inferenceScheduler.js';
+import { probeQuarantinedCapacity } from './lib/threatLibrary/ai/capacityRecovery.js';
 import { maybeScheduleAutoRetry } from './lib/threatLibrary/autoRetry.js';
 import { buildRetryProgress } from './lib/threatLibrary/retryState.js';
 import { AI_FAILURE_CODES, aiFailure } from './lib/threatLibrary/ai/timeouts.js';
@@ -346,6 +348,14 @@ const safetyTimer = setInterval(async () => {
     if (recovered.length) log.info('scheduler recovered', { recovered: recovered.length, source: 'safety_net' });
   } catch (err) {
     log.warn('failed to recover interrupted analyses', { error: err?.message, source: 'safety_net' });
+  }
+  // Quarantined AI capacity is probed even when no analysis is waiting, so a
+  // provider that recovered frees its slot without manual action.
+  try {
+    const outcome = await probeQuarantinedCapacity(pool, getInferenceScheduler(pool));
+    if (outcome === 'released') log.info('quarantined AI capacity released after idle probe', { source: 'safety_net' });
+  } catch (err) {
+    log.warn('quarantined AI capacity probe failed', { error: err?.message, source: 'safety_net' });
   }
   dispatchQueuedAnalyses().catch((err) => {
     log.warn('failed to dispatch queued analyses', { error: err?.message, source: 'safety_net' });

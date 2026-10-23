@@ -380,7 +380,15 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   app.get('/api/threat-library/ai-settings', requireRole(ROLES.ADMIN), async (_req, res) => {
     try {
       const settings = await getAiSettings(pool);
-      return res.json({ settings: maskAiSettingsForClient(settings) });
+      let inferenceCapacity = null;
+      try {
+        const { describeInferenceCapacity } = await import('../lib/threatLibrary/ai/capacityRecovery.js');
+        const { getInferenceScheduler } = await import('../lib/threatLibrary/ai/inferenceScheduler.js');
+        inferenceCapacity = await describeInferenceCapacity(settings, deps.inferenceScheduler || getInferenceScheduler(pool));
+      } catch {
+        inferenceCapacity = null; // status is informational
+      }
+      return res.json({ settings: maskAiSettingsForClient(settings), inference_capacity: inferenceCapacity });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to load AI settings', detail: err.message });
     }
@@ -454,6 +462,41 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       return res.json({ settings: maskAiSettingsForClient(updated) });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to clear API key', detail: err.message });
+    }
+  });
+
+  // Operator recovery for quarantined AI capacity: a slot whose cancelled
+  // request was never confirmed finished on the provider is held (fail-closed)
+  // until a probe succeeds. An admin who has verified the provider is idle
+  // (e.g. restarted Ollama) can release it explicitly; audited.
+  app.post('/api/threat-library/ai-settings/release-quarantined-capacity', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      if (req.body?.confirm !== true) {
+        return res.status(400).json({
+          message: 'Confirm that the AI provider is idle (no request still running) before releasing quarantined capacity.',
+          code: 'confirmation_required'
+        });
+      }
+      const settings = await getAiSettings(pool);
+      const { releaseQuarantinedCapacity } = await import('../lib/threatLibrary/ai/capacityRecovery.js');
+      const { getInferenceScheduler } = await import('../lib/threatLibrary/ai/inferenceScheduler.js');
+      const result = await releaseQuarantinedCapacity(settings, deps.inferenceScheduler || getInferenceScheduler(pool));
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.THREAT_LIBRARY_AI_CAPACITY_RELEASED,
+        entityType: AUDIT_ENTITY.SYSTEM,
+        entityDisplay: 'Threat Library AI capacity',
+        severity: AUDIT_SEVERITY.WARNING,
+        after: { released: result.released, resource: result.resource_key }
+      });
+      try {
+        await dispatchQueuedAnalyses();
+      } catch {
+        // the worker safety net dispatches next
+      }
+      return res.json({ released: result.released });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to release quarantined AI capacity', detail: err.message });
     }
   });
 

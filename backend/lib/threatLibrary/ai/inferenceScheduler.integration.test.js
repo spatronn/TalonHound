@@ -181,7 +181,7 @@ test('cancellation while waiting rejects with the abort reason and frees the que
   }
 });
 
-test('crashed holder: its lease expires and the slot is reclaimed without manual cleanup', opts, async () => {
+test('crashed holder (hosted provider, not fail-closed): its lease expires and the slot is reclaimed without manual cleanup', opts, async () => {
   const resourceKey = key();
   const scheduler = createInferenceScheduler(pool, FAST);
   try {
@@ -337,21 +337,26 @@ test('sustained contention: three reports issuing back-to-back requests are serv
 
 const QFAST = { ...FAST, verifyIntervalMs: 200 };
 
-test('quarantine is durable: the slot stays occupied after the quarantining process is gone, until the bound', opts, async () => {
+test('quarantine is durable and fail-closed: after the quarantining process is gone it outlives its bound; waiters then fail fast', opts, async () => {
   const resourceKey = key();
   const crashed = createInferenceScheduler(pool, QFAST);
   const survivor = createInferenceScheduler(otherProcessPool, QFAST);
   try {
-    const lease = await crashed.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000 });
-    await lease.quarantine({ holdMs: 1500, reason: 'first_token_timeout' });
+    const lease = await crashed.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000, failClosed: true, maxExecutionMs: 1000 });
+    await lease.quarantine({ holdMs: 1000, reason: 'first_token_timeout' });
     const quarantinedAt = Date.now();
     // The quarantining process "dies": no release, no heartbeat. The provider never proves idle.
     let probes = 0;
-    const next = await survivor.acquire({ resourceKey, capacity: 1, maxWaitMs: 5000, verifyIdle: async () => { probes += 1; return false; } });
+    const err = await survivor.acquire({ resourceKey, capacity: 1, maxWaitMs: 10_000, failClosed: true, verifyIdle: async () => { probes += 1; return false; } }).catch((e) => e);
     const waited = Date.now() - quarantinedAt;
-    assert.ok(waited >= 1400, `held until the worst-case bound (${waited}ms)`);
-    assert.ok(waited < 3500, 'then reclaimed: no deadlock');
+    assert.equal(err.code, AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED, 'explicit state, not reuse');
+    assert.ok(waited >= 950 && waited < 3000, `waited out the bound, then failed fast (${waited}ms), far below its 10s budget`);
     assert.ok(probes >= 2, 'the waiter probed meanwhile');
+    await sleep(500);
+    const { rows } = await pool.query(`SELECT state FROM threat_library_ai_capacity_leases WHERE resource_key = $1 AND quarantined_at IS NOT NULL`, [resourceKey]);
+    assert.deepEqual(rows.map((r) => r.state), ['holding'], 'still held long after the bound: time never frees it');
+    // Recovery: the provider proves idle.
+    const next = await survivor.acquire({ resourceKey, capacity: 1, maxWaitMs: 5000, failClosed: true, verifyIdle: async () => true });
     await next.release();
   } finally {
     await cleanup(resourceKey);
@@ -379,27 +384,26 @@ test('quarantine is released early by a waiter in another process once the provi
   }
 });
 
-test('probes of one quarantined slot are claim-guarded across processes (no probe storm)', opts, async () => {
+test('probes of one quarantined slot are claim-guarded across processes (no probe storm); past the bound both waiters fail fast', opts, async () => {
   const resourceKey = key();
   const a = createInferenceScheduler(pool, QFAST);
-  const b = createInferenceScheduler(otherProcessPool, QFAST);
+  const b2 = createInferenceScheduler(otherProcessPool, QFAST);
   try {
-    const lease = await a.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000 });
+    const lease = await a.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000, failClosed: true });
     await lease.quarantine({ holdMs: 1000 });
     let probes = 0;
     const verifyIdle = async () => { probes += 1; return false; };
     const started = Date.now();
     // Two waiters (two processes) behind the same quarantined slot, polling every 25ms.
-    const w1 = a.acquire({ resourceKey, capacity: 1, maxWaitMs: 5000, verifyIdle });
+    const w1 = a.acquire({ resourceKey, capacity: 1, maxWaitMs: 5000, failClosed: true, verifyIdle }).catch((e) => e);
     await sleep(20);
-    const w2 = b.acquire({ resourceKey, capacity: 1, maxWaitMs: 5000, verifyIdle });
-    const l1 = await w1;
+    const w2 = b2.acquire({ resourceKey, capacity: 1, maxWaitMs: 5000, failClosed: true, verifyIdle }).catch((e) => e);
+    const [e1, e2] = await Promise.all([w1, w2]);
     const elapsed = Date.now() - started;
+    assert.equal(e1.code, AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED);
+    assert.equal(e2.code, AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED);
     const maxProbes = Math.ceil(elapsed / QFAST.verifyIntervalMs) + 1;
     assert.ok(probes <= maxProbes, `${probes} probes in ${elapsed}ms (≤ ${maxProbes} at one per ${QFAST.verifyIntervalMs}ms)`);
-    await l1.release();
-    const l2 = await w2;
-    await l2.release();
   } finally {
     await cleanup(resourceKey);
   }
@@ -419,6 +423,123 @@ test('quarantine after a lost lease re-occupies the slot instead of letting a re
     assert.deepEqual(rows, [{ state: 'holding', purpose: 'quarantine', q: true }]);
     const err = await scheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 300 }).catch((e) => e);
     assert.equal(err.code, AI_FAILURE_CODES.AI_CAPACITY_WAIT_TIMEOUT, 'capacity 1 stays occupied');
+  } finally {
+    await cleanup(resourceKey);
+  }
+});
+
+/** A pool whose queries all fail while `outage.down` (this process lost the database). */
+function outagePool(outage) {
+  return {
+    connect: async () => {
+      if (outage.down) throw new Error('connect ECONNREFUSED (database outage)');
+      return pool.connect();
+    },
+    query: (sql, params) => (outage.down ? Promise.reject(new Error('connect ECONNREFUSED (database outage)')) : pool.query(sql, params))
+  };
+}
+
+test('database outage during cancellation: the expired lease becomes a quarantine, never free capacity, while the old inference still runs', opts, async () => {
+  const resourceKey = key();
+  const outage = { down: false };
+  const holderScheduler = createInferenceScheduler(outagePool(outage), QFAST);
+  const other = createInferenceScheduler(otherProcessPool, QFAST);
+  try {
+    const holder = await holderScheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000, failClosed: true, maxExecutionMs: 10_000 });
+    // Outage: renewals fail; the holder aborts its request (as client.js does on
+    // lease loss) and tries to quarantine, which cannot be written either.
+    outage.down = true;
+    const lost = await new Promise((resolve) => holder.onLost(resolve));
+    assert.equal(lost.code, AI_FAILURE_CODES.AI_CAPACITY_LEASE_LOST);
+    await holder.quarantine({ holdMs: 10_000, reason: 'ai_capacity_lease_lost' }); // fails silently: database down
+    // The lease row expires during the outage (holdLeaseMs 1500).
+    await sleep(QFAST.holdLeaseMs + 200);
+    // The database is back for everyone else; the old inference is still running on the provider.
+    let providerBusy = true;
+    let probes = 0;
+    let grantedAt = null;
+    const waiter = other.acquire({
+      resourceKey, capacity: 1, maxWaitMs: 10_000, failClosed: true,
+      verifyIdle: async () => { probes += 1; return !providerBusy; }
+    }).then((lease) => { grantedAt = Date.now(); return lease; });
+    await sleep(700);
+    assert.equal(grantedAt, null, 'no capacity handed out while termination is unverified');
+    const { rows } = await pool.query(`SELECT state, purpose FROM threat_library_ai_capacity_leases WHERE resource_key = $1 AND quarantined_at IS NOT NULL`, [resourceKey]);
+    assert.deepEqual(rows, [{ state: 'holding', purpose: 'quarantine:lease_expired' }], 'fail-closed conversion of the expired lease');
+    assert.ok(probes >= 1);
+    const idleAt = Date.now();
+    providerBusy = false; // the old inference finished
+    const lease = await waiter;
+    assert.ok(grantedAt >= idleAt, 'granted only after the provider proved idle');
+    await lease.release();
+  } finally {
+    outage.down = false;
+    await cleanup(resourceKey);
+  }
+});
+
+test('multiple workers reclaiming after an outage: one probe at a time, no grant before proof, never two holders', opts, async () => {
+  const resourceKey = key();
+  const crashed = createInferenceScheduler(pool, QFAST);
+  const w1 = createInferenceScheduler(pool, QFAST);
+  const w2 = createInferenceScheduler(otherProcessPool, QFAST);
+  let holding = 0;
+  let maxHolding = 0;
+  try {
+    // A holder whose process vanished during the outage: its lease simply expires.
+    const dead = await crashed.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000, failClosed: true, maxExecutionMs: 60_000 });
+    await pool.query(`UPDATE threat_library_ai_capacity_leases SET lease_expires_at = NOW() - INTERVAL '1 second' WHERE token = $1::uuid`, [dead.token]);
+    let providerBusy = true;
+    let probes = 0;
+    let concurrentProbes = 0;
+    let maxConcurrentProbes = 0;
+    const verifyIdle = async () => {
+      probes += 1;
+      concurrentProbes += 1;
+      maxConcurrentProbes = Math.max(maxConcurrentProbes, concurrentProbes);
+      await sleep(30);
+      concurrentProbes -= 1;
+      return !providerBusy;
+    };
+    const run = async (scheduler) => {
+      const lease = await scheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 15_000, failClosed: true, verifyIdle });
+      holding += 1;
+      maxHolding = Math.max(maxHolding, holding);
+      await sleep(60);
+      holding -= 1;
+      await lease.release();
+    };
+    const started = Date.now();
+    const both = Promise.all([run(w1), run(w2)]);
+    await sleep(800);
+    assert.equal(maxHolding, 0, 'nobody was granted while the provider was busy');
+    const elapsed = Date.now() - started;
+    assert.ok(probes <= Math.ceil(elapsed / QFAST.verifyIntervalMs) + 1, `${probes} probes in ${elapsed}ms: claim-guarded`);
+    assert.equal(maxConcurrentProbes, 1, 'never two probes of the slot at once');
+    providerBusy = false;
+    await both;
+    assert.equal(maxHolding, 1, 'capacity 1 respected across workers');
+    dead.release().catch(() => {});
+  } finally {
+    await cleanup(resourceKey);
+  }
+});
+
+test('administrator release frees quarantined capacity explicitly (and only quarantined rows)', opts, async () => {
+  const resourceKey = key();
+  const scheduler = createInferenceScheduler(pool, QFAST);
+  try {
+    const stuck = await scheduler.acquire({ resourceKey, capacity: 2, maxWaitMs: 2000, failClosed: true });
+    await stuck.quarantine({ holdMs: 1 });
+    const live = await scheduler.acquire({ resourceKey, capacity: 2, maxWaitMs: 2000, failClosed: true });
+    const blocked = await scheduler.acquire({ resourceKey, capacity: 2, maxWaitMs: 5000, failClosed: true, verifyIdle: async () => false }).catch((e) => e);
+    assert.equal(blocked.code, AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED);
+    assert.equal(await scheduler.releaseQuarantined(resourceKey), 1);
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM threat_library_ai_capacity_leases WHERE resource_key = $1 AND state = 'holding'`, [resourceKey]);
+    assert.equal(rows[0].n, 1, 'the live holder is untouched');
+    const next = await scheduler.acquire({ resourceKey, capacity: 2, maxWaitMs: 2000, failClosed: true });
+    await next.release();
+    await live.release();
   } finally {
     await cleanup(resourceKey);
   }

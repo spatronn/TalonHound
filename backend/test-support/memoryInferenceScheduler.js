@@ -65,16 +65,23 @@ export function createMemoryInferenceScheduler(options = {}) {
           resolve();
         }
       };
-      const fail = (err) => {
+      const fail = (w.fail = (err) => {
         const idx = waiters.indexOf(w);
         if (idx >= 0) waiters.splice(idx, 1);
         cleanup();
         err.timing = { slot_wait_ms: Date.now() - startedAt, slot_max_position: maxPosition };
         reject(err);
-      };
+      });
       const timer = setTimeout(() => fail(aiFailure(AI_FAILURE_CODES.AI_CAPACITY_WAIT_TIMEOUT)), Math.max(0, req.maxWaitMs ?? 60_000));
       const onAbort = () => fail(req.signal.reason || aiFailure(AI_FAILURE_CODES.JOB_CANCELLED));
       req.signal?.addEventListener('abort', onAbort, { once: true });
+      if (holding >= capacityHint && [...quarantines].some((q) => q.unverified)) {
+        cleanup();
+        const err = aiFailure(AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED);
+        err.timing = { slot_wait_ms: 0, slot_max_position: 0 };
+        reject(err);
+        return;
+      }
       waiters.push(w);
       maxPosition = waiters.length;
       grantNext();
@@ -114,7 +121,15 @@ export function createMemoryInferenceScheduler(options = {}) {
           released = true;
           freeSlot(type, { reason });
         };
-        q.expiry = setTimeout(() => q.end('quarantine_expired'), Math.max(0, holdMs ?? 0));
+        // Fail-closed: the bound does not free the slot, it marks it unverified.
+        q.expiry = setTimeout(() => {
+          q.unverified = true;
+          events.push({ type: 'quarantine_unverified', at: Date.now() });
+          // Like the PG scheduler's per-poll check: queued waiters fail fast.
+          if (holding >= capacityHint) {
+            for (const w of [...waiters]) w.fail?.(aiFailure(AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED));
+          }
+        }, Math.max(0, holdMs ?? 0));
         quarantines.add(q);
         events.push({ type: 'quarantine', at: Date.now(), holdMs, reason });
       },
@@ -126,9 +141,17 @@ export function createMemoryInferenceScheduler(options = {}) {
     };
   }
 
+  /** Administrator release (audited by the caller). */
+  async function releaseQuarantined() {
+    const all = [...quarantines];
+    for (const q of all) q.end('quarantine_released_by_admin');
+    return all.length;
+  }
+
   return {
     acquire,
     verifyQuarantine,
+    releaseQuarantined,
     events,
     stats: () => ({ holding, waiting: waiters.length, maxHolding, quarantined: quarantines.size })
   };

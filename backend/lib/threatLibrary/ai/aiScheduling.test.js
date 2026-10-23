@@ -172,3 +172,48 @@ test('pipeline contract: the shared scheduler is the default for every analysis'
   assert.match(src, /deps\.inferenceScheduler === undefined \? getInferenceScheduler\(pool\)/);
   assert.match(src, /scheduler: inferenceScheduler/);
 });
+
+test('fence error code equals the pipeline interruption code (refresh path must not import ./ai/*)', async () => {
+  const { JOB_OWNERSHIP_LOST_CODE } = await import('../jobFence.js');
+  assert.equal(JOB_OWNERSHIP_LOST_CODE, AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
+  const fenceSrc = readFileSync(new URL('../jobFence.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(fenceSrc, /from '\.\/ai\//);
+});
+
+test('quarantined capacity code: explicit, transient (bounded auto-retry), with a message', () => {
+  assert.equal(AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED, 'ai_capacity_quarantined');
+  assert.equal(isTransientAiFailure(AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED), true);
+  assert.match(AI_FAILURE_MESSAGES[AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED], /has not confirmed/);
+});
+
+test('capacity recovery helpers: status and admin release target the configured endpoint only', async () => {
+  const { describeInferenceCapacity, releaseQuarantinedCapacity } = await import('./capacityRecovery.js');
+  const calls = [];
+  const scheduler = {
+    snapshot: async (key) => { calls.push(['snapshot', key]); return { holding: 1, waiting: 2, quarantined: 1, unverified: 1, oldest_quarantined_at: 't' }; },
+    releaseQuarantined: async (key) => { calls.push(['release', key]); return 1; }
+  };
+  const settings = { enabled: true, provider: 'ollama', model: 'm', base_url: 'http://192.168.1.8:11434/' };
+  assert.deepEqual(await describeInferenceCapacity(settings, scheduler), { capacity: 1, holding: 1, waiting: 2, quarantined: 1, unverified: 1, oldest_quarantined_at: 't' });
+  assert.deepEqual(await releaseQuarantinedCapacity(settings, scheduler), { released: 1, resource_key: 'ollama|http://192.168.1.8:11434' });
+  assert.deepEqual(calls.map((c) => c[1]), ['ollama|http://192.168.1.8:11434', 'ollama|http://192.168.1.8:11434']);
+  assert.equal(await describeInferenceCapacity({ enabled: false }, scheduler), null);
+  assert.deepEqual(await releaseQuarantinedCapacity(null, scheduler), { released: 0, resource_key: null });
+});
+
+test('admin release route: admin-only, explicit confirmation, audited, then dispatch', () => {
+  const routes = readFileSync(new URL('../../../routes/threatLibrary.js', import.meta.url), 'utf8');
+  const start = routes.indexOf("'/api/threat-library/ai-settings/release-quarantined-capacity', requireRole(ROLES.ADMIN)");
+  assert.ok(start > 0, 'route registered for admins');
+  const block = routes.slice(start, routes.indexOf('app.post(', start + 10));
+  assert.match(block, /req\.body\?\.confirm !== true/);
+  assert.match(block, /code: 'confirmation_required'/);
+  assert.match(block, /AUDIT_ACTION\.THREAT_LIBRARY_AI_CAPACITY_RELEASED/);
+  assert.ok(block.indexOf('auditSuccess') < block.indexOf('dispatchQueuedAnalyses'));
+});
+
+test('worker contract: the safety net probes quarantined capacity even with no analysis waiting', () => {
+  const src = readFileSync(new URL('../../../threat-library-worker.js', import.meta.url), 'utf8');
+  assert.match(src.slice(src.indexOf('const safetyTimer')), /probeQuarantinedCapacity\(pool, getInferenceScheduler\(pool\)\)/);
+  assert.match(src, /fence: \{ jobId, ownerToken \}/);
+});

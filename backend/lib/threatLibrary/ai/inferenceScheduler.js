@@ -34,7 +34,19 @@
  * a probe served promptly inside that slot proves the provider is idle, or
  * the request's worst-case execution bound passes. Probes are claim-guarded
  * (verify_after) and run by the holder or by any waiter, so a quarantine
- * never depends on the process that created it and never blocks forever.
+ * never depends on the process that created it.
+ *
+ * Fail-closed (local providers, `failClosed`): time never frees capacity.
+ *  - A holding lease that expires (holder crashed, database outage, network
+ *    partition) is converted into a quarantine under the endpoint lock, not
+ *    deleted: whoever reaches the database first after recovery finds the
+ *    slot quarantined, never free.
+ *  - A quarantine past its worst-case bound stays: waiters then fail fast with
+ *    `ai_capacity_quarantined` (explicit, bounded) instead of waiting, while
+ *    probes continue (waiters, the worker safety net). Recovery is a
+ *    successful probe or an audited administrator release
+ *    (`releaseQuarantined`).
+ * Hosted providers (failClosed false) keep plain lease expiry.
  */
 
 import crypto from 'node:crypto';
@@ -110,13 +122,13 @@ export function createInferenceScheduler(pool, options = {}) {
     }
   }
 
-  async function insertWaiter(token, { resourceKey, purpose, reportId }) {
+  async function insertWaiter(token, { resourceKey, purpose, reportId, failClosed, maxExecutionMs }) {
     const { rows } = await pool.query(
       `INSERT INTO threat_library_ai_capacity_leases
-         (resource_key, token, state, purpose, owner, report_id, lease_expires_at)
-       VALUES ($1, $2::uuid, 'waiting', $3, $4, $5, NOW() + ($6::int * INTERVAL '1 millisecond'))
+         (resource_key, token, state, purpose, owner, report_id, lease_expires_at, fail_closed, max_execution_ms)
+       VALUES ($1, $2::uuid, 'waiting', $3, $4, $5, NOW() + ($6::int * INTERVAL '1 millisecond'), $7, $8)
        RETURNING id`,
-      [resourceKey, token, purpose || null, ownerLabel, reportId ?? null, cfg.waitLeaseMs]
+      [resourceKey, token, purpose || null, ownerLabel, reportId ?? null, cfg.waitLeaseMs, failClosed === true, maxExecutionMs ?? null]
     );
     return Number(rows[0].id);
   }
@@ -130,16 +142,44 @@ export function createInferenceScheduler(pool, options = {}) {
         INFERENCE_LOCK_NAMESPACE,
         resourceKey
       ]);
+      // Waiters that stopped polling hold no capacity: drop them.
+      await client.query(
+        `DELETE FROM threat_library_ai_capacity_leases
+         WHERE resource_key = $1 AND state = 'waiting' AND lease_expires_at < NOW()`,
+        [resourceKey]
+      );
+      // A holder that stopped renewing (crash, database outage, partition) may
+      // have left a request running on the provider. Fail-closed: quarantine
+      // it (probe before reuse) rather than free it.
+      const converted = await client.query(
+        `UPDATE threat_library_ai_capacity_leases
+         SET quarantined_at = NOW(), verify_after = NOW(), purpose = 'quarantine:lease_expired',
+             lease_expires_at = GREATEST(
+               NOW(),
+               COALESCE(acquired_at, created_at) + (COALESCE(max_execution_ms, 0) * INTERVAL '1 millisecond')
+             )
+         WHERE resource_key = $1 AND state = 'holding' AND quarantined_at IS NULL
+           AND lease_expires_at < NOW() AND fail_closed
+         RETURNING owner, report_id`,
+        [resourceKey]
+      );
+      if (converted.rowCount) {
+        log.warn('expired AI capacity lease quarantined (provider termination unverified)', {
+          resource: resourceKey,
+          holders: converted.rows.map((r) => ({ owner: r.owner, reportId: r.report_id }))
+        });
+      }
       const purged = await client.query(
         `DELETE FROM threat_library_ai_capacity_leases
-         WHERE resource_key = $1 AND lease_expires_at < NOW()
-         RETURNING state, owner, purpose`,
+         WHERE resource_key = $1 AND state = 'holding' AND quarantined_at IS NULL
+           AND lease_expires_at < NOW() AND NOT fail_closed
+         RETURNING owner, purpose`,
         [resourceKey]
       );
       if (purged.rowCount) {
         log.warn('expired AI capacity leases reclaimed', {
           resource: resourceKey,
-          reclaimed: purged.rows.map((r) => ({ state: r.state, owner: r.owner, purpose: r.purpose }))
+          reclaimed: purged.rows.map((r) => ({ owner: r.owner, purpose: r.purpose }))
         });
       }
       let mine = await client.query(
@@ -155,10 +195,10 @@ export function createInferenceScheduler(pool, options = {}) {
         // longer than the waiter lease): rejoin at the tail rather than jump.
         mine = await client.query(
           `INSERT INTO threat_library_ai_capacity_leases
-             (resource_key, token, state, purpose, owner, report_id, lease_expires_at)
-           VALUES ($1, $2::uuid, 'waiting', $3, $4, $5, NOW() + ($6::int * INTERVAL '1 millisecond'))
+             (resource_key, token, state, purpose, owner, report_id, lease_expires_at, fail_closed, max_execution_ms)
+           VALUES ($1, $2::uuid, 'waiting', $3, $4, $5, NOW() + ($6::int * INTERVAL '1 millisecond'), $7, $8)
            RETURNING id`,
-          [resourceKey, token, meta.purpose || null, ownerLabel, meta.reportId ?? null, cfg.waitLeaseMs]
+          [resourceKey, token, meta.purpose || null, ownerLabel, meta.reportId ?? null, cfg.waitLeaseMs, meta.failClosed === true, meta.maxExecutionMs ?? null]
         );
         requeued = true;
       }
@@ -167,6 +207,7 @@ export function createInferenceScheduler(pool, options = {}) {
         `SELECT
            COUNT(*) FILTER (WHERE state = 'holding')::int AS holding,
            COUNT(*) FILTER (WHERE state = 'holding' AND quarantined_at IS NOT NULL)::int AS quarantined,
+           COUNT(*) FILTER (WHERE state = 'holding' AND quarantined_at IS NOT NULL AND lease_expires_at < NOW())::int AS unverified,
            COUNT(*) FILTER (WHERE state = 'waiting' AND id < $2)::int AS ahead,
            COUNT(*) FILTER (WHERE state = 'waiting')::int AS waiting
          FROM threat_library_ai_capacity_leases
@@ -182,9 +223,9 @@ export function createInferenceScheduler(pool, options = {}) {
            WHERE token = $1::uuid`,
           [token, cfg.holdLeaseMs]
         );
-        return { acquired: true, holding: view.holding + 1, quarantined: view.quarantined, ahead: 0, waiting: view.waiting - 1, requeued };
+        return { acquired: true, holding: view.holding + 1, quarantined: view.quarantined, unverified: view.unverified, ahead: 0, waiting: view.waiting - 1, requeued };
       }
-      return { acquired: false, holding: view.holding, quarantined: view.quarantined, ahead: view.ahead, waiting: view.waiting, requeued };
+      return { acquired: false, holding: view.holding, quarantined: view.quarantined, unverified: view.unverified, ahead: view.ahead, waiting: view.waiting, requeued };
     });
   }
 
@@ -233,7 +274,7 @@ export function createInferenceScheduler(pool, options = {}) {
         const res = await pool.query(
           `UPDATE threat_library_ai_capacity_leases
            SET lease_expires_at = NOW() + ($2::int * INTERVAL '1 millisecond')
-           WHERE token = $1::uuid AND state = 'holding'`,
+           WHERE token = $1::uuid AND state = 'holding' AND quarantined_at IS NULL`,
           [token, cfg.holdLeaseMs]
         );
         if (released || lost) return;
@@ -272,7 +313,7 @@ export function createInferenceScheduler(pool, options = {}) {
         if (released || quarantined) return;
         quarantined = true;
         clearInterval(timer);
-        const holdMs = Math.max(1000, Math.trunc(Number(q?.holdMs) || 0));
+        const holdMs = Math.max(1, Math.trunc(Number(q?.holdMs) || 0));
         try {
           const res = await pool.query(
             `UPDATE threat_library_ai_capacity_leases
@@ -284,8 +325,8 @@ export function createInferenceScheduler(pool, options = {}) {
           if (!res.rowCount) {
             await pool.query(
               `INSERT INTO threat_library_ai_capacity_leases
-                 (resource_key, token, state, purpose, owner, report_id, lease_expires_at, acquired_at, quarantined_at, verify_after)
-               VALUES ($1, $2::uuid, 'holding', 'quarantine', $3, $4, NOW() + ($5::int * INTERVAL '1 millisecond'), NOW(), NOW(), NOW())
+                 (resource_key, token, state, purpose, owner, report_id, lease_expires_at, acquired_at, quarantined_at, verify_after, fail_closed)
+               VALUES ($1, $2::uuid, 'holding', 'quarantine', $3, $4, NOW() + ($5::int * INTERVAL '1 millisecond'), NOW(), NOW(), NOW(), true)
                ON CONFLICT (token) DO NOTHING`,
               [resourceKey, token, ownerLabel, info.reportId ?? null, holdMs]
             );
@@ -326,7 +367,7 @@ export function createInferenceScheduler(pool, options = {}) {
          WHERE id = (
            SELECT id FROM threat_library_ai_capacity_leases
            WHERE resource_key = $1 AND state = 'holding' AND quarantined_at IS NOT NULL
-             AND verify_after <= NOW() AND lease_expires_at >= NOW()
+             AND verify_after <= NOW()
            ORDER BY id LIMIT 1
            FOR UPDATE SKIP LOCKED
          )
@@ -365,7 +406,9 @@ export function createInferenceScheduler(pool, options = {}) {
    *   purpose?: string,
    *   reportId?: number|null,
    *   onWaiting?: (view: { position: number, holding: number, waiting: number, waited_ms: number }) => void,
-   *   verifyIdle?: () => Promise<boolean>
+   *   verifyIdle?: () => Promise<boolean>,
+   *   failClosed?: boolean,
+   *   maxExecutionMs?: number
    * }} req
    */
   async function acquire(req) {
@@ -441,6 +484,14 @@ export function createInferenceScheduler(pool, options = {}) {
           }
           if (outcome === 'released') continue;
         }
+        if (view && view.unverified > 0 && view.holding >= capacity) {
+          // No free slot and a quarantine outlived its worst-case bound
+          // unverified: an explicit, bounded state — never a silent reuse.
+          throw capacityError(
+            AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED,
+            'AI capacity is held: the provider has not confirmed that an abandoned request finished. It is released when a probe succeeds or an administrator releases it.'
+          );
+        }
         if (view) {
           const position = view.ahead + 1;
           maxPosition = Math.max(maxPosition, position);
@@ -480,20 +531,43 @@ export function createInferenceScheduler(pool, options = {}) {
          COUNT(*) FILTER (WHERE state = 'holding')::int AS holding,
          COUNT(*) FILTER (WHERE state = 'waiting')::int AS waiting,
          COUNT(*) FILTER (WHERE state = 'holding' AND quarantined_at IS NOT NULL)::int AS quarantined,
+         COUNT(*) FILTER (WHERE state = 'holding' AND quarantined_at IS NOT NULL AND lease_expires_at < NOW())::int AS unverified,
+         MIN(quarantined_at) FILTER (WHERE state = 'holding' AND quarantined_at IS NOT NULL) AS oldest_quarantined_at,
          COALESCE(EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE state = 'waiting'))) * 1000, 0)::bigint AS oldest_wait_ms
        FROM threat_library_ai_capacity_leases
-       WHERE resource_key = $1 AND lease_expires_at >= NOW()`,
+       WHERE resource_key = $1 AND (lease_expires_at >= NOW() OR quarantined_at IS NOT NULL)`,
       [resourceKey]
     );
     return {
       holding: rows[0]?.holding || 0,
       waiting: rows[0]?.waiting || 0,
       quarantined: rows[0]?.quarantined || 0,
+      unverified: rows[0]?.unverified || 0,
+      oldest_quarantined_at: rows[0]?.oldest_quarantined_at || null,
       oldest_wait_ms: Number(rows[0]?.oldest_wait_ms || 0)
     };
   }
 
-  return { acquire, snapshot, verifyQuarantine, config: cfg };
+  /**
+   * Administrator recovery: free every quarantined slot of `resourceKey`
+   * (after confirming the provider is idle, e.g. restarted). Audited by the
+   * caller. Returns the number of slots released.
+   * @param {string} resourceKey
+   */
+  async function releaseQuarantined(resourceKey) {
+    const { rowCount } = await pool.query(
+      `DELETE FROM threat_library_ai_capacity_leases
+       WHERE resource_key = $1 AND state = 'holding' AND quarantined_at IS NOT NULL`,
+      [resourceKey]
+    );
+    if (rowCount) {
+      log.warn('quarantined AI capacity released by an administrator', { resource: resourceKey, released: rowCount });
+      localReleases.emit(resourceKey);
+    }
+    return rowCount;
+  }
+
+  return { acquire, snapshot, verifyQuarantine, releaseQuarantined, config: cfg };
 }
 
 const schedulersByPool = new WeakMap();

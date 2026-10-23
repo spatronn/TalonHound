@@ -22,7 +22,14 @@
  * worker's heartbeat (raw pool) waits for it at most that long.
  */
 
-import { AI_FAILURE_CODES, aiFailure } from './ai/timeouts.js';
+// No ./ai/* import: Refresh extraction uses this fence and must never reach
+// a model client (extractionRefresh.test.js static guarantee). The code is the
+// same string as AI_FAILURE_CODES.JOB_OWNERSHIP_LOST.
+export const JOB_OWNERSHIP_LOST_CODE = 'job_ownership_lost';
+
+function ownershipLost() {
+  return Object.assign(new Error('Analysis ownership moved to another worker'), { code: JOB_OWNERSHIP_LOST_CODE });
+}
 
 const FENCE_SQL = `SELECT 1 FROM threat_library_jobs
   WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'
@@ -43,7 +50,7 @@ function sqlText(sql) {
 export function createFencedDb(pool, fence) {
   const lockFence = async (client) => {
     const owned = await client.query(FENCE_SQL, [fence.jobId, fence.ownerToken]);
-    if (!owned.rowCount) throw aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
+    if (!owned.rowCount) throw ownershipLost();
   };
 
   async function inFencedTransaction(client, fn) {
@@ -117,7 +124,7 @@ export function createFencedDb(pool, fence) {
         `SELECT 1 FROM threat_library_jobs WHERE id = $1 AND owner_token = $2::uuid AND status = 'running'`,
         [fence.jobId, fence.ownerToken]
       );
-      if (!owned.rowCount) throw aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST);
+      if (!owned.rowCount) throw ownershipLost();
     }
   };
 }
