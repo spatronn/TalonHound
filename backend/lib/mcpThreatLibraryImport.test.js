@@ -386,7 +386,7 @@ test('tool input schema accepts only a URL (no TLP, source, review or promotion 
   assert.deepEqual(Object.keys(def.inputSchema), ['url']);
   assert.equal(def.inputSchema.url.safeParse('x'.repeat(getMcpConfig().valueMaxChars + 1)).success, false);
   assert.equal(def.annotations.readOnlyHint, false);
-  assert.match(def.description, /Never approves IOC candidates, never runs Create IOCs/);
+  assert.match(def.description, /Never auto-approves IOC candidates/);
   assert.deepEqual(Object.keys(tools.get('get_threat_library_import_status').inputSchema), ['report_id']);
   assert.equal(tools.get('get_threat_library_import_status').annotations.readOnlyHint, true);
 });

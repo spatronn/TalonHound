@@ -374,6 +374,28 @@ export async function applyCandidateReviewActions(pool, reportId, opts) {
     [reportId, ids]
   );
 
+  // Explicit-id preview (MCP dry_run / UI confirm): report eligible vs skipped
+  // without writing. All-matching preview lives in applyAllMatchingSelection.
+  if (opts.preview === true) {
+    let eligible = selectedBefore;
+    let skippedIds = [];
+    if (action === 'approve' || action === 'approve_high_confidence_malicious') {
+      skippedIds = selectedBefore.filter((c) => !isReviewActionableIndicator(c)).map((c) => Number(c.id));
+      const skip = new Set(skippedIds);
+      eligible = selectedBefore.filter((c) => !skip.has(Number(c.id)));
+    }
+    return {
+      ok: true,
+      preview: true,
+      updated: 0,
+      eligible: eligible.length,
+      skipped_context_only: skippedIds.length,
+      matching: selectedBefore.length,
+      ineligible: skippedIds.length,
+      excluded: 0
+    };
+  }
+
   let updated = ids.length;
   let skippedIds = [];
   if (action === 'approve' || action === 'approve_high_confidence_malicious') {

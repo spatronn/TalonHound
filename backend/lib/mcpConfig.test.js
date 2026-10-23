@@ -27,6 +27,7 @@ test('getMcpConfig returns secure defaults', () => {
   assert.equal(cfg.rateLimitImportPerMin, MCP_DEFAULTS.RATE_LIMIT_IMPORT_PER_MIN);
   assert.equal(cfg.rateLimitSearchPerMin, MCP_DEFAULTS.RATE_LIMIT_SEARCH_PER_MIN);
   assert.equal(cfg.rateLimitBulkPerMin, MCP_DEFAULTS.RATE_LIMIT_BULK_PER_MIN);
+  assert.equal(cfg.rateLimitThreatLibraryWritePerMin, MCP_DEFAULTS.RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN);
 });
 
 test('getMcpConfig applies env overrides with clamping', () => {

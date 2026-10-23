@@ -7,7 +7,8 @@ import {
   authorizeMcpTool,
   MCP_ENRICHMENT_ACTION_TOOLS,
   MCP_TAG_ACTION_TOOLS,
-  MCP_THREAT_LIBRARY_ACTION_TOOLS
+  MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS,
+  MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS
 } from './mcpPermissions.js';
 import {
   mcpLookupIoc,
@@ -24,7 +25,25 @@ import { mcpListEnrichmentProviders, mcpEnrichIocs, mcpGetEnrichmentJob } from '
 import { mcpListTags, mcpAddIocTags, mcpRemoveIocTags } from './mcpTagService.js';
 import { mcpListIocsByMalwareFamily, mcpListMalwareFamilies } from './mcpMalwareFamilyService.js';
 import { mcpThreatLibraryImportUrl, mcpGetThreatLibraryImportStatus } from './mcpThreatLibraryImportService.js';
+import {
+  mcpThreatLibraryGetReview,
+  mcpThreatLibraryGetWorkflowStatus,
+  mcpThreatLibraryReviewIocs,
+  mcpThreatLibraryCreateIocs,
+  mcpThreatLibraryFinalizeReport,
+  mcpThreatLibraryReviewIocSource,
+  REVIEW_ACTIONS,
+  REVIEW_STATUS_FILTERS
+} from './threatLibrary/mcpThreatLibraryReviewService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from './auditConstants.js';
+
+const MCP_DEDICATED_AUDIT_TOOLS = new Set([
+  'import_iocs',
+  ...MCP_ENRICHMENT_ACTION_TOOLS,
+  ...MCP_TAG_ACTION_TOOLS,
+  ...MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS,
+  ...MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS
+]);
 
 function toolText(obj) {
   return {
@@ -60,11 +79,9 @@ async function withAuth(toolName, ctx, handler) {
     if (outcome?.error) {
       return toolError(outcome.error.message, outcome.error.code || 'ERROR', outcome.error);
     }
-    // import_iocs, the enrichment action tools, the tag tools and the Threat Library
-    // import tool write their own dedicated audit events.
-    if (ctx.audit?.auditSuccess && ctx.req && toolName !== 'import_iocs'
-      && !MCP_ENRICHMENT_ACTION_TOOLS.includes(toolName) && !MCP_TAG_ACTION_TOOLS.includes(toolName)
-      && !MCP_THREAT_LIBRARY_ACTION_TOOLS.includes(toolName)) {
+    // Dedicated-audit tools write their own domain audit events (IOC import,
+    // enrichment, tags, Threat Library import/review) — skip the generic MCP row.
+    if (ctx.audit?.auditSuccess && ctx.req && !MCP_DEDICATED_AUDIT_TOOLS.has(toolName)) {
       const actor = mcpActorAuditFields(ctx.mcpAuth || ctx.req.mcpAuth, ctx.req.user);
       await ctx.audit.auditSuccess({
         req: ctx.req,
@@ -564,9 +581,9 @@ export function registerMcpTools(server, deps) {
         + 'Duplicates use the UI identity (canonical URL): if the report is already in the library nothing is fetched or queued and `outcome` = `already_exists` with the existing `report_id`. '
         + 'Otherwise `outcome` = `import_started`: a report and an analyze job are created and queued for the normal Threat Library worker (fetch → extraction → analysis); '
         + 'the response carries report_id, job_id and the persisted processing state (`report.review_phase` preparing | review_ready | finalized | failed, import/analysis status, job status). '
-        + 'A queued job is NOT a finished import: poll get_threat_library_import_status until `ingestion_complete` or `ingestion_failed`, then read the report with get_threat_report. '
+        + 'A queued job is NOT a finished import: poll get_threat_library_import_status until `ingestion_complete` or `ingestion_failed`, then read the report with get_threat_report / threat_library_get_review. '
         + 'URLs that serve a PDF are not ingested by URL import (the job fails with pdf_via_url_unsupported, as in the UI). '
-        + 'Never approves IOC candidates, never runs Create IOCs and never changes analyst review decisions — those stay analyst actions in the UI. Audited as the UI import events with MCP provenance.',
+        + 'Never auto-approves IOC candidates and never runs Create IOCs or finalize — those are separate MCP tools (threat_library_review_iocs / threat_library_create_iocs / threat_library_finalize_report) that require explicit analyst decisions and mcp:threat_library:write. Audited as the UI import events with MCP provenance.',
       inputSchema: {
         url: z.string().min(1).max(config.valueMaxChars).describe('Public http(s) URL of the threat report')
       },
@@ -595,5 +612,169 @@ export function registerMcpTools(server, deps) {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async (args) => withAuth('get_threat_library_import_status', ctxFrom(), () => mcpGetThreatLibraryImportStatus(deps.pool, args))
+  );
+
+  // ---------------------------------------------------------------------------
+  // Threat Library: post-import review lifecycle (same services as the UI).
+  // ---------------------------------------------------------------------------
+
+  const selectionSchema = z.object({
+    mode: z.enum(['all_matching', 'explicit']).describe('all_matching resolves the filter server-side; explicit uses candidate_ids'),
+    filters: z.object({
+      tab: z.string().min(1).max(64).optional(),
+      source: z.enum(['all', 'original', 'linked', 'linked_only']).optional(),
+      match: z.enum(['all', 'existing', 'new']).optional(),
+      type: z.enum(['all', 'ip', 'domain', 'url', 'hash', 'cidr']).optional(),
+      result: z.enum(['all', 'created', 'already_existing', 'unsupported', 'not_created']).optional(),
+      search: z.string().max(200).optional()
+    }).optional(),
+    excluded_candidate_ids: z.array(z.union([z.number().int().positive(), z.string().min(1).max(64)])).max(10000).optional(),
+    scope_token: z.string().regex(/^[a-f0-9]{64}$/).optional()
+  }).strict().optional();
+
+  const candidateIdsSchema = z.array(z.union([
+    z.number().int().positive(),
+    z.string().min(1).max(64)
+  ])).max(50000).optional().describe(
+    'Candidate ids from threat_library_get_review (UUID `id` or numeric `candidate_id`). Required for explicit review/create — never defaults to all extracted observables.'
+  );
+
+  server.registerTool(
+    'threat_library_get_review',
+    {
+      title: 'Get Threat Library review state',
+      description:
+        'Read-only Threat Library report review surface for one report_id (after ingestion_complete): '
+        + 'report metadata, review_phase, authoritative counts (all / indicators / total_unique / linked_only / context_only / pending / approved / pending_actionable / creatable), '
+        + 'linked IOC Sources with lifecycle, extraction_quality warnings, gates (create_iocs_permitted / finalize_permitted / finalize_blockers), '
+        + 'and a paged candidate list with review_decision, indicator membership, linked-source provenance, create_eligibility and publisher evidence. '
+        + 'Optional filters: review_status (' + REVIEW_STATUS_FILTERS.join('|') + '), membership (all|union|indicators|pending_actionable|creatable|linked_only). '
+        + 'Persisted data only — same membership and counters as the UI. Use report_revision on subsequent mutations to reject stale applies.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
+        review_status: z.enum(REVIEW_STATUS_FILTERS).optional().describe('Filter candidates by review decision'),
+        membership: z.enum(['all', 'union', 'indicators', 'pending_actionable', 'creatable', 'linked_only']).optional(),
+        limit: z.number().int().min(1).max(500).optional().describe('Candidate page size (default 100, max 500)'),
+        offset: z.number().int().min(0).optional().describe('Candidate page offset')
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('threat_library_get_review', ctxFrom(), () => mcpThreatLibraryGetReview(deps.pool, args))
+  );
+
+  server.registerTool(
+    'threat_library_get_workflow_status',
+    {
+      title: 'Get Threat Library workflow status',
+      description:
+        'Read-only consolidated lifecycle status for one report: conceptual stages import → extraction → review → create_iocs → finalize mapped to persisted review_phase / pending_actionable / creatable / finalize gates. '
+        + 'Returns current_stage, completed_stages, remaining_actions (with tool names), blockers and next_steps. Safe to poll. Never mutates.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)')
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('threat_library_get_workflow_status', ctxFrom(), () => mcpThreatLibraryGetWorkflowStatus(deps.pool, args))
+  );
+
+  server.registerTool(
+    'threat_library_review_iocs',
+    {
+      title: 'Review Threat Library IOC candidates',
+      description:
+        'ACTION: apply analyst review decisions to Threat Library candidates — same service as POST /api/threat-library/reports/:id/review. '
+        + 'Requires mcp:threat_library:write and analyst/admin owner. action = ' + REVIEW_ACTIONS.join('|') + '. '
+        + 'approve / context_only / ignore require explicit candidate_ids (UUID or numeric) or an all_matching selection (commit needs scope_token from a prior dry_run). '
+        + 'Never auto-approves every extracted observable. Context Only and ignored rows stay excluded from Create IOCs. '
+        + 'dry_run/preview=true reports eligible/skipped without writing. Optional expected_revision (from threat_library_get_review) rejects stale applies (STALE_REPORT). '
+        + 'Audited as the UI review events with MCP provenance.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
+        action: z.enum(REVIEW_ACTIONS).describe('Review action'),
+        candidate_ids: candidateIdsSchema,
+        selection: selectionSchema,
+        dry_run: z.boolean().optional().describe('When true, preview only (no writes)'),
+        preview: z.boolean().optional().describe('Alias of dry_run'),
+        expected_revision: z.string().min(1).max(128).optional().describe('report_revision from threat_library_get_review')
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('threat_library_review_iocs', ctx, () => mcpThreatLibraryReviewIocs(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'threat_library_create_iocs',
+    {
+      title: 'Create IOCs from approved Threat Library indicators',
+      description:
+        'ACTION: Create IOCs — the same backend path as the Threat Library Create IOCs button (applyCandidateReviewActions action=create_iocs). '
+        + 'Requires mcp:threat_library:write and analyst/admin owner. Processes only analyst-approved, creatable Indicators (union membership including linked IOC Sources); '
+        + 'pending / ignored / Context Only / CIDR are never created. Requires explicit candidate_ids or all_matching selection — never defaults to every extracted observable. '
+        + 'confirm=true commits; omit confirm or dry_run=true for preview. Idempotent: existing IOCs are reused (already_existing), not duplicated. '
+        + 'Returns newly_created_count vs existing_reused_count, skipped/failed reasons, operation_id. Concurrent Create IOCs on the same report returns create_iocs_in_progress.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
+        candidate_ids: candidateIdsSchema,
+        selection: selectionSchema,
+        confirm: z.boolean().optional().describe('Must be true to commit Create IOCs (default is preview)'),
+        dry_run: z.boolean().optional().describe('When true, preview only'),
+        operation_id: z.string().uuid().optional().describe('Optional idempotency / correlation id'),
+        expected_revision: z.string().min(1).max(128).optional()
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('threat_library_create_iocs', ctx, () => mcpThreatLibraryCreateIocs(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'threat_library_finalize_report',
+    {
+      title: 'Finalize Threat Library report',
+      description:
+        'ACTION: finalize a Threat Library report — same finalizeReport service as POST /api/threat-library/reports/:id/finalize. '
+        + 'Requires mcp:threat_library:write and analyst/admin owner. Blocked while any actionable Indicator is still pending (pending_review_remaining) or the report is not review-ready. '
+        + 'Context Only / ignored / non-actionable rows do not block. Extraction quality warnings do not block (same as UI). '
+        + 'dry_run=true returns would_finalize + blockers without writing. Never force-finalizes via direct status updates.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
+        dry_run: z.boolean().optional().describe('When true, readiness check only'),
+        expected_revision: z.string().min(1).max(128).optional()
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('threat_library_finalize_report', ctx, () => mcpThreatLibraryFinalizeReport(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'threat_library_review_ioc_source',
+    {
+      title: 'Approve or dismiss a linked IOC Source',
+      description:
+        'ACTION: approve (queue extract) or dismiss a publisher-linked IOC Source on a Threat Library report — same path as the UI IOC Source approve/dismiss buttons. '
+        + 'Requires mcp:threat_library:write and analyst/admin owner. report_id + source_id (from threat_library_get_review.linked_ioc_sources). '
+        + 'approve may include selected_paths. Extract runs asynchronously; poll threat_library_get_review / get_threat_library_import_status for new candidates.',
+      inputSchema: {
+        report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
+        source_id: z.string().min(36).max(36).describe('Linked IOC Source public id (uuid)'),
+        action: z.enum(['approve', 'dismiss']).describe('approve queues extract; dismiss removes from review'),
+        selected_paths: z.array(z.string().min(1).max(1024)).max(500).optional()
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('threat_library_review_ioc_source', ctx, () => mcpThreatLibraryReviewIocSource(deps.pool, args, ctx, {
+        threatLibraryQueue: deps.threatLibraryQueue || null
+      }));
+    }
   );
 }

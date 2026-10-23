@@ -17,7 +17,13 @@ export const API_SCOPE = Object.freeze({
   /** Add/remove analyst (manual) IOC tags through MCP. Never implied by read, import or enrichment scopes. */
   MCP_TAGS_WRITE: 'mcp:tags:write',
   /** Import a report into the Threat Library by URL through MCP (same path as Import Intelligence → URL). Never implied by other scopes. */
-  MCP_THREAT_LIBRARY_IMPORT: 'mcp:threat_library:import'
+  MCP_THREAT_LIBRARY_IMPORT: 'mcp:threat_library:import',
+  /**
+   * Analyst Threat Library review mutations through MCP: candidate review,
+   * Create IOCs, finalize, and linked IOC Source approve/dismiss. Never implied
+   * by read, IOC import, enrichment, tags or Threat Library URL-import scopes.
+   */
+  MCP_THREAT_LIBRARY_WRITE: 'mcp:threat_library:write'
 });
 
 export const ALL_API_SCOPES = Object.freeze([
@@ -32,7 +38,8 @@ export const ALL_API_SCOPES = Object.freeze([
   API_SCOPE.MCP_ENRICHMENT_WRITE,
   API_SCOPE.MCP_SOURCES_READ,
   API_SCOPE.MCP_TAGS_WRITE,
-  API_SCOPE.MCP_THREAT_LIBRARY_IMPORT
+  API_SCOPE.MCP_THREAT_LIBRARY_IMPORT,
+  API_SCOPE.MCP_THREAT_LIBRARY_WRITE
 ]);
 
 export const ACCESS_PROFILE = Object.freeze({
@@ -95,20 +102,21 @@ const PROFILE_DEFS = Object.freeze({
   [ACCESS_PROFILE.MCP_ANALYST]: Object.freeze({
     id: ACCESS_PROFILE.MCP_ANALYST,
     label: 'MCP Analyst',
-    description: 'MCP (/mcp) access for trusted AI analyst agents: read IOC context, import IOCs into existing IOC Sources, trigger the enabled TalonHound enrichment providers (may consume provider API quota), add/remove analyst tags from the tag catalog, and import Threat Library reports by URL (queued for the normal analysis and analyst review; never approves IOCs). Bound to an owner user; effective rights are the intersection of token scopes and the owner role — never more than that user can do in the GUI.',
-    permission_summary: 'MCP read + import + enrichment + tags + report URL import',
+    description: 'MCP (/mcp) access for trusted AI analyst agents: read IOC context, import IOCs into existing IOC Sources, trigger the enabled TalonHound enrichment providers (may consume provider API quota), add/remove analyst tags from the tag catalog, import Threat Library reports by URL, and perform the post-import Threat Library review workflow (candidate review, Create IOCs, finalize, linked IOC Source approve/dismiss) with the same rules as the UI. Bound to an owner user; effective rights are the intersection of token scopes and the owner role — never more than that user can do in the GUI. Never auto-approves extracted candidates.',
+    permission_summary: 'MCP read + import + enrichment + tags + TL import + TL review',
     key_prefix: 'th_mcp_',
     scopes: Object.freeze([
       API_SCOPE.MCP_IOC_READ,
       API_SCOPE.MCP_IOC_CREATE,
       API_SCOPE.MCP_SOURCES_READ,
       API_SCOPE.MCP_ENRICHMENT_READ,
-      // Stored per key at creation; keys created before 039/040/046 were backfilled
+      // Stored per key at creation; keys created before 039/040/046/048 were backfilled
       // by migrations 039_mcp_analyst_enrichment_scope.sql / 040_mcp_tags_write_scope.sql /
-      // 046_mcp_threat_library_import_scope.sql.
+      // 046_mcp_threat_library_import_scope.sql / 048_mcp_threat_library_write_scope.sql.
       API_SCOPE.MCP_ENRICHMENT_WRITE,
       API_SCOPE.MCP_TAGS_WRITE,
-      API_SCOPE.MCP_THREAT_LIBRARY_IMPORT
+      API_SCOPE.MCP_THREAT_LIBRARY_IMPORT,
+      API_SCOPE.MCP_THREAT_LIBRARY_WRITE
     ]),
     creatable: true,
     requiresOwner: true

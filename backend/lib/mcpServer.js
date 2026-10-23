@@ -52,8 +52,13 @@ export function createTalonHoundMcpServer(deps) {
         + 'MCP never creates tags; source/feed and Threat Library tags are never removed. '
         + 'threat_library_import_url is an ACTION tool (requires mcp:threat_library:import) = Threat Library Import Intelligence → URL: '
         + 'it queues a public report URL for the normal background fetch/extraction/analysis (duplicates return outcome already_exists with the existing report_id); '
-        + 'poll get_threat_library_import_status until ingestion_complete or ingestion_failed, then read it with get_threat_report. '
-        + 'Importing a report never approves IOC candidates or creates IOCs — review and Create IOCs stay analyst actions.'
+        + 'poll get_threat_library_import_status until ingestion_complete or ingestion_failed, then read it with get_threat_report or threat_library_get_review. '
+        + 'Importing a report never auto-approves IOC candidates or creates IOCs. '
+        + 'Post-import lifecycle (requires mcp:threat_library:write): threat_library_get_review / threat_library_get_workflow_status (read), '
+        + 'threat_library_review_iocs (explicit approve|context_only|ignore — never auto-approve all extracted), '
+        + 'threat_library_create_iocs (same Create IOCs as the UI; confirm=true to commit), '
+        + 'threat_library_finalize_report, threat_library_review_ioc_source (approve/dismiss linked packs). '
+        + 'All mutations reuse the UI application services and audit events.'
     }
   );
 
