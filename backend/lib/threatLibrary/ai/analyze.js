@@ -378,14 +378,65 @@ function timingEntry(kind, chunkKey, started, result, extra = {}) {
  */
 export async function analyzeThreatDocument(settings, input, hooks = {}) {
   assertAiReady(settings);
-  const policy = resolveAiTimeoutPolicy(settings);
+  const policy = hooks.policy || resolveAiTimeoutPolicy(settings);
   const analysisStartedAt = hooks.analysisStartedAt || Date.now();
-  const deadlineAt = analysisStartedAt + policy.total_analysis_timeout_ms;
+  // total_analysis_timeout_ms bounds ACTIVE analysis time: time spent waiting
+  // for TalonHound-managed AI capacity moves both deadlines forward. Capacity
+  // waits have their own cumulative budget (capacity_wait_timeout_ms), so the
+  // wall clock stays bounded by active ceiling + capacity budget.
+  let deadlineAt = analysisStartedAt + policy.total_analysis_timeout_ms;
   const reserveMs = resolveRecoveryReserveMs(policy);
   const minPrimaryMs = resolveMinPrimaryCallMs(policy);
   const minRepairMs = resolveMinRepairMs(policy);
-  const primaryDeadlineAt = deadlineAt - reserveMs;
-  const callProvider = hooks.callProvider || callAiProvider;
+  let primaryDeadlineAt = deadlineAt - reserveMs;
+  let capacityWaitMs = 0;
+  const noteCapacityWait = (ms) => {
+    const n = Number(ms) || 0;
+    if (n <= 0) return;
+    capacityWaitMs += n;
+    deadlineAt += n;
+    primaryDeadlineAt += n;
+  };
+  const rawCallProvider = hooks.callProvider || callAiProvider;
+  /**
+   * Every provider call of this analysis (chunk, repair, recovery, synthesis)
+   * goes through the shared inference scheduler when one is supplied.
+   */
+  const callProvider = async (callSettings, messages, callHooks = {}) => {
+    const { progressExtra, ...rest } = callHooks;
+    try {
+      const res = await rawCallProvider(callSettings, messages, {
+        scheduler: hooks.scheduler,
+        transport: hooks.transport,
+        policy: hooks.policy,
+        reportId: hooks.reportId ?? null,
+        capacityWaitBudgetMs: Math.max(0, policy.capacity_wait_timeout_ms - capacityWaitMs),
+        onCapacityWait: async (view) => {
+          await hooks.onProgress?.({
+            ...progressBase(),
+            ...(progressExtra || {}),
+            ai_capacity_waiting: true,
+            ai_capacity_position: view.position,
+            ai_capacity_active: view.holding,
+            ai_capacity_wait_ms: capacityWaitMs + view.waited_ms
+          });
+        },
+        onCapacityAcquired: async (info) => {
+          await hooks.onProgress?.({
+            ...progressBase(),
+            ...(progressExtra || {}),
+            ai_capacity_wait_ms: capacityWaitMs + (Number(info?.wait_ms) || 0)
+          });
+        },
+        ...rest
+      });
+      noteCapacityWait(res?.timing?.slot_wait_ms);
+      return res;
+    } catch (err) {
+      noteCapacityWait(err?.timing?.slot_wait_ms);
+      throw err;
+    }
+  };
   const allCandidates = withCandidateIds(input.candidates || []);
   const knownBlockIds = collectBlockIds(input.document);
   const knownCandidateKeys = new Set(
@@ -425,6 +476,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     resolved_candidates: partition.explicit.length + partition.resolvedOther.length,
     schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
     timing: timings.slice(-24),
+    ai_capacity_waiting: false,
+    ai_capacity_wait_ms: capacityWaitMs,
     last_provider_activity_at: new Date().toISOString()
   });
 
@@ -437,6 +490,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         ai_calls: aiCalls,
         timing: timings,
         elapsed_ms: Date.now() - analysisStartedAt,
+        active_elapsed_ms: Date.now() - analysisStartedAt - capacityWaitMs,
+        ai_capacity_wait_ms: capacityWaitMs,
         total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
         recovery_reserve_ms: reserveMs
       }
@@ -505,6 +560,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           signal: hooks.signal,
           keepAlive: i < chunks.length - 1 ? '15m' : '5m',
           formatSchema,
+          purpose: 'chunk',
+          progressExtra: { current_chunk: chunk.chunk_key, current_chunk_index: i + 1 },
           onActivity: async () => {
             await hooks.onProgress?.({
               ...progressBase(),
@@ -529,6 +586,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         current_chunk_index: i + 1,
         analysis_chunks_remaining: chunks.length - partials.length,
         elapsed_ms: Date.now() - analysisStartedAt,
+        active_elapsed_ms: Date.now() - analysisStartedAt - capacityWaitMs,
+        ai_capacity_wait_ms: capacityWaitMs,
         total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
         recovery_reserve_ms: reserveMs
       };
@@ -581,6 +640,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       chunkProgress({
         analysis_chunks_remaining: chunks.length - partials.length,
         elapsed_ms: Date.now() - analysisStartedAt,
+        active_elapsed_ms: Date.now() - analysisStartedAt - capacityWaitMs,
+        ai_capacity_wait_ms: capacityWaitMs,
         total_analysis_timeout_ms: policy.total_analysis_timeout_ms,
         recovery_reserve_ms: reserveMs
       });
@@ -604,6 +665,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
             signal: hooks.signal,
             keepAlive: '5m',
             formatSchema: schema,
+            purpose: kind,
+            progressExtra: { current_chunk: chunk.chunk_key, current_chunk_index: i + 1 },
             onActivity: async () => {
               await hooks.onProgress?.(chunkProgress({ [activityFlag]: true }));
             }
@@ -819,6 +882,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
               signal: hooks.signal,
               keepAlive: '5m',
               formatSchema: formatSchemaSynthesis,
+              purpose: 'synthesis',
+              progressExtra: { synthesizing: true },
               onActivity: async () => {
                 await hooks.onProgress?.({ ...progressBase(), synthesizing: true });
               }
@@ -838,8 +903,10 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
             synthesis.skipped_reason = 'invalid_output';
           }
         } catch (err) {
-          timings.push(timingEntry('synthesis', SYNTHESIS_CHUNK_KEY, started, null, { failed: err?.code || 'error' }));
-          if (err?.code === AI_FAILURE_CODES.JOB_CANCELLED) throw err;
+          timings.push(timingEntry('synthesis', SYNTHESIS_CHUNK_KEY, started, { timing: err?.timing }, { failed: err?.code || 'error' }));
+          // Cancellation, shutdown and ownership loss stop the run; anything else
+          // only skips the optional synthesis.
+          if (err?.code === AI_FAILURE_CODES.JOB_CANCELLED || hooks.signal?.aborted) throw err;
           // Deadline or provider failure during optional synthesis → keep merged chunk result.
           synthesis.skipped_reason = err?.code || 'error';
         }
@@ -861,6 +928,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       synthesis,
       timing: timings,
       elapsed_ms: Date.now() - analysisStartedAt,
+      active_elapsed_ms: Date.now() - analysisStartedAt - capacityWaitMs,
+      ai_capacity_wait_ms: capacityWaitMs,
       timeout_policy: { ...policy, recovery_reserve_ms: reserveMs },
       schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION
     }

@@ -12,6 +12,7 @@ import { createServiceLogger } from '../appLogger.js';
 import { getThreatLibraryJobOptions } from './queueConfig.js';
 import { getAiSettings, updateJob, updateReportStatus } from './store.js';
 import { ALL_THREAT_LIBRARY_JOB_MODES, THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
+import { JOB_OWNER_STALE_MS } from './jobOwnership.js';
 
 const log = createServiceLogger('threat-library-scheduler');
 
@@ -26,15 +27,56 @@ export const ANALYSIS_SLOT_LOCK_KEY = 'threat-library.analysis_slots';
 /** All worker-dispatched Threat Library job types (analysis + IOC source jobs). */
 const ANALYSIS_JOB_TYPES = ALL_THREAT_LIBRARY_JOB_MODES;
 const OCCUPIED_JOB_STATUSES = Object.freeze(['queued', 'running']);
+/**
+ * Report pipeline modes: at most one queued or running job per report
+ * (IOC-source jobs are per source and may run beside them).
+ */
+export const REPORT_PIPELINE_JOB_TYPES = Object.freeze([
+  THREAT_LIBRARY_JOB_MODES.ANALYZE,
+  THREAT_LIBRARY_JOB_MODES.RETRY,
+  THREAT_LIBRARY_JOB_MODES.RERUN_AI,
+  THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION
+]);
+const REPORT_JOB_LOCK_NAMESPACE = 'threat-library.report_pipeline_job';
 const LIVE_BULLMQ_STATES = new Set(['active', 'waiting', 'delayed', 'paused', 'waiting-children']);
 
 export class AnalysisConcurrencySettingError extends Error {
-  constructor(message) {
+  constructor(message, code = 'invalid_max_concurrent_report_analyses') {
     super(message);
     this.name = 'AnalysisConcurrencySettingError';
-    this.code = 'invalid_max_concurrent_report_analyses';
+    this.code = code;
     this.status = 400;
   }
+}
+
+/**
+ * Inference-scheduler settings (migration 049). NULL / '' resets to the
+ * provider default resolved in timeouts.resolveAiTimeoutPolicy.
+ */
+export const AI_SCHEDULING_SETTING_BOUNDS = Object.freeze({
+  max_concurrent_ai_requests: { min: 1, max: 8 },
+  capacity_wait_timeout_ms: { min: 10_000, max: 14_400_000 },
+  provider_execution_timeout_ms: { min: 30_000, max: 7_200_000 },
+  auto_retry_max_attempts: { min: 0, max: 5 }
+});
+
+/**
+ * @param {keyof typeof AI_SCHEDULING_SETTING_BOUNDS} name
+ * @param {unknown} value
+ * @returns {number|null}
+ */
+export function parseAiSchedulingSetting(name, value) {
+  const bounds = AI_SCHEDULING_SETTING_BOUNDS[name];
+  if (!bounds) throw new Error(`unknown AI scheduling setting ${name}`);
+  if (value === null || value === undefined || value === '') return null;
+  const n = typeof value === 'string' && /^-?\d+$/.test(value.trim()) ? Number(value.trim()) : value;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < bounds.min || n > bounds.max) {
+    throw new AnalysisConcurrencySettingError(
+      `${name} must be an integer between ${bounds.min} and ${bounds.max}`,
+      `invalid_${name}`
+    );
+  }
+  return n;
 }
 
 /**
@@ -180,13 +222,33 @@ export async function dispatchQueuedThreatLibraryAnalyses(pool, opts = {}) {
          AND j.bullmq_job_id IS NULL
          AND j.job_type = ANY($1::text[])
          AND r.deleted_at IS NULL
+         -- Delayed automatic retries wait for their backoff.
+         AND (j.not_before IS NULL OR j.not_before <= NOW())
+         -- Never a second live pipeline run for the same report.
+         AND (
+           j.job_type <> ALL($3::text[])
+           OR NOT EXISTS (
+             SELECT 1 FROM threat_library_jobs o
+             WHERE o.report_id = j.report_id
+               AND o.id <> j.id
+               AND o.status = ANY($4::text[])
+               AND o.bullmq_job_id IS NOT NULL
+               AND o.job_type = ANY($3::text[])
+           )
+         )
        ORDER BY j.created_at ASC, j.id ASC
        LIMIT $2
        FOR UPDATE OF j SKIP LOCKED`,
-      [ANALYSIS_JOB_TYPES, available]
+      [ANALYSIS_JOB_TYPES, available, REPORT_PIPELINE_JOB_TYPES, OCCUPIED_JOB_STATUSES]
     );
 
+    // Two unclaimed pipeline jobs of one report can both be in this snapshot
+    // (legacy rows, a creator outside createExclusivePipelineJob): claim one.
+    const claimedReports = new Set();
     for (const job of candidates) {
+      const pipelineJob = REPORT_PIPELINE_JOB_TYPES.includes(job.job_type);
+      if (pipelineJob && claimedReports.has(job.report_id)) continue;
+      if (pipelineJob) claimedReports.add(job.report_id);
       const extra = dispatchExtraFromJob(job);
       const bull = await enqueue({ ...job, ...extra });
       if (!bull?.id && bull?.id !== 0) {
@@ -313,50 +375,70 @@ export async function queueThreatLibraryAnalysis(pool, queue, input) {
 }
 
 /**
- * Re-queue interrupted claimed/running jobs whose BullMQ state is gone so a
- * crash cannot permanently consume a concurrency slot. Live BullMQ states
- * are left alone (another worker may still own them).
+ * Re-queue interrupted claimed/running jobs so a crash cannot permanently
+ * consume a concurrency slot.
+ *
+ * A running job with an owner (jobOwnership.js) is interrupted only when its
+ * owner's heartbeat is stale — the BullMQ state alone is not trusted, since a
+ * crashed worker's job stays "active" until its lock expires. A legacy row
+ * without an owner falls back to the BullMQ state check. The UPDATE re-checks
+ * the staleness, so a heartbeat that lands meanwhile keeps the job.
  *
  * @param {import('pg').Pool} pool
- * @param {{ getJobState?: (bullmqJobId: string) => Promise<string|null> }} opts
+ * @param {{ getJobState?: (bullmqJobId: string) => Promise<string|null>, staleMs?: number }} opts
  */
 export async function recoverInterruptedAnalysisJobs(pool, opts = {}) {
+  const staleMs = Number(opts.staleMs) > 0 ? Number(opts.staleMs) : JOB_OWNER_STALE_MS;
   const { rows } = await pool.query(
-    `SELECT j.id, j.report_id, j.status, j.bullmq_job_id, j.job_type
+    `SELECT j.id, j.report_id, j.status, j.bullmq_job_id, j.job_type, j.owner_token,
+            (j.owner_token IS NOT NULL
+              AND COALESCE(j.heartbeat_at, j.started_at, j.created_at) < NOW() - ($3::int * INTERVAL '1 millisecond')) AS owner_stale
      FROM threat_library_jobs j
      WHERE j.status = ANY($1::text[])
        AND j.bullmq_job_id IS NOT NULL
        AND j.job_type = ANY($2::text[])`,
-    [OCCUPIED_JOB_STATUSES, ANALYSIS_JOB_TYPES]
+    [OCCUPIED_JOB_STATUSES, ANALYSIS_JOB_TYPES, staleMs]
   );
   const recovered = [];
   for (const row of rows) {
+    const owned = row.status === 'running' && row.owner_token;
+    if (owned && !row.owner_stale) continue;
     let state = null;
-    if (typeof opts.getJobState === 'function') {
+    if (!owned && typeof opts.getJobState === 'function') {
       try {
         state = await opts.getJobState(String(row.bullmq_job_id));
       } catch {
         state = null;
       }
     }
-    if (state && LIVE_BULLMQ_STATES.has(state)) continue;
+    if (!owned && state && LIVE_BULLMQ_STATES.has(state)) continue;
 
     if (row.status === 'running') {
-      await pool.query(
+      const res = await pool.query(
         `UPDATE threat_library_jobs
          SET status = 'queued',
              bullmq_job_id = NULL,
              stage = 'queued',
+             owner_token = NULL,
+             heartbeat_at = NULL,
              error_message = 'recovered after interrupted analysis'
-         WHERE id = $1 AND status = 'running'`,
-        [row.id]
+         WHERE id = $1 AND status = 'running'
+           AND (owner_token IS NULL
+             OR COALESCE(heartbeat_at, started_at, created_at) < NOW() - ($2::int * INTERVAL '1 millisecond'))`,
+        [row.id, staleMs]
       );
+      if (!res.rowCount) continue;
       await updateReportStatus(pool, row.report_id, {
         analysis_status: 'pending',
         import_status: 'processing'
       });
-      recovered.push({ jobId: row.id, reportId: row.report_id, reason: 'interrupted_running' });
-      log.info('stale analysis recovered', { jobId: row.id, reportId: row.report_id, reason: 'interrupted_running', bullmqState: state || 'missing' });
+      recovered.push({ jobId: row.id, reportId: row.report_id, reason: owned ? 'owner_heartbeat_stale' : 'interrupted_running' });
+      log.info('stale analysis recovered', {
+        jobId: row.id,
+        reportId: row.report_id,
+        reason: owned ? 'owner_heartbeat_stale' : 'interrupted_running',
+        bullmqState: state || (owned ? 'not_checked' : 'missing')
+      });
     } else if (row.status === 'queued') {
       await pool.query(
         `UPDATE threat_library_jobs
@@ -408,4 +490,70 @@ export function restoreStatusForCancelledJobs(cancelledJobs) {
     if (restore && typeof restore === 'object' && restore.analysis_status) return restore;
   }
   return null;
+}
+
+/**
+ * Create a report pipeline job unless one is already queued or running for
+ * the report. Serialized per report with a transaction advisory lock, so two
+ * concurrent requests (double-clicked Retry, UI + MCP, an automatic retry)
+ * can never both create a live job. A lock-key hash collision only
+ * serializes two reports' checks.
+ * @param {import('pg').Pool} pool
+ * @param {{ reportId: number, jobType: string, requestedBy?: string|null, jobPayload?: object|null, notBefore?: Date|null }} input
+ * @returns {Promise<{ created: boolean, job: object }>}
+ */
+export async function createExclusivePipelineJob(pool, input) {
+  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
+  const release = client !== pool;
+  try {
+    await client.query('BEGIN');
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1), $2::int)', [
+      REPORT_JOB_LOCK_NAMESPACE,
+      Number(input.reportId) % 2147483647
+    ]);
+    const existing = await client.query(
+      `SELECT * FROM threat_library_jobs
+       WHERE report_id = $1 AND status = ANY($2::text[]) AND job_type = ANY($3::text[])
+       ORDER BY id DESC LIMIT 1`,
+      [input.reportId, OCCUPIED_JOB_STATUSES, REPORT_PIPELINE_JOB_TYPES]
+    );
+    if (existing.rows[0]) {
+      await client.query('COMMIT');
+      return { created: false, job: existing.rows[0] };
+    }
+    const { rows } = await client.query(
+      `INSERT INTO threat_library_jobs (report_id, job_type, status, stage, requested_by, job_payload, not_before)
+       VALUES ($1, $2, 'queued', 'queued', $3::uuid, COALESCE($4::jsonb, '{}'::jsonb), $5)
+       RETURNING *`,
+      [
+        input.reportId,
+        input.jobType,
+        input.requestedBy || null,
+        input.jobPayload != null ? JSON.stringify(input.jobPayload) : null,
+        input.notBefore || null
+      ]
+    );
+    await client.query('COMMIT');
+    return { created: true, job: rows[0] };
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+    throw err;
+  } finally {
+    if (release) client.release();
+  }
+}
+
+/**
+ * A delayed automatic retry becomes due now (an analyst clicked Retry while
+ * it was waiting for its backoff). Only unclaimed jobs move.
+ * @param {import('pg').Pool} pool
+ * @param {number} jobId
+ */
+export async function expediteDelayedJob(pool, jobId) {
+  const { rowCount } = await pool.query(
+    `UPDATE threat_library_jobs SET not_before = NULL
+     WHERE id = $1 AND status = 'queued' AND bullmq_job_id IS NULL AND not_before IS NOT NULL`,
+    [jobId]
+  );
+  return rowCount > 0;
 }

@@ -73,6 +73,34 @@ export function buildProgressChecklist(report, job) {
   });
 }
 
+/**
+ * Automatic-retry note for a report waiting for its scheduled retry, or null.
+ * @returns {string|null}
+ */
+export function describeAutoRetry(report) {
+  const status = String(report?.analysis_status || '').toLowerCase();
+  const retry = report?.analysis_progress?.auto_retry;
+  if (status !== 'pending' || !retry) return null;
+  const when = retry.scheduled_for ? new Date(retry.scheduled_for) : null;
+  const at = when && !Number.isNaN(when.getTime())
+    ? ` at ${when.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+    : '';
+  const reason = retry.reason_code ? ` after ${retry.reason_code}` : '';
+  return `Automatic retry ${retry.attempt}/${retry.max_attempts}${reason} scheduled${at}; it resumes from completed chunks.`;
+}
+
+/**
+ * Live AI-capacity note while an analysis waits for an inference slot, or null.
+ * @returns {string|null}
+ */
+export function describeAiCapacityWait(progress) {
+  if (!progress?.ai_capacity_waiting) return null;
+  const parts = ['Waiting for AI capacity'];
+  if (Number(progress.ai_capacity_position) > 0) parts.push(`position ${Number(progress.ai_capacity_position)}`);
+  if (Number(progress.ai_capacity_active) > 0) parts.push(`${Number(progress.ai_capacity_active)} running`);
+  return parts.join(' · ');
+}
+
 export function isProcessingStatus(report) {
   const status = String(report?.analysis_status || '').toLowerCase();
   if (!status) return true;
@@ -90,6 +118,7 @@ export function statusLabel(report) {
   if (a === 'extracting' || a === 'candidates') return 'Extracting';
   if (a === 'analyzing') {
     const p = report?.analysis_progress || {};
+    if (p.ai_capacity_waiting) return 'Waiting for AI capacity';
     if (p.analysis_chunks_total && p.current_chunk_index) {
       return `Analyzing ${p.current_chunk_index}/${p.analysis_chunks_total}`;
     }
@@ -99,6 +128,8 @@ export function statusLabel(report) {
     return 'Analyzing';
   }
   if (a === 'matching') return 'Matching';
+  if (a === 'pending' && report?.analysis_progress?.auto_retry) return 'Retry scheduled';
+  if (a === 'pending' && report?.analysis_progress?.interrupted) return 'Queued (resuming)';
   if (a === 'pending') return 'Queued';
   return a || i || 'Unknown';
 }

@@ -5,6 +5,8 @@ import { formatUserDateTime } from '../../lib/formatDate.js';
 import { useAppConfirm } from '../../lib/appChromeContext.jsx';
 import {
   buildProgressChecklist,
+  describeAiCapacityWait,
+  describeAutoRetry,
   isProcessingStatus,
   statusLabel
 } from './stages.js';
@@ -209,10 +211,14 @@ function ProgressChecklist({ report, job }) {
     const parts = [];
     if (total && current) parts.push(`Chunk ${current} of ${total}`);
     else if (total != null && done != null) parts.push(`${done} / ${total} sections complete`);
-    if (progress.last_provider_activity_at) {
+    // While queued for an AI slot no provider request is open: no "activity" to report.
+    if (progress.last_provider_activity_at && !progress.ai_capacity_waiting) {
       const ago = Math.max(0, Math.round((Date.now() - new Date(progress.last_provider_activity_at).getTime()) / 1000));
       parts.push(`Last provider activity: ${ago}s ago`);
     }
+    const capacityNote = describeAiCapacityWait(progress);
+    if (capacityNote) parts.unshift(capacityNote);
+    else if (Number(progress.ai_capacity_wait_ms) >= 1000) parts.push(`Waited ${Math.round(Number(progress.ai_capacity_wait_ms) / 1000)}s for AI capacity`);
     if (progress.synthesizing) parts.push('Synthesizing final summary');
     if (progress.repairing) parts.push('Repairing model output');
     if (Number.isFinite(Number(progress.ai_calls)) && Number(progress.ai_calls) > 0) parts.push(`AI calls: ${Number(progress.ai_calls)}`);
@@ -1832,7 +1838,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
             <p style={{ margin: '0 0 12px', fontSize: 13, color: '#94a3b8' }}>
               {isRefreshExtractionInProgress(report, job)
                 ? 'Re-running deterministic extraction and IOC matching. AI analysis does not run.'
-                : 'Analysis is running. Progress updates every few seconds from the worker — not a fake timer.'}
+                : describeAutoRetry(report) || 'Analysis is running. Progress updates every few seconds from the worker — not a fake timer.'}
             </p>
             <ProgressChecklist report={report} job={job} />
           </SectionCard>

@@ -149,6 +149,10 @@ export function describeAnalysisStage(report, job) {
     matching: 'Matching against local IOCs',
     review_required: 'Preparing review'
   }[stage] || statusLabel(report);
+  if (stage === 'analyzing' && progress.ai_capacity_waiting) {
+    // Queued behind other analyses for the shared AI provider — not a slow model.
+    return { stage, stageLabel: 'Waiting for AI capacity', chunkLabel: null };
+  }
   let chunkLabel = null;
   const total = Number(progress.analysis_chunks_total);
   if (Number.isFinite(total) && total > 0) {

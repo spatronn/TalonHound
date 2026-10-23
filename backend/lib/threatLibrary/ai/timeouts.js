@@ -20,13 +20,25 @@ export const AI_FAILURE_CODES = Object.freeze({
   AI_OUTPUT_SCHEMA_ERROR: 'ai_output_schema_error',
   AI_OUTPUT_REFERENCE_ERROR: 'ai_output_reference_error',
   AI_GENERATION_LIMIT: 'ai_generation_limit_exceeded',
-  AI_OUTPUT_BUDGET_EXCEEDED: 'ai_output_budget_exceeded'
+  AI_OUTPUT_BUDGET_EXCEEDED: 'ai_output_budget_exceeded',
+  // Inference scheduling (inferenceScheduler.js): waiting for TalonHound-managed
+  // capacity is never reported as a provider timeout.
+  AI_CAPACITY_WAIT_TIMEOUT: 'ai_capacity_wait_timeout',
+  AI_CAPACITY_UNAVAILABLE: 'ai_capacity_unavailable',
+  AI_CAPACITY_LEASE_LOST: 'ai_capacity_lease_lost',
+  // Capacity held by a request whose provider-side termination is unverified
+  // past its worst-case bound: fail fast instead of risking an overlap.
+  AI_CAPACITY_QUARANTINED: 'ai_capacity_quarantined',
+  PROVIDER_EXECUTION_TIMEOUT: 'provider_execution_timeout',
+  // Job ownership (jobOwnership.js): the run stops without writing report state.
+  JOB_OWNERSHIP_LOST: 'job_ownership_lost',
+  WORKER_SHUTDOWN: 'worker_shutdown'
 });
 
 export const AI_FAILURE_MESSAGES = Object.freeze({
   [AI_FAILURE_CODES.PROVIDER_UNREACHABLE]: 'AI provider is unreachable from the TalonHound host',
   [AI_FAILURE_CODES.CONNECTION_TIMEOUT]: 'Timed out establishing a connection to the AI provider',
-  [AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT]: 'AI provider did not start responding within the first-response timeout (model may still be loading)',
+  [AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT]: 'AI provider did not start responding within the first-response timeout after the request was sent',
   [AI_FAILURE_CODES.PROVIDER_INACTIVITY_TIMEOUT]: 'AI provider stopped producing output (inactivity timeout)',
   [AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE]: 'Total analysis safety ceiling exceeded',
   [AI_FAILURE_CODES.PROVIDER_HTTP_ERROR]: 'AI provider returned an HTTP error',
@@ -40,8 +52,61 @@ export const AI_FAILURE_MESSAGES = Object.freeze({
   [AI_FAILURE_CODES.AI_OUTPUT_SCHEMA_ERROR]: 'AI returned JSON that does not match the required schema',
   [AI_FAILURE_CODES.AI_OUTPUT_REFERENCE_ERROR]: 'AI response referenced unknown or forbidden identifiers',
   [AI_FAILURE_CODES.AI_GENERATION_LIMIT]: 'AI output reached the generation token ceiling before the JSON was complete',
-  [AI_FAILURE_CODES.AI_OUTPUT_BUDGET_EXCEEDED]: 'AI output exceeded the per-chunk entity/relationship budget'
+  [AI_FAILURE_CODES.AI_OUTPUT_BUDGET_EXCEEDED]: 'AI output exceeded the per-chunk entity/relationship budget',
+  [AI_FAILURE_CODES.AI_CAPACITY_WAIT_TIMEOUT]: 'Waited too long for AI capacity (other analyses were using the AI provider)',
+  [AI_FAILURE_CODES.AI_CAPACITY_UNAVAILABLE]: 'AI capacity scheduler is unavailable',
+  [AI_FAILURE_CODES.AI_CAPACITY_LEASE_LOST]: 'AI capacity lease was lost while the request was running',
+  [AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED]: 'AI capacity is held: the provider has not confirmed that an abandoned request finished',
+  [AI_FAILURE_CODES.PROVIDER_EXECUTION_TIMEOUT]: 'AI provider request exceeded the per-request execution limit',
+  [AI_FAILURE_CODES.JOB_OWNERSHIP_LOST]: 'Analysis ownership moved to another worker',
+  [AI_FAILURE_CODES.WORKER_SHUTDOWN]: 'Analysis was interrupted by a worker shutdown and will resume'
 });
+
+/**
+ * Failures worth one bounded automatic retry: the provider or the transport
+ * was temporarily unavailable. Validation, schema, budget, deadline, model and
+ * context errors are permanent for the same input and are never retried.
+ * Capacity-wait timeouts are not retried either: they mean sustained
+ * congestion, and re-queueing would only add load.
+ * @param {string|null|undefined} code
+ * @param {number|null|undefined} [httpStatus]
+ */
+export function isTransientAiFailure(code, httpStatus) {
+  switch (code) {
+    case AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT:
+    case AI_FAILURE_CODES.PROVIDER_INACTIVITY_TIMEOUT:
+    case AI_FAILURE_CODES.CONNECTION_TIMEOUT:
+    case AI_FAILURE_CODES.PROVIDER_UNREACHABLE:
+    case AI_FAILURE_CODES.AI_CAPACITY_UNAVAILABLE:
+    case AI_FAILURE_CODES.AI_CAPACITY_LEASE_LOST:
+    case AI_FAILURE_CODES.AI_CAPACITY_QUARANTINED:
+      return true;
+    case AI_FAILURE_CODES.PROVIDER_HTTP_ERROR:
+      return Number(httpStatus) >= 500 || Number(httpStatus) === 429;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Inference capacity is a property of the provider endpoint, not of the
+ * model: a second model on the same Ollama host shares its GPU and queue.
+ * @param {object} settings
+ */
+export function inferenceResourceKey(settings) {
+  const provider = String(settings?.provider || 'unknown');
+  let base = String(settings?.base_url || '').trim().toLowerCase().replace(/\/+$/, '');
+  if (!base) {
+    base = provider === 'ollama'
+      ? 'http://127.0.0.1:11434'
+      : provider === 'anthropic'
+        ? 'https://api.anthropic.com'
+        : provider === 'openai'
+          ? 'https://api.openai.com/v1'
+          : '';
+  }
+  return `${provider}|${base}`;
+}
 
 /**
  * @param {string|null|undefined} baseUrl
@@ -87,18 +152,28 @@ export function resolveAiTimeoutPolicy(settings) {
   const local = isLocalAiProvider(settings);
   const legacy = Number(settings?.timeout_ms);
 
+  // Local default capacity 1: the production Ollama host was measured to run
+  // one request at a time (provider queue = the other request's runtime).
+  // Execution limit: num_predict 10240 at ~17 tok/s plus the longest observed
+  // prompt evaluation (~164s) is ~13 min; 20 min leaves headroom.
   const defaults = local
     ? {
         connection_timeout_ms: 30_000,
         first_token_timeout_ms: 300_000,
         inactivity_timeout_ms: 300_000,
-        total_analysis_timeout_ms: 1_800_000
+        total_analysis_timeout_ms: 1_800_000,
+        max_concurrent_ai_requests: 1,
+        capacity_wait_timeout_ms: 3_600_000,
+        provider_execution_timeout_ms: 1_200_000
       }
     : {
         connection_timeout_ms: 15_000,
         first_token_timeout_ms: 120_000,
         inactivity_timeout_ms: 180_000,
-        total_analysis_timeout_ms: 900_000
+        total_analysis_timeout_ms: 900_000,
+        max_concurrent_ai_requests: 4,
+        capacity_wait_timeout_ms: 900_000,
+        provider_execution_timeout_ms: 600_000
       };
 
   const inactivityFallback = Number.isFinite(legacy) && legacy > 0
@@ -134,6 +209,25 @@ export function resolveAiTimeoutPolicy(settings) {
       7_200_000,
       defaults.total_analysis_timeout_ms
     ),
+    max_concurrent_ai_requests: Math.trunc(clamp(
+      settings?.max_concurrent_ai_requests,
+      1,
+      8,
+      defaults.max_concurrent_ai_requests
+    )),
+    capacity_wait_timeout_ms: clamp(
+      settings?.capacity_wait_timeout_ms,
+      10_000,
+      14_400_000,
+      defaults.capacity_wait_timeout_ms
+    ),
+    provider_execution_timeout_ms: clamp(
+      settings?.provider_execution_timeout_ms,
+      30_000,
+      7_200_000,
+      defaults.provider_execution_timeout_ms
+    ),
+    auto_retry_max_attempts: Math.trunc(clamp(settings?.auto_retry_max_attempts, 0, 5, 2)),
     is_local: local
   };
 }

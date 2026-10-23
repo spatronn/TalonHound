@@ -223,6 +223,7 @@ export const AUDIT_ACTION = Object.freeze({
   FILE_ARTIFACT_OBSERVATION_ATTACHED: 'file_artifact.observation_attached',
   // Threat Library: one event per user action (never one per candidate).
   THREAT_LIBRARY_AI_SETTINGS_UPDATED: 'threat_library.ai_settings.updated',
+  THREAT_LIBRARY_AI_CAPACITY_RELEASED: 'threat_library.ai_capacity.released',
   THREAT_LIBRARY_REPORT_IMPORTED_PDF: 'threat_library.report.imported.pdf',
   THREAT_LIBRARY_REPORT_IMPORTED_URL: 'threat_library.report.imported.url',
   THREAT_LIBRARY_REPORT_IMPORTED_THIB: 'threat_library.report.imported.thib',
@@ -454,6 +455,7 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.FILE_ARTIFACT_CONFLICT_DETECTED]: 'File Artifact Conflict Detected',
   [AUDIT_ACTION.FILE_ARTIFACT_OBSERVATION_ATTACHED]: 'File Artifact Observation Attached',
   [AUDIT_ACTION.THREAT_LIBRARY_AI_SETTINGS_UPDATED]: 'Threat Library › AI Settings Updated',
+  [AUDIT_ACTION.THREAT_LIBRARY_AI_CAPACITY_RELEASED]: 'Threat Library › Quarantined AI Capacity Released',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORTED_PDF]: 'Threat Library › Report Imported (PDF)',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORTED_URL]: 'Threat Library › Report Imported (URL)',
   [AUDIT_ACTION.THREAT_LIBRARY_REPORT_IMPORTED_THIB]: 'Threat Library › Report Imported (THIB)',

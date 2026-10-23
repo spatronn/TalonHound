@@ -22,6 +22,7 @@ import {
   RELATIONSHIP_SELECTION_LINES
 } from './prompts.js';
 import { isGenerationLimitHit, parseOllamaNdjsonLine, callAiProvider } from './client.js';
+import { fetchTransport } from './providerHttp.js';
 import { processAiResponseText, validateAiAnalysis } from './schema.js';
 import { createCanonicalDocument } from '../canonicalDocument.js';
 
@@ -117,6 +118,10 @@ function hooksWith(calls, responses, extra = {}) {
 }
 
 // ---------------------------------------------------------------- budgets
+
+
+// client.js uses node:http by default; these tests stub globalThis.fetch.
+const viaGlobalFetch = fetchTransport((url, init) => globalThis.fetch(url, init));
 
 test('output budgets: documented derivation, recovery strictly smaller, all under Zod ceilings', () => {
   const chunk = outputBudget('chunk');
@@ -355,7 +360,7 @@ test('Ollama call timing records num_predict and flags a ceiling hit', async () 
     const result = await callAiProvider(
       { enabled: true, provider: 'ollama', model: 'qwen3.5:9b', base_url: 'http://127.0.0.1:11434' },
       { system: 'sys', user: 'usr' },
-      { formatSchema: buildProviderJsonSchema() }
+      { formatSchema: buildProviderJsonSchema(), transport: viaGlobalFetch }
     );
     assert.equal(result.timing.num_predict, 10240);
     assert.equal(result.timing.eval_count, 10240);

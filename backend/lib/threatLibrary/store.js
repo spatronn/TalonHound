@@ -22,7 +22,12 @@ import {
   reportListPhaseCounts,
   reportListStatusSql
 } from './reportListQuery.js';
-import { parseMaxConcurrentReportAnalyses, resolveMaxConcurrentReportAnalyses } from './analysisConcurrency.js';
+import {
+  parseMaxConcurrentReportAnalyses,
+  resolveMaxConcurrentReportAnalyses,
+  parseAiSchedulingSetting,
+  AI_SCHEDULING_SETTING_BOUNDS
+} from './analysisConcurrency.js';
 import { loadReportReviewProgress } from './reviewProgress.js';
 
 export async function getAiSettings(pool) {
@@ -62,6 +67,13 @@ export async function updateAiSettings(pool, patch, userPublicId) {
   const nextConcurrency = hasConcurrencyPatch
     ? parseMaxConcurrentReportAnalyses(patch.max_concurrent_report_analyses)
     : resolveMaxConcurrentReportAnalyses(current?.max_concurrent_report_analyses);
+  // Scheduler settings: a present key (even null) replaces, an absent key keeps.
+  const scheduling = {};
+  for (const name of Object.keys(AI_SCHEDULING_SETTING_BOUNDS)) {
+    scheduling[name] = Object.prototype.hasOwnProperty.call(patch, name)
+      ? parseAiSchedulingSetting(name, patch[name])
+      : (current?.[name] ?? null);
+  }
 
   const { rows } = await pool.query(
     `UPDATE threat_library_ai_settings SET
@@ -79,6 +91,10 @@ export async function updateAiSettings(pool, patch, userPublicId) {
        inactivity_timeout_ms = COALESCE($13, inactivity_timeout_ms),
        total_analysis_timeout_ms = COALESCE($14, total_analysis_timeout_ms),
        max_concurrent_report_analyses = $15,
+       max_concurrent_ai_requests = $16,
+       capacity_wait_timeout_ms = $17,
+       provider_execution_timeout_ms = $18,
+       auto_retry_max_attempts = $19,
        updated_at = NOW(),
        updated_by = $10::uuid
      WHERE id = 1
@@ -98,7 +114,11 @@ export async function updateAiSettings(pool, patch, userPublicId) {
       Number.isFinite(firstTokenTimeoutMs) ? firstTokenTimeoutMs : null,
       Number.isFinite(inactivityTimeoutMs) ? inactivityTimeoutMs : null,
       Number.isFinite(totalTimeoutMs) ? totalTimeoutMs : null,
-      nextConcurrency
+      nextConcurrency,
+      scheduling.max_concurrent_ai_requests,
+      scheduling.capacity_wait_timeout_ms,
+      scheduling.provider_execution_timeout_ms,
+      scheduling.auto_retry_max_attempts
     ]
   );
   return rows[0];
@@ -443,6 +463,18 @@ export async function saveAnalysisChunkResult(pool, reportId, analysisRunId, chu
        $7, $8::jsonb, $9::jsonb, 1, NOW(), NOW(), NOW()
      )
      ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
+       -- Keep the previous attempt (bounded to 10) instead of losing its diagnostics.
+       attempt_history = (CASE WHEN jsonb_array_length(threat_library_analysis_chunks.attempt_history) >= 10
+                              THEN threat_library_analysis_chunks.attempt_history - 0
+                              ELSE threat_library_analysis_chunks.attempt_history END)
+         || jsonb_build_array(jsonb_build_object(
+              'attempt', threat_library_analysis_chunks.attempt_count,
+              'status', threat_library_analysis_chunks.status,
+              'error_code', threat_library_analysis_chunks.error_code,
+              'error_message', left(threat_library_analysis_chunks.error_message, 300),
+              'timing', threat_library_analysis_chunks.timing,
+              'at', threat_library_analysis_chunks.updated_at
+            )),
        status = 'completed',
        result = EXCLUDED.result,
        block_ids = EXCLUDED.block_ids,
@@ -480,6 +512,18 @@ export async function markAnalysisChunkFailed(pool, reportId, analysisRunId, chu
        $1, $2::uuid, $3, $4, 'failed', $5::jsonb, $6, $7, $8, $9::jsonb, $10, $11::jsonb, $12::jsonb, 1, NOW(), NOW()
      )
      ON CONFLICT (report_id, analysis_run_id, chunk_key) DO UPDATE SET
+       -- Keep the previous attempt (bounded to 10) instead of losing its diagnostics.
+       attempt_history = (CASE WHEN jsonb_array_length(threat_library_analysis_chunks.attempt_history) >= 10
+                              THEN threat_library_analysis_chunks.attempt_history - 0
+                              ELSE threat_library_analysis_chunks.attempt_history END)
+         || jsonb_build_array(jsonb_build_object(
+              'attempt', threat_library_analysis_chunks.attempt_count,
+              'status', threat_library_analysis_chunks.status,
+              'error_code', threat_library_analysis_chunks.error_code,
+              'error_message', left(threat_library_analysis_chunks.error_message, 300),
+              'timing', threat_library_analysis_chunks.timing,
+              'at', threat_library_analysis_chunks.updated_at
+            )),
        status = 'failed',
        error_code = EXCLUDED.error_code,
        error_message = EXCLUDED.error_message,

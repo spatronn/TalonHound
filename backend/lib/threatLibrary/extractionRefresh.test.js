@@ -1331,3 +1331,24 @@ test('the CLI actor constant matches the maintenance script operator', async () 
   const src = fs.readFileSync(new URL('../../scripts/threat-library-report-maintenance.js', import.meta.url), 'utf8');
   assert.ok(src.includes(`actorUsername: '${MAINTENANCE_CLI_ACTOR}'`));
 });
+
+for (const code of ['worker_shutdown', 'job_ownership_lost']) {
+  test(`${code} during the AI stage: the run stops without writing report or job failure state`, async () => {
+    const { db, pool } = await seedAnalyzedReport({ status: 'failed' });
+    db.jobs[0].job_type = 'retry';
+    const before = { status: db.report.analysis_status, failure_code: db.report.failure_code };
+    const candidatesBefore = JSON.stringify(db.candidates);
+    const analyzeThreatDocument = async () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    const result = await runThreatLibraryJob(pool, { reportId: 77, jobId: 41, jobType: 'retry', resumeAnalysis: true }, { analyzeThreatDocument });
+    assert.equal(result.ok, false);
+    assert.equal(result.interrupted, true);
+    assert.equal(result.code, code);
+    assert.notEqual(db.report.analysis_status, 'failed', 'no terminal failure written (the worker requeues / the new owner reports)');
+    assert.equal(db.report.failure_code, before.failure_code);
+    assert.notEqual(db.jobs[0].status, 'failed');
+    assert.equal(JSON.stringify(db.candidates), candidatesBefore, 'candidate rows untouched');
+    assert.equal(db.sql.some((q) => /INSERT INTO ioc_items/i.test(q)), false);
+  });
+}

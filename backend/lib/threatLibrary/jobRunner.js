@@ -30,7 +30,8 @@ export async function runThreatLibraryJob(pool, ctx, deps = {}) {
       reportId: ctx.reportId,
       jobId: ctx.jobId,
       restoreStatus: ctx.restoreStatus,
-      membershipPolicy: ctx.membershipPolicy
+      membershipPolicy: ctx.membershipPolicy,
+      fence: ctx.fence
     });
   }
 

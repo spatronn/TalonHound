@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
+import { useAppConfirm } from '../../lib/appChromeContext.jsx';
 import { ui } from './styles.js';
 import {
   MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
@@ -17,11 +18,30 @@ const PROVIDERS = [
   { value: 'openai_compatible', label: 'OpenAI-compatible' }
 ];
 
+const LOCAL_CAPACITY = Object.freeze({
+  max_concurrent_ai_requests: 1,
+  capacity_wait_timeout_ms: 3600000,
+  provider_execution_timeout_ms: 1200000,
+  auto_retry_max_attempts: 2
+});
+const HOSTED_CAPACITY = Object.freeze({
+  max_concurrent_ai_requests: 4,
+  capacity_wait_timeout_ms: 900000,
+  provider_execution_timeout_ms: 600000,
+  auto_retry_max_attempts: 2
+});
+
+function intOrNull(value) {
+  if (value === '' || value == null) return null;
+  const n = Number(value);
+  return Number.isInteger(n) ? n : null;
+}
+
 const PROVIDER_DEFAULTS = {
-  openai: { connection_timeout_ms: 15000, first_token_timeout_ms: 120000, inactivity_timeout_ms: 180000, total_analysis_timeout_ms: 900000 },
-  anthropic: { connection_timeout_ms: 15000, first_token_timeout_ms: 120000, inactivity_timeout_ms: 180000, total_analysis_timeout_ms: 900000 },
-  openai_compatible: { connection_timeout_ms: 15000, first_token_timeout_ms: 120000, inactivity_timeout_ms: 180000, total_analysis_timeout_ms: 900000 },
-  ollama: { connection_timeout_ms: 30000, first_token_timeout_ms: 300000, inactivity_timeout_ms: 300000, total_analysis_timeout_ms: 1800000 }
+  openai: { connection_timeout_ms: 15000, first_token_timeout_ms: 120000, inactivity_timeout_ms: 180000, total_analysis_timeout_ms: 900000, ...HOSTED_CAPACITY },
+  anthropic: { connection_timeout_ms: 15000, first_token_timeout_ms: 120000, inactivity_timeout_ms: 180000, total_analysis_timeout_ms: 900000, ...HOSTED_CAPACITY },
+  openai_compatible: { connection_timeout_ms: 15000, first_token_timeout_ms: 120000, inactivity_timeout_ms: 180000, total_analysis_timeout_ms: 900000, ...HOSTED_CAPACITY },
+  ollama: { connection_timeout_ms: 30000, first_token_timeout_ms: 300000, inactivity_timeout_ms: 300000, total_analysis_timeout_ms: 1800000, ...LOCAL_CAPACITY }
 };
 
 export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
@@ -33,6 +53,9 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [settings, setSettings] = useState(null);
+  const [capacity, setCapacity] = useState(null);
+  const [releasing, setReleasing] = useState(false);
+  const requestConfirm = useAppConfirm();
   const [form, setForm] = useState({
     enabled: false,
     provider: 'openai_compatible',
@@ -44,6 +67,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
     total_analysis_timeout_ms: 900000,
     max_input_chars: 120000,
     max_concurrent_report_analyses: MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
+    ...HOSTED_CAPACITY,
     api_key: '',
     privacy_ack: false
   });
@@ -55,6 +79,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
       const { data } = await api.get('/threat-library/ai-settings');
       const s = data?.settings || null;
       setSettings(s);
+      setCapacity(data?.inference_capacity || null);
       setForm((f) => ({
         ...f,
         enabled: s?.enabled === true,
@@ -67,6 +92,10 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
         total_analysis_timeout_ms: s?.total_analysis_timeout_ms || 900000,
         max_input_chars: s?.max_input_chars || 120000,
         max_concurrent_report_analyses: parseConcurrentReportAnalyses(s?.max_concurrent_report_analyses) || MAX_CONCURRENT_REPORT_ANALYSES_DEFAULT,
+        max_concurrent_ai_requests: s?.max_concurrent_ai_requests ?? HOSTED_CAPACITY.max_concurrent_ai_requests,
+        capacity_wait_timeout_ms: s?.capacity_wait_timeout_ms ?? HOSTED_CAPACITY.capacity_wait_timeout_ms,
+        provider_execution_timeout_ms: s?.provider_execution_timeout_ms ?? HOSTED_CAPACITY.provider_execution_timeout_ms,
+        auto_retry_max_attempts: s?.auto_retry_max_attempts ?? HOSTED_CAPACITY.auto_retry_max_attempts,
         api_key: '',
         privacy_ack: Boolean(s?.privacy_ack_at)
       }));
@@ -117,6 +146,10 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
         timeout_ms: Number(form.inactivity_timeout_ms) || 180000,
         max_input_chars: Number(form.max_input_chars) || 120000,
         max_concurrent_report_analyses: concurrency,
+        max_concurrent_ai_requests: intOrNull(form.max_concurrent_ai_requests),
+        capacity_wait_timeout_ms: intOrNull(form.capacity_wait_timeout_ms),
+        provider_execution_timeout_ms: intOrNull(form.provider_execution_timeout_ms),
+        auto_retry_max_attempts: intOrNull(form.auto_retry_max_attempts),
         privacy_ack: form.privacy_ack === true
       };
       if (form.api_key.trim()) body.api_key = form.api_key.trim();
@@ -145,6 +178,29 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
       setError(err?.response?.data?.message || 'Failed to clear API key');
     } finally {
       setClearing(false);
+    }
+  }
+
+  async function releaseQuarantinedCapacity() {
+    const ok = await requestConfirm({
+      title: 'Release quarantined AI capacity?',
+      description:
+        'Only after confirming the AI provider has no request still running (for example after restarting Ollama). Releasing while it is still generating makes new analyses queue behind it.',
+      confirmLabel: 'Release',
+      cancelLabel: 'Cancel'
+    });
+    if (!ok) return;
+    setReleasing(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await api.post('/threat-library/ai-settings/release-quarantined-capacity', { confirm: true });
+      setSuccess(`Released ${Number(data?.released) || 0} quarantined AI slot(s).`);
+      await load();
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to release quarantined AI capacity');
+    } finally {
+      setReleasing(false);
     }
   }
 
@@ -283,6 +339,33 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
                   Increasing this value starts queued reports immediately; decreasing it does not stop analyses that are already running.
                 </span>
               </div>
+              <div>
+                <label style={ui.label} htmlFor="tl-ai-capacity">Concurrent AI requests per provider</label>
+                <input
+                  id="tl-ai-capacity"
+                  style={ui.input}
+                  type="number"
+                  min={1}
+                  max={8}
+                  step={1}
+                  value={form.max_concurrent_ai_requests}
+                  onChange={(e) => setField('max_concurrent_ai_requests', e.target.value)}
+                />
+                <span style={ui.helper}>
+                  How many model requests the provider runs at once, shared by every analysis and the connection test.
+                  Local Ollama: 1 unless OLLAMA_NUM_PARALLEL is raised on the host.
+                </span>
+              </div>
+              <div>
+                <label style={ui.label} htmlFor="tl-ai-capacity-wait">AI capacity wait limit (ms)</label>
+                <input id="tl-ai-capacity-wait" style={ui.input} type="number" min={10000} value={form.capacity_wait_timeout_ms} onChange={(e) => setField('capacity_wait_timeout_ms', e.target.value)} />
+                <span style={ui.helper}>Total time one analysis may wait for a free AI slot.</span>
+              </div>
+              <div>
+                <label style={ui.label} htmlFor="tl-ai-auto-retry">Automatic retries</label>
+                <input id="tl-ai-auto-retry" style={ui.input} type="number" min={0} max={5} step={1} value={form.auto_retry_max_attempts} onChange={(e) => setField('auto_retry_max_attempts', e.target.value)} />
+                <span style={ui.helper}>For provider unavailability and timeouts only; each retry resumes from completed chunks. 0 disables.</span>
+              </div>
             </div>
 
             <h3 style={{ margin: '22px 0 8px', fontSize: 14, color: '#e2e8f0' }}>Timeouts</h3>
@@ -298,7 +381,7 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
               <div>
                 <label style={ui.label} htmlFor="tl-ai-first">First-response timeout (ms)</label>
                 <input id="tl-ai-first" style={ui.input} type="number" min={5000} value={form.first_token_timeout_ms} onChange={(e) => setField('first_token_timeout_ms', e.target.value)} />
-                <span style={ui.helper}>Allows local model load time before the first token.</span>
+                <span style={ui.helper}>Counted from when the request is sent, after an AI slot is acquired.</span>
               </div>
               <div>
                 <label style={ui.label} htmlFor="tl-ai-idle">Inactivity timeout (ms)</label>
@@ -308,7 +391,12 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
               <div>
                 <label style={ui.label} htmlFor="tl-ai-total">Total analysis ceiling (ms)</label>
                 <input id="tl-ai-total" style={ui.input} type="number" min={60000} value={form.total_analysis_timeout_ms} onChange={(e) => setField('total_analysis_timeout_ms', e.target.value)} />
-                <span style={ui.helper}>Hard safety limit for the whole report analysis job.</span>
+                <span style={ui.helper}>Limit on active analysis time; waiting for an AI slot is not counted.</span>
+              </div>
+              <div>
+                <label style={ui.label} htmlFor="tl-ai-exec">Per-request execution limit (ms)</label>
+                <input id="tl-ai-exec" style={ui.input} type="number" min={30000} value={form.provider_execution_timeout_ms} onChange={(e) => setField('provider_execution_timeout_ms', e.target.value)} />
+                <span style={ui.helper}>Maximum duration of one model request, streaming included.</span>
               </div>
             </div>
 
@@ -360,6 +448,21 @@ export default function ThreatLibraryAiSettings({ AppShell, useSession }) {
                 </button>
               ) : null}
             </div>
+            {capacity?.quarantined > 0 ? (
+              <div style={{ ...ui.error, marginTop: 14 }} data-testid="ai-capacity-quarantined">
+                <strong style={{ display: 'block', marginBottom: 4 }}>
+                  AI capacity held: {capacity.quarantined} of {capacity.capacity} slot(s)
+                  {capacity.oldest_quarantined_at ? ` since ${formatUserDateTime(capacity.oldest_quarantined_at)}` : ''}
+                </strong>
+                The provider has not confirmed that a cancelled request finished. The slot is released automatically once a test request is served
+                {capacity.unverified > 0 ? '; until then new analyses fail with ai_capacity_quarantined.' : '.'}
+                <div style={{ marginTop: 10 }}>
+                  <button type="button" style={ui.btnDanger} disabled={releasing} onClick={() => releaseQuarantinedCapacity().catch(() => {})}>
+                    {releasing ? 'Releasing…' : 'Release quarantined capacity'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
       </section>

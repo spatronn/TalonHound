@@ -43,6 +43,7 @@ import {
   queueThreatLibraryAnalysis,
   restoreStatusForCancelledJobs
 } from '../lib/threatLibrary/analysisConcurrency.js';
+import { createExclusivePipelineJob, expediteDelayedJob } from '../lib/threatLibrary/analysisConcurrency.js';
 import {
   createManualIocSource,
   getIocSourceByPublicId,
@@ -379,7 +380,15 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   app.get('/api/threat-library/ai-settings', requireRole(ROLES.ADMIN), async (_req, res) => {
     try {
       const settings = await getAiSettings(pool);
-      return res.json({ settings: maskAiSettingsForClient(settings) });
+      let inferenceCapacity = null;
+      try {
+        const { describeInferenceCapacity } = await import('../lib/threatLibrary/ai/capacityRecovery.js');
+        const { getInferenceScheduler } = await import('../lib/threatLibrary/ai/inferenceScheduler.js');
+        inferenceCapacity = await describeInferenceCapacity(settings, deps.inferenceScheduler || getInferenceScheduler(pool));
+      } catch {
+        inferenceCapacity = null; // status is informational
+      }
+      return res.json({ settings: maskAiSettingsForClient(settings), inference_capacity: inferenceCapacity });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to load AI settings', detail: err.message });
     }
@@ -423,7 +432,11 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           api_key_updated: Boolean(body.api_key),
           inactivity_timeout_ms: updated.inactivity_timeout_ms,
           total_analysis_timeout_ms: updated.total_analysis_timeout_ms,
-          max_concurrent_report_analyses: updated.max_concurrent_report_analyses
+          max_concurrent_report_analyses: updated.max_concurrent_report_analyses,
+          max_concurrent_ai_requests: updated.max_concurrent_ai_requests,
+          capacity_wait_timeout_ms: updated.capacity_wait_timeout_ms,
+          provider_execution_timeout_ms: updated.provider_execution_timeout_ms,
+          auto_retry_max_attempts: updated.auto_retry_max_attempts
         }
       });
       // Increasing the limit must start queued reports without a restart.
@@ -435,7 +448,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       }
       return res.json({ settings: maskAiSettingsForClient(updated) });
     } catch (err) {
-      if (err instanceof AnalysisConcurrencySettingError || err.code === 'invalid_max_concurrent_report_analyses') {
+      if (err instanceof AnalysisConcurrencySettingError || String(err.code || '').startsWith('invalid_')) {
         return res.status(400).json({ message: err.message, code: err.code });
       }
       return res.status(500).json({ message: 'Failed to update AI settings', detail: err.message });
@@ -452,11 +465,47 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     }
   });
 
+  // Operator recovery for quarantined AI capacity: a slot whose cancelled
+  // request was never confirmed finished on the provider is held (fail-closed)
+  // until a probe succeeds. An admin who has verified the provider is idle
+  // (e.g. restarted Ollama) can release it explicitly; audited.
+  app.post('/api/threat-library/ai-settings/release-quarantined-capacity', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      if (req.body?.confirm !== true) {
+        return res.status(400).json({
+          message: 'Confirm that the AI provider is idle (no request still running) before releasing quarantined capacity.',
+          code: 'confirmation_required'
+        });
+      }
+      const settings = await getAiSettings(pool);
+      const { releaseQuarantinedCapacity } = await import('../lib/threatLibrary/ai/capacityRecovery.js');
+      const { getInferenceScheduler } = await import('../lib/threatLibrary/ai/inferenceScheduler.js');
+      const result = await releaseQuarantinedCapacity(settings, deps.inferenceScheduler || getInferenceScheduler(pool));
+      await audit.auditSuccess({
+        req,
+        action: AUDIT_ACTION.THREAT_LIBRARY_AI_CAPACITY_RELEASED,
+        entityType: AUDIT_ENTITY.SYSTEM,
+        entityDisplay: 'Threat Library AI capacity',
+        severity: AUDIT_SEVERITY.WARNING,
+        after: { released: result.released, resource: result.resource_key }
+      });
+      try {
+        await dispatchQueuedAnalyses();
+      } catch {
+        // the worker safety net dispatches next
+      }
+      return res.json({ released: result.released });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to release quarantined AI capacity', detail: err.message });
+    }
+  });
+
   app.post('/api/threat-library/ai-settings/probe', requireRole(ROLES.ADMIN), async (req, res) => {
     try {
       const settings = await getAiSettings(pool);
       const { probeAiProvider } = await import('../lib/threatLibrary/ai/probe.js');
-      const result = await probeAiProvider(settings);
+      const { getInferenceScheduler } = await import('../lib/threatLibrary/ai/inferenceScheduler.js');
+      const result = await probeAiProvider(settings, { scheduler: deps.inferenceScheduler || getInferenceScheduler(pool) });
       await pool.query(
         `UPDATE threat_library_ai_settings
          SET last_probe_at = NOW(), last_probe_ok = $2, last_probe_detail = $3::jsonb, updated_at = NOW()
@@ -1005,7 +1054,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         let recoveredOrphanedStatus = false;
         if (isActiveAnalysisStatus(report.analysis_status)) {
           const { rows: activeJobs } = await pool.query(
-            `SELECT public_id, status, stage, progress, error_message, created_at
+            `SELECT id, public_id, status, stage, progress, error_message, created_at, bullmq_job_id, not_before
              FROM threat_library_jobs
              WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
              ORDER BY id DESC LIMIT 1`,
@@ -1021,6 +1070,13 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             recoveredOrphanedStatus = isOrphanedActiveAnalysis({ report, activeJob: null, latestJob: latestJobs[0] || null });
           }
           if (!recoveredOrphanedStatus) {
+            // An automatic retry waiting for its backoff: the analyst's Retry
+            // makes it due now instead of creating a second job.
+            if (activeJobs[0]?.not_before && !activeJobs[0].bullmq_job_id) {
+              if (await expediteDelayedJob(pool, activeJobs[0].id)) {
+                try { await dispatchQueuedAnalyses(); } catch { /* worker safety net claims it */ }
+              }
+            }
             return res.status(202).json({
               report: publicReport(report),
               job_id: activeJobs[0]?.public_id || null,
@@ -1083,6 +1139,24 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           candidate_extraction_version: report.analysis_progress?.candidate_extraction_version || null
         });
 
+        // Atomic per report: a concurrent Retry (double click, UI + MCP, an
+        // automatic retry) finds this job instead of creating a second one.
+        const exclusive = await createExclusivePipelineJob(pool, {
+          reportId: report.id,
+          jobType: 'retry',
+          requestedBy: (await actorOf(req))?.publicId
+        });
+        if (!exclusive.created) {
+          return res.status(202).json({
+            report: publicReport(await reportWithDetail(await getReportByPublicId(pool, req.params.publicId))),
+            job_id: exclusive.job.public_id,
+            already_running: true,
+            code: 'analysis_already_running',
+            resumed: true
+          });
+        }
+        const jobRow = exclusive.job;
+
         // Leave failed immediately (pending = Queued) without looking like
         // Analyzing while waiting for a concurrency slot. The worker updates
         // the stage once the job is claimed.
@@ -1092,12 +1166,6 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           analysis_progress: progress,
           clear_failure: true,
           clear_cancel: true
-        });
-
-        const jobRow = await createJob(pool, {
-          reportId: report.id,
-          jobType: 'retry',
-          requestedBy: (await actorOf(req))?.publicId
         });
         await scheduleAnalysis(report.id, jobRow, {
           sourceUrl: report.source_url || undefined,
@@ -1225,11 +1293,17 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       : { jobType: mode, restoreStatus, ...(membershipPolicy ? { membershipPolicy } : {}) };
     let jobRow = null;
     try {
-      jobRow = await createJob(pool, {
+      // Same per-report serialization as Retry: never a second live pipeline job.
+      const exclusive = await createExclusivePipelineJob(pool, {
         reportId: report.id,
         jobType: mode,
         requestedBy: (await actorOf(req))?.publicId
       });
+      if (!exclusive.created) {
+        // A concurrent request created the job first; it owns the report status.
+        return alreadyRunning(await getReportByPublicId(pool, req.params.publicId));
+      }
+      jobRow = exclusive.job;
       await scheduleAnalysis(report.id, jobRow, dispatch, progress);
     } catch (err) {
       // Nothing ran: the committed report state is untouched, hand it back.
