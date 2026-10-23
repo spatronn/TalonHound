@@ -117,7 +117,11 @@ function createPool({ report = baseReport(), candidates = [], iocs = [], sourceI
         state.report.updated_at = new Date();
         return { rows: [state.report], rowCount: 1 };
       }
-      if (flat.includes('FROM threat_report_candidate_source_links')) {
+      // loadReportLinkedSourceCandidateIds only — not the linked-provenance
+      // EXISTS subquery embedded in other candidate SELECTs.
+      if (/SELECT DISTINCT l\.candidate_id\s+FROM threat_report_candidate_source_links/i.test(flat)
+        || (flat.includes('FROM threat_report_candidate_source_links l')
+          && flat.includes('JOIN threat_report_candidates c'))) {
         return {
           rows: state.candidates
             .filter((c) => c.has_linked_source_occurrence)
