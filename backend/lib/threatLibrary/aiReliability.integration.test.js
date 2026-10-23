@@ -6,6 +6,7 @@ import {
   candidateColumns,
   createJob,
   createThreatReport,
+  getAiSettings,
   markAnalysisChunkFailed,
   saveAnalysisChunkResult
 } from './store.js';
@@ -16,13 +17,14 @@ import { claimJobOwnership, startJobHeartbeat, requeueOwnedJob } from './jobOwne
 import { createFencedDb } from './jobFence.js';
 import { runExtractionRefresh } from './extractionRefresh.js';
 import { probeQuarantinedCapacity } from './ai/capacityRecovery.js';
-import { inferenceResourceKey } from './ai/timeouts.js';
+import { inferenceResourceKey, resolveAiTimeoutPolicy } from './ai/timeouts.js';
+import { maskAiSettingsForClient } from './ai/settings.js';
 import {
   createExclusivePipelineJob,
   dispatchQueuedThreatLibraryAnalyses,
   recoverInterruptedAnalysisJobs
 } from './analysisConcurrency.js';
-import { maybeScheduleAutoRetry, AUTO_RETRY_BASE_DELAY_MS } from './autoRetry.js';
+import { maybeScheduleAutoRetry, decideAutoRetry, AUTO_RETRY_BASE_DELAY_MS } from './autoRetry.js';
 import { runAnalysisPipeline } from './pipeline.js';
 import { buildAnalysisChunks } from './ai/analyze.js';
 import { createInferenceScheduler } from './ai/inferenceScheduler.js';
@@ -72,7 +74,8 @@ test.after(async () => {
     await pool.query(
       `UPDATE threat_library_ai_settings
        SET enabled = $1, provider = $2, base_url = $3, model = $4, max_input_chars = $5,
-           max_concurrent_ai_requests = $6, auto_retry_max_attempts = $7
+           max_concurrent_ai_requests = $6, auto_retry_max_attempts = $7,
+           capacity_wait_timeout_ms = $8, provider_execution_timeout_ms = $9
        WHERE id = 1`,
       [
         savedSettings.enabled,
@@ -81,11 +84,58 @@ test.after(async () => {
         savedSettings.model,
         savedSettings.max_input_chars,
         savedSettings.max_concurrent_ai_requests,
-        savedSettings.auto_retry_max_attempts
+        savedSettings.auto_retry_max_attempts,
+        savedSettings.capacity_wait_timeout_ms,
+        savedSettings.provider_execution_timeout_ms
       ]
     );
   }
   await pool.end();
+});
+
+test('NULL scheduling columns via getAiSettings resolve to local Ollama defaults (prod 37c5b53 bug)', opts, async () => {
+  await pool.query(
+    `UPDATE threat_library_ai_settings
+     SET enabled = true,
+         provider = 'ollama',
+         base_url = 'http://192.168.1.8:11434',
+         model = 'qwen3.5:9b',
+         max_concurrent_ai_requests = NULL,
+         capacity_wait_timeout_ms = NULL,
+         provider_execution_timeout_ms = NULL,
+         auto_retry_max_attempts = NULL
+     WHERE id = 1`
+  );
+  const row = await getAiSettings(pool);
+  assert.equal(row.max_concurrent_ai_requests, null);
+  assert.equal(row.capacity_wait_timeout_ms, null);
+  assert.equal(row.provider_execution_timeout_ms, null);
+  assert.equal(row.auto_retry_max_attempts, null);
+
+  const policy = resolveAiTimeoutPolicy(row);
+  assert.equal(policy.is_local, true);
+  assert.equal(policy.max_concurrent_ai_requests, 1);
+  assert.equal(policy.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(policy.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(policy.auto_retry_max_attempts, 2);
+
+  const masked = maskAiSettingsForClient(row);
+  assert.equal(masked.capacity_wait_timeout_ms, 3_600_000);
+  assert.equal(masked.provider_execution_timeout_ms, 1_200_000);
+  assert.equal(masked.auto_retry_max_attempts, 2);
+
+  await pool.query(`UPDATE threat_library_ai_settings SET auto_retry_max_attempts = 0 WHERE id = 1`);
+  const disabled = resolveAiTimeoutPolicy(await getAiSettings(pool));
+  assert.equal(disabled.auto_retry_max_attempts, 0);
+  assert.equal(
+    decideAutoRetry({
+      jobType: 'analyze',
+      code: 'first_token_timeout',
+      previousAttempt: 0,
+      maxAttempts: disabled.auto_retry_max_attempts
+    }).retry,
+    false
+  );
 });
 
 const created = [];
