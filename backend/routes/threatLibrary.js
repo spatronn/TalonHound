@@ -54,6 +54,10 @@ import {
   summarizeIocSources,
   transitionSource
 } from '../lib/threatLibrary/iocSources/store.js';
+import {
+  approveLinkedIocSource,
+  dismissLinkedIocSource
+} from '../lib/threatLibrary/iocSources/analystActions.js';
 import { validateIocSourceUrl } from '../lib/threatLibrary/iocSources/fetchSafe.js';
 import { assessIocSourceDestination } from '../lib/threatLibrary/iocSources/destinationIntel.js';
 import { IOC_SOURCE_JOB_MODES } from '../lib/threatLibrary/iocSources/constants.js';
@@ -1644,41 +1648,20 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (!source) return res.status(404).json({ message: 'IOC source not found' });
         const report = await getReportByPublicId(pool, source.report_public_id);
         if (!report) return res.status(404).json({ message: 'Report not found' });
-        const actor = await actorOf(req);
-        if (Array.isArray(req.body?.selected_paths)) {
-          await setSelectedSourceFiles(pool, source.id, req.body.selected_paths);
+        const result = await approveLinkedIocSource(pool, queue, {
+          sourcePublicId: req.params.sourceId,
+          report,
+          actor: await actorOf(req),
+          selectedPaths: Array.isArray(req.body?.selected_paths) ? req.body.selected_paths : null,
+          audit,
+          req
+        });
+        if (!result.ok) {
+          return res.status(result.status || 400).json({ message: result.error, code: result.code || null });
         }
-        const updated = await transitionSource(pool, source, 'approve', {
-          approved_by: actorPublicId(actor)
-        });
-        await writeAudit(req, {
-          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_APPROVED,
-          ...reportAuditEntity(report),
-          severity: AUDIT_SEVERITY.INFO,
-          status: AUDIT_STATUS.SUCCESS,
-          metadata: {
-            ...reportAuditSnapshot(report),
-            source_public_id: source.public_id,
-            canonical_url: source.canonical_url,
-            initiated_by: initiatedBy(actor)
-          }
-        });
-        const { jobRow } = await queueIocSourceJob(report, updated || source, IOC_SOURCE_JOB_MODES.EXTRACT, actor);
-        await writeAudit(req, {
-          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_EXTRACT_QUEUED,
-          ...reportAuditEntity(report),
-          severity: AUDIT_SEVERITY.INFO,
-          status: AUDIT_STATUS.SUCCESS,
-          metadata: {
-            ...reportAuditSnapshot(report),
-            source_public_id: source.public_id,
-            job_id: jobRow.public_id
-          }
-        });
-        const files = await listSourceFiles(pool, source.id);
-        return res.status(202).json({
-          source: publicIocSource(updated || source, files),
-          job_id: jobRow.public_id
+        return res.status(result.status || 202).json({
+          source: result.source,
+          job_id: result.job_id
         });
       } catch (err) {
         const status = err.code === 'invalid_source_transition' ? 409 : 500;
@@ -1696,22 +1679,17 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (!source) return res.status(404).json({ message: 'IOC source not found' });
         const report = await getReportByPublicId(pool, source.report_public_id);
         if (!report) return res.status(404).json({ message: 'Report not found' });
-        const actor = await actorOf(req);
-        const updated = await transitionSource(pool, source, 'dismiss', {
-          dismissed_by: actorPublicId(actor)
+        const result = await dismissLinkedIocSource(pool, {
+          sourcePublicId: req.params.sourceId,
+          report,
+          actor: await actorOf(req),
+          audit,
+          req
         });
-        await writeAudit(req, {
-          action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_DISMISSED,
-          ...reportAuditEntity(report),
-          severity: AUDIT_SEVERITY.INFO,
-          status: AUDIT_STATUS.SUCCESS,
-          metadata: {
-            ...reportAuditSnapshot(report),
-            source_public_id: source.public_id,
-            initiated_by: initiatedBy(actor)
-          }
-        });
-        return res.json({ source: publicIocSource(updated || source) });
+        if (!result.ok) {
+          return res.status(result.status || 400).json({ message: result.error, code: result.code || null });
+        }
+        return res.json({ source: result.source });
       } catch (err) {
         const status = err.code === 'invalid_source_transition' || err.code === 'source_dismissed' ? 409 : 500;
         return res.status(status).json({ message: err.message, code: err.code || null });

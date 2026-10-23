@@ -193,7 +193,8 @@ export async function mcpThreatLibraryImportUrl(pool, args, ctx, deps = {}) {
       already_imported: false,
       duplicate_reason: null,
       message: 'Report import accepted. Fetching, extraction and analysis run in the background; '
-        + 'poll get_threat_library_import_status with report_id. IOC review and Create IOCs stay analyst actions.',
+        + 'poll get_threat_library_import_status with report_id, then use threat_library_get_review / '
+        + 'threat_library_review_iocs / threat_library_create_iocs / threat_library_finalize_report for the analyst workflow.',
       report_id: report.id,
       job_id: job.public_id,
       source_url: result.sourceUrl,

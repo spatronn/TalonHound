@@ -35,7 +35,16 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   // or tag scopes.
   threat_library_import_url: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_IMPORT],
   // Processing state of one report (persisted status only).
-  get_threat_library_import_status: [API_SCOPE.MCP_IOC_READ]
+  get_threat_library_import_status: [API_SCOPE.MCP_IOC_READ],
+  // Post-import Threat Library review surface (persisted candidates + gates).
+  threat_library_get_review: [API_SCOPE.MCP_IOC_READ],
+  threat_library_get_workflow_status: [API_SCOPE.MCP_IOC_READ],
+  // Analyst mutations — same requireRole(admin, analyst) gate as the UI review /
+  // Create IOCs / finalize / linked-source routes. Separate write scope.
+  threat_library_review_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
+  threat_library_create_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
+  threat_library_finalize_report: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
+  threat_library_review_ioc_source: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE]
 });
 
 /** Tools that trigger external enrichment (side effects + provider quota). */
@@ -45,7 +54,21 @@ export const MCP_ENRICHMENT_ACTION_TOOLS = Object.freeze(['enrich_ioc', 'bulk_en
 export const MCP_TAG_ACTION_TOOLS = Object.freeze(['add_ioc_tags', 'remove_ioc_tags']);
 
 /** Tools that import Threat Library reports (write the GUI's threat_library.report.* import audit events). */
-export const MCP_THREAT_LIBRARY_ACTION_TOOLS = Object.freeze(['threat_library_import_url']);
+export const MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS = Object.freeze(['threat_library_import_url']);
+
+/**
+ * Tools that mutate Threat Library review / Create IOCs / finalize / linked
+ * IOC Source state (write the GUI's threat_library.* review audit events).
+ */
+export const MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS = Object.freeze([
+  'threat_library_review_iocs',
+  'threat_library_create_iocs',
+  'threat_library_finalize_report',
+  'threat_library_review_ioc_source'
+]);
+
+/** @deprecated Use MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS — kept for older imports. */
+export const MCP_THREAT_LIBRARY_ACTION_TOOLS = MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS;
 
 export function mcpHasScope(scopes, required) {
   return hasApiScope(scopes, required);
@@ -96,6 +119,16 @@ export function ownerCanMcpImportReport(role) {
   return r === ROLES.ADMIN || r === ROLES.ANALYST;
 }
 
+/**
+ * Owner may review / Create IOCs / finalize Threat Library reports through MCP
+ * only when they could in the GUI: POST …/review, …/finalize and linked IOC
+ * Source approve/dismiss are requireRole(admin, analyst).
+ */
+export function ownerCanMcpThreatLibraryWrite(role) {
+  const r = normalizeAppRole(role);
+  return r === ROLES.ADMIN || r === ROLES.ANALYST;
+}
+
 export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
   const scopeList = Array.isArray(scopes) ? scopes : [];
   const canReadOwner = ownerCanMcpRead(ownerRole);
@@ -111,6 +144,7 @@ export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
     // Same owner gate as tags: catalog discovery for analyst/admin pickers.
     malware_families_read: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_IOC_READ),
     threat_library_import: ownerCanMcpImportReport(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_THREAT_LIBRARY_IMPORT),
+    threat_library_write: ownerCanMcpThreatLibraryWrite(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_THREAT_LIBRARY_WRITE),
     owner_role: normalizeAppRole(ownerRole),
     owner_readonly: isReadOnlyRole(ownerRole)
   });
@@ -161,12 +195,20 @@ export function authorizeMcpTool(toolName, auth = {}) {
         message: 'Owner user is not permitted to change IOC tags'
       };
     }
-  } else if (MCP_THREAT_LIBRARY_ACTION_TOOLS.includes(name)) {
+  } else if (MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS.includes(name)) {
     if (!caps.threat_library_import || !caps.ioc_read) {
       return {
         ok: false,
         code: 'RBAC_DENIED',
         message: 'Owner user is not permitted to import Threat Library reports'
+      };
+    }
+  } else if (MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS.includes(name)) {
+    if (!caps.threat_library_write || !caps.ioc_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to review or finalize Threat Library reports'
       };
     }
   } else if (name === 'list_tags') {

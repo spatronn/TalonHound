@@ -24,6 +24,44 @@ test('MCP_TOOL_SCOPES covers expected tools', () => {
   assert.ok(MCP_TOOL_SCOPES.import_iocs);
   assert.ok(MCP_TOOL_SCOPES.list_ioc_sources);
   assert.ok(MCP_TOOL_SCOPES.get_threat_report);
+  assert.ok(MCP_TOOL_SCOPES.threat_library_get_review);
+  assert.ok(MCP_TOOL_SCOPES.threat_library_review_iocs);
+  assert.ok(MCP_TOOL_SCOPES.threat_library_create_iocs);
+  assert.ok(MCP_TOOL_SCOPES.threat_library_finalize_report);
+  assert.ok(MCP_TOOL_SCOPES.threat_library_get_workflow_status);
+  assert.ok(MCP_TOOL_SCOPES.threat_library_review_ioc_source);
+});
+
+test('Threat Library review write tools require mcp:threat_library:write and analyst/admin owner', () => {
+  const readOnly = authorizeMcpTool('threat_library_review_iocs', {
+    scopes: READ_SCOPES,
+    ownerRole: ROLES.ANALYST
+  });
+  assert.equal(readOnly.ok, false);
+  assert.equal(readOnly.code, 'MISSING_SCOPE');
+
+  const writeScopes = [...READ_SCOPES, API_SCOPE.MCP_THREAT_LIBRARY_WRITE];
+  assert.equal(authorizeMcpTool('threat_library_review_iocs', {
+    scopes: writeScopes,
+    ownerRole: ROLES.ANALYST
+  }).ok, true);
+  assert.equal(authorizeMcpTool('threat_library_create_iocs', {
+    scopes: writeScopes,
+    ownerRole: ROLES.ADMIN
+  }).ok, true);
+  assert.equal(authorizeMcpTool('threat_library_finalize_report', {
+    scopes: writeScopes,
+    ownerRole: ROLES.READONLY
+  }).code, 'RBAC_DENIED');
+
+  assert.equal(authorizeMcpTool('threat_library_get_review', {
+    scopes: READ_SCOPES,
+    ownerRole: ROLES.READONLY
+  }).ok, true);
+  assert.equal(authorizeMcpTool('threat_library_get_workflow_status', {
+    scopes: READ_SCOPES,
+    ownerRole: ROLES.ANALYST
+  }).ok, true);
 });
 
 test('get_threat_report is readable with the same scope as get_ioc_context, never with create-only scope', () => {

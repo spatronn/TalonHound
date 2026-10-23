@@ -17,8 +17,9 @@ Through MCP, a client can:
 - List selectable IOC Sources
 - Import missing IOCs into an **existing** IOC Source (with optional dry-run)
 - Import a threat report into the Threat Library by URL (`threat_library_import_url`, the Import Intelligence → URL operation) and poll its processing state
+- After ingestion completes: read the review surface (`threat_library_get_review` / `threat_library_get_workflow_status`), apply explicit candidate review decisions (`threat_library_review_iocs`), run Create IOCs (`threat_library_create_iocs`), finalize the report (`threat_library_finalize_report`), and approve/dismiss linked IOC Sources (`threat_library_review_ioc_source`) — the same application services as the UI
 
-There are **no** MCP tools to delete IOCs, manage feeds or administer users. External enrichment and report import run only through the explicit action tools described below.
+There are **no** MCP tools to delete IOCs, manage feeds or administer users. External enrichment, report import and Threat Library review mutations run only through the explicit action tools described below. Extracted candidates are **never** auto-approved.
 
 ## Architecture
 
@@ -72,7 +73,7 @@ MCP credentials are API keys stored in `published_feed_access_keys`, using dedic
 | Profile id | Label | Key prefix | Typical use |
 |------------|--------|------------|-------------|
 | `mcp_read` | MCP Read | `th_mcp_` | Lookup / search / context / bulk / list sources |
-| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs`, the enrichment action tools (`enrich_ioc` / `bulk_enrich_iocs`), the tag tools (`add_ioc_tags` / `remove_ioc_tags`) and Threat Library URL import (`threat_library_import_url`) |
+| `mcp_analyst` | MCP Analyst | `th_mcp_` | Trusted AI analyst agent: same reads **plus** `import_iocs`, enrichment (`enrich_ioc` / `bulk_enrich_iocs`), tags (`add_ioc_tags` / `remove_ioc_tags`), Threat Library URL import (`threat_library_import_url`) and Threat Library review write (`threat_library_review_iocs` / `create_iocs` / `finalize_report` / `review_ioc_source`) |
 
 All MCP profiles **require an owner user**. The owner’s TalonHound role is loaded on every request.
 
@@ -100,15 +101,16 @@ Create keys in the TalonHound UI under API key management (same place as publish
 | `mcp:sources:read` | `list_ioc_sources` |
 | `mcp:tags:write` | `add_ioc_tags`, `remove_ioc_tags` — analyst (`manual`) tags only (also needs `mcp:ioc:read` and an analyst/admin owner) |
 | `mcp:threat_library:import` | `threat_library_import_url` — Threat Library Import Intelligence → URL (also needs `mcp:ioc:read` and an analyst/admin owner, the same roles as the UI import) |
+| `mcp:threat_library:write` | Post-import review mutations: `threat_library_review_iocs`, `threat_library_create_iocs`, `threat_library_finalize_report`, `threat_library_review_ioc_source` (also needs `mcp:ioc:read` and analyst/admin owner) |
 
 `get_threat_library_import_status` needs only `mcp:ioc:read`.
 
 Profile presets:
 
 - **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`, `mcp:threat_library:import`
+- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`, `mcp:threat_library:import`, `mcp:threat_library:write`
 
-**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`, and `046_mcp_threat_library_import_scope.sql` added `mcp:threat_library:import`. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
+**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`, `046_mcp_threat_library_import_scope.sql` added `mcp:threat_library:import`, and `048_mcp_threat_library_write_scope.sql` added `mcp:threat_library:write`. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
 
 ## Tools
 
@@ -132,6 +134,12 @@ Profile presets:
 | `remove_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Remove analyst tags from one IOC. Source/feed and Threat Library tags are never removed (`not_removable`). |
 | `threat_library_import_url` | `mcp:ioc:read` + `mcp:threat_library:import` | **No — action** | Import a public report URL into the Threat Library: the same operation as Import Intelligence → URL → Start Import. Returns `outcome` (`import_started` / `already_exists`), `report_id`, `job_id` and the persisted processing state. See [Threat Library URL import](#threat-library-url-import-action-tool). |
 | `get_threat_library_import_status` | `mcp:ioc:read` | Yes | Processing state of one report by `report_id`: `review_phase`, import/analysis status, `failure`, latest job, `ingestion_complete` / `ingestion_failed` / `readable_with_get_threat_report`. |
+| `threat_library_get_review` | `mcp:ioc:read` | Yes | Review surface: counts, gates, linked IOC Sources, paged candidates. See [Threat Library review lifecycle](#threat-library-review-lifecycle-post-import). |
+| `threat_library_get_workflow_status` | `mcp:ioc:read` | Yes | Lifecycle stages + remaining actions. |
+| `threat_library_review_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Explicit candidate approve / context_only / ignore (and related review actions). |
+| `threat_library_create_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Create IOCs from approved Indicators (`confirm: true` to commit). |
+| `threat_library_finalize_report` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Finalize report after review. |
+| `threat_library_review_ioc_source` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Approve or dismiss a linked IOC Source pack. |
 
 There are no IOC/source delete, update-admin, feed, or user-management tools.
 
@@ -297,7 +305,38 @@ MCP threat_library_import_url { url }
   - fetch or HTTP errors.
 
   A re-import of a failed URL is still a duplicate, as in the UI. Retry is a UI action.
-- **What it never does:** approve IOC candidates, run Create IOCs, change review decisions, write IOCs, or mark a job complete. Review and Create IOCs stay analyst actions in the UI.
+- **What it never does:** auto-approve IOC candidates, run Create IOCs, change review decisions, write IOCs, or mark a job complete. Those are separate tools under `mcp:threat_library:write` (below).
+
+## Threat Library review lifecycle (post-import)
+
+After `ingestion_complete`, the same analyst workflow as the Threat Library report page is available over MCP. Every mutation calls the shared application services used by the UI (`applyCandidateReviewActions`, `finalizeReport`, linked IOC Source approve/dismiss) — there is no parallel MCP engine.
+
+| Tool | Scope | Role |
+|------|-------|------|
+| `threat_library_get_review` | `mcp:ioc:read` | Read review surface, counts, gates, paged candidates, linked IOC Sources |
+| `threat_library_get_workflow_status` | `mcp:ioc:read` | Poll conceptual stages + remaining actions |
+| `threat_library_review_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | `approve` / `context_only` / `ignore` / `approve_high_confidence_malicious` / `promote_to_ioc` |
+| `threat_library_create_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | Create IOCs button (`confirm: true` to commit) |
+| `threat_library_finalize_report` | `mcp:ioc:read` + `mcp:threat_library:write` | Finalize (`dry_run` for readiness) |
+| `threat_library_review_ioc_source` | `mcp:ioc:read` + `mcp:threat_library:write` | Linked pack `approve` / `dismiss` |
+
+Safety rules (identical to the UI):
+
+- Review requires an **explicit** `candidate_ids` list (UUID or numeric) or an `all_matching` selection with `scope_token` on commit — never “approve everything extracted”.
+- Context Only / ignored / pending rows are never created as IOCs.
+- Create IOCs reuses existing inventory rows (`already_existing`); retries do not duplicate.
+- Finalize is blocked while any actionable Indicator is still `pending` (`pending_review_remaining`). Extraction quality warnings do not block finalize.
+- Optional `expected_revision` (from `threat_library_get_review.report_revision`) rejects stale applies with `STALE_REPORT`.
+
+Example post-import sequence:
+
+```json
+{"name":"threat_library_get_review","arguments":{"report_id":"6f1c…","membership":"pending_actionable"}}
+{"name":"threat_library_review_iocs","arguments":{"report_id":"6f1c…","action":"approve","candidate_ids":["…"],"dry_run":true}}
+{"name":"threat_library_review_iocs","arguments":{"report_id":"6f1c…","action":"approve","candidate_ids":["…"],"expected_revision":"…"}}
+{"name":"threat_library_create_iocs","arguments":{"report_id":"6f1c…","candidate_ids":["…"],"confirm":true}}
+{"name":"threat_library_finalize_report","arguments":{"report_id":"6f1c…"}}
+```
 
 Example automation flow (JSON-RPC over Streamable HTTP):
 
@@ -350,6 +389,7 @@ Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
 | Tags per `add_ioc_tags` / `remove_ioc_tags` call | **10** | `MCP_TAG_WRITE_MAX` (hard max 25) |
 | `list_tags` max | **100** | `MCP_TAG_LIST_MAX` (max 200) |
 | `threat_library_import_url` / minute | **10** | `MCP_RATE_LIMIT_REPORT_IMPORT_PER_MIN` (max 60) |
+| Threat Library review write tools / minute | **30** | `MCP_RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN` (max 300) |
 
 Exceeding limits returns HTTP **429**. Disable MCP entirely with `MCP_ENABLED=false`.
 
