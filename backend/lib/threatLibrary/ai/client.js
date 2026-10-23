@@ -9,10 +9,21 @@ import {
   classifyProviderHttpError,
   sanitizeProviderHttpError,
   resolveAiTimeoutPolicy,
-  resolveHeaderWaitMs
+  resolveHeaderWaitMs,
+  inferenceResourceKey
 } from './timeouts.js';
 import { assertAiReady } from './settings.js';
 import { AI_OUTPUT_BOUNDS } from './contract.js';
+import { nodeHttpTransport } from './providerHttp.js';
+import { createServiceLogger } from '../../appLogger.js';
+
+const log = createServiceLogger('threat-library-ai');
+
+/** Bound on waiting for a cancelled request's socket to close before the slot is released. */
+export const CANCEL_CLOSE_WAIT_MS = 5000;
+
+/** Provider-side queue time (ms) above which a slot holder reports residual contention. */
+export const PROVIDER_CONTENTION_THRESHOLD_MS = 5000;
 
 /** Last-resort Ollama generation ceiling. See AI_OUTPUT_BOUNDS.numPredict. */
 export const OLLAMA_NUM_PREDICT = AI_OUTPUT_BOUNDS.numPredict;
@@ -70,14 +81,14 @@ export function resolveProviderEndpoint(settings) {
  * @param {number} connectionTimeoutMs
  * @param {AbortSignal} signal
  */
-async function waitForHeaders(fetchPromise, connectionTimeoutMs, signal) {
+async function waitForHeaders(fetchPromise, connectionTimeoutMs, signal, timeoutError = () => aiFailure(AI_FAILURE_CODES.CONNECTION_TIMEOUT)) {
   let timer;
   try {
     return await Promise.race([
       fetchPromise,
       new Promise((_, reject) => {
         timer = setTimeout(() => {
-          reject(aiFailure(AI_FAILURE_CODES.CONNECTION_TIMEOUT));
+          reject(timeoutError());
         }, connectionTimeoutMs);
         if (signal) {
           const onAbort = () => {
@@ -101,6 +112,8 @@ async function waitForHeaders(fetchPromise, connectionTimeoutMs, signal) {
  *   firstTokenTimeoutMs: number,
  *   inactivityTimeoutMs: number,
  *   totalDeadlineAt: number,
+ *   deadlineCode?: string,
+ *   startedAt?: number,
  *   signal?: AbortSignal,
  *   onActivity?: (info: { bytes: number, firstToken: boolean }) => void,
  *   onChunkText?: (text: string) => void,
@@ -121,7 +134,9 @@ export async function consumeProviderStream(body, opts) {
   let gotFirst = false;
   let firstTokenAt = null;
   let lastActivity = Date.now();
-  const started = Date.now();
+  // First-token budget runs from when the request was sent (not from when
+  // headers arrived), so header wait + body wait never exceed one budget.
+  const started = Number(opts.startedAt) > 0 ? Number(opts.startedAt) : Date.now();
   const tickMs = Math.min(
     1000,
     Math.max(
@@ -139,7 +154,7 @@ export async function consumeProviderStream(body, opts) {
     }
     const now = Date.now();
     if (now > opts.totalDeadlineAt) {
-      throw aiFailure(AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
+      throw aiFailure(opts.deadlineCode || AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
     }
     if (!gotFirst && now - started > opts.firstTokenTimeoutMs) {
       throw aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
@@ -218,6 +233,16 @@ export async function consumeProviderStream(body, opts) {
         text += buffer;
       }
     }
+  } catch (err) {
+    // Cancel the body so the socket closes and the provider stops generating;
+    // releasing the lock alone leaves the response stream (and the provider's
+    // work) running. Bounded so cleanup can never mask the original error.
+    if (opts.stats) opts.stats.partial_output_chars = text.length;
+    await Promise.race([
+      reader.cancel(err).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 1000))
+    ]);
+    throw err;
   } finally {
     try {
       reader.releaseLock();
@@ -318,128 +343,264 @@ export function parseOllamaNdjsonLine(line, acc) {
 }
 
 /**
+ * Build the provider request body (no transport concerns).
+ * @param {object} settings
+ * @param {{ kind: string }} endpoint
+ * @param {{ system: string, user: string }} messages
+ * @param {object} hooks
+ * @param {number} numPredict
+ */
+function buildProviderRequest(settings, endpoint, messages, hooks, numPredict) {
+  if (endpoint.kind === 'ollama_stream') {
+    return {
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: settings.model,
+        stream: true,
+        // Prefer JSON Schema when provided (Ollama structured outputs); else json mode.
+        format: hooks.formatSchema || 'json',
+        // Reasoning models (qwen3.x, deepseek-r1, …) otherwise spend minutes on
+        // hidden "thinking" before the constrained JSON starts. Extraction does
+        // not need chain-of-thought; older Ollama versions ignore the field.
+        think: false,
+        keep_alive: hooks.keepAlive || '15m',
+        options: {
+          temperature: 0.1,
+          // Last-resort token ceiling; schema maxItems should stop generation first.
+          num_predict: numPredict
+        },
+        messages: [
+          { role: 'system', content: messages.system },
+          { role: 'user', content: messages.user }
+        ]
+      })
+    };
+  }
+  if (endpoint.kind === 'anthropic_stream') {
+    return {
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': String(settings.api_key || ''),
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: settings.model,
+        max_tokens: 8192,
+        stream: true,
+        system: messages.system,
+        messages: [{ role: 'user', content: messages.user }]
+      })
+    };
+  }
+  const headers = { 'content-type': 'application/json' };
+  if (settings.api_key) headers.authorization = `Bearer ${settings.api_key}`;
+  return {
+    headers,
+    body: JSON.stringify({
+      model: settings.model,
+      temperature: 0.1,
+      stream: true,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: messages.system },
+        { role: 'user', content: messages.user }
+      ]
+    })
+  };
+}
+
+/** Ollama reports wall time from request receipt; what load/prompt/eval do not explain is its own queue. */
+export function providerQueueMs(metrics) {
+  if (!metrics || !Number.isFinite(Number(metrics.total_duration))) return null;
+  const ns =
+    Number(metrics.total_duration) -
+    (Number(metrics.load_duration) || 0) -
+    (Number(metrics.prompt_eval_duration) || 0) -
+    (Number(metrics.eval_duration) || 0);
+  return Math.max(0, Math.round(ns / 1e6));
+}
+
+const KNOWN_FAILURE_CODES = new Set(Object.values(AI_FAILURE_CODES));
+
+function mapTransportError(err) {
+  if (err?.code && KNOWN_FAILURE_CODES.has(err.code)) return err;
+  if (err?.name === 'AbortError') return aiFailure(AI_FAILURE_CODES.JOB_CANCELLED);
+  const msg = String(err?.message || err);
+  const sysCode = String(err?.code || err?.cause?.code || '');
+  if (/ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT/i.test(sysCode)) return aiFailure(AI_FAILURE_CODES.CONNECTION_TIMEOUT, msg);
+  return aiFailure(AI_FAILURE_CODES.PROVIDER_UNREACHABLE, msg);
+}
+
+async function waitForClose(closed, ms) {
+  if (!closed) return 'not_started';
+  let timer;
+  try {
+    return await Promise.race([
+      closed.then((v) => v || 'closed', () => 'closed'),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve('unconfirmed'), ms);
+      })
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * One provider call:
+ *   1. capacity wait (hooks.scheduler) — bounded by the capacity-wait budget,
+ *      never counted as provider latency or against the active deadline;
+ *   2. connect — connection_timeout_ms;
+ *   3. first response — first_token_timeout_ms from the moment the request is
+ *      sent (local: HTTP headers carry the first token; hosted: headers within
+ *      connection_timeout_ms, then the first streamed text);
+ *   4. stream inactivity — inactivity_timeout_ms between chunks;
+ *   5. execution — provider_execution_timeout_ms for the whole request;
+ *   6. active analysis deadline — hooks.callDeadlineAt (or analysisStartedAt +
+ *      total_analysis_timeout_ms), shifted by this call's capacity wait.
+ * Every failure aborts the request and waits (bounded) for the socket to
+ * close before the inference slot is released.
+ *
  * @param {object} settings
  * @param {{ system: string, user: string }} messages
  * @param {{
  *   onActivity?: Function,
  *   signal?: AbortSignal,
  *   analysisStartedAt?: number,
- *   keepAlive?: string
+ *   callDeadlineAt?: number,
+ *   keepAlive?: string,
+ *   formatSchema?: object,
+ *   numPredict?: number,
+ *   scheduler?: { acquire: Function },
+ *   capacityWaitBudgetMs?: number,
+ *   onCapacityWait?: Function,
+ *   onCapacityAcquired?: Function,
+ *   purpose?: string,
+ *   reportId?: number|null,
+ *   transport?: Function,
+ *   policy?: object
  * }} [hooks]
  */
 export async function callAiProvider(settings, messages, hooks = {}) {
   assertAiReady(settings);
-  const policy = resolveAiTimeoutPolicy(settings);
+  // hooks.policy: a pre-resolved policy (tests / tools need sub-second timeouts
+  // below the production clamps); production callers never pass it.
+  const policy = hooks.policy || resolveAiTimeoutPolicy(settings);
   const endpoint = resolveProviderEndpoint(settings);
+  const telemetry = {
+    purpose: hooks.purpose || null,
+    report_id: hooks.reportId ?? null,
+    provider: endpoint.kind,
+    model: settings.model || null
+  };
+
+  let lease = null;
+  let slotWaitMs = 0;
+  if (hooks.scheduler) {
+    const waitStartedAt = Date.now();
+    const budget = hooks.capacityWaitBudgetMs != null ? Number(hooks.capacityWaitBudgetMs) : policy.capacity_wait_timeout_ms;
+    try {
+      lease = await hooks.scheduler.acquire({
+        resourceKey: inferenceResourceKey(settings),
+        capacity: policy.max_concurrent_ai_requests,
+        maxWaitMs: Math.max(0, budget),
+        signal: hooks.signal,
+        purpose: hooks.purpose,
+        reportId: hooks.reportId,
+        onWaiting: hooks.onCapacityWait
+      });
+    } catch (err) {
+      const failure = mapTransportError(err);
+      failure.timing = { ...(failure.timing || {}), slot_wait_ms: Date.now() - waitStartedAt };
+      log.warn('AI request not started', { ...telemetry, code: failure.code, slot_wait_ms: failure.timing.slot_wait_ms });
+      throw failure;
+    }
+    slotWaitMs = lease.waitMs;
+    if (lease.maxPosition > 0) {
+      try {
+        await hooks.onCapacityAcquired?.({ wait_ms: slotWaitMs });
+      } catch { /* progress is best-effort */ }
+    }
+  }
+
+  try {
+    return await executeProviderCall(settings, messages, hooks, { policy, endpoint, lease, slotWaitMs, telemetry });
+  } finally {
+    // executeProviderCall has already aborted and awaited the socket close on
+    // failure, so the next holder never overlaps a still-running request.
+    if (lease) await lease.release();
+  }
+}
+
+async function executeProviderCall(settings, messages, hooks, ctx) {
+  const { policy, endpoint, lease, slotWaitMs, telemetry } = ctx;
   const analysisStartedAt = hooks.analysisStartedAt || Date.now();
   const globalDeadlineAt = analysisStartedAt + policy.total_analysis_timeout_ms;
   const hookedDeadline = Number(hooks.callDeadlineAt);
-  const totalDeadlineAt =
-    Number.isFinite(hookedDeadline) && hookedDeadline > 0
-      ? Math.min(globalDeadlineAt, hookedDeadline)
-      : globalDeadlineAt;
+  // Deadlines measure active time: this call's capacity wait is added back.
+  const activeDeadlineAt =
+    (Number.isFinite(hookedDeadline) && hookedDeadline > 0 ? Math.min(globalDeadlineAt, hookedDeadline) : globalDeadlineAt) +
+    slotWaitMs;
+  const requestStartedAt = Date.now();
+  const executionDeadlineAt = requestStartedAt + policy.provider_execution_timeout_ms;
+  const totalDeadlineAt = Math.min(activeDeadlineAt, executionDeadlineAt);
+  const deadlineCode =
+    executionDeadlineAt < activeDeadlineAt
+      ? AI_FAILURE_CODES.PROVIDER_EXECUTION_TIMEOUT
+      : AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE;
+  const slotTiming = {
+    slot_wait_ms: slotWaitMs,
+    ...(lease
+      ? {
+          slot_max_position: lease.maxPosition ?? 0,
+          slot_holders_at_acquire: lease.holdersAtAcquire ?? null,
+          slot_capacity: lease.capacity ?? null
+        }
+      : {})
+  };
+
+  if (activeDeadlineAt - Date.now() <= 1000) {
+    throw Object.assign(aiFailure(AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE), { timing: { ...slotTiming } });
+  }
+
   const controller = new AbortController();
   const onOuterAbort = () => controller.abort(hooks.signal.reason || aiFailure(AI_FAILURE_CODES.JOB_CANCELLED));
   if (hooks.signal) {
     if (hooks.signal.aborted) onOuterAbort();
     else hooks.signal.addEventListener('abort', onOuterAbort, { once: true });
   }
+  const offLeaseLost = lease?.onLost?.((err) => controller.abort(err)) || null;
 
-  const remainingTotal = Math.max(totalDeadlineAt - Date.now(), 1000);
-  if (remainingTotal <= 1000) {
-    throw aiFailure(AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE);
-  }
-  const callStartedAt = Date.now();
   const promptChars = String(messages.system || '').length + String(messages.user || '').length;
   const numPredict = Number(hooks.numPredict) > 0 ? Number(hooks.numPredict) : OLLAMA_NUM_PREDICT;
+  const transport = hooks.transport || nodeHttpTransport;
 
+  let call = null;
+  let headersAt = null;
+  const stats = {};
   try {
-    let fetchPromise;
-    if (endpoint.kind === 'ollama_stream') {
-      fetchPromise = fetch(endpoint.url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          model: settings.model,
-          stream: true,
-          // Prefer JSON Schema when provided (Ollama structured outputs); else json mode.
-          format: hooks.formatSchema || 'json',
-          // Reasoning models (qwen3.x, deepseek-r1, …) otherwise spend minutes on
-          // hidden "thinking" before the constrained JSON starts. Extraction does
-          // not need chain-of-thought; older Ollama versions ignore the field.
-          think: false,
-          keep_alive: hooks.keepAlive || '15m',
-          options: {
-            temperature: 0.1,
-            // Last-resort token ceiling; schema maxItems should stop generation first.
-            num_predict: numPredict
-          },
-          messages: [
-            { role: 'system', content: messages.system },
-            { role: 'user', content: messages.user }
-          ]
-        }),
-        signal: controller.signal
-      });
-    } else if (endpoint.kind === 'anthropic_stream') {
-      fetchPromise = fetch(endpoint.url, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': String(settings.api_key || ''),
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: settings.model,
-          max_tokens: 8192,
-          stream: true,
-          system: messages.system,
-          messages: [{ role: 'user', content: messages.user }]
-        }),
-        signal: controller.signal
-      });
-    } else {
-      const headers = { 'content-type': 'application/json' };
-      if (settings.api_key) headers.authorization = `Bearer ${settings.api_key}`;
-      fetchPromise = fetch(endpoint.url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          model: settings.model,
-          temperature: 0.1,
-          stream: true,
-          response_format: { type: 'json_object' },
-          messages: [
-            { role: 'system', content: messages.system },
-            { role: 'user', content: messages.user }
-          ]
-        }),
-        signal: controller.signal
-      });
-    }
+    const request = buildProviderRequest(settings, endpoint, messages, hooks, numPredict);
+    call = transport(endpoint.url, {
+      method: 'POST',
+      headers: request.headers,
+      body: request.body,
+      signal: controller.signal,
+      connectTimeoutMs: policy.connection_timeout_ms
+    });
 
     let res;
-    let headersAt = null;
     try {
-      // Local Ollama may delay HTTP headers until prompt ingest/model load finishes.
-      const headerWaitMs = Math.min(
-        resolveHeaderWaitMs(policy),
-        Math.max(totalDeadlineAt - Date.now(), 1000)
-      );
-      res = await waitForHeaders(fetchPromise, headerWaitMs, controller.signal);
+      const headerBudgetMs = policy.is_local ? policy.first_token_timeout_ms : resolveHeaderWaitMs(policy);
+      const headerWaitMs = Math.min(headerBudgetMs, Math.max(totalDeadlineAt - Date.now(), 1000));
+      const limitedByDeadline = headerWaitMs < headerBudgetMs;
+      res = await waitForHeaders(call.response, headerWaitMs, controller.signal, () => {
+        if (limitedByDeadline) return aiFailure(deadlineCode);
+        // Local providers withhold headers until the first token is ready.
+        return aiFailure(policy.is_local ? AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT : AI_FAILURE_CODES.CONNECTION_TIMEOUT);
+      });
       headersAt = Date.now();
     } catch (err) {
-      if (err?.code === AI_FAILURE_CODES.CONNECTION_TIMEOUT && policy.is_local) {
-        // Headers never arrived within first-token budget (model load / long prompt).
-        throw aiFailure(AI_FAILURE_CODES.FIRST_TOKEN_TIMEOUT);
-      }
-      if (err?.code) throw err;
-      if (err?.name === 'AbortError') throw aiFailure(AI_FAILURE_CODES.CONNECTION_TIMEOUT);
-      const msg = String(err?.message || err);
-      if (/ECONNREFUSED|ENOTFOUND|EHOSTUNREACH|fetch failed|network/i.test(msg)) {
-        throw aiFailure(AI_FAILURE_CODES.PROVIDER_UNREACHABLE, msg);
-      }
-      throw aiFailure(AI_FAILURE_CODES.PROVIDER_UNREACHABLE, msg);
+      throw mapTransportError(err);
     }
 
     if (!res.ok) {
@@ -454,12 +615,6 @@ export async function callAiProvider(settings, messages, hooks = {}) {
       const err = aiFailure(code, `AI provider error (${res.status}): ${diagnostic.message}`);
       err.http_status = diagnostic.http_status;
       err.provider_error = diagnostic;
-      err.timing = {
-        total_ms: Date.now() - callStartedAt,
-        headers_ms: headersAt ? headersAt - callStartedAt : null,
-        prompt_chars: promptChars,
-        output_chars: 0
-      };
       throw err;
     }
 
@@ -470,11 +625,12 @@ export async function callAiProvider(settings, messages, hooks = {}) {
           ? parseAnthropicSseLine
           : parseOpenAiSseLine;
 
-    const stats = {};
     const text = await consumeProviderStream(res.body, {
       firstTokenTimeoutMs: policy.first_token_timeout_ms,
       inactivityTimeoutMs: policy.inactivity_timeout_ms,
       totalDeadlineAt,
+      deadlineCode,
+      startedAt: requestStartedAt,
       signal: controller.signal,
       onActivity: hooks.onActivity,
       parseLine,
@@ -482,25 +638,82 @@ export async function callAiProvider(settings, messages, hooks = {}) {
     });
 
     const timing = {
-      total_ms: Date.now() - callStartedAt,
-      headers_ms: headersAt ? headersAt - callStartedAt : null,
-      first_token_ms: headersAt && stats.first_token_ms != null ? headersAt - callStartedAt + stats.first_token_ms : null,
+      total_ms: Date.now() - requestStartedAt,
+      headers_ms: headersAt ? headersAt - requestStartedAt : null,
+      first_token_ms: stats.first_token_ms ?? null,
+      stream_ms: headersAt ? Date.now() - headersAt : null,
       prompt_chars: promptChars,
       output_chars: stats.output_chars ?? text.length,
       thinking_chars: stats.thinking_chars ?? 0,
       provider: endpoint.kind,
+      ...slotTiming,
       ...(endpoint.kind === 'ollama_stream' ? { num_predict: numPredict } : {}),
       ...(stats.provider_metrics || {})
     };
     timing.generation_limit_hit = isGenerationLimitHit(timing);
-    return { text, policy, timing };
-  } catch (err) {
-    if (err?.code) throw err;
-    if (err?.name === 'AbortError') {
-      throw aiFailure(AI_FAILURE_CODES.JOB_CANCELLED);
+    const queueMs = providerQueueMs(stats.provider_metrics);
+    if (queueMs != null) {
+      timing.provider_queue_ms = queueMs;
+      if (lease && queueMs > (Number(policy.provider_contention_threshold_ms) || PROVIDER_CONTENTION_THRESHOLD_MS)) {
+        // We held the TalonHound slot, yet the provider still queued the
+        // request: something outside TalonHound uses the same inference host.
+        timing.provider_contention = true;
+        log.warn('residual provider contention while holding AI capacity', {
+          ...telemetry,
+          provider_queue_ms: queueMs,
+          slot_wait_ms: slotWaitMs
+        });
+      }
     }
+    log.info('AI request completed', {
+      ...telemetry,
+      slot_wait_ms: slotWaitMs,
+      headers_ms: timing.headers_ms,
+      first_token_ms: timing.first_token_ms,
+      total_ms: timing.total_ms,
+      provider_queue_ms: timing.provider_queue_ms ?? null,
+      prompt_eval_count: timing.prompt_eval_count ?? null,
+      eval_count: timing.eval_count ?? null,
+      done_reason: timing.done_reason ?? null
+    });
+    return { text, policy, timing };
+  } catch (rawErr) {
+    // A deliberate abort (shutdown, cancel, lost lease) surfaces from the
+    // socket as ECONNRESET / "aborted": report the reason we aborted with.
+    const abortReason = controller.signal.aborted ? controller.signal.reason : null;
+    const err = abortReason?.code && KNOWN_FAILURE_CODES.has(abortReason.code) && !KNOWN_FAILURE_CODES.has(rawErr?.code)
+      ? abortReason
+      : mapTransportError(rawErr);
+    // Stop the outstanding request before reporting (and before the caller
+    // releases the inference slot): abort destroys the socket, the provider
+    // sees the close and drops the work.
+    if (!controller.signal.aborted) controller.abort(err);
+    const cancelOutcome = await waitForClose(call?.closed, CANCEL_CLOSE_WAIT_MS);
+    err.timing = {
+      ...(err.timing || {}),
+      total_ms: Date.now() - requestStartedAt,
+      headers_ms: headersAt ? headersAt - requestStartedAt : null,
+      prompt_chars: promptChars,
+      output_chars: stats.partial_output_chars ?? 0,
+      provider: endpoint.kind,
+      ...slotTiming,
+      cancel_outcome: cancelOutcome
+    };
+    if (cancelOutcome === 'unconfirmed') {
+      log.warn('cancelled AI request socket did not confirm close', { ...telemetry, code: err.code });
+    }
+    log.warn('AI request failed', {
+      ...telemetry,
+      code: err.code || null,
+      http_status: err.http_status ?? null,
+      slot_wait_ms: slotWaitMs,
+      headers_ms: err.timing.headers_ms,
+      total_ms: err.timing.total_ms,
+      cancel_outcome: cancelOutcome
+    });
     throw err;
   } finally {
     if (hooks.signal) hooks.signal.removeEventListener?.('abort', onOuterAbort);
+    offLeaseLost?.();
   }
 }

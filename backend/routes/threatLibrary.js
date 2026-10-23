@@ -43,6 +43,7 @@ import {
   queueThreatLibraryAnalysis,
   restoreStatusForCancelledJobs
 } from '../lib/threatLibrary/analysisConcurrency.js';
+import { createExclusivePipelineJob, expediteDelayedJob } from '../lib/threatLibrary/analysisConcurrency.js';
 import {
   createManualIocSource,
   getIocSourceByPublicId,
@@ -423,7 +424,11 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           api_key_updated: Boolean(body.api_key),
           inactivity_timeout_ms: updated.inactivity_timeout_ms,
           total_analysis_timeout_ms: updated.total_analysis_timeout_ms,
-          max_concurrent_report_analyses: updated.max_concurrent_report_analyses
+          max_concurrent_report_analyses: updated.max_concurrent_report_analyses,
+          max_concurrent_ai_requests: updated.max_concurrent_ai_requests,
+          capacity_wait_timeout_ms: updated.capacity_wait_timeout_ms,
+          provider_execution_timeout_ms: updated.provider_execution_timeout_ms,
+          auto_retry_max_attempts: updated.auto_retry_max_attempts
         }
       });
       // Increasing the limit must start queued reports without a restart.
@@ -435,7 +440,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       }
       return res.json({ settings: maskAiSettingsForClient(updated) });
     } catch (err) {
-      if (err instanceof AnalysisConcurrencySettingError || err.code === 'invalid_max_concurrent_report_analyses') {
+      if (err instanceof AnalysisConcurrencySettingError || String(err.code || '').startsWith('invalid_')) {
         return res.status(400).json({ message: err.message, code: err.code });
       }
       return res.status(500).json({ message: 'Failed to update AI settings', detail: err.message });
@@ -456,7 +461,8 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     try {
       const settings = await getAiSettings(pool);
       const { probeAiProvider } = await import('../lib/threatLibrary/ai/probe.js');
-      const result = await probeAiProvider(settings);
+      const { getInferenceScheduler } = await import('../lib/threatLibrary/ai/inferenceScheduler.js');
+      const result = await probeAiProvider(settings, { scheduler: deps.inferenceScheduler || getInferenceScheduler(pool) });
       await pool.query(
         `UPDATE threat_library_ai_settings
          SET last_probe_at = NOW(), last_probe_ok = $2, last_probe_detail = $3::jsonb, updated_at = NOW()
@@ -1005,7 +1011,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         let recoveredOrphanedStatus = false;
         if (isActiveAnalysisStatus(report.analysis_status)) {
           const { rows: activeJobs } = await pool.query(
-            `SELECT public_id, status, stage, progress, error_message, created_at
+            `SELECT id, public_id, status, stage, progress, error_message, created_at, bullmq_job_id, not_before
              FROM threat_library_jobs
              WHERE report_id = $1 AND status = ANY(ARRAY['queued','running'])
              ORDER BY id DESC LIMIT 1`,
@@ -1021,6 +1027,13 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             recoveredOrphanedStatus = isOrphanedActiveAnalysis({ report, activeJob: null, latestJob: latestJobs[0] || null });
           }
           if (!recoveredOrphanedStatus) {
+            // An automatic retry waiting for its backoff: the analyst's Retry
+            // makes it due now instead of creating a second job.
+            if (activeJobs[0]?.not_before && !activeJobs[0].bullmq_job_id) {
+              if (await expediteDelayedJob(pool, activeJobs[0].id)) {
+                try { await dispatchQueuedAnalyses(); } catch { /* worker safety net claims it */ }
+              }
+            }
             return res.status(202).json({
               report: publicReport(report),
               job_id: activeJobs[0]?.public_id || null,
@@ -1083,6 +1096,24 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           candidate_extraction_version: report.analysis_progress?.candidate_extraction_version || null
         });
 
+        // Atomic per report: a concurrent Retry (double click, UI + MCP, an
+        // automatic retry) finds this job instead of creating a second one.
+        const exclusive = await createExclusivePipelineJob(pool, {
+          reportId: report.id,
+          jobType: 'retry',
+          requestedBy: (await actorOf(req))?.publicId
+        });
+        if (!exclusive.created) {
+          return res.status(202).json({
+            report: publicReport(await reportWithDetail(await getReportByPublicId(pool, req.params.publicId))),
+            job_id: exclusive.job.public_id,
+            already_running: true,
+            code: 'analysis_already_running',
+            resumed: true
+          });
+        }
+        const jobRow = exclusive.job;
+
         // Leave failed immediately (pending = Queued) without looking like
         // Analyzing while waiting for a concurrency slot. The worker updates
         // the stage once the job is claimed.
@@ -1092,12 +1123,6 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           analysis_progress: progress,
           clear_failure: true,
           clear_cancel: true
-        });
-
-        const jobRow = await createJob(pool, {
-          reportId: report.id,
-          jobType: 'retry',
-          requestedBy: (await actorOf(req))?.publicId
         });
         await scheduleAnalysis(report.id, jobRow, {
           sourceUrl: report.source_url || undefined,

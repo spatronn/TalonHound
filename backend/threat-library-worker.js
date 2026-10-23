@@ -1,5 +1,6 @@
 import './lib/ensure-db-password.js';
 import './lib/ensure-redis-password.js';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +21,10 @@ import {
   recoverInterruptedAnalysisJobs,
   resolveThreatLibraryWorkerConcurrency
 } from './lib/threatLibrary/analysisConcurrency.js';
+import { claimJobOwnership, startJobHeartbeat, requeueOwnedJob } from './lib/threatLibrary/jobOwnership.js';
+import { maybeScheduleAutoRetry } from './lib/threatLibrary/autoRetry.js';
+import { buildRetryProgress } from './lib/threatLibrary/retryState.js';
+import { AI_FAILURE_CODES, aiFailure } from './lib/threatLibrary/ai/timeouts.js';
 
 const log = createServiceLogger('threat-library-worker');
 
@@ -53,6 +58,9 @@ const queueName = getThreatLibraryQueueName();
 const queue = new Queue(queueName, { connection: redis });
 const concurrency = resolveThreatLibraryWorkerConcurrency();
 const workerStartedAt = Date.now();
+/** jobId → { controller, ownerToken } for jobs this process is running. */
+const activeRuns = new Map();
+let shuttingDown = false;
 
 async function dispatchQueuedAnalyses() {
   return dispatchQueuedThreatLibraryAnalyses(pool, {
@@ -105,6 +113,14 @@ const worker = new Worker(
       await releaseSlotAndDispatch('unknown_job_mode', { bullmqJobId: job.id, reportId, jobId });
       return { ok: false, code: err.code };
     }
+    // One live owner per job: a duplicate delivery (stalled-lock re-delivery,
+    // re-dispatch after recovery) yields to a live owner instead of running twice.
+    const ownerToken = crypto.randomUUID();
+    const claimed = await claimJobOwnership(pool, { jobId, ownerToken, bullmqJobId: String(job.id) });
+    if (!claimed) {
+      log.warn('duplicate delivery skipped; job owned by a live worker or already ended', { bullmqJobId: job.id, reportId, jobId, mode });
+      return { ok: false, code: 'duplicate_delivery' };
+    }
     log.info('job started', {
       bullmqJobId: job.id,
       reportId,
@@ -112,9 +128,16 @@ const worker = new Worker(
       mode,
       aiInvocationAllowed: jobModeInvokesAi(mode),
       resumeAnalysis: job.data?.resumeAnalysis === true,
-      aiClient: 'streaming-v3'
+      autoRetryAttempt: job.data?.jobPayload?.auto_retry?.attempt ?? null,
+      aiClient: 'streaming-v4'
     });
-    await updateJob(pool, jobId, { status: 'running', stage: 'starting', bullmq_job_id: String(job.id) });
+    const controller = new AbortController();
+    activeRuns.set(jobId, { controller, ownerToken });
+    const heartbeat = startJobHeartbeat(pool, {
+      jobId,
+      ownerToken,
+      onLost: () => controller.abort(aiFailure(AI_FAILURE_CODES.JOB_OWNERSHIP_LOST))
+    });
     try {
       const result = await runThreatLibraryJob(pool, {
         reportId,
@@ -125,9 +148,15 @@ const worker = new Worker(
         newAnalysisRun: job.data?.newAnalysisRun === true,
         restoreStatus: job.data?.restoreStatus,
         membershipPolicy: job.data?.membershipPolicy,
-        jobPayload: job.data?.jobPayload
+        jobPayload: job.data?.jobPayload,
+        signal: controller.signal
       });
       log.info('job finished', { bullmqJobId: job.id, reportId, mode, ok: result?.ok === true, code: result?.code });
+      if (result?.interrupted) {
+        if (result.code === AI_FAILURE_CODES.WORKER_SHUTDOWN) await requeueAfterShutdown(reportId, jobId, ownerToken);
+        // Ownership lost: the new owner reports the outcome.
+        return result;
+      }
       if (!isIocSourceJobMode(mode)) {
         await auditAnalysisOutcome(pool, auditService, {
           reportId,
@@ -136,9 +165,24 @@ const worker = new Worker(
           code: result?.code || null,
           summary: result?.summary || null
         });
+        if (result && result.ok === false && !shuttingDown) {
+          try {
+            await maybeScheduleAutoRetry(pool, {
+              reportId,
+              jobId,
+              jobType: mode,
+              jobPayload: job.data?.jobPayload || null,
+              result
+            });
+          } catch (err) {
+            log.warn('automatic retry scheduling failed', { reportId, jobId, error: err?.message });
+          }
+        }
       }
       return result;
     } finally {
+      heartbeat.stop();
+      activeRuns.delete(jobId);
       await releaseSlotAndDispatch(mode, { bullmqJobId: job.id, reportId, jobId });
     }
   },
@@ -187,6 +231,32 @@ worker.on('failed', async (job, err) => {
   }
 });
 
+/**
+ * Graceful shutdown interrupted an AI run: hand the job back to the queue
+ * (owner-guarded) so the next worker resumes from its checkpoints.
+ */
+async function requeueAfterShutdown(reportId, jobId, ownerToken) {
+  try {
+    const requeued = await requeueOwnedJob(pool, { jobId, ownerToken, reason: 'requeued after worker shutdown' });
+    if (!requeued) return;
+    const report = await getReportById(pool, reportId);
+    await updateReportStatus(pool, reportId, {
+      analysis_status: 'pending',
+      import_status: 'processing',
+      analysis_progress: {
+        ...buildRetryProgress('pending', {
+          candidate_extraction_version: report?.analysis_progress?.candidate_extraction_version || null
+        }),
+        extraction_diagnostics: report?.analysis_progress?.extraction_diagnostics || undefined,
+        interrupted: { reason: 'worker_shutdown', at: new Date().toISOString() }
+      }
+    });
+    log.info('analysis requeued after worker shutdown', { reportId, jobId });
+  } catch (err) {
+    log.warn('failed to requeue analysis after shutdown; crash recovery will pick it up', { reportId, jobId, error: err?.message });
+  }
+}
+
 async function recoverThenDispatch() {
   try {
     const active = await queue.getJobs(['active']);
@@ -228,9 +298,23 @@ worker.on('ready', () => {
   recoverThenDispatch().catch(() => {});
 });
 
-// Bounded safety net only: import/complete/settings already dispatch directly.
+// Bounded safety net: import/complete/settings already dispatch directly.
+// Also dispatches delayed automatic retries once due, and recovers jobs whose
+// owner (this or another worker process) stopped heartbeating.
 const DISPATCH_SAFETY_MS = 30_000;
-const safetyTimer = setInterval(() => {
+const safetyTimer = setInterval(async () => {
+  if (shuttingDown) return;
+  try {
+    const recovered = await recoverInterruptedAnalysisJobs(pool, {
+      getJobState: async (id) => {
+        const j = await queue.getJob(id);
+        return j ? j.getState() : null;
+      }
+    });
+    if (recovered.length) log.info('scheduler recovered', { recovered: recovered.length, source: 'safety_net' });
+  } catch (err) {
+    log.warn('failed to recover interrupted analyses', { error: err?.message, source: 'safety_net' });
+  }
   dispatchQueuedAnalyses().catch((err) => {
     log.warn('failed to dispatch queued analyses', { error: err?.message, source: 'safety_net' });
   });
@@ -238,7 +322,15 @@ const safetyTimer = setInterval(() => {
 if (typeof safetyTimer.unref === 'function') safetyTimer.unref();
 
 async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   clearInterval(safetyTimer);
+  // Stop in-flight AI work now (Compose gives ~10s before SIGKILL): each run
+  // cancels its provider request, releases its inference slot and is requeued.
+  for (const [jobId, run] of activeRuns) {
+    log.info('interrupting analysis for shutdown', { jobId });
+    run.controller.abort(aiFailure(AI_FAILURE_CODES.WORKER_SHUTDOWN));
+  }
   await worker.close();
   await queue.close();
   await redis.quit();

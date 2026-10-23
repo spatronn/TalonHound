@@ -12,6 +12,7 @@ import {
   THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION
 } from './candidateExtraction.js';
 import { analyzeThreatDocument } from './ai/providers.js';
+import { getInferenceScheduler } from './ai/inferenceScheduler.js';
 import { AI_FAILURE_CODES, AI_FAILURE_MESSAGES } from './ai/timeouts.js';
 import { THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './ai/contract.js';
 import { normalizeEntityName } from './constants.js';
@@ -68,8 +69,10 @@ const log = createServiceLogger('threat-library');
  * and `rerun_ai` jobs; `refresh_extraction` never reaches this function
  * (jobRunner.js routes it to the AI-free extractionRefresh.js).
  * @param {import('pg').Pool} pool
- * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean, jobType?: string, newAnalysisRun?: boolean }} ctx
- * @param {{ analyzeThreatDocument?: Function }} [deps] provider seam (tests)
+ * @param {{ reportId: number, jobId: number, pdfBuffer?: Buffer, sourceUrl?: string, resumeAnalysis?: boolean, jobType?: string, newAnalysisRun?: boolean, signal?: AbortSignal }} ctx
+ *   ctx.signal: the worker aborts it on shutdown / lost job ownership; the run
+ *   then stops without writing report state (the worker requeues or yields).
+ * @param {{ analyzeThreatDocument?: Function, inferenceScheduler?: object|null, transport?: Function }} [deps] provider seam (tests)
  */
 export async function runAnalysisPipeline(pool, ctx, deps = {}) {
   if (ctx?.jobType === THREAT_LIBRARY_JOB_MODES.REFRESH_EXTRACTION) {
@@ -81,6 +84,12 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
   if (!report) throw Object.assign(new Error('Report not found'), { code: 'not_found' });
 
   const abort = new AbortController();
+  if (ctx.signal) {
+    if (ctx.signal.aborted) abort.abort(ctx.signal.reason);
+    else ctx.signal.addEventListener('abort', () => abort.abort(ctx.signal.reason), { once: true });
+  }
+  // `null` disables the gate (tests / tools); default is the shared scheduler.
+  const inferenceScheduler = deps.inferenceScheduler === undefined ? getInferenceScheduler(pool) : deps.inferenceScheduler;
   const analysisStartedAt = Date.now();
   const progressCarry = {
     candidate_extraction_version:
@@ -427,13 +436,19 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         {
           analysisStartedAt,
           signal: abort.signal,
+          scheduler: inferenceScheduler,
+          transport: deps.transport,
+          reportId: report.id,
           shouldCancel: async () => isAnalysisCancelRequested(pool, report.id),
           loadCompletedChunk: async (chunkKey) =>
             loadCompletedChunkResult(pool, report.id, runId, chunkKey),
           saveChunkResult: async (chunk, result, meta) =>
             saveAnalysisChunkResult(pool, report.id, runId, chunk, result, meta || {}),
-          markChunkFailed: async (chunk, code, message, meta) =>
-            markAnalysisChunkFailed(pool, report.id, runId, chunk, code, message, meta || {}),
+          markChunkFailed: async (chunk, code, message, meta) => {
+            // An interrupted owner must not overwrite a chunk the next owner may complete.
+            if (isInterruptionCode(code)) return;
+            return markAnalysisChunkFailed(pool, report.id, runId, chunk, code, message, meta || {});
+          },
           onProgress: (progress) => progressGate.push(progress)
         }
       );
@@ -469,6 +484,12 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       // No in-flight "analyzing" progress write may land after the terminal status below.
       await progressGate.close();
       const code = aiErr.code || 'ai_failed';
+      if (isInterruptionCode(code)) {
+        // Shutdown / ownership loss: leave report and job rows to the worker
+        // (requeue) or to the job's new owner. Checkpoints stay intact.
+        log.warn('AI analysis interrupted', { reportId: report.id, code });
+        return { ok: false, code, interrupted: true, error: aiErr.message };
+      }
       if (code !== AI_FAILURE_CODES.JOB_CANCELLED) {
         // best-effort mark current chunk failed is handled inside analyze when save fails
       }
@@ -521,6 +542,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
                 analysis_chunks_remaining: progressDetail.analysis_chunks_remaining ?? null,
                 ai_calls: progressDetail.ai_calls ?? null,
                 elapsed_ms: progressDetail.elapsed_ms ?? null,
+                active_elapsed_ms: progressDetail.active_elapsed_ms ?? null,
+                ai_capacity_wait_ms: progressDetail.ai_capacity_wait_ms ?? null,
                 total_analysis_timeout_ms: progressDetail.total_analysis_timeout_ms ?? null,
                 timing: Array.isArray(progressDetail.timing) ? progressDetail.timing.slice(-24) : [],
                 resumable: true
@@ -539,7 +562,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           issues: Array.isArray(aiErr.details) ? aiErr.details.slice(0, 10) : []
         }
       });
-      return { ok: false, code, error: message };
+      return { ok: false, code, error: message, http_status: aiErr.http_status ?? null };
     }
 
     // Merge AI candidate updates onto the deterministic set (never the reverse).
@@ -910,4 +933,8 @@ function resolveRef(kind, ref, entityByRef, candByKey) {
     };
   }
   return null;
+}
+
+function isInterruptionCode(code) {
+  return code === AI_FAILURE_CODES.WORKER_SHUTDOWN || code === AI_FAILURE_CODES.JOB_OWNERSHIP_LOST;
 }

@@ -4,8 +4,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { callAiProvider, parseOllamaNdjsonLine, consumeProviderStream, OLLAMA_NUM_PREDICT } from './client.js';
+import { fetchTransport } from './providerHttp.js';
 import { buildProviderJsonSchema, AI_OUTPUT_BOUNDS } from './contract.js';
 import { AI_FAILURE_CODES, sanitizeProviderHttpError } from './timeouts.js';
+
+
+// client.js uses node:http by default; these tests stub globalThis.fetch.
+const viaGlobalFetch = fetchTransport((url, init) => globalThis.fetch(url, init));
 
 test('Ollama num_predict matches the documented last-resort ceiling', () => {
   assert.equal(OLLAMA_NUM_PREDICT, AI_OUTPUT_BOUNDS.numPredict);
@@ -42,7 +47,7 @@ test('Ollama chat request includes schema, think:false, temperature 0.1, finite 
     const result = await callAiProvider(
       { enabled: true, provider: 'ollama', model: 'qwen3.5:9b', base_url: 'http://127.0.0.1:11434' },
       { system: 'sys', user: 'usr' },
-      { formatSchema: schema }
+      { formatSchema: schema, transport: viaGlobalFetch }
     );
     assert.equal(captured.stream, true);
     assert.equal(captured.think, false);
@@ -109,7 +114,7 @@ test('Ollama HTTP 400 attaches sanitized provider_error and zero output chars', 
     await callAiProvider(
       { enabled: true, provider: 'ollama', model: 'qwen3.5:9b', base_url: 'http://127.0.0.1:11434' },
       { system: 'sys', user: 'usr' },
-      { formatSchema: buildProviderJsonSchema() }
+      { formatSchema: buildProviderJsonSchema(), transport: viaGlobalFetch }
     );
     assert.fail('expected throw');
   } catch (err) {

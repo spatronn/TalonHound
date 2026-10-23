@@ -244,7 +244,7 @@ The record is stored in `analysis_progress.extraction_diagnostics.quality` and r
 - Every provider call is timed (headers / first token / output chars) into `analysis_progress.timing` and the worker log; a total-deadline failure records completed/remaining chunks so the UI can explain what a Retry will resume
 - AI responses go through: provider structured output → JSON extraction → deterministic normalization → Zod schema → reference checks → persist
 - Categorical confidence words such as `high` map to documented numeric values; invalid items in optional relationships are dropped with diagnostics rather than discarding an entire valid chunk
-- Separate timeouts: connection, first-token, inactivity (resets on stream activity), and total analysis ceiling
+- Separate timeouts: AI capacity wait, connection, first response (from request sent, after a slot is acquired), inactivity (resets on stream activity), per-request execution limit, and the active-analysis ceiling — see [AI inference capacity](#ai-inference-capacity)
 - Ollama uses native streaming (`/api/chat` + JSON Schema `format` when supported + `keep_alive`) so long local generations are not mistaken for hung connections
 - Failed AI validation stores capped model-output samples and issue paths on the analysis chunk for diagnosis (not full report prompts)
 - Provider API keys are never logged; progress is persisted server-side (browser navigation does not cancel the job)
@@ -436,9 +436,28 @@ AI Settings field: `max_concurrent_report_analyses` (UI: **Concurrent report ana
 
 **Runtime changes.** Increasing the limit immediately claims more queued jobs. Decreasing it never kills in-flight analyses; new claims wait until `active < new limit`.
 
-**Restart / stale jobs.** Queued (`bullmq_job_id` null) jobs survive backend/worker restart. On worker ready, interrupted `running` jobs whose BullMQ state is gone are re-queued (not left occupying a slot). A still-live BullMQ job is left alone so the same report is not analyzed twice. A 30s safety-net dispatch covers a missed completion hook; import/complete/settings already wake the scheduler directly.
+**Restart / stale jobs.** Queued (`bullmq_job_id` null) jobs survive backend/worker restart. A worker claims a job in PostgreSQL before running it (`owner_token` + `heartbeat_at`, every 15s); a second delivery of the same job (BullMQ stalled re-delivery, re-dispatch after recovery) yields to a live owner. A `running` job is re-queued only when its owner's heartbeat is older than 2 minutes, regardless of the BullMQ state (a crashed worker's job stays "active" until its lock expires); legacy rows without an owner fall back to the BullMQ state check. On graceful shutdown the worker aborts in-flight AI requests and re-queues its jobs immediately (`Queued (resuming)`), so the next worker resumes from completed chunks. Dispatch never claims a second pipeline job for a report that already has one claimed. A 30s safety net runs recovery and dispatch (including due automatic retries); import/complete/settings already wake the scheduler directly.
 
 **Worker process ceiling.** `THREAT_LIBRARY_WORKER_CONCURRENCY` (Compose default 4) is the BullMQ worker capacity. It must be ≥ the setting maximum so a runtime increase does not require a compose change. The setting is the real limiter.
+
+### AI inference capacity
+
+`max_concurrent_report_analyses` limits how many reports are in the pipeline; it does not limit how many requests reach the AI provider. Every AI request — chunk, repair, compact recovery, synthesis and the Settings connection test — first takes a slot from the shared inference scheduler (`lib/threatLibrary/ai/inferenceScheduler.js`, table `threat_library_ai_capacity_leases`).
+
+| Setting (AI Settings) | Default (local / hosted) | Meaning |
+|---|---|---|
+| `max_concurrent_ai_requests` | 1 / 4 | Requests the provider endpoint runs at once, shared by all processes. Raise only when the host runs requests in parallel (Ollama `OLLAMA_NUM_PARALLEL`). |
+| `capacity_wait_timeout_ms` | 60 / 15 min | Cumulative time one analysis may wait for slots → `ai_capacity_wait_timeout` |
+| `provider_execution_timeout_ms` | 20 / 10 min | One request, streaming included → `provider_execution_timeout` |
+| `auto_retry_max_attempts` | 2 | Bounded automatic retries of transient failures (0 disables) |
+
+- **Fair and bounded.** Slots are granted strictly FIFO per endpoint (`provider|base_url`; models on one host share it). Chunks of a report run one at a time, so FIFO alternates between reports and no report monopolizes the provider. Waiting holds no database connection.
+- **Crash-safe.** Slots are leases: holders heartbeat every 15s, waiters refresh while polling; a dead process's lease expires (60s holding, 15s waiting). A holder that cannot confirm its lease aborts its request (`ai_capacity_lease_lost`).
+- **Timing.** The first-response timer starts when the request is sent, after the slot is acquired: queueing behind other analyses is never reported as `first_token_timeout`. `total_analysis_timeout_ms` bounds active analysis time; capacity waits are excluded and bounded by `capacity_wait_timeout_ms`.
+- **Transport.** Provider calls use `node:http(s)` without Node fetch's implicit 300s header/body timeouts. Every failure aborts the request and waits (≤5s) for the socket to close before the slot is released, so a cancelled request never keeps the provider busy.
+- **Residual contention.** A request that held a TalonHound slot but still queued inside Ollama (an external client on the same host) is logged as `residual provider contention` with `provider_queue_ms`.
+- **Automatic retry.** Only `first_token_timeout`, `provider_inactivity_timeout`, `connection_timeout`, `provider_unreachable`, HTTP 429/5xx and scheduler availability failures. Backoff 60s × 2^(n−1) + 0–25% jitter (≤15 min), one live pipeline job per report, every attempt goes through the scheduler and resumes from checkpoints. The report shows **Retry scheduled**; Retry Analysis makes a scheduled retry due immediately.
+- **Telemetry.** Per call (`analysis_progress.timing`, chunk `timing` and worker log): `slot_wait_ms`, `slot_max_position`, `headers_ms`, `first_token_ms`, `stream_ms`, `total_ms`, `provider_queue_ms`, Ollama token counts, `cancel_outcome`. Earlier chunk attempts are kept in `threat_library_analysis_chunks.attempt_history` (last 10).
 
 The worker must run the same backend image as the API (`talonhound-backend:local`). Building only the `backend` service and recreating workers without a shared image tag previously left the worker on a stale AbortController timeout path.
 

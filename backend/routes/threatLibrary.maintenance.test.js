@@ -70,6 +70,10 @@ function harness(reportPatch = {}, { jobs = [], audit = null, preview = null } =
       if (/FROM threat_library_jobs[\s\S]*status = ANY\(ARRAY\['queued','running'\]\)/.test(s)) {
         return { rows: active().sort((a, b) => b.id - a.id).slice(0, 1) };
       }
+      // createExclusivePipelineJob: live pipeline job for the report (under the advisory lock).
+      if (/FROM threat_library_jobs\s+WHERE report_id = \$1 AND status = ANY\(\$2::text\[\]\) AND job_type = ANY\(\$3::text\[\]\)/.test(s)) {
+        return { rows: active().filter((j) => params[2].includes(j.job_type)).sort((a, b) => b.id - a.id).slice(0, 1) };
+      }
       if (/SELECT status FROM threat_library_jobs WHERE report_id = \$1 ORDER BY id DESC LIMIT 1/.test(s)) {
         return { rows: [...state.jobs].sort((a, b) => b.id - a.id).slice(0, 1) };
       }

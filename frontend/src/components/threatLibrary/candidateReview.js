@@ -518,16 +518,38 @@ export function describeAnalysisFailureDetail(report) {
     lines.push(`Completed semantic chunks: ${done} / ${total}`);
     lines.push(`Remaining chunks: ${remaining}`);
     if (Number.isFinite(Number(progress.ai_calls))) lines.push(`AI calls made: ${Number(progress.ai_calls)}`);
+    const mins = (n) => `${Math.round(Number(n) / 6000) / 10} min`;
     if (Number.isFinite(Number(progress.elapsed_ms)) && Number.isFinite(Number(progress.total_analysis_timeout_ms))) {
-      const mins = (n) => `${Math.round(Number(n) / 6000) / 10} min`;
-      lines.push(`Elapsed ${mins(progress.elapsed_ms)} of ${mins(progress.total_analysis_timeout_ms)} ceiling`);
+      // Records written before capacity scheduling have no active/wait split.
+      if (progress.active_elapsed_ms != null && Number.isFinite(Number(progress.active_elapsed_ms))) {
+        lines.push(`Active analysis ${mins(progress.active_elapsed_ms)} of ${mins(progress.total_analysis_timeout_ms)} ceiling`);
+      } else {
+        lines.push(`Elapsed ${mins(progress.elapsed_ms)} of ${mins(progress.total_analysis_timeout_ms)} ceiling`);
+      }
+    }
+    if (Number(progress.ai_capacity_wait_ms) >= 1000) {
+      lines.push(`Waited ${mins(progress.ai_capacity_wait_ms)} for AI capacity (not counted against the ceiling)`);
     }
     if (progress.resumable !== false) lines.push('Retry Analysis will resume from completed checkpoints.');
   } else if (code === 'total_analysis_deadline_exceeded') {
     lines.push('Retry Analysis reuses the stored document and resumes compatible checkpoints.');
   }
+  const hint = AI_FAILURE_HINTS[code];
+  if (hint) lines.push(hint);
   return lines;
 }
+
+/** What an AI failure code means for the analyst (shown under the failure). */
+const AI_FAILURE_HINTS = Object.freeze({
+  first_token_timeout: 'The AI provider accepted the request but produced no output in time. If it persists, check the provider host.',
+  provider_unreachable: 'The AI provider could not be reached or dropped the connection.',
+  connection_timeout: 'The AI provider did not accept the connection in time.',
+  provider_inactivity_timeout: 'The AI provider stopped streaming output mid-response.',
+  provider_execution_timeout: 'A single AI request exceeded the per-request execution limit.',
+  ai_capacity_wait_timeout: 'Other analyses kept the AI provider busy for longer than the capacity wait limit. Retry once the queue is shorter.',
+  ai_capacity_unavailable: 'The AI capacity scheduler could not reach the database.',
+  ai_capacity_lease_lost: 'The analysis lost its AI slot while running (database connectivity).'
+});
 
 export const PAGE_SIZES = Object.freeze([25, 50, 100]);
 export const DEFAULT_PAGE_SIZE = 50;

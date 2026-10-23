@@ -7,7 +7,14 @@ import { processAiResponseText } from './schema.js';
 import { buildProviderJsonSchema, THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION } from './contract.js';
 import { assertAiReady } from './settings.js';
 
-export async function probeAiProvider(settings) {
+/** A connection test never queues behind running analyses for long. */
+export const PROBE_CAPACITY_WAIT_MS = 60_000;
+
+/**
+ * @param {object} settings
+ * @param {{ scheduler?: object, transport?: Function }} [deps]
+ */
+export async function probeAiProvider(settings, deps = {}) {
   assertAiReady(settings);
   const system =
     'Return only JSON. confidence must be a number between 0 and 1. No markdown.';
@@ -22,8 +29,15 @@ export async function probeAiProvider(settings) {
     { system, user },
     {
       analysisStartedAt: started,
-      keepAlive: '0',
-      formatSchema: buildProviderJsonSchema()
+      // The probe is a real inference request: it takes a capacity slot like
+      // any analysis call. keep_alive '5m' (was '0') so a probe never unloads
+      // the model out from under analyses queued behind it.
+      keepAlive: '5m',
+      formatSchema: buildProviderJsonSchema(),
+      scheduler: deps.scheduler,
+      transport: deps.transport,
+      capacityWaitBudgetMs: PROBE_CAPACITY_WAIT_MS,
+      purpose: 'probe'
     }
   );
   const processed = processAiResponseText(text, {
