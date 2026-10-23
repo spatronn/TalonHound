@@ -17,6 +17,9 @@
  *    outside a BEGIN are fenced statements), so helpers that manage their
  *    own transaction (reconcileReportCandidates) are fenced as a whole.
  *  - `transaction(fn)`: one fenced transaction around several writes.
+ *    `fn` receives the raw checked-out client (has `.release` and `.connect`).
+ *    Helpers that auto-BEGIN must detect a Pool via checkout semantics
+ *    (not `.connect` alone) — see `acquireDbSession` in store.js.
  *
  * The fence lock is held only for the duration of a write transaction. The
  * worker's heartbeat (raw pool) waits for it at most that long.

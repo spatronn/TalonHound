@@ -664,13 +664,31 @@ function insertCandidateParams(reportId, col) {
 }
 
 /**
+ * Checkout a session for a self-managed BEGIN/COMMIT, or reuse an already
+ * checked-out client (pg.Client and fenced wrapClient expose `.release`).
+ *
+ * pg.Client also has `.connect()` — never treat "has connect" alone as a Pool.
+ * That mistake throws "Client has already been connected" when the AI pipeline
+ * passes the raw client from `createFencedDb().transaction()` into reconcile.
+ *
+ * @param {import('pg').Pool|import('pg').PoolClient|{connect?: Function, release?: Function, query: Function}} db
+ * @returns {Promise<{ client: object, owned: boolean }>}
+ */
+export async function acquireDbSession(db) {
+  const isCheckedOut = typeof db?.release === 'function';
+  if (!isCheckedOut && typeof db?.connect === 'function') {
+    return { client: await db.connect(), owned: true };
+  }
+  return { client: db, owned: false };
+}
+
+/**
  * Replace candidates for a report (idempotent retry).
  * Runs as one transaction so a failed rebuild never leaves the report with a
  * half-swapped (or empty) pending review set.
  */
 export async function replaceCandidates(pool, reportId, candidates) {
-  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
-  const owned = client !== pool;
+  const { client, owned } = await acquireDbSession(pool);
   try {
     if (owned) await client.query('BEGIN');
     await client.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
@@ -800,8 +818,7 @@ export async function reconcileReportCandidates(pool, reportId, candidates, opti
   const sourceFileId = scope && typeof scope === 'object' ? (scope.sourceFileId ?? null) : null;
   const isSourceScope = Number.isFinite(sourceId) && sourceId > 0;
 
-  const client = typeof pool.connect === 'function' ? await pool.connect() : pool;
-  const owned = client !== pool;
+  const { client, owned } = await acquireDbSession(pool);
   try {
     if (owned) await client.query('BEGIN');
     const { rows: existing } = await client.query(

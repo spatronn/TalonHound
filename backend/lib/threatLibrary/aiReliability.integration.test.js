@@ -578,7 +578,12 @@ function persistenceRacingPool(onReconcileLock) {
     query: (...args) => pool.query(...args),
     connect: async () => {
       const client = await pool.connect();
+      // Mirror pg.Client: checked-out sessions expose both .connect and .release.
+      // reconcile/replace must reuse this handle — calling .connect() again throws.
       return {
+        connect: async () => {
+          throw new Error('Client has already been connected. You cannot reuse a client.');
+        },
         query: async (sql, params) => {
           const res = await client.query(sql, params);
           if (!fired && /FROM threat_report_candidates WHERE report_id = \$1 ORDER BY id FOR UPDATE/.test(String(sql))) {
