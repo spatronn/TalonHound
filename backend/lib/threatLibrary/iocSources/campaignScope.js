@@ -162,13 +162,101 @@ function titleSimilarity(a, b) {
   return inter / Math.min(ta.size, tb.size);
 }
 
+function reportLinkHost(hostname) {
+  return String(hostname || '').toLowerCase().replace(/^www\./, '');
+}
+
+/** Last non-empty path segment — Elastic slug (`taking-shellter`). */
+function pathSlug(pathname) {
+  const parts = String(pathname || '').toLowerCase().split('/').filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : '';
+}
+
 function linksReport(text, reportUrl) {
   const canon = reportUrl ? canonicalizeReportUrl(reportUrl) : null;
   if (!canon) return false;
+  let canonPath = '';
+  let canonHost = '';
+  let canonSlug = '';
+  try {
+    const cu = new URL(canon);
+    canonPath = cu.pathname.replace(/\/+$/, '').toLowerCase();
+    canonHost = reportLinkHost(cu.hostname);
+    canonSlug = pathSlug(cu.pathname);
+  } catch {
+    return false;
+  }
   for (const m of String(text || '').matchAll(/https?:\/\/[^\s<>"'`[\]]+/gi)) {
-    if (canonicalizeReportUrl(m[0].replace(/[.,;:)]+$/, '')) === canon) return true;
+    const cleaned = m[0].replace(/[.,;:)]+$/, '');
+    if (canonicalizeReportUrl(cleaned) === canon) return true;
+    // Elastic Security Labs READMEs often cite the same article with www /
+    // non-www hosts, or with/without a `/threat-command/` path prefix while
+    // keeping the same terminal slug.
+    try {
+      const u = new URL(cleaned);
+      const host = reportLinkHost(u.hostname);
+      if (host !== canonHost) continue;
+      const path = u.pathname.replace(/\/+$/, '').toLowerCase();
+      if (canonPath && path === canonPath) return true;
+      const slug = pathSlug(u.pathname);
+      if (canonSlug && slug && slug === canonSlug && slug.length >= 6) return true;
+    } catch {
+      // ignore
+    }
   }
   return false;
+}
+
+/**
+ * Lightweight Markdown → canonical document for campaign README scoping.
+ * Preserves ATX headings (`#` / `##`) so selectCampaignScope can see sections.
+ * @param {string} text
+ * @param {{ title?: string, sourceUrl?: string|null }} [meta]
+ */
+export function markdownToCanonicalDocument(text, meta = {}) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  const blocks = [];
+  let idx = 0;
+  let section = null;
+  const nextId = () => `b${String((idx += 1)).padStart(3, '0')}`;
+  let para = [];
+  const flushPara = () => {
+    if (!para.length) return;
+    const t = para.join('\n').trim();
+    para = [];
+    if (!t) return;
+    blocks.push({ id: nextId(), type: 'paragraph', text: t, section, page: null });
+  };
+  for (const raw of lines) {
+    const heading = raw.match(/^(#{1,6})\s+(.+?)\s*$/);
+    if (heading) {
+      flushPara();
+      section = heading[2].trim();
+      blocks.push({
+        id: nextId(),
+        type: 'heading',
+        level: heading[1].length,
+        text: section,
+        section,
+        page: null
+      });
+      continue;
+    }
+    if (!raw.trim()) {
+      flushPara();
+      continue;
+    }
+    // Keep markdown link URLs visible for linksReport.
+    const withUrls = raw.replace(/\[([^\]]*)\]\((https?:[^)\s]+)\)/g, '$1 $2');
+    para.push(withUrls);
+  }
+  flushPara();
+  return createCanonicalDocument({
+    title: meta.title || 'Markdown IOC source',
+    language: null,
+    blocks,
+    meta: { source_url: meta.sourceUrl || null, extractor: 'tl-markdown-readme-v1', adapter: 'markdown_readme' }
+  });
 }
 
 /**

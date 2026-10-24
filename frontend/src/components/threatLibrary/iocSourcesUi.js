@@ -24,9 +24,38 @@ const SOURCE_TYPE_LABEL = Object.freeze({
   txt: 'Text',
   csv: 'CSV',
   json: 'JSON',
+  stix_json: 'STIX JSON',
+  stix_xml: 'STIX XML',
+  xml: 'XML',
+  markdown: 'Markdown',
   pdf: 'PDF',
   unknown: 'Source'
 });
+
+/** Map inspect/extract error codes to analyst-facing labels (no policy quotes). */
+const ERROR_CODE_LABEL = Object.freeze({
+  unsupported_json_schema: 'Unsupported JSON schema',
+  unsupported_format: 'Unsupported format',
+  unsupported_stix_version: 'Unsupported STIX version',
+  unsupported_pattern: 'Unsupported STIX pattern',
+  not_stix_json: 'Not STIX JSON',
+  not_stix_xml: 'Not STIX XML',
+  invalid_stix_json: 'Invalid STIX JSON',
+  invalid_json: 'Invalid JSON',
+  campaign_scope_unresolved: 'Campaign scope unresolved',
+  no_parsable_files: 'No parsable files',
+  blocked_url: 'Blocked URL',
+  source_mismatch: 'Source mismatch'
+});
+
+/**
+ * @param {string|null|undefined} code
+ */
+export function sourceErrorLabel(code) {
+  const key = String(code || '').toLowerCase();
+  if (!key) return null;
+  return ERROR_CODE_LABEL[key] || key.replace(/_/g, ' ');
+}
 
 /**
  * @param {string|null|undefined} status
