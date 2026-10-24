@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyCandidateReviewActions, finalizeReport } from './reviewService.js';
 
-function fakePool(report, { candidates = [], sourceId = 4 } = {}) {
+function fakePool(report, { candidates = [], sourceId = 4, linkedSources = [] } = {}) {
   const writes = [];
   const queries = [];
   return {
@@ -12,6 +12,14 @@ function fakePool(report, { candidates = [], sourceId = 4 } = {}) {
       queries.push({ sql, params });
       if (/FROM threat_reports WHERE id = \$1/.test(sql) && /^\s*SELECT/i.test(sql)) {
         return { rows: report ? [report] : [] };
+      }
+      if (/FROM threat_report_ioc_sources/.test(sql) && /^\s*SELECT/i.test(sql)) {
+        return { rows: linkedSources };
+      }
+      if (/^\s*UPDATE threat_reports r/.test(sql)) {
+        // Guarded finalize write: the statement itself re-checks the rules.
+        writes.push({ sql, params });
+        return { rows: report ? [report] : [], rowCount: report ? 1 : 0 };
       }
       if (/FROM threat_report_candidates/.test(sql) && /^\s*SELECT/i.test(sql)) {
         const ids = Array.isArray(params?.[1]) ? params[1].map(Number) : null;

@@ -129,7 +129,7 @@ test('import, delete, source URL, THIB export and finalize use the audit builder
   assert.match(routeSrc, /buildImportFailedAuditEvent/);
   assert.match(routeSrc, /buildDeleteAuditEvent\(\{ report, user: req\.user \}\)/);
   assert.match(routeSrc, /buildThibExportAuditEvent/);
-  assert.match(routeSrc, /finalizeReport\(pool, report\.id, \{ user: await actorOf\(req\), audit, req \}\)/);
+  assert.match(routeSrc, /finalizeReport\(pool, report\.id, \{ user: await actorOf\(req\), audit, req, sourceOverride \}\)/);
 });
 
 test('review actions receive the resolved actor, audit service and request', () => {

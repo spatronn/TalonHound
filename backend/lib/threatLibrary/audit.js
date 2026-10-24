@@ -222,16 +222,30 @@ export function summarizeFinalizeCandidates(candidates) {
   return summary;
 }
 
-export function buildFinalizeAuditEvent({ report, candidates, user }) {
+export function buildFinalizeAuditEvent({ report, candidates, user, sourceOverride = null }) {
   return {
     action: AUDIT_ACTION.THREAT_LIBRARY_REPORT_FINALIZED,
     ...reportAuditEntity(report),
-    severity: AUDIT_SEVERITY.INFO,
+    // Finalizing over unresolved linked IOC Sources is an administrator
+    // override of the completeness guard (tl-finalize-guard-v1).
+    severity: sourceOverride ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
     status: AUDIT_STATUS.SUCCESS,
     metadata: {
       ...reportAuditSnapshot(report),
       initiated_by: initiatedBy(user),
-      ...summarizeFinalizeCandidates(candidates)
+      ...summarizeFinalizeCandidates(candidates),
+      ...(sourceOverride
+        ? {
+            linked_source_override: {
+              reason: sourceOverride.reason,
+              sources: (sourceOverride.sources || []).map((s) => ({
+                public_id: s.public_id,
+                lifecycle_status: s.lifecycle_status,
+                url: redactUrlSecrets(s.url)
+              }))
+            }
+          }
+        : {})
     }
   };
 }

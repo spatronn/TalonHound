@@ -84,6 +84,11 @@ function fakePool(report, candidates = []) {
       if (/FROM threat_report_candidates/.test(sql) && /^\s*SELECT/i.test(sql)) {
         return { rows: candidates };
       }
+      if (/FROM threat_report_ioc_sources/.test(sql) && /^\s*SELECT/i.test(sql)) return { rows: [] };
+      if (/^\s*UPDATE threat_reports r/.test(sql)) {
+        writes.push({ sql, params });
+        return { rows: report ? [report] : [], rowCount: report ? 1 : 0 };
+      }
       writes.push({ sql, params });
       return { rows: [] };
     }

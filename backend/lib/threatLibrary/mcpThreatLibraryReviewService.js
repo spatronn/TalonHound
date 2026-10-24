@@ -11,6 +11,7 @@
 
 import { mcpActorAuditFields } from '../mcpIocService.js';
 import { applyCandidateReviewActions, finalizeReport } from './reviewService.js';
+import { finalizeBlockers, linkedSourceBlocker, loadReportSources } from './finalizeGuard.js';
 import {
   classifyCreateEligibility,
   classifyPromoteEligibility,
@@ -269,6 +270,9 @@ function gatesFromSnapshot(report, candidates, linkedSources) {
       pending_count: decisions.pending_actionable
     });
   }
+  // Same linked-source rule the finalize write enforces (finalizeGuard.js).
+  const sourceBlocker = linkedSourceBlocker(linkedSources);
+  if (sourceBlocker) finalizeBlocked.push(sourceBlocker);
   return {
     review_phase: phase,
     review_mutations_permitted: reviewReady,
@@ -365,6 +369,8 @@ function mapServiceFailure(result) {
       message: result.error || 'Review action failed',
       phase: result.phase || undefined,
       pending_count: result.pending_count,
+      blockers: result.blockers,
+      linked_sources: result.linked_sources,
       summary: result.summary,
       results: result.results,
       matching: result.matching,
@@ -879,18 +885,16 @@ export async function mcpThreatLibraryFinalizeReport(pool, args = {}, ctx = {}) 
     const linked = await loadReportLinkedSourceCandidateIds(pool, report.id);
     const withProv = withLinkedSourceProvenance(candidates, linked);
     const pendingCount = withProv.filter((c) => isPendingActionableCandidate(c)).length;
-    if (pendingCount > 0) {
+    // MCP never overrides the linked-source rule (administrator UI/API only).
+    const blockers = finalizeBlockers({ pendingCount, sources: await loadReportSources(pool, report.id) });
+    if (blockers.length) {
       return {
         status: 200,
         body: {
           report_id: report.public_id,
           dry_run: true,
           would_finalize: false,
-          blockers: [{
-            code: 'pending_review_remaining',
-            message: `${pendingCount} indicator${pendingCount === 1 ? '' : 's'} still need review.`,
-            pending_count: pendingCount
-          }],
+          blockers,
           report: serializeImportReportState(report)
         }
       };

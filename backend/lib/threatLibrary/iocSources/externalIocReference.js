@@ -59,7 +59,7 @@ const LOOKUP_SERVICE_HOST_RE =
 /** File extensions that are payloads / archives / code, never an IOC data pack. */
 const NON_PACK_FILE_EXT_RE = /\.(?:zip|7z|rar|gz|tgz|tar|bz2|xz|exe|msi|dll|dmg|pkg|apk|ipa|deb|rpm|iso|img|bin|jar|js|mjs|ts|py|ps1|sh|bat|vbs|hta|lnk|docx?|xlsx?|pptx?|png|jpe?g|gif|svg|webp|mp4|mov)$/i;
 /** Data-pack file extensions (a linked file must be one of these to qualify). */
-const PACK_FILE_EXT_RE = /\.(?:txt|csv|json|stix|misp|xml|ioc|md|adoc|yml|yaml|sha256|sha1|md5|tsv|pdf)$/i;
+const PACK_FILE_EXT_RE = /\.(?:txt|csv|json|ndjson|jsonl|stix|misp|xml|ioc|md|adoc|yml|yaml|sha256|sha1|md5|tsv|pdf)$/i;
 /** Anchor text naming an IOC exchange format ("AA25-203A STIX XML", "MISP event JSON", "OpenIOC"). */
 const IOC_FORMAT_LINK_TEXT_RE = /\b(?:stix(?:\s*2(?:\.\d)?)?|misp|openioc)\b/i;
 /**

@@ -967,13 +967,20 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       try {
         const report = await getReportByPublicId(pool, req.params.publicId);
         if (!report) return res.status(404).json({ message: 'Report not found' });
-        const result = await finalizeReport(pool, report.id, { user: await actorOf(req), audit, req });
+        // Administrator-only, reasoned override of the linked-IOC-Source rule
+        // (validated and audited by finalizeReport / finalizeGuard).
+        const sourceOverride = req.body?.linked_source_override && typeof req.body.linked_source_override === 'object'
+          ? { reason: String(req.body.linked_source_override.reason || '') }
+          : null;
+        const result = await finalizeReport(pool, report.id, { user: await actorOf(req), audit, req, sourceOverride });
         if (!result.ok) {
           return res.status(result.status || 400).json({
             message: result.error,
             code: result.code || null,
             phase: result.phase || null,
             pending_count: result.pending_count,
+            blockers: result.blockers || undefined,
+            linked_sources: result.linked_sources || undefined,
             report: publicReport(await reportWithDetail(report))
           });
         }

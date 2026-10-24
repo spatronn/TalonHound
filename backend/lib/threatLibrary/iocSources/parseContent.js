@@ -6,7 +6,6 @@
 
 import { extractCandidatesFromDocument } from '../candidateExtraction.js';
 import { htmlToCanonicalDocument, plainTextToCanonicalDocument } from '../urlIngest.js';
-import { LINKED_SOURCE_IOC_ASSERTION } from './constants.js';
 import { guessTypeFromUrl } from './sourceType.js';
 import {
   asciidocToCanonicalDocument,
@@ -16,6 +15,8 @@ import {
   selectCampaignScope
 } from './campaignScope.js';
 import { candidatesFromStixEvidence } from './stix/candidates.js';
+import { toLinkedSourceCandidate } from './linkedCandidate.js';
+import { parseCsvIocSource, parseNdjsonIocSource } from './structuredSources.js';
 import { looksLikeStixJson, parseStixJsonSource } from './stix/json.js';
 import { looksLikeStixXml, parseStixXmlSource } from './stix/xml.js';
 
@@ -28,6 +29,9 @@ export function detectSourceFormat({ contentType, url, path }) {
   const ct = String(contentType || '').split(';')[0].trim().toLowerCase();
   const name = String(path || url || '').toLowerCase();
   if (ct === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
+  if (ct === 'application/x-ndjson' || ct === 'application/jsonl' || name.endsWith('.ndjson') || name.endsWith('.jsonl')) {
+    return 'ndjson';
+  }
   if (
     ct === 'application/stix+json'
     || ct === 'application/vnd.oasis.stix+json'
@@ -127,49 +131,26 @@ export function candidatesFromDocument(document, meta = {}) {
     const type = String(c.candidate_type || '').toLowerCase();
     if (!type || type === 'cve' || type === 'attack_technique') continue;
     // Linked packs are treated as source-scoped authoritative lists (not original MODE A).
-    out.push({
-      candidate_type: c.candidate_type,
-      original_value: c.original_value,
-      normalized_value: c.normalized_value,
-      assessment: c.assessment === 'context_only' || c.assessment === 'invalid' ? c.assessment : 'malicious',
-      role: c.role || 'malicious_infrastructure',
-      confidence: c.confidence ?? 0.9,
-      evidence_text: c.evidence_text || null,
-      section: c.section || meta.filePath || 'linked_ioc_source',
-      block_id: c.block_id || null,
-      page_number: c.page_number ?? null,
-      review_status: 'pending',
-      match_state: c.match_state || 'new',
-      is_ioc: true,
-      source_assertion: LINKED_SOURCE_IOC_ASSERTION,
-      has_original_document_occurrence: false,
-      evidence: {
-        ...(c.evidence && typeof c.evidence === 'object' ? c.evidence : {}),
-        source_assertion: LINKED_SOURCE_IOC_ASSERTION,
-        document_has_authoritative_scope: false,
-        linked_source: true,
-        linked_source_id: meta.sourcePublicId || null,
-        linked_source_path: meta.filePath || null,
-        is_direct_source_observable: true,
-        occurrences: Array.isArray(c.evidence?.occurrences)
-          ? c.evidence.occurrences.map((o) => ({
-              ...o,
-              zone: o.zone || 'linked_ioc_source',
-              asserted: true,
-              occurrence_kind: o.occurrence_kind || 'standalone_indicator_row'
-            }))
-          : [
-              {
-                zone: 'linked_ioc_source',
-                asserted: true,
-                occurrence_kind: 'standalone_indicator_row',
-                surrounding_text: c.evidence_text || c.original_value
-              }
-            ]
-      }
-    });
+    out.push(
+      toLinkedSourceCandidate(
+        { ...c, occurrences: Array.isArray(c.evidence?.occurrences) ? c.evidence.occurrences : null, evidence: c.evidence },
+        meta
+      )
+    );
   }
   return out;
+}
+
+/**
+ * Reference instant for STIX `valid_until`: the report's publication date when
+ * known. A pack linked to a report records what the publisher asserted then;
+ * aging an IOC out later is the expiration engine's job, not a reason to drop
+ * it from the report's inventory. Unknown publication date → now.
+ * @param {{ publishedAt?: string|Date|null }} [reportScope]
+ */
+export function stixValidityReference(reportScope = {}) {
+  const t = Date.parse(String(reportScope?.publishedAt || ''));
+  return Number.isFinite(t) ? new Date(t) : new Date();
 }
 
 function typeBreakdownFromCandidates(candidates) {
@@ -247,10 +228,26 @@ export async function parseIocSourceContent(input) {
   }
 
   if (format === 'stix_json') {
-    return finishStixParse(parseStixJsonSource(bodyText), meta, warnings);
+    return finishStixParse(parseStixJsonSource(bodyText, { now: stixValidityReference(meta.reportScope) }), meta, warnings);
   }
   if (format === 'stix_xml') {
     return finishStixParse(parseStixXmlSource(bodyText), meta, warnings);
+  }
+
+  // Tabular / record packs: values come from fields whose meaning is known,
+  // never from a free-text scan of the file (structuredSources.js).
+  if (format === 'csv' || format === 'ndjson') {
+    const parsed = format === 'csv' ? parseCsvIocSource(bodyText, meta) : parseNdjsonIocSource(bodyText, meta);
+    if (!parsed.ok) return { ...parsed, warnings: [...warnings, ...(parsed.warnings || [])] };
+    const candidates = parsed.candidates.filter((c) => !isPublisherReferenceCandidate(c, meta.reportScope));
+    return {
+      ...parsed,
+      candidates,
+      raw_count: parsed.raw_count,
+      unique_count: candidates.length,
+      type_breakdown: typeBreakdownFromCandidates(candidates),
+      warnings: [...warnings, ...(parsed.warnings || [])]
+    };
   }
 
   if (format === 'pdf') {
@@ -279,7 +276,7 @@ export async function parseIocSourceContent(input) {
     document = markdownToCanonicalDocument(input.body || '', { title: input.path || 'IOC source', sourceUrl: input.url });
   } else if (format === 'json') {
     if (looksLikeStixJson(bodyText)) {
-      return finishStixParse(parseStixJsonSource(bodyText), meta, warnings);
+      return finishStixParse(parseStixJsonSource(bodyText, { now: stixValidityReference(meta.reportScope) }), meta, warnings);
     }
     const asText = jsonIndicatorsToText(input.body || '');
     if (!asText) {

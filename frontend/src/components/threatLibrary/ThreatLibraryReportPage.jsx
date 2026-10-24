@@ -1376,6 +1376,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         }
         return;
       }
+      if (err?.response?.data?.code === 'linked_ioc_sources_unresolved') {
+        // Server-enforced (finalizeGuard): extract or dismiss every linked IOC Source first.
+        const ok = await requestConfirm({
+          title: 'Linked IOC Sources are not resolved.',
+          description: err.response.data.message || 'Extract or dismiss every linked IOC Source before finalizing.',
+          confirmLabel: 'Show IOC Sources',
+          cancelLabel: 'Close',
+          variant: 'warning'
+        });
+        if (ok) setView(REPORT_VIEWS.IOC_SOURCES);
+        return;
+      }
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Finalize failed');
     } finally {
       setBusy('');

@@ -16,7 +16,16 @@
 
 import crypto from 'node:crypto';
 import { createManualIoc } from '../manualIocCreate.js';
-import { getThreatLibraryIocSourceId, getReportById, updateReportStatus } from './store.js';
+import { getThreatLibraryIocSourceId, getReportById } from './store.js';
+import {
+  FINALIZE_BLOCKER_CODES,
+  GUARDED_FINALIZE_SQL,
+  LINKED_SOURCE_OPEN_STATUSES,
+  finalizeBlockers,
+  loadReportSources,
+  openLinkedSources,
+  validateSourceOverride
+} from './finalizeGuard.js';
 import {
   buildCreateIocsAuditEvent,
   buildFinalizeAuditEvent,
@@ -725,35 +734,75 @@ async function promoteCandidate(pool, report, candidate, ctx) {
   });
 }
 
+function finalizeRejection(blockers) {
+  const first = blockers[0];
+  const sourceBlocker = blockers.find((b) => b.code === FINALIZE_BLOCKER_CODES.LINKED_SOURCES);
+  const pendingBlocker = blockers.find((b) => b.code === FINALIZE_BLOCKER_CODES.PENDING_REVIEW);
+  return {
+    ok: false,
+    status: 409,
+    code: first.code,
+    error: blockers.map((b) => b.message).join(' '),
+    blockers,
+    ...(pendingBlocker ? { pending_count: pendingBlocker.pending_count } : {}),
+    ...(sourceBlocker ? { linked_sources: sourceBlocker.sources } : {})
+  };
+}
+
 /**
  * Finalize report after review (marks ready/imported without creating IOCs implicitly).
- * Blocked while any actionable indicator is still pending analyst review.
+ * Blocked while any actionable indicator is still pending analyst review, or
+ * while a linked IOC Source is neither extracted nor dismissed
+ * (finalizeGuard.js). The guard is re-checked by the write itself, so a
+ * concurrent candidate / source change cannot bypass it.
+ *
+ * `opts.sourceOverride = { reason }` lets an administrator finalize over
+ * unresolved linked sources; it is audited. Callers that cannot authorize it
+ * (MCP) never pass it.
  */
 export async function finalizeReport(pool, reportId, opts = {}) {
   const report = await getReportById(pool, reportId);
   if (!report) return { ok: false, status: 404, error: 'Report not found' };
   if (!isFinalizeAllowed(report)) return reviewNotReadyError(report);
 
+  const override = validateSourceOverride(opts.sourceOverride, opts.user);
+  if (override && !override.ok) return override;
+
   const { rows: candidates } = await pool.query(
     `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates WHERE report_id = $1`,
     [reportId]
   );
+  const sources = await loadReportSources(pool, reportId);
   const pendingCount = candidates.filter((c) => isPendingActionableCandidate(c)).length;
-  if (pendingCount > 0) {
+  const blockers = finalizeBlockers({ pendingCount, sources, sourceOverride: Boolean(override) });
+  if (blockers.length) return finalizeRejection(blockers);
+
+  const written = await pool.query(GUARDED_FINALIZE_SQL, [reportId, Boolean(override), LINKED_SOURCE_OPEN_STATUSES]);
+  if (!written.rowCount) {
+    // A candidate or source changed between the read and the write.
+    const { rows: fresh } = await pool.query(
+      `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates WHERE report_id = $1`,
+      [reportId]
+    );
+    const freshBlockers = finalizeBlockers({
+      pendingCount: fresh.filter((c) => isPendingActionableCandidate(c)).length,
+      sources: await loadReportSources(pool, reportId),
+      sourceOverride: Boolean(override)
+    });
+    if (freshBlockers.length) return finalizeRejection(freshBlockers);
     return {
       ok: false,
       status: 409,
-      code: 'pending_review_remaining',
-      pending_count: pendingCount,
-      error: `${pendingCount} indicator${pendingCount === 1 ? '' : 's'} still need review.`
+      code: FINALIZE_BLOCKER_CODES.STATE_CHANGED,
+      error: 'The report changed while finalizing; reload and try again.'
     };
   }
-
-  await updateReportStatus(pool, reportId, {
-    import_status: 'ready',
-    analysis_status: 'ready',
-    finalize: true
-  });
-  await emitAudit(opts, buildFinalizeAuditEvent({ report, candidates, user: opts.user }));
+  const sourceOverride = override ? { reason: override.reason, sources: openLinkedSources(sources) } : null;
+  await emitAudit(opts, buildFinalizeAuditEvent({
+    report,
+    candidates,
+    user: opts.user,
+    sourceOverride: sourceOverride && sourceOverride.sources.length ? sourceOverride : null
+  }));
   return { ok: true };
 }

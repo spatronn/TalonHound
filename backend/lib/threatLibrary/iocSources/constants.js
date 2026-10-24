@@ -52,6 +52,9 @@ export const IOC_SOURCE_ELIGIBLE_EXTENSIONS = Object.freeze([
   '.txt',
   '.csv',
   '.json',
+  // Record-per-line packs (Elastic labs-releases ECS indicators).
+  '.ndjson',
+  '.jsonl',
   '.html',
   '.htm',
   '.pdf',

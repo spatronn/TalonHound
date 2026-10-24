@@ -91,8 +91,9 @@ function cand(overrides = {}) {
   };
 }
 
-function createPool({ report = baseReport(), candidates = [], iocs = [], sourceId = 4 } = {}) {
+function createPool({ report = baseReport(), candidates = [], iocs = [], sourceId = 4, linkedSources = [] } = {}) {
   const state = {
+    linkedSources: linkedSources.map((s) => ({ ...s })),
     report: { ...report },
     candidates: candidates.map((c) => ({ ...c, report_id: c.report_id ?? report.id })),
     iocs: [...iocs],
@@ -108,6 +109,18 @@ function createPool({ report = baseReport(), candidates = [], iocs = [], sourceI
       }
       if (flat.includes('FROM threat_reports WHERE id = $1') && /^\s*SELECT/i.test(flat)) {
         return { rows: state.report?.id === params[0] ? [state.report] : [] };
+      }
+      if (/^UPDATE threat_reports r SET/.test(flat)) {
+        // Guarded finalize: the statement re-checks pending rows and open sources.
+        state.writes.push({ sql: flat, params });
+        const open = new Set(params[2] || []);
+        const blockedBySource = params[1] !== true && state.linkedSources.some((s) => open.has(s.lifecycle_status));
+        if (blockedBySource) return { rows: [], rowCount: 0 };
+        state.report.import_status = 'ready';
+        state.report.analysis_status = 'ready';
+        state.report.finalized_at = new Date();
+        state.report.updated_at = new Date();
+        return { rows: [state.report], rowCount: 1 };
       }
       if (/^UPDATE threat_reports SET/.test(flat)) {
         state.writes.push({ sql: flat, params });
@@ -206,7 +219,7 @@ function createPool({ report = baseReport(), candidates = [], iocs = [], sourceI
         if (flat.includes('COUNT(*)')) {
           return { rows: [{ total: 0, discovered_pending: 0, attached: 0, extracted: 0, failed: 0 }] };
         }
-        return { rows: [] };
+        return { rows: state.linkedSources.map((s) => ({ ...s })) };
       }
       if (flat.includes('FROM threat_report_entities')
         || flat.includes('FROM threat_relationships')
@@ -621,4 +634,35 @@ test('reportRevision changes when candidate roster size changes', () => {
   const a = reportRevision(report, [cand({ id: 1 })]);
   const b = reportRevision(report, [cand({ id: 1 }), cand({ id: 2 })]);
   assert.notEqual(a, b);
+});
+
+test('finalize guard parity: an unresolved linked IOC Source blocks MCP preview, gates and write alike', async () => {
+  const sources = [
+    { public_id: 'src-1', lifecycle_status: 'discovered', original_url: 'https://github.com/vendor/iocs/tree/main/campaign' },
+    { public_id: 'src-2', lifecycle_status: 'dismissed', original_url: 'https://vendor.example/ioc.csv' }
+  ];
+  const pool = createPool({ candidates: [cand({ id: 1, review_status: 'approved' })], linkedSources: sources });
+
+  const dry = await mcpThreatLibraryFinalizeReport(pool, { report_id: REPORT_PUBLIC, dry_run: true }, { user: USER });
+  assert.equal(dry.body.would_finalize, false);
+  const dryBlocker = dry.body.blockers.find((b) => b.code === 'linked_ioc_sources_unresolved');
+  assert.ok(dryBlocker);
+  assert.deepEqual(dryBlocker.sources.map((s) => s.public_id), ['src-1']);
+
+  const status = await mcpThreatLibraryGetWorkflowStatus(pool, { report_id: REPORT_PUBLIC });
+  assert.equal(status.body.gates.finalize_permitted, false);
+  assert.ok(status.body.blockers.some((b) => b.code === 'linked_ioc_sources_unresolved' && b.message === dryBlocker.message));
+
+  // MCP cannot override, whatever it sends.
+  const write = await mcpThreatLibraryFinalizeReport(pool, { report_id: REPORT_PUBLIC, linked_source_override: { reason: 'pack is a duplicate of the page tables' } }, { user: { ...USER, role: 'admin' }, audit: { auditLog: async () => {} } });
+  assert.equal(write.status, 409);
+  assert.equal(write.error.code, 'linked_ioc_sources_unresolved');
+  assert.deepEqual(write.error.linked_sources.map((s) => s.public_id), ['src-1']);
+  assert.equal(pool.state.report.finalized_at ?? null, null);
+
+  // Dismissing (audited disposition) or extracting resolves the source.
+  pool.state.linkedSources[0].lifecycle_status = 'extracted';
+  const done = await mcpThreatLibraryFinalizeReport(pool, { report_id: REPORT_PUBLIC }, { user: USER, audit: { auditLog: async () => {} } });
+  assert.equal(done.status, 200);
+  assert.equal(done.body.finalized, true);
 });

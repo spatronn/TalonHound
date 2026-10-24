@@ -17,6 +17,7 @@
  * here matches a vendor, a URL or a specific indicator value.
  */
 
+import { isIPv6 } from 'node:net';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
 import { resolveDottedTokenType } from './candidateTyping.js';
@@ -68,8 +69,12 @@ function embeddedAbsoluteUrl(token) {
  * published and is never an indicator column; an explicit endpoint (ip:port,
  * URL) in the unparsed remainder of a mixed indicator cell is a value of the
  * cell; a cell holding one URL wrapped onto two lines is one value.
+ * v10: a bare IPv6 cell is an IP value (trailing `::` is not punctuation); a
+ * defanged cell spelling reaches the dotted-token resolver; a resolution
+ * column ("Resolved IP", "A record") is an attribute of the row's own
+ * indicator, never an indicator column.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v9';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v10';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -147,13 +152,25 @@ const ATTRIBUTE_COLUMN_HEADER_RE =
   /(?:^|\b)(?:certificate|certificates|cert|certs|code[\s-]*signing|thumbprint|thumbprints|serial(?:\s*(?:number|no))?|signer|signers|signing\s*(?:identity|subject|issuer)|issuer|issued\s*(?:by|to)|imphash|ssdeep|tlsh|sertifika|parmak\s*izi|zertifikat|certificado|сертификат|отпечаток|证书|指纹)(?:\b|$)/i;
 
 /**
+ * Column headers that name what the row's own indicator RESOLVED to ("Resolved
+ * IP", "Resolves to", "A record", "DNS resolution"): a passive-DNS answer for
+ * that domain — often shared CDN addresses — not an address the publisher
+ * attributes to the actor. Publishers list actor IPs in the row's own
+ * indicator column (tl-table-v10).
+ */
+const RESOLUTION_COLUMN_HEADER_RE =
+  /^(?:resolved\s*(?:ips?|ip\s*address(?:es)?|address(?:es)?|to)|resolves?\s*to|resolution|ip\s*resolutions?|dns\s*(?:resolutions?|answers?|records?)|a\s*records?|aaaa\s*records?|passive\s*dns)$/i;
+
+/**
  * Attribute kind of a column header, or null.
  * @param {string|null} header
- * @returns {'certificate'|'fuzzy_hash'|null}
+ * @returns {'certificate'|'fuzzy_hash'|'resolution'|null}
  */
 export function attributeColumnKind(header) {
   const norm = normalizeHeaderLabel(header || '');
-  if (!norm || norm.length > 48 || !ATTRIBUTE_COLUMN_HEADER_RE.test(norm)) return null;
+  if (!norm || norm.length > 48) return null;
+  if (RESOLUTION_COLUMN_HEADER_RE.test(norm)) return 'resolution';
+  if (!ATTRIBUTE_COLUMN_HEADER_RE.test(norm)) return null;
   return /\b(?:imphash|ssdeep|tlsh)\b/.test(norm) ? 'fuzzy_hash' : 'certificate';
 }
 
@@ -276,7 +293,9 @@ const TRAILING_PUNCT_RE = /[,;:.，；。]+$/;
  * @param {{ typeLabel?: string|null }} [ctx] raw row type cell / column label (source semantics)
  */
 function parseToken(token, declared, ctx = {}) {
-  let t = String(token || '').trim().replace(TRAILING_PUNCT_RE, '');
+  let t = String(token || '').trim();
+  // `2001:db8::` ends in colons that are part of the address, not punctuation.
+  if (!isIPv6(t)) t = t.replace(TRAILING_PUNCT_RE, '');
   if (!t) return null;
   let port = null;
   const ep = t.match(IPV4_PORT_CELL_RE);
@@ -307,7 +326,10 @@ function parseToken(token, declared, ctx = {}) {
     // Central typing gate: the row's type label ("Mutex", "Domain", "Class") and
     // the value's own shape decide domain vs technical artifact. The cell text
     // keeps its original case so identifier segmentation is visible.
-    typing = resolveDottedTokenType(t, {
+    // The publisher's own spelling (`EmbersAndBites[.]com`) when it is this
+    // token: a defang marker is a network assertion the resolver must see.
+    const spelled = ctx.sourceToken && refangObservable(ctx.sourceToken) === t ? ctx.sourceToken : t;
+    typing = resolveDottedTokenType(spelled, {
       surroundingText: '',
       typeLabel: ctx.typeLabel || null,
       declaredType: declared ? declared.type : null,
@@ -377,7 +399,7 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   // "payload.exe" on the next line): one value; `raw` keeps the cell as written.
   const refanged = refangObservable(joinWrappedUrlTail(source) || source);
   if (!refanged) return { values: [], rejected: [], reason: 'empty_indicator' };
-  const whole = parseToken(refanged, declared, ctx);
+  const whole = parseToken(refanged, declared, { ...ctx, sourceToken: source });
   // One value only when the parsed identity carries no whitespace: a cell that
   // lists several values ("H1 H2", "<br>"-separated) is split below, never
   // accepted as one spaced "hash".
@@ -401,7 +423,7 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
     const rawTok = refangedTokens[i];
     if (!rawTok || isInlineTypeLabelToken(rawTok)) continue;
     let tok = rawTok;
-    let parsed = parseToken(tok, declared, ctx);
+    let parsed = parseToken(tok, declared, aligned ? { ...ctx, sourceToken: sourceTokens[i] } : ctx);
     // "(SHA-256", "<hash>)": brackets around a value or a bare type label.
     if (!parsed?.ok) {
       const stripped = rawTok.replace(WRAPPING_PUNCT_RE, '');

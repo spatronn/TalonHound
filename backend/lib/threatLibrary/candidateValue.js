@@ -5,6 +5,7 @@
  * imports so documentZones → tableSemantics → candidateValue has no cycle.
  */
 
+import { isIPv6 } from 'node:net';
 import { normalizeObservable } from '../observable-normalization.js';
 import { normalizeIpAddress, isValidIpAddress, validatePublicIp } from '../publicIp.js';
 import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
@@ -186,7 +187,9 @@ export function normalizeCandidateValue(raw, hintType = null) {
     };
   }
 
-  let inferred = hintType || inferObservableType(refanged);
+  // A bare IPv6 address is an IP, never a hostname: the shared manual-create
+  // inference only recognises dotted IPv4 (typed table cells reach here unhinted).
+  let inferred = hintType || (isIPv6(refanged) ? 'ip' : inferObservableType(refanged));
   if (hintType === 'ipv6') inferred = 'ip';
   if (hintType === 'cidr') inferred = 'cidr';
 
