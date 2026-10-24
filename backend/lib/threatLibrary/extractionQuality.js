@@ -65,8 +65,19 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * v9 (31-report audit): under the section-tree engine the reported MODE is
  * the tree's authoritative-scope decision (the one membership uses), not the
  * legacy linear document scope.
+ * v10 (30-report audit): checks grounded in the confirmed failure categories.
+ * Check 19 lists directory URLs excluded as incomplete prefixes although the
+ * publisher listed them in an IOC section; check 20 lists table reference-
+ * column values kept as context and warns on an Indicator read from a
+ * reference-labelled column; check 21 warns on a file-hash Indicator whose own
+ * row / sentence calls the digest a key, certificate, fingerprint or banner
+ * hash; check 22 reports a downloadable IOC package the publisher announces
+ * (overlaid at read time when no IOC Source was discovered); post-merge check
+ * 23 warns when the model demoted rows of a table whose sibling rows of the
+ * same type are Indicators. A typed-artifact cell value no longer counts as a
+ * dropped explicit-table row.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v9';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v10';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -136,8 +147,31 @@ export const QUALITY_CODES = Object.freeze({
   /** Model malicious / suspicious labels without publisher support, not applied (check 17). */
   AI_ESCALATION_UNSUPPORTED: 'ai_escalation_unsupported',
   /** Candidates assessed malicious that are not report Indicators (check 18, explains suppression). */
-  MALICIOUS_ASSESSED_NON_MEMBERS: 'malicious_assessed_non_members'
+  MALICIOUS_ASSESSED_NON_MEMBERS: 'malicious_assessed_non_members',
+  /** Directory URLs excluded as incomplete prefixes although listed in an IOC section (check 19). */
+  IOC_SECTION_URL_PREFIX_EXCLUDED: 'ioc_section_url_prefix_excluded',
+  /** Table reference-column values (tool homepage / download / source links) kept as context (check 20). */
+  REFERENCE_COLUMN_CONTEXT: 'reference_column_values_context',
+  /** An Indicator read only from a table column whose header names a reference / source / download link (check 20). */
+  REFERENCE_COLUMN_INDICATOR: 'reference_column_indicator',
+  /** A file-hash Indicator whose own row or sentence calls the digest a key / certificate / fingerprint / banner hash (check 21). */
+  NON_FILE_DIGEST_SUSPECT: 'non_file_digest_indicator_suspect',
+  /** The publisher announces a downloadable IOC package (STIX / JSON / CSV / repository) (check 22). */
+  IOC_PACKAGE_ANNOUNCED: 'ioc_package_announced',
+  /** Model-demoted table rows beside Indicator rows of the same table and type (post-merge check 23). */
+  AI_DEMOTED_TABLE_ROWS: 'ai_demoted_table_rows'
 });
+
+/** A table column header that names where something is published (check 20). */
+const REFERENCE_HEADER_RE =
+  /^(?:sources?|references?|refs?|downloads?|download\s+(?:link|links|url|urls|page|location)|(?:tool\s+)?home\s*pages?|projects?|project\s+(?:page|url|site|link)s?|repository|repositories|repos?|websites?)$/i;
+/** Non-file digest vocabulary written next to a hash (check 21). */
+const NON_FILE_DIGEST_WORDS_RE =
+  /\b(?:(?:public|private|host|server|ssh)\s+(?:[a-z0-9-]+\s+){0,2}keys?|fingerprints?|thumbprints?|certificates?|serial\s+(?:number|no)|banner[\s_-]*\d*[\s_-]*hash|jarm|ja3s?|ja4|imphash|ssdeep|tlsh|build[\s-]*id)\b/i;
+const FILE_SUBJECT_RE = /\b(?:file|sample|binary|executable|payload|dll|exe|loader|dropper|implant|script|archive|installer|malware|backdoor|trojan|ransomware|encryptor)\b/i;
+/** A downloadable IOC package announced in the document text (check 22). */
+const IOC_PACKAGE_LEAD_IN_RE =
+  /\b(?:a\s+downloadable\s+(?:copy|list|version|file|set)\s+of\s+(?:the\s+)?(?:[\w.,]+\s+){0,3}(?:iocs?|indicators?)|downloadable\s+iocs?|(?:iocs?|indicators?|observables)\s+(?:are|is)\s+(?:also\s+)?available\s+(?:for\s+download|in\s+(?:stix|json|csv|ecs|misp|txt))|available\s+for\s+download\s+in\s+(?:both\s+)?(?:ecs|stix|json|csv|misp))\b/i;
 
 /**
  * Every threshold the checks use. Values are minimums of distinct identities
@@ -901,6 +935,81 @@ export function assessExtractionQuality(input) {
     });
   }
 
+  // --- 19. Directory URLs excluded as incomplete prefixes inside an IOC section ---
+  const prefixExcluded = candidates.filter((c) => c.incomplete_url_prefix === true &&
+    (c.occurrences || []).some((o) => STRONG_IOC_ZONES.has(String(o.zone || ''))));
+  if (prefixExcluded.length) {
+    push({
+      code: QUALITY_CODES.IOC_SECTION_URL_PREFIX_EXCLUDED,
+      severity: 'info',
+      explanation: `${prefixExcluded.length} URL(s) ending in "/" are listed inside a publisher IOC section but were excluded as ` +
+        'incomplete path prefixes of longer sibling URLs (they are not single-value IOC rows). Confirm the publisher did not ' +
+        'intend the directory itself as an indicator.',
+      candidates: prefixExcluded.map(identity).sort(),
+      block_ids: prefixExcluded.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+
+  // --- 20. Table reference columns (tool homepage / download / source links) ---
+  const referenceContext = candidates.filter((c) => c.policy_decision === 'context_only_reference_column');
+  if (referenceContext.length) {
+    push({
+      code: QUALITY_CODES.REFERENCE_COLUMN_CONTEXT,
+      severity: 'info',
+      explanation: `${referenceContext.length} link(s) from a table reference column (where a listed tool is published) were ` +
+        'kept as Context Only, not as actor infrastructure.',
+      candidates: referenceContext.map(identity).sort(),
+      block_ids: referenceContext.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+  const referenceMembers = candidates.filter((c) => c.__member &&
+    (c.table_rows || []).length > 0 &&
+    (c.table_rows || []).every((r) => REFERENCE_HEADER_RE.test(String(r.column_header || '').trim())));
+  if (referenceMembers.length) {
+    push({
+      code: QUALITY_CODES.REFERENCE_COLUMN_INDICATOR,
+      severity: 'warning',
+      explanation: `${referenceMembers.length} Indicator(s) come only from a table column whose header names a reference / ` +
+        'source / download link; check that the publisher attributes them to the actor rather than citing where a tool is published.',
+      candidates: referenceMembers.map(identity).sort(),
+      block_ids: referenceMembers.flatMap((c) => (c.table_rows || []).map((r) => r.table_id)).filter(Boolean)
+    });
+  }
+
+  // --- 21. File-hash Indicators described as keys / certificates / fingerprints / banner hashes ---
+  const digestSuspects = candidates.filter((c) => {
+    if (!c.__member || !HASH_TYPES.has(String(c.candidate_type))) return false;
+    const texts = [
+      ...(c.table_rows || []).map((r) => r.description || ''),
+      ...(c.occurrences || []).map((o) => o.surrounding_text || '')
+    ].filter(Boolean);
+    return texts.some((t) => NON_FILE_DIGEST_WORDS_RE.test(t) && !FILE_SUBJECT_RE.test(t.replace(NON_FILE_DIGEST_WORDS_RE, ' ')));
+  });
+  if (digestSuspects.length) {
+    push({
+      code: QUALITY_CODES.NON_FILE_DIGEST_SUSPECT,
+      severity: 'warning',
+      explanation: `${digestSuspects.length} file-hash Indicator(s) sit in a row / sentence that calls the digest a key, ` +
+        'certificate, fingerprint or banner hash and names no file; such digests identify no sample, review the hash type.',
+      candidates: digestSuspects.map(identity).sort(),
+      block_ids: digestSuspects.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+
+  // --- 22. Downloadable IOC package announced by the publisher ---
+  const packageBlocks = blocks.filter((b) => IOC_PACKAGE_LEAD_IN_RE.test(refangTextForExtraction(String(b.text || ''))));
+  if (packageBlocks.length) {
+    push({
+      code: QUALITY_CODES.IOC_PACKAGE_ANNOUNCED,
+      severity: 'info',
+      explanation: 'The publisher announces a downloadable IOC package (STIX / JSON / CSV / repository). It may hold indicators ' +
+        'or hash types the page does not list; it is reviewed as a linked IOC Source (never ingested automatically).',
+      candidates: [],
+      block_ids: packageBlocks.map((b) => b.id),
+      evidence: evidenceFor(packageBlocks.map((b) => b.id))
+    });
+  }
+
   warnings.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.code.localeCompare(b.code));
   const counts = { high: 0, warning: 0, info: 0 };
   for (const w of warnings) counts[w.severity] += 1;
@@ -1031,7 +1140,8 @@ export function withReplayMembershipDivergence(quality, input) {
 const POST_MERGE_CODES = Object.freeze([
   QUALITY_CODES.AI_EVIDENCE_UNGROUNDED,
   QUALITY_CODES.AI_ESCALATION_UNSUPPORTED,
-  QUALITY_CODES.MALICIOUS_ASSESSED_NON_MEMBERS
+  QUALITY_CODES.MALICIOUS_ASSESSED_NON_MEMBERS,
+  QUALITY_CODES.AI_DEMOTED_TABLE_ROWS
 ]);
 
 /**
@@ -1063,6 +1173,26 @@ export function assessPostMergeQuality(candidates) {
       severity: 'warning',
       explanation: `${unsupported.length} model malicious / suspicious label(s) cite no publisher text naming the value and were not applied.`,
       candidates: unsupported.map(identityOf).sort()
+    });
+  }
+  // Check 23: a model Context Only decision on table rows whose sibling rows
+  // (same table, same type) are Indicators: the MODE B split where a
+  // structured inventory degraded to row-by-row model reading.
+  const tableIdsOf = (c) => [...new Set((c.occurrences || [])
+    .filter((o) => o.block_type === 'table' || o.form === 'table_row')
+    .map((o) => o.block_id)
+    .filter(Boolean))];
+  const memberTables = new Set();
+  for (const c of list) if (memberOf(c)) for (const t of tableIdsOf(c)) memberTables.add(`${t}\0${c.candidate_type}`);
+  const demotedRows = list.filter((c) => c.decision_source === 'ai' && c.assessment === 'context_only' && c.is_ioc !== false &&
+    !memberOf(c) && tableIdsOf(c).some((t) => memberTables.has(`${t}\0${c.candidate_type}`)));
+  if (demotedRows.length) {
+    out.push({
+      code: QUALITY_CODES.AI_DEMOTED_TABLE_ROWS,
+      severity: 'warning',
+      explanation: `${demotedRows.length} table row value(s) were set to Context Only by the model while other rows of the same ` +
+        'table and type are Indicators. A publisher inventory read row by row can split arbitrarily: review the table as a whole.',
+      candidates: demotedRows.map(identityOf).sort()
     });
   }
   const suppressed = list.filter((c) =>

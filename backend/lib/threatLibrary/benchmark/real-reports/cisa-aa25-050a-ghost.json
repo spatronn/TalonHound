@@ -1,0 +1,305 @@
+{
+ "id": "real-cisa-aa25-050a-ghost",
+ "title": "#StopRansomware: Ghost (Cring) Ransomware | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "7cd1886d98604b35609ab0a74e837840d8184cbb637338bd28e9855e233108fc",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-050a",
+  "talonhound_report_id": "02d47884-6510-48c5-bd86-37a5d8409e09",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "Table 1 Tools Leveraged: Source column = public open-source project links (provenance), not actor infrastructure; ransom emails unsupported type",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "md5",
+    "value": "0a5c4ad3ec240fbfd00bdc1d36bd54eb",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "29e44e8994197bdb0c2be6fc5dfc15c2",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "34b3009590ec2d361f07cac320671410",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "625bd7275e1892eac50a22f8b4a6355d",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "a2fd181f57548c215ac6891d000ec6b9",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "ac58a214ce7deb3a578c10b97f93d9c3",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "c3b8f6d102393b4542e9f951c9435255",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "c5d712f82d5d37bb284acd4468ab3533",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "c9e35b5c1dc8856da25965b385a26ec4",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "d1c5e7b8e937625891707f8b4b594314",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "d9c019182d88290e5489cdf3b607f982",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "db38ef2e3d4d8cb785df48f458b35090",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "ef6a213f59f3fbee2894bd6734bbaed2",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   },
+   {
+    "type": "md5",
+    "value": "ff52fdf84448277b1bc121f592f753c5",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Ghost (Cring) Ransomware > Indicators of Compromise (IOC)"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "url",
+    "value": "github.com/BeichenDream/BadPotato",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/BeichenDream/Chunk-Proxy/blob/main/proxy.aspx",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/BeichenDream/GodPotato",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/BronzeTicket/SharpNBTScan",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/EddieIvan01/iox",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/k8gege/Ladon",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/leitosama/SharpZeroLogon",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "github.com/mitchmoser/SharpShares",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   },
+   {
+    "type": "url",
+    "value": "rejitto.com/hfs",
+    "rationale": "Table 1 \"Tools Leveraged by Ghost Actors\" Source column: public tool project pages (provenance), not actor infrastructure."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [
+   {
+    "type": "email",
+    "value": "asauribe@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "cringghost@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "crptbackup@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "d3crypt@onionmail.org"
+   },
+   {
+    "type": "email",
+    "value": "d3svc@tuta.io"
+   },
+   {
+    "type": "email",
+    "value": "eternalnightmare@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "evilcorp@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "fileunlock@onionmail.org"
+   },
+   {
+    "type": "email",
+    "value": "fortihooks@protonmail.com"
+   },
+   {
+    "type": "email",
+    "value": "genesis1337@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "ghost1998@tutamail.com"
+   },
+   {
+    "type": "email",
+    "value": "ghostbackup@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "ghosts1337@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "ghosts1337@tuta.io"
+   },
+   {
+    "type": "email",
+    "value": "ghostsbackup@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "hsharada@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "just4money@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "kellyreiff@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "kev1npt@tuta.io"
+   },
+   {
+    "type": "email",
+    "value": "lockhelp1998@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "r.heisler@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "rainbowforever@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "rainbowforever@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "retryit1998@mailfence.com"
+   },
+   {
+    "type": "email",
+    "value": "retryit1998@tutamail.com"
+   },
+   {
+    "type": "email",
+    "value": "rsacrpthelp@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "rsahelp@protonmail.com"
+   },
+   {
+    "type": "email",
+    "value": "sdghost@onionmail.org"
+   },
+   {
+    "type": "email",
+    "value": "shadowghost@skiff.com"
+   },
+   {
+    "type": "email",
+    "value": "shadowghosts@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "summerkiller@mailfence.com"
+   },
+   {
+    "type": "email",
+    "value": "summerkiller@tutanota.com"
+   },
+   {
+    "type": "email",
+    "value": "webroothooks@tutanota.com"
+   }
+  ],
+  "sections": []
+ }
+}

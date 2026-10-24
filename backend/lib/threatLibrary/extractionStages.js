@@ -410,9 +410,11 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
     const grounding = blocks ? groundAiCandidateUpdate(existing, u, blocks, { disclaimer }) : null;
     const escalates = ESCALATING_ASSESSMENTS.has(String(u.assessment || '').toLowerCase());
     // An unsupported model claim never escalates a candidate: a malicious /
-    // suspicious label needs real publisher text naming the value. Demotions
-    // (context only, benign roles) are conservative and still apply.
-    const applyAssessment = !grounding || grounding.supported || !escalates;
+    // suspicious label needs real publisher text naming the value. A demotion
+    // (context only, benign roles) needs grounded publisher text too: a model
+    // decision resting on a fabricated quote / missing block never overrides
+    // the deterministic reading (tl-evidence-integrity-v3).
+    const applyAssessment = !grounding || (escalates ? grounding.supported : grounding.grounded !== false);
     applyEvidencePolicy(existing, applyAssessment
       ? { assessment: u.assessment, role: u.role || existing.role, confidence: u.confidence ?? existing.confidence }
       : null);
@@ -426,7 +428,9 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
       supported: grounding ? grounding.supported : null,
       ...(grounding && grounding.supported === false
         ? { unsupported_reason: grounding.publisher_disclaimer ? 'publisher_disclaimer' : grounding.assertive === false ? 'no_publisher_assertion' : 'ungrounded_citation' }
-        : {}),
+        : grounding && grounding.grounded === false
+          ? { unsupported_reason: 'ungrounded_citation' }
+          : {}),
       applied: applyAssessment,
       integrity_version: EVIDENCE_INTEGRITY_VERSION
     };

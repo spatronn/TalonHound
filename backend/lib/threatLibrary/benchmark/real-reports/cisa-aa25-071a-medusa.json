@@ -1,0 +1,228 @@
+{
+ "id": "real-cisa-aa25-071a-medusa",
+ "title": "#StopRansomware: Medusa Ransomware | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "3af097290e3345dada9f7392f81bd3304789c631886eb02ec1cd9dbfd854f491",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-071a",
+  "talonhound_report_id": "2221baf9-fe12-44b7-a450-7e7eee61b3b0",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "erp.ranasons.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "143.110.243.154",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "143.244.47.89",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "146.70.172.247",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.69",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.71",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "167.88.166.173",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.135.86.185",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.238.231.16",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.238.231.4",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.238.231.77",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.238.231.85",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.238.231.98",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "23.234.106.242",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "23.234.89.195",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "23.234.93.112",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "37.19.21.180",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "37.221.66.239",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "83.138.53.139",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Technical Details > Stealth"
+   },
+   {
+    "type": "ip",
+    "value": "85.155.186.121",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "94.156.67.145",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "md5",
+    "value": "2c7f328feeb94608aaaf99ec70cb0323",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "md5",
+    "value": "44370f5c977e415981febf7dbb87a85c",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "md5",
+    "value": "4d0b6e3c9c33550a005e41663a1977cb",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "md5",
+    "value": "8f11d9067da087cb4185fa804caac2df",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "md5",
+    "value": "d796259c44be852327623fd2e40c47f2",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "md5",
+    "value": "eb05429d25fc57b476428cdb0a134b2f",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "sha1",
+    "value": "2df705c9be0465f1c73a9f5d35147723deb16b5e",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://45.61.150.94:8000/storm.exe",
+    "assertion": "explicit",
+    "evidence": "IOC table row: http//45.61.150[.]94:8000/storm[.]exe | URL | SimpleHelp agent was downloaded"
+   },
+   {
+    "type": "url",
+    "value": "https://3324.requestcatcher.com/hihi",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Medusa Ransomware > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "ip",
+    "value": "45.61.150.94",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

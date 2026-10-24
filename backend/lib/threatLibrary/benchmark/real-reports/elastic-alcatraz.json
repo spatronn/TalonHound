@@ -1,0 +1,48 @@
+{
+ "id": "real-elastic-alcatraz",
+ "title": "De-obfuscating ALCATRAZ",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "9242e603e2c09d5c1344eb6e41dd661746e60aac74bdbf04f9874a473359eae4",
+  "url": "https://www.elastic.co/security-labs/threat-command/deobfuscating-alcatraz",
+  "talonhound_report_id": "c24ecf32-1fcc-4504-8a54-6681506aa9ea",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "sha256",
+    "value": "3050c464360ba7004d60f3ea7ebdf85d9a778d931fbf1041fa5867b930e1f7fd",
+    "assertion": "explicit",
+    "evidence": "De-obfuscating ALCATRAZ > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

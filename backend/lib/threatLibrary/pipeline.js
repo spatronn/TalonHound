@@ -320,11 +320,40 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     });
     const { extractionChanged, shouldReuseCandidates } = reuse;
 
+    // Retry / Re-run AI under an unchanged document and extraction contract:
+    // the deterministic reading is re-derived from the stored document. Same
+    // contract + same document ⇒ the same identities as the stored rows, so
+    // completed AI chunks stay valid, while the candidate set carries the same
+    // evidence metadata (scope engine, section tree, type resolution) and the
+    // same quality record as a first analysis. Stored rows are the fallback
+    // only when the re-read identities differ (never silently mixed).
+    let reusedReextraction = null;
     if (shouldReuseCandidates) {
+      reusedReextraction = rereadForReuse(report, document, previousRows);
+      if (!reusedReextraction) {
+        log.warn('retry re-extraction identities differ from stored rows; reusing stored rows', { reportId: report.id });
+      }
+    }
+
+    if (shouldReuseCandidates && !reusedReextraction) {
       candidates = await loadReportCandidatesForAnalysis(pool, report.id);
       progressCarry.candidate_extraction_version =
         progressCarry.candidate_extraction_version || THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
       log.info('reusing candidates', {
+        reportId: report.id,
+        count: candidates.length,
+        ...summarizeCandidateSet(candidates)
+      });
+    } else if (reusedReextraction) {
+      // In memory only: stored rows (and any model decisions they carry) are
+      // not rewritten before the model stage; the atomic outcome writes them.
+      document = reusedReextraction.document;
+      candidates = preserveAnalystCandidates(reusedReextraction.candidates, previousRows, { carryStoredMatch: true });
+      extractionDiagnostics = reusedReextraction.diagnostics;
+      freshExtraction = true;
+      progressCarry.candidate_extraction_version = THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
+      progressCarry.extraction_diagnostics = compactExtractionDiagnostics(extractionDiagnostics);
+      log.info('reusing candidates (re-read from stored document)', {
         reportId: report.id,
         count: candidates.length,
         ...summarizeCandidateSet(candidates)
@@ -842,6 +871,26 @@ export function mergeAnalysisProgress(carry, extra = {}) {
     out.extraction_diagnostics = carry.extraction_diagnostics;
   }
   return out;
+}
+
+/**
+ * Deterministic re-read of the stored document for a candidate-reusing run.
+ * Returns the extraction when its original-document identities equal the
+ * stored original-document rows, else null (the caller keeps the stored rows).
+ * @param {object} report
+ * @param {object} document
+ * @param {object[]} previousRows persisted candidate rows
+ */
+export function rereadForReuse(report, document, previousRows) {
+  const extracted = extractReportCandidates(report, document);
+  const key = (c) => `${c.candidate_type}\0${c.normalized_value}`;
+  const fresh = new Set(extracted.candidates.map(key));
+  const stored = new Set(
+    (previousRows || []).filter((r) => r.has_original_document_occurrence !== false).map(key)
+  );
+  if (fresh.size !== stored.size) return null;
+  for (const k of fresh) if (!stored.has(k)) return null;
+  return extracted;
 }
 
 export function decideCandidateReuse(input) {

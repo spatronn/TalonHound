@@ -1,0 +1,138 @@
+{
+ "id": "real-elastic-shelby-strategy",
+ "title": "The Shelby Strategy",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "e6b7ece9922d26df9f869696a16c2a0e6db9bbe0b03b1ec6e1dfe6988fb5ad40",
+  "url": "https://www.elastic.co/security-labs/threat-command/the-shelby-strategy",
+  "talonhound_report_id": "65956244-0513-4706-bc08-55a8f13e6e0d",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "arthurshelby.click",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > SHELBYLOADER code analysis > DNS-Based Keying Mechanism"
+   },
+   {
+    "type": "domain",
+    "value": "speed-test.click",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "ip",
+    "value": "172.86.68.55",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "ip",
+    "value": "195.16.74.138",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "ip",
+    "value": "2.56.126.151",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "ip",
+    "value": "2.56.126.157",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "ip",
+    "value": "2.56.126.188",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "0354862d83a61c8e69adc3e65f6e5c921523eff829ef1b169e4f0f143b04091f",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "0e25efeb4e3304815f9e51c1d9bd3a2e2a23ece3a32f0b47f829536f71ead17a",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "472e685e7994f51bbb259be9c61f01b8b8f35d20030f03215ce205993dbad7f5",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "5c384109d3e578a0107e8518bcb91cd63f6926f0c0d0e01525d34a734445685c",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "e51c6f0fbc5a7e0b03a0d6e1e1d26ab566d606b551c785bf882e9a02f04c862b",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "fb8d4c24bcfd853edb15c5c4096723b239f03255f17cec42f2d881f5f31b6025",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "feb5d225fa38efe2a627ddfbe9654bf59c171ac0742cd565b7a5f22b45a4cc3a",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > REF8685 campaign analysis"
+   },
+   {
+    "type": "url",
+    "value": "github.com/arturshellby",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   },
+   {
+    "type": "url",
+    "value": "github.com/johnshelllby",
+    "assertion": "explicit",
+    "evidence": "The Shelby Strategy > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

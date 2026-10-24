@@ -1,0 +1,94 @@
+{
+ "id": "real-cisa-aa24-131a-black-basta",
+ "title": "#StopRansomware: Black Basta | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "c92a23c6f9456e9fc69f35881ced02f84870222134b4e0a64a03acf4fb5964c8",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-131a",
+  "talonhound_report_id": "2cc50b2d-494c-482d-9baa-a66d4138c7f3",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "exckicks.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Black Basta > Indicators of Compromise"
+   },
+   {
+    "type": "domain",
+    "value": "moereng.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Black Basta > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "170.130.165.73",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Black Basta > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.11.181.44",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Black Basta > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "66.42.118.54",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Black Basta > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "79.132.130.211",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Black Basta > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "domain",
+    "value": "blackberry.com",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "domain",
+    "value": "cisa.gov",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [
+   {
+    "type": "email",
+    "value": "report@cisa.gov"
+   }
+  ],
+  "sections": []
+ }
+}

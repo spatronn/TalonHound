@@ -211,7 +211,11 @@ export function summarizeOccurrenceEvidence(candidate) {
   if (!zones.length && candidate.zone) zones.push(candidate.zone);
 
   const annotated = occ.some((o) => o.asserted != null || o.occurrence_kind != null);
-  const strongZoneOcc = occ.filter((o) => STRONG_IOC_ZONES.has(String(o.zone || o.section_kind || '')));
+  // A value read from a table's reference / prose cell never carries the
+  // section's authority by itself (tl-candidates-v37).
+  const strongZoneOcc = occ.filter(
+    (o) => o.reference_cell !== true && o.description_cell !== true && STRONG_IOC_ZONES.has(String(o.zone || o.section_kind || ''))
+  );
   const assertedOcc = annotated ? strongZoneOcc.filter((o) => o.asserted === true) : strongZoneOcc;
   const hasStrong = occ.length ? assertedOcc.length > 0 : zones.some((z) => STRONG_IOC_ZONES.has(z));
   const hasStrongZoneNarrative = annotated && strongZoneOcc.some((o) => o.asserted !== true);
@@ -464,7 +468,25 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     occs.length > 0 &&
     occs.every((o) => String(o?.zone_reason || '') === 'legitimate_service_list') &&
     !summary.hasStrong;
-  if (onlyEmailDomain) {
+  // Values that exist only in a table's reference column ("Source" /
+  // "Download" / "Homepage" of a tool row): where the subject is published,
+  // not an observable the publisher attributes to the actor (tl-table-v9).
+  // Values only in a row's prose cell that never asserted them (no role
+  // clause, or not an explicit IOC table) are row context (tl-candidates-v37).
+  const onlyReferenceCells = occs.length > 0 && occs.every((o) => o?.reference_cell === true || o?.description_cell === true);
+  if (onlyReferenceCells && !reportSource) {
+    candidate.assessment = 'context_only';
+    candidate.role = 'reference';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = occs.every((o) => o?.reference_cell === true)
+      ? 'context_only_reference_column'
+      : 'context_only_table_description';
+    candidate.source_assertion = SOURCE_ASSERTIONS.REFERENCE_ONLY;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
+  } else if (onlyEmailDomain) {
     candidate.assessment = 'context_only';
     candidate.role = 'reference';
     candidate.match_state = 'context_only';
@@ -729,7 +751,11 @@ export function buildCandidateEvidenceRecord(c) {
     zone_reason: o.zone_reason || undefined,
     scope_opening_id: o.scope_opening_id || undefined,
     typing_reason: o.typing_reason || undefined,
-    list_stance: o.list_stance || undefined
+    list_stance: o.list_stance || undefined,
+    // A value read from a table reference column (tool homepage / download link).
+    reference_cell: o.reference_cell === true ? true : undefined,
+    // A value read from a table row's prose (description) cell, not asserted.
+    description_cell: o.description_cell === true ? true : undefined
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
     table_id: r.table_id || null,
@@ -797,6 +823,8 @@ export function buildCandidateEvidenceRecord(c) {
     scope_engine_version: c.scope_engine_version || null,
     section_tree_version: c.section_tree_version || null,
     reserved_address: c.reserved_address === true || undefined,
+    // Gate 0 provenance: survives a reused-row rewrite (Retry parity).
+    incomplete_url_prefix: c.incomplete_url_prefix === true || undefined,
     rfc_example: c.rfc_example === true || undefined,
     non_actionable_local: c.non_actionable_local === true || undefined,
     parsed: c.parsed && typeof c.parsed === 'object' ? c.parsed : {},

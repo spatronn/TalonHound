@@ -26,8 +26,12 @@
  * indicators opens publisher indicator scope with delegated-authority reading
  * (operational clauses, sample statements, endpoints and rows assert; passing
  * mentions do not).
+ * v8 (30-report audit): a heading whose first content blocks caption an
+ * actor-attributed hash inventory ("Table 3. Files Used by <X> Ransomware
+ * Actors (SHA-256)" over a File Name | Hash table) declares indicator scope
+ * the same way; a caption that calls the files legitimate / dual-use does not.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v7';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v8';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';

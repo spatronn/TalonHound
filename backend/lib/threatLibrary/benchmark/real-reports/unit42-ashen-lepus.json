@@ -1,0 +1,228 @@
+{
+ "id": "real-unit42-ashen-lepus",
+ "title": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New AshTag Malware Suite",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "d8a5db76b77e967a1f2b3c4bda0567075b6f3200ecae4afc598ccf924e5dfbde",
+  "url": "https://unit42.paloaltonetworks.com/hamas-affiliate-ashen-lepus-uses-new-malware-suite-ashtag",
+  "talonhound_report_id": "8d318404-5825-4cd2-a48f-27b12ffb82f6",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "account.techupinfo.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Loaders Variant #1"
+   },
+   {
+    "type": "domain",
+    "value": "api.healthylifefeed.com",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Breaking Down Ashen Lepus’s Recent Campaign Developments > C2 Architecture Evolution"
+   },
+   {
+    "type": "domain",
+    "value": "api.medicinefinders.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Loaders Variant #1"
+   },
+   {
+    "type": "domain",
+    "value": "api.softmatictech.com",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Breaking Down Ashen Lepus’s Recent Campaign Developments > C2 Architecture Evolution"
+   },
+   {
+    "type": "domain",
+    "value": "api.systemsync.info",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Loaders Variant #2"
+   },
+   {
+    "type": "domain",
+    "value": "api.technology-system.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Exfiltration Server"
+   },
+   {
+    "type": "domain",
+    "value": "api.widetechno.info",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Loaders Variant #2"
+   },
+   {
+    "type": "domain",
+    "value": "apiv2.onlinefieldtech.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Loaders Variant #1"
+   },
+   {
+    "type": "domain",
+    "value": "auth.onlinefieldtech.com",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Breaking Down Ashen Lepus’s Recent Campaign Developments > C2 Architecture Evolution"
+   },
+   {
+    "type": "domain",
+    "value": "forum.technoforts.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Backdoor"
+   },
+   {
+    "type": "domain",
+    "value": "forum.techtg.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Backdoor"
+   },
+   {
+    "type": "domain",
+    "value": "status.techupinfo.com",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > C2 Domains > Loaders Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "1f3bd755de24e00af2dba61f938637d1cc0fbfd6166dba014e665033ad4445c0",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > RAR Archives"
+   },
+   {
+    "type": "sha256",
+    "value": "2d71d7e6ffecab8eefa2d6a885bcefe639fca988bdcac99e9b057e61698a1fd6",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "30490ba95c42cefcca1d0328ea740e61c26eaf606a98f68d26c4a519ce918c99",
+    "assertion": "explicit",
+    "evidence": "mas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenOrchestrator"
+   },
+   {
+    "type": "sha256",
+    "value": "3502c9e4896802f069ef9dcdba2a7476e1208ece3cd5ced9f1c4fd32d4d0d768",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > RAR Archives"
+   },
+   {
+    "type": "sha256",
+    "value": "3d445c25752f86c65e03d4ebed6d563d48a22e424ba855001ad2db2290bf564c",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > RAR Archives"
+   },
+   {
+    "type": "sha256",
+    "value": "4e1f7b48249dd5bf3a857d5d017f0b88c0372749fa156f5456056767c5548345",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > RAR Archives"
+   },
+   {
+    "type": "sha256",
+    "value": "66ab29d2d62548faeaeadaad9dd62818163175872703fda328bb1b4894f5e69e",
+    "assertion": "explicit",
+    "evidence": "Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshTag Module Designated as \"SN\""
+   },
+   {
+    "type": "sha256",
+    "value": "6bd3d05aef89cd03d6b49b20716775fe92f0cf8a3c2747094404ef98f96e9376",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenStager"
+   },
+   {
+    "type": "sha256",
+    "value": "739a5199add1d970ba22d69cc10b4c3a13b72136be6d45212429e8f0969af3dc",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #2"
+   },
+   {
+    "type": "sha256",
+    "value": "7e5769cd8128033fc933fbf3346fe2eb9c8e9fc6aa683546e9573e7aa01a8b6b",
+    "assertion": "explicit",
+    "evidence": "Hamas-Affiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > RAR Archives"
+   },
+   {
+    "type": "sha256",
+    "value": "8870bd358d605a5685a5f9f7785b5fee5aebdcb20e4e62153623f764d7366a3c",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "8c44fa9bf68341c61ccaca0a3723945543e2a04d9db712ae50861e3fa6d9cc98",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "a17858f40ff506d59b5ee1ba2579da1685345206f2c7d78cb2c9c578a0c4402b",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "b00491dc178a3d4f320951bccb17eb85bfef23e718b4b94eb597c90b5b6e0ba2",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #2"
+   },
+   {
+    "type": "sha256",
+    "value": "e71a292eafe0ca202f646af7027c17faaa969177818caf08569bd77838e93064",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #2"
+   },
+   {
+    "type": "sha256",
+    "value": "ebe3b6977f66be30a22c2aff9b50fec8529dfa46415ea489bd7961552868f6b5",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "f380bd95156fbfb93537f35941278778819df1629cb4c5a4e09fe17f6293b7b7",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "f554c43707f5d87625a3834116a2d22f551b1d9a5aff1e446d24893975c431bc",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #1"
+   },
+   {
+    "type": "sha256",
+    "value": "f9816bc81de2e8639482c877a8defcaed9b15ffdce12beaef1cff3fea95999d4",
+    "assertion": "explicit",
+    "evidence": "ffiliated Ashen Lepus Targets Middle Eastern Diplomatic Entities With New > Indicators of Compromise > SHA256 Hashes of Malware Samples > AshenLoader Variant #2"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

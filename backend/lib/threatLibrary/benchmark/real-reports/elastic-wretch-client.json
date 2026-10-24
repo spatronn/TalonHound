@@ -1,0 +1,340 @@
+{
+ "id": "real-elastic-wretch-client",
+ "title": "A Wretch Client: From ClickFix deception to information stealer deployment",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "0c81f460cd91017e0a5bb6d50df0c9a2123ea7f4eec3105e71eda23c9cdaff02",
+  "url": "https://www.elastic.co/security-labs/threat-command/a-wretch-client",
+  "talonhound_report_id": "7aa56257-6a1a-44ed-8d1f-30fb3e77030a",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "36 IPs: Infrastructure analysis 'ARECHCLIENT2 IOC: ... the following C2 nodes are still active' = publisher-declared indicators (v36 declared lead-in). HOST-BANNER_0_HASH md5 is a web banner digest (non-file digest policy)",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "clients.contology.com",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "domain",
+    "value": "clients.dealeronlinemarketing.com",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "domain",
+    "value": "koonenmagaziner.click",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.18.56",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.24.67",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "143.110.230.167",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > ARECHCLIENT2"
+   },
+   {
+    "type": "ip",
+    "value": "144.172.101.228",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "144.172.94.120",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "144.172.97.2",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > ARECHCLIENT2"
+   },
+   {
+    "type": "ip",
+    "value": "172.105.148.233",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "172.235.190.176",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "172.86.72.81",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "176.126.163.56",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "185.125.50.140",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "185.156.72.63",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "185.156.72.71",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "185.156.72.80",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "192.124.178.244",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "193.149.176.31",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "194.26.27.10",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "194.87.29.62",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "195.82.147.132",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.118.248.29",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.86.149",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.86.159",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.86.82",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.87.212",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.87.249",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.87.7",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.77.154.115",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "45.94.47.164",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "50.57.243.90",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Technical analysis of the infection"
+   },
+   {
+    "type": "ip",
+    "value": "62.60.247.154",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "66.63.187.22",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "67.220.72.124",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "79.124.62.10",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "82.117.242.178",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "82.117.255.225",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "84.200.17.129",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "85.158.110.179",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "91.184.242.37",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "ip",
+    "value": "91.199.163.74",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Infrastructure analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "2ec47cbe6d03e6bdcccc63c936d1c8310c261755ae5485295fecac4836d7e56a",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "4dc5ba5014628ad0c85f6e8903de4dd3b49fed65796978988df8c128ba7e7de9",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "a8ba1e14249cdd9d806ef2d56bedd5fb09de920b6f78082d1af3634f4c136b90",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f92b491d63bb77ed3b4c7741c8c15bdb7c44409f1f850c08dce170f5c8712d55",
+    "assertion": "explicit",
+    "evidence": "A Wretch Client: From ClickFix deception to information stealer deployment > Observations"
+   },
+   {
+    "type": "url",
+    "value": "https://pastebin.com/raw/Wg8DHh2x",
+    "assertion": "explicit",
+    "evidence": "Observations 'pastebin[.]com/raw/Wg8DHh2x' (scheme added by canonicalisation)"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "md5",
+    "value": "82cddf3a9bff315d8fc708e5f5f85f20",
+    "rationale": "Filename, host of a listed URL, or HOST-BANNER_0_HASH web-server banner digest (infrastructure pivot), not a sample MD5."
+   },
+   {
+    "type": "domain",
+    "value": "heeschamjiet.rc",
+    "rationale": "Filename, host of a listed URL, or HOST-BANNER_0_HASH web-server banner digest (infrastructure pivot), not a sample MD5."
+   },
+   {
+    "type": "url",
+    "value": "pastebin.com/raw/Wg8DHh2x",
+    "rationale": "Filename, host of a listed URL, or HOST-BANNER_0_HASH web-server banner digest (infrastructure pivot), not a sample MD5."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

@@ -1,0 +1,143 @@
+{
+ "id": "real-elastic-tollbooth",
+ "title": "TOLLBOOTH: What's yours, IIS mine",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "580b9337d302be44aa0fdfbfd7ce753f19f1a16aec7d65e2b8cc0ecd3124020c",
+  "url": "https://www.elastic.co/security-labs/threat-command/tollbooth",
+  "talonhound_report_id": "21b09a1e-710f-4f77-a694-d99a80a0a146",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "api.aseo99.com",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "asf-sikkeiyjga.cn-shenzhen.fcapp.run",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "ask-bdtj-selohjszlw.cn-shenzhen.fcapp.run",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "c.cseo99.com",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > IIS module analysis > Management Channel"
+   },
+   {
+    "type": "domain",
+    "value": "f.fseo99.com",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "mlxya.oss-accelerate.aliyuncs.com",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > IIS module analysis > Page Hijacker"
+   },
+   {
+    "type": "sha256",
+    "value": "230b84398e873938bbcc7e4a1a358bde4345385d58eb45c1726cee22028026e9",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "82b7f077021df9dc2cf1db802ed48e0dec8f6fa39a34e3f2ade2f0b63a1b5788",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "913431f1d36ee843886bb052bfc89c0e5db903c673b5e6894c49aabc19f1e2fc",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "915441b7d7ddb7d885ecfe75b11eed512079b49875fc288cd65b023ce1e05964",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "bae5a7722814948fbba197e9b0f8ec5a6fe8328c7078c3adcca0022a533a84fe",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "bd2de6ca6c561cec1c1c525e7853f6f73bf6f2406198cd104ecb2ad00859f7d3",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "c1ca053e3c346513bac332b5740848ed9c496895201abc734f2de131ec1b9fb2",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "c348996e27fc14e3dce8a2a476d22e52c6b97bf24dd9ed165890caf88154edd2",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f9dd0b57a5c133ca0c4cab3cca1ac8debdc4a798b452167a1e5af78653af00c1",
+    "assertion": "explicit",
+    "evidence": "TOLLBOOTH: What's yours, IIS mine > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "ip",
+    "value": "1.9.2.13",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "ip",
+    "value": "121.0.0.0",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

@@ -63,8 +63,13 @@ function embeddedAbsoluteUrl(token) {
  * cell's hash. Certificate / fuzzy-hash attribute headers (thumbprint, serial,
  * signer, issuer, imphash, ssdeep, TLSH) name attribute columns, never
  * indicator columns.
+ * v9: a reference column ("Source", "Reference", "Download", "Homepage",
+ * "Project", "Repository" over URL cells) names where a row's subject is
+ * published and is never an indicator column; an explicit endpoint (ip:port,
+ * URL) in the unparsed remainder of a mixed indicator cell is a value of the
+ * cell; a cell holding one URL wrapped onto two lines is one value.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v8';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v9';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -150,6 +155,40 @@ export function attributeColumnKind(header) {
   const norm = normalizeHeaderLabel(header || '');
   if (!norm || norm.length > 48 || !ATTRIBUTE_COLUMN_HEADER_RE.test(norm)) return null;
   return /\b(?:imphash|ssdeep|tlsh)\b/.test(norm) ? 'fuzzy_hash' : 'certificate';
+}
+
+/**
+ * Column headers that name where the row's subject is published — a tool's
+ * project page, download location or reference article — rather than an
+ * observable of the actor: "Source", "Reference", "Download", "Homepage",
+ * "Project", "Repository".
+ */
+const REFERENCE_COLUMN_HEADER_RE =
+  /^(?:sources?|references?|refs?|downloads?|download\s+(?:link|links|url|urls|page|location)|(?:tool\s+)?home\s*pages?|projects?|project\s+(?:page|url|site|link)s?|repository|repositories|repos?|websites?|web\s*sites?|more\s+info(?:rmation)?|documentation|further\s+reading|tool\s+(?:url|link|source)s?|kaynak|referans|quelle|fuente|fonte|来源|参考|источник)$/;
+
+/**
+ * A reference column: a reference header over cells whose observables are
+ * URLs (resource locations). A "Source" column of IP addresses (connection
+ * source) or hashes is not a reference column.
+ * @param {string} header
+ * @param {string[][]} rows
+ * @param {number} col
+ */
+function isReferenceColumn(header, rows, col) {
+  if (!REFERENCE_COLUMN_HEADER_RE.test(normalizeHeaderLabel(header))) return false;
+  let urls = 0;
+  let others = 0;
+  for (const r of rows) {
+    const cell = String(r[col] || '').trim();
+    if (!cell) continue;
+    const parsed = parseIndicatorCell(cell, null);
+    for (const v of parsed.values) {
+      if (v.is_ioc === false) continue;
+      if (v.candidate_type === 'url') urls += 1;
+      else others += 1;
+    }
+  }
+  return urls > 0 && urls >= others * 2;
 }
 
 /** Heading / caption text that already curates samples or IOCs for this table. */
@@ -307,6 +346,25 @@ function parseToken(token, declared, ctx = {}) {
 }
 
 /**
+ * An absolute URL ending in "/" followed, after whitespace, by exactly one
+ * file-name segment — and nothing else — is one URL whose last path segment
+ * the publisher's layout wrapped onto the next line of the same cell / row
+ * ("http://192.0.2.7:443/" + "4591187629.exe"). Only the whole text qualifies:
+ * prose, a second URL or a segment without an extension never joins.
+ */
+const WRAPPED_URL_TAIL_RE =
+  /^((?:h(?:tt|xx)ps?|ftps?)(?::|\[:\])\/\/[^\s/]+\/(?:[^\s]*\/)?)\s+([A-Za-z0-9][\w~%+-]*(?:\.[A-Za-z0-9]{1,10})+)$/i;
+
+/**
+ * @param {string} text one table cell or one indicator row
+ * @returns {string|null} the joined URL, or null when the text is not a wrapped URL
+ */
+export function joinWrappedUrlTail(text) {
+  const m = WRAPPED_URL_TAIL_RE.exec(String(text || '').replace(/\s+/g, ' ').trim());
+  return m ? `${m[1]}${m[2]}` : null;
+}
+
+/**
  * Values asserted by one indicator cell. Whole-cell parse first (single value),
  * then token split for cells that list several indicators.
  * @param {string} cellText
@@ -315,7 +373,9 @@ function parseToken(token, declared, ctx = {}) {
  */
 export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   const source = String(cellText || '').replace(/\s+/g, ' ').trim();
-  const refanged = refangObservable(source);
+  // A URL the publisher's layout wrapped inside one cell ("http://h:443/" then
+  // "payload.exe" on the next line): one value; `raw` keeps the cell as written.
+  const refanged = refangObservable(joinWrappedUrlTail(source) || source);
   if (!refanged) return { values: [], rejected: [], reason: 'empty_indicator' };
   const whole = parseToken(refanged, declared, ctx);
   // One value only when the parsed identity carries no whitespace: a cell that
@@ -465,8 +525,21 @@ function decomposeMixedCell(refanged, whole, declared, ctx) {
     // Unparsed remainder: keep the leading value, report what was not read
     // (every observable of a prose remainder, parsed or not).
     residualObservables.unshift(...iocValues.map(idOf));
+    // An explicit network endpoint in the remainder — "ip:port" or an absolute
+    // URL, as in a command line the publisher put in the indicator column
+    // ("conhost.exe client 192.0.2.5:443 …") — is a value of the cell
+    // (tl-table-v9). A bare host merely named in prose is still only reported.
+    const endpoints = [];
+    for (const rawTok of residual.split(CELL_TOKEN_SPLIT_RE).filter(Boolean)) {
+      const tok = rawTok.replace(WRAPPING_PUNCT_RE, '');
+      const p = tok ? parseToken(tok, null, ctx) : null;
+      if (!p?.ok || p.is_ioc === false) continue;
+      if (!((p.candidate_type === 'ip' && p.port != null) || p.candidate_type === 'url')) continue;
+      if (endpoints.some((e) => e.candidate_type === p.candidate_type && e.normalized_value === p.normalized_value)) continue;
+      endpoints.push({ ...p, raw: tok, residual_endpoint: true });
+    }
     return {
-      values: [{ ...whole, raw: head, cell_residual: residual.slice(0, 160), residual_observables: residualObservables.length ? residualObservables : undefined }],
+      values: [{ ...whole, raw: head, cell_residual: residual.slice(0, 160), residual_observables: residualObservables.length ? residualObservables : undefined }, ...endpoints],
       rejected: [],
       reason: null,
       decomposition: { mixed: true, recovered: 0, residual_unparsed: true, residual_observables: residualObservables }
@@ -604,7 +677,8 @@ function subHeaderRowDeclarations(cells, indicatorCols) {
 }
 
 function cellIsObservable(cellText) {
-  const refanged = refangObservable(String(cellText || '').replace(/\s+/g, ' ').trim());
+  const text = String(cellText || '').replace(/\s+/g, ' ').trim();
+  const refanged = refangObservable(joinWrappedUrlTail(text) || text);
   if (!refanged) return null;
   if (refanged.length <= 512 && !/\s/.test(refanged)) {
     const parsed = parseToken(refanged, null);
@@ -911,6 +985,12 @@ export function interpretIocTable(block, opts = {}) {
       continue;
     }
     const attributeKind = header ? attributeColumnKind(header) : null;
+    if (header && isReferenceColumn(header, rows, c)) {
+      // Provenance of the row's subject (where a tool is published), never
+      // an observable the publisher attributes to the actor (tl-table-v9).
+      columns.push({ index: c, header, intent: 'other', method: 'reference_column', attribute_kind: 'reference', declared_type: null, ...stats });
+      continue;
+    }
     if (attributeKind) {
       // Never an indicator column, even when every cell parses (thumbprints).
       columns.push({ index: c, header, intent: 'other', method: 'attribute_column', attribute_kind: attributeKind, declared_type: null, ...stats });

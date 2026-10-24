@@ -1,12 +1,12 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v33",
+    "candidates": "tl-candidates-v37",
     "zones": "tl-zones-v15",
-    "tables": "tl-table-v8",
-    "type_resolver": "tl-type-resolver-v13",
+    "tables": "tl-table-v9",
+    "type_resolver": "tl-type-resolver-v15",
     "html": "threat_library_html_v8",
     "pdf": "threat_library_pdf_v6",
-    "quality": "tl-quality-v9",
+    "quality": "tl-quality-v10",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
@@ -35,7 +35,7 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 24,
+      "info": 26,
       "cases_flagged": 3,
       "exact_cases": 90,
       "exact_cases_flagged": 3,
@@ -460,7 +460,8 @@
       "assertions_checked": 30,
       "warning_codes": [
         "authoritative_section_empty",
-        "delegated_authority_applied"
+        "delegated_authority_applied",
+        "ioc_package_announced"
       ]
     },
     "golden-elastic-oxloader-observations": {
@@ -622,6 +623,7 @@
       "assertions_correct": 10,
       "assertions_checked": 10,
       "warning_codes": [
+        "ioc_package_announced",
         "non_file_digest_reclassified"
       ]
     },
@@ -906,7 +908,8 @@
       "assertions_checked": 0,
       "warning_codes": [
         "authoritative_section_empty",
-        "indicator_rows_outside_authoritative_scope"
+        "indicator_rows_outside_authoritative_scope",
+        "reference_column_values_context"
       ]
     },
     "golden-esentire-nimbus-rat-delegated": {

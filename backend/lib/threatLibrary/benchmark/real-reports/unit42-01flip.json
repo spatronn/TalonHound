@@ -1,0 +1,60 @@
+{
+ "id": "real-unit42-01flip",
+ "title": "01flip: Multi-Platform Ransomware Written in Rust",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "81e063f51dd98896ef0ab15af7b6d69b00e4ba2fb56da6da606766c21e614b9c",
+  "url": "https://unit42.paloaltonetworks.com/new-ransomware-01flip-written-in-rust",
+  "talonhound_report_id": "8a5e38e8-8a19-4a9f-8334-afe689e4ad32",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "sha256",
+    "value": "6aad1c36ab9c7c44350ebe3a17178b4fd93c2aa296e2af212ab28d711c0889a3",
+    "assertion": "explicit",
+    "evidence": "01flip: Multi-Platform Ransomware Written in Rust > Indicators of Compromise > Malicious Samples > Windows Version of 01flip Ransomware"
+   },
+   {
+    "type": "sha256",
+    "value": "ba41f0c7ea36cefe7bc9827b3cf27308362a4d07a8c97109704df5d209bce191",
+    "assertion": "explicit",
+    "evidence": "01flip: Multi-Platform Ransomware Written in Rust > Indicators of Compromise > Malicious Samples > Linux Sliver Beacon, TCP Pivot as C2"
+   },
+   {
+    "type": "sha256",
+    "value": "e5834b7bdd70ec904470d541713e38fe933e96a4e49f80dbfb25148d9674f957",
+    "assertion": "explicit",
+    "evidence": "01flip: Multi-Platform Ransomware Written in Rust > Indicators of Compromise > Malicious Samples > Linux Version of 01flip Ransomware"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

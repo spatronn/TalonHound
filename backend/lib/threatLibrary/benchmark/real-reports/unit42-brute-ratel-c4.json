@@ -1,0 +1,396 @@
+{
+ "id": "real-unit42-brute-ratel-c4",
+ "title": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "975fec92d3cd07e1bf3db65bdac12cfc9eb5a448f83b9830615079976946b2c4",
+  "url": "https://unit42.paloaltonetworks.com/brute-ratel-c4-tool/",
+  "talonhound_report_id": "8bb2114a-b999-4992-97b2-74ddc5d35285",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "ds.windowsupdate.eu.org",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "104.6.92.229",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "137.184.199.17",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "138.68.50.218",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "138.68.58.43",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "139.162.195.169",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "139.180.187.179",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "147.182.247.103",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "149.154.100.151",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "15.206.84.52",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "159.223.49.16",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "159.65.186.50",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Identifying OneDrive.Update"
+   },
+   {
+    "type": "ip",
+    "value": "162.216.240.61",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "172.105.102.247",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "172.81.62.82",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "174.129.157.251",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > From Click to Brute"
+   },
+   {
+    "type": "ip",
+    "value": "178.79.143.149",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "178.79.168.110",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "178.79.172.35",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "18.130.233.249",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "18.133.26.247",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "18.217.179.8",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "18.236.92.31",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "185.138.164.112",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "194.29.186.67",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "194.87.70.14",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "213.168.249.232",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "3.110.56.219",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "3.133.7.69",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "31.184.198.83",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "34.195.122.225",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "34.243.172.90",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "35.170.243.216",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.144.225.3",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.76.155.71",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.79.36.192",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "52.48.51.67",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "52.90.228.203",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "54.229.102.30",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "54.90.137.213",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "89.100.107.65",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "92.255.85.173",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "92.255.85.44",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "94.130.130.43",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha1",
+    "value": "55684a30a47476fce5b42cbd59add4b0fbc776a3",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha1",
+    "value": "66aab897e33b3e4d940c51eba8d07f5605d5b275",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "1fc7b0e1054d54ce8f1de0cc95976081c7a85c7926c03172a3ddaa672690042c",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > From Click to Brute"
+   },
+   {
+    "type": "sha256",
+    "value": "31acf37d180ab9afbcf6a4ec5d29c3e19c947641a2d9ce3ce56d71c1f576c069",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "3ad53495851bafc48caf6d2227a434ca2e0bef9ab3bd40abfe4ea8f318d37bbe",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Identifying OneDrive.Update"
+   },
+   {
+    "type": "sha256",
+    "value": "3ed21a4bfcf9838e06ad3058d13d5c28026c17dc996953a22a00f0609b0df3b9",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "5887c4646e032e015aa186c5970e8f07d3ed1de8dbfa298ba4522c89e547419b",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "973f573cab683636d9a70b8891263f59e2f02201ffb4dd2e9d7ecbb1521da03e",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "b5d1d3c1aec2f2ef06e7d0b7996bc45df4744934bd66266a6ebb02d70e35236e",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "d71dc7ba8523947e08c6eec43a726fe75aed248dfd3a7c4f6537224e9ed05f6f",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "dd8652e2dcfe3f1a72631b3a9585736fbe77ffabee4098f6b3c48e1469bf27aa",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "e1a9b35cf1378fda12310f0920c5c53ad461858b3cb575697ea125dfee829611",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "ea2876e9175410b6f6719f80ee44b9553960758c7d0f7bed73c0fe9a78d8e669",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "ef9b60aa0e4179c16a9ac441e0a21dc3a1c3dc04b100ee487eabf5c5b1f571a6",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "f58ae9193802e9baf17e6b59e3fdbe3e9319c5d27726d60802e3e82d30d14d46",
+    "assertion": "explicit",
+    "evidence": "When Pentest Tools Go Brutal: Red-Teaming Tool Being Abused by Malicious Actors > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

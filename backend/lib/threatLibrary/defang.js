@@ -8,6 +8,16 @@
 const HXXP_RE = /\bhxxps?(?::\/\/|\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
 // http[://], http[:]//, http[:][//]
 const SCHEME_BRACKET_RE = /\b(https?)(?:\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
+// Publisher typo "http//host" / "hxxps//host" (the scheme colon dropped,
+// tl-defang-v3): recovered only when a dotted host (name or IPv4, fanged or
+// bracket-defanged) follows the slashes, so prose such as "http//" alone or
+// "see http//docs" stays untouched.
+const MISSING_COLON_SCHEME_RE =
+  /\b(h(?:tt|xx)ps?)\/\/(?=(?:[a-z0-9-]+(?:\.|\[\.\]|\(\.\)))+[a-z0-9-]+(?:[:/?#\s]|$)|\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}\b)/gi;
+// "https[:]/host/path" / "https:/host" (one slash of the authority marker
+// dropped): recovered after the colon / dot refang, only before a dotted host
+// followed by a path, port, query or end (tl-defang-v3).
+const SINGLE_SLASH_SCHEME_RE = /\b(https?):\/(?!\/)(?=(?:[a-z0-9-]+\.)+[a-z0-9-]+(?:[/:?#\s]|$))/gi;
 const BRACKET_DOT_RE = /\[\.\]|\(\.\)|\{\.\}/g;
 // Publisher variants of the bracketed dot between two hostname characters
 // (tl-defang-v2): whitespace inside the brackets ("evil[ . ]com"), a single
@@ -49,6 +59,7 @@ export function stripInvisibleFormatChars(text) {
 
 function refangSchemes(text) {
   return String(text || '')
+    .replace(MISSING_COLON_SCHEME_RE, (_, scheme) => `${scheme.toLowerCase().replace('hxxp', 'http')}://`)
     .replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'))
     .replace(SCHEME_BRACKET_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
 }
@@ -65,6 +76,7 @@ export function refangObservable(value) {
   v = v.replace(BRACKET_COLON_RE, ':');
   // meow:// → http:// (rare vendor defang)
   v = v.replace(/\bmeow:\/\//gi, 'http://');
+  v = v.replace(SINGLE_SLASH_SCHEME_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
   return v.trim();
 }
 
@@ -78,6 +90,7 @@ export function refangTextForExtraction(text) {
   t = refangDots(t);
   t = t.replace(BRACKET_COLON_RE, ':');
   t = t.replace(/\bmeow:\/\//gi, 'http://');
+  t = t.replace(SINGLE_SLASH_SCHEME_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
   return t;
 }
 

@@ -54,11 +54,11 @@ const KIND_PATTERNS = [
   ],
   [
     DIGEST_KINDS.SIMILARITY,
-    /(?:^|[^a-z0-9])(?:vhash|imphash|import\s+hash|ssdeep|tlsh|authentihash|pehash|rich\s*(?:header\s*)?hash|telfhash|dhash|icon\s+hash|fuzzy\s+hash)(?:[^a-z0-9]|$)/i
+    /(?:^|[^a-z0-9])(?:vhash|imphash|import\s+hash|ssdeep|tlsh|authentihash|pehash|rich\s*(?:header\s*)?hash|telfhash|dhash|icon\s+hash|fuzzy\s+hash|(?:host[\s_-]*)?banner(?:[\s_-]*\d+)?[\s_-]*hash(?:es)?|favicon[\s_-]*hash|http[\s_-]*(?:header|title|body)[\s_-]*hash)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.CRYPTO_KEY,
-    /(?:^|[^a-z0-9])(?:(?:aes|rc4|rsa|xor|chacha\d*|salsa\d*|des|3des|blowfish|hmac|encryption|decryption|session|symmetric|secret|private|public|master|shared|cipher|crypto)[\s_-]*(?:key|iv|nonce|secret)s?|keys?[\s_-]*(?:material|stream)|initiali[sz]ation\s+vector|iv|nonce|salt)(?:[^a-z0-9]|$)/i
+    /(?:^|[^a-z0-9])(?:(?:aes|rc4|rsa|xor|chacha\d*|salsa\d*|des|3des|blowfish|hmac|encryption|decryption|session|symmetric|secret|private|public|master|shared|cipher|crypto)[\s_-]*(?:key|iv|nonce|secret)s?|(?:public|private|host|server|client|ssh)\s+(?:(?:rsa|dsa|ecdsa|ed25519|ed448|x25519|ssh|sftp|[a-z]{2,10}\d{0,5})\s+){1,2}keys?|ssh[\s_-]+(?:host[\s_-]+)?(?:key[\s_-]+)?fingerprints?|keys?[\s_-]*(?:material|stream)|initiali[sz]ation\s+vector|iv|nonce|salt)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.CREDENTIAL,
@@ -78,6 +78,9 @@ const REGISTRY_KEY_LABEL_RE = /\b(?:run|runonce|registry|reg|hkcu|hklm|hkey_[a-z
 /** File / sample nouns: a label that names the file keeps the hash reading. */
 const FILE_NOUN_RE =
   /(?:^|[^a-z0-9])(?:files?|samples?|binar(?:y|ies)|executables?|payloads?|dlls?|exes?|loaders?|droppers?|implants?|scripts?|archives?|installers?|documents?|attachments?|malware|artifacts?|apks?|elfs?|modules?|components?|variants?|stagers?|backdoors?|trojans?|filename|file\s*name)(?:[^a-z0-9]|$)/i;
+
+/** "<digest word> of / for <subject>" in a row description: the digest's own subject. */
+const DIGEST_SUBJECT_RE = /\b(?:hash(?:es)?|digests?|fingerprints?|thumbprints?|sha-?(?:1|256|384|512)|md5)\s+(?:value\s+)?(?:of|for)\s+(?:the\s+|an?\s+)?([^.;|¶]{2,120})/i;
 
 /** Field separators that end the label window before a value. */
 const SEPARATOR_RE = /[,;|\n\r¶]|\s[-–—]\s/g;
@@ -160,6 +163,29 @@ export function classifyHexDigest(text, value, opts = {}) {
   // An unlabelled value (a bare list item) takes its subject from the scope
   // label the same way an algorithm-only row label does.
   const scopeGoverns = own.reason === 'unlabelled' || (own.reason === 'file_label' && ALGORITHM_ONLY_LABEL_RE.test(label));
+  // A table row whose description cell, written AFTER the value, says what the
+  // digest is of ("SHA-256 Hash of public ED25519 Key for WinSCP Server"):
+  // that subject governs like a label (tl-digest-v2). Only a description that
+  // names the digest itself counts — "Backdoor using an RC4 key" does not.
+  // A description that names the digest kind without an of/for subject
+  // ("HOST-BANNER_0_HASH from the exposed SSH service") also governs when it
+  // is not a file-hash reading (tl-digest-v2 / 30-report RC-5).
+  const rowDescription = String(opts.rowDescription || '').trim();
+  if (rowDescription) {
+    const subject = DIGEST_SUBJECT_RE.exec(rowDescription);
+    if (subject && !FILE_NOUN_RE.test(subject[1])) {
+      const fromDescription = classifyLabel(subject[1].slice(0, 120));
+      if (fromDescription.kind !== DIGEST_KINDS.FILE && fromDescription.kind !== DIGEST_KINDS.CREDENTIAL) {
+        return { kind: fromDescription.kind, label, reason: `${fromDescription.kind}_row_description` };
+      }
+    }
+    if (!FILE_NOUN_RE.test(rowDescription)) {
+      const fromRow = classifyLabel(rowDescription.slice(0, 160));
+      if (fromRow.kind !== DIGEST_KINDS.FILE && fromRow.kind !== DIGEST_KINDS.CREDENTIAL) {
+        return { kind: fromRow.kind, label, reason: `${fromRow.kind}_row_description` };
+      }
+    }
+  }
   if (scope && scopeGoverns && !FILE_NOUN_RE.test(scope)) {
     const fromScope = classifyLabel(scope.slice(0, 160));
     if (fromScope.kind !== DIGEST_KINDS.FILE && fromScope.kind !== DIGEST_KINDS.CREDENTIAL) {

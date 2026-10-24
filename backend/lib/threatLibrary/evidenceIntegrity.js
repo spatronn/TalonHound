@@ -14,7 +14,10 @@
 
 import { refangTextForExtraction } from './defang.js';
 
-export const EVIDENCE_INTEGRITY_VERSION = 'tl-evidence-integrity-v2';
+// v3: an applied model demotion needs grounded support too (a fabricated quote
+// or missing block never overrides the deterministic reading), and Refresh
+// replay never re-applies a decision the gate refused when it was made.
+export const EVIDENCE_INTEGRITY_VERSION = 'tl-evidence-integrity-v3';
 
 /**
  * v2: a malicious / suspicious model label needs a publisher ASSERTION, not
@@ -209,6 +212,9 @@ export function groundAiCandidateUpdate(candidate, update, blocks, opts = {}) {
     cited_block: citedStatus,
     assertive,
     publisher_disclaimer: disclaimer,
+    // The claim points at real publisher text naming the value (or cites
+    // nothing): required for ANY applied assessment, demotions included (v3).
+    grounded,
     // A model claim is supported when it points at real publisher text that
     // names the value (a verbatim quote or a cited block containing it), or
     // cites nothing at all — then it is a reading of the candidate's own

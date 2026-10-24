@@ -1,0 +1,78 @@
+{
+ "id": "real-unit42-airstalk",
+ "title": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain Attack",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "11a0e04e3a26947cbf63a205520d793d92c9e678b420387e39fcadebeab2f9d9",
+  "url": "https://unit42.paloaltonetworks.com/new-windows-based-malware-family-airstalk",
+  "talonhound_report_id": "1fdd9ae9-89fe-4ac7-ad42-53fce4d58343",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "sha256",
+    "value": "0c444624af1c9cce6532a6f88786840ebce6ed3df9ed570ac75e07e30b0c0bde",
+    "assertion": "explicit",
+    "evidence": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain  > Technical Analysis > Signed Binaries and Timestamps"
+   },
+   {
+    "type": "sha256",
+    "value": "1f8f494cc75344841e77d843ef53f8c5f1beaa2f464bcbe6f0aacf2a0757c8b5",
+    "assertion": "explicit",
+    "evidence": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain  > Technical Analysis > Signed Binaries and Timestamps"
+   },
+   {
+    "type": "sha256",
+    "value": "3a48ea6857f1b6ae28bd1f4a07990a080d854269b1c1563c9b2e330686eb23b5",
+    "assertion": "explicit",
+    "evidence": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain  > Technical Analysis > Signed Binaries and Timestamps"
+   },
+   {
+    "type": "sha256",
+    "value": "4e4cbaed015dfbda3c368ca4442cd77a0a2d5e65999cd6886798495f2c29fcd5",
+    "assertion": "explicit",
+    "evidence": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain  > Technical Analysis > Signed Binaries and Timestamps"
+   },
+   {
+    "type": "sha256",
+    "value": "b6d37334034cd699a53df3e0bcac5bbdf32d52b4fa4944e44488bd2024ad719b",
+    "assertion": "explicit",
+    "evidence": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain  > Technical Analysis > Signed Binaries and Timestamps"
+   },
+   {
+    "type": "sha256",
+    "value": "dfdc27d81a6a21384d6dba7dcdc4c7f9348cf1bdc6df7521b886108b71b41533",
+    "assertion": "explicit",
+    "evidence": "Suspected Nation-State Threat Actor Uses New Airstalk Malware in a Supply Chain  > Technical Analysis > Signed Binaries and Timestamps"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

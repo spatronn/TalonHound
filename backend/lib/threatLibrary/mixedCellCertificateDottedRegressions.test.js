@@ -50,9 +50,9 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contracts bumped for the six-report audit fixes', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v36');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v8');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v14');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v37');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v9');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v15');
 });
 
 // --- 1. Mixed cells -----------------------------------------------------------

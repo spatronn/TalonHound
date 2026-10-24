@@ -65,9 +65,18 @@ export function createExplicitTableAssertionTracker() {
         (c) => Array.isArray(c.table_rows) && c.table_rows.some((r) => r.explicit)
       );
       const createdKeys = new Set(created.map((c) => explicitTableIdentityKey(c.candidate_type, c.normalized_value)));
+      // The same cell value deliberately typed as a non-network artifact
+      // ("sys32.exe" under an IP column is a file name) materialized: a typing
+      // decision, not a lost row (tl-quality-v10).
+      const typedAsArtifact = new Set(
+        (createdCandidates || [])
+          .filter((c) => c.is_ioc === false)
+          .map((c) => String(c.normalized_value || '').toLowerCase())
+      );
       const missing = [];
       for (const [key, ident] of asserted) {
         if (createdKeys.has(key) || createdKeys.has(aliases.get(key))) continue;
+        if (ident.type === 'domain' && typedAsArtifact.has(String(ident.value || '').toLowerCase())) continue;
         missing.push(formatExplicitTableIdentityKey(key));
         if (!dropped.has(key)) rememberDropped(ident.type, ident.value, 'not_materialized');
       }

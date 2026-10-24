@@ -1,0 +1,66 @@
+{
+ "id": "real-unit42-ransomhouse-encryption",
+ "title": "From Linear to Complex: An Upgrade in RansomHouse Encryption",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "704de9089e447f058f9237f64e3421933d6fedfe2626c9de66054d6530ff5e43",
+  "url": "https://unit42.paloaltonetworks.com/ransomhouse-encryption-upgrade/",
+  "talonhound_report_id": "787de133-17c9-4272-9b46-e315940b8cdc",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "sha256",
+    "value": "0fe7fcc66726f8f2daed29b807d1da3c531ec004925625855f8889950d0d24d8",
+    "assertion": "explicit",
+    "evidence": "From Linear to Complex: An Upgrade in RansomHouse Encryption > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "26b3c1269064ba1bf2bfdcf2d3d069e939f0e54fc4189e5a5263a49e17872f2a",
+    "assertion": "explicit",
+    "evidence": "From Linear to Complex: An Upgrade in RansomHouse Encryption > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "8189c708706eb7302d7598aeee8cd6bdb048bf1a6dbe29c59e50f0a39fd53973",
+    "assertion": "explicit",
+    "evidence": "From Linear to Complex: An Upgrade in RansomHouse Encryption > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "d36afcfe1ae2c3e6669878e6f9310a04fb6c8af525d17c4ffa8b510459d7dd4d",
+    "assertion": "explicit",
+    "evidence": "From Linear to Complex: An Upgrade in RansomHouse Encryption > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

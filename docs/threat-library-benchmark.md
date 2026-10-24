@@ -4,11 +4,14 @@ A repeatable way to measure IOC extraction. It catches regressions before an ana
 
 The benchmark runs the deterministic extraction stage (`extractionStages.extractReportCandidates`) on frozen fixtures, the same stage the import pipeline and Refresh extraction use. It never calls a model, a database or the network.
 
+For the 2026-10-24 thirty-report remediation (contracts through `tl-candidates-v37` / `tl-quality-v10`), including offline corpus replay that **does** reapply retained model decisions, see [`threat-library-30-report-remediation.md`](threat-library-30-report-remediation.md).
+
 ```bash
 cd backend
 npm run benchmark:threat-library                # table + diff against baseline.json
 npm run benchmark:threat-library -- --json      # full JSON report
 npm run test:threat-library-benchmark           # the CI gate
+npm run replay:threat-library-corpus -- <snapshot.jsonl.gz> --labels
 ```
 
 ## Cases

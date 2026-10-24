@@ -653,6 +653,9 @@ function cleanRowToken(tok) {
 
 /** Network schemes that are not an Indicator URL type; the host they carry is. */
 const NON_HTTP_NETWORK_SCHEME_RE = /^(?:ftps?|sftp|scp|smb|ssh|telnet|tcp|udp|irc|ldaps?):\/\//i;
+/** One transport endpoint and nothing else (host = name or IPv4, optional port). */
+const TRANSPORT_ENDPOINT_LINE_RE =
+  /^(?:tcp|udp|tls|ssl|socks[45]h?):\/\/(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})?\/?$/i;
 
 const OBSERVABLE_TOKEN_RE =
   /^(?:https?:\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
@@ -682,6 +685,8 @@ export function isSchemeLessUrlToken(token) {
 export function isIndicatorValueLine(text) {
   const t = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
   if (!t) return false;
+  // A lone transport endpoint ("tcp://c2.example:443"): its host is the value.
+  if (TRANSPORT_ENDPOINT_LINE_RE.test(refangTextForExtraction(t))) return true;
   // Scheme-less host/path URLs contain "/" and would otherwise look like paths.
   if (isSchemeLessUrlToken(t)) return true;
   if (isFilenameShapedToken(t)) return false;
@@ -1342,6 +1347,15 @@ function relationDetailForOccurrence(candidate, o) {
 export function attachOccurrenceRelations(candidate) {
   const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
   for (const o of occ) {
+    // A table reference / prose cell that did not assert the value is row
+    // context: no relation, no assertion (tl-candidates-v37).
+    if (o.reference_cell === true || o.description_cell === true) {
+      o.source_relation = SOURCE_RELATIONS.CONTEXTUAL;
+      o.relation_marker = 'context_cell';
+      o.occurrence_kind = 'context_cell';
+      o.asserted = false;
+      continue;
+    }
     const detail = relationDetailForOccurrence(candidate, o);
     o.source_relation = detail.relation;
     o.relation_marker = detail.marker;
