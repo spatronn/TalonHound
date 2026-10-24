@@ -131,6 +131,11 @@ test('override: administrator only, with a written reason; audited as a warning'
   const analyst = await finalizeReport(pool({ sourcesSeq: sources }), 9, { user: { role: 'analyst' }, sourceOverride: { reason: 'pack is a duplicate of the article tables' } });
   assert.equal(analyst.status, 403);
   assert.equal(analyst.code, 'finalize_override_forbidden');
+  const unaudited = pool({ sourcesSeq: sources });
+  const noAudit = await finalizeReport(unaudited, 9, { user: { role: 'admin' }, sourceOverride: { reason: 'pack is a duplicate of the article tables' } });
+  assert.equal(noAudit.status, 503);
+  assert.equal(noAudit.code, 'finalize_override_audit_unavailable');
+  assert.equal(unaudited.state.writes.length, 0);
   const short = await finalizeReport(pool({ sourcesSeq: sources }), 9, { user: { role: 'admin' }, sourceOverride: { reason: 'dup' } });
   assert.equal(short.status, 400);
   assert.equal(short.code, 'finalize_override_reason_required');
@@ -165,4 +170,33 @@ test('a finalized report is never reopened: a blocked re-finalize writes nothing
   assert.equal(p.state.writes.length, 0);
   assert.equal(p.state.report.finalized_at, '2026-10-21T19:29:00Z');
   assert.equal(p.state.report.analysis_status, 'ready');
+});
+
+test('no bypass: the status store refuses to finalize and only the guarded statement sets finalized_at', async () => {
+  const { updateReportStatus } = await import('./store.js');
+  const pool = { query: async () => { throw new Error('must not query'); } };
+  await assert.rejects(() => updateReportStatus(pool, 9, { import_status: 'ready', finalize: true }), /cannot finalize/);
+
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const backend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const writers = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(?:m?js)$/.test(e.name) && !/\.test\.m?js$/.test(e.name)) {
+        if (/finalized_at\s*=\s*(?:NOW\(\)|CASE WHEN \$\d+ THEN NOW\(\))/i.test(fs.readFileSync(p, 'utf8'))) {
+          writers.push(path.relative(backend, p).split(path.sep).join('/'));
+        }
+      }
+    }
+  };
+  for (const d of ['lib', 'routes', 'scripts', 'services', 'workers']) {
+    if (fs.existsSync(path.join(backend, d))) walk(path.join(backend, d));
+  }
+  // store.js keeps the inert CASE for its fixed parameter list ($17 is always false).
+  assert.deepEqual(writers.sort(), ['lib/threatLibrary/finalizeGuard.js', 'lib/threatLibrary/store.js']);
 });

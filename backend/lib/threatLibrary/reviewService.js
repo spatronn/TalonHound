@@ -776,6 +776,10 @@ export async function finalizeReport(pool, reportId, opts = {}) {
   const pendingCount = candidates.filter((c) => isPendingActionableCandidate(c)).length;
   const blockers = finalizeBlockers({ pendingCount, sources, sourceOverride: Boolean(override) });
   if (blockers.length) return finalizeRejection(blockers);
+  if (override && typeof opts.audit?.auditLog !== 'function') {
+    // An override is only accepted when it can be audited.
+    return { ok: false, status: 503, code: 'finalize_override_audit_unavailable', error: 'Finalize override requires the audit log.' };
+  }
 
   const written = await pool.query(GUARDED_FINALIZE_SQL, [reportId, Boolean(override), LINKED_SOURCE_OPEN_STATUSES]);
   if (!written.rowCount) {

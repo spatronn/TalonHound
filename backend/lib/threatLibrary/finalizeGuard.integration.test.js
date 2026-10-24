@@ -145,7 +145,7 @@ test('administrator override finalizes over an unresolved source', opts, async (
   const { report } = await setupReport();
   try {
     await addSource(pool, report.id, 'failed');
-    const r = await finalizeReport(racingPool(null), report.id, { user: { role: 'admin' }, sourceOverride: { reason: 'pack duplicates the article tables exactly' } });
+    const r = await finalizeReport(racingPool(null), report.id, { user: { role: 'admin' }, audit: { auditLog: async () => {} }, sourceOverride: { reason: 'pack duplicates the article tables exactly' } });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.ok(await finalizedAt(report.id));
   } finally {
