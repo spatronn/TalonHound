@@ -1,12 +1,12 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v37",
+    "candidates": "tl-candidates-v38",
     "zones": "tl-zones-v15",
-    "tables": "tl-table-v9",
-    "type_resolver": "tl-type-resolver-v15",
+    "tables": "tl-table-v10",
+    "type_resolver": "tl-type-resolver-v16",
     "html": "threat_library_html_v8",
     "pdf": "threat_library_pdf_v6",
-    "quality": "tl-quality-v10",
+    "quality": "tl-quality-v11",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
@@ -35,7 +35,7 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 26,
+      "info": 27,
       "cases_flagged": 3,
       "exact_cases": 90,
       "exact_cases_flagged": 3,
@@ -461,7 +461,8 @@
       "warning_codes": [
         "authoritative_section_empty",
         "delegated_authority_applied",
-        "ioc_package_announced"
+        "ioc_package_announced",
+        "resolution_column_values_context"
       ]
     },
     "golden-elastic-oxloader-observations": {

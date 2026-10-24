@@ -25,10 +25,14 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v1';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v2';
 
-/** Section headings that never hold indicators. */
-const NON_INDICATOR_SECTION_RE = /\b(?:mitre|att&ck|attack\s+techniques|references?|acknowledg\w*|license|changelog|contact)\b/i;
+/**
+ * Section headings that never hold indicators. Antivirus detection-name lists
+ * ("ESET detection names") label samples; they are README structure, never a
+ * second campaign (v2 — a single-campaign ESET README resolves).
+ */
+const NON_INDICATOR_SECTION_RE = /\b(?:mitre|att&ck|attack\s+techniques|references?|acknowledg\w*|license|changelog|contact|detection\s+names?)\b/i;
 /** Generic IOC-section headings (structure of one campaign, not a campaign title). */
 const GENERIC_IOC_SECTION_RE =
   /^(?:iocs?|indicators?(?:\s+of\s+compromise)?(?:\s*\(iocs?\))?|files?|network|hashes|samples?|domains?|ip\s+addresses|urls?|registry|file\s+paths?|mutex(?:es)?|certificates?|yara|sigma|detections?|mitre\s+att&ck\s+techniques)\b/i;

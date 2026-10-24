@@ -145,6 +145,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Tool Source / Reference links kept as Context Only',
     why: 'URLs from Source, Reference, Download or Homepage columns describe where a tool is published, not actor infrastructure. They stay Context Only.'
   },
+  resolution_column_values_context: {
+    title: 'Resolved addresses kept as Context Only',
+    why: 'Addresses from a Resolved IP / A record column are what a listed domain resolved to — often shared CDN infrastructure. The row’s own domain or IP is the Indicator; these stay Context Only.'
+  },
   reference_column_indicator: {
     title: 'Indicator came only from a reference-labelled column',
     why: 'This Indicator was read only from a table column whose header names a reference, source or download link. Confirm the publisher attributes it to the actor before acting on it.'

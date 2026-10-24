@@ -310,6 +310,11 @@ export async function listThreatReports(pool, { limit, offset, search, sort, ord
 }
 
 export async function updateReportStatus(pool, reportId, patch) {
+  // Finalization is guarded (finalizeGuard.js): only reviewService.finalizeReport's
+  // conditional UPDATE may set finalized_at; a status update never can.
+  if (patch?.finalize) {
+    throw new Error('updateReportStatus cannot finalize a report; use reviewService.finalizeReport');
+  }
   const { rows } = await pool.query(
     `UPDATE threat_reports SET
        title = COALESCE($2, title),
@@ -362,7 +367,7 @@ export async function updateReportStatus(pool, reportId, patch) {
       patch.ai_result ?? null,
       patch.published_at ?? null,
       patch.source_name ?? null,
-      patch.finalize === true,
+      false, // $17 finalize: never set here (see above)
       patch.analysis_progress ?? null,
       patch.failure_code ?? null,
       patch.analysis_run_id ?? null,

@@ -38,7 +38,7 @@ export async function guardSourceUrl(source, deps) {
  */
 export async function loadReportScopeContext(pool, reportId) {
   const { rows } = await pool.query(
-    `SELECT title, source_url, canonical_document FROM threat_reports WHERE id = $1`,
+    `SELECT title, source_url, published_at, canonical_document FROM threat_reports WHERE id = $1`,
     [reportId]
   );
   const r = rows[0] || {};
@@ -46,6 +46,8 @@ export async function loadReportScopeContext(pool, reportId) {
   return {
     reportUrl: r.source_url || null,
     reportTitle: r.title || null,
+    // STIX validity is judged at publication (parseContent.stixValidityReference).
+    publishedAt: r.published_at || null,
     headings: blocks.filter((b) => b?.type === 'heading').map((b) => String(b.text || '')).slice(0, 200)
   };
 }

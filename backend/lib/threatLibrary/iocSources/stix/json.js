@@ -236,6 +236,9 @@ export function extractStixJsonEvidence(bundle, opts = {}) {
       } else if (expired) {
         membership = EVIDENCE_MEMBERSHIP.CONTEXT_ONLY;
         diagnostics.push('expired_validity');
+      } else if (opts.now && isExpired(o.valid_until)) {
+        // Valid when the report was published; aged out since (provenance only).
+        diagnostics.push('validity_ended_after_report_publication');
       }
 
       for (const obs of parsed.observables) {

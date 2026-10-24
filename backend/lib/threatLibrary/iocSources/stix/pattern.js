@@ -3,7 +3,7 @@
  * No eval. Unsupported / ambiguous compound expressions return typed diagnostics.
  */
 
-/** @typedef {{ ok: true, observables: Array<{ type: string, value: string, property: string }>, compound: 'single'|'or_same_object'|'and_same_hashes' } | { ok: false, code: string, message: string }} PatternResult */
+/** @typedef {{ ok: true, observables: Array<{ type: string, value: string, property: string }>, compound: 'single'|'or_same_object'|'and_same_hashes', dropped_properties: string[] } | { ok: false, code: string, message: string }} PatternResult */
 
 const HASH_PROP = {
   md5: 'md5',
@@ -154,8 +154,25 @@ export function parseStixPattern(pattern) {
     return { ok: false, code: 'unsupported_pattern', message: `Unsupported pattern residue: ${residual.slice(0, 80)}` };
   }
 
+  // One file described by several digests (`SHA-1 OR SHA-256 OR MD5 OR
+  // SSDEEP`): an algorithm TalonHound does not index (SSDEEP, TLSH, SHA-512)
+  // is an attribute of that file, not a reason to drop its supported hashes.
+  const fileHashCompound = comparisons.length > 1
+    && comparisons.every((c) => c.objectType === 'file' && /^hashes\./i.test(c.property));
+  const droppedProperties = [];
+  const usable = fileHashCompound
+    ? comparisons.filter((c) => {
+        if (c.type && c.value) return true;
+        droppedProperties.push(`${c.objectType}:${c.property}`);
+        return false;
+      })
+    : comparisons;
+  if (!usable.length) {
+    return { ok: false, code: 'unsupported_pattern', message: 'No supported file hash algorithm in pattern' };
+  }
+
   const mapped = [];
-  for (const c of comparisons) {
+  for (const c of usable) {
     if (!c.type || !c.value) {
       return {
         ok: false,
@@ -176,7 +193,7 @@ export function parseStixPattern(pattern) {
     const allFileHashes = mapped.every((o) => ['md5', 'sha1', 'sha256'].includes(o.type));
     const sameFile = mapped.every((o) => o.property.startsWith('file:'));
     if (allFileHashes && sameFile) {
-      return { ok: true, observables: mapped, compound: 'and_same_hashes' };
+      return { ok: true, observables: mapped, compound: 'and_same_hashes', dropped_properties: droppedProperties };
     }
     return {
       ok: false,
@@ -191,7 +208,7 @@ export function parseStixPattern(pattern) {
     const allHashes = mapped.every((o) => ['md5', 'sha1', 'sha256'].includes(o.type));
     const sameType = types.size === 1;
     if (allHashes || sameType) {
-      return { ok: true, observables: mapped, compound: 'or_same_object' };
+      return { ok: true, observables: mapped, compound: 'or_same_object', dropped_properties: droppedProperties };
     }
     return {
       ok: false,
@@ -200,5 +217,5 @@ export function parseStixPattern(pattern) {
     };
   }
 
-  return { ok: true, observables: mapped, compound: 'single' };
+  return { ok: true, observables: mapped, compound: 'single', dropped_properties: droppedProperties };
 }

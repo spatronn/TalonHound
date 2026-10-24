@@ -76,8 +76,10 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * 23 warns when the model demoted rows of a table whose sibling rows of the
  * same type are Indicators. A typed-artifact cell value no longer counts as a
  * dropped explicit-table row.
+ * v11 (20-report audit): check 20 reports resolution-column addresses (a
+ * listed domain's DNS answer) apart from tool reference links.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v10';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v11';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -152,6 +154,8 @@ export const QUALITY_CODES = Object.freeze({
   IOC_SECTION_URL_PREFIX_EXCLUDED: 'ioc_section_url_prefix_excluded',
   /** Table reference-column values (tool homepage / download / source links) kept as context (check 20). */
   REFERENCE_COLUMN_CONTEXT: 'reference_column_values_context',
+  /** Table resolution-column values (a listed domain's DNS answer, often shared CDN) kept as context (check 20). */
+  RESOLUTION_COLUMN_CONTEXT: 'resolution_column_values_context',
   /** An Indicator read only from a table column whose header names a reference / source / download link (check 20). */
   REFERENCE_COLUMN_INDICATOR: 'reference_column_indicator',
   /** A file-hash Indicator whose own row or sentence calls the digest a key / certificate / fingerprint / banner hash (check 21). */
@@ -960,6 +964,17 @@ export function assessExtractionQuality(input) {
         'kept as Context Only, not as actor infrastructure.',
       candidates: referenceContext.map(identity).sort(),
       block_ids: referenceContext.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+  const resolutionContext = candidates.filter((c) => c.policy_decision === 'context_only_resolution_column');
+  if (resolutionContext.length) {
+    push({
+      code: QUALITY_CODES.RESOLUTION_COLUMN_CONTEXT,
+      severity: 'info',
+      explanation: `${resolutionContext.length} address(es) from a table resolution column (what a listed domain resolved to) ` +
+        'were kept as Context Only; the row’s own domain or IP carries the publisher assertion.',
+      candidates: resolutionContext.map(identity).sort(),
+      block_ids: resolutionContext.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
     });
   }
   const referenceMembers = candidates.filter((c) => c.__member &&

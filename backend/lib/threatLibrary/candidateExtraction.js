@@ -51,6 +51,7 @@ import {
   validateUrlCandidate
 } from './observableTypeResolver.js';
 import { hexRunIsHostnameLabelFragment, ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
+import { findIpv6Tokens } from './ipv6Tokens.js';
 import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest } from './digestSemantics.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
 import {
@@ -234,8 +235,14 @@ export {
  * table reference columns are Context Only; a row description that says what
  * a digest is of governs its file-hash reading (tl-section-tree-v8,
  * tl-table-v9, tl-evidence-integrity-v3).
+ * v38 (20-report audit): IPv6 tokens are hex/colon runs validated by
+ * `net.isIPv6` (tl-ipv6-tokens-v1) — mid-address `::`, trailing `::` and
+ * IPv4-mapped forms are addresses, invalid runs yield nothing (never a valid
+ * fragment); a bare IPv6 table cell is an IP, not a hostname; a defanged
+ * mixed-case hostname (`EmbersAndBites[.]com`) keeps the domain reading
+ * (tl-type-resolver-v16).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v37';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v38';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -477,8 +484,6 @@ const IPV4_RE =
   /(?<![A-Za-z0-9_-]\.)\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\/(?:3[0-2]|[12]?\d))?\b(?!\.[A-Za-z0-9_-])/g;
 const IPV4_PORT_RE =
   /(?<![A-Za-z0-9_-]\.)\b((?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))[:：](\d{1,5})\b/g;
-const IPV6_RE =
-  /\b(?:(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}|::(?:[0-9a-fA-F]{1,4}:){0,5}[0-9a-fA-F]{1,4}|(?:[0-9a-fA-F]{1,4}:){1,6}:)\b(?!\.[A-Za-z0-9_-])/g;
 /** Bare IPv6 loopback — leading `\b` fails because `:` is a non-word character. */
 const IPV6_LOOPBACK_RE = /(?<![0-9a-fA-F:])::1(?![0-9a-fA-F:])/g;
 // Typographic quotes / guillemets never occur raw inside a URL (they are
@@ -1451,7 +1456,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // Reference columns ("Source" / "Download" / "Homepage" links of a tool
     // table): provenance of the row's subject, kept as Context Only values
     // and never asserted, whatever section the table sits in (tl-table-v9).
-    for (const col of (interp.columns || []).filter((c) => c.attribute_kind === 'reference')) {
+    // Resolution columns ("Resolved IP") are the same kind of provenance: the
+    // row domain's DNS answer, not an actor address (tl-table-v10).
+    for (const col of (interp.columns || []).filter((c) => c.attribute_kind === 'reference' || c.attribute_kind === 'resolution')) {
+      const typingReason = col.attribute_kind === 'resolution' ? 'resolution_column' : 'reference_column';
       for (const row of interp.rows || []) {
         const cell = String(row.cells?.[col.index] || '').trim();
         if (!cell) continue;
@@ -1462,7 +1470,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
             originalValue: v.raw,
             rowText: (row.cells || []).filter(Boolean).join(' | '),
             referenceCell: true,
-            typing: { typing_reason: 'reference_column' }
+            typingReason,
+            typing: { typing_reason: typingReason }
           });
         }
       }
@@ -1604,12 +1613,17 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       }
     }
 
+    // IPv6 first: its spans keep an IPv4-mapped tail (`::ffff:192.0.2.1`)
+    // from also reading as a separate IPv4 address.
+    const ipv6Tokens = findIpv6Tokens(text).filter((t) => !insideAnySpan(urlSpans, t.start, t.end));
+    const ipv6Spans = ipv6Tokens.map((t) => [t.start, t.end]);
+
     // IP:port endpoints (direct C2 endpoint assertions)
     for (const m of text.matchAll(IPV4_PORT_RE)) {
       const start = m.index;
       const ipEnd = start + m[1].length;
       const end = start + m[0].length;
-      if (insideAnySpan(urlSpans, start, end)) continue;
+      if (insideAnySpan(urlSpans, start, end) || insideAnySpan(ipv6Spans, start, end)) continue;
       if (!ipv4MatchIsStandalone(text, start, ipEnd)) continue;
       const port = Number(m[2]);
       if (!Number.isFinite(port) || port < 1 || port > 65535) continue;
@@ -1629,7 +1643,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const slash = raw.indexOf('/');
       const ipEnd = start + (slash >= 0 ? slash : raw.length);
       const end = start + raw.length;
-      if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
+      if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end) || insideAnySpan(ipv6Spans, start, end)) continue;
       if (!ipv4MatchIsStandalone(text, start, ipEnd)) continue;
       if (slash >= 0) add(raw, 'cidr', block, { form: standaloneForm });
       else if (versionTokens?.inVersion.has(raw) && !versionTokens.elsewhere.has(raw)) {
@@ -1655,12 +1669,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         } else add(raw, 'ip', block, { form: standaloneForm });
       }
     }
-    for (const m of text.matchAll(IPV6_RE)) {
-      const start = m.index;
-      const end = start + m[0].length;
-      if (insideAnySpan(urlSpans, start, end)) continue;
-      if (!ipv4MatchIsStandalone(text, start, end)) continue;
-      add(m[0], 'ipv6', block, { form: standaloneForm });
+    for (const t of ipv6Tokens) {
+      if (!ipv4MatchIsStandalone(text, t.start, t.end)) continue;
+      add(t.value, 'ipv6', block, { form: standaloneForm });
     }
     for (const m of text.matchAll(IPV6_LOOPBACK_RE)) {
       const start = m.index;

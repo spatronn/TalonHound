@@ -7,8 +7,11 @@
  * overlaid when a report is read (UI detail, MCP): it never changes membership.
  */
 
-const PENDING = new Set(['discovered', 'inspecting', 'inspected', 'attached', 'extracting']);
-const UNRESOLVED = new Set(['unsupported', 'failed', 'blocked', 'stale']);
+import { LINKED_SOURCE_PENDING_STATUSES, LINKED_SOURCE_UNRESOLVED_STATUSES } from '../finalizeGuard.js';
+
+// One definition of pending / unresolved, shared with the finalize guard.
+const PENDING = new Set(LINKED_SOURCE_PENDING_STATUSES);
+const UNRESOLVED = new Set(LINKED_SOURCE_UNRESOLVED_STATUSES);
 
 export const LINKED_SOURCE_NOT_INGESTED_CODE = 'linked_ioc_source_not_ingested';
 /** The publisher announces an IOC package but no IOC Source was discovered or attached (tl-quality-v10). */

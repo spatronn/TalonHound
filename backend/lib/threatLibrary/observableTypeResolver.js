@@ -77,7 +77,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * alternation branch (`|currentversion.run|`) is a regex fragment, not a
  * host, unless its suffix is DNS-strong.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v15';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v16';
+
+/** Dot-defang spellings a publisher writes around a hostname label separator. */
+const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -905,7 +908,13 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   // 8. Symbolic identifier shape (case segmentation, underscores) is a code signal
   //    unless the source states a network relation for this exact token.
+  //    A publisher defang marker (`EmbersAndBites[.]com`) is a network
+  //    assertion — nobody defangs a class name — and so is an explicit IOC
+  //    row: with a delegated DNS suffix either one keeps the host reading
+  //    whatever the casing (tl-type-resolver-v16).
   if (codeShape) {
+    if (hasDelegatedDnsSuffix(lower) && DEFANG_MARKER_RE.test(original)) return out('domain', 'defanged_mixed_case');
+    if (strength === 'strong' && explicitRow) return out('domain', 'explicit_row_mixed_case');
     if (strength === 'strong' && clauseNetwork && !clauseArtifact) return out('domain', 'network_context_mixed_case');
     return out('technical_artifact', codeContext ? 'code_context' : 'code_identifier_shape');
   }
