@@ -1,0 +1,135 @@
+{
+ "id": "real-cisa-aa23-352a-play",
+ "title": "#StopRansomware: Play Ransomware | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "01342dd0f144ce648dc742a9bd28ee2b1e07ccd272f8ee3aff820106b21a58fa",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-352a",
+  "talonhound_report_id": "4191258b-1fb7-4a8a-b051-611856a9786a",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "4 SHA-256 digests of public ECDSA/ED25519 server keys are non-file digests (TalonHound digestSemantics policy -> technical artifact)",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "sha1",
+    "value": "3d86555acaa19aeddb5896071d1e3711b062edbe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "0e408aed1acf902a9f97abf71cf0dd354024109c5d52a79054c421be35d93549",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "1409e010675bf4a40db0a845b60db3aae5b302834e80adeec884aebc55eccbf7",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "453257c3494addafb39cb6815862403e827947a1e7737eb8168cd10522465deb",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "47b7b2dd88959cd7224a5542ae8d5bce928bfc986bf0d0321532a7515c244a1e",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "6de8dd5757f9a3ac5e2ac28e8a77682d7a29be25c106f785a061dcf582a20dc6",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "75404543de25513b376f097ceb383e8efb9c9b95da8945fd4aa37c7b2f226212",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "75b525b220169f07aecfb3b1991702fbd9a1e170caf0040d1fcb07c3e819f54a",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "7a42f96599df8090cf89d6e3ce4316d24c6c00e499c8557a2e09d61c00c11986",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "7dea671be77a2ca5772b86cf8831b02bff0567bce6a3ae023825aa40354f8aca",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "90040340ee101cac7831d7035230ac8ad4224d432e5636f34f13aa1c4a0c2041",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "c59f3c8d61d940b56436c14bc148c1fe98862921b8f7bad97fbc96b31d71193c",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Play Ransomware > Technical Details > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "sha256",
+    "value": "372f7b45a141bb0709d578bc716cbca03104258822c4290ccbeb600223850158",
+    "rationale": "SHA-256 digest of a public ECDSA/ED25519 server key (row description), not a file."
+   },
+   {
+    "type": "sha256",
+    "value": "511f63455ca4f83b0347b65dda17585ad02591a9f23d8e234e5ce1321aa3381a",
+    "rationale": "SHA-256 digest of a public ECDSA/ED25519 server key (row description), not a file."
+   },
+   {
+    "type": "sha256",
+    "value": "859165041d75fba3759c5533e324225f355c8a07b4645b984192ad6bef06db1a",
+    "rationale": "SHA-256 digest of a public ECDSA/ED25519 server key (row description), not a file."
+   },
+   {
+    "type": "sha256",
+    "value": "967daff362e63ff45526f585b7944488ace1bb5bb5b30fa40d56557f1c538d09",
+    "rationale": "SHA-256 digest of a public ECDSA/ED25519 server key (row description), not a file."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

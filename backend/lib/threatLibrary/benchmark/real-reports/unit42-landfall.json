@@ -1,0 +1,180 @@
+{
+ "id": "real-unit42-landfall",
+ "title": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsung Devices",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "fd2a001cafcad2c6bf74f229b478fd1d070d81a7454a926647224930ea6edf53",
+  "url": "https://unit42.paloaltonetworks.com/landfall-is-new-commercial-grade-android-spyware",
+  "talonhound_report_id": "8c7b2d27-158b-47cc-bade-5f42ca83851b",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "brightvideodesigns.com",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "domain",
+    "value": "healthyeatingontherun.com",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "domain",
+    "value": "hotelsitereview.com",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "domain",
+    "value": "projectmanagerskills.com",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "ip",
+    "value": "192.36.57.56",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "ip",
+    "value": "194.76.224.127",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "ip",
+    "value": "45.155.250.158",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "ip",
+    "value": "46.246.28.75",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "ip",
+    "value": "91.132.92.35",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "ip",
+    "value": "92.243.65.240",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > C2 Infrastructure for LANDFALL Spyware"
+   },
+   {
+    "type": "sha256",
+    "value": "211311468f3673f005031d5f77d4d716e80cbf3c1f0bb1f148f2200920513261",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "2425f15eb542fca82892fd107ac19d63d4d112ddbfe698650f0c25acf6f8d78a",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > Indicators of Compromise > Malware Samples"
+   },
+   {
+    "type": "sha256",
+    "value": "29882a3c426273a7302e852aa77662e168b6d44dcebfca53757e29a9cdf02483",
+    "assertion": "explicit",
+    "evidence": "FALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Discovery > Malformed DNG Image Files: A New Attack Vector Trend"
+   },
+   {
+    "type": "sha256",
+    "value": "384f073d3d51e0f2e1586b6050af62de886ff448735d963dfc026580096d81bd",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "69cf56ac6f3888efa7a1306977f431fd1edb369a5fd4591ce37b72b7e01955ee",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "9297888746158e38d320b05b27b0032b2cc29231be8990d87bc46f1e06456f93",
+    "assertion": "explicit",
+    "evidence": "FALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Discovery > Malformed DNG Image Files: A New Attack Vector Trend"
+   },
+   {
+    "type": "sha256",
+    "value": "a62a2400bf93ed84ebadf22b441924f904d3fcda7d1507ba309a4b1801d44495",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "b06dec10e8ad0005ebb9da24204c96cb2e297bd8d418bc1c8983d066c0997756",
+    "assertion": "explicit",
+    "evidence": "FALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Discovery > Malformed DNG Image Files: A New Attack Vector Trend"
+   },
+   {
+    "type": "sha256",
+    "value": "b45817ffb0355badcc89f2d7d48eecf00ebdf2b966ac986514f9d971f6c57d18",
+    "assertion": "explicit",
+    "evidence": "FALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Discovery > Malformed DNG Image Files: A New Attack Vector Trend"
+   },
+   {
+    "type": "sha256",
+    "value": "b975b499baa3119ac5c2b3379306d4e50b9610e9bba3e56de7dfd3927a96032d",
+    "assertion": "explicit",
+    "evidence": "FALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Discovery > Malformed DNG Image Files: A New Attack Vector Trend"
+   },
+   {
+    "type": "sha256",
+    "value": "c0f30c2a2d6f95b57128e78dc0b7180e69315057e62809de1926b75f86516b2e",
+    "assertion": "explicit",
+    "evidence": "FALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Discovery > Malformed DNG Image Files: A New Attack Vector Trend"
+   },
+   {
+    "type": "sha256",
+    "value": "d2fafc7100f33a11089e98b660a85bd479eab761b137cca83b1f6d19629dd3b0",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Analysis"
+   },
+   {
+    "type": "sha256",
+    "value": "ffeeb0356abb56c5084756a5ab0a39002832403bca5290bb6d794d14b642ffe2",
+    "assertion": "explicit",
+    "evidence": "LANDFALL: New Commercial-Grade Android Spyware in Exploit Chain Targeting Samsun > LANDFALL Spyware Analysis"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

@@ -1,0 +1,213 @@
+{
+ "id": "real-elastic-eddiestealer",
+ "title": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "b5e3d888061035a99e704ca82b47704fec6f8b3d9ae765bf445efa4421747119",
+  "url": "https://www.elastic.co/security-labs/threat-command/eddiestealer",
+  "talonhound_report_id": "0f6737f6-0a19-4517-a515-0b441e58f029",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "llll.fit",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "militrex.wiki",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "plasetplastik.com",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "shiglimugli.xyz",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "xxxivi.com",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "45.144.53.145",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "84.200.154.47",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "0f5717b98e2b44964c4a5dfec4126fc35f5504f7f8dec386c0e0b0229e3482e7",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "162a8521f6156070b9a97b488ee902ac0c395714aba970a688d54305cb3e163f",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "1bdc2455f32d740502e001fce51dbf2494c00f4dcadd772ea551ed231c35b9a2",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "20eeae4222ff11e306fded294bebea7d3e5c5c2d8c5724792abf56997f30aaf9",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "218ec38e8d749ae7a6d53e0d4d58e3acf459687c7a34f5697908aec6a2d7274d",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "2bef71355b37c4d9cd976e0c6450bfed5f62d8ab2cf096a4f3b77f6c0cb77a3b",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "47409e09afa05fcc9c9eff2c08baca3084d923c8d82159005dbae2029e1959d0",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "5330cf6a8f4f297b9726f37f47cffac38070560cbac37a8e561e00c19e995f42",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "53f803179304e4fa957146507c9f936b38da21c2a3af4f9ea002a7f35f5bc23d",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "73b9259fecc2a4d0eeb0afef4f542642c26af46aa8f0ce2552241ee5507ec37f",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "7930d6469461af84d3c47c8e40b3d6d33f169283df42d2f58206f43d42d4c9f4",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "acae8a4d92d24b7e7cb20c0c13fd07c8ab6ed8c5f9969504a905287df1af179b",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "b8b379ba5aff7e4ef2838517930bf20d83a1cfec5f7b284f9ee783518cb989a7",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "d318a70d7f4158e3fe5f38f23a241787359c55d352cb4b26a4bd007fd44d5b80",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "d905ceb30816788de5ad6fa4fe108a202182dd579075c6c95b0fb26ed5520daa",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "e8942805238f1ead8304cfdcf3d6076fa0cdf57533a5fae36380074a90d642e4",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f6536045ab63849c57859bbff9e6615180055c268b89c613dfed2db1f1a370f2",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f8b4e2ca107c4a91e180a17a845e1d7daac388bd1bb4708c222cda0eff793e7a",
+    "assertion": "explicit",
+    "evidence": "Chasing Eddies: New Rust-based InfoStealer used in CAPTCHA campaigns > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "md5",
+    "value": "20745dc4d048f67e0b62aca33be80283",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "md5",
+    "value": "4776ff459c881a5b876da396f7324c64",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "md5",
+    "value": "6cc654225172ef70a189788746cbb445",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "md5",
+    "value": "c8c3e658881593d798da07a1b80f250c",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

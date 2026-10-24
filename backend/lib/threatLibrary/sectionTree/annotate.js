@@ -238,15 +238,42 @@ function zoneForHeading(text, isRealHeading, blocks, i, chromeIds) {
 const DECLARED_INDICATOR_SECTION_RE =
   /\b(?:this|the\s+following|the\s+below)\s+(?:section|appendix|table|list)\b[^.]{0,60}?\b(?:adds?|lists?|contains?|provides?|includes?|presents?)\b[^.]{0,30}?\b(?:indicators?|iocs?)\b/i;
 
-/** One of the first two content blocks after heading `i` is a declaring paragraph. */
+/**
+ * A table caption that attributes a hash inventory to the threat actor: "Files
+ * Used by <X> Ransomware Actors (SHA-256)", "MD5 Hashes Associated with <X>
+ * Activity" (tl-section-tree-v8). A caption that calls the files legitimate /
+ * dual-use, or names no actor, does not declare indicators.
+ */
+const ACTOR_FILE_INVENTORY_CAPTION_RE =
+  /\b(?:files?|hash(?:es)?|samples?|binaries|executables|payloads?|malware)\b[^.]{0,40}?\b(?:used|leveraged|deployed|dropped|observed|employed|associated)\s+(?:by|with)\b[^.]{0,60}?\b(?:actors?|operators?|affiliates?|ransomware|threat\s+actors?|groups?|apt\s?\d*|campaigns?|activity)\b/i;
+const HASH_INVENTORY_WORD_RE = /\b(?:sha-?(?:1|256|384|512)|md-?5|hash(?:es)?)\b/i;
+const NON_ACTOR_FILE_STANCE_RE = /\b(?:legitimate|benign|clean|signed|dual[\s-]?use|commercial|open[\s-]?source|publicly\s+available)\b/i;
+
+function declaresActorHashInventory(b, next) {
+  const caption = b.type === 'caption' ? textOf(b) : b.type === 'table' ? String(b.table?.caption || '') : '';
+  if (!caption || caption.length > 200) return false;
+  if (!ACTOR_FILE_INVENTORY_CAPTION_RE.test(caption) || NON_ACTOR_FILE_STANCE_RE.test(caption)) return false;
+  const table = b.type === 'table' ? b : next?.type === 'table' ? next : null;
+  if (!table) return false;
+  const headers = (Array.isArray(table.table?.headers) ? table.table.headers : []).join(' ');
+  return HASH_INVENTORY_WORD_RE.test(caption) || HASH_INVENTORY_WORD_RE.test(headers);
+}
+
+/**
+ * One of the first two content blocks after heading `i` is a declaring
+ * paragraph, or one of the first four is the caption of an actor-attributed
+ * hash inventory table (the publisher's file IOCs outside an "Indicators"
+ * heading).
+ */
 function declaresIndicatorSection(blocks, i, chromeIds) {
   let seen = 0;
-  for (let j = i + 1; j < blocks.length && seen < 2; j += 1) {
+  for (let j = i + 1; j < blocks.length && seen < 4; j += 1) {
     const b = blocks[j];
     if (isChrome(b, chromeIds)) continue;
     if (b.type === 'heading') return false;
     seen += 1;
-    if (b.type === 'paragraph' && DECLARED_INDICATOR_SECTION_RE.test(textOf(b))) return true;
+    if (seen <= 2 && b.type === 'paragraph' && DECLARED_INDICATOR_SECTION_RE.test(textOf(b))) return true;
+    if (declaresActorHashInventory(b, blocks[j + 1])) return true;
   }
   return false;
 }

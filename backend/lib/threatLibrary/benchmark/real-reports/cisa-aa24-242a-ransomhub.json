@@ -1,0 +1,806 @@
+{
+ "id": "real-cisa-aa24-242a-ransomhub",
+ "title": "#StopRansomware: RansomHub Ransomware | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "4579d889a86a6eda0ea71733c5a4ee44707d2c61d3af0672f59f0c104759e33a",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-242a",
+  "talonhound_report_id": "09adf823-3825-40b9-81e5-d6146da3906a",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "file paths + emails in IOC section are non-network types; 2026-10-24 re-verification: domain:samuelelena.co moved from indicators to not_indicators (host of listed URLs only)",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "onionmail.org",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "domain",
+    "value": "protonmail.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "188.34.188.7",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "193.106.175.107",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "193.124.125.78",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "193.233.254.21",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.134.140.69",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.135.232.2",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "45.95.67.41",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "8.211.2.97",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "89.23.96.203",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/CRYPTSP.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/NEWOFFICIALPROGRAMCAUSEOFNEWUPDATE.INI",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/NEWOFFICIALPROGRAMCAUSEOFNEWUPDATE.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/NEWOFFICIALPROGRAMCAUSEOFNEWUPDATE.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/amba16.ico",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/bcrypt.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/en",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://188.34.188.7/555/en-US",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/1.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/1.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/10.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/12.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/12.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/2.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/2.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/2wrRR6sW6XJtsXyPzuhWhDG7qwN4es.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/2wrRR6sW6XJtsXyPzuhWhDG7qwN4es.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/3.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/3.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/4.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/4.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/5.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/5.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/6.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/7.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/8.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/9.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/92.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/AmbaPDF.ico",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/CRYPTBASE.DLL",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/CRYPTSP.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/Cabinet.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/DPAPI.DLL",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/IPHLPAPI.DLL",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/SspiCli.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/TmsLA6kdcU8jxKzpMvbUVweTeF5YcR.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/TmsLA6kdcU8jxKzpMvbUVweTeF5YcR.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/USERENV.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/WININET.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/WINMM.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/WINMMBASE.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/ambapdf.ico.DLL",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/bcrypt.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/cryptnet.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/cv4TCGxUjvS.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en-US",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en-US/d%E5%AD%97%E5%AD%97.resources.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en-US/d%E5%AD%97%E5%AD%97.resources.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en-US/d%E5%AD%97%E5%AD%97.resources/d%E5%AD%97%E5%AD%97.resources.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en-US/d%E5%AD%97%E5%AD%97.resources/d%E5%AD%97%E5%AD%97.resources.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en/d%E5%AD%97%E5%AD%97.resources.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en/d%E5%AD%97%E5%AD%97.resources.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en/d%E5%AD%97%E5%AD%97.resources/d%E5%AD%97%E5%AD%97.resources.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/en/d%E5%AD%97%E5%AD%97.resources/d%E5%AD%97%E5%AD%97.resources.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/iertutil.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/information.INI",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/information.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/information.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/mshtml.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/msi.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/urlmon.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/webio.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/winhttp.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/winnlsres.dll",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/xwenxub285p83ecrzvft.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://89.23.96.203/333/xwenxub285p83ecrzvft.exe.Config",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://samuelelena.co/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://samuelelena.co/npm/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://samuelelena.co/npm/module.external/client.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://samuelelena.co/npm/module.external/jquery.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://samuelelena.co/npm/module.tripadvisor/module.tripadvisor.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://samuelelena.co:443/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://temp.sh/KnCqD/superloop.exe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://12301230.co/npm/module.external/client.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://12301230.co/npm/module.external/jquery.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://12301230.co/npm/module.external/moment.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://12301230.co/npm/module.tripadvisor/module.tripadvisor.css",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://12301230.co/npm/module.tripadvisor/module.tripadvisor.js",
+    "assertion": "explicit",
+    "evidence": "IOC row 'https[:]// 12301230[.]co /npm/module.tripadvisor/module.tripadvisor.js'"
+   },
+   {
+    "type": "url",
+    "value": "https://40031.co/npm/module.external/client.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://40031.co/npm/module.external/jquery.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://40031.co/npm/module.external/moment.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://40031.co/npm/module.tripadvisor/module.tripadvisor.css",
+    "assertion": "explicit",
+    "evidence": "IOC row 'https[:]//40031[.]co /npm/module.tripadvisor/module.tripadvisor.css'"
+   },
+   {
+    "type": "url",
+    "value": "https://40031.co/npm/module.tripadvisor/module.tripadvisor.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://grabify.link/Y33YXP",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/2KBydfw/112882618.png",
+    "assertion": "explicit",
+    "evidence": "IOC row 'https[:]// i.ibb.co /2KBydfw/112882618.png' (spaces)"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/4g6jH2J/2773036704.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/Fxhyq6t/2077411869.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/HK0jV1G/534475006.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/SxQLwYm/1038436121.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/V3Kj1c2/1154761258.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/X2FR8Kz/2113791011.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/b1bZBpg/2615174623.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/nbMNnW4/2501108160.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/p1RCtpy/2681232755.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.co/v1bn9ZK/369210627.png",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://i.ibb.com/V3Kj1c2/1154761258.png",
+    "assertion": "explicit",
+    "evidence": "IOC row 'https[:]//i.ibb.com:443/V3Kj1c2/1154761258.png' (default port canonicalised)"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/np",
+    "assertion": "explicit",
+    "evidence": "IOC row 'https[:]//samuelelena[.]co /np' (publisher-truncated)"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.external",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.external/client.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.external/jquery.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.external/jquery.min.js&nbsp",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.external/moment.min.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.tripadvisor/module.tripadvisor",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://samuelelena.co/npm/module.tripadvisor/module.tripadvisor.js",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "domain",
+    "value": "12301230.co",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "url",
+    "value": "https://40031.co",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "domain",
+    "value": "i.ibb.co",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "domain",
+    "value": "module.tripadvisor",
+    "rationale": "Publisher evidence does not assert it as an Indicator (filename, reference, or host of a listed URL)."
+   },
+   {
+    "type": "domain",
+    "value": "samuelelena.co",
+    "rationale": "Only the host of the publisher URLs (one written \"https[:]/samuelelena[.]co/npm/...\" with a single slash); never listed as a bare domain. Re-verification correction 2026-10-24."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

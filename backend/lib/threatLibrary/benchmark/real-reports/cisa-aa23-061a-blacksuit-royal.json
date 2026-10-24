@@ -1,0 +1,1140 @@
+{
+ "id": "real-cisa-aa23-061a-blacksuit-royal",
+ "title": "#StopRansomware: Blacksuit (Royal) Ransomware | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "f7c94a03fde7d3fa00fb120102cd07a8bcc4008feb388b39c612b09bcfde42bc",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-061a",
+  "talonhound_report_id": "023bea6f-8d1c-4c56-9177-6652581872fd",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "Mimecast URL-protect wrappers pasted by publisher are benign; 5.181.157.8 exists only as wrapper domain= param; Table 8 \"Legitimate Files and Tools\" (chisel/cloudflared hashes) = Context Only by publisher stance (TH drops them entirely: context completeness gap)",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "abbeymathiass.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "altocloudzone.live",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "ciborkumari.xyz",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "gororama.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "hourlyprofitstore.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "mail.abbeymathiass.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "mail.turnovercheck.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "megupdate.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "myappearinc.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "mystuff.bublup.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "parkerpublic.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "provincial-gaiters-gw.aws-use1.cloud-ara.tyk.io",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "softeruplive.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "sombrat.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "store.abbeymathiass.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "store.turnovercheck.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "tumbleproperty.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "domain",
+    "value": "turnovercheck.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "www.recruitment-interview.org",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "domain",
+    "value": "zoommanager.com",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "102.157.44.105",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "104.21.58.219",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "105.158.118.241",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "105.69.155.85",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "113.169.187.159",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "134.35.9.209",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "135.148.67.84",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "137.220.61.94",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "138.199.53.226",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "139.195.43.166",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "139.60.161.213",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "140.82.18.48",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "140.82.48.158",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "141.98.80.181",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "143.244.146.183",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "144.202.120.122",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "147.135.11.223",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "147.135.36.162",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "148.213.109.165",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "149.28.73.161",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "ip",
+    "value": "152.89.247.50",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "155.138.150.236",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "163.182.177.80",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "172.64.80.1",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "179.43.167.10",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "180.131.145.61",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "180.131.145.85",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "181.141.3.126",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "181.164.194.228",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "184.166.211.74",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "184.174.96.16",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "185.143.223.69",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "185.190.24.103",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "185.7.214.218",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "186.64.67.6",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "186.86.212.138",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "190.193.180.228",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "193.149.176.157",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "193.235.146.104",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "193.37.69.116",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "196.70.77.11",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "197.11.134.255",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "197.158.89.85",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "197.204.247.7",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "197.207.181.147",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "197.207.218.27",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "197.94.67.207",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "209.141.36.116",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "23.111.114.52",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "41.100.55.97",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "41.107.77.67",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "41.109.11.80",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "41.251.121.35",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "41.97.65.51",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "42.189.12.36",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "44.202.120.122",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "45.141.87.218",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "45.227.251.167",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "45.61.136.47",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "45.76.225.156",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "45.8.158.104",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "47.87.229.39",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "5.181.234.58",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "5.188.86.195",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "5.44.42.20",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "61.166.221.46",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "68.83.169.91",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "77.73.133.84",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "81.184.181.215",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "82.12.196.197",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "89.108.65.136",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "89.251.22.32",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "ip",
+    "value": "94.232.41.105",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "ip",
+    "value": "98.143.70.147",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha1",
+    "value": "30cc7724be4a09d5bcd9254197af05e9fab76455",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha1",
+    "value": "41a79f83f8b00ac7a9dd06e1e225d64d95d29b1d",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha1",
+    "value": "585b05b290d241a249af93b1896a9474128da969",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha1",
+    "value": "65dc04f3f75deb3b287cca3138d9d0ec36b8bea0",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha1",
+    "value": "790d40cd16fb458bf99e3600bce29eca06d40b56",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha1",
+    "value": "861793c4e0d4a92844994b640cc6bc3e20944a73",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha1",
+    "value": "9a92b147cad814bfbd4632b6034b8abf8d84b1a5",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha1",
+    "value": "9e19afc15c5781e8a89a75607578760aabad8e65",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha1",
+    "value": "a4ef01d55e55cebdd37ba71c28b0c448a9c833c0",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha1",
+    "value": "a51b1f1f0636bff199c0f87e2bb300d42e06698b",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha1",
+    "value": "a84ed0f3c46b01d66510ccc9b1fc1e07af005c60",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha1",
+    "value": "c96154690f60a8e1f2271242e458029014ffe30a",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha1",
+    "value": "d93f1ef533e6b8c95330ba0962e3670eaf94a026",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "01ce9cfebb29596d0ab7c99e8dbadf1a8409750b183e6bf73e0de021b365be13",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "08c6e20b1785d4ec4e3f9956931d992377963580b4b2c6579fd9930e08882b1c",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "13c25164791d3436cf2efbc410caec6b6dd6978d7e83c4766917630e24e1af10",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "141b2190f51397dbd0dfde0e3904b264c91b6f81febc823ff0c33da980b69944",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "146335b1be627318ac09476f0c8f8e6e027805e6077673f72d6dce1677a24c78",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "1743494f803bbcbd11150a4a8b7a2c5faba1223da607f67d24b18ca2d95d5ba3",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "19896a23d7b054625c2f6b1ee1551a0da68ad25cddbb24510a3b74578418e618",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "1cdafbe519f60aaadb4a92e266fff709129f86f0c9ee595c45499c66092e0499",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "216047c048bf1dcbf031cf24bd5e0f263994a5df60b23089e393033d17257cb5",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "25a6f82936134a6c5c0066f382530b9d6bf2c8da6feafe028f166b1a9d7283cf",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "2b93206d7a36cccdf7d7596b90ead301b2ff7e9a96359f39b6ba31bb13d11f45",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "3041dfc13f356c2f0133a9c11a258f87cb7de1e17bc435e9b623d74bc5e1c6be",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "338228a3e79f3993abc102cbac2ff253c84965213d59ac30892538cdd9b0a22b",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "342b398647073159dfa8a7d36510171f731b760089a546e96fbb8a292791efee",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "34a98f2b54ebab999f218b0990665485eb2bb74babdf7e714cc10a306616b00c",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "3c8c1b1f53e0767b7291bb1ae605ffa62a93e9c8cc783e4ca47ac84b48320d59",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "3e6e2e0de75896033d91dfd07550c478590ca4cd4598004d9e19246e8a09cb97",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "420db40d26d309d3dba3245abb91207f1bca050530545a8048f856e5840d22a2",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "4a9dde3979c2343c024c6eeeddff7639be301826dd637c006074e04a1e4e9fe7",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "4cd00234b18e04dcd745cc81bb928c8451f6601affb5fa45f20bb11bfb5383ce",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "5654f32a4f0f2e900a35761e8caf7ef0c50ee7800e0a3b19354b571bc6876f61",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "5b08c02c141eab94a40b56240a26cab7ff07e9a6e760dfde8b8b053a3526f0e6",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "6332f189cc71df646ff0f1b9b02a005c9ebda3fe7b9712976660746913b030de",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "68c57daed0e5899c49b827042bcf3bbeba33b524bd83315a44d889721664dc34",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "74d81ef0be02899a177d7ff6374d699b634c70275b3292dbc67e577b5f6a3f3c",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "82f1f72f4b1bfd7cc8afbe6d170686b1066049bc7e5863b51aa15ccc5c841f58",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "84e1efbed6bb7720caea6720a8bff7cd93b5d42fb1d71ef8031bfd3897ed4435",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "85087f28a84205e344d7e8e06979e6622fab0cfe1759fd24e38cd0390bca5fa6",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "8a983042278bc5897dbcdd54d1d7e3143f8b7ead553b5a4713e30deffda16375",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "8a99353662ccae117d2bb22efd8c43d7169060450be413af763e8ad7522d2451",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "8d16a23d5a5630502b09c33fbc571d2261c6c98fecc3a79a1e1129354f930d0a",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "8f87a1542ee790623896bbaab933d1883484de02a7b3d65d6c791d50173a923d",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "91605641a4c7e859b7071a9841d1cd154b9027e6a58c20ec4cadafeaf47c9055",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "9493b512d7d15510ebee5b300c55b67f9f2ff1dda64bddc99ba8ba5024113300",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "9bbc9784ce3c818a127debfe710ec6ce21e7c9dd0daf4e30b8506a6dba533db4",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "a0a4a99948e12309f54911264261d96f0e40d5fd695bab82e95fbc1f9024482e",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "ae724dce252c7b05a84bc264993172cf86950d22744b5e3a1b15ba645d9d3733",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "af9f95497b8503af1a399bc6f070c3bbeabc5aeecd8c09bca80495831ae71e61",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "b028eaa0ec452c6844881dc34be813834813a40591b89ea9a57dd4fb4084e477",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "b8c4aec31c134adbdbe8aad65d2bcb21cfe62d299696a23add9aa1de082c6e20",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "b987f738a1e185f71e358b02cafa5fe56a4e3457df3b587d6b40e9c9de1da410",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "bbb7404419f91f82cedfec915931a9339f04165b27d8878d63827c9ee421ed62",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "bc609cf53dde126b766d35b5bcf0a530c24d91fe23633dad6c2c59fd1843f781",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "be030e685536eb38ba1fec1c90e90a4165f6641c8dc39291db1d23f4ee9fa0b1",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "c4a2227cd8d85128eafef8ee2298aa105da892c8b0f37405667c2d1647c35c46",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "c798b2690c5f16eb2917a679af3117cfe9c7060fa8bc84ffc3159338ef33508e",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "d47d4b52e75e8cf3b11ea171163a66c06d1792227c1cf7ca49d7df60804a1681",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "e0dbe3a2d07ee10731b68a142c65db077cfb88e5ec5c8415e548d3ede40e7ffc",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "e3d7c012040962acd66f395d1c5c5f73f305aa1058f2111e8e37d9cb213b80c4",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "e813f8faf3aa2eb20e285596413f5088b2d7fd153fe9f72f3ff45735d0fddced",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "e87512ea12288acec611cf8e995c4ced3971d9e35c0c5dcfd9ee17c9e3ed913d",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "ee6ec2810910c6d2a2957f041edd1e39dca4266a1cc8009ae6d7315aba9196f5",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "f0197bd7ccd568c523df9c7d9afcbac222f14d344312322c04c92e7968859726",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "sha256",
+    "value": "f02af8ffc37d1874b971307fdec80e33e583b56d9ebabda78a4b8ad038bc3bf0",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "f805dafb3c0b7e18aa7d8c96db8e8d4e9301ff619622d1aecc8080e0ecd9ebbe",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "sha256",
+    "value": "f8cff7082a936912baf2124d42ed82403c75c87cb160553a7df862f8d81809ee",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "sha256",
+    "value": "fb638dba20e5fec72f5501d7e0627b302834ec5eaf331dd999763ee925cbc0f9",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal and BlackSuit IOCs as of June 2023 (New November 13, 2023)"
+   },
+   {
+    "type": "url",
+    "value": "https://1tvnews.af/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://avpvuurwerk.nl/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://beautyhabits.gr/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://file.io/ScPd1KcJTtxO",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://interpolyaris.ru/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://libertygospeltracts.com/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://oldtimertreffen-rethem.de/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://parencyivf.com/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://pikaluna.com/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "https://stroeck.at/xmlrpc.php",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > IOCs as of July 2024 (New August 7, 2024)"
+   },
+   {
+    "type": "url",
+    "value": "myappearinc.com/acquire/draft/c7lh0s5jv",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   },
+   {
+    "type": "url",
+    "value": "pastebin.mozilla.org/Z54Vudf9/raw",
+    "assertion": "explicit",
+    "evidence": "#StopRansomware: Blacksuit (Royal) Ransomware > Indicators of Compromise (IOCs) > Royal IOCs as of January 2023"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "sha256",
+    "value": "b9ef2e948a9b49a6930fc190b22cbdb3571579d37a4de56564e41a2ef736767b",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   },
+   {
+    "type": "sha256",
+    "value": "c429719a45ca14f52513fe55320ebc49433c729a0d2223479d9d43597eab39fa",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   },
+   {
+    "type": "url",
+    "value": "https://protect-us.mimecast.com/s/A2PyC31xN5IpzR0XUvzaAj?domain=5.181.157.8",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   },
+   {
+    "type": "url",
+    "value": "https://protect-us.mimecast.com/s/CcsrC4xyO7fBK73ztjNfPl?domain=5.181.234.58",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   },
+   {
+    "type": "url",
+    "value": "https://protect-us.mimecast.com/s/NwueC5yzP5IZLW4MulfSrc?domain=137.220.61.94",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   },
+   {
+    "type": "url",
+    "value": "https://protect-us.mimecast.com/s/T3InC2kwM5hpzEOVU9S5zn?domain=147.135.36.162",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   },
+   {
+    "type": "url",
+    "value": "https://protect-us.mimecast.com/s/teBrC1wvL8iMNE56tXga0n?domain=147.135.11.223",
+    "rationale": "Mimecast URL-protect wrapper link (benign redirector), or a Table 8 \"Legitimate Files and Tools\" value."
+   }
+  ],
+  "ambiguous": [
+   {
+    "type": "ip",
+    "value": "5.181.157.8",
+    "rationale": "Appears only as the domain= parameter of a pasted Mimecast URL-protect wrapper in a row labelled \"IPs and Domains for downloads / C2 / exfiltration\"; the publisher STIX package lists it."
+   }
+  ],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

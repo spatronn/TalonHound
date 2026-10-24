@@ -23,6 +23,10 @@ import {
   runBenchmark
 } from './benchmarkRunner.js';
 
+// Score the production scope engine (benchmark.test.js / the CLI do the same);
+// THREAT_LIBRARY_SCOPE_ENGINE=legacy measures the emergency rollback.
+process.env.THREAT_LIBRARY_SCOPE_ENGINE = process.env.THREAT_LIBRARY_SCOPE_ENGINE || 'section_tree';
+
 const labels = loadRealReportLabels();
 const knownFp = JSON.parse(fs.readFileSync(path.join(REAL_REPORT_LABELS_DIR, 'known-false-positives.json'), 'utf8'));
 const SOURCE_DIR = process.env.TL_BENCHMARK_SOURCE_DIR || null;

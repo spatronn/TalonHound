@@ -1,0 +1,298 @@
+{
+ "id": "real-cisa-aa23-131a-papercut",
+ "title": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG | CISA",
+ "publisher": "CISA",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "cisa",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "fbbfaa142455f5bd228b8ab6682616110e5a3fd55f2ed6637d54f2eacbe82823",
+  "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa23-131a",
+  "talonhound_report_id": "1bb5b5f7-2962-4c16-a038-68047242a87b",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible CISA publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "emails unsupported type; Suricata rules in Network Traffic Signatures repeat the IOC domains",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "anydeskupdate.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "anydeskupdates.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "ber6vjyb.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "domain",
+    "value": "netviewremote.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "study.abroad.ge",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "domain",
+    "value": "upd343.winserverupdates.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "domain",
+    "value": "upd488.windowservicecemter.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "domain",
+    "value": "updateservicecenter.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "windowcsupdates.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "windowservicecemter.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "windowservicecentar.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "windowservicecenter.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "domain",
+    "value": "winserverupdates.com",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Network Traffic Signatures"
+   },
+   {
+    "type": "ip",
+    "value": "102.130.112.157",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "172.106.112.46",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "176.97.76.163",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "192.160.102.164",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "194.87.82.7",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "195.123.246.20",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "198.50.191.95",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "206.197.244.75",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "216.122.175.114",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "46.4.20.30",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "5.188.206.14",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "5.8.18.233",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "5.8.18.240",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "80.94.95.103",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "89.105.216.106",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "ip",
+    "value": "92.118.36.199",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "0ce7c6369c024d497851a482e011ef1528ad270e83995d52213276edbe71403f",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "6bb160ebdc59395882ff322e67e000a22a5c54ac777b6b1f10f1fef381df9c15",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "c0f8aeeb2d11c6e751ee87c40ee609aceb1c1036706a5af0d3d78738b6cc4125",
+    "assertion": "explicit",
+    "evidence": "Malicious Actors Exploit CVE-2023-27350 in PaperCut MF and NG > DETECTION METHODS > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "http://192.184.35.216:443/4591187629.exe",
+    "assertion": "explicit",
+    "evidence": "IOC table row 'http://192.184.35[.]216:443/ 4591187629.exe' (space inside URL)"
+   },
+   {
+    "type": "url",
+    "value": "upd488.windowservicecemter.com/download/update.dll",
+    "assertion": "explicit",
+    "evidence": "IOC table row 'upd488.windowservicecemter[.]com/download/update.dll | File: Cobalt Strike Beacon'"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "domain",
+    "value": "data-highstream.com",
+    "rationale": "Truncation of \"http://192.184.35[.]216:443/ 4591187629.exe\" at the stray space, or a ransom e-mail provider."
+   },
+   {
+    "type": "domain",
+    "value": "gmx.com",
+    "rationale": "Truncation of \"http://192.184.35[.]216:443/ 4591187629.exe\" at the stray space, or a ransom e-mail provider."
+   },
+   {
+    "type": "url",
+    "value": "http://192.184.35.216:443/",
+    "rationale": "Truncation of \"http://192.184.35[.]216:443/ 4591187629.exe\" at the stray space, or a ransom e-mail provider."
+   },
+   {
+    "type": "url",
+    "value": "https://github.com/kost/revsocks",
+    "rationale": "Truncation of \"http://192.184.35[.]216:443/ 4591187629.exe\" at the stray space, or a ransom e-mail provider."
+   },
+   {
+    "type": "domain",
+    "value": "onionmail.org",
+    "rationale": "Truncation of \"http://192.184.35[.]216:443/ 4591187629.exe\" at the stray space, or a ransom e-mail provider."
+   },
+   {
+    "type": "domain",
+    "value": "privyonline.com",
+    "rationale": "Truncation of \"http://192.184.35[.]216:443/ 4591187629.exe\" at the stray space, or a ransom e-mail provider."
+   }
+  ],
+  "ambiguous": [],
+  "unsupported_type_indicators": [
+   {
+    "type": "email",
+    "value": "decrypt.support@privyonline.com"
+   },
+   {
+    "type": "email",
+    "value": "fimaribahundqf@gmx.com"
+   },
+   {
+    "type": "email",
+    "value": "main-office@data-highstream.com"
+   },
+   {
+    "type": "email",
+    "value": "prepalkeinuc0u@gmx.com"
+   },
+   {
+    "type": "email",
+    "value": "tpyrcne@onionmail.org"
+   }
+  ],
+  "sections": []
+ }
+}

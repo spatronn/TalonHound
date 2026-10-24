@@ -61,9 +61,9 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v36');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v14');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v7');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v37');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v15');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v8');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
 });
 
@@ -323,7 +323,7 @@ test('A: model output never overwrites publisher evidence; unsupported escalatio
   assert.deepEqual(quality, [QUALITY_CODES.AI_ESCALATION_UNSUPPORTED, QUALITY_CODES.AI_EVIDENCE_UNGROUNDED].sort());
 });
 
-test('A: a grounded model quote may replace the excerpt; a demotion always applies', () => {
+test('A: a grounded model quote may replace the excerpt; a demotion needs grounded support too (tl-evidence-integrity-v3)', () => {
   const x = run(`<p>The loader was configured with subdomains of 'beacon-relay-example[.]org' as a C&amp;C.</p>`);
   const c = find(x, 'beacon-relay-example.org');
   const [grounded] = mergeAiCandidateUpdates([structuredClone(c)], {
@@ -332,11 +332,21 @@ test('A: a grounded model quote may replace the excerpt; a demotion always appli
   }, { document: x.document });
   assert.equal(grounded.ai_classification.applied, true);
   assert.equal(grounded.assessment, 'malicious');
-  const [demoted] = mergeAiCandidateUpdates([structuredClone(c)], {
+  // A demotion resting on a fabricated quote never overrides the deterministic reading.
+  const [fabricated] = mergeAiCandidateUpdates([structuredClone(c)], {
     candidate_updates: [{ candidate_type: 'domain', normalized_value: c.normalized_value, assessment: 'context_only', role: 'reference',
       evidence_text: 'not in the document at all' }]
   }, { document: x.document });
+  assert.notEqual(fabricated.assessment, 'context_only');
+  assert.equal(fabricated.ai_classification.applied, false);
+  assert.equal(fabricated.ai_classification.unsupported_reason, 'ungrounded_citation');
+  // A demotion quoting the publisher text still applies.
+  const [demoted] = mergeAiCandidateUpdates([structuredClone(c)], {
+    candidate_updates: [{ candidate_type: 'domain', normalized_value: c.normalized_value, assessment: 'context_only', role: 'reference',
+      evidence_text: 'configured with subdomains of beacon-relay-example[.]org as a C&C' }]
+  }, { document: x.document });
   assert.equal(demoted.assessment, 'context_only');
+  assert.equal(demoted.ai_classification.applied, true);
 });
 
 test('A: a publisher dual-use stance wins over a model malicious label', () => {

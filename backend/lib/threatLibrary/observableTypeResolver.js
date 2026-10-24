@@ -73,8 +73,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * unexpanded `$NAME$` / `%NAME%` / `<name>` / `[Name]` placeholders make a URL
  * a template; URL boundaries are parenthesis-balanced, a "(?…)" / "(#…)"
  * optional-part annotation and an escaped closing quote are not URL text.
+ * v15 (30-report audit): a dotted token that is a regular-expression
+ * alternation branch (`|currentversion.run|`) is a regex fragment, not a
+ * host, unless its suffix is DNS-strong.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v14';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v15';
 
 export const RESOLVED_TYPES = Object.freeze({
   DOMAIN: 'domain',
@@ -184,7 +187,13 @@ const ARTIFACT_CLAUSE_RE =
   /(?:\bmutex|\bmutant\b|muteks|\bsemaphore|single[\s-]?instance|singleinstance|\bnamespace|\bclass\b|\bmethod\b|\bfunction\b|\bassembly\b|\bmodule\b|\bpackage\b|\bsymbol\b|config(?:uration)?\s*(?:key|value|entry|block|option|property|setting|file)|\bsetting|\bproperty|\bparameter|\bregistry|\bhkcu\b|\bhklm\b|\bhkey_|\bpdb\b|scheduled\s*task|named\s*pipe|\bpipe\s*name|\bevent\s*name|\bwindow\s*title|user[\s-]?agent|sınıf|metot|fonksiyon|modül|yapılandırma|ayar|parametre|kayıt\s*defteri|klasse|methode|funktion|konfiguration|einstellung|registrierung|clase|método|metodo|función|funcion|configuración|configuracion|ajuste|parámetro|parametro|класс|метод|функци|конфигурац|настройк|параметр|мьютекс|мутекс|реестр|互斥|信号量|类名|命名空间|方法|函数|模块|配置|参数|属性|注册表)/i;
 
 /** Code-context vocabulary (decompilation, language names) around a token. */
-const CODE_CONTEXT_RE = /(?:\.NET\b|\bC#|\bC\+\+|\bJava\b|\bGo(?:lang)?['’]s\b|\bRust\b|\bPython\b|\bclass\s|\bnamespace\s|\bmethod\s|\bfunction\s|\bstruct\b|\bpackage\s|decompil|disassembl|反编译|代码片段|函数|类\s|derleme|sınıf|Klasse|Methode|класс|метод)/i;
+/** A regex alternation / group opening right before a token ("…|", "(?:", "\b"). */
+const REGEX_BRANCH_BEFORE_RE = /(?:\||\(\?:|\\b)\s*$/;
+/** A regex boundary / alternation / group close right after a token ("\b", "|", ")"). */
+const REGEX_BRANCH_AFTER_RE = /^\s*(?:\\b|\\s|\||\)(?:[*+?]|\s*\|))/;
+/** Regex syntax tokens: escapes (\b \s \S \d \w \/), non-capturing groups. */
+const REGEX_SYNTAX_TOKEN_RE = /\\[bBsSdDwW\/]|\(\?[:!=]/g;
+const CODE_CONTEXT_RE =/(?:\.NET\b|\bC#|\bC\+\+|\bJava\b|\bGo(?:lang)?['’]s\b|\bRust\b|\bPython\b|\bclass\s|\bnamespace\s|\bmethod\s|\bfunction\s|\bstruct\b|\bpackage\s|decompil|disassembl|反编译|代码片段|函数|类\s|derleme|sınıf|Klasse|Methode|класс|метод)/i;
 
 /**
  * @param {string} label
@@ -872,6 +881,20 @@ export function resolveDottedToken(raw, ctx = {}) {
   // 6. Assignment / key position (`agent.server.host = …`, `"a.b.c": …`) is a
   //    configuration key whatever the suffix looks like.
   if (assignmentKey) return out('technical_artifact', 'config_context');
+
+  // 6b. Regular-expression fragment (`|currentversion.run\b|` in a hunting
+  //     query): an alternation branch, inside a clause dense with regex
+  //     syntax, whose unescaped dot is a wildcard — not a literal hostname
+  //     (a regex for a host escapes its dots). No stated network relation
+  //     (tl-type-resolver-v15).
+  if (
+    !inlineNetwork &&
+    REGEX_BRANCH_BEFORE_RE.test(before) &&
+    REGEX_BRANCH_AFTER_RE.test(after) &&
+    (clause.match(REGEX_SYNTAX_TOKEN_RE) || []).length >= 2
+  ) {
+    return out('technical_artifact', 'regex_fragment');
+  }
 
   // 7. Clause vocabulary: an artifact reading with no network relation stated.
   //    A DNS-shaped suffix is not overturned by loose clause words ("the module

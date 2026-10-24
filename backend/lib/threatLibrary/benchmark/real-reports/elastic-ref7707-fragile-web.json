@@ -1,0 +1,216 @@
+{
+ "id": "real-elastic-ref7707-fragile-web",
+ "title": "From South America to Southeast Asia: The Fragile Web of REF7707",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "06c0a90ce563643a9ca96c3eb2592ceb40c1c239b3cc12bbaa8398626ff154c9",
+  "url": "https://www.elastic.co/security-labs/threat-command/fragile-web-ref7707",
+  "talonhound_report_id": "32f31163-465f-4f38-8987-1a6ffb54b94c",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "cloud.autodiscovar.com",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes > Autodiscovar"
+   },
+   {
+    "type": "domain",
+    "value": "d-links.net",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "domain",
+    "value": "digert.ictnsc.com",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Execution Flow > Connectivity checks"
+   },
+   {
+    "type": "domain",
+    "value": "poster.checkponit.com",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Execution Flow > FINALDRAFT Analysis > PATHLOADER and GUIDLOADER"
+   },
+   {
+    "type": "domain",
+    "value": "support.fortineat.com",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Execution Flow > FINALDRAFT Analysis > PATHLOADER and GUIDLOADER"
+   },
+   {
+    "type": "domain",
+    "value": "support.vmphere.com",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Execution Flow > Connectivity checks"
+   },
+   {
+    "type": "domain",
+    "value": "update.hobiter.com",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Execution Flow > FINALDRAFT Analysis > FINALDRAFT bridging OS’"
+   },
+   {
+    "type": "domain",
+    "value": "vm-clouds.net",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "ip",
+    "value": "45.91.133.254",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "ip",
+    "value": "47.239.0.216",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "ip",
+    "value": "47.83.8.198",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "ip",
+    "value": "8.213.217.182",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "ip",
+    "value": "8.218.153.45",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Infrastructure Analysis > Service banner hashes"
+   },
+   {
+    "type": "sha256",
+    "value": "17b2c6723c11348ab438891bc52d0b29f38fc435c6ba091d4464f9f2a1b926e0",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "20508edac0ca872b7977d1d2b04425aaa999ecf0b8d362c0400abb58bd686f92",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "33f3a8ef2c5fbd45030385b634e40eaa264acbaeb7be851cbf04b62bbe575e75",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "39e85de1b1121dc38a33eca97c41dbd9210124162c6d669d28480c833e059530",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "41141e3bdde2a7aebf329ec546745149144eff584b7fe878da7a2ad8391017b9",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "41a3a518cc8abad677bb2723e05e2f052509a6f33ea75f32bd6603c96b721081",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "49e383ab6d092ba40e12a255e37ba7997f26239f82bebcd28efaa428254d30e1",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "5e3dbfd543909ff09e343339e4e64f78c874641b4fe9d68367c4d1024fe79249",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "7cd14d3e564a68434e3b705db41bddeb51dbb7d5425fd901c5ec904dbb7b6af0",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "83406905710e52f6af35b4b3c27549a12c28a628c492429d3a411fdb2d28cc8c",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "842d6ddb7b26fdb1656235293ebf77c683608f8f312ed917074b30fbd5e8b43d",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "9a11d6fcf76583f7f70ff55297fb550fed774b61f35ee2edd95cf6f959853bcf",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Execution Flow > FINALDRAFT Analysis > PATHLOADER and GUIDLOADER"
+   },
+   {
+    "type": "sha256",
+    "value": "d9fc1cab72d857b1e4852d414862ed8eab1d42960c1fd643985d352c148a6461",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f29779049f1fc2d45e43d866a845c45dc9aed6c2d9bbf99a8b1bdacfac2d52f2",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f45661ea4959a944ca2917454d1314546cc0c88537479e00550eef05bed5b1b9",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f90420847e1f2378ac8c52463038724533a9183f02ce9ad025a6a10fd4327f12",
+    "assertion": "explicit",
+    "evidence": "From South America to Southeast Asia: The Fragile Web of REF7707 > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

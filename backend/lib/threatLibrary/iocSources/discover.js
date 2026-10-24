@@ -44,7 +44,60 @@ function nearestHeadingText(node) {
   return '';
 }
 
-function toDiscoveryRow({ absolute, canonical, score, matchedCues, linkText, surrounding, headingText, reportUrl }) {
+const BLOCK_TAGS = new Set(['p', 'li', 'td', 'th', 'dd', 'dt', 'div', 'section', 'blockquote', 'figcaption', 'caption', 'pre']);
+
+function isBlank(node) {
+  return node?.type === 'text' && !String(node.data || '').trim();
+}
+
+function previousElement(node) {
+  let sib = node?.prev;
+  while (sib && (isBlank(sib) || sib.type === 'comment')) sib = sib.prev;
+  return sib && sib.type === 'tag' ? sib : null;
+}
+
+/**
+ * The publisher's lead-in for the anchor's list / block (tl-ioc-source-discovery-v3):
+ * the element right before the list item's list ("For a downloadable copy of
+ * IOCs, see:" + a <ul> of STIX links), or the paragraph right before the
+ * anchor's own paragraph when that paragraph ends with a colon. Headings are
+ * not lead-ins (they are scored separately as the section heading).
+ */
+function leadInTextOf(anchor) {
+  let node = anchor?.parent || null;
+  while (node && !(node.type === 'tag' && BLOCK_TAGS.has(String(node.name || '').toLowerCase()))) node = node.parent;
+  // Climb a few wrapper levels (<li> → <ul>; download-widget <div>s); at each
+  // level walk back over sibling link-only blocks (the other files of the same
+  // download list) to the publisher sentence that introduces them.
+  for (let depth = 0; node && depth < 4; depth += 1) {
+    let sib = previousElement(node);
+    for (let hops = 0; sib && hops < 8; hops += 1) {
+      const tag = String(sib.name || '').toLowerCase();
+      if (/^h[1-6]$/.test(tag)) return '';
+      const text = textOf(sib).replace(/\s+/g, ' ').trim();
+      if (text && text.length <= 300 && (/:\s*$/.test(text) || LEAD_IN_NOUN_RE.test(text)) && !isLinkOnlyBlock(sib)) return text;
+      if (!isLinkOnlyBlock(sib)) break;
+      sib = previousElement(sib);
+    }
+    const parent = node.parent;
+    if (!parent || parent.type !== 'tag' || /^(?:article|main|body|section)$/i.test(String(parent.name || ''))) return '';
+    node = parent;
+  }
+  return '';
+}
+
+/** Indicator nouns that let a lead-in without a trailing colon qualify. */
+const LEAD_IN_NOUN_RE = /\b(?:iocs?|indicators?|observables?)\b/i;
+
+/** A short block that is essentially one link (a download widget / list entry). */
+function isLinkOnlyBlock(el) {
+  const links = findElements(el, (x) => String(x?.name || '').toLowerCase() === 'a');
+  if (!links.length) return false;
+  const text = textOf(el).replace(/\s+/g, ' ').trim();
+  return text.length <= 200;
+}
+
+function toDiscoveryRow({ absolute, canonical, score, matchedCues, linkText, surrounding, headingText, reportUrl, leadIn }) {
   return {
     original_url: absolute,
     canonical_url: canonical,
@@ -55,6 +108,7 @@ function toDiscoveryRow({ absolute, canonical, score, matchedCues, linkText, sur
       link_text: String(linkText || '').slice(0, 240),
       surrounding_text: String(surrounding || '').slice(0, 400),
       heading_text: headingText ? String(headingText).slice(0, 200) : null,
+      ...(leadIn ? { lead_in_text: String(leadIn).slice(0, 300) } : {}),
       matched_cues: matchedCues.slice(0, 16),
       score,
       report_url: reportUrl || null
@@ -98,12 +152,14 @@ export function discoverIocSourcesFromHtml(html, opts = {}) {
     const linkText = textOf(a).trim();
     const parentText = textOf(a.parent || a).trim().slice(0, 400);
     const headingText = nearestHeadingText(a);
+    const leadIn = leadInTextOf(a);
     const scored = scoreIocSourceCandidate({
       href: absolute,
       linkText,
       surrounding: parentText,
       headingText,
-      reportHost
+      reportHost,
+      leadIn
     });
     if (!isAcceptedIocSourceScore(scored)) continue;
 
@@ -119,7 +175,8 @@ export function discoverIocSourcesFromHtml(html, opts = {}) {
         linkText,
         surrounding: parentText,
         headingText,
-        reportUrl: opts.reportUrl
+        reportUrl: opts.reportUrl,
+        leadIn
       })
     );
   }

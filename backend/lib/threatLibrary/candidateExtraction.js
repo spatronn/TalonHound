@@ -27,7 +27,7 @@ import {
 } from './candidateTyping.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { normalizeCandidateValue } from './candidateValue.js';
-import { parseIndicatorCell } from './tableSemantics.js';
+import { joinWrappedUrlTail, parseIndicatorCell } from './tableSemantics.js';
 import { ipv4VersionContext } from './ipv4VersionContext.js';
 import {
   annotateListStances,
@@ -35,7 +35,8 @@ import {
   isCredentialLabeledHex,
   isIndicatorRowShape,
   isIndicatorValueLine,
-  lineContainingObservable
+  lineContainingObservable,
+  textDescribesValueAsBenign
 } from './indicatorScope.js';
 import {
   FILE_EXT_HINT,
@@ -224,8 +225,17 @@ export {
  * observable (tableSemantics); "label: ftp://host" rows assert the host.
  * v36: membership follows tl-section-tree-v7 — a section whose lead-in
  * declares it adds / lists indicators is publisher indicator scope.
+ * v37 (30-report audit): recoverable URL forms ("http//host", a URL wrapped
+ * onto two lines of one cell / row, transport endpoints "tcp://host:443" whose
+ * host is the value); a directory URL listed as its own explicit IOC row is
+ * not an incomplete prefix; an email local part is never a domain; table
+ * description cells keep their observables (Context Only unless the value's
+ * own clause gives it an actor-infrastructure role in an explicit IOC table);
+ * table reference columns are Context Only; a row description that says what
+ * a digest is of governs its file-hash reading (tl-section-tree-v8,
+ * tl-table-v9, tl-evidence-integrity-v3).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v36';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v37';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -247,11 +257,68 @@ function hasExplicitIocSectionOccurrence(entry) {
 }
 
 /**
+ * Actor-infrastructure role words a publisher writes next to a value in a
+ * table description cell ("(C2 SystemBC)", "exfiltration server").
+ */
+const DESCRIPTION_ROLE_WORDS =
+  String.raw`(?:c2|c&c|cnc|command\s*(?:and|&)\s*control|exfil(?:tration)?\s+(?:server|domain|host|ip|infrastructure|endpoint)|malicious\s+(?:domain|host|server|ip|url|infrastructure)|phishing\s+(?:domain|site|page|url|server)|payload\s+(?:server|host|domain|url)|(?:download|staging|delivery)\s+server)`;
+/** The role right before the value: "C2 domain X", "C2: X", "C&C server - X". */
+const ROLE_BEFORE_VALUE_RE = new RegExp(
+  String.raw`(?:^|[^a-z0-9])${DESCRIPTION_ROLE_WORDS}(?:\s+(?:domain|host|server|ip|url|address|endpoint)s?)?\s*[:=\-–—]?\s*$`,
+  'i'
+);
+/** The role right after the value: "X (C2 SystemBC)", "X - C2", "X is a C2 server". */
+const ROLE_AFTER_VALUE_RE = new RegExp(
+  String.raw`^\s*[\-–—:(\[]*\s*(?:is\s+(?:an?\s+|the\s+)?)?${DESCRIPTION_ROLE_WORDS}(?:[^a-z0-9]|$)`,
+  'i'
+);
+
+/**
+ * A description cell asserts `value` when the clause that names it — split at
+ * ";", "·", line breaks or sentence ends — names only this observable, gives
+ * that observable itself an actor-infrastructure role (right before or right
+ * after it, no relation word between: "resolved C2 domains via X" or "C2,
+ * associated with host X" name another subject's role) and does not call it
+ * benign.
+ * @param {string} cell description cell text (publisher spelling)
+ * @param {string} value refanged value
+ */
+function descriptionClauseAssertsRole(cell, value) {
+  const text = refangTextForExtraction(cell);
+  const v = String(value || '').toLowerCase();
+  if (!v) return false;
+  const clause = text.split(/[;·¶\n]|\.\s+(?=[A-Z])/).find((c) => c.toLowerCase().includes(v));
+  if (!clause) return false;
+  const observables = parseIndicatorCell(clause, null).values.filter((x) => x.is_ioc !== false);
+  if (observables.length !== 1 || textDescribesValueAsBenign(clause, [v])) return false;
+  const at = clause.toLowerCase().indexOf(v);
+  return ROLE_BEFORE_VALUE_RE.test(clause.slice(Math.max(0, at - 40), at)) || ROLE_AFTER_VALUE_RE.test(clause.slice(at + v.length, at + v.length + 40));
+}
+
+/**
+ * True when the publisher wrote this value as its own row of an explicit IOC
+ * table: a typed table cell, or a one-cell table row whose whole text is the
+ * value. A line of a pasted dump, a PDF row list or a sentence is not.
+ */
+function hasExplicitSingleValueRowOccurrence(entry) {
+  return (entry.occurrences || []).some((o) => {
+    if (o.zone !== 'explicit_ioc_section') return false;
+    if (o.form === 'table_row') return true;
+    // A one-cell table row holding only this URL (an HTML IOC table of URL
+    // rows). A line of a pasted dump / PDF row list keeps the prefix rule.
+    return o.form === 'list_row' && o.block_type === 'table' && isIndicatorValueLine(String(o.surrounding_text || ''));
+  });
+}
+
+/**
  * Mark URL candidates that are incomplete path prefixes of a longer sibling
  * URL in the same document (e.g. http://host:443/t/ vs …/t/a779ab).
  * An origin URL (pathname "/") with a longer same-origin sibling is incomplete
  * unless the publisher also listed that origin in an explicit IOC inventory —
  * path IOCs never authorize a broader root alone (tl-candidates-v34).
+ * A directory URL ("http://h/555/") the publisher listed as its own row of an
+ * explicit IOC table is a complete value, not a prefix (tl-candidates-v37); a
+ * bare prefix line in a pasted URL dump or PDF row list keeps the protection.
  * @param {Map<string, object>} byKey
  */
 function markIncompleteUrlPrefixes(byKey) {
@@ -274,6 +341,7 @@ function markIncompleteUrlPrefixes(byKey) {
       if (!hasExplicitIocSectionOccurrence(a)) a.incomplete_url_prefix = true;
       continue;
     }
+    if (hasExplicitSingleValueRowOccurrence(a)) continue;
     a.incomplete_url_prefix = true;
   }
 }
@@ -425,6 +493,15 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"'`\]‘’“”«»]+/gi;
  */
 const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`\]，。；‘’“”«»]+)/gi;
 const URL_SCHEME_PREFIX_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+/**
+ * Transport endpoint written with a non-HTTP scheme ("tcp://c2.example:443",
+ * "udp://198.51.100.7:53", "socks5://h:1080"). TalonHound URL values are web
+ * resources, so the endpoint's host is the observable: the scheme declares it
+ * a network host (never a `key: value` pair), the port is endpoint context and
+ * the publisher's endpoint spelling is kept as provenance (tl-candidates-v37).
+ */
+const NETWORK_ENDPOINT_RE =
+  /\b(tcp|udp|tls|ssl|socks[45]h?):\/\/((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))(?::(\d{1,5}))?(?![\w.-])/gi;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
 
 /** A redaction placeholder right before a hostname tail ("<REDACTED>", "[redacted]", "REDACTED", "xxx"). */
@@ -686,6 +763,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         ? surroundingWindow(extra.evidenceRowText || text, focus, 140, extra.focusOrdinal || 0)
         : null,
       typing_reason: extra.typingReason || null,
+      ...(extra.referenceCell === true ? { reference_cell: true } : {}),
+      ...(extra.descriptionCell === true ? { description_cell: true } : {}),
       ...(block?.list_stance ? { list_stance: block.list_stance } : {})
     };
   }
@@ -866,7 +945,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const scopeLabel = block?.type === 'table'
         ? block?.table?.caption || block?.section || null
         : block?.type === 'list' ? listLeadIns.get(block.id) || null : null;
-      const digest = classifyHexDigest(line, n.normalizedValue, { scopeLabel });
+      const digest = classifyHexDigest(line, n.normalizedValue, { scopeLabel, rowDescription: extra.tableRow?.description || null });
       if (NON_FILE_DIGEST_KINDS.has(digest.kind) && digest.kind !== DIGEST_KINDS.CREDENTIAL) {
         countReason(typeDiag.excluded_reasons, `non_file_digest_${digest.kind}`);
         const artifact = materialize({
@@ -1167,6 +1246,19 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     block.layout === 'observable_row' ||
     ((block.type === 'list' || block.type === 'table') && isIndicatorValueLine(block.text || ''));
 
+  /**
+   * Text the regex passes read for a block. An indicator row that is one URL
+   * wrapped by the publisher's layout ("http://h/" + "x.exe") is read joined,
+   * so the URL is one value and its tail never becomes a file-name token.
+   */
+  const scanText = (block) => {
+    const raw = block.text || '';
+    const joined = isObservableRow(block) ? joinWrappedUrlTail(raw) : null;
+    return refangTextForExtraction(joined || raw);
+  };
+  /** Transport endpoints seen in the regex pass: [type, host, endpoint spelling]. */
+  const networkEndpoints = [];
+
   /** Blocks handled row-by-row (typed indicator tables) — skipped by the regex passes. */
   const tableHandled = new Set();
   // Publisher observation dates in indicator rows: slash-date order is decided
@@ -1305,6 +1397,76 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         }
       }
     }
+    // Description cells: observables written in a row's prose cell. One whose
+    // own clause gives it an actor-infrastructure role ("evil.example (C2
+    // SystemBC)") in an explicit IOC table is that row's assertion; any other
+    // is Context Only provenance — kept, never dropped (tl-candidates-v37).
+    const descriptionCols = (interp.columns || []).filter((c) => c.intent === 'description');
+    for (const row of interp.rows || []) {
+      const rowValues = new Set((row.values || []).map((v) => candidateKey(v.candidate_type, v.normalized_value)));
+      for (const col of descriptionCols) {
+        const cell = String(row.cells?.[col.index] || '').trim();
+        if (!cell) continue;
+        for (const v of parseIndicatorCell(cell, null).values) {
+          if (v.is_ioc === false || rowValues.has(candidateKey(v.candidate_type, v.normalized_value))) continue;
+          if (v.candidate_type === 'domain' && !String(v.normalized_value).includes('.')) continue;
+          const rowText = (row.cells || []).filter(Boolean).join(' | ');
+          if (Boolean(interp.explicit) && descriptionClauseAssertsRole(cell, v.refanged)) {
+            explicitTableAssertions.rememberAsserted(v.candidate_type, v.normalized_value);
+            add(v.refanged, v.candidate_type, block, {
+              form: OCCURRENCE_FORMS.TABLE_ROW,
+              port: v.port ?? null,
+              originalValue: v.raw,
+              rowText,
+              evidenceRowText: rowText,
+              tableRow: {
+                table_id: block.id,
+                page: block.page ?? null,
+                row_index: row.row_index,
+                column_index: col.index,
+                column_header: columnLabels?.[col.index] || null,
+                declared_type: null,
+                type_cell: row.type_cell || null,
+                indicator_cell: cell,
+                raw_value: v.raw,
+                description: row.description,
+                explicit: true,
+                description_value: true
+              },
+              explicitTable: true
+            });
+          } else {
+            // Context only: the value is related row metadata, so an endpoint
+            // port written beside it is not recorded as the value's port.
+            add(v.refanged, v.candidate_type, block, {
+              form: OCCURRENCE_FORMS.STANDALONE,
+              originalValue: v.raw,
+              rowText,
+              descriptionCell: true
+            });
+          }
+        }
+      }
+    }
+    // Reference columns ("Source" / "Download" / "Homepage" links of a tool
+    // table): provenance of the row's subject, kept as Context Only values
+    // and never asserted, whatever section the table sits in (tl-table-v9).
+    for (const col of (interp.columns || []).filter((c) => c.attribute_kind === 'reference')) {
+      for (const row of interp.rows || []) {
+        const cell = String(row.cells?.[col.index] || '').trim();
+        if (!cell) continue;
+        for (const v of parseIndicatorCell(cell, null).values) {
+          if (v.is_ioc === false) continue;
+          add(v.refanged, v.candidate_type, block, {
+            form: OCCURRENCE_FORMS.STANDALONE,
+            originalValue: v.raw,
+            rowText: (row.cells || []).filter(Boolean).join(' | '),
+            referenceCell: true,
+            typing: { typing_reason: 'reference_column' }
+          });
+        }
+      }
+    }
     // Version-column release numbers of an indicator table are never row
     // values (tl-table-v5); keep them as version metadata, as the text pass does.
     const versionTokens = versionColumnTokens(block);
@@ -1323,7 +1485,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const urlSpansByBlock = new Map();
   for (const block of blocks) {
     if (tableHandled.has(block.id)) continue;
-    const text = refangTextForExtraction(block.text || '');
+    const text = scanText(block);
     if (!text.trim()) continue;
     const spans = [];
     for (const m of text.matchAll(URL_RE)) {
@@ -1409,7 +1571,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // own host component — not an independent assertion — and are skipped.
   for (const block of blocks) {
     if (tableHandled.has(block.id)) continue;
-    const text = refangTextForExtraction(block.text || '');
+    const text = scanText(block);
     if (!text.trim()) continue;
     const urlSpans = urlSpansByBlock.get(block.id) || [];
     const isRow = isObservableRow(block);
@@ -1420,6 +1582,27 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // Prose version reading applies outside publisher IOC sections and rows,
     // where a bare value is the publisher's assertion and stays authoritative.
     const proseVersions = !isRow && !STRONG_IOC_ZONES.has(block.zone || '');
+
+    // Non-HTTP transport endpoints ("tcp://host:443"): the host, read as a
+    // declared network host with its port; the endpoint spelling is provenance.
+    for (const m of text.matchAll(NETWORK_ENDPOINT_RE)) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (insideAnySpan(urlSpans, start, end)) continue;
+      const host = m[2].toLowerCase();
+      const isIp = isValidIpAddress(host);
+      const port = m[3] && Number(m[3]) >= 1 && Number(m[3]) <= 65535 ? Number(m[3]) : null;
+      const added = add(host, isIp ? 'ip' : 'domain', block, {
+        form: isIp && port != null ? OCCURRENCE_FORMS.IP_PORT : standaloneForm,
+        port,
+        declaredType: isIp ? null : 'domain',
+        typing: { typing_reason: 'network_endpoint_scheme' }
+      });
+      if (added) {
+        networkEndpoints.push([isIp ? 'ip' : 'domain', host, m[0]]);
+        consumed.push([start, end]);
+      }
+    }
 
     // IP:port endpoints (direct C2 endpoint assertions)
     for (const m of text.matchAll(IPV4_PORT_RE)) {
@@ -1508,7 +1691,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     for (const m of text.matchAll(DOMAIN_RE)) {
       const start = m.index;
       const end = start + m[0].length;
-      if (insideAnySpan(urlSpans, start, end)) continue;
+      if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
+      // The local part of an email address ("decrypt.support@mail.example")
+      // is a mailbox name whose dots only look like a hostname
+      // (tl-candidates-v37): never a domain of its own.
+      if (/^@[a-z0-9]/i.test(text.slice(end, end + 2))) continue;
       // Truncated publisher hostname: "online-driver.kro.k" (from "kro[.]k")
       // matches DOMAIN_RE as the prefix "...kro" because a 1-char final label
       // cannot be a TLD. Do not invent a shorter complete domain from that.
@@ -1538,6 +1725,16 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   // Decide deferred dotted tokens (domain vs technical artifact) per document.
   resolvePendingDotted();
+
+  // Endpoint provenance: the publisher's "tcp://host:port" spelling stays on
+  // the host identity (parsed metadata, never a second value).
+  for (const [type, host, spelling] of networkEndpoints) {
+    const entry = byKey.get(candidateKey(type, host));
+    if (!entry) continue;
+    const list = Array.isArray(entry.parsed.network_endpoints) ? entry.parsed.network_endpoints : [];
+    if (!list.includes(spelling) && list.length < 8) list.push(spelling);
+    entry.parsed.network_endpoints = list;
+  }
 
   // One resource written "host/path" in one place and "https://host/path" in
   // another is one identity: the scheme-less spelling joins the absolute URL

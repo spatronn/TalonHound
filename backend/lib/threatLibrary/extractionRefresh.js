@@ -153,6 +153,11 @@ export function aiReplayUpdatesFromRows(rows, opts = {}) {
     const roleSuggestion = ev.ai_role_suggestion || null;
     if (decisionSource !== 'ai' && !roleSuggestion) continue;
     const confidence = row.confidence == null ? null : Number(row.confidence);
+    // A model decision the evidence-integrity gate refused when it was made
+    // (fabricated quote, missing block, unsupported escalation) stays refused:
+    // the replay anchor is the publisher text, so re-grounding it would launder
+    // the original claim (tl-evidence-integrity-v3).
+    if (decisionSource === 'ai' && !promotedFrom && ev.ai_classification && ev.ai_classification.applied === false) continue;
     if (decisionSource === 'ai') {
       const update = {
         candidate_type: row.candidate_type,

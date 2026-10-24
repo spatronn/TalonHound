@@ -59,11 +59,11 @@ const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(
 const find = (x, type, value) => x.candidates.find((c) => c.candidate_type === type && c.normalized_value === value);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v36');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v14');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v37');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v15');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v7');
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v9');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v8');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v10');
 });
 
 // --- A. Markdown-escaped defang ----------------------------------------------

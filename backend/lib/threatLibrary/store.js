@@ -1167,7 +1167,26 @@ export async function loadReportCandidatesForAnalysis(pool, reportId) {
       is_parser_derived_metadata: ev.is_parser_derived_metadata === true,
       derived_from: ev.derived_from || null,
       source_relation: ev.source_relation || null,
-      document_has_authoritative_scope: ev.document_has_authoritative_scope === true
+      document_has_authoritative_scope: ev.document_has_authoritative_scope === true,
+      // Persisted provenance carried as stored (never re-derived or invented):
+      // a rewrite of a reused row keeps the reading it was extracted under.
+      artifact_kind: ev.artifact_kind || null,
+      digest_kind: ev.digest_kind || undefined,
+      digest_shape: ev.digest_shape || undefined,
+      publisher_evidence: ev.publisher_evidence || undefined,
+      ai_classification: ev.ai_classification || undefined,
+      ai_evidence_rejected: ev.ai_evidence_rejected || undefined,
+      ai_role_suggestion: ev.ai_role_suggestion || null,
+      canonical_rejection: ev.canonical_rejection || null,
+      type_resolution: ev.type_resolution || null,
+      scope_engine: ev.scope_engine || null,
+      scope_engine_version: ev.scope_engine_version || null,
+      section_tree_version: ev.section_tree_version || null,
+      incomplete_url_prefix: ev.incomplete_url_prefix === true || undefined,
+      reserved_address: ev.reserved_address === true || undefined,
+      rfc_example: ev.rfc_example === true || undefined,
+      non_actionable_local: ev.non_actionable_local === true || undefined,
+      evidence: ev
     };
   });
 }

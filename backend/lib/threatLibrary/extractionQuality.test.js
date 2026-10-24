@@ -37,7 +37,7 @@ const members = (cands) =>
   cands.filter((c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })).map((c) => `${c.candidate_type}:${c.normalized_value}`).sort();
 
 test('contract: version, central thresholds, stable codes', () => {
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v9');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v10');
   assert.ok(Object.isFrozen(EXTRACTION_QUALITY_THRESHOLDS));
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.orphanRunMinValues, 3);
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.appendixHeadingNonmemberMinValues, 2);

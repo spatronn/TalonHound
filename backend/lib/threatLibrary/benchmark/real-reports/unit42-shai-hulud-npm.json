@@ -1,0 +1,93 @@
+{
+ "id": "real-unit42-shai-hulud-npm",
+ "title": "\"Shai-Hulud\" Worm Compromises npm Ecosystem in Supply Chain Attack (Updated November 26)",
+ "publisher": "Palo Alto Networks Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "9cbd5d4c24be67f946e32237fdcbe529ac6b805d20466708400f70750584c3ee",
+  "url": "https://unit42.paloaltonetworks.com/npm-supply-chain-attack",
+  "talonhound_report_id": "8ed8b221-3eee-4d78-a6a2-e80d865277c2",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Palo Alto Networks Unit 42 publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "4 Nov-2025 campaign file hashes appear only inside a hunting query (Updated Queries for November 2025 Campaign), not in the IOC section; MODE A keeps them Context Only",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "sha256",
+    "value": "46faab8ab153fae6e80e7cca38eab363075bb524edd79e42269217a083628f09",
+    "assertion": "explicit",
+    "evidence": "Hulud\" Worm Compromises npm Ecosystem in Supply Chain Attack (Updated Nove > Unit 42 Managed Threat Hunting Queries > Updated Queries for November 2025 Campaign"
+   },
+   {
+    "type": "sha256",
+    "value": "4b2399646573bb737c4969563303d8ee2e9ddbd1b271f1ca9e35ea78062538db",
+    "assertion": "explicit",
+    "evidence": "\"Shai-Hulud\" Worm Compromises npm Ecosystem in Supply Chain Attack (Updated Nove > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "b74caeaa75e077c99f7d44f46daaf9796a3be43ecf24f2a1fd381844669da777",
+    "assertion": "explicit",
+    "evidence": "\"Shai-Hulud\" Worm Compromises npm Ecosystem in Supply Chain Attack (Updated Nove > Indicators of Compromise"
+   },
+   {
+    "type": "sha256",
+    "value": "dc67467a39b70d1cd4c1f7f7a459b35058163592f4a9e8fb4dffcbba98ef210c",
+    "assertion": "explicit",
+    "evidence": "\"Shai-Hulud\" Worm Compromises npm Ecosystem in Supply Chain Attack (Updated Nove > Indicators of Compromise"
+   },
+   {
+    "type": "url",
+    "value": "https://webhook.site/bb8ca5f6-4175-45d2-b042-fc9ebb8170b7",
+    "assertion": "explicit",
+    "evidence": "\"Shai-Hulud\" Worm Compromises npm Ecosystem in Supply Chain Attack (Updated Nove > Indicators of Compromise"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [
+   {
+    "type": "sha256",
+    "value": "62ee164b9b306250c1172583f138c9614139264f889fa99614903c12755468d0",
+    "rationale": "Present only inside the hunting query \"Updated Queries for November 2025 Campaign\" (malicious bundle.js / bun_environment.js / setup_bun.js); the IOC section was not updated for the November wave. MODE A keeps it Context Only; analyst promote decision."
+   },
+   {
+    "type": "sha256",
+    "value": "a3894003ad1d293ba96d77881ccd2071446dc3f65f434669b49b3da92421901a",
+    "rationale": "Present only inside the hunting query \"Updated Queries for November 2025 Campaign\" (malicious bundle.js / bun_environment.js / setup_bun.js); the IOC section was not updated for the November wave. MODE A keeps it Context Only; analyst promote decision."
+   },
+   {
+    "type": "sha256",
+    "value": "cbb9bc5a8496243e02f3cc080efbe3e4a1430ba0671f2e43a202bf45b05479cd",
+    "rationale": "Present only inside the hunting query \"Updated Queries for November 2025 Campaign\" (malicious bundle.js / bun_environment.js / setup_bun.js); the IOC section was not updated for the November wave. MODE A keeps it Context Only; analyst promote decision."
+   },
+   {
+    "type": "sha256",
+    "value": "f099c5d9ec417d4445a0328ac0ada9cde79fc37410914103ae9c609cbc0ee068",
+    "rationale": "Present only inside the hunting query \"Updated Queries for November 2025 Campaign\" (malicious bundle.js / bun_environment.js / setup_bun.js); the IOC section was not updated for the November wave. MODE A keeps it Context Only; analyst promote decision."
+   }
+  ],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

@@ -1,0 +1,126 @@
+{
+ "id": "real-elastic-roningloader",
+ "title": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "573306a1e20a39d6382cefb21258e69b37eca068f9c88dc690fcb77b063f8c76",
+  "url": "https://www.elastic.co/security-labs/threat-command/roningloader",
+  "talonhound_report_id": "d98e8afa-2a05-4153-b792-15e4c12db426",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "qaqkongtiao.com",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "1613a913d0384cbb958e9a8d6b00fffaf77c27d348ebc7886d6c563a6f22f2b7",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "1c1528b546aa29be6614707cbe408cb4b46e8ed05bf3fe6b388b9f22a4ee37e2",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "2515b546125d20013237aeadec5873e6438ada611347035358059a77a32c54f5",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "33b494eaaa6d7ed75eec74f8c8c866b6c42f59ca72b8517b3d4752c3313e617c",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "395f835731d25803a791db984062dd5cfdcade6f95cc5d0f68d359af32f6258d",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "3dd470e85fe77cd847ca59d1d08ec8ccebe9bd73fd2cf074c29d87ca2fd24e33",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "4d5beb8efd4ade583c8ff730609f142550e8ed14c251bae1097c35a756ed39e6",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "82794015e2b40cc6e02d3c1d50241465c0cf2c2e4f0a7a2a8f880edaee203724",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "96f401b80d3319f8285fa2bb7f0d66ca9055d349c044b78c27e339bcfb07cdf0",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "c65170be2bf4f0bd71b9044592c063eaa82f3d43fcbd8a81e30a959bcaad8ae5",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "da2c58308e860e57df4c46465fd1cfc68d41e8699b4871e9a9be3c434283d50b",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > RONINGLOADER code analysis > Stage 1"
+   },
+   {
+    "type": "sha256",
+    "value": "fc63f5dfc93f2358f4cba18cbdf99578fff5dac4cdd2de193a21f6041a0e01bc",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "fd4dd9904549c6655465331921a28330ad2b9ff1c99eb993edf2252001f1d107",
+    "assertion": "explicit",
+    "evidence": "RONINGLOADER: DragonBreath’s New Path to PPL Abuse > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

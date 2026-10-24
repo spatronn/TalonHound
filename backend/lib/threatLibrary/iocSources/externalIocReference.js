@@ -60,6 +60,14 @@ const LOOKUP_SERVICE_HOST_RE =
 const NON_PACK_FILE_EXT_RE = /\.(?:zip|7z|rar|gz|tgz|tar|bz2|xz|exe|msi|dll|dmg|pkg|apk|ipa|deb|rpm|iso|img|bin|jar|js|mjs|ts|py|ps1|sh|bat|vbs|hta|lnk|docx?|xlsx?|pptx?|png|jpe?g|gif|svg|webp|mp4|mov)$/i;
 /** Data-pack file extensions (a linked file must be one of these to qualify). */
 const PACK_FILE_EXT_RE = /\.(?:txt|csv|json|stix|misp|xml|ioc|md|adoc|yml|yaml|sha256|sha1|md5|tsv|pdf)$/i;
+/** Anchor text naming an IOC exchange format ("AA25-203A STIX XML", "MISP event JSON", "OpenIOC"). */
+const IOC_FORMAT_LINK_TEXT_RE = /\b(?:stix(?:\s*2(?:\.\d)?)?|misp|openioc)\b/i;
+/**
+ * A lead-in that announces a downloadable indicator package ("For a
+ * downloadable copy of Nov. 13, 2025 IOCs, see:", "Downloadable IOCs:").
+ */
+const IOC_PACKAGE_LEAD_IN_RE =
+  /\b(?:a\s+downloadable\s+(?:copy|list|version|file|set)\s+of\s+(?:the\s+)?(?:[\w.,()-]+\s+){0,4}?(?:iocs?|indicators?)|downloadable\s+(?:iocs?|indicators?))\b/i;
 /** Indicator nouns in the anchor's own sentence. */
 const LOCAL_IOC_NOUN_RE = /\b(?:iocs?|indicators?|observables?)\b/i;
 /** The link text is itself an observable (a per-indicator lookup link). */
@@ -67,7 +75,7 @@ const OBSERVABLE_LINK_TEXT_RE =
   /^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64}|(?:\d{1,3}(?:\[?\.\]?)){3}\d{1,3}|(?:[a-z0-9-]+(?:\[\.\]|\.))+[a-z]{2,63})$/i;
 
 /**
- * Score a candidate external IOC reference destination (tl-ioc-source-discovery-v2).
+ * Score a candidate external IOC reference destination (tl-ioc-source-discovery-v3).
  *
  * Evidence is ANCHOR-LOCAL: the link text and the sentence / block around it.
  * An IOC section heading adds weight but never validates a link by itself —
@@ -76,10 +84,12 @@ const OBSERVABLE_LINK_TEXT_RE =
  * are not IOC packs.
  * @returns {{ score: number, matchedCues: string[], hasTextEvidence: boolean, rejected?: string }}
  */
-export function scoreIocSourceCandidate({ href, linkText, surrounding, headingText, reportHost }) {
+export function scoreIocSourceCandidate({ href, linkText, surrounding, headingText, reportHost, leadIn }) {
   // Strip absolute URLs from prose before cue / pointer matching so a bare
   // https://github.com/... hostname cannot satisfy "… available … github …".
-  const localProse = `${linkText || ''} ${surrounding || ''}`.replace(/https?:\/\/\S+/gi, ' ');
+  // The publisher's lead-in for the anchor's list ("For a downloadable copy of
+  // IOCs, see:") is anchor-local: it introduces exactly these links (v3).
+  const localProse = `${leadIn || ''} ${linkText || ''} ${surrounding || ''}`.replace(/https?:\/\/\S+/gi, ' ');
   const textHay = normalizeHay(localProse);
   const urlHay = normalizeHay(href);
   const textCues = collectTextCues(textHay);
@@ -112,7 +122,12 @@ export function scoreIocSourceCandidate({ href, linkText, surrounding, headingTe
   const hasStrongPath = pathCues.some((c) => /url:\/(?:ioc|iocs|indicators?)\//.test(c)) || (isGitHost && /(?:^|[-_/])iocs?(?:[-_/.]|$)/i.test(path));
   // Anchor-local evidence: an IOC-dataset phrase, or a pointer sentence that
   // names indicators ("These indicators are available for download here").
-  const localEvidence = textCues.length > 0 || (pointer && LOCAL_IOC_NOUN_RE.test(localProse));
+  // v3: or the anchor text itself is the indicator noun / an IOC data format
+  // ("observables" linking to an /indicators/ path; "STIX XML" / "MISP JSON").
+  const packageLeadIn = IOC_PACKAGE_LEAD_IN_RE.test(String(leadIn || ''));
+  const localEvidence = textCues.length > 0 || (pointer && LOCAL_IOC_NOUN_RE.test(localProse)) || packageLeadIn ||
+    (hasStrongPath && LOCAL_IOC_NOUN_RE.test(linkLabel)) ||
+    (IOC_FORMAT_LINK_TEXT_RE.test(linkLabel) && PACK_FILE_EXT_RE.test(lastSegment));
 
   // Same-site links (navigation, tags, authors, other posts) qualify only as
   // a data file the anchor itself presents as an IOC pack.
@@ -137,6 +152,9 @@ export function scoreIocSourceCandidate({ href, linkText, surrounding, headingTe
   if (pointer) {
     score += 6;
     matchedCues.push('external_pointer');
+  } else if (packageLeadIn) {
+    score += 6;
+    matchedCues.push('ioc_package_lead_in');
   }
   if (hasIocHeading) {
     score += 5;
@@ -256,12 +274,17 @@ export function findExternalIocReferencesInBlocks(blocks, opts = {}) {
   /** @type {Map<string, object>} */
   const byHref = new Map();
   let lastHeading = '';
+  let previousText = '';
 
   for (const b of list) {
     if (b?.type === 'heading' && b.text) {
       lastHeading = String(b.text).slice(0, 200);
+      previousText = '';
       continue;
     }
+    // Lead-in of a list: the block right before it ending with a colon (v3).
+    const leadIn = (b?.type === 'list' || b?.type === 'list_item') && /:\s*$/.test(previousText) ? previousText.slice(0, 300) : '';
+    previousText = String(b?.text || '').trim();
     const t = String(b?.text || '');
     const links = blockHyperlinks(b);
     const candidates = [];
@@ -291,7 +314,8 @@ export function findExternalIocReferencesInBlocks(blocks, opts = {}) {
         linkText: c.linkText,
         surrounding: c.surrounding,
         headingText: lastHeading,
-        reportHost
+        reportHost,
+        leadIn
       });
       if (!isAcceptedIocSourceScore(scored)) continue;
       const prev = byHref.get(c.href);

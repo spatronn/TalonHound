@@ -1,0 +1,102 @@
+{
+ "id": "real-elastic-shellter",
+ "title": "Taking SHELLTER: a commercial evasion framework abused in-the-wild",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "13c349b42ca676307159b40f9815c6e1161b2a3da10db00fe22e6fcfbbefb4e4",
+  "url": "https://www.elastic.co/security-labs/threat-command/taking-shellter",
+  "talonhound_report_id": "3813d0a3-5cb5-4ba0-bf92-164b09f73338",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "eaglekl.digital",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > Observations"
+   },
+   {
+    "type": "domain",
+    "value": "plotoraus.shop",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "185.156.72.80",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > Campaigns > ARECHCLIENT2"
+   },
+   {
+    "type": "ip",
+    "value": "94.141.12.182",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "263ab8c9ec821ae573979ef2d5ad98cda5009a39e17398cd31b0fad98d862892",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "70ec2e65f77a940fd0b2b5c0a78a83646dec17583611741521e0992c1bf974f1",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > SHELLTER Loader - Technical Details > License Check and Self-disarm"
+   },
+   {
+    "type": "sha256",
+    "value": "7d0c9855167e7c19a67f800892e974c4387e1004b40efb25a2a1d25a99b03a10",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > SHELLTER Loader - Technical Details > License Check and Self-disarm"
+   },
+   {
+    "type": "sha256",
+    "value": "b3e93bfef12678294d9944e61d90ca4aa03b7e3dae5e909c3b2166f122a14dad",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > SHELLTER Loader - Technical Details > License Check and Self-disarm"
+   },
+   {
+    "type": "sha256",
+    "value": "c865f24e4b9b0855b8b559fc3769239b0aa6e8d680406616a13d9a36fbbc2d30",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > SHELLTER Loader - Technical Details > License Check and Self-disarm"
+   },
+   {
+    "type": "sha256",
+    "value": "da59d67ced88beae618b9d6c805f40385d0301d412b787e9f9c9559d00d2c880",
+    "assertion": "explicit",
+    "evidence": "Taking SHELLTER: a commercial evasion framework abused in-the-wild > SHELLTER Loader - Technical Details > License Check and Self-disarm"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

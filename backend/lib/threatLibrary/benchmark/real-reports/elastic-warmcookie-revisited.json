@@ -1,0 +1,270 @@
+{
+ "id": "real-elastic-warmcookie-revisited",
+ "title": "WARMCOOKIE One Year Later: New Features and Fresh Insights",
+ "publisher": "Elastic Security Labs",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "elastic",
+  "html",
+  "audit_30_2026_10_24"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "d2e404f6d479e3ad4392e88241ed868808acbca69dfd0db1525c7851aeb2d420",
+  "url": "https://www.elastic.co/security-labs/threat-command/revisiting-warmcookie",
+  "talonhound_report_id": "64872a7d-4d43-4da3-a6f2-92b540d8e791",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible Elastic Security Labs publication at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-24"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (30-report audit 2026-10-24): live publisher page re-fetched and parsed with an own heading-path walker, refang and regexes (no TalonHound zone/scope/typing/classification code); authority zones chosen by a human per report; every in-zone and out-of-zone observable reviewed one by one; linked STIX/GitHub packages diffed separately.",
+   "verified_by": "manual review of the publisher text (2026-10-24)",
+   "verified_at": "2026-10-24",
+   "notes": "",
+   "coverage_note": "One of the 30 reports in review_required on 2026-10-24 (30-report audit); primary document only, linked packages are not part of these labels."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "storsvc-win.com",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.18.183",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "109.120.137.42",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "149.248.58.85",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "149.248.7.220",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "151.236.26.198",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "155.94.155.155",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "170.130.165.112",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "170.130.55.107",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "178.209.52.166",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "185.161.251.26",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "185.195.64.68",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "185.49.68.139",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "185.49.69.102",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "192.36.57.164",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "192.36.57.50",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "194.71.107.41",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "194.87.45.138",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "195.82.147.3",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "38.180.91.117",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "45.153.126.129",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "62.60.238.115",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "83.172.136.121",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "85.208.84.220",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "87.120.126.32",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "87.120.93.151",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "89.46.232.247",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "89.46.232.52",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "91.222.173.219",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "91.222.173.91",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "ip",
+    "value": "93.152.230.29",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "169c30e06f12e33c12dc92b909b7b69ce77bcbfc2aca91c5c096dc0f1938fe76",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "5bca7f1942e07e8c12ecd9c802ecdb96570dfaaa1f44a6753ebb9ffda0604cb4",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "9d143e0be6e08534bb84f6c478b95be26867bef2985b1fe55f45a378fc3ccf2b",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "b7aec5f73d2a6bbd8cd920edb4760e2edadc98c3a45bf4fa994d47ca9cbd02f6",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "c7bb97341d2f0b2a8cd327e688acb65eaefc1e01c61faaeba2bc1e4e5f0e6f6e",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "e0de5a2549749aca818b94472e827e697dac5796f45edd85bc0ff6ef298c5555",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   },
+   {
+    "type": "sha256",
+    "value": "f4d2c9470b322af29b9188a3a590cbe85bacb9cc8fcd7c2e94d82271ded3f659",
+    "assertion": "explicit",
+    "evidence": "WARMCOOKIE One Year Later: New Features and Fresh Insights > Observations"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "unsupported_type_indicators": [],
+  "sections": []
+ }
+}

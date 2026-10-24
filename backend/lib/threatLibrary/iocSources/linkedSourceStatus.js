@@ -11,6 +11,18 @@ const PENDING = new Set(['discovered', 'inspecting', 'inspected', 'attached', 'e
 const UNRESOLVED = new Set(['unsupported', 'failed', 'blocked', 'stale']);
 
 export const LINKED_SOURCE_NOT_INGESTED_CODE = 'linked_ioc_source_not_ingested';
+/** The publisher announces an IOC package but no IOC Source was discovered or attached (tl-quality-v10). */
+export const IOC_PACKAGE_NOT_DISCOVERED_CODE = 'ioc_package_not_discovered';
+/** Persisted candidates lack the extraction provenance a first analysis writes (tl-quality-v10). */
+export const EXTRACTION_PROVENANCE_INCOMPLETE_CODE = 'extraction_provenance_incomplete';
+/** Candidates exist but no extraction-quality record was stored (tl-quality-v10). */
+export const EXTRACTION_QUALITY_MISSING_CODE = 'extraction_quality_missing';
+const READ_TIME_CODES = new Set([
+  LINKED_SOURCE_NOT_INGESTED_CODE,
+  IOC_PACKAGE_NOT_DISCOVERED_CODE,
+  EXTRACTION_PROVENANCE_INCOMPLETE_CODE,
+  EXTRACTION_QUALITY_MISSING_CODE
+]);
 
 /**
  * @param {Array<{ lifecycle_status: string }>} rows threat_report_ioc_sources rows
@@ -32,30 +44,61 @@ export function summarizeLinkedIocSources(rows) {
 }
 
 /**
- * Overlay the linked-source gap onto a stored quality record (copy).
+ * Overlay read-time gaps onto a stored quality record (copy): un-ingested
+ * linked IOC Sources, an announced IOC package with no IOC Source, persisted
+ * candidates without extraction provenance, and a missing quality record. The
+ * stored record is computed before discovery and never sees these; nothing
+ * here changes membership.
  * @param {object|null} quality stored extraction quality
- * @param {ReturnType<typeof summarizeLinkedIocSources>|null} summary
+ * @param {(ReturnType<typeof summarizeLinkedIocSources> & { candidate_provenance?: { rows: number, missing: number } })|null} summary
  */
 export function withLinkedSourceQuality(quality, summary) {
-  if (!quality || typeof quality !== 'object' || !summary) return quality;
+  if (!summary) return quality;
+  const provenance = summary.candidate_provenance || null;
+  const add = [];
+  if (!quality || typeof quality !== 'object') {
+    if (!provenance || !(provenance.rows > 0)) return quality;
+    quality = { status: 'clean', mode: null, counts: { high: 0, warning: 0, info: 0 }, warnings: [], warnings_total: 0 };
+    add.push({
+      code: EXTRACTION_QUALITY_MISSING_CODE,
+      severity: 'warning',
+      explanation: `${provenance.rows} candidate(s) exist but no extraction-quality record was stored for this report; ` +
+        'quality checks did not run on the persisted set (a Refresh extraction recomputes it).'
+    });
+  }
   const open = summary.pending + summary.unresolved;
-  if (!open) return quality;
-  const warnings = Array.isArray(quality.warnings) ? quality.warnings.filter((w) => w?.code !== LINKED_SOURCE_NOT_INGESTED_CODE) : [];
-  warnings.push({
-    code: LINKED_SOURCE_NOT_INGESTED_CODE,
-    severity: 'warning',
-    section: null,
-    evidence: [],
-    block_ids: [],
-    candidates: [],
-    candidate_count: 0,
-    explanation: `${open} publisher-declared IOC Source(s) are not extracted (${summary.pending} pending, ${summary.unresolved} unresolved): Linked and Union Indicators are incomplete until the analyst inspects and extracts them.`
-  });
-  const counts = { high: 0, warning: 0, info: 0, ...(quality.counts || {}) };
-  counts.warning = warnings.filter((w) => w.severity === 'warning').length;
+  if (open) {
+    add.push({
+      code: LINKED_SOURCE_NOT_INGESTED_CODE,
+      severity: 'warning',
+      explanation: `${open} publisher-declared IOC Source(s) are not extracted (${summary.pending} pending, ${summary.unresolved} unresolved): Linked and Union Indicators are incomplete until the analyst inspects and extracts them.`
+    });
+  }
+  const announced = (quality.warnings || []).some((w) => w?.code === 'ioc_package_announced');
+  if (announced && summary.declared === 0 && summary.dismissed === 0) {
+    add.push({
+      code: IOC_PACKAGE_NOT_DISCOVERED_CODE,
+      severity: 'warning',
+      explanation: 'The publisher announces a downloadable IOC package but no IOC Source is attached to this report: add it ' +
+        'as a linked IOC Source (Union Indicators may be incomplete).'
+    });
+  }
+  if (provenance && provenance.missing > 0) {
+    add.push({
+      code: EXTRACTION_PROVENANCE_INCOMPLETE_CODE,
+      severity: 'warning',
+      explanation: `${provenance.missing} of ${provenance.rows} persisted candidate(s) carry no scope-engine / section-tree / ` +
+        'type-resolver provenance (stored by an older or reused-candidate path); a Refresh extraction re-derives it.'
+    });
+  }
+  if (!add.length) return quality;
+  const warnings = Array.isArray(quality.warnings) ? quality.warnings.filter((w) => !READ_TIME_CODES.has(w?.code)) : [];
+  for (const w of add) warnings.push({ section: null, evidence: [], block_ids: [], candidates: [], candidate_count: 0, ...w });
+  const counts = { high: 0, warning: 0, info: 0 };
+  for (const w of warnings) counts[w.severity] = (counts[w.severity] || 0) + 1;
   return {
     ...quality,
-    status: quality.status === 'high' ? 'high' : 'warning',
+    status: counts.high ? 'high' : counts.warning ? 'warning' : counts.info ? 'info' : 'clean',
     counts,
     warnings,
     warnings_total: warnings.length
@@ -68,5 +111,22 @@ export function withLinkedSourceQuality(quality, summary) {
  */
 export async function loadLinkedIocSourceSummary(pool, reportId) {
   const { rows } = await pool.query('SELECT lifecycle_status FROM threat_report_ioc_sources WHERE report_id = $1', [reportId]);
-  return summarizeLinkedIocSources(rows);
+  const summary = summarizeLinkedIocSources(rows);
+  try {
+    const r = await pool.query(
+      `SELECT count(*)::int AS rows,
+              count(*) FILTER (WHERE evidence->>'scope_engine' IS NULL OR evidence->'type_resolution' IS NULL
+                                 OR evidence->'type_resolution' = 'null'::jsonb)::int AS missing
+         FROM threat_report_candidates
+        WHERE report_id = $1 AND has_original_document_occurrence`,
+      [reportId]
+    );
+    const row = r?.rows?.[0];
+    if (row && Number.isFinite(Number(row.rows))) {
+      summary.candidate_provenance = { rows: Number(row.rows), missing: Number(row.missing) || 0 };
+    }
+  } catch {
+    // Provenance overlay is best-effort read-time diagnostics.
+  }
+  return summary;
 }
