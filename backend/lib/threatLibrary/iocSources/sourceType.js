@@ -17,7 +17,10 @@ export function guessTypeFromUrl(url) {
   if (u.includes('raw.githubusercontent.com/')) return 'github_file';
   if (/\.pdf(\?|$)/i.test(u)) return 'pdf';
   if (/\.csv(\?|$)/i.test(u)) return 'csv';
+  if (/\.stix\.?json(\?|$)/i.test(u) || /stix[^/]*\.json(\?|$)/i.test(u)) return 'stix_json';
   if (/\.json(\?|$)/i.test(u)) return 'json';
+  if (/\.stix\.?xml(\?|$)/i.test(u) || /stix[^/]*\.xml(\?|$)/i.test(u) || /\.stix(\?|$)/i.test(u)) return 'stix_xml';
+  if (/\.xml(\?|$)/i.test(u)) return 'xml';
   if (/\.(txt|md|ioc|ya?ml)(\?|$)/i.test(u)) return 'txt';
   if (/\.(html?|htm)(\?|$)/i.test(u)) return 'html';
   return 'unknown';

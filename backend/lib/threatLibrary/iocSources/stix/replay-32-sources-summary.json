@@ -1,0 +1,634 @@
+{
+  "generated_at": "2026-10-24T13:25:55.192Z",
+  "summary": {
+    "total": 32,
+    "ok": 32,
+    "by_format": {
+      "stix_xml": 16,
+      "stix_json": 13,
+      "github_dir": 3
+    },
+    "by_code": {
+      "inspected": 32
+    },
+    "stix_json_ok": 13,
+    "stix_json_total": 13,
+    "stix_xml_ok": 16,
+    "stix_xml_total": 16,
+    "github_ok": 3,
+    "github_total": 3,
+    "total_unique_indicators": 1836,
+    "classification_totals": {
+      "indicator": 1836,
+      "context_only": 115,
+      "excluded": 0,
+      "uncertain": 0,
+      "unsupported": 195
+    }
+  },
+  "baseline_note": "Phase-2 text-inspection counts (885 observed / 434 globally new) are NOT acceptance targets. These figures are semantic Indicator/context classifications after STIX-aware parse.",
+  "per_source": [
+    {
+      "report_id": 30366,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 24,
+      "classification": {
+        "indicator": 24,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-07/AA25-203A-interlock-stix.xml",
+      "files": []
+    },
+    {
+      "report_id": 30366,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 24,
+      "classification": {
+        "indicator": 24,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 9
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-07/AA25-203A-interlock-stix.json",
+      "files": []
+    },
+    {
+      "report_id": 30367,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 6,
+      "classification": {
+        "indicator": 6,
+        "context_only": 5,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-03/AA25-071A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 30367,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 3,
+      "classification": {
+        "indicator": 3,
+        "context_only": 5,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 1
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-03/AA25-071A-StopRansomware-Medusa-Ransomware.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 30367,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 41,
+      "classification": {
+        "indicator": 41,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2026-08/AA25-071A-stix.xml",
+      "files": []
+    },
+    {
+      "report_id": 30367,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 25,
+      "classification": {
+        "indicator": 25,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 8
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2026-08/AA25-071A-stix.json",
+      "files": []
+    },
+    {
+      "report_id": 30368,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 27,
+      "classification": {
+        "indicator": 27,
+        "context_only": 33,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-02/AA25-050A-%23StopRansomware-Ghost-%28Cring%29-Ransomware.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 30368,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 27,
+      "classification": {
+        "indicator": 27,
+        "context_only": 33,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-02/AA25-050A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 30368,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 1,
+      "classification": {
+        "indicator": 1,
+        "context_only": 33,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 14
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-02/AA25-050A-%23StopRansomware-Ghost-%28Cring%29-Ransomware.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31337,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 41,
+      "classification": {
+        "indicator": 41,
+        "context_only": 5,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2023-05/aa23-131a.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31338,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 6,
+      "classification": {
+        "indicator": 6,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-11/AA24-131A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31338,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 6,
+      "classification": {
+        "indicator": 6,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-11/AA24-131A_StopRansomware_Black_Basta.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31338,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 214,
+      "classification": {
+        "indicator": 214,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-05/AA24-131A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31338,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 178,
+      "classification": {
+        "indicator": 178,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 12
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-05/AA24-131A-StopRansomware-Black-Basta.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31339,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 120,
+      "classification": {
+        "indicator": 120,
+        "context_only": 1,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-08/AA24-242A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31339,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 120,
+      "classification": {
+        "indicator": 120,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 1
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-08/AA24-242A-StopRansomware-RansomHub-Ransomware.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31340,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 22,
+      "classification": {
+        "indicator": 22,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-11/AA24-109A-%23StopRansomware-Akira-Ransomware.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31340,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 19,
+      "classification": {
+        "indicator": 19,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 32
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-11/AA24-109A-%23StopRansomware-Akira-Ransomware.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31340,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 107,
+      "classification": {
+        "indicator": 107,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-04/AA24-109A.stix_0.xml",
+      "files": []
+    },
+    {
+      "report_id": 31340,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 42,
+      "classification": {
+        "indicator": 42,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 25
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-04/AA24-109A-StopRansomware-Akira-Ransomware.stix_0.json",
+      "files": []
+    },
+    {
+      "report_id": 31366,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 36,
+      "classification": {
+        "indicator": 36,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-06/AA23-352A_StopRansomware-Play-Ransomware.stix_XML.xml",
+      "files": []
+    },
+    {
+      "report_id": 31366,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 5,
+      "classification": {
+        "indicator": 5,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 11
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2025-06/AA23-352A_StopRansomware-Play-Ransomware.stix_JSON.json",
+      "files": []
+    },
+    {
+      "report_id": 31366,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 19,
+      "classification": {
+        "indicator": 19,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2023-12/AA23-352A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31366,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 13,
+      "classification": {
+        "indicator": 13,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 2
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2023-12/AA23-352A-StopRansomware-Play-Ransomware.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31367,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 103,
+      "classification": {
+        "indicator": 103,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2023-03/aa23-061a.stix__0.xml",
+      "files": []
+    },
+    {
+      "report_id": 31367,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 130,
+      "classification": {
+        "indicator": 130,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2023-11/AA23-061A.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31367,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 77,
+      "classification": {
+        "indicator": 77,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 30
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2023-11/AA23-061A_stopransomware_royal_ransomware_update.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31367,
+      "format": "stix_xml",
+      "ok": true,
+      "unique_indicators": 213,
+      "classification": {
+        "indicator": 213,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-08/AA23-061A-Aug-2024_2.stix_.xml",
+      "files": []
+    },
+    {
+      "report_id": 31367,
+      "format": "stix_json",
+      "ok": true,
+      "unique_indicators": 139,
+      "classification": {
+        "indicator": 139,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 50
+      },
+      "code": "inspected",
+      "source_url": "https://www.cisa.gov/sites/default/files/2024-08/AA23-061A-StopRansomware-BlackSuit-Royal-Ransomware-Aug-2024_2.stix_.json",
+      "files": []
+    },
+    {
+      "report_id": 31370,
+      "format": "github_dir",
+      "ok": true,
+      "unique_indicators": 9,
+      "classification": {
+        "indicator": 9,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://github.com/elastic/labs-releases/tree/main/indicators/shellter",
+      "files": [
+        {
+          "path": "indicators/shellter/README.md",
+          "ok": true,
+          "code": null,
+          "format": "markdown",
+          "unique": 0,
+          "classification": null,
+          "scope": {
+            "status": "single_campaign",
+            "multi_campaign": false,
+            "section_heading": null,
+            "excluded_sections": []
+          }
+        },
+        {
+          "path": "indicators/shellter/stix-bundle.json",
+          "ok": true,
+          "code": null,
+          "format": "stix_json",
+          "unique": 9,
+          "classification": {
+            "indicator": 9,
+            "context_only": 0,
+            "excluded": 0,
+            "uncertain": 0,
+            "unsupported": 0
+          },
+          "scope": null
+        }
+      ]
+    },
+    {
+      "report_id": 31372,
+      "format": "github_dir",
+      "ok": true,
+      "unique_indicators": 24,
+      "classification": {
+        "indicator": 24,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://github.com/elastic/labs-releases/tree/main/indicators/shelby-strategy",
+      "files": [
+        {
+          "path": "indicators/shelby-strategy/README.md",
+          "ok": true,
+          "code": null,
+          "format": "markdown",
+          "unique": 0,
+          "classification": null,
+          "scope": {
+            "status": "single_campaign",
+            "multi_campaign": false,
+            "section_heading": null,
+            "excluded_sections": []
+          }
+        },
+        {
+          "path": "indicators/shelby-strategy/stix-bundle.json",
+          "ok": true,
+          "code": null,
+          "format": "stix_json",
+          "unique": 24,
+          "classification": {
+            "indicator": 24,
+            "context_only": 0,
+            "excluded": 0,
+            "uncertain": 0,
+            "unsupported": 0
+          },
+          "scope": null
+        }
+      ]
+    },
+    {
+      "report_id": 31377,
+      "format": "github_dir",
+      "ok": true,
+      "unique_indicators": 15,
+      "classification": {
+        "indicator": 15,
+        "context_only": 0,
+        "excluded": 0,
+        "uncertain": 0,
+        "unsupported": 0
+      },
+      "code": "inspected",
+      "source_url": "https://github.com/elastic/labs-releases/tree/main/indicators/tollbooth",
+      "files": [
+        {
+          "path": "indicators/tollbooth/README.md",
+          "ok": true,
+          "code": null,
+          "format": "markdown",
+          "unique": 0,
+          "classification": null,
+          "scope": {
+            "status": "single_campaign",
+            "multi_campaign": false,
+            "section_heading": null,
+            "excluded_sections": []
+          }
+        },
+        {
+          "path": "indicators/tollbooth/stix-bundle.json",
+          "ok": true,
+          "code": null,
+          "format": "stix_json",
+          "unique": 15,
+          "classification": {
+            "indicator": 15,
+            "context_only": 0,
+            "excluded": 0,
+            "uncertain": 0,
+            "unsupported": 0
+          },
+          "scope": null
+        }
+      ]
+    }
+  ]
+}

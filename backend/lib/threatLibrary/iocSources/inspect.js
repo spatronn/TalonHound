@@ -162,7 +162,16 @@ export async function inspectIocSource(pool, source, deps = {}) {
             // Persist sha256 of fetched bytes for extract-time drift detection.
             content_sha: fetched.contentHash || file.content_sha || null,
             content_type: fetched.contentType || null,
-            parse_status: parsed.ok ? 'ok' : parsed.code === 'unsupported_json_schema' || parsed.code === 'unsupported_format' ? 'unsupported' : 'failed',
+            parse_status: parsed.ok
+              ? 'ok'
+              : parsed.code === 'unsupported_json_schema'
+                || parsed.code === 'unsupported_format'
+                || parsed.code === 'unsupported_stix_version'
+                || parsed.code === 'not_stix_json'
+                || parsed.code === 'not_stix_xml'
+                || parsed.code === 'campaign_scope_unresolved'
+                ? 'unsupported'
+                : 'failed',
             estimated_raw_count: parsed.raw_count ?? 0,
             estimated_unique_count: parsed.unique_count ?? 0,
             type_breakdown: parsed.type_breakdown || {},

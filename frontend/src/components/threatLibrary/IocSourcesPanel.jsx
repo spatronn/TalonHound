@@ -13,6 +13,7 @@ import {
   lifecycleBadge,
   shortSourceTitle,
   sourceCardMeta,
+  sourceErrorLabel,
   sourceProvenanceLabel,
   sourceTypeLabel
 } from './iocSourcesUi.js';
@@ -21,6 +22,7 @@ function PreviewBlock({ preview }) {
   if (!preview || typeof preview !== 'object') return null;
   const estimated = preview.estimated === true;
   const label = estimated ? 'Estimated' : 'Inspected';
+  const cls = preview.classification && typeof preview.classification === 'object' ? preview.classification : null;
   return (
     <dl className="tl-ioc-source-preview">
       <div>
@@ -39,6 +41,22 @@ function PreviewBlock({ preview }) {
         <dt>New identities</dt>
         <dd>{preview.new_identities ?? '—'}</dd>
       </div>
+      {cls ? (
+        <>
+          <div>
+            <dt>Indicators</dt>
+            <dd>{cls.indicator ?? 0}</dd>
+          </div>
+          <div>
+            <dt>Context only</dt>
+            <dd>{cls.context_only ?? 0}</dd>
+          </div>
+          <div>
+            <dt>Excluded / unsupported</dt>
+            <dd>{(cls.excluded ?? 0) + (cls.unsupported ?? 0)}</dd>
+          </div>
+        </>
+      ) : null}
       {preview.repo_ref ? (
         <div>
           <dt>Branch / ref</dt>
@@ -300,7 +318,8 @@ export default function IocSourcesPanel({
 
             {selected.error_detail ? (
               <p role="alert" className="tl-ioc-source-drawer__error">
-                {selected.error_code ? `${selected.error_code}: ` : ''}{selected.error_detail}
+                {selected.error_code ? `${sourceErrorLabel(selected.error_code) || selected.error_code}: ` : ''}
+                {selected.error_detail}
               </p>
             ) : null}
 
