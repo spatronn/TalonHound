@@ -346,11 +346,13 @@ export async function parseIocSourceContent(input) {
     document = selected.document;
   }
 
-  // Campaign READMEs: only table rows are IOC inventory (ESET AsciiDoc /
-  // markdown tables). Prose/Reference paragraphs are for scope tying only —
-  // never free-text promote domains from an Elastic-style instructions README.
+  // Markdown campaign READMEs (Elastic instructions style): only table rows
+  // are IOC inventory. Prose/Reference paragraphs are for scope tying only.
+  // AsciiDoc READMEs keep structured extraction (tables + listing blocks);
+  // their paragraph path already preserves defanged URLs as values, not
+  // link-macro text (see campaignScope.asciidocToCanonicalDocument).
   let extractDoc = document;
-  if (isReadmePath(input.path || input.url || '')) {
+  if (format === 'markdown' && isReadmePath(input.path || input.url || '')) {
     const tableBlocks = (document.blocks || []).filter((b) => b?.type === 'table');
     if (!tableBlocks.length) {
       return {
