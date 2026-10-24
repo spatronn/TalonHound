@@ -136,6 +136,30 @@ export const QUALITY_CODE_COPY = Object.freeze({
   malicious_assessed_non_members: {
     title: 'Malicious-looking values outside the publisher’s IOC list',
     why: 'These values are assessed malicious but the publisher did not list them in its IOC section, so they are not Indicators. They stay visible under All.'
+  },
+  ioc_section_url_prefix_excluded: {
+    title: 'Directory URL excluded as an incomplete prefix',
+    why: 'A URL ending in “/” was treated as an incomplete prefix of a longer sibling URL. If the publisher listed that directory as its own IOC-table row, review whether it should be an Indicator.'
+  },
+  reference_column_values_context: {
+    title: 'Tool Source / Reference links kept as Context Only',
+    why: 'URLs from Source, Reference, Download or Homepage columns describe where a tool is published, not actor infrastructure. They stay Context Only.'
+  },
+  reference_column_indicator: {
+    title: 'Indicator came only from a reference-labelled column',
+    why: 'This Indicator was read only from a table column whose header names a reference, source or download link. Confirm the publisher attributes it to the actor before acting on it.'
+  },
+  non_file_digest_indicator_suspect: {
+    title: 'File-hash Indicator that may be a key or banner digest',
+    why: 'The row or sentence calls this digest a key, certificate, fingerprint or banner hash and does not name a file. Such digests usually identify no sample — review the hash type.'
+  },
+  ioc_package_announced: {
+    title: 'Publisher announces a downloadable IOC package',
+    why: 'The report points at a STIX, JSON, CSV or repository pack that may hold additional indicators. Review it as a linked IOC Source; nothing is ingested automatically.'
+  },
+  ai_demoted_table_rows: {
+    title: 'Model demoted some rows of an Indicator table',
+    why: 'The model set some table-row values to Context Only while other rows of the same table and type remain Indicators. Review the table as a whole — a publisher inventory should not split arbitrarily.'
   }
 });
 
