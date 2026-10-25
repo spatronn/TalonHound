@@ -200,7 +200,15 @@ export function classifySectionRole(text, opts = {}) {
   if (SAMPLE_INTENT_RE.test(t) && t.length <= 80) return SECTION_ROLES.SAMPLE_TABLE;
   if (C2_INTENT_RE.test(t)) return SECTION_ROLES.C2_INFRASTRUCTURE;
   if (OPERATIONAL_INFRA_RE.test(t)) return SECTION_ROLES.OPERATIONAL_INFRASTRUCTURE;
-  if (IOC_INTENT_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
+  // Indicator appendix labels must lead with the indicator concept
+  // (INDICATOR_HEAD_RE). A mid-title / hyphenated mention ("… IOC-shaped …",
+  // "near IOC inventory", "IOC inventory methodology discussion") is narrative
+  // chrome, not an appendix declaration — same intent as rejecting
+  // "Why these indicators matter" (sectionScope.test.js).
+  if (INDICATOR_HEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
+  // Bare synonym labels covered by IOC_INTENT but not by the English
+  // head-anchored pattern ("detection data", "observables").
+  if (/^(?:detection\s+data|observables?)\s*$/i.test(t)) return SECTION_ROLES.IOC_APPENDIX;
   if (APPENDIX_RE.test(t) && /(?:server|node|range|indicator|ioc|infrastructure|vpn|c2|hash|sample)/i.test(t)) {
     if (C2_INTENT_RE.test(t)) return SECTION_ROLES.C2_INFRASTRUCTURE;
     if (OPERATIONAL_INFRA_RE.test(t) || /\b(?:vpn|range|node|infrastructure)\b/i.test(t)) {
@@ -208,6 +216,10 @@ export function classifySectionRole(text, opts = {}) {
     }
     return SECTION_ROLES.IOC_APPENDIX;
   }
+  // Descriptive "Indicators: …" / "IOCs (Type 3)" when callers allow the suffix form.
+  // INDICATOR_HEAD_RE already matched pure labels above; this path is retained
+  // for callers that previously relied on allowDescriptiveSuffix after the
+  // looser IOC_INTENT_RE gate (now removed).
   if (opts.allowDescriptiveSuffix !== false && INDICATOR_HEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
   return null;
 }

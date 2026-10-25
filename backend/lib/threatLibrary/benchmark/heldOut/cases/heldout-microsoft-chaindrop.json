@@ -1,0 +1,47 @@
+{
+  "id": "heldout-microsoft-chaindrop",
+  "title": "Microsoft — ChainDrop npm worm IOC table (held-out expansion)",
+  "publisher": "Microsoft",
+  "format": "html",
+  "dataset_split": "held_out_expansion",
+  "tags": ["held_out", "expansion", "microsoft", "html", "mode_a", "untouched"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-microsoft-chaindrop.html",
+    "url": "https://www.microsoft.com/en-us/security/blog/2026/08/04/chaindrop-supply-chain-compromise-anatomy-self-propagating-worm/"
+  },
+  "source_reference": {
+    "url": "https://www.microsoft.com/en-us/security/blog/2026/08/04/chaindrop-supply-chain-compromise-anatomy-self-propagating-worm/",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public Microsoft Security Blog; fixture retains the IOC table extract only.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "Distinct from golden-elastic-shai-hulud-chaindrop (Elastic URL/fixture). Not in real-reports."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out expansion 2026-10-25): IOC table transcribed from the public Microsoft Security Blog. learn.microsoft.com is contextual.",
+      "verified_by": "manual review of the publisher text (held-out expansion, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Primary-document IOC table extract only.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "sha256", "value": "54dc7ea54a1317cca0e890a2770630cf7fa6c97813e0cb9d2caa93012b350668", "assertion": "explicit" },
+      { "type": "sha256", "value": "fd3ca4007b225fdf8de7af4345a19179d5efa8c4bb9205f88cda806e5684b1eb", "assertion": "explicit" },
+      { "type": "sha256", "value": "9fc2570b7cef51c1b8df116d144d11ff4096357be7d2c4c6367cfc2509cf1bcc", "assertion": "explicit" },
+      { "type": "domain", "value": "npm-cache.com", "assertion": "explicit" },
+      { "type": "domain", "value": "pypi-get.com", "assertion": "explicit" },
+      { "type": "domain", "value": "js-mirror.com", "assertion": "explicit" },
+      { "type": "url", "value": "https://npm-cache.com:443/router", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "learn.microsoft.com" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "Indicators of compromise (IOC)", "expected": "authoritative" }]
+  }
+}

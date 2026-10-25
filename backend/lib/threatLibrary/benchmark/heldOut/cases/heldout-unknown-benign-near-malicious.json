@@ -1,6 +1,6 @@
 {
   "id": "heldout-unknown-benign-near-malicious",
-  "title": "Unknown publisher — benign URL near malicious IOC table (held-out pilot)",
+  "title": "Unknown publisher — dual-use domain listed in IOC table (held-out pilot)",
   "publisher": "synthetic",
   "format": "html",
   "dataset_split": "held_out_pilot",
@@ -12,23 +12,22 @@
   },
   "ground_truth": {
     "provenance": {
-      "method": "constructed: IOC table lists C2 domain/IP/hash plus dual-use ifconfig.me marked as legitimate connectivity check; Microsoft Graph URL outside the table is contextual documentation only.",
-      "verified_by": "construction",
+      "method": "constructed + adjudicated (2026-10-25): IOC table lists C2 domain/IP/hash and ifconfig.me. Comment says 'Legitimate connectivity check used by malware' — malice co-presence means describesBenignComponent is false; MODE A table assertion keeps Indicator membership (same policy as Huntress-style demotion requiring a pure legitimate stance without malice cues). Microsoft Graph URL outside the table is contextual documentation only. Original pilot incorrectly labelled ifconfig.me as excluded_legitimate.",
+      "verified_by": "construction + independent adjudication against evidencePolicy/describesBenignComponent contract",
       "verified_at": "2026-10-25",
-      "coverage_note": "Synthetic held-out case for benign-near-malicious membership.",
+      "coverage_note": "Synthetic held-out case for dual-use rows in IOC tables. Label adjudication corrected after Phase B investigation; not an engine change.",
       "mode": "A"
     },
     "indicators": [
       { "type": "domain", "value": "evil-relay.example", "assertion": "explicit" },
       { "type": "ip", "value": "198.51.100.44", "assertion": "explicit" },
-      { "type": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "assertion": "explicit" }
+      { "type": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "assertion": "explicit" },
+      { "type": "domain", "value": "ifconfig.me", "assertion": "explicit" }
     ],
     "context_only": [
       { "type": "url", "value": "https://learn.microsoft.com/graph/overview" }
     ],
-    "excluded_legitimate": [
-      { "type": "domain", "value": "ifconfig.me" }
-    ],
+    "excluded_legitimate": [],
     "not_indicators": [],
     "ambiguous": [],
     "sections": [{ "heading": "Indicators of Compromise", "expected": "authoritative" }]

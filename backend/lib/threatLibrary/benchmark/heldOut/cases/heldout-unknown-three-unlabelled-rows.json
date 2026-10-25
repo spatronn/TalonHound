@@ -1,6 +1,6 @@
 {
   "id": "heldout-unknown-three-unlabelled-rows",
-  "title": "Unknown publisher — three unlabelled IOC-shaped rows without appendix (held-out pilot)",
+  "title": "Unknown publisher — three unlabelled Host/Port rows without appendix (held-out pilot)",
   "publisher": "synthetic",
   "format": "html",
   "dataset_split": "held_out_pilot",
@@ -12,10 +12,10 @@
   },
   "ground_truth": {
     "provenance": {
-      "method": "constructed: three IOC-shaped table rows without a publisher IOC appendix heading. Under section_tree scope engine these must not become document-global MODE A Indicators.",
+      "method": "constructed: three Host/Port table rows without a publisher IOC appendix heading. Under section_tree these must not become document-global MODE A Indicators. Fixture title intentionally avoids the token IOC so the case measures unlabelled-row authority, not heading over-match (the IOC-shaped H1 defect is covered by reliabilityObservability regression).",
       "verified_by": "construction",
       "verified_at": "2026-10-25",
-      "coverage_note": "Synthetic held-out case pinning section-tree authority behaviour on unlabelled rows.",
+      "coverage_note": "Synthetic held-out case pinning section-tree authority behaviour on unlabelled rows. Original pilot H1 containing 'IOC-shaped' was promoted to regression after it drove a general heading fix.",
       "mode": "B"
     },
     "indicators": [],

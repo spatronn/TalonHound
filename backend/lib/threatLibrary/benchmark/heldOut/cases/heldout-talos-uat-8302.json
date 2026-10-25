@@ -1,0 +1,51 @@
+{
+  "id": "heldout-talos-uat-8302",
+  "title": "Cisco Talos — UAT-8302 network IOCs (held-out expansion)",
+  "publisher": "Cisco Talos",
+  "format": "html",
+  "dataset_split": "held_out_expansion",
+  "tags": ["held_out", "expansion", "cisco_talos", "html", "mode_a", "untouched"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-talos-uat-8302.html",
+    "url": "https://blog.talosintelligence.com/uat-8302/"
+  },
+  "source_reference": {
+    "url": "https://blog.talosintelligence.com/uat-8302/",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public Cisco Talos blog; fixture retains a bounded Network IOCs extract.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "Not in golden cases or real-reports (talos-uat-11587 is a different report)."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out expansion 2026-10-25): Network IOCs subset transcribed from the public Talos page. File-hash inventories on the live page are out of scope for this extract. cisco.com is contextual.",
+      "verified_by": "manual review of the publisher text (held-out expansion, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Extract-scoped network indicators only.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "url", "value": "https://www.drivelivelime.com", "assertion": "explicit" },
+      { "type": "url", "value": "https://www.drivelivelime.com/x", "assertion": "explicit" },
+      { "type": "domain", "value": "www.drivelivelime.com", "assertion": "explicit" },
+      { "type": "url", "value": "https://msiidentity.com", "assertion": "explicit" },
+      { "type": "domain", "value": "msiidentity.com", "assertion": "explicit" },
+      { "type": "url", "value": "http://trafficmanagerupdate.com/index.php", "assertion": "explicit" },
+      { "type": "domain", "value": "trafficmanagerupdate.com", "assertion": "explicit" },
+      { "type": "domain", "value": "update-kaspersky.workers.dev", "assertion": "explicit" },
+      { "type": "ip", "value": "85.209.156.3", "assertion": "explicit" },
+      { "type": "ip", "value": "38.54.32.244", "assertion": "explicit" },
+      { "type": "ip", "value": "45.135.135.100", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "cisco.com" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "Indicators of compromise (IOCs)", "expected": "authoritative" }]
+  }
+}
