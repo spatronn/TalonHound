@@ -29,6 +29,7 @@
 
 import { resolveReportPhase, REPORT_PHASES } from './reportPhase.js';
 import { reviewActionableIndicatorSql } from './indicatorMembership.js';
+import { LINKED_SOURCE_OPEN_STATUSES } from './finalizeGuard.js';
 
 export const REPORT_LIFECYCLE_LOCK_VERSION = 'tl-report-lifecycle-lock-v1';
 export const REPORT_FINALIZED_CODE = 'report_finalized';
@@ -82,6 +83,32 @@ export async function pendingObligationIds(client, reportId) {
     [reportId]
   );
   return new Set(rows.map((r) => Number(r.id)));
+}
+
+const FINALIZED_STATUSES = new Set(['ready', 'skipped']);
+
+/** Whether a status value is a finalized phase (ready / skipped). */
+export function isFinalizedStatus(status) {
+  return FINALIZED_STATUSES.has(String(status || '').toLowerCase());
+}
+
+/**
+ * Open finalization obligations of a report: pending actionable Indicators
+ * and linked IOC Sources that are neither extracted nor dismissed. Read under
+ * the finalize lock by every path that writes a finalized status.
+ * @param {{ query: Function }} client
+ * @param {number} reportId
+ * @returns {Promise<{ pending_indicators: number, open_sources: number, total: number }>}
+ */
+export async function finalizationObligations(client, reportId) {
+  const pending = (await pendingObligationIds(client, reportId)).size;
+  const { rows } = await client.query(
+    `SELECT count(*)::int AS n FROM threat_report_ioc_sources
+      WHERE report_id = $1 AND lifecycle_status = ANY($2::text[])`,
+    [reportId, LINKED_SOURCE_OPEN_STATUSES]
+  );
+  const open = Number(rows[0]?.n || 0);
+  return { pending_indicators: pending, open_sources: open, total: pending + open };
 }
 
 /**

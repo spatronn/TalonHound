@@ -29,7 +29,16 @@ import {
   AI_SCHEDULING_SETTING_BOUNDS
 } from './analysisConcurrency.js';
 import { loadReportReviewProgress } from './reviewProgress.js';
-import { ReportFinalizedError, isFinalizedReport, lockReportForMutation, pendingObligationIds } from './reportLifecycleLock.js';
+import {
+  ReportFinalizedError,
+  finalizationObligations,
+  inReportTransaction,
+  isFinalizedReport,
+  isFinalizedStatus,
+  lockReportForFinalize,
+  lockReportForMutation,
+  pendingObligationIds
+} from './reportLifecycleLock.js';
 
 export async function getAiSettings(pool) {
   const { rows } = await pool.query(`SELECT * FROM threat_library_ai_settings WHERE id = 1`);
@@ -1141,18 +1150,38 @@ export async function claimReportForMaintenance(pool, reportId, { allowedStatuse
  * @param {object} analysisProgress
  */
 export async function restoreReportStatus(pool, reportId, restore, analysisProgress) {
-  const { rows } = await pool.query(
-    `UPDATE threat_reports
-     SET analysis_status = $2,
-         import_status = $3,
-         analysis_progress = $4::jsonb,
-         cancel_requested_at = NULL,
-         updated_at = NOW()
-     WHERE id = $1
-     RETURNING *`,
-    [reportId, restore.analysis_status, restore.import_status, JSON.stringify(analysisProgress || {})]
-  );
-  return rows[0] || null;
+  // Restoring a finalized status is a re-finalization (tl-report-lifecycle-lock-v1):
+  // under the finalize lock, a report that gained pending Indicators or open
+  // linked IOC Sources while it was out of the finalized phase returns to
+  // review instead, and the reason is recorded on analysis_progress.
+  return inReportTransaction(pool, async (client) => {
+    let target = restore;
+    let progress = analysisProgress || {};
+    if (isFinalizedStatus(restore?.analysis_status)) {
+      await lockReportForFinalize(client, reportId);
+      const obligations = await finalizationObligations(client, reportId);
+      if (obligations.total) {
+        target = { analysis_status: 'review_required', import_status: 'review_required' };
+        progress = {
+          ...progress,
+          stage: 'review_required',
+          restore_guard: { requested_status: restore.analysis_status, reopened_for_review: true, ...obligations }
+        };
+      }
+    }
+    const { rows } = await client.query(
+      `UPDATE threat_reports
+       SET analysis_status = $2,
+           import_status = $3,
+           analysis_progress = $4::jsonb,
+           cancel_requested_at = NULL,
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING *`,
+      [reportId, target.analysis_status, target.import_status, JSON.stringify(progress)]
+    );
+    return rows[0] || null;
+  });
 }
 
 /**
