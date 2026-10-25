@@ -28,6 +28,7 @@ export const REVIEW_FILTERS = Object.freeze([
 export const PRIMARY_REVIEW_VIEWS = Object.freeze([
   { id: 'total_unique', label: 'All Indicators' },
   { id: 'needs_review', label: 'Needs Review' },
+  { id: 'needs_attention', label: 'Needs Attention' },
   { id: 'context_only', label: 'Context Only' },
   { id: 'all', label: 'All Candidates' }
 ]);
@@ -223,6 +224,42 @@ export function isContextOnlyCandidate(candidate) {
   return state === 'context_only' || review === 'context_only' || assessment === 'context_only';
 }
 
+/**
+ * Bounded "Needs Attention" set: ambiguous / suppressed candidates that are
+ * not Indicators but deserve a second look. Never auto-promotes membership.
+ * Signals reuse existing row metadata only.
+ */
+export function isNeedsAttentionCandidate(candidate) {
+  if (!candidate) return false;
+  if (isUnionReviewIndicator(candidate)) return false;
+  const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
+  const review = String(candidate.review_status || 'pending').toLowerCase();
+  if (review === 'ignored' || review === 'approved') return false;
+  if (candidate.ai_needed === true || ev.ai_needed === true) return true;
+  const policy = String(candidate.policy_decision || ev.policy_decision || '').toLowerCase();
+  if (
+    policy === 'context_only_narrative_with_authoritative_scope' ||
+    policy === 'context_only_contextual_mention_in_indicator_section' ||
+    policy === 'ai_needed_authoritative_narrative' ||
+    policy === 'ai_needed_prose_sample_hash'
+  ) {
+    return true;
+  }
+  const ai = candidate.ai_classification || ev.ai_classification;
+  if (ai && ai.applied === false && (ai.unsupported_reason || ai.supported === false)) return true;
+  const occs = Array.isArray(candidate.occurrences)
+    ? candidate.occurrences
+    : Array.isArray(ev.occurrences)
+      ? ev.occurrences
+      : [];
+  if (occs.some((o) => o?.row_shape === true || o?.structural_row === true)) {
+    if (candidate.document_has_authoritative_scope === true || ev.document_has_authoritative_scope === true) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function matchReviewFilter(candidate, filter) {
   if (filter === 'all') return true;
   const state = String(candidate.match_state || '').toLowerCase();
@@ -241,6 +278,7 @@ export function matchReviewFilter(candidate, filter) {
   if (filter === 'needs_review') {
     return review === 'pending' && isUnionReviewIndicator(candidate);
   }
+  if (filter === 'needs_attention') return isNeedsAttentionCandidate(candidate);
   // Source-scoped filter: `source:<public_id>`
   if (String(filter || '').startsWith('source:')) {
     const sourceId = String(filter).slice('source:'.length);

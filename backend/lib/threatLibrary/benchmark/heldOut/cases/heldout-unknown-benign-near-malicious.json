@@ -1,0 +1,36 @@
+{
+  "id": "heldout-unknown-benign-near-malicious",
+  "title": "Unknown publisher — benign URL near malicious IOC table (held-out pilot)",
+  "publisher": "synthetic",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "synthetic", "unknown_structure", "mode_a", "benign_near_malicious"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-unknown-benign-near-malicious.html",
+    "url": "https://research.example/blog/benign-near-malicious/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: IOC table lists C2 domain/IP/hash plus dual-use ifconfig.me marked as legitimate connectivity check; Microsoft Graph URL outside the table is contextual documentation only.",
+      "verified_by": "construction",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Synthetic held-out case for benign-near-malicious membership.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "domain", "value": "evil-relay.example", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.44", "assertion": "explicit" },
+      { "type": "sha256", "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "url", "value": "https://learn.microsoft.com/graph/overview" }
+    ],
+    "excluded_legitimate": [
+      { "type": "domain", "value": "ifconfig.me" }
+    ],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "Indicators of Compromise", "expected": "authoritative" }]
+  }
+}

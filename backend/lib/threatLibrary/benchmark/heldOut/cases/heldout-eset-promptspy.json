@@ -1,0 +1,49 @@
+{
+  "id": "heldout-eset-promptspy",
+  "title": "ESET — PromptSpy Android GenAI malware (held-out pilot)",
+  "publisher": "ESET",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "eset", "html", "mode_a", "sha1", "domain", "ip", "typed_table"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-eset-promptspy.html",
+    "url": "https://www.welivesecurity.com/en/eset-research/promptspy-ushers-in-era-android-threats-using-genai/"
+  },
+  "source_reference": {
+    "url": "https://www.welivesecurity.com/en/eset-research/promptspy-ushers-in-era-android-threats-using-genai/",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public WeLiveSecurity article; fixture retains IoCs tables (subset of Files + Network) plus minimal narrative.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "Not in benchmark/cases or real-reports (real-eset-sparrowock is a different report)."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out pilot 2026-10-25): IoCs Files/Network tables transcribed from the public ESET article; VirusTotal domain treated as contextual. Filename cells are not Indicators. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (held-out pilot, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Subset of publisher File SHA-1 rows present in the fixture plus all Network rows in the fixture. Additional SHA-1 rows on the live page were omitted from the extract and are out of scope for this label.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "sha1", "value": "6bbc9ab132ba066f63676e05da13d108598bc29b", "assertion": "explicit" },
+      { "type": "sha1", "value": "375d7423e63c8f5f2cc814e8cfe697ba25168afa", "assertion": "explicit" },
+      { "type": "sha1", "value": "e60d12017d2da579df87368f5596a0244621ae86", "assertion": "explicit" },
+      { "type": "sha1", "value": "9b1723284e311794987997cb7e8814eb6014713f", "assertion": "explicit" },
+      { "type": "ip", "value": "52.222.205.45", "assertion": "explicit" },
+      { "type": "domain", "value": "m-mgarg.com", "assertion": "explicit" },
+      { "type": "ip", "value": "54.67.2.84", "assertion": "explicit" },
+      { "type": "ip", "value": "104.21.91.170", "assertion": "explicit" },
+      { "type": "domain", "value": "mgardownload.com", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "virustotal.com" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "IoCs", "expected": "authoritative" }]
+  }
+}

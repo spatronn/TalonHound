@@ -1,0 +1,51 @@
+{
+  "id": "heldout-talos-uat-7237",
+  "title": "Cisco Talos — UAT-7237 web hosting intrusion (held-out pilot)",
+  "publisher": "Cisco Talos",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "cisco_talos", "html", "mode_a", "sha256", "domain", "ip", "url"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-talos-uat-7237.html",
+    "url": "https://blog.talosintelligence.com/uat-7237-targets-web-hosting-infra/"
+  },
+  "source_reference": {
+    "url": "https://blog.talosintelligence.com/uat-7237-targets-web-hosting-infra/",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public Cisco Talos blog; fixture retains the IOC block extract plus minimal narrative.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "Not in benchmark/cases or real-reports as of 2026-10-25."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out pilot 2026-10-25): public Talos IOCs pre block transcribed; Microsoft Learn URL treated as contextual documentation. Not derived from TalonHound output.",
+      "verified_by": "manual review of the publisher text (held-out pilot, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Primary-document IOC extract; linked GitHub package not labelled here.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "sha256", "value": "450fa9029c59af9edf2126df1d6a657ee6eb024d0341b32e6f6bdb8dc04bae5a", "assertion": "explicit" },
+      { "type": "sha256", "value": "6a72e4b92d6a459fc2c6054e9ddb9819d04ed362bd847333492410b6d7bae5aa", "assertion": "explicit" },
+      { "type": "sha256", "value": "e106716a660c751e37cfc4f4fbf2ea2f833e92c2a49a0b3f40fc36ad77e0a044", "assertion": "explicit" },
+      { "type": "sha256", "value": "b52bf5a644ae96807e6d846b0ce203611d83cc8a782badc68ac46c9616649477", "assertion": "explicit" },
+      { "type": "sha256", "value": "864e67f76ad0ce6d4cc83304af4347384c364ca6735df0797e4b1ff9519689c5", "assertion": "explicit" },
+      { "type": "sha256", "value": "df8497b9c37b780d6b6904a24133131faed8ea4cf3d75830b53c25d41c5ea386", "assertion": "explicit" },
+      { "type": "sha256", "value": "0952e5409f39824b8a630881d585030a1d656db897adf228ce27dd9243db20b7", "assertion": "explicit" },
+      { "type": "sha256", "value": "7a5f05da3739ad3e11414672d01b8bcf23503a9a8f1dd3f10ba2ead7745cdb1f", "assertion": "explicit" },
+      { "type": "domain", "value": "cvbbonwxtgvc3isfqfc52cwzja0kvuqd.lambda-url.ap-northeast-1.on.aws", "assertion": "explicit" },
+      { "type": "url", "value": "http://141.164.50.141/sdksdk608/win-x64.rar", "assertion": "explicit" },
+      { "type": "ip", "value": "141.164.50.141", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "url", "value": "https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "IOCs", "expected": "authoritative" }]
+  }
+}

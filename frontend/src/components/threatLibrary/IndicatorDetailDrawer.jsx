@@ -124,6 +124,25 @@ export default function IndicatorDetailDrawer({
             </dl>
           </section>
 
+          {d.membership ? (
+            <section className="tl-drawer__section" aria-labelledby="tl-drawer-membership" data-testid="drawer-membership">
+              <h3 className="tl-section-title" id="tl-drawer-membership">Membership decision</h3>
+              <div style={{ fontSize: 13, color: '#e2e8f0' }}>{d.membership.summary}</div>
+              <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                {d.membership.outcome}
+                {d.membership.mode ? ` · MODE ${d.membership.mode}` : ''}
+                {d.membership.reasonCode ? ` · ${d.membership.reasonCode}` : ''}
+              </div>
+              {d.membership.policyDecision || d.membership.sourceAssertion ? (
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                  {d.membership.sourceAssertion ? `assertion ${d.membership.sourceAssertion}` : ''}
+                  {d.membership.sourceAssertion && d.membership.policyDecision ? ' · ' : ''}
+                  {d.membership.policyDecision ? `policy ${d.membership.policyDecision}` : ''}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="tl-drawer__section" aria-labelledby="tl-drawer-evidence">
             <h3 className="tl-section-title" id="tl-drawer-evidence">Evidence</h3>
             <div style={{ fontSize: 13, color: '#e2e8f0' }}>

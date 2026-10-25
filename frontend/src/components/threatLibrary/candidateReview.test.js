@@ -130,7 +130,7 @@ test('default review filter is All Indicators (total unique), not All Candidates
   assert.equal(DEFAULT_SOURCE_FILTER, 'all');
   assert.equal(DEFAULT_MATCH_FILTER, 'all');
   assert.deepEqual(PRIMARY_REVIEW_VIEWS.map((v) => v.id), [
-    'total_unique', 'needs_review', 'context_only', 'all'
+    'total_unique', 'needs_review', 'needs_attention', 'context_only', 'all'
   ]);
   assert.equal(isReviewIndicator(explicitUrl), true);
   assert.equal(isReviewIndicator(bodyIp), true);

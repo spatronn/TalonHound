@@ -9,6 +9,7 @@
  */
 
 import { describeCandidateProvenance, confidenceLabel, iocResultLabel, iocResultOutcome } from './candidateReview.js';
+import { describeMembershipDecision } from './membershipExplanationUi.js';
 import {
   assessmentLabel,
   candidateTypeLabel,
@@ -125,10 +126,12 @@ export function describeCandidateDetail(candidate, { formatDateTime } = {}) {
 
   const occurrences = Array.isArray(ev.occurrences) ? ev.occurrences : [];
   const tableRows = Array.isArray(ev.table_rows) ? ev.table_rows : [];
+  const membership = describeMembershipDecision(c);
   return {
     value: candidateDisplayValue(c),
     typeLabel: candidateTypeLabel(c.candidate_type),
     fields,
+    membership,
     evidence: {
       assertion: p.assertion,
       decision: p.decision,

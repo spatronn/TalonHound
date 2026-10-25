@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Mixed benign and malicious observables near IOC inventory</title></head>
+<body>
+<article>
+<h1>Mixed benign and malicious observables near IOC inventory</h1>
+<p>Operators beacon to evil-relay[.]example after checking connectivity with ifconfig[.]me and reading Microsoft Graph API docs.</p>
+<h2>Indicators of Compromise</h2>
+<table>
+<thead><tr><th>Indicator</th><th>Type</th><th>Comment</th></tr></thead>
+<tbody>
+<tr><td>evil-relay[.]example</td><td>domain</td><td>Primary C2</td></tr>
+<tr><td>198.51.100[.]44</td><td>ip</td><td>Secondary C2</td></tr>
+<tr><td>cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc</td><td>sha256</td><td>Beacon sample</td></tr>
+<tr><td>ifconfig[.]me</td><td>domain</td><td>Legitimate connectivity check used by malware (exclude from blocking solely on this row if your policy treats it as dual-use; publisher lists it under IOCs as observed callback)</td></tr>
+</tbody>
+</table>
+<p>Also observed browsing https://learn.microsoft.com/graph/overview during reconnaissance — not an IOC.</p>
+</article>
+</body>
+</html>

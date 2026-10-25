@@ -1,0 +1,32 @@
+{
+  "id": "heldout-unknown-three-unlabelled-rows",
+  "title": "Unknown publisher — three unlabelled IOC-shaped rows without appendix (held-out pilot)",
+  "publisher": "synthetic",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "synthetic", "unknown_structure", "section_tree", "no_mode_a_authority"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-unknown-three-unlabelled-rows.html",
+    "url": "https://research.example/blog/three-unlabelled-rows/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: three IOC-shaped table rows without a publisher IOC appendix heading. Under section_tree scope engine these must not become document-global MODE A Indicators.",
+      "verified_by": "construction",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Synthetic held-out case pinning section-tree authority behaviour on unlabelled rows.",
+      "mode": "B"
+    },
+    "indicators": [],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "alpha-stage.research-lab.test" },
+      { "type": "domain", "value": "beta-stage.research-lab.test" },
+      { "type": "ip", "value": "203.0.113.55" }
+    ],
+    "ambiguous": [],
+    "sections": []
+  }
+}

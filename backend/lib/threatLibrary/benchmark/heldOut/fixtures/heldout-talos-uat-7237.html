@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>UAT-7237 targets Taiwanese web hosting infrastructure</title></head>
+<body>
+<article>
+<h1>UAT-7237 targets Taiwanese web hosting infrastructure</h1>
+<p>Cisco Talos discovered UAT-7237, a Chinese-speaking APT group. Operators used SoftEther VPN clients and Cobalt Strike.</p>
+<p>Documentation references such as <a href="https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/">Microsoft Remote Desktop Services</a> describe legitimate administration surfaces abused after compromise.</p>
+<h2>IOCs</h2>
+<p>IOCs for this research can also be found at our GitHub repository.</p>
+<pre>450fa9029c59af9edf2126df1d6a657ee6eb024d0341b32e6f6bdb8dc04bae5a - C:\temp\wmiscan.exe
+6a72e4b92d6a459fc2c6054e9ddb9819d04ed362bd847333492410b6d7bae5aa - c:/hotfix/Project1.exe - ssp_dump_lsass tool
+E106716a660c751e37cfc4f4fbf2ea2f833e92c2a49a0b3f40fc36ad77e0a044 - C:/hotfixlog/Fileless.exe - FScan
+B52bf5a644ae96807e6d846b0ce203611d83cc8a782badc68ac46c9616649477 - C:/hotfixlog/smb_version.exe
+864e67f76ad0ce6d4cc83304af4347384c364ca6735df0797e4b1ff9519689c5 – fileless.exe - Mimikatz
+
+SoundBill
+Df8497b9c37b780d6b6904a24133131faed8ea4cf3d75830b53c25d41c5ea386
+
+Cobalt Strike
+0952e5409f39824b8a630881d585030a1d656db897adf228ce27dd9243db20b7
+7a5f05da3739ad3e11414672d01b8bcf23503a9a8f1dd3f10ba2ead7745cdb1f
+
+cvbbonwxtgvc3isfqfc52cwzja0kvuqd.lambda-url.ap-northeast-1[.]on[.]aws
+http[://]141[.]164[.]50[.]141/sdksdk608/win-x64[.]rar
+141[.]164[.]50[.]141</pre>
+</article>
+</body>
+</html>

@@ -311,10 +311,20 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
       occurrences,
       document_has_authoritative_scope: hasAuth,
       // Force evidence policy to recompute publisher assertion from remapped zones.
+      // Clear deterministic classification fields too: a linear-pass explicit /
+      // malicious assessment from structural discovery must not survive when
+      // section-tree demotes the occurrence out of authoritative scope
+      // (AI classification has not run yet at this stage).
       source_assertion: undefined,
       evidence_strength: undefined,
       evidence_tier: undefined,
       policy_decision: undefined,
+      assessment: undefined,
+      decision_source: undefined,
+      match_state: undefined,
+      ai_needed: undefined,
+      role: undefined,
+      confidence: undefined,
       scope_engine: SCOPE_ENGINE_SECTION_TREE,
       scope_engine_version: SECTION_TREE_SCOPE_ENGINE_VERSION,
       section_tree_version: tree.version || SECTION_TREE_VERSION
