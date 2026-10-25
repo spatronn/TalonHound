@@ -103,9 +103,6 @@ export function describeMembershipDecision(candidate) {
   } else if (policy.startsWith('ioc_excluded')) {
     reasonCode = 'unsupported_or_non_ioc';
     summary = 'Excluded from IOC review: unsupported type, invalid canonical shape, or non-network artifact.';
-  } else if (policy.startsWith('context_only') || policy.startsWith('demoted_')) {
-    reasonCode = 'context_only_policy';
-    summary = `Not an Indicator (${policy}).`;
   } else if (
     !member &&
     modeA &&
@@ -121,6 +118,9 @@ export function describeMembershipDecision(candidate) {
   ) {
     reasonCode = 'insufficient_publisher_assertion';
     summary = 'Not an Indicator: MODE A requires a publisher assertion; this occurrence is narrative-only.';
+  } else if (policy.startsWith('context_only') || policy.startsWith('demoted_')) {
+    reasonCode = 'context_only_policy';
+    summary = `Not an Indicator (${policy}).`;
   } else if (candidate.ai_needed === true || ev.ai_needed === true) {
     reasonCode = 'ai_needed_pending';
     summary = 'Classification still needs model review; not yet a settled Indicator.';
