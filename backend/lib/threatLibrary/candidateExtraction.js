@@ -241,8 +241,12 @@ export {
  * fragment); a bare IPv6 table cell is an IP, not a hostname; a defanged
  * mixed-case hostname (`EmbersAndBites[.]com`) keeps the domain reading
  * (tl-type-resolver-v16).
+ * v39: filename-column consistency (tl-table-v11) demotes only ambiguous
+ * file/TLD collisions or rows with explicit file evidence — a publisher-
+ * asserted domain in a mixed Item|Description IOC table is never rewritten
+ * to a technical artifact merely because sibling cells are filenames.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v38';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v39';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -1457,7 +1461,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // table): provenance of the row's subject, kept as Context Only values
     // and never asserted, whatever section the table sits in (tl-table-v9).
     // Resolution columns ("Resolved IP") are the same kind of provenance: the
-    // row domain's DNS answer, not an actor address (tl-table-v10).
+    // row domain's DNS answer, not an actor address (tl-table-v11).
     for (const col of (interp.columns || []).filter((c) => c.attribute_kind === 'reference' || c.attribute_kind === 'resolution')) {
       const typingReason = col.attribute_kind === 'resolution' ? 'resolution_column' : 'reference_column';
       for (const row of interp.rows || []) {

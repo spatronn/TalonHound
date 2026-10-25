@@ -79,7 +79,7 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * v11 (20-report audit): check 20 reports resolution-column addresses (a
  * listed domain's DNS answer) apart from tool reference links.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v11';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v12';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -163,8 +163,18 @@ export const QUALITY_CODES = Object.freeze({
   /** The publisher announces a downloadable IOC package (STIX / JSON / CSV / repository) (check 22). */
   IOC_PACKAGE_ANNOUNCED: 'ioc_package_announced',
   /** Model-demoted table rows beside Indicator rows of the same table and type (post-merge check 23). */
-  AI_DEMOTED_TABLE_ROWS: 'ai_demoted_table_rows'
+  AI_DEMOTED_TABLE_ROWS: 'ai_demoted_table_rows',
+  /**
+   * An IOC-table value was rewritten from domain → file by filename-column
+   * consistency while the publisher row still asserts network / C2 semantics
+   * (check 24). Silent Indicator loss; review typing.
+   */
+  FILE_NAME_COLUMN_NETWORK_CONFLICT: 'file_name_column_network_conflict'
 });
+
+/** Row / evidence text that asserts network / domain / C2 semantics (check 24). */
+const FILE_NAME_COLUMN_NETWORK_EVIDENCE_RE =
+  /\b(?:domains?|hostnames?|fqdns?|c2|c&c|command[\s-]and[\s-]control|callbacks?|beacons?|contacted|communicat\w*|connect(?:s|ed|ing)?(?:\s+\w+){0,4}\s+to|hosted\s+on|dns|malicious\s+infrastructure|基础设施|域名|主机名?|домен|хост)\b/i;
 
 /** A table column header that names where something is published (check 20). */
 const REFERENCE_HEADER_RE =
@@ -1022,6 +1032,44 @@ export function assessExtractionQuality(input) {
       candidates: [],
       block_ids: packageBlocks.map((b) => b.id),
       evidence: evidenceFor(packageBlocks.map((b) => b.id))
+    });
+  }
+
+  // --- 24. Filename-column demotion contradicts publisher network evidence ---
+  // A mixed Item column may rewrite an ambiguous file/TLD collision to a file
+  // name; when the same rewrite hits a value whose row still says "domain" /
+  // "C2" / "contacted", the network identity was discarded silently.
+  const filenameColumnConflicts = candidates.filter((c) => {
+    if (c.is_ioc !== false && c.candidate_type === 'domain') return false;
+    const reason =
+      c.typing_reason ||
+      c.type_resolution?.reason ||
+      c.evidence?.typing_reason ||
+      c.evidence?.type_resolution?.reason ||
+      null;
+    if (reason !== 'file_name_column') return false;
+    const texts = [
+      c.evidence_text,
+      ...(c.table_rows || []).map((r) => r.description || ''),
+      ...((c.evidence && c.evidence.table_rows) || []).map((r) => r.description || ''),
+      ...(c.occurrences || []).map((o) => o.surrounding_text || '')
+    ].filter(Boolean);
+    return texts.some((t) => FILE_NAME_COLUMN_NETWORK_EVIDENCE_RE.test(t));
+  });
+  if (filenameColumnConflicts.length) {
+    push({
+      code: QUALITY_CODES.FILE_NAME_COLUMN_NETWORK_CONFLICT,
+      severity: 'warning',
+      explanation: `${filenameColumnConflicts.length} IOC-table value(s) were typed as file names because sibling cells were ` +
+        'filenames, while the publisher row still asserts domain / C2 / contacted-host semantics. Network identity may have ' +
+        'been discarded; review the Item column typing.',
+      candidates: filenameColumnConflicts.map(identity).sort(),
+      block_ids: filenameColumnConflicts.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean),
+      evidence: filenameColumnConflicts.map((c) => ({
+        identity: identity(c),
+        typing_reason: 'file_name_column',
+        evidence_text: excerpt(c.evidence_text || (c.table_rows || [])[0]?.description || '')
+      }))
     });
   }
 

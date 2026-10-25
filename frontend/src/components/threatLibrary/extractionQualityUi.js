@@ -164,6 +164,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
   ai_demoted_table_rows: {
     title: 'Model demoted some rows of an Indicator table',
     why: 'The model set some table-row values to Context Only while other rows of the same table and type remain Indicators. Review the table as a whole — a publisher inventory should not split arbitrarily.'
+  },
+  file_name_column_network_conflict: {
+    title: 'Filename-column typing discarded a network IOC',
+    why: 'An IOC-table value was typed as a file name because sibling cells were filenames, while the publisher row still describes a domain, C2 host, or contacted infrastructure. Confirm the network identity was not dropped.'
   }
 });
 

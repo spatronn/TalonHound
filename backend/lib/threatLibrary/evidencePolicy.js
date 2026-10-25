@@ -479,7 +479,7 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     candidate.role = 'reference';
     candidate.match_state = 'context_only';
     // A resolution column ("Resolved IP") holds the row domain's DNS answer
-    // (tl-table-v10); it is reported apart from tool reference links.
+    // (tl-table-v11); it is reported apart from tool reference links.
     candidate.policy_decision = occs.every((o) => o?.typing_reason === 'resolution_column')
       ? 'context_only_resolution_column'
       : occs.every((o) => o?.reference_cell === true)
