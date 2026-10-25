@@ -95,9 +95,15 @@ export function describeMembershipDecision(candidate) {
     reasonCode = 'ai_grounded_demotion';
     summary = 'Not an Indicator: a grounded AI classification set Context Only.';
   } else if (
-    policy === 'context_only_narrative_with_authoritative_scope' ||
-    policy === 'context_only_contextual_mention_in_indicator_section' ||
-    (modeA && !EXPLICIT.has(assertion) && !member)
+    !member &&
+    modeA &&
+    !EXPLICIT.has(assertion) &&
+    (policy === 'context_only_narrative_with_authoritative_scope' ||
+      policy === 'context_only_contextual_mention_in_indicator_section' ||
+      policy === 'pass' ||
+      policy === 'ai_needed_authoritative_narrative' ||
+      policy === 'ai_needed_prose_sample_hash' ||
+      !policy)
   ) {
     reasonCode = 'insufficient_publisher_assertion';
     summary = 'Not an Indicator: MODE A requires a publisher assertion; this occurrence is narrative-only.';

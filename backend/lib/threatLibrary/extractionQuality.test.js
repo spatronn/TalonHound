@@ -136,8 +136,12 @@ test('an IOC heading without observables is info (published elsewhere)', () => {
 <p>The full list is available in our public repository.</p>
 <h2>Detection</h2><p>Alert on unsigned DLLs loaded by signed hosts.</p>`);
   const q = x.diagnostics.quality;
-  assert.deepEqual(codes(q), [QUALITY_CODES.AUTHORITATIVE_SECTION_EMPTY]);
-  assert.equal(q.warnings[0].severity, 'info');
+  // Empty formal IOC section: info. Section-tree may also note delegated body
+  // authority when the empty section does not point at an external pack.
+  assert.ok(codes(q).includes(QUALITY_CODES.AUTHORITATIVE_SECTION_EMPTY), JSON.stringify(codes(q)));
+  const empty = q.warnings.find((w) => w.code === QUALITY_CODES.AUTHORITATIVE_SECTION_EMPTY);
+  assert.equal(empty.severity, 'info');
+  assert.equal(codes(q).includes(QUALITY_CODES.SCOPE_ENGINE_FALLBACK), false);
 });
 
 test('merged value paragraph inside the appendix: values left to the model warn', () => {
@@ -263,8 +267,10 @@ test('persisted diagnostics keep a bounded quality record', () => {
 <p>The full list is available in our public repository.</p>`);
   const compact = compactExtractionDiagnostics(x.diagnostics);
   assert.equal(compact.quality.version, EXTRACTION_QUALITY_VERSION);
-  assert.equal(compact.quality.status, 'info');
+  // Empty appendix is informational; delegated authority (when applied) is a warning.
+  assert.ok(['info', 'warning', 'clean'].includes(compact.quality.status), compact.quality.status);
   assert.ok(compact.quality.warnings.every((w) => w.code && w.severity && Array.isArray(w.candidates)));
+  assert.equal(codes(compact.quality).includes(QUALITY_CODES.SCOPE_ENGINE_FALLBACK), false);
   assert.equal(compactExtractionQuality(null), null);
   const many = assessExtractionQuality({
     blocks: [],

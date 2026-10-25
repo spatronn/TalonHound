@@ -208,7 +208,9 @@ export function explainMembershipDecision(candidate) {
     reasonCode = MEMBERSHIP_REASON_CODES.OPERATIONAL_MALICIOUS_CONTEXT;
   } else if (member && !modeA) {
     reasonCode = MEMBERSHIP_REASON_CODES.MODE_B_BODY_MEMBER;
-  } else if (!reasonCode && modeA && !publisherAsserted && !member) {
+  } else if (!member && modeA && !publisherAsserted) {
+    // MODE A non-members without a publisher assertion — even when ai_needed
+    // is still true — are suppressed by authority, not merely awaiting AI.
     reasonCode = MEMBERSHIP_REASON_CODES.INSUFFICIENT_PUBLISHER_ASSERTION;
   } else if (!reasonCode && candidate.ai_needed === true && !member) {
     reasonCode = MEMBERSHIP_REASON_CODES.AI_NEEDED_PENDING;
