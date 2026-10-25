@@ -38,6 +38,7 @@
  * removed identity is deleted; state never moves between identities.
  */
 
+import { finalizationObligations, isFinalizedStatus, lockReportForFinalize } from './reportLifecycleLock.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import {
   applyPublicationDate,
@@ -508,9 +509,16 @@ export async function runExtractionRefresh(pool, ctx) {
     // aborts with nothing written), and the guard is re-evaluated against the
     // locked state and link provenance (the accepted preview fingerprint is
     // checked again there).
-    refreshTx = pool.fenced ? await pool.connect() : null;
+    // One outcome transaction whenever the pool can provide one (the fenced
+    // worker handle, or a plain pool for the maintenance CLI). The report row
+    // is locked FOR UPDATE first (tl-report-lifecycle-lock-v1: report →
+    // candidates), so writing a finalized outcome below is as guarded as Finalize.
+    refreshTx = pool.fenced || typeof pool.connect === 'function' ? await pool.connect() : null;
     const db = refreshTx || pool;
-    if (refreshTx) await refreshTx.query('BEGIN');
+    if (refreshTx) {
+      await refreshTx.query('BEGIN');
+      await lockReportForFinalize(refreshTx, report.id);
+    }
     let lockedGuard = { diff: membershipDiff, guard };
     const persisted = await reconcileReportCandidates(db, report.id, refreshed.candidates, {
       reopensFinalized: true,
@@ -544,7 +552,23 @@ export async function runExtractionRefresh(pool, ctx) {
           : 'RELEASE SAVEPOINT tl_refresh_publication_date'
       );
     }
-    const outcome = resolveRefreshOutcomeStatus(restore, persisted);
+    let outcome = resolveRefreshOutcomeStatus(restore, persisted);
+    if (isFinalizedStatus(outcome.analysis_status)) {
+      // Re-finalizing: anything left to review (a pending Indicator, an open
+      // linked IOC Source — e.g. added while the report was being refreshed)
+      // returns the report to review instead.
+      const obligations = await finalizationObligations(db, report.id);
+      if (obligations.total) {
+        outcome = {
+          ...outcome,
+          analysis_status: 'review_required',
+          import_status: 'review_required',
+          reopened_for_review: true,
+          reopen_reason: 'open_obligations',
+          obligations
+        };
+      }
+    }
     const grounding = await applyStoredVulnerabilityGrounding(db, report, refreshed.document);
     const publisherGrounding = await applyStoredPublisherEntityGrounding(
       db,

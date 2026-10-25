@@ -26,6 +26,7 @@ import { aiReplayUpdatesFromRows, applyAnalystState, resolveRefreshOutcomeStatus
 import { requiresReviewAfterExtractionRefresh } from './candidateAnalystState.js';
 import { parseJobMode, jobModeInvokesAi, evaluateMaintenanceAction, UnknownJobModeError } from './jobModes.js';
 import { isActionableReviewIndicator } from './promotion.js';
+import { isPendingReviewActionableIndicator } from './indicatorMembership.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = 'https://research.example/blog/refresh-extraction/';
@@ -85,10 +86,21 @@ function createFakeDb({ report, iocCatalog = [] }) {
     db.sql.push(s);
     db.calls.push({ sql: s, params });
     const t = s.trim();
-    if (/^(BEGIN|COMMIT|ROLLBACK)/.test(t)) return { rows: [] };
+    if (/^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE SAVEPOINT)/.test(t)) return { rows: [] };
     if (/FROM threat_reports WHERE id = \$1 AND deleted_at IS NULL/.test(s)) return { rows: [clone(db.report)] };
-    // Report lifecycle lock (tl-report-lifecycle-lock-v1).
-    if (/FROM threat_reports WHERE id = \$1 FOR KEY SHARE/.test(s)) return { rows: [clone(db.report)] };
+    // Report lifecycle lock + finalization obligations (tl-report-lifecycle-lock-v1).
+    if (/FROM threat_reports WHERE id = \$1 FOR (?:KEY SHARE|UPDATE)/.test(s)) return { rows: [clone(db.report)] };
+    if (/AND COALESCE\(c\.review_status, 'pending'\) = 'pending'/.test(s)) {
+      return {
+        rows: db.candidates
+          .filter((c) => isPendingReviewActionableIndicator({ ...c, has_linked_source_occurrence: db.sourceLinks.includes(c.id) }))
+          .map((c) => ({ id: c.id }))
+      };
+    }
+    if (/FROM threat_report_ioc_sources\s+WHERE report_id = \$1 AND lifecycle_status = ANY/.test(s)) {
+      const open = new Set(params[1]);
+      return { rows: [{ n: (db.sources || []).filter((x) => open.has(x.lifecycle_status)).length }] };
+    }
     if (/^UPDATE threat_reports SET\s+title = COALESCE\(\$2, title\)/.test(t)) {
       const p = params;
       const r = db.report;
@@ -289,6 +301,11 @@ async function seedAnalyzedReport({ status = 'review_required', previousContract
   }, { document: extracted.document });
   const matched = await matchCandidateSet(pool, merged);
   await replaceCandidates(pool, report.id, mutate ? mutate(matched.candidates) : matched.candidates);
+  // A finalized fixture is one the finalize guard could have produced: its
+  // actionable Indicators were reviewed (approved) before finalization.
+  if (status === 'ready') {
+    for (const c of db.candidates) if (isPendingReviewActionableIndicator(c)) c.review_status = 'approved';
+  }
   const byKey = (k) => db.candidates.find((c) => key(c) === k);
 
   db.entities = [

@@ -258,3 +258,25 @@ test('lifecycle protocol: obligation-introducing writes exist only behind the re
     assert.match(body, /lockReportForMutation\(client,/, fn);
   }
 });
+
+test('lifecycle protocol: every write INTO a finalized status re-checks obligations under the finalize lock', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  const read = (f) => fs.readFileSync(path.join(here, f), 'utf8');
+  const store = read('store.js');
+  const restore = store.slice(store.indexOf('export async function restoreReportStatus('));
+  const restoreBody = restore.slice(0, restore.indexOf('\n}\n'));
+  assert.match(restoreBody, /isFinalizedStatus\(restore\?\.analysis_status\)/);
+  assert.ok(restoreBody.indexOf('lockReportForFinalize(client, reportId)') < restoreBody.indexOf('finalizationObligations(client, reportId)'));
+  const refresh = read('extractionRefresh.js');
+  assert.match(refresh, /await refreshTx\.query\('BEGIN'\);\s*await lockReportForFinalize\(refreshTx, report\.id\);/);
+  assert.match(refresh, /if \(isFinalizedStatus\(outcome\.analysis_status\)\) \{\s*[\s\S]{0,400}finalizationObligations\(db, report\.id\)/);
+  const thib = read('thibImport.js');
+  assert.match(thib, /analysis_status: obligations\.total \? 'review_required' : 'skipped'/);
+  // Retry / Rerun AI never claim a finalized report; only Refresh extraction does (and is guarded above).
+  const { MAINTENANCE_ALLOWED_STATUSES } = await import('./jobModes.js');
+  const finalizedClaimers = Object.entries(MAINTENANCE_ALLOWED_STATUSES).filter(([, s]) => s.includes('ready') || s.includes('skipped')).map(([m]) => m);
+  assert.deepEqual(finalizedClaimers, ['refresh_extraction']);
+});

@@ -51,6 +51,11 @@ function harness(reportPatch = {}, { jobs = [], audit = null, preview = null } =
         state.report.analysis_progress = { ...state.report.analysis_progress, ...JSON.parse(params[2]) };
         return { rows: [{ ...state.report }] };
       }
+      // restoreReportStatus to a finalized status: finalize lock + obligations
+      // (tl-report-lifecycle-lock-v1); this report has none open.
+      if (/FROM threat_reports WHERE id = \$1 FOR UPDATE/.test(s)) return { rows: [{ ...state.report }] };
+      if (/AND COALESCE\(c\.review_status, 'pending'\) = 'pending'/.test(s)) return { rows: [] };
+      if (/FROM threat_report_ioc_sources\s+WHERE report_id = \$1 AND lifecycle_status = ANY/.test(s)) return { rows: [{ n: 0 }] };
       if (/^UPDATE threat_reports\s+SET analysis_status = \$2,\s+import_status = \$3/.test(t)) {
         state.report.analysis_status = params[1];
         state.report.import_status = params[2];

@@ -512,3 +512,99 @@ test('reopen audit insert failure leaves the report finalized', opts, async () =
     await cleanup(report.id);
   }
 });
+
+// --- Re-finalization paths (restore to a finalized status) -------------------
+
+test('restore to ready after a refresh window re-checks obligations: an open source reopens the report', opts, async () => {
+  const { restoreReportStatus } = await import('./store.js');
+  const report = await setupReport();
+  try {
+    // A finalized report claimed by a maintenance job (Refresh extraction) is
+    // out of the finalized phase; a source added in that window is allowed…
+    await pool.query(`UPDATE threat_reports SET analysis_status = 'pending', import_status = 'processing' WHERE id = $1`, [report.id]);
+    await createManualIocSource(pool, report.id, { url: `https://vendor.example/${crypto.randomUUID()}/iocs.csv` });
+    // …and restoring the prior "ready" must not re-finalize it with that source open.
+    const row = await restoreReportStatus(pool, report.id, { analysis_status: 'ready', import_status: 'ready' }, { stage: 'ready' });
+    assert.equal(row.analysis_status, 'review_required');
+    assert.equal(row.analysis_progress.restore_guard.open_sources, 1);
+    assert.equal(row.analysis_progress.restore_guard.reopened_for_review, true);
+    assertInvariant(await persisted(report.id), 'restore');
+  } finally {
+    await cleanup(report.id);
+  }
+});
+
+test('restore to ready with nothing open stays finalized', opts, async () => {
+  const { restoreReportStatus } = await import('./store.js');
+  const report = await setupReport();
+  try {
+    await pool.query(`UPDATE threat_reports SET analysis_status = 'pending', import_status = 'processing' WHERE id = $1`, [report.id]);
+    const row = await restoreReportStatus(pool, report.id, { analysis_status: 'ready', import_status: 'ready' }, { stage: 'ready' });
+    assert.equal(row.analysis_status, 'ready');
+    assert.equal(row.analysis_progress.restore_guard, undefined);
+  } finally {
+    await cleanup(report.id);
+  }
+});
+
+test('race: restore to ready waits for an in-flight source insert, then reopens', opts, async () => {
+  const { restoreReportStatus } = await import('./store.js');
+  const report = await setupReport();
+  try {
+    await pool.query(`UPDATE threat_reports SET analysis_status = 'pending', import_status = 'processing' WHERE id = $1`, [report.id]);
+    const client = await pool.connect();
+    let restore;
+    let waited = false;
+    try {
+      await client.query('BEGIN');
+      await createManualIocSource(client, report.id, { url: `https://vendor.example/${crypto.randomUUID()}/iocs.csv` });
+      const fin = instrumentedPool();
+      restore = restoreReportStatus(fin, report.id, { analysis_status: 'ready', import_status: 'ready' }, { stage: 'ready' });
+      const pid = await Promise.race([fin.state.pid$, sleep(5000).then(() => null)]);
+      waited = pid ? await Promise.race([waitUntilLockWait(pid, 3000), restore.then(() => false)]) : false;
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+    const row = await restore;
+    assert.equal(waited, true, 'the restore must wait for the in-flight source insert');
+    assert.equal(row.analysis_status, 'review_required');
+    assertInvariant(await persisted(report.id), 'restore race');
+  } finally {
+    await cleanup(report.id);
+  }
+});
+
+test('Refresh extraction of a finalized report never re-finalizes it over an open source', opts, async () => {
+  const { runExtractionRefresh } = await import('./extractionRefresh.js');
+  const { buildLayoutVariant } = await import('./benchmark/layoutVariants.js');
+  const { extractReportCandidates } = await import('./extractionStages.js');
+  const { createJob, candidateColumns } = await import('./store.js');
+  const variant = buildLayoutVariant('html_c2_then_loaders/table');
+  const report = await createThreatReport(pool, { title: `itest-refresh-refinalize-${crypto.randomUUID()}`, source_type: 'url', source_url: variant.sourceUrl });
+  try {
+    const extracted = extractReportCandidates({ source_type: 'url', source_url: variant.sourceUrl }, variant.document);
+    await pool.query(`UPDATE threat_reports SET canonical_document = $2::jsonb WHERE id = $1`, [report.id, JSON.stringify(extracted.document)]);
+    for (const c of extracted.candidates) {
+      const col = candidateColumns(c);
+      await pool.query(
+        `INSERT INTO threat_report_candidates (report_id, candidate_type, original_value, normalized_value, assessment, role, review_status, match_state, is_ioc, source_assertion, evidence, has_original_document_occurrence)
+         VALUES ($1,$2,$3,$4,$5,$6,'approved',$7,$8,$9,$10::jsonb,$11)`,
+        [report.id, col.candidate_type, col.original_value, col.normalized_value, col.assessment, col.role, col.match_state, col.is_ioc, col.source_assertion, JSON.stringify(col.evidence), col.has_original_document_occurrence !== false]
+      );
+    }
+    // Claimed for maintenance (the route / CLI claim), with a source added in the window.
+    await pool.query(`UPDATE threat_reports SET analysis_status = 'pending', import_status = 'processing', finalized_at = NOW() WHERE id = $1`, [report.id]);
+    await createManualIocSource(pool, report.id, { url: `https://vendor.example/${crypto.randomUUID()}/iocs.csv` });
+    const job = await createJob(pool, { reportId: report.id, jobType: 'refresh_extraction' });
+    const res = await runExtractionRefresh(pool, { reportId: report.id, jobId: job.id, restoreStatus: { analysis_status: 'ready', import_status: 'ready' } });
+    assert.equal(res.ok, true, JSON.stringify(res));
+    const s = await persisted(report.id);
+    assert.equal(s.finalized, false, 'an open source keeps the refreshed report in review');
+    assertInvariant(s, 'refresh');
+    await pool.query(`DELETE FROM threat_library_jobs WHERE report_id = $1`, [report.id]);
+  } finally {
+    await pool.query(`DELETE FROM threat_library_jobs WHERE report_id = $1`, [report.id]).catch(() => {});
+    await cleanup(report.id);
+  }
+});

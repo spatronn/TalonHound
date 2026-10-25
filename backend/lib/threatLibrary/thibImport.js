@@ -3,6 +3,7 @@
  */
 
 import crypto from 'node:crypto';
+import { finalizationObligations } from './reportLifecycleLock.js';
 import { previewThibImport } from './thib/codec.js';
 import { normalizeTlp } from './constants.js';
 import { normalizeSuppliedPublicationDate } from './publicationDate.js';
@@ -147,9 +148,13 @@ export async function importThibBundle(pool, bundle, opts = {}) {
   await replaceRelationships(pool, report.id, rels);
 
   const summary = preview.summary;
+  // `skipped` is a finalized phase ("Imported (Bundle)"). A bundle that brings
+  // Indicators still awaiting review is not finalized intelligence
+  // (tl-report-lifecycle-lock-v1): it opens in review instead.
+  const obligations = await finalizationObligations(pool, report.id);
   await updateReportStatus(pool, report.id, {
     import_status: 'review_required',
-    analysis_status: 'skipped',
+    analysis_status: obligations.total ? 'review_required' : 'skipped',
     candidate_summary: {
       total: summary.indicators,
       existing: summary.already_in_talonhound,
