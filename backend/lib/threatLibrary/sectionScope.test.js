@@ -1,10 +1,10 @@
-/**
+﻿/**
  * Section scope model: authoritative section discovery (descriptive indicator
  * headings), scope inheritance across short sub-labelled groups, structural
  * list discovery as a fallback only, and occurrence-level assertion vs
  * narrative mention inside C2 / IOC sections. Fixture values are sanitized
  * and mirror the shape of a vendor blog (single-column indicator tables under
- * one "Indicators: â€¦" heading); nothing in production code knows them.
+ * one "Indicators: …" heading); nothing in production code knows them.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -101,11 +101,11 @@ function fixtureHtml() {
 <p>Below are the domains and IP addresses referenced throughout this research, grouped by casino type.</p>
 <table><thead><tr><th>Illegal Casino Domains (Type 1)</th></tr></thead><tbody>${rows(F.type1)}</tbody></table>
 <table><thead><tr><th>FooBird C2 and Decoy Domains (Type 3)</th></tr></thead><tbody>
-<tr><td>${defang(F.decoy)} â€“ Decoy domain</td></tr>${rows(F.c2)}<tr><td>${defang(F.decoy2)} â€“ Decoy domain</td></tr>${rows([F.single])}</tbody></table>
+<tr><td>${defang(F.decoy)} – Decoy domain</td></tr>${rows(F.c2)}<tr><td>${defang(F.decoy2)} – Decoy domain</td></tr>${rows([F.single])}</tbody></table>
 <table><thead><tr><th>Supporting IP Addresses for Illegal Casino Domains (Type 1)</th></tr></thead><tbody>${rows(F.ips)}</tbody></table>
 <p class="entry-meta">September 15, 2026</p>
 </article>
-<footer>Â© vendor https://vendor.example-blog.com/privacy</footer>
+<footer>© vendor https://vendor.example-blog.com/privacy</footer>
 </body></html>`;
 }
 
@@ -118,7 +118,7 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/casino/')
 test('internal contracts bumped for the scope model (product VERSION untouched)', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
-  assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged â€” inheritance no longer depends on it');
+  assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged — inheritance no longer depends on it');
 });
 
 // ---------------------------------------------------------------------------
@@ -128,13 +128,13 @@ test('internal contracts bumped for the scope model (product VERSION untouched)'
 test('indicator headings with a descriptive suffix declare an indicator section (generic, multilingual)', () => {
   for (const h of [
     'Indicators: Three Casinos and a Thousand Lookalikes',
-    'Indicators â€“ Network Infrastructure',
+    'Indicators – Network Infrastructure',
     'Indicators of Compromise: Campaign A',
     'Network Indicators: Additional Infrastructure',
     'IOCs (Type 3)',
-    'GÃ¶stergeler: Ek AltyapÄ±',
-    'å¨èƒæŒ‡æ ‡ï¼šæ´»åŠ¨A',
-    'Indicadores â€“ CampaÃ±a B'
+    'Göstergeler: Ek Altyapı',
+    '威胁指标：活动A',
+    'Indicadores – Campaña B'
   ]) {
     assert.equal(classifySectionRole(h), SECTION_ROLES.IOC_APPENDIX, h);
     assert.equal(classifyHeadingText(h), 'explicit_ioc_section', h);
@@ -148,7 +148,7 @@ test('indicator headings with a descriptive suffix declare an indicator section 
   assert.equal(classifySectionRole('Why these indicators matter'), null);
   assert.equal(classifySectionRole('Indicators suggest a Chinese origin'), null);
   assert.equal(classifySectionRole('Executive Summary'), null);
-  // Mid-title / hyphenated "IOC" mentions are narrative chrome, not appendix labels
+  // Mid-title / hyphenated IOC mentions are narrative chrome, not appendix labels
   // (held-out pilot FP class: H1 containing IOC-shaped incorrectly opened MODE A).
   assert.equal(classifySectionRole('Three unlabelled IOC-shaped rows without an appendix heading'), null);
   assert.equal(classifyHeadingText('Three unlabelled IOC-shaped rows without an appendix heading'), null);
@@ -156,10 +156,13 @@ test('indicator headings with a descriptive suffix declare an indicator section 
   assert.equal(classifyHeadingText('Mixed benign and malicious observables near IOC inventory'), null);
   assert.equal(classifySectionRole('IOC inventory methodology discussion'), null);
   assert.equal(classifyHeadingText('IOC inventory methodology discussion'), null);
-  // Bare / prefixed IOC labels still declare an appendix.
   assert.equal(classifySectionRole('IOCs'), SECTION_ROLES.IOC_APPENDIX);
   assert.equal(classifySectionRole('Additional IOCs'), SECTION_ROLES.IOC_APPENDIX);
   assert.equal(classifyHeadingText('Additional IOCs'), 'explicit_ioc_section');
+  // Common publisher inventory labels ("Example IOCs") must remain MODE A openers.
+  assert.equal(classifySectionRole('Example IOCs'), SECTION_ROLES.IOC_APPENDIX);
+  assert.equal(classifyHeadingText('Example IOCs'), 'explicit_ioc_section');
+  assert.equal(classifySectionRole('Selected Indicators'), SECTION_ROLES.IOC_APPENDIX);
 });
 
 test('a descriptive indicator heading followed only by prose is not an authoritative section', () => {
@@ -182,7 +185,7 @@ test('a descriptive indicator heading followed only by prose is not an authorita
 // Exact regression fixture
 // ---------------------------------------------------------------------------
 
-test('fixture: exact authoritative set â€” 3-row group, decoy label, 1-row group, IP label, 2 defanged IPs', () => {
+test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group, IP label, 2 defanged IPs', () => {
   const { candidates, diagnostics } = extractHtml(fixtureHtml());
   const expected = new Set([
     ...F.type1.map((v) => `domain:${v}`),
@@ -204,7 +207,7 @@ test('fixture: exact authoritative set â€” 3-row group, decoy label, 1-row 
     );
   }
 
-  // Missing IPs: the 2-row IP subgroup inherits the section (no â‰¥3 run needed).
+  // Missing IPs: the 2-row IP subgroup inherits the section (no ≥3 run needed).
   for (const ip of F.ips) {
     const c = byVal(candidates, ip);
     const row = c.occurrences.find((o) => o.zone === 'explicit_ioc_section');
@@ -219,10 +222,10 @@ test('fixture: exact authoritative set â€” 3-row group, decoy label, 1-row 
   const single = byVal(candidates, F.single);
   assert.equal(single.assessment, 'malicious');
   assert.ok(single.occurrences.some((o) => o.zone === 'explicit_ioc_section' && o.asserted === true));
-  // Annotated rows ("x â€“ Decoy domain") are still rows.
+  // Annotated rows ("x – Decoy domain") are still rows.
   assert.equal(byVal(candidates, F.decoy2).occurrences.find((o) => o.zone === 'explicit_ioc_section').occurrence_kind, OCCURRENCE_KINDS.STANDALONE_INDICATOR_ROW);
 
-  // "Type 3: â€¦ C2 Domains â€¦" titles a prose topic (no indicator structure in
+  // "Type 3: … C2 Domains …" titles a prose topic (no indicator structure in
   // its subtree): narrative, not a curated C2 section. The research firm in it
   // stays context under the curated appendix scope.
   const research = byVal(candidates, F.research);
@@ -271,14 +274,14 @@ test('fixture: exact authoritative set â€” 3-row group, decoy label, 1-row 
   assert.ok(ev.occurrences.some((o) => o.occurrence_kind === OCCURRENCE_KINDS.LIST_ITEM && o.asserted === true));
 });
 
-test('fixture: heading levels â€” deeper sub-labels inherit, sibling topics close the section', () => {
+test('fixture: heading levels — deeper sub-labels inherit, sibling topics close the section', () => {
   const d = doc([
     { id: 'h', type: 'heading', level: 2, text: 'Indicators: Campaign Infrastructure' },
     { id: 'r1', type: 'list_item', text: '203.0.113.10' },
     { id: 'r2', type: 'list_item', text: '203.0.113.11' },
     { id: 'r3', type: 'list_item', text: '203.0.113.12' },
     { id: 'sub1', type: 'heading', level: 3, text: 'Decoy domains' },
-    { id: 'r4', type: 'list_item', text: 'decoy-one[.]net â€“ Decoy domain' },
+    { id: 'r4', type: 'list_item', text: 'decoy-one[.]net – Decoy domain' },
     { id: 'sub2', type: 'heading', level: 3, text: 'Supporting IP Addresses' },
     { id: 'r5', type: 'list_item', text: '198[.]51[.]100[.]20' },
     { id: 'r6', type: 'list_item', text: '198[.]51[.]100[.]21' },
@@ -301,7 +304,7 @@ test('fixture: heading levels â€” deeper sub-labels inherit, sibling topics
   assert.equal(byVal(cands, 'vendor-tool.example')?.assessment, 'context_only');
 });
 
-test('fixture: no heading levels (PDF) â€” a label followed by rows inherits, a topic heading resets', () => {
+test('fixture: no heading levels (PDF) — a label followed by rows inherits, a topic heading resets', () => {
   const d = doc([
     { id: 'h', type: 'heading', page: 12, text: 'Indicators' },
     { id: 'r1', type: 'list_item', layout: 'observable_row', page: 12, text: 'one[.]casino-x[.]com' },
@@ -397,7 +400,7 @@ test('C2 section: explicit rows and operational clauses assert; research / provi
   assert.equal(staged.policy_decision, 'ai_needed_authoritative_narrative');
   assert.equal(staged.occurrences[0].occurrence_kind, OCCURRENCE_KINDS.NARRATIVE_MENTION);
   assert.equal(summarizeCandidateSet(cands).ai_needed, 1);
-  // â€¦and the model's verdict is honoured for it, while it still cannot touch the research firm.
+  // …and the model's verdict is honoured for it, while it still cannot touch the research firm.
   const merged = mergeAiCandidateUpdates(cands, {
     candidate_updates: [
       { candidate_type: 'domain', normalized_value: 'secondary-stage.net', assessment: 'malicious', role: 'payload_hosting', confidence: 0.8 },
@@ -409,7 +412,7 @@ test('C2 section: explicit rows and operational clauses assert; research / provi
   assert.equal(summarizeCandidateSet(merged).ai_needed, 0);
 });
 
-test('same observable: contextual prose mention + explicit row â†’ the row wins', () => {
+test('same observable: contextual prose mention + explicit row → the row wins', () => {
   const d = doc([
     { id: 'h', type: 'heading', text: 'C2 Servers' },
     { id: 'p', text: 'According to researchers at Example Labs, dual-role.net was registered in March.' },
@@ -434,7 +437,7 @@ test('relation detail: zone is evidence, not proof', () => {
 });
 
 test('row-shape helpers', () => {
-  assert.equal(isIndicatorRowShape('vip311[.]cc â€“ Decoy domain', 'vip311.cc'), true);
+  assert.equal(isIndicatorRowShape('vip311[.]cc – Decoy domain', 'vip311.cc'), true);
   assert.equal(isIndicatorRowShape('C2 203.0.113.44', '203.0.113.44'), true);
   assert.equal(isIndicatorRowShape('Domain: evil.example', 'evil.example'), true);
   assert.equal(isIndicatorRowShape('The backdoor connects to 203.0.113.88 for command and control.', '203.0.113.88'), false);
@@ -458,7 +461,7 @@ test('scheme-less host/path in a narrative-only report: one URL on the AI path, 
   assert.equal(url.normalized_value, 'cdn-stage.example.net/assets/loader.bin');
   assert.equal(url.parsed.scheme_less, true);
   assert.equal(url.parsed.path, '/assets/loader.bin');
-  assert.equal(url.ai_needed, true, 'no appendix â†’ the model classifies the narrative assertion');
+  assert.equal(url.ai_needed, true, 'no appendix → the model classifies the narrative assertion');
   assert.equal(url.source_relation, SOURCE_RELATIONS.OPERATIONAL_MALICIOUS);
   assert.equal(cands.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'cdn-stage.example.net'), false);
   assert.equal(cands.some((c) => String(c.normalized_value).includes('loader.bin') && c.candidate_type !== 'url'), false);
@@ -498,12 +501,12 @@ test('scheme-less host/path row inside an indicator section is a deterministic U
 // Multi-format / multi-language
 // ---------------------------------------------------------------------------
 
-test('Turkish plain text: descriptive GÃ¶stergeler heading, short sub-groups, research firm stays context', () => {
+test('Turkish plain text: descriptive Göstergeler heading, short sub-groups, research firm stays context', () => {
   const text = [
-    'Komuta Kontrol AltyapÄ±sÄ±',
-    'Ã–rnek AraÅŸtÄ±rma firmasÄ± (ornek-arastirma.com.tr) kampanyayÄ± ilk raporlayan ekipti.',
-    'ZararlÄ± 203.0.113.9:8443 adresine baÄŸlanÄ±r.',
-    'GÃ¶stergeler: Kampanya AltyapÄ±sÄ±',
+    'Komuta Kontrol Altyapısı',
+    'Örnek Araştırma firması (ornek-arastirma.com.tr) kampanyayı ilk raporlayan ekipti.',
+    'Zararlı 203.0.113.9:8443 adresine bağlanır.',
+    'Göstergeler: Kampanya Altyapısı',
     'kotu-c2.ornek.net',
     'Destekleyici IP Adresleri',
     '198[.]51[.]100[.]7',
@@ -521,16 +524,16 @@ test('Turkish plain text: descriptive GÃ¶stergeler heading, short sub-groups, 
   assert.equal(cands.find((c) => String(c.normalized_value).includes('arastirma.ornek-firma.com.tr'))?.assessment, 'context_only');
 });
 
-test('Chinese headings: å¨èƒæŒ‡æ ‡ with a descriptive suffix, a 2-row sub-group and a å‚è€ƒé“¾æŽ¥ section', () => {
+test('Chinese headings: 威胁指标 with a descriptive suffix, a 2-row sub-group and a 参考链接 section', () => {
   const cands = extractCandidatesFromDocument(
     doc(
       [
-        { id: 'h1', type: 'heading', text: 'å¨èƒæŒ‡æ ‡ï¼šæ´»åŠ¨A' },
+        { id: 'h1', type: 'heading', text: '威胁指标：活动A' },
         { id: 'r1', type: 'list_item', text: 'c2-one[.]example[.]com' },
-        { id: 'sub', type: 'heading', text: 'ç›¸å…³IPåœ°å€' },
+        { id: 'sub', type: 'heading', text: '相关IP地址' },
         { id: 'r2', type: 'list_item', text: '203[.]0[.]113[.]44' },
         { id: 'r3', type: 'list_item', text: '203[.]0[.]113[.]45' },
-        { id: 'h2', type: 'heading', text: 'å‚è€ƒé“¾æŽ¥' },
+        { id: 'h2', type: 'heading', text: '参考链接' },
         { id: 'b2', text: 'https://research.example.org/prior' }
       ],
       { language: 'zh' }
@@ -544,7 +547,7 @@ test('Chinese headings: å¨èƒæŒ‡æ ‡ with a descriptive suffix, a 
 
 test('PDF page continuation: a 1-row group split across a page break with a running footer keeps scope', () => {
   const d = doc([
-    { id: 'h', type: 'heading', page: 5, text: 'Indicators â€“ Network Infrastructure' },
+    { id: 'h', type: 'heading', page: 5, text: 'Indicators – Network Infrastructure' },
     { id: 'r1', type: 'list_item', layout: 'observable_row', page: 5, text: 'first[.]casino-y[.]com' },
     { id: 'r2', type: 'list_item', layout: 'observable_row', page: 5, text: 'second[.]casino-y[.]com' },
     { id: 'f1', page: 5, layout: 'page_edge', text: '5 | Vendor Research' },

@@ -4,7 +4,7 @@
   "publisher": "synthetic",
   "format": "html",
   "dataset_split": "held_out_pilot",
-  "tags": ["held_out", "pilot", "synthetic", "unknown_structure", "section_tree", "no_mode_a_authority"],
+  "tags": ["held_out", "pilot", "synthetic", "unknown_structure", "section_tree", "no_mode_a_authority", "mode_b"],
   "source": {
     "kind": "html_file",
     "path": "../fixtures/heldout-unknown-three-unlabelled-rows.html",
@@ -12,19 +12,20 @@
   },
   "ground_truth": {
     "provenance": {
-      "method": "constructed: three Host/Port table rows without a publisher IOC appendix heading. Under section_tree these must not become document-global MODE A Indicators. Fixture title intentionally avoids the token IOC so the case measures unlabelled-row authority, not heading over-match (the IOC-shaped H1 defect is covered by reliabilityObservability regression).",
-      "verified_by": "construction",
+      "method": "constructed + adjudicated (2026-10-25): three Host/Port table rows without a publisher IOC appendix heading. Under section_tree these must not become document-global MODE A / explicit_ioc Indicators. Domains resolve reference_only. The staging IP remains a MODE B body_member (publisher asserts observed staging endpoints) — not an appendix false positive. Fixture title intentionally avoids the token IOC so the case measures unlabelled-row authority; the IOC-shaped H1 defect is covered by reliabilityObservability regression.",
+      "verified_by": "construction + membership explanation adjudication",
       "verified_at": "2026-10-25",
-      "coverage_note": "Synthetic held-out case pinning section-tree authority behaviour on unlabelled rows. Original pilot H1 containing 'IOC-shaped' was promoted to regression after it drove a general heading fix.",
+      "coverage_note": "Synthetic held-out case pinning section-tree authority behaviour on unlabelled rows. Original pilot H1 containing 'IOC-shaped' was promoted to regression after it drove a general heading fix. Original pilot labelled all three as FP Indicators under mistaken MODE A; post-fix only the IP remains an Indicator via MODE B policy.",
       "mode": "B"
     },
-    "indicators": [],
+    "indicators": [
+      { "type": "ip", "value": "203.0.113.55", "assertion": "body" }
+    ],
     "context_only": [],
     "excluded_legitimate": [],
     "not_indicators": [
       { "type": "domain", "value": "alpha-stage.research-lab.test" },
-      { "type": "domain", "value": "beta-stage.research-lab.test" },
-      { "type": "ip", "value": "203.0.113.55" }
+      { "type": "domain", "value": "beta-stage.research-lab.test" }
     ],
     "ambiguous": [],
     "sections": []

@@ -87,9 +87,19 @@ test('HTML H1 mentioning IOC-shaped does not open MODE A over three Host/Port ro
   for (const v of ['alpha-stage.research-lab.test', 'beta-stage.research-lab.test', '203.0.113.55']) {
     const c = out.candidates.find((x) => x.normalized_value === v);
     assert.ok(c, v);
-    assert.equal(isReportIndicatorMember(persisted(c)), false, v);
+    // Mid-title "IOC-shaped" must not invent MODE A / explicit_ioc rows.
     assert.notEqual(c.source_assertion, 'explicit_ioc', v);
+    assert.equal(c.document_has_authoritative_scope, false, v);
   }
+  // Domains in an unlabelled Host/Port staging table stay non-Indicators.
+  // A bare IP may still be MODE B body_member — that is review-set policy, not
+  // appendix authority (see explainMembershipDecision → mode_b_body_member).
+  for (const v of ['alpha-stage.research-lab.test', 'beta-stage.research-lab.test']) {
+    const c = out.candidates.find((x) => x.normalized_value === v);
+    assert.equal(isReportIndicatorMember(persisted(c)), false, v);
+  }
+  const ip = out.candidates.find((x) => x.normalized_value === '203.0.113.55');
+  assert.equal(explainMembershipDecision(persisted(ip)).reason_code, 'mode_b_body_member');
 });
 
 test('legacy: three unlabelled rows open MODE A and suppress narrative C2 membership', () => {

@@ -12,7 +12,7 @@ Combined 9 cases (5 real + 4 synthetic): TP 51 / FP 4 / FN 0 — precision 0.927
 Pilot FP identities (investigation):
 
 1. `domain:ifconfig.me` — **INCORRECT GROUND TRUTH** (IOC-table row with malice co-mention; MODE A assertion intended). Label adjudicated.
-2. Three Host/Port rows under H1 containing `IOC-shaped` — **CONFIRMED ENGINE DEFECT** (mid-title `\biocs?\b` opened MODE A). Defect promoted to regression; fixture title cleaned for continued unlabelled-row evaluation.
+2. Three Host/Port rows under H1 containing `IOC-shaped` — **CONFIRMED ENGINE DEFECT** (mid-title `\biocs?\b` / mid-title `appendix` co-mention opened MODE A). Defect promoted to `reliabilityObservability` regression; fixture title cleaned. Post-fix: domains stay non-Indicators; staging IP remains MODE B `body_member` (re-labeled, not an appendix FP).
 
 ## Current inventory
 
@@ -32,3 +32,13 @@ Pilot FP identities (investigation):
 | heldout-unknown-three-unlabelled-rows | pilot | synthetic | unlabelled rows (title cleaned) |
 
 **Target:** 15–20 real / 30–50 long-term. **Real labeled now:** 8. **Synthetic:** 4.
+
+## Post-fix scorecard (2026-10-25, section_tree)
+
+| Dataset | Reports | TP | FP | FN | Precision | Recall | Exact |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Pilot real (untuned identities) | 5 | 43 | 0 | 0 | 1.0 | 1.0 | 5/5 |
+| Expansion real (untouched) | 3 | 24 | 0 | 0 | 1.0 | 1.0 | 3/3 |
+| Synthetic structural | 4 | 10 | 0 | 0 | 1.0 | 1.0 | 4/4 |
+
+Contamination note: `heldout-unknown-three-unlabelled-rows` title was cleaned after the IOC-shaped H1 defect drove the heading fix; that defect is guarded by `reliabilityObservability` regression. Expansion real cases were not used to tune the fix.
