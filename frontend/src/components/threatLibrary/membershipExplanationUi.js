@@ -94,19 +94,6 @@ export function describeMembershipDecision(candidate) {
   ) {
     reasonCode = 'ai_grounded_demotion';
     summary = 'Not an Indicator: a grounded AI classification set Context Only.';
-  } else if (
-    !member &&
-    modeA &&
-    !EXPLICIT.has(assertion) &&
-    (policy === 'context_only_narrative_with_authoritative_scope' ||
-      policy === 'context_only_contextual_mention_in_indicator_section' ||
-      policy === 'pass' ||
-      policy === 'ai_needed_authoritative_narrative' ||
-      policy === 'ai_needed_prose_sample_hash' ||
-      !policy)
-  ) {
-    reasonCode = 'insufficient_publisher_assertion';
-    summary = 'Not an Indicator: MODE A requires a publisher assertion; this occurrence is narrative-only.';
   } else if (policy.includes('provider') || policy.includes('benign') || policy.includes('legitimate')) {
     reasonCode = 'benign_or_provider';
     summary = 'Not an Indicator: publisher describes this as legitimate, dual-use, or a provider/service.';
@@ -119,6 +106,21 @@ export function describeMembershipDecision(candidate) {
   } else if (policy.startsWith('context_only') || policy.startsWith('demoted_')) {
     reasonCode = 'context_only_policy';
     summary = `Not an Indicator (${policy}).`;
+  } else if (
+    !member &&
+    modeA &&
+    !EXPLICIT.has(assertion) &&
+    (policy === 'context_only_narrative_with_authoritative_scope' ||
+      policy === 'context_only_contextual_mention_in_indicator_section' ||
+      policy === 'pass' ||
+      policy === 'ai_needed_authoritative_narrative' ||
+      policy === 'ai_needed_prose_sample_hash' ||
+      !policy ||
+      candidate.ai_needed === true ||
+      ev.ai_needed === true)
+  ) {
+    reasonCode = 'insufficient_publisher_assertion';
+    summary = 'Not an Indicator: MODE A requires a publisher assertion; this occurrence is narrative-only.';
   } else if (candidate.ai_needed === true || ev.ai_needed === true) {
     reasonCode = 'ai_needed_pending';
     summary = 'Classification still needs model review; not yet a settled Indicator.';

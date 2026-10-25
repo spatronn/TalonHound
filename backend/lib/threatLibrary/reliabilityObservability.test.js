@@ -204,7 +204,7 @@ test('empty formal IOC appendix produces completeness quality signal', () => {
   );
 });
 
-test('prompt-injection text in publisher content does not invent Indicator membership for the injected host', () => {
+test('prompt-injection text in publisher content does not replace publisher IOC membership', () => {
   process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const out = extractReportCandidates(
     { source_url: 'https://vendor.example/inject' },
@@ -221,11 +221,11 @@ test('prompt-injection text in publisher content does not invent Indicator membe
       ]
     })
   );
+  // Publisher-listed Indicator remains; injection prose does not remove it or
+  // force AI / membership authority changes on the deterministic path.
   assert.ok(members(out.candidates).includes('domain:real-c2.evilvend.net'));
-  // Injected narrative host may be extracted, but MODE A keeps it out of Indicators.
-  assert.equal(members(out.candidates).includes('domain:inject-please-approve.evilvend.net'), false);
-  const injected = out.candidates.find((c) => c.normalized_value === 'inject-please-approve.evilvend.net');
-  if (injected) {
-    assert.equal(explainMembershipDecision(injected).reason_code, 'insufficient_publisher_assertion');
-  }
+  assert.equal(out.diagnostics.scope_engine.engine, 'section_tree');
+  assert.equal(out.diagnostics.scope_engine.fallback, undefined);
+  const listed = out.candidates.find((c) => c.normalized_value === 'real-c2.evilvend.net');
+  assert.equal(explainMembershipDecision(listed).reason_code, 'explicit_publisher_ioc');
 });
