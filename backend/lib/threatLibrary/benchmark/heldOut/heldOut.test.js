@@ -83,6 +83,15 @@ test('annotateFalseNegativesWithStages aggregates counts', () => {
   assert.equal(out.failure_stages[FAILURE_STAGES.CONTEXT_ONLY_POLICY], 1);
 });
 
+test('held-out html_file paths resolve relative to the case directory', () => {
+  const d = discoverHeldOutCases();
+  const withHtml = d.labeled.find((x) => x.definition.source?.kind === 'html_file');
+  if (!withHtml) return;
+  assert.equal(withHtml.definition.__dir, path.dirname(withHtml.path));
+  const resolved = path.resolve(withHtml.definition.__dir, withHtml.definition.source.path);
+  assert.ok(fs.existsSync(resolved), `missing fixture ${resolved}`);
+});
+
 test('exploratory files in cases/ are skipped, not scored', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tl-heldout-'));
   const casesDir = path.join(tmp, 'cases');

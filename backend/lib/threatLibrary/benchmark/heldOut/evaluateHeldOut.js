@@ -52,7 +52,9 @@ export function discoverHeldOutCases({ casesDir = HELD_OUT_CASES_DIR, unlabeledD
     }
     try {
       validateBenchmarkCase(raw, file);
-      labeled.push({ path: file, definition: raw });
+      // __dir lets html_file / canonical paths resolve relative to the case file
+      // (same contract as loadCaseDirectory for regression fixtures).
+      labeled.push({ path: file, definition: { ...raw, __dir: path.dirname(file) } });
     } catch (err) {
       skipped.push({ path: file, reason: String(err.message || err).slice(0, 240) });
     }
