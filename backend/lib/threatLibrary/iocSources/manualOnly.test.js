@@ -49,7 +49,13 @@ test('IOC Source INSERT writers are manual create + discovery upsert only', () =
   ]);
   const store = read(path.join(here, 'store.js'));
   const fn = store.slice(store.indexOf('export async function createManualIocSource('));
-  const body = fn.slice(0, fn.indexOf('\n}\n'));
+  // createManualIocSource takes the report lifecycle lock, then its private
+  // insertManualSource helper writes the row (tl-report-lifecycle-lock-v1).
+  const head = fn.slice(0, fn.indexOf('\n}\n'));
+  assert.match(head, /lockReportForMutation\(client, reportId\)/);
+  assert.match(head, /insertManualSource\(client,/);
+  const helper = store.slice(store.indexOf('async function insertManualSource('));
+  const body = helper.slice(0, helper.indexOf('\n}\n'));
   assert.match(body, /INSERT INTO threat_report_ioc_sources/);
   assert.match(body, /'manual'/);
   assert.doesNotMatch(body, /'auto'/);

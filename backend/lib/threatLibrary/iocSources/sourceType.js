@@ -7,6 +7,23 @@
  * - the explicit Add Source URL action (`store.createManualIocSource`)
  */
 
+import { IOC_SOURCE_TYPES } from './constants.js';
+
+/**
+ * A parse format as a persisted `source_type`: the column is constrained to
+ * IOC_SOURCE_TYPES (migration 050), while the parser also reports `ndjson` /
+ * `asciidoc`. Unknown values become 'unknown' rather than failing the write.
+ * @param {string|null|undefined} format
+ */
+export function persistableSourceType(format) {
+  if (format == null || format === '') return null;
+  const f = String(format).toLowerCase();
+  if (IOC_SOURCE_TYPES.includes(f)) return f;
+  if (f === 'ndjson' || f === 'jsonl') return 'json';
+  if (f === 'asciidoc' || f === 'adoc') return 'markdown';
+  return 'unknown';
+}
+
 export function guessTypeFromUrl(url) {
   const u = String(url || '').toLowerCase();
   // GitHub blob/tree URLs are source packs even when the path ends in .txt/.csv.

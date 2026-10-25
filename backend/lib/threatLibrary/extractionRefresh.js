@@ -513,6 +513,7 @@ export async function runExtractionRefresh(pool, ctx) {
     if (refreshTx) await refreshTx.query('BEGIN');
     let lockedGuard = { diff: membershipDiff, guard };
     const persisted = await reconcileReportCandidates(db, report.id, refreshed.candidates, {
+      reopensFinalized: true,
       beforeWrite: async (lockedRows, client) => {
         const drift = candidateSnapshotDrift(previousRows, lockedRows);
         if (drift.length) {

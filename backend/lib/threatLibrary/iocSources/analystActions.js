@@ -82,7 +82,7 @@ export async function approveLinkedIocSource(pool, queue, opts) {
       approved_by: actorPublicId(opts.actor)
     });
   } catch (err) {
-    if (err?.code === 'invalid_source_transition') {
+    if (err?.code === 'invalid_source_transition' || err?.code === 'report_finalized') {
       return { ok: false, status: 409, code: err.code, error: err.message };
     }
     throw err;
@@ -158,7 +158,7 @@ export async function dismissLinkedIocSource(pool, opts) {
       dismissed_by: actorPublicId(opts.actor)
     });
   } catch (err) {
-    if (err?.code === 'invalid_source_transition' || err?.code === 'source_dismissed') {
+    if (err?.code === 'invalid_source_transition' || err?.code === 'source_dismissed' || err?.code === 'report_finalized') {
       return { ok: false, status: 409, code: err.code, error: err.message };
     }
     throw err;

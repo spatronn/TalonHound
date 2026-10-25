@@ -29,6 +29,7 @@ import {
   AI_SCHEDULING_SETTING_BOUNDS
 } from './analysisConcurrency.js';
 import { loadReportReviewProgress } from './reviewProgress.js';
+import { ReportFinalizedError, isFinalizedReport, lockReportForMutation, pendingObligationIds } from './reportLifecycleLock.js';
 
 export async function getAiSettings(pool) {
   const { rows } = await pool.query(`SELECT * FROM threat_library_ai_settings WHERE id = 1`);
@@ -826,6 +827,16 @@ export async function reconcileReportCandidates(pool, reportId, candidates, opti
   const { client, owned } = await acquireDbSession(pool);
   try {
     if (owned) await client.query('BEGIN');
+    // Lifecycle lock first (report → candidates, tl-report-lifecycle-lock-v1):
+    // serializes with finalize in either order. On a finalized report the
+    // write may not introduce a pending actionable Indicator.
+    // `reopensFinalized`: Refresh extraction, the explicit role-gated reopen
+    // path — it returns the report to review in this same transaction and
+    // records `reopened_for_review` on its job row.
+    const parent = await lockReportForMutation(client, reportId);
+    const finalizedObligations = parent && isFinalizedReport(parent) && options.reopensFinalized !== true
+      ? await pendingObligationIds(client, reportId)
+      : null;
     const { rows: existing } = await client.query(
       `SELECT * FROM threat_report_candidates WHERE report_id = $1 ORDER BY id FOR UPDATE`,
       [reportId]
@@ -1050,6 +1061,15 @@ export async function reconcileReportCandidates(pool, reportId, candidates, opti
       }
     }
 
+    if (finalizedObligations) {
+      const after = await pendingObligationIds(client, reportId);
+      const introduced = [...after].filter((id) => !finalizedObligations.has(id));
+      if (introduced.length) {
+        throw new ReportFinalizedError(
+          `The report is finalized: this change would add ${introduced.length} indicator(s) awaiting review. Reopen the report for review first.`
+        );
+      }
+    }
     if (owned) await client.query('COMMIT');
     return { rows, added, updated, unchanged, removed };
   } catch (err) {

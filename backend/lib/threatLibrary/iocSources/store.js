@@ -6,6 +6,8 @@ import { canonicalizeReportUrl } from '../importIdentity.js';
 import { reportIndicatorMembershipSql } from '../indicatorMembership.js';
 import { IOC_SOURCE_LIFECYCLE } from './constants.js';
 import { transitionPatch } from './sourceState.js';
+import { persistableSourceType } from './sourceType.js';
+import { ReportFinalizedError, inReportTransaction, isFinalizedReport, lockReportForMutation } from '../reportLifecycleLock.js';
 
 export function publicIocSource(row, files = null) {
   if (!row) return null;
@@ -92,6 +94,16 @@ export async function createManualIocSource(pool, reportId, { url, requestedBy }
     err.code = 'invalid_url';
     throw err;
   }
+  // A new source is an open obligation: never on a finalized report
+  // (tl-report-lifecycle-lock-v1 — the report lock serializes with finalize).
+  return inReportTransaction(pool, async (client) => {
+    const report = await lockReportForMutation(client, reportId);
+    if (report && isFinalizedReport(report)) throw new ReportFinalizedError();
+    return insertManualSource(client, reportId, url, canonical, requestedBy);
+  });
+}
+
+async function insertManualSource(pool, reportId, url, canonical, requestedBy) {
   const { rows } = await pool.query(
     `INSERT INTO threat_report_ioc_sources (
        report_id, original_url, canonical_url, source_type, discovery_method,
@@ -140,7 +152,7 @@ export async function applySourcePatch(pool, sourceId, patch) {
       patch.lifecycle_status ?? null,
       patch.inspection_status ?? null,
       patch.extraction_status ?? null,
-      patch.source_type ?? null,
+      persistableSourceType(patch.source_type),
       patch.preview != null ? JSON.stringify(patch.preview) : null,
       patch.content_hash ?? null,
       patch.repo_revision ?? null,
@@ -156,9 +168,28 @@ export async function applySourcePatch(pool, sourceId, patch) {
   return rows[0] || null;
 }
 
+const RESOLVED_LIFECYCLE = new Set([IOC_SOURCE_LIFECYCLE.EXTRACTED, IOC_SOURCE_LIFECYCLE.DISMISSED]);
+
+/**
+ * Apply a lifecycle transition under the report lifecycle lock
+ * (tl-report-lifecycle-lock-v1). The transition is computed from the source
+ * row as locked now, not the caller's copy. On a finalized report a resolved
+ * source (extracted / dismissed) may not move back to an open state; open →
+ * open and open → resolved transitions stay allowed.
+ */
 export async function transitionSource(pool, source, action, extra = {}) {
-  const patch = transitionPatch(source, action, extra);
-  return applySourcePatch(pool, source.id, patch);
+  return inReportTransaction(pool, async (client) => {
+    const report = await lockReportForMutation(client, source.report_id);
+    const { rows } = await client.query(`SELECT * FROM threat_report_ioc_sources WHERE id = $1 FOR UPDATE`, [source.id]);
+    const current = rows[0] || source;
+    const patch = transitionPatch(current, action, extra);
+    const from = String(current.lifecycle_status || '').toLowerCase();
+    const to = String(patch?.lifecycle_status || from).toLowerCase();
+    if (report && isFinalizedReport(report) && !patch?.idempotent && RESOLVED_LIFECYCLE.has(from) && !RESOLVED_LIFECYCLE.has(to)) {
+      throw new ReportFinalizedError();
+    }
+    return applySourcePatch(client, current.id, patch);
+  });
 }
 
 export async function replaceSourceFiles(pool, sourceId, files) {

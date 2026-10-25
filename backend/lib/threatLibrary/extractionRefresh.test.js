@@ -87,6 +87,8 @@ function createFakeDb({ report, iocCatalog = [] }) {
     const t = s.trim();
     if (/^(BEGIN|COMMIT|ROLLBACK)/.test(t)) return { rows: [] };
     if (/FROM threat_reports WHERE id = \$1 AND deleted_at IS NULL/.test(s)) return { rows: [clone(db.report)] };
+    // Report lifecycle lock (tl-report-lifecycle-lock-v1).
+    if (/FROM threat_reports WHERE id = \$1 FOR KEY SHARE/.test(s)) return { rows: [clone(db.report)] };
     if (/^UPDATE threat_reports SET\s+title = COALESCE\(\$2, title\)/.test(t)) {
       const p = params;
       const r = db.report;
