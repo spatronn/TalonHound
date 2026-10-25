@@ -21,7 +21,7 @@ import { isIPv6 } from 'node:net';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
 import { resolveDottedTokenType } from './candidateTyping.js';
-import { NON_NETWORK_RESOLVED_TYPES, trimUrlBoundary } from './observableTypeResolver.js';
+import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, trimUrlBoundary } from './observableTypeResolver.js';
 
 /**
  * The absolute http(s) URL embedded after other text in one whitespace-free
@@ -73,8 +73,12 @@ function embeddedAbsoluteUrl(token) {
  * defanged cell spelling reaches the dotted-token resolver; a resolution
  * column ("Resolved IP", "A record") is an attribute of the row's own
  * indicator, never an indicator column.
+ * v11: filename-column consistency demotes only ambiguous file/TLD collisions
+ * (`back.pl`, `tool.py`) or rows with explicit file evidence — never a clear
+ * publisher-asserted domain (`evil[.]net` / “Domain contacted…”) merely because
+ * sibling Item-column cells are filenames.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v10';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v11';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -156,7 +160,7 @@ const ATTRIBUTE_COLUMN_HEADER_RE =
  * IP", "Resolves to", "A record", "DNS resolution"): a passive-DNS answer for
  * that domain — often shared CDN addresses — not an address the publisher
  * attributes to the actor. Publishers list actor IPs in the row's own
- * indicator column (tl-table-v10).
+ * indicator column (tl-table-v11).
  */
 const RESOLUTION_COLUMN_HEADER_RE =
   /^(?:resolved\s*(?:ips?|ip\s*address(?:es)?|address(?:es)?|to)|resolves?\s*to|resolution|ip\s*resolutions?|dns\s*(?:resolutions?|answers?|records?)|a\s*records?|aaaa\s*records?|passive\s*dns)$/i;
@@ -794,6 +798,68 @@ function columnStats(rows, col) {
 const NETWORK_DECLARED_TYPES = new Set(['domain', 'url', 'ip', 'ipv6', 'email']);
 
 /**
+ * Last labels that are both common file extensions and delegated DNS suffixes
+ * (or ccTLDs used as script extensions). Filename-column consistency may demote
+ * these when a column is mostly files; clear gTLDs (`com`/`net`/`org`) are not
+ * in this set and are not demoted by file majority alone.
+ * `pl` (Perl / Poland) is the motivating case and is not in FILE_EXT_HINT.
+ */
+const FILENAME_DOMAIN_COLLISION_SUFFIXES = new Set([
+  ...FILE_EXT_HINT,
+  'pl'
+]);
+
+/** Row description that asserts network / domain / C2 semantics for the Item. */
+const NETWORK_ROW_EVIDENCE_RE =
+  /\b(?:domains?|hostnames?|fqdns?|c2|c&c|command[\s-]and[\s-]control|callbacks?|beacons?|contacted|communicat\w*|connect(?:s|ed|ing)?(?:\s+\w+){0,4}\s+to|hosted\s+on|dns|malicious\s+infrastructure|基础设施|域名|主机名?|домен|хост)\b/i;
+
+/** Row description that asserts the Item is a file / sample name. */
+const FILE_ROW_EVIDENCE_RE =
+  /\b(?:file\s*names?|filenames?|dropped\s*files?|sample\s*names?|payload\s*files?|webshells?|executables?|binaries?|driver\s*files?|script\s*files?|dosya\s*ad[ıi]|dateiname|archivo|fichier|文件名)\b/i;
+
+/**
+ * IOC inventory column headers (Item / Indicator / IOC / Domain / …). Clear
+ * domains in a file-majority column keep their domain reading here; Field /
+ * Source / Purpose analysis columns do not.
+ */
+const IOC_ITEM_COLUMN_HEADER_RE =
+  /^(?:item|items|indicator|indicators|ioc|iocs|observable|observables|value|values|domain|domains|hostname|hostnames|fqdn|fqdns|host|hosts|url|urls|uri|artifact|artifacts|artefact|artefacts|gösterge|gostergeler|göstergeler|değer|deger|değerler|degerler|indicador|indicadores|valor|valores|indikator|indikatoren|wert|werte|indicateur|indicateurs|valeur|valeurs|指标|指標|值|индикатор|индикаторы|значение)$/;
+
+/**
+ * True when a hostname-shaped value's last label is an ambiguous file/TLD
+ * collision (`.pl`, `.py`, `.so`, …), not a clear network gTLD (`.com`/`.net`).
+ * @param {string} value
+ */
+export function isFilenameDomainCollisionSuffix(value) {
+  const labels = String(value || '')
+    .toLowerCase()
+    .replace(/\.$/, '')
+    .split('.')
+    .filter(Boolean);
+  if (labels.length < 2) return false;
+  return FILENAME_DOMAIN_COLLISION_SUFFIXES.has(labels[labels.length - 1]);
+}
+
+/**
+ * @param {string|null|undefined} header
+ */
+function isIocItemColumnHeader(header) {
+  const norm = normalizeHeaderLabel(header || '');
+  return Boolean(norm) && IOC_ITEM_COLUMN_HEADER_RE.test(norm);
+}
+
+/**
+ * Publisher defang residue on the source spelling (`evil[.]com`). Supporting
+ * signal only — never sufficient alone against explicit file evidence.
+ * @param {object} value
+ */
+function cellLooksDefanged(value) {
+  const raw = String(value?.raw || '');
+  if (!raw) return false;
+  return /\[\.\]|\(\.\)|\{\.\}|\[ *\. *\]|\( *\. *\)/.test(raw);
+}
+
+/**
  * True when a column is a hash indicator column (MD5 / SHA header or declared).
  * @param {{ header?: string|null, intent?: string, declared_type?: { type: string }|null }} col
  */
@@ -897,27 +963,59 @@ function tableInAuthoritativeScope(block, opts = {}) {
 }
 
 /**
+ * Whether a domain reading in a file-majority column should be rewritten as a
+ * file name. Column file majority is necessary but not sufficient:
+ *   - Publisher network evidence (“Domain contacted…”, “C2”) always keeps the domain.
+ *   - Ambiguous file/TLD collisions (`back.pl`) demote (defang alone does not save them).
+ *   - Explicit file evidence (File Name header / “dropped file” description) demotes.
+ *   - Clear domains otherwise keep only in IOC Item/Indicator-shaped columns or when
+ *     the cell is defanged; Field/Source analysis tables still demote under file majority.
+ * @param {object} value parsed indicator cell value (domain reading)
+ * @param {{ description?: string|null }} row
+ * @param {{ header?: string|null, declared_type?: { type: string }|null }} col
+ */
+function shouldDemoteDomainInFileColumn(value, row, col) {
+  if (value.declared_type && NETWORK_DECLARED_TYPES.has(value.declared_type)) return false;
+  if (value.typing_reason === 'declared_network_type') return false;
+  const description = String(row?.description || '');
+  if (NETWORK_ROW_EVIDENCE_RE.test(description)) return false;
+  const collision = isFilenameDomainCollisionSuffix(value.normalized_value || value.refanged || '');
+  const fileEvidence = FILE_ROW_EVIDENCE_RE.test(description) || columnIsFileNameColumn(col);
+  if (fileEvidence) return true;
+  if (collision) return true;
+  if (cellLooksDefanged(value) || isIocItemColumnHeader(col.header)) return false;
+  return true;
+}
+
+/**
  * One table column holds one kind of value. In a column whose values are file
  * names (`b374.php`, `error.jsp`, `x.exe`), a name whose extension also happens
- * to be a ccTLD (`back.pl`, `tool.py`) is a file name too — never a domain
- * because its suffix is delegated. Applies only to columns without a declared
- * network type, with at least two unambiguous file names that outnumber the
- * domain readings two to one. Mutates the parsed row values in place.
- * @param {{ status: string, values: object[] }[]} rows
- * @param {{ index: number, declared_type?: { type: string }|null }[]} indicatorCols
+ * to be a ccTLD / script suffix (`back.pl`, `tool.py`) is a file name too —
+ * never a domain because its suffix is ambiguous. Clear domains (`evil.net`)
+ * and rows whose description asserts network / C2 semantics keep the domain
+ * reading even when sibling cells are filenames. Applies only to columns
+ * without a declared network type, with at least two unambiguous file names
+ * that outnumber the domain readings two to one. Mutates the parsed row
+ * values in place.
+ * @param {{ status: string, description?: string|null, values: object[] }[]} rows
+ * @param {{ index: number, header?: string|null, declared_type?: { type: string }|null }[]} indicatorCols
  */
 function applyFileNameColumnConsistency(rows, indicatorCols) {
   for (const col of indicatorCols) {
     if (col.declared_type && NETWORK_DECLARED_TYPES.has(col.declared_type.type)) continue;
-    const values = rows
+    const entries = rows
       .filter((r) => r.status === 'valid')
-      .flatMap((r) => r.values.filter((v) => v.column_index === col.index));
-    const files = values.filter((v) => v.candidate_type === 'technical_artifact' && v.artifact_kind === 'file');
-    const domains = values.filter(
-      (v) => v.candidate_type === 'domain' && v.typing_reason !== 'declared_network_type' && !v.declared_type
+      .flatMap((r) => r.values.filter((v) => v.column_index === col.index).map((v) => ({ value: v, row: r })));
+    const files = entries.filter((e) => e.value.candidate_type === 'technical_artifact' && e.value.artifact_kind === 'file');
+    const domains = entries.filter(
+      (e) =>
+        e.value.candidate_type === 'domain' &&
+        e.value.typing_reason !== 'declared_network_type' &&
+        !e.value.declared_type
     );
     if (!domains.length || files.length < 2 || files.length < 2 * domains.length) continue;
-    for (const v of domains) {
+    for (const { value: v, row } of domains) {
+      if (!shouldDemoteDomainInFileColumn(v, row, col)) continue;
       Object.assign(v, {
         candidate_type: 'technical_artifact',
         normalized_value: v.refanged,

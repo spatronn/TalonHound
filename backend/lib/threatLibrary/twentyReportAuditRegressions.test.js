@@ -1,5 +1,5 @@
 /**
- * Twenty-report audit regressions (tl-candidates-v38 / tl-ipv6-tokens-v1 /
+ * Twenty-report audit regressions (tl-candidates-v39 / tl-ipv6-tokens-v1 /
  * tl-type-resolver-v16). Generic shapes of the confirmed production defects,
  * with synthetic or documentation values:
  *
@@ -52,8 +52,8 @@ const iocTable = (rows) => `<h2>Indicators of Compromise (IOCs)</h2>
 ${rows.map(([v, d]) => `<tr><td>${v}</td><td>${d}</td></tr>`).join('\n')}
 </table>`;
 
-test('versions: tl-candidates-v38, tl-ipv6-tokens-v1, tl-type-resolver-v16', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v38');
+test('versions: tl-candidates-v39, tl-ipv6-tokens-v1, tl-type-resolver-v16', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
   assert.equal(IPV6_TOKENS_VERSION, 'tl-ipv6-tokens-v1');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v16');
 });
