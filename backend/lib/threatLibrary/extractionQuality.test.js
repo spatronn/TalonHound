@@ -37,11 +37,32 @@ const members = (cands) =>
   cands.filter((c) => isReportIndicatorMember({ ...c, evidence: buildCandidateEvidenceRecord(c) })).map((c) => `${c.candidate_type}:${c.normalized_value}`).sort();
 
 test('contract: version, central thresholds, stable codes', () => {
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v12');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v13');
   assert.ok(Object.isFrozen(EXTRACTION_QUALITY_THRESHOLDS));
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.orphanRunMinValues, 3);
   assert.equal(EXTRACTION_QUALITY_THRESHOLDS.appendixHeadingNonmemberMinValues, 2);
   assert.equal(new Set(Object.values(QUALITY_CODES)).size, Object.keys(QUALITY_CODES).length);
+});
+
+test('scope-engine fallback surfaces warning without mutating candidates', () => {
+  const x = run(`<h2>Indicators of compromise</h2><ul><li>evil-c2[.]example</li></ul>`);
+  const cands = structuredClone(x.candidates);
+  const q = assessExtractionQuality({
+    blocks: x.annotated?.blocks || [],
+    candidates: cands,
+    diagnostics: {
+      ...(x.diagnostics || {}),
+      scope_engine: { engine: 'legacy', fallback: true, error: 'boom' }
+    },
+    sourceHost: 'example.test',
+    documentMeta: x.document?.meta
+  });
+  assert.ok(q.warnings.some((w) => w.code === QUALITY_CODES.SCOPE_ENGINE_FALLBACK));
+  assert.deepEqual(
+    cands.map((c) => c.assessment),
+    x.candidates.map((c) => c.assessment),
+    'quality must not mutate assessments'
+  );
 });
 
 test('clean IOC appendix: no warning', () => {

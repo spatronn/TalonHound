@@ -86,8 +86,9 @@
     "test:sprint-smoke": "node --test lib/healthChecks.test.js lib/reasonValidation.test.js lib/auditRedaction.test.js lib/rbac.test.js lib/iocExportHelpers.test.js lib/iocExportQuery.test.js lib/integrationQueueRecovery.test.js lib/integrationQueueBullmqReconciliation.test.js lib/integrationQueueHealth.test.js lib/backup/manifest.test.js lib/backup/checksums.test.js lib/backup/retention.test.js lib/backup/pathSafety.test.js lib/backup/operationLock.test.js lib/backup/encryption.test.js lib/backup/scheduler.test.js routes/backups.test.js lib/systemTime.test.js lib/iocListTimestamps.test.js routes/setup.test.js lib/setupCode.test.js lib/firstRunSetup.test.js routes/setupWizard.test.js lib/fileArtifacts/hashNormalize.test.js",
     "test:provider-disable-guard": "node --test lib/enrichmentProviderRegistry.test.js routes/enrichmentDisabledGuard.test.js lib/spamhausDropSyncDisabled.test.js lib/enrichmentProviderConfigAudit.test.js",
     "test:threat-library": "node --test lib/threatLibrary/*.test.js lib/threatLibrary/**/*.test.js routes/threatLibrary.test.js routes/threatLibrary.retry.test.js routes/threatLibrary.mitreRemoved.test.js routes/threatLibrary.maintenance.test.js",
-    "test:threat-library-benchmark": "node --test lib/threatLibrary/benchmark/*.test.js",
+    "test:threat-library-benchmark": "node --test lib/threatLibrary/benchmark/*.test.js lib/threatLibrary/benchmark/heldOut/*.test.js",
     "benchmark:threat-library": "node scripts/threat-library-benchmark.js",
+    "benchmark:threat-library-held-out": "node scripts/threat-library-held-out.js",
     "replay:threat-library-corpus": "node scripts/threat-library-corpus-replay.js",
     "scan:threat-library-quality": "node scripts/threat-library-quality-scan.js",
     "smoke:routes": "node scripts/smoke-routes.js"

@@ -8,7 +8,12 @@
  * count and the rows the user sees after clicking that tab never disagree.
  */
 
-import { REVIEW_FILTERS, matchReviewFilter, withInferredPublisherIocScope } from './candidateReview.js';
+import {
+  REVIEW_FILTERS,
+  PRIMARY_REVIEW_VIEWS,
+  matchReviewFilter,
+  withInferredPublisherIocScope
+} from './candidateReview.js';
 import { resolveReportPhase, REPORT_PHASES, canShowReviewTable } from './reportPhase.js';
 import { statusLabel } from './stages.js';
 import { artifactTypeLabel, entityTypeLabel, humanizeEnum, languageLabel, sourceTypeLabel } from './reportDisplayLabels.js';
@@ -17,13 +22,17 @@ import { formatPublicationDate, publicationDateTitle } from './publicationDate.j
 /**
  * Per-filter row counts for the indicator filter tabs.
  * @param {object[]} candidates
- * @returns {Record<string, number>} keyed by REVIEW_FILTERS id
+ * @returns {Record<string, number>} keyed by REVIEW_FILTERS / PRIMARY_REVIEW_VIEWS id
  */
 export function buildReviewFilterCounts(candidates) {
   const rows = withInferredPublisherIocScope(candidates);
   const counts = {};
-  for (const f of REVIEW_FILTERS) {
-    counts[f.id] = rows.reduce((n, c) => (matchReviewFilter(c, f.id) ? n + 1 : n), 0);
+  const ids = new Set([
+    ...REVIEW_FILTERS.map((f) => f.id),
+    ...PRIMARY_REVIEW_VIEWS.map((f) => f.id)
+  ]);
+  for (const id of ids) {
+    counts[id] = rows.reduce((n, c) => (matchReviewFilter(c, id) ? n + 1 : n), 0);
   }
   return counts;
 }

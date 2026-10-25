@@ -78,8 +78,12 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * dropped explicit-table row.
  * v11 (20-report audit): check 20 reports resolution-column addresses (a
  * listed domain's DNS answer) apart from tool reference links.
+ * v12 (filename-column consistency): check 24 flags filename-column typing
+ * that discarded a network IOC identity.
+ * v13 (reliability observability): check 25 surfaces section-tree → legacy
+ * scope-engine fallback so degraded membership semantics are analyst-visible.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v12';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v13';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -169,7 +173,13 @@ export const QUALITY_CODES = Object.freeze({
    * consistency while the publisher row still asserts network / C2 semantics
    * (check 24). Silent Indicator loss; review typing.
    */
-  FILE_NAME_COLUMN_NETWORK_CONFLICT: 'file_name_column_network_conflict'
+  FILE_NAME_COLUMN_NETWORK_CONFLICT: 'file_name_column_network_conflict',
+  /**
+   * Section-tree authority failed and extraction fell back to the legacy
+   * linear scope engine (check 25). Membership semantics may differ from
+   * normal section-tree processing.
+   */
+  SCOPE_ENGINE_FALLBACK: 'scope_engine_fallback'
 });
 
 /** Row / evidence text that asserts network / domain / C2 semantics (check 24). */
@@ -904,8 +914,29 @@ export function assessExtractionQuality(input) {
     }
   }
 
-  // --- 13. Delegated authority (every formal IOC section empty; section-tree) ---
+  // --- 25. Scope-engine fallback (section-tree failed → legacy membership) ---
   const scopeEngine = diagnostics.scope_engine || {};
+  if (scopeEngine.fallback === true || (scopeEngine.engine === 'legacy' && scopeEngine.error)) {
+    const err = String(scopeEngine.error || '').slice(0, 160);
+    push({
+      code: QUALITY_CODES.SCOPE_ENGINE_FALLBACK,
+      severity: 'warning',
+      explanation:
+        'Section-tree authority failed for this report, so Indicator membership used the legacy linear scope engine. ' +
+        'Membership may differ from normal section-tree processing. Review Indicators carefully' +
+        (err ? ` (debug: ${err})` : '.') +
+        (err ? '.' : ''),
+      candidates: [],
+      block_ids: [],
+      section: {
+        engine: scopeEngine.engine || 'legacy',
+        fallback: true,
+        error: err || null
+      }
+    });
+  }
+
+  // --- 13. Delegated authority (every formal IOC section empty; section-tree) ---
   if (scopeEngine.delegated_scope === true) {
     const delegatedMembers = candidates.filter((c) => c.__member &&
       (c.occurrences || []).some((o) => o.zone === 'delegated_ioc_scope' && o.asserted === true));

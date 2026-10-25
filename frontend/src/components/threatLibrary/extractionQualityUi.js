@@ -168,6 +168,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
   file_name_column_network_conflict: {
     title: 'Filename-column typing discarded a network IOC',
     why: 'An IOC-table value was typed as a file name because sibling cells were filenames, while the publisher row still describes a domain, C2 host, or contacted infrastructure. Confirm the network identity was not dropped.'
+  },
+  scope_engine_fallback: {
+    title: 'Extraction used emergency legacy scope',
+    why: 'Section-tree authority failed for this report, so Indicator membership used the older linear scope engine. Indicators may differ from normal processing — review carefully.'
   }
 });
 

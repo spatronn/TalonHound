@@ -83,7 +83,7 @@ test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v8');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v16');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v8');
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v12');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v13');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v2');
 });
