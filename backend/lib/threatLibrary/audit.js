@@ -250,6 +250,26 @@ export function buildFinalizeAuditEvent({ report, candidates, user, sourceOverri
   };
 }
 
+/**
+ * A finalized report returned to review by an explicit, reasoned analyst
+ * action (tl-report-lifecycle-lock-v1). Written in the reopen transaction.
+ */
+export function buildReopenAuditEvent({ report, user, reason }) {
+  return {
+    action: AUDIT_ACTION.THREAT_LIBRARY_REPORT_REOPENED,
+    ...reportAuditEntity(report),
+    severity: AUDIT_SEVERITY.WARNING,
+    status: AUDIT_STATUS.SUCCESS,
+    before: { analysis_status: report.analysis_status || null, finalized_at: report.finalized_at || null },
+    after: { analysis_status: 'review_required' },
+    metadata: {
+      ...reportAuditSnapshot(report),
+      initiated_by: initiatedBy(user),
+      reason
+    }
+  };
+}
+
 /** Source URL provenance change; credentials/tokens in either URL are masked. */
 export function buildSourceUrlAuditEvent({ report, oldUrl, newUrl, user }) {
   return {

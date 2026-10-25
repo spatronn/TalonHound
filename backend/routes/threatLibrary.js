@@ -33,7 +33,23 @@ import { validatePdfBuffer, isAcceptablePdfUploadMeta } from '../lib/threatLibra
 import { maskAiSettingsForClient } from '../lib/threatLibrary/ai/providers.js';
 import { exportThibBundle, validateThibBundle, previewThibImport } from '../lib/threatLibrary/thib/codec.js';
 import { importThibBundle } from '../lib/threatLibrary/thibImport.js';
-import { applyCandidateReviewActions, finalizeReport } from '../lib/threatLibrary/reviewService.js';
+import { applyCandidateReviewActions, finalizeReport, reopenReport } from '../lib/threatLibrary/reviewService.js';
+import { REPORT_FINALIZED_CODE, isFinalizedReport } from '../lib/threatLibrary/reportLifecycleLock.js';
+
+/** Source-action errors that are state conflicts, not server faults. */
+const SOURCE_CONFLICT_CODES = new Set(['invalid_source_transition', 'source_dismissed', REPORT_FINALIZED_CODE]);
+
+/** A resolved (extracted / dismissed) source would reopen on a finalized report. */
+function reopensResolvedSource(report, source) {
+  return isFinalizedReport(report) && ['extracted', 'dismissed'].includes(String(source?.lifecycle_status || ''));
+}
+
+function finalizedReportConflict(res) {
+  return res.status(409).json({
+    message: 'The report is finalized. Reopen it for review before inspecting or extracting its IOC Sources again.',
+    code: REPORT_FINALIZED_CODE
+  });
+}
 import { storeArtifactBuffer } from '../lib/threatLibrary/artifactStore.js';
 import {
   AnalysisConcurrencySettingError,
@@ -992,6 +1008,25 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     }
   );
 
+  // Explicit, reasoned return of a finalized report to review
+  // (tl-report-lifecycle-lock-v1); its audit row commits with it.
+  app.post(
+    '/api/threat-library/reports/:publicId/reopen',
+    requireRole(ROLES.ADMIN, ROLES.ANALYST),
+    async (req, res) => {
+      try {
+        const report = await getReportByPublicId(pool, req.params.publicId);
+        if (!report) return res.status(404).json({ message: 'Report not found' });
+        const result = await reopenReport(pool, report.id, { user: await actorOf(req), audit, req, reason: req.body?.reason });
+        if (!result.ok) return res.status(result.status || 400).json({ message: result.error, code: result.code || null });
+        const updated = await getReportByPublicId(pool, req.params.publicId);
+        return res.json({ report: publicReport(await reportWithDetail(updated)) });
+      } catch (err) {
+        return res.status(500).json({ message: 'Reopen failed', detail: err.message });
+      }
+    }
+  );
+
   // --- Export THIB ---
   app.get(
     '/api/threat-library/reports/:publicId/export/thib',
@@ -1610,6 +1645,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
             requestedBy: actorPublicId(actor)
           });
         } catch (err) {
+          if (err?.code === REPORT_FINALIZED_CODE) return res.status(409).json({ message: err.message, code: err.code });
           if (intel.ok || err?.code !== 'invalid_url') throw err;
           row = null; // refused below without a stored row
         }
@@ -1699,6 +1735,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (!source) return res.status(404).json({ message: 'IOC source not found' });
         const report = await getReportByPublicId(pool, source.report_public_id);
         if (!report) return res.status(404).json({ message: 'Report not found' });
+        if (reopensResolvedSource(report, source)) return finalizedReportConflict(res);
         const actor = await actorOf(req);
         const { jobRow } = await queueIocSourceJob(report, source, IOC_SOURCE_JOB_MODES.INSPECT, actor);
         await writeAudit(req, {
@@ -1714,7 +1751,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         });
         return res.status(202).json({ source: publicIocSource(source), job_id: jobRow.public_id });
       } catch (err) {
-        const status = err.code === 'invalid_source_transition' ? 409 : 500;
+        const status = SOURCE_CONFLICT_CODES.has(err.code) ? 409 : 500;
         return res.status(status).json({ message: err.message, code: err.code || null });
       }
     }
@@ -1745,7 +1782,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           job_id: result.job_id
         });
       } catch (err) {
-        const status = err.code === 'invalid_source_transition' ? 409 : 500;
+        const status = SOURCE_CONFLICT_CODES.has(err.code) ? 409 : 500;
         return res.status(status).json({ message: err.message, code: err.code || null });
       }
     }
@@ -1772,7 +1809,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         }
         return res.json({ source: result.source });
       } catch (err) {
-        const status = err.code === 'invalid_source_transition' || err.code === 'source_dismissed' ? 409 : 500;
+        const status = SOURCE_CONFLICT_CODES.has(err.code) ? 409 : 500;
         return res.status(status).json({ message: err.message, code: err.code || null });
       }
     }
@@ -1789,6 +1826,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (!source) return res.status(404).json({ message: 'IOC source not found' });
         const report = await getReportByPublicId(pool, source.report_public_id);
         if (!report) return res.status(404).json({ message: 'Report not found' });
+        if (reopensResolvedSource(report, source)) return finalizedReportConflict(res);
         const actor = await actorOf(req);
         const { jobRow } = await queueIocSourceJob(report, source, IOC_SOURCE_JOB_MODES.INSPECT, actor);
         return res.status(202).json({ source: publicIocSource(source), job_id: jobRow.public_id });
@@ -1807,6 +1845,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         if (!source) return res.status(404).json({ message: 'IOC source not found' });
         const report = await getReportByPublicId(pool, source.report_public_id);
         if (!report) return res.status(404).json({ message: 'Report not found' });
+        if (reopensResolvedSource(report, source)) return finalizedReportConflict(res);
         const actor = await actorOf(req);
         if (source.lifecycle_status !== 'attached' && source.lifecycle_status !== 'extracted' && source.lifecycle_status !== 'failed' && source.lifecycle_status !== 'stale') {
           return res.status(409).json({ message: 'Source must be attached before extraction', code: 'invalid_source_transition' });

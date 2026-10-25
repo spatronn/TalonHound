@@ -227,3 +227,17 @@ test('S-2: STIX validity is judged at report publication, revocation still exclu
   const revoked = await parse(stixBundle('2030-01-01T00:00:00Z', true), path, { reportScope: { publishedAt: '2024-09-27T00:00:00Z' } });
   assert.deepEqual(values(revoked), []);
 });
+
+test('PR #37 compatibility: every persisted source_type is allowed by migration 050', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const { persistableSourceType } = await import('./sourceType.js');
+  const sql = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../migrations/050_threat_report_ioc_source_stix_types.sql'), 'utf8');
+  const allowed = new Set([...sql.matchAll(/'([a-z_]+)'::text/g)].map((m) => m[1]));
+  // Every format the parser reports (incl. ndjson / asciidoc) maps into the constraint.
+  for (const format of ['txt', 'csv', 'json', 'ndjson', 'jsonl', 'stix_json', 'stix_xml', 'xml', 'markdown', 'asciidoc', 'html', 'pdf', 'github_dir', 'github_file', 'something-new']) {
+    assert.ok(allowed.has(persistableSourceType(format)), `${format} → ${persistableSourceType(format)}`);
+  }
+  assert.equal(persistableSourceType(null), null);
+});

@@ -11,6 +11,7 @@
 import { parseHtml, findElements } from '../extract/htmlBlocks.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 import { IOC_SOURCE_LIFECYCLE } from './constants.js';
+import { inReportTransaction, isFinalizedReport, lockReportForMutation } from '../reportLifecycleLock.js';
 import {
   EXTERNAL_IOC_POINTER_RE,
   findExternalIocReferencesInBlocks,
@@ -237,6 +238,20 @@ export function discoverIocSourcesFromText(text, opts = {}) {
 export async function upsertDiscoveredSources(pool, reportId, discovered) {
   const list = Array.isArray(discovered) ? discovered : [];
   const results = { inserted: 0, skipped: 0, unchanged: 0 };
+  if (!list.length) return results;
+  // Discovery is automatic, never an analyst decision: on a finalized report
+  // it records nothing (tl-report-lifecycle-lock-v1; the analyst reopens the
+  // report to pick up a newly announced pack).
+  return inReportTransaction(pool, async (client) => {
+    const report = await lockReportForMutation(client, reportId);
+    if (report && isFinalizedReport(report)) {
+      return { ...results, skipped: list.length, skipped_finalized: list.length };
+    }
+    return insertDiscovered(client, reportId, list, results);
+  });
+}
+
+async function insertDiscovered(pool, reportId, list, results) {
   for (const item of list) {
     const canonical = item.canonical_url || canonicalizeReportUrl(item.original_url);
     if (!canonical) {

@@ -4,13 +4,13 @@ import crypto from 'node:crypto';
 import pg from 'pg';
 import { createThreatReport } from './store.js';
 import { finalizeReport } from './reviewService.js';
+import { createAuditLogService } from '../auditLogService.js';
 
 /**
- * Real-Postgres checks of the guarded finalize write (tl-finalize-guard-v1):
- * a competing commit from a second connection lands at the exact point
- * between finalizeReport's read and its conditional UPDATE, and the UPDATE
- * itself must refuse to finalize. Rows are committed (two connections), so
- * every test deletes its own report afterwards.
+ * Real-Postgres checks of the finalize guard rules (tl-finalize-guard-v1):
+ * open / resolved linked sources and the administrator override with its
+ * durable audit row. Concurrent interleavings live in
+ * finalizeConcurrency.integration.test.js. Every test deletes its own report.
  *
  * ALLOW_THREAT_LIBRARY_DB_TESTS=1 with a migrated throwaway database; run
  * with --test-concurrency=1 alongside the other TL itest files.
@@ -26,7 +26,6 @@ const config = {
   max: 4
 };
 const pool = new pg.Pool(config);
-const other = new pg.Pool({ ...config, max: 2 });
 
 let hasDb = false;
 if (process.env.ALLOW_THREAT_LIBRARY_DB_TESTS === '1') {
@@ -41,20 +40,10 @@ const opts = { skip: hasDb ? false : 'set ALLOW_THREAT_LIBRARY_DB_TESTS=1 with a
 
 test.after(async () => {
   await pool.end();
-  await other.end();
 });
 
-const GUARDED_UPDATE_RE = /^\s*UPDATE threat_reports r/;
-
-/** Pool that runs `beforeWrite()` (a committed competing change) right before the guarded UPDATE. */
-function racingPool(beforeWrite) {
-  return {
-    query: async (sql, params) => {
-      if (typeof sql === 'string' && GUARDED_UPDATE_RE.test(sql) && beforeWrite) await beforeWrite();
-      return pool.query(sql, params);
-    }
-  };
-}
+/** The real pool: finalize runs its own locked transaction on a checked-out client. */
+const finalizePool = () => pool;
 
 async function setupReport({ review = 'approved' } = {}) {
   const report = await createThreatReport(pool, {
@@ -84,6 +73,7 @@ async function addSource(db, reportId, lifecycle) {
 }
 
 async function cleanup(reportId) {
+  await pool.query(`DELETE FROM audit_logs WHERE entity_id = (SELECT public_id::text FROM threat_reports WHERE id = $1)`, [reportId]);
   await pool.query(`DELETE FROM threat_report_ioc_sources WHERE report_id = $1`, [reportId]);
   await pool.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
   await pool.query(`DELETE FROM threat_reports WHERE id = $1`, [reportId]);
@@ -96,7 +86,7 @@ test('control: resolved sources (extracted + dismissed) finalize', opts, async (
   try {
     await addSource(pool, report.id, 'extracted');
     await addSource(pool, report.id, 'dismissed');
-    const r = await finalizeReport(racingPool(null), report.id, { user: { role: 'analyst' } });
+    const r = await finalizeReport(finalizePool(), report.id, { user: { role: 'analyst' } });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.ok(await finalizedAt(report.id));
   } finally {
@@ -108,7 +98,7 @@ test('a pending linked source blocks finalize in the database', opts, async () =
   const { report } = await setupReport();
   try {
     await addSource(pool, report.id, 'discovered');
-    const r = await finalizeReport(racingPool(null), report.id, { user: { role: 'analyst' } });
+    const r = await finalizeReport(finalizePool(), report.id, { user: { role: 'analyst' } });
     assert.equal(r.code, 'linked_ioc_sources_unresolved');
     assert.equal(await finalizedAt(report.id), null);
   } finally {
@@ -116,36 +106,16 @@ test('a pending linked source blocks finalize in the database', opts, async () =
   }
 });
 
-test('race: a source committed after the read is seen by the guarded write', opts, async () => {
-  const { report } = await setupReport();
-  try {
-    const r = await finalizeReport(racingPool(() => addSource(other, report.id, 'discovered')), report.id, { user: { role: 'analyst' } });
-    assert.equal(r.ok, false);
-    assert.equal(r.code, 'linked_ioc_sources_unresolved');
-    assert.equal(await finalizedAt(report.id), null);
-  } finally {
-    await cleanup(report.id);
-  }
-});
-
-test('race: an Indicator returned to pending after the read blocks the write', opts, async () => {
-  const { report, candidateId } = await setupReport();
-  try {
-    const flip = () => other.query(`UPDATE threat_report_candidates SET review_status = 'pending' WHERE id = $1`, [candidateId]);
-    const r = await finalizeReport(racingPool(flip), report.id, { user: { role: 'analyst' } });
-    assert.equal(r.ok, false);
-    assert.equal(r.code, 'pending_review_remaining');
-    assert.equal(await finalizedAt(report.id), null);
-  } finally {
-    await cleanup(report.id);
-  }
-});
+// Interleavings with a competing transaction (an in-flight source insert /
+// status change / pending Indicator, in both lock orders) are covered by
+// finalizeConcurrency.integration.test.js: under tl-report-lifecycle-lock-v1 a
+// competing write can no longer commit between finalize's read and its write.
 
 test('administrator override finalizes over an unresolved source', opts, async () => {
   const { report } = await setupReport();
   try {
     await addSource(pool, report.id, 'failed');
-    const r = await finalizeReport(racingPool(null), report.id, { user: { role: 'admin' }, audit: { auditLog: async () => {} }, sourceOverride: { reason: 'pack duplicates the article tables exactly' } });
+    const r = await finalizeReport(finalizePool(), report.id, { user: { role: 'admin' }, audit: createAuditLogService(pool), sourceOverride: { reason: 'pack duplicates the article tables exactly' } });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.ok(await finalizedAt(report.id));
   } finally {

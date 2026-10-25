@@ -55,7 +55,17 @@ function pool({ candidates = [approved], sourcesSeq = [[]], reportRow = report }
 
 const auditSink = () => {
   const events = [];
-  return { events, audit: { auditLog: async (e) => events.push(e), auditSuccess: async (e) => events.push(e) } };
+  const durable = [];
+  return {
+    events,
+    durable,
+    audit: {
+      auditLog: async (e) => events.push(e),
+      auditSuccess: async (e) => events.push(e),
+      // Transactional writer: the row is part of the finalize transaction.
+      auditLogInTransaction: async (client, e) => { durable.push(e); events.push(e); }
+    }
+  };
 };
 
 test('every lifecycle status is classified: resolved, pending or unresolved', () => {
@@ -116,13 +126,16 @@ test('a failed / unsupported source blocks too; extracted + dismissed finalize',
   assert.equal(events[0].metadata.linked_source_override, undefined);
 });
 
-test('a source appearing between the read and the write cannot bypass the guard', async () => {
+test('defence in depth: the guarded statement still refuses when its re-check disagrees', async () => {
+  // Under the report lock (tl-report-lifecycle-lock-v1) a competing write
+  // cannot land between the blocker read and the write — real interleavings
+  // are covered by finalizeConcurrency.integration.test.js. If the statement
+  // re-check ever disagrees, nothing is written.
   const appeared = [{ public_id: 'late', lifecycle_status: 'discovered' }];
   const p = pool({ sourcesSeq: [[], appeared] });
   const r = await finalizeReport(p, 9, { user: { role: 'analyst' } });
   assert.equal(r.ok, false);
-  assert.equal(r.code, 'linked_ioc_sources_unresolved');
-  assert.deepEqual(r.linked_sources.map((s) => s.public_id), ['late']);
+  assert.equal(r.code, 'finalize_state_changed');
   assert.equal(p.state.report.finalized_at, undefined);
 });
 
@@ -141,11 +154,15 @@ test('override: administrator only, with a written reason; audited as a warning'
   assert.equal(short.code, 'finalize_override_reason_required');
 
   const p = pool({ sourcesSeq: sources });
-  const { events, audit } = auditSink();
+  const { events, durable, audit } = auditSink();
   const r = await finalizeReport(p, 9, { user: { role: 'admin' }, audit, sourceOverride: { reason: 'pack is a duplicate of the article tables' } });
   assert.equal(r.ok, true);
   assert.equal(p.state.writes[0].params[1], true);
   assert.equal(events.length, 1);
+  assert.equal(durable.length, 1, 'the override audit goes through the transactional writer');
+  // An audit service without the transactional writer cannot carry an override.
+  const bestEffortOnly = await finalizeReport(pool({ sourcesSeq: sources }), 9, { user: { role: 'admin' }, audit: { auditLog: async () => {} }, sourceOverride: { reason: 'pack is a duplicate of the article tables' } });
+  assert.equal(bestEffortOnly.code, 'finalize_override_audit_unavailable');
   assert.equal(events[0].severity, 'warning');
   const meta = events[0].metadata.linked_source_override;
   assert.equal(meta.reason, 'pack is a duplicate of the article tables');
@@ -199,4 +216,45 @@ test('no bypass: the status store refuses to finalize and only the guarded state
   }
   // store.js keeps the inert CASE for its fixed parameter list ($17 is always false).
   assert.deepEqual(writers.sort(), ['lib/threatLibrary/finalizeGuard.js', 'lib/threatLibrary/store.js']);
+});
+
+test('lifecycle protocol: obligation-introducing writes exist only behind the report lock', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const backend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const files = [];
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.m?js$/.test(e.name) && !/\.test\.m?js$/.test(e.name)) files.push(p);
+    }
+  };
+  for (const d of ['lib', 'routes', 'scripts', 'services', 'workers']) {
+    if (fs.existsSync(path.join(backend, d))) walk(path.join(backend, d));
+  }
+  for (const f of fs.readdirSync(backend)) if (/\.m?js$/.test(f)) files.push(path.join(backend, f));
+  const rel = (p) => path.relative(backend, p).split(path.sep).join('/');
+  const hits = (re) => files.filter((f) => re.test(fs.readFileSync(f, 'utf8'))).map(rel).sort();
+  // New candidate rows: the reconcile choke point (and the new-report THIB rebuild).
+  assert.deepEqual(hits(/INSERT INTO threat_report_candidates\b|INSERT_CANDIDATE_SQL = `INSERT/), ['lib/threatLibrary/store.js']);
+  // Source rows: only the two lock-protected writers; status updates only via applySourcePatch.
+  assert.deepEqual(hits(/INSERT INTO threat_report_ioc_sources\b/), ['lib/threatLibrary/iocSources/discover.js', 'lib/threatLibrary/iocSources/store.js']);
+  assert.deepEqual(hits(/UPDATE threat_report_ioc_sources\b/), ['lib/threatLibrary/iocSources/store.js']);
+  assert.deepEqual(hits(/\bapplySourcePatch\(/), ['lib/threatLibrary/iocSources/store.js']);
+  // Linked-source links (which can make a row an Indicator) only inside reconcile.
+  assert.deepEqual(hits(/INSERT INTO threat_report_candidate_source_links\b/), ['lib/threatLibrary/store.js']);
+  // Nothing sets a candidate back to pending outside the extraction state merge.
+  assert.deepEqual(hits(/SET\s+review_status\s*=\s*'pending'/i), []);
+  const store = fs.readFileSync(path.join(backend, 'lib/threatLibrary/store.js'), 'utf8');
+  const reconcile = store.slice(store.indexOf('export async function reconcileReportCandidates('));
+  assert.ok(reconcile.indexOf('lockReportForMutation(client, reportId)') < reconcile.indexOf('FROM threat_report_candidates WHERE report_id = $1 ORDER BY id FOR UPDATE'),
+    'report lock precedes candidate row locks (deterministic order)');
+  const src = fs.readFileSync(path.join(backend, 'lib/threatLibrary/iocSources/store.js'), 'utf8');
+  for (const fn of ['export async function createManualIocSource(', 'export async function transitionSource(']) {
+    const body = src.slice(src.indexOf(fn), src.indexOf('\n}\n', src.indexOf(fn)));
+    assert.match(body, /lockReportForMutation\(client,/, fn);
+  }
 });

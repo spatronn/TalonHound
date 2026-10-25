@@ -24,11 +24,19 @@ import {
   finalizeBlockers,
   loadReportSources,
   openLinkedSources,
+  OVERRIDE_REASON_MIN_LENGTH,
   validateSourceOverride
 } from './finalizeGuard.js';
 import {
+  RETRYABLE_TX_CODES,
+  inReportTransaction,
+  isFinalizedReport,
+  lockReportForFinalize
+} from './reportLifecycleLock.js';
+import {
   buildCreateIocsAuditEvent,
   buildFinalizeAuditEvent,
+  buildReopenAuditEvent,
   buildReviewAuditEvent,
   iocCreatedOriginMetadata,
   safeErrorCategory
@@ -768,45 +776,117 @@ export async function finalizeReport(pool, reportId, opts = {}) {
   const override = validateSourceOverride(opts.sourceOverride, opts.user);
   if (override && !override.ok) return override;
 
-  const { rows: candidates } = await pool.query(
-    `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates WHERE report_id = $1`,
-    [reportId]
-  );
-  const sources = await loadReportSources(pool, reportId);
-  const pendingCount = candidates.filter((c) => isPendingActionableCandidate(c)).length;
-  const blockers = finalizeBlockers({ pendingCount, sources, sourceOverride: Boolean(override) });
-  if (blockers.length) return finalizeRejection(blockers);
-  if (override && typeof opts.audit?.auditLog !== 'function') {
-    // An override is only accepted when it can be audited.
-    return { ok: false, status: 503, code: 'finalize_override_audit_unavailable', error: 'Finalize override requires the audit log.' };
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await finalizeLocked(pool, reportId, opts, override);
+    } catch (err) {
+      // A deadlock / serialization victim retries the whole short transaction.
+      if (RETRYABLE_TX_CODES.includes(err?.code) && attempt < 2) continue;
+      throw err;
+    }
   }
+}
 
-  const written = await pool.query(GUARDED_FINALIZE_SQL, [reportId, Boolean(override), LINKED_SOURCE_OPEN_STATUSES]);
-  if (!written.rowCount) {
-    // A candidate or source changed between the read and the write.
-    const { rows: fresh } = await pool.query(
+/**
+ * Reopen a finalized report for review — the explicit lifecycle transition
+ * that lets new linked IOC Sources / pending Indicators be added again
+ * (tl-report-lifecycle-lock-v1). Locks the report like finalize, needs a
+ * written reason, and writes its audit row in the same transaction (no
+ * reopen without its audit row). Existing review decisions and IOC links are
+ * untouched; `finalized_at` keeps the last finalization time.
+ * @param {{ query: Function, connect?: Function }} pool
+ * @param {number} reportId
+ * @param {{ user?: object, audit?: object, req?: object, reason?: string }} [opts]
+ */
+export async function reopenReport(pool, reportId, opts = {}) {
+  const reason = String(opts.reason || '').trim();
+  if (reason.length < OVERRIDE_REASON_MIN_LENGTH) {
+    return {
+      ok: false,
+      status: 400,
+      code: 'reopen_reason_required',
+      error: `Reopening a finalized report needs a written reason (at least ${OVERRIDE_REASON_MIN_LENGTH} characters).`
+    };
+  }
+  if (typeof opts.audit?.auditLogInTransaction !== 'function') {
+    return { ok: false, status: 503, code: 'reopen_audit_unavailable', error: 'Reopening a report requires the audit log.' };
+  }
+  return inReportTransaction(pool, async (client) => {
+    const locked = await lockReportForFinalize(client, reportId);
+    if (!locked) return { ok: false, status: 404, error: 'Report not found' };
+    if (!isFinalizedReport(locked)) {
+      return { ok: false, status: 409, code: 'report_not_finalized', error: 'Only a finalized report can be reopened.' };
+    }
+    await client.query(
+      `UPDATE threat_reports SET analysis_status = 'review_required', import_status = 'review_required', updated_at = NOW() WHERE id = $1`,
+      [reportId]
+    );
+    await opts.audit.auditLogInTransaction(client, {
+      req: opts.req,
+      actor: opts.user,
+      ...buildReopenAuditEvent({ report: locked, user: opts.user, reason: reason.slice(0, 1000) })
+    });
+    return { ok: true };
+  });
+}
+
+/**
+ * One finalize transaction (tl-report-lifecycle-lock-v1): lock the report
+ * row FOR UPDATE first, so every in-flight mutation of the report commits
+ * before the blockers are read and none can start until this commits; then
+ * re-read the phase, candidates and sources under the lock, write, and record
+ * a mandatory override audit row in the same transaction. Nothing is written
+ * unless every step succeeds.
+ */
+async function finalizeLocked(pool, reportId, opts, override) {
+  let afterCommit = null;
+  const result = await inReportTransaction(pool, async (client) => {
+    const locked = await lockReportForFinalize(client, reportId);
+    if (!locked) return { ok: false, status: 404, error: 'Report not found' };
+    if (!isFinalizeAllowed(locked)) return reviewNotReadyError(locked);
+
+    const { rows: candidates } = await client.query(
       `SELECT *, ${LINKED_PROVENANCE_SQL} FROM threat_report_candidates WHERE report_id = $1`,
       [reportId]
     );
-    const freshBlockers = finalizeBlockers({
-      pendingCount: fresh.filter((c) => isPendingActionableCandidate(c)).length,
-      sources: await loadReportSources(pool, reportId),
-      sourceOverride: Boolean(override)
+    const sources = await loadReportSources(client, reportId);
+    const pendingCount = candidates.filter((c) => isPendingActionableCandidate(c)).length;
+    const blockers = finalizeBlockers({ pendingCount, sources, sourceOverride: Boolean(override) });
+    if (blockers.length) return finalizeRejection(blockers);
+    // Already finalized (a duplicate or concurrent request): nothing to write, nothing to audit again.
+    if (isFinalizedReport(locked)) return { ok: true, already_finalized: true };
+
+    const overridden = override ? openLinkedSources(sources) : [];
+    if (overridden.length && typeof opts.audit?.auditLogInTransaction !== 'function') {
+      // An override is only accepted when its audit row can commit with it.
+      return { ok: false, status: 503, code: 'finalize_override_audit_unavailable', error: 'Finalize override requires the audit log.' };
+    }
+
+    const written = await client.query(GUARDED_FINALIZE_SQL, [reportId, Boolean(override), LINKED_SOURCE_OPEN_STATUSES]);
+    if (!written.rowCount) {
+      // Defence in depth: under the report lock the statement re-check cannot
+      // disagree with the blockers above unless the protocol was bypassed.
+      return {
+        ok: false,
+        status: 409,
+        code: FINALIZE_BLOCKER_CODES.STATE_CHANGED,
+        error: 'The report changed while finalizing; reload and try again.'
+      };
+    }
+    const event = buildFinalizeAuditEvent({
+      report: locked,
+      candidates,
+      user: opts.user,
+      sourceOverride: overridden.length ? { reason: override.reason, sources: overridden } : null
     });
-    if (freshBlockers.length) return finalizeRejection(freshBlockers);
-    return {
-      ok: false,
-      status: 409,
-      code: FINALIZE_BLOCKER_CODES.STATE_CHANGED,
-      error: 'The report changed while finalizing; reload and try again.'
-    };
-  }
-  const sourceOverride = override ? { reason: override.reason, sources: openLinkedSources(sources) } : null;
-  await emitAudit(opts, buildFinalizeAuditEvent({
-    report,
-    candidates,
-    user: opts.user,
-    sourceOverride: sourceOverride && sourceOverride.sources.length ? sourceOverride : null
-  }));
-  return { ok: true };
+    if (overridden.length) {
+      // Durable: throws (and rolls the finalize back) if the row cannot be written.
+      await opts.audit.auditLogInTransaction(client, { req: opts.req, actor: opts.user, ...event });
+    } else {
+      afterCommit = event;
+    }
+    return { ok: true };
+  });
+  if (afterCommit) await emitAudit(opts, afterCommit);
+  return result;
 }
