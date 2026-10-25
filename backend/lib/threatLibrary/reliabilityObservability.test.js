@@ -21,6 +21,7 @@ import { applySectionTreeAuthority } from './sectionTree/authority.js';
 import { extractCandidatesFromDocument } from './candidateExtraction.js';
 import { annotateDocumentZones } from './documentZones.js';
 import { explainMembershipDecision } from './membershipExplanation.js';
+import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 
 function persisted(c) {
   return { ...c, evidence: buildCandidateEvidenceRecord(c) };
@@ -60,6 +61,45 @@ test('section-tree: three unlabelled IOC-shaped rows do not invent MODE A; narra
   assert.ok(narrative);
   assert.equal(narrative.document_has_authoritative_scope, false);
   assert.equal(isReportIndicatorMember(persisted(narrative)), true);
+});
+
+test('HTML H1 mentioning IOC-shaped does not open MODE A over three Host/Port rows', () => {
+  // Promoted from held-out pilot FP: mid-title "IOC" previously matched IOC_INTENT_RE.
+  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
+  const html = `<!doctype html><html><body>
+<h1>Three unlabelled IOC-shaped rows without an appendix heading</h1>
+<p>During analysis we observed the following network endpoints used for staging:</p>
+<table><thead><tr><th>Host</th><th>Port</th><th>First seen</th></tr></thead><tbody>
+<tr><td>alpha-stage[.]research-lab[.]test</td><td>443</td><td>2026-01-02</td></tr>
+<tr><td>beta-stage[.]research-lab[.]test</td><td>443</td><td>2026-01-03</td></tr>
+<tr><td>203.0.113[.]55</td><td>8080</td><td>2026-01-04</td></tr>
+</tbody></table>
+<p>No formal Indicators of Compromise section is declared in this document.</p>
+</body></html>`;
+  const r = extractCanonicalDocumentFromHtml(html, {
+    url: 'https://research.example/blog/three-unlabelled-rows/',
+    finalUrl: 'https://research.example/blog/three-unlabelled-rows/',
+    httpStatus: 200
+  });
+  assert.equal(r.ok, true);
+  const out = extractReportCandidates({ source_url: 'https://research.example/blog/three-unlabelled-rows/' }, r.document);
+  assert.equal(out.diagnostics.scope_engine.has_authoritative_scope, false);
+  for (const v of ['alpha-stage.research-lab.test', 'beta-stage.research-lab.test', '203.0.113.55']) {
+    const c = out.candidates.find((x) => x.normalized_value === v);
+    assert.ok(c, v);
+    // Mid-title "IOC-shaped" must not invent MODE A / explicit_ioc rows.
+    assert.notEqual(c.source_assertion, 'explicit_ioc', v);
+    assert.equal(c.document_has_authoritative_scope, false, v);
+  }
+  // Domains in an unlabelled Host/Port staging table stay non-Indicators.
+  // A bare IP may still be MODE B body_member — that is review-set policy, not
+  // appendix authority (see explainMembershipDecision → mode_b_body_member).
+  for (const v of ['alpha-stage.research-lab.test', 'beta-stage.research-lab.test']) {
+    const c = out.candidates.find((x) => x.normalized_value === v);
+    assert.equal(isReportIndicatorMember(persisted(c)), false, v);
+  }
+  const ip = out.candidates.find((x) => x.normalized_value === '203.0.113.55');
+  assert.equal(explainMembershipDecision(persisted(ip)).reason_code, 'mode_b_body_member');
 });
 
 test('legacy: three unlabelled rows open MODE A and suppress narrative C2 membership', () => {

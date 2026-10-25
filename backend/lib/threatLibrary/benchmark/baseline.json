@@ -1,7 +1,7 @@
 {
   "versions": {
     "candidates": "tl-candidates-v38",
-    "zones": "tl-zones-v15",
+    "zones": "tl-zones-v16",
     "tables": "tl-table-v10",
     "type_resolver": "tl-type-resolver-v16",
     "html": "threat_library_html_v8",

@@ -100,7 +100,7 @@ import {
  * whole contact block ("Contact", "Contact us", "Contact information"); a
  * topic that starts with the word ("Contact Form Engagement") is narrative.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v15';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v16';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -198,7 +198,10 @@ export const STRONG_IOC_ZONES = new Set([
  */
 const HEADING_HINTS = Object.freeze({
   explicit_ioc_section: [
-    /\biocs?\b/i,
+    // Label-like IOC titles only (lead + optional separator / end). Do not
+    // match mid-phrase or hyphenated compounds ("IOC-shaped", "IOC inventory
+    // methodology discussion", "near IOC inventory") — those are narrative.
+    /^(?:(?:host|network|file|atomic|additional|other|related)\s+)?iocs?\b(?!-)\s*(?:[:：\-–—|(\[（]|$)/i,
     /indicators?\s+of\s+compromise/i,
     /compromise\s+indicators?/i,
     /^(?:host|network|file|atomic|additional|other|related)?\s*indicators?\s*[:：]?$/i,

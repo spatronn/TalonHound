@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Section scope model: authoritative section discovery (descriptive indicator
  * headings), scope inheritance across short sub-labelled groups, structural
  * list discovery as a fallback only, and occurrence-level assertion vs
@@ -117,7 +117,7 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/casino/')
 
 test('internal contracts bumped for the scope model (product VERSION untouched)', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v15');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
   assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged — inheritance no longer depends on it');
 });
 
@@ -148,6 +148,21 @@ test('indicator headings with a descriptive suffix declare an indicator section 
   assert.equal(classifySectionRole('Why these indicators matter'), null);
   assert.equal(classifySectionRole('Indicators suggest a Chinese origin'), null);
   assert.equal(classifySectionRole('Executive Summary'), null);
+  // Mid-title / hyphenated IOC mentions are narrative chrome, not appendix labels
+  // (held-out pilot FP class: H1 containing IOC-shaped incorrectly opened MODE A).
+  assert.equal(classifySectionRole('Three unlabelled IOC-shaped rows without an appendix heading'), null);
+  assert.equal(classifyHeadingText('Three unlabelled IOC-shaped rows without an appendix heading'), null);
+  assert.equal(classifySectionRole('Mixed benign and malicious observables near IOC inventory'), null);
+  assert.equal(classifyHeadingText('Mixed benign and malicious observables near IOC inventory'), null);
+  assert.equal(classifySectionRole('IOC inventory methodology discussion'), null);
+  assert.equal(classifyHeadingText('IOC inventory methodology discussion'), null);
+  assert.equal(classifySectionRole('IOCs'), SECTION_ROLES.IOC_APPENDIX);
+  assert.equal(classifySectionRole('Additional IOCs'), SECTION_ROLES.IOC_APPENDIX);
+  assert.equal(classifyHeadingText('Additional IOCs'), 'explicit_ioc_section');
+  // Common publisher inventory labels ("Example IOCs") must remain MODE A openers.
+  assert.equal(classifySectionRole('Example IOCs'), SECTION_ROLES.IOC_APPENDIX);
+  assert.equal(classifyHeadingText('Example IOCs'), 'explicit_ioc_section');
+  assert.equal(classifySectionRole('Selected Indicators'), SECTION_ROLES.IOC_APPENDIX);
 });
 
 test('a descriptive indicator heading followed only by prose is not an authoritative section', () => {
@@ -250,7 +265,7 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
 
   // Diagnostics explain the scope decisions without the analyst UI changing.
   const compact = compactExtractionDiagnostics(diagnostics);
-  assert.equal(compact.scope.zones_version, 'tl-zones-v15');
+  assert.equal(compact.scope.zones_version, 'tl-zones-v16');
   assert.ok(compact.scope.trace.some((t) => t.decision === 'open' && t.form === 'descriptive_suffix'));
   assert.ok(compact.scope.trace.some((t) => t.decision === 'topic_heading_unconfirmed' && t.zone === 'c2_section'));
   assert.ok(compact.scope.occurrence_kinds.list_item >= 8);

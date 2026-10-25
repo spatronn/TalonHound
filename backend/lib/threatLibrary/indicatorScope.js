@@ -113,6 +113,11 @@ export const SECTION_ROLES = Object.freeze({
 const APPENDIX_RE =
   /\b(?:appendix|appendices|annex|annexe|anexo|anhang|anlage|ekler|ek\b|附录|附件|annexes?)\b/i;
 
+// Appendix/annex must LEAD the heading. Mid-title mentions
+// ("without an appendix heading") are narrative, not appendix labels.
+const APPENDIX_LEAD_RE =
+  /^(?:(?:appendix|appendices|annex|annexe|anexo|anhang|anlage|ekler|ek|annexes?)\b|附录|附件)/i;
+
 const C2_INTENT_RE =
   /\b(?:c\s*&\s*c|c2|c&c|command\s*(?:and|&)\s*control|komuta\s*kontrol)\b|控制端|回连地址|通信地址|远控地址|c2地址|c2服务器/i;
 
@@ -162,7 +167,7 @@ const REPORTING_CONTACT_RE =
  * and be closed by punctuation, "of", or the end of the heading.
  */
 const INDICATOR_HEAD_RE =
-  /^(?:(?:host|network|file|atomic|additional|other|related|technical|known|key|observed|associated|new|ağ|dosya|ek)\s+)?(?:indicators?|iocs?|göstergeler|indicadores|威胁指标|妥协指标)\s*(?:[:：\-–—|(\[（]|of\b|$)/i;
+  /^(?:(?:host|network|file|atomic|additional|other|related|technical|known|key|observed|associated|new|example|selected|listed|sample|ağ|dosya|ek)\s+)?(?:indicators?|iocs?|göstergeler|indicadores|威胁指标|妥协指标)\s*(?:[:：\-–—|(\[（]|of\b|$)/i;
 
 /**
  * Classify a heading as an indicator-section declaration, with its form.
@@ -200,22 +205,34 @@ export function classifySectionRole(text, opts = {}) {
   if (SAMPLE_INTENT_RE.test(t) && t.length <= 80) return SECTION_ROLES.SAMPLE_TABLE;
   if (C2_INTENT_RE.test(t)) return SECTION_ROLES.C2_INFRASTRUCTURE;
   if (OPERATIONAL_INFRA_RE.test(t)) return SECTION_ROLES.OPERATIONAL_INFRASTRUCTURE;
-  if (IOC_INTENT_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
-  if (APPENDIX_RE.test(t) && /(?:server|node|range|indicator|ioc|infrastructure|vpn|c2|hash|sample)/i.test(t)) {
+  // IOC appendix via synonym inventory labels (IOC_INTENT_RE). Bare English
+  // "IOC"/"IOCs" must be head-anchored (INDICATOR_HEAD_RE) or appendix-led —
+  // mid-title / hyphenated mentions ("IOC-shaped", "near IOC inventory",
+  // "IOC inventory methodology discussion", "without an appendix heading")
+  // are narrative chrome, not MODE A openers.
+  if (IOC_INTENT_RE.test(t)) {
+    if (/\biocs?-/i.test(t)) {
+      // Hyphenated compound (IOC-shaped): only accept if a non-bare synonym
+      // also matched. IOC_INTENT's bare iocs? alternative is what fired; reject.
+    } else {
+      const bareIoc = /\biocs?\b/i.test(t);
+      if (!bareIoc) return SECTION_ROLES.IOC_APPENDIX;
+      if (INDICATOR_HEAD_RE.test(t) || APPENDIX_LEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
+      // mid-title bare IOC — not an appendix declaration
+    }
+  }
+  if (APPENDIX_LEAD_RE.test(t) && /(?:server|node|range|indicator|ioc|infrastructure|vpn|c2|hash|sample)/i.test(t)) {
     if (C2_INTENT_RE.test(t)) return SECTION_ROLES.C2_INFRASTRUCTURE;
     if (OPERATIONAL_INFRA_RE.test(t) || /\b(?:vpn|range|node|infrastructure)\b/i.test(t)) {
       return SECTION_ROLES.OPERATIONAL_INFRASTRUCTURE;
     }
     return SECTION_ROLES.IOC_APPENDIX;
   }
+  // Descriptive "Indicators: …" / "IOCs (Type 3)" when callers allow the suffix form.
   if (opts.allowDescriptiveSuffix !== false && INDICATOR_HEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
   return null;
 }
 
-/**
- * Map a section role onto a document zone.
- * @param {string|null} role
- */
 export function zoneForSectionRole(role) {
   switch (role) {
     case SECTION_ROLES.C2_INFRASTRUCTURE:
