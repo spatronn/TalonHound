@@ -1,0 +1,53 @@
+{
+  "id": "heldout-unit42-panos-cve",
+  "title": "Unit 42 — PAN-OS CVE-2026-0257 exploitation IOCs (held-out pilot)",
+  "publisher": "Unit 42",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "unit42", "html", "mode_a", "ip", "hostname_non_ioc"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-unit42-panos-cve.html",
+    "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/"
+  },
+  "source_reference": {
+    "url": "https://unit42.paloaltonetworks.com/active-exploitation-of-pan-os-cve-2026-0257/",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public Unit 42 threat brief; fixture retains Indicators of the Activity IP list plus host/MAC hunting strings.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "Not in golden Unit 42 cases or real-reports as of 2026-10-25."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out pilot 2026-10-25): IP Addresses under Indicators of the Activity transcribed from the public Unit 42 brief. Host names / MAC strings are hunting aids, not supported network IOC types in TalonHound ground truth. docs.paloaltonetworks.com is contextual.",
+      "verified_by": "manual review of the publisher text (held-out pilot, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Primary-document IP list only.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "ip", "value": "23.128.228.6", "assertion": "explicit" },
+      { "type": "ip", "value": "104.207.144.154", "assertion": "explicit" },
+      { "type": "ip", "value": "146.19.216.119", "assertion": "explicit" },
+      { "type": "ip", "value": "146.19.216.120", "assertion": "explicit" },
+      { "type": "ip", "value": "146.19.216.125", "assertion": "explicit" },
+      { "type": "ip", "value": "179.43.172.213", "assertion": "explicit" },
+      { "type": "ip", "value": "185.195.232.139", "assertion": "explicit" },
+      { "type": "ip", "value": "198.12.106.60", "assertion": "explicit" },
+      { "type": "ip", "value": "202.144.192.47", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "docs.paloaltonetworks.com" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "windows-laptop-001", "rationale": "host hunting string, not a network IOC type" },
+      { "type": "domain", "value": "desktop-gp01", "rationale": "host hunting string" },
+      { "type": "domain", "value": "gp-client", "rationale": "host hunting string" }
+    ],
+    "ambiguous": [],
+    "sections": [{ "heading": "Indicators of the Activity", "expected": "authoritative" }]
+  }
+}

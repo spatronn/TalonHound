@@ -1,0 +1,31 @@
+{
+  "id": "heldout-unknown-empty-appendix",
+  "title": "Unknown publisher — explicit IOC appendix with zero local values (held-out pilot)",
+  "publisher": "synthetic",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "synthetic", "unknown_structure", "empty_appendix", "quality"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-unknown-empty-appendix.html",
+    "url": "https://research.example/blog/empty-appendix-delegated/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: authoritative IOC heading with zero local observables; narrative staging domain is not an Indicator under MODE A.",
+      "verified_by": "construction",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Synthetic completeness / quality held-out case.",
+      "mode": "A"
+    },
+    "indicators": [],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "update-check.contoso-research.test" }
+    ],
+    "ambiguous": [],
+    "sections": [{ "heading": "Indicators of Compromise", "expected": "authoritative" }],
+    "expected_quality_codes": ["authoritative_section_empty"]
+  }
+}

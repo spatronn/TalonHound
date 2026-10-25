@@ -11,16 +11,36 @@ import { discoverHeldOutCases, evaluateHeldOutCorpus, HELD_OUT_CASES_DIR } from 
 import { classifyFailureStage, FAILURE_STAGES, annotateFalseNegativesWithStages } from './failureStage.js';
 import { BENCHMARK_CASES_DIR } from '../benchmarkRunner.js';
 
-test('held-out discovery reports zero labeled cases without fabricating metrics', () => {
-  const d = discoverHeldOutCases();
-  assert.equal(d.labeled_cases, 0);
+test('held-out discovery never fabricates metrics; empty corpora stay null', () => {
   assert.ok(fs.existsSync(HELD_OUT_CASES_DIR));
+  const d = discoverHeldOutCases();
   assert.notEqual(d.held_out_cases_dir, BENCHMARK_CASES_DIR);
+  // Guard: committed held-out cases must not reuse regression case ids.
+  const regressionIds = new Set(
+    fs
+      .readdirSync(BENCHMARK_CASES_DIR)
+      .filter((f) => f.endsWith('.json') && !f.startsWith('known-'))
+      .map((f) => f.replace(/\.json$/, ''))
+  );
+  for (const item of d.labeled) {
+    assert.ok(!regressionIds.has(item.definition.id), `${item.definition.id} collides with regression`);
+    assert.ok(
+      item.definition.dataset_split === 'held_out_pilot' || (item.definition.tags || []).includes('held_out'),
+      `${item.definition.id} missing held_out marker`
+    );
+  }
   const score = evaluateHeldOutCorpus();
-  assert.equal(score.labeled_cases, 0);
-  assert.equal(score.available_cases, 0);
-  assert.equal(score.aggregate.tp, null);
-  assert.match(score.aggregate.note || '', /No independently labeled/);
+  assert.equal(score.labeled_cases, d.labeled_cases);
+  if (score.labeled_cases === 0) {
+    assert.equal(score.available_cases, 0);
+    assert.equal(score.aggregate.tp, null);
+    assert.match(score.aggregate.note || '', /No independently labeled/);
+  } else {
+    assert.equal(typeof score.aggregate.tp, 'number');
+    assert.equal(typeof score.aggregate.fp, 'number');
+    assert.equal(typeof score.aggregate.fn, 'number');
+    assert.ok(score.available_cases > 0);
+  }
 });
 
 test('failure-stage classifier separates extraction vs membership vs AI vs analyst', () => {

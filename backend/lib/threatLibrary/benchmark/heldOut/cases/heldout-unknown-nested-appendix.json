@@ -1,0 +1,36 @@
+{
+  "id": "heldout-unknown-nested-appendix",
+  "title": "Unknown publisher — nested Appendix / IOC subgroup layout (held-out pilot)",
+  "publisher": "synthetic",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "synthetic", "unknown_structure", "mode_a", "nested_heading"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-unknown-nested-appendix.html",
+    "url": "https://research.example/blog/nested-appendix-layout/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed: nested Appendix > Indicators of compromise > Network/Files subgroups; only nested-appendix rows are Indicators; Microsoft Learn URL is contextual documentation.",
+      "verified_by": "construction",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Synthetic structural held-out case for previously unseen heading nesting.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "domain", "value": "payload-cdn.bad-delivery.net", "assertion": "explicit" },
+      { "type": "ip", "value": "203.0.113.88", "assertion": "explicit" },
+      { "type": "url", "value": "https://payload-cdn.bad-delivery.net/get", "assertion": "explicit" },
+      { "type": "sha256", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "assertion": "explicit" },
+      { "type": "sha256", "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "url", "value": "https://learn.microsoft.com/en-us/windows/security/" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "A. Indicators of compromise", "expected": "authoritative" }]
+  }
+}

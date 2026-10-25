@@ -1,0 +1,48 @@
+{
+  "id": "heldout-cisa-aa24-290a",
+  "title": "CISA AA24-290A Iranian actors — Appendix B extract (held-out pilot)",
+  "publisher": "CISA",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "cisa", "html", "mode_a", "sha1", "ip", "appendix"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-cisa-aa24-290a.html",
+    "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-290a"
+  },
+  "source_reference": {
+    "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa24-290a",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public CISA advisory; fixture retains Appendix B Table 13 hashes and a bounded Table 14 IP subset.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "AA24-290A is not among committed real-reports CISA labels as of 2026-10-25."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out pilot 2026-10-25): Appendix B Table 13 hash values and the six Table 14 IP rows present in the fixture transcribed from the public CISA advisory. Additional Table 14 IPs on the live page are out of scope for this extract. cisa.gov is contextual.",
+      "verified_by": "manual review of the publisher text (held-out pilot, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Extract-scoped labels only; VPN-node disclaimer retained as publisher context, not as membership demotion.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "sha1", "value": "1f96d15b26416b2c7043ee7172357af3afbb002a", "assertion": "explicit" },
+      { "type": "sha1", "value": "3d3cdf7cfc881678febcafb26ae423fe5aa4efec", "assertion": "explicit" },
+      { "type": "ip", "value": "95.181.234.12", "assertion": "explicit" },
+      { "type": "ip", "value": "95.181.234.25", "assertion": "explicit" },
+      { "type": "ip", "value": "173.239.232.20", "assertion": "explicit" },
+      { "type": "ip", "value": "172.98.71.191", "assertion": "explicit" },
+      { "type": "ip", "value": "102.129.235.127", "assertion": "explicit" },
+      { "type": "ip", "value": "188.126.94.60", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "cisa.gov" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "Appendix B: Indicators of Compromise", "expected": "authoritative" }]
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "id": "heldout-talos-uat-9686",
+  "title": "Cisco Talos — UAT-9686 AquaShell (held-out pilot)",
+  "publisher": "Cisco Talos",
+  "format": "html",
+  "dataset_split": "held_out_pilot",
+  "tags": ["held_out", "pilot", "cisco_talos", "html", "mode_a", "defanged_ip", "sha256"],
+  "source": {
+    "kind": "html_file",
+    "path": "../fixtures/heldout-talos-uat-9686.html",
+    "url": "https://blog.talosintelligence.com/uat-9686/"
+  },
+  "source_reference": {
+    "url": "https://blog.talosintelligence.com/uat-9686/",
+    "distribution": {
+      "basis": "public_web_publication",
+      "evidence": "Public Cisco Talos blog; fixture retains only the IOC section evidence extract plus minimal narrative context.",
+      "verified_at": "2026-10-25"
+    },
+    "exclusion_note": "Not present in benchmark/cases or real-reports as of 2026-10-25 (talos-uat-11587 is a different report)."
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "Independent publisher ground truth (held-out pilot 2026-10-25): public Talos page IOCs section re-read; SHA256 digests and defanged IPs transcribed from the publisher IOC block; cisco.com product link treated as contextual. Not derived from TalonHound extraction output.",
+      "verified_by": "manual review of the publisher text (held-out pilot, 2026-10-25)",
+      "verified_at": "2026-10-25",
+      "coverage_note": "Primary-document IOC section extract only; linked GitHub IOC package not included in this label set.",
+      "mode": "A"
+    },
+    "indicators": [
+      { "type": "sha256", "value": "2db8ad6e0f43e93cc557fbda0271a436f9f2a478b1607073d4ee3d20a87ae7ef", "assertion": "explicit" },
+      { "type": "sha256", "value": "145424de9f7d5dd73b599328ada03aa6d6cdcee8d5fe0f7cb832297183dbe4ca", "assertion": "explicit" },
+      { "type": "sha256", "value": "85a0b22bd17f7f87566bd335349ef89e24a5a19f899825b4d178ce6240f58bfc", "assertion": "explicit" },
+      { "type": "ip", "value": "172.233.67.176", "assertion": "explicit" },
+      { "type": "ip", "value": "172.237.29.147", "assertion": "explicit" },
+      { "type": "ip", "value": "38.54.56.95", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "domain", "value": "cisco.com" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "ambiguous": [],
+    "sections": [{ "heading": "IOCs", "expected": "authoritative" }]
+  }
+}

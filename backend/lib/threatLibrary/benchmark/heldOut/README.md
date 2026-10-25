@@ -40,3 +40,5 @@ node scripts/threat-library-held-out.js
 
 When zero labeled held-out cases are present, the runner reports
 `labeled_cases: 0` and does not fabricate scores.
+
+See `CORPUS.md` for the current pilot inventory and exclusion notes.
