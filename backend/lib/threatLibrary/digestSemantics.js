@@ -31,7 +31,10 @@ export const DIGEST_KINDS = Object.freeze({
   SIMILARITY: 'similarity_hash',
   CRYPTO_KEY: 'cryptographic_key',
   CREDENTIAL: 'credential',
-  WELL_KNOWN: 'well_known_digest'
+  WELL_KNOWN: 'well_known_digest',
+  // Account / tunnel / tenant / device identifiers that merely share the hex
+  // shape ("Cloudflare tunnel account tag", "bot ID") — tl-digest-v3.
+  IDENTIFIER: 'account_identifier'
 });
 
 /** Non-file digest kinds: never md5 / sha1 / sha256 Indicators. */
@@ -42,7 +45,8 @@ export const NON_FILE_DIGEST_KINDS = Object.freeze(
     DIGEST_KINDS.SIMILARITY,
     DIGEST_KINDS.CRYPTO_KEY,
     DIGEST_KINDS.CREDENTIAL,
-    DIGEST_KINDS.WELL_KNOWN
+    DIGEST_KINDS.WELL_KNOWN,
+    DIGEST_KINDS.IDENTIFIER
   ])
 );
 
@@ -59,6 +63,10 @@ const KIND_PATTERNS = [
   [
     DIGEST_KINDS.CRYPTO_KEY,
     /(?:^|[^a-z0-9])(?:(?:aes|rc4|rsa|xor|chacha\d*|salsa\d*|des|3des|blowfish|hmac|encryption|decryption|session|symmetric|secret|private|public|master|shared|cipher|crypto)[\s_-]*(?:key|iv|nonce|secret)s?|(?:public|private|host|server|client|ssh)\s+(?:(?:rsa|dsa|ecdsa|ed25519|ed448|x25519|ssh|sftp|[a-z]{2,10}\d{0,5})\s+){1,2}keys?|ssh[\s_-]+(?:host[\s_-]+)?(?:key[\s_-]+)?fingerprints?|keys?[\s_-]*(?:material|stream)|initiali[sz]ation\s+vector|iv|nonce|salt)(?:[^a-z0-9]|$)/i
+  ],
+  [
+    DIGEST_KINDS.IDENTIFIER,
+    /(?:^|[^a-z0-9])(?:(?:account|tenant|tunnel|client|customer|user|device|machine|bot|victim|affiliate|campaign|session|install(?:ation)?|subscription|organi[sz]ation|org)[\s_-]*(?:account[\s_-]*)?(?:tags?|ids?|identifiers?|uuids?|guids?)|account[\s_-]*tags?)(?:[^a-z0-9]|$)/i
   ],
   [
     DIGEST_KINDS.CREDENTIAL,

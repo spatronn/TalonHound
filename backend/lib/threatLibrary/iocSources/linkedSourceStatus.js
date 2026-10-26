@@ -20,8 +20,16 @@ export const IOC_PACKAGE_NOT_DISCOVERED_CODE = 'ioc_package_not_discovered';
 export const EXTRACTION_PROVENANCE_INCOMPLETE_CODE = 'extraction_provenance_incomplete';
 /** Candidates exist but no extraction-quality record was stored (tl-quality-v10). */
 export const EXTRACTION_QUALITY_MISSING_CODE = 'extraction_quality_missing';
+/**
+ * A linked IOC Source whose files belong to other reports (their metadata rows
+ * link other articles) or whose campaign folder could not be corroborated:
+ * the published link does not lead to this report's inventory
+ * (tl-ioc-source-scope-v3).
+ */
+export const LINKED_SOURCE_SCOPE_MISMATCH_CODE = 'linked_ioc_source_scope_mismatch';
 const READ_TIME_CODES = new Set([
   LINKED_SOURCE_NOT_INGESTED_CODE,
+  LINKED_SOURCE_SCOPE_MISMATCH_CODE,
   IOC_PACKAGE_NOT_DISCOVERED_CODE,
   EXTRACTION_PROVENANCE_INCOMPLETE_CODE,
   EXTRACTION_QUALITY_MISSING_CODE
@@ -31,13 +39,14 @@ const READ_TIME_CODES = new Set([
  * @param {Array<{ lifecycle_status: string }>} rows threat_report_ioc_sources rows
  */
 export function summarizeLinkedIocSources(rows) {
-  const out = { declared: 0, extracted: 0, pending: 0, unresolved: 0, dismissed: 0 };
+  const out = { declared: 0, extracted: 0, pending: 0, unresolved: 0, dismissed: 0, scope_mismatch: 0 };
   for (const r of Array.isArray(rows) ? rows : []) {
     const s = String(r?.lifecycle_status || '');
     if (s === 'dismissed') {
       out.dismissed += 1;
       continue;
     }
+    if (r?.error_code === 'campaign_scope_unresolved' || r?.other_report_files > 0) out.scope_mismatch += 1;
     out.declared += 1;
     if (s === 'extracted') out.extracted += 1;
     else if (PENDING.has(s)) out.pending += 1;
@@ -77,6 +86,13 @@ export function withLinkedSourceQuality(quality, summary) {
       explanation: `${open} publisher-declared IOC Source(s) are not extracted (${summary.pending} pending, ${summary.unresolved} unresolved): Linked and Union Indicators are incomplete until the analyst inspects and extracts them.`
     });
   }
+  if (summary.scope_mismatch > 0) {
+    add.push({
+      code: LINKED_SOURCE_SCOPE_MISMATCH_CODE,
+      severity: 'warning',
+      explanation: `${summary.scope_mismatch} linked IOC Source(s) lead to inventories of other reports (or no campaign folder for this report could be corroborated): verify the publisher link before extracting or dismissing.`
+    });
+  }
   const announced = (quality.warnings || []).some((w) => w?.code === 'ioc_package_announced');
   if (announced && summary.declared === 0 && summary.dismissed === 0) {
     add.push({
@@ -113,7 +129,13 @@ export function withLinkedSourceQuality(quality, summary) {
  * @param {number} reportId
  */
 export async function loadLinkedIocSourceSummary(pool, reportId) {
-  const { rows } = await pool.query('SELECT lifecycle_status FROM threat_report_ioc_sources WHERE report_id = $1', [reportId]);
+  const { rows } = await pool.query(
+    `SELECT lifecycle_status, error_code,
+            COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(preview->'scope'->'other_report_files') = 'array'
+                                             THEN preview->'scope'->'other_report_files' END), 0)::int AS other_report_files
+       FROM threat_report_ioc_sources WHERE report_id = $1`,
+    [reportId]
+  );
   const summary = summarizeLinkedIocSources(rows);
   try {
     const r = await pool.query(

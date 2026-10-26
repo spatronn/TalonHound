@@ -29,7 +29,7 @@
 import { normalizeCandidateValue } from '../candidateValue.js';
 import { toLinkedSourceCandidate } from './linkedCandidate.js';
 
-export const STRUCTURED_SOURCE_PARSER_VERSION = 'tl-ioc-source-structured-v1';
+export const STRUCTURED_SOURCE_PARSER_VERSION = 'tl-ioc-source-structured-v2';
 
 const IOC_TYPES = new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256']);
 
@@ -38,6 +38,9 @@ const DECLARED_TYPE_HINTS = new Map([
   ['domain', 'domain'], ['domains', 'domain'], ['domain-name', 'domain'], ['domain_name', 'domain'], ['hostname', 'domain'],
   ['host', 'domain'], ['fqdn', 'domain'],
   ['url', 'url'], ['urls', 'url'], ['uri', 'url'],
+  // A host + path written without a scheme ("ip_path,192.0.2.7/api/x") is a
+  // URL; read as an IP it would drop the publisher's path (structured-v2).
+  ['ip_path', 'url'], ['ip-path', 'url'], ['ip:path', 'url'], ['host_path', 'url'], ['domain_path', 'url'], ['url_path', 'url'],
   ['ip', 'ip'], ['ips', 'ip'], ['ipv4', 'ip'], ['ipv6', 'ip'], ['ip-dst', 'ip'], ['ip-src', 'ip'], ['ip_address', 'ip'],
   ['ip address', 'ip'], ['ip addresses', 'ip'], ['ipv4-addr', 'ip'], ['ipv6-addr', 'ip'], ['ip_port', 'ip'], ['ip-port', 'ip'],
   ['ip:port', 'ip'], ['ip-dst|port', 'ip'],

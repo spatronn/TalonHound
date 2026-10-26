@@ -77,7 +77,7 @@ import { isValidIpAddress } from '../publicIp.js';
  * alternation branch (`|currentversion.run|`) is a regex fragment, not a
  * host, unless its suffix is DNS-strong.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v16';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v17';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -550,8 +550,10 @@ const TEMPLATE_PLACEHOLDER_RE = /\$?\{[A-Za-z_][\w.-]{0,40}(?:\}|$)|%7B[A-Za-z_]
 const URL_TEMPLATE_PLACEHOLDER_RE = new RegExp([
   /\$[A-Za-z_]\w{1,40}\$/.source,
   /%(?=\w*[G-Zg-z_])[A-Za-z_]\w{2,40}%/.source,
-  /<[A-Za-z_][\w.-]{0,40}>/.source,
-  /%3C[A-Za-z_][\w.-]{0,40}%3E/.source,
+  // The closing ">" may already be cut by the URL boundary ("/curl/<token>"
+  // read as ".../curl/<token") — tl-type-resolver-v17.
+  /<[A-Za-z_][\w.-]{0,40}(?:>|$)/.source,
+  /%3C[A-Za-z_][\w.-]{0,40}(?:%3E|$)/.source,
   /\/\[[A-Za-z_][\w.-]{2,40}(?:\]|$)/.source
 ].join('|'), 'i');
 

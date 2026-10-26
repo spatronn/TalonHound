@@ -1,0 +1,330 @@
+{
+ "id": "real-huntress-the-crypto-wallet-that-never-opened",
+ "title": "The Crypto Wallet That Never Opened: Tampered Exodus Installer Hides a Modular RAT | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "90875b4bf6b8d851a5f0e057309f9853da6e5ab3c9f52dde942297895c64d653",
+  "url": "https://www.huntress.com/blog/exodus-crypto-wallet-installer-rat",
+  "talonhound_report_id": "f61dc62a-9dff-49fd-a220-aa4cbb3de82e",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "45 hosts configured in the binary but not contacted are in the IOC section and are Indicators; the publisher hedges some as possibly compromised small-business domains (treat them as leads). The five services the publisher says not to use (api.blockchain.info, api.moonpay.com, api.rampnetwork.com, api.segment.io, www.googleapis.com) are not Indicators."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "api.27inbarbadostours.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.504guaratv.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.b2compages.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.elcaminodesermadre.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.ideasnation.net",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.jyfgarriga.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.onemkscleaningsolutions.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.rezperfect.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.shopfoora.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "api.shuyinla.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.bcntextilrep.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.conviertenoensi.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.geutex.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.micheladafestelpaso.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.rtpsenior4djp.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.sentiented.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.shuchipharmacy.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.springstore.net",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "app.stateyatra.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.auravp3.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.clubvp3.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.esalesrep.net",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.h-dsf1034.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.nailedbynakole.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.secureswallow.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.shuchimed.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "auth.speaktowinclients.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.baraldes.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.cobraporganardinero.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.estudiod2.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.jiyaoglass.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.planningportfolioweek.org",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.shinozen.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.snsafirieik.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.speaktogrowbiz.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.yenoox.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "lgapistorage123.table.core.windows.net",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.ariesglobalsoft.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.cistecca360.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.emialvarez.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.gompl-rggsrve.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.metodorace.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.premios-king.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.suplenation.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.trythecrowdmakers.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "static.turboleadslab.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "us05.org",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "winapi.table.core.windows.net",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "35.212.159.20",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "2f47cfbb13f7a8a2d30d287f4ddd974fabea6762ad9781d438eb53da41b4582d",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "5274e93e35586a341d14b50cdf8413d59c51fd94f32bdc70bfdfb77198367603",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "5fe753945da0eaac2c2ef3845cba603dea6c3e8529fa581d7e0192f8af60391a",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "7e74f6e2eb7a17a8d25bb322a14c392c9d92c6ab29fc66b50221da134a1bdba8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "84437d4239d2a3d90c4faad0a3c0630b2f61a40f7bbd12109bef74d7613b8756",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "8c3b41ea5a85778145a6e5772bfee2eb0f8b027d0af199fb71a76dfb8bb29e5a",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "c513a7346484ee69a2931c4a89956ee50aa63e4366ef989315e669d8f10d7485",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "fdd376562aac4be64fb635546a61e1912ff2c353360db73d2c553dcbb5a44f54",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "35.212.159.20/jn0101.msi",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

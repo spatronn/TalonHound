@@ -30,8 +30,13 @@
  * actor-attributed hash inventory ("Table 3. Files Used by <X> Ransomware
  * Actors (SHA-256)" over a File Name | Hash table) declares indicator scope
  * the same way; a caption that calls the files legitimate / dual-use does not.
+ * v9 (24-report audit): an IOC heading whose own section is only lead-in
+ * prose continues into the same-level indicator-class siblings that follow it
+ * ("## Indicators of Compromise" → "## Network", "## File hashes"); the first
+ * other heading closes it. Qualified IOC headings include inventory-grade
+ * qualifiers ("Primary IOCs").
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v8';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v9';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';

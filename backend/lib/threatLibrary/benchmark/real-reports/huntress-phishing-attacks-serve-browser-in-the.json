@@ -1,0 +1,110 @@
+{
+ "id": "real-huntress-phishing-attacks-serve-browser-in-the",
+ "title": "Phishing Attacks Serve Browser-in-the-Browser Pages, Rogue RMM Persistence | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "c583b5fc56e34b2a42fa34e1e205f18c920992ab42dc88a2e9c968c7e70118f0",
+  "url": "https://www.huntress.com/blog/phishing-bitb-rmm-attacks",
+  "talonhound_report_id": "28fc2413-8b62-41ce-adb7-744c0c106862",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "instance-uxh86b-relay.screenconnect.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "relay.goldenmelon.us",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "scx.illuminantgroup.net",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "144.172.115.59",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "41d2097e8ac636a478aa011e12128c03b3b9bb3c8efca43d3c4f214ac8b1f07b",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "9f5910d69a4fbc56ff1854e7e0df3199fbfddd7fe6b374f7d816fa6ae70ef991",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "f048400c23add8c75abe189393d33c873c02c74eeaf43d47b950c8d643763b35",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "fc96a04c615847f0fb1391f04d9d1aac7f78ddfb7d459168df0a4172b98354e2",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "hosthiifran.screenconnect.com/Bin/ScreenConnect.ClientSetup.exe?e=Access&y=Guest&c=olojoaje&c=&c=&c=&c=&c=&c=&c=",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://adoube.vu/2a8ed9baefcd",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://adoube.vu/filedocacess/file.html",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://wir.consultingics.com/Bin/ScreenConnect.ClientSetup.msi?e=Access&y=Guest&c=GOODVIBE&c=&c=&c=&c=&c=&c=&c=",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "selectstructure.com.au/freedom/adobedocument.html",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "victory.mkc1.digitaloceanspaces.com/Adbrdb/AdbRdBkUpsStUp.msi",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

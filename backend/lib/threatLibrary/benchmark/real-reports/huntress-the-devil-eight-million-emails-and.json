@@ -1,0 +1,117 @@
+{
+ "id": "real-huntress-the-devil-eight-million-emails-and",
+ "title": "The Devil, Eight Million Emails, and a Whole Lot of Milk | Phishing Stager Exposed | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "1a1954c70acda38119695803d15212de006981b86f509dfcd00fc07276bf98c4",
+  "url": "https://www.huntress.com/blog/terminal-server-phishing-stager-exposed",
+  "talonhound_report_id": "e0d637b6-a5e5-459a-85ee-a55b0aa279b6",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "cidr",
+    "value": "88.210.63.0/24",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "212.93.152.37",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "216.152.151.168",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "80.94.95.37",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "87.251.64.134",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "13ac78f8f2ed76a03c85f0cdef07e5463aa64458303c0949090fcd81868ba8ca",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "375c2c84e2ca022c565507523b75c9c08a455479861ea41fc9b9ff74b3453445",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "5d2ad1795b0dfc4a58424b2fa2f002246f653b119d362954ae270b6998e9d575",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "6c428acbd91be85fedf9cbb334457ddea08ff624d4de88041749578e968d62a8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "7fda5f10a2bc212daaa467484c56eb8abf3f3681f6405c5c2fac16d4124e44ca",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "95fc58dc321b07ecc99d95359bcdee08a5beb519ead8e70e40f33928533a1b14",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "c5ec55270af084d3c07d2918098d598bc2c5ca42f4189d69cdfcae2c958e5ec7",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://ipelc.gob.bo/boots_store/",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [
+   {
+    "type": "domain",
+    "value": "boots.com",
+    "rationale": "Legitimate brand domain of a spoofed sender address (hello[@]boots[.]com, Spoofed sender impersonating Boots UK)"
+   }
+  ],
+  "not_indicators": [],
+  "ambiguous": [
+   {
+    "type": "sha256",
+    "value": "dc8a31a104df44b76a05c3e6d4fbe85be243cc6db0ff25e298e25cc469715046",
+    "rationale": "gm.exe, Gammadyne Mailer (legitimate commercial bulk-mail tool, abused); legitimate-tool hash, analyst decision (cf. PsExec precedent)"
+   }
+  ],
+  "sections": []
+ }
+}

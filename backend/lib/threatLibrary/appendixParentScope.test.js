@@ -25,7 +25,7 @@ const SOURCE = 'https://research.example/blog/appendix-parent-scope/';
 
 test('appendix parent scope contracts', () => {
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v40');
 });
 
 function htmlDoc(inner) {

@@ -1,0 +1,55 @@
+{
+ "id": "real-huntress-the-gentleman-ransomware-defense-evasion-ttps",
+ "title": "The Gentleman Ransomware | Defense Evasion TTPs Uncovered | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "a01fc7f3ecfa9e380b80be6ac87b36f650dca3933df1eeb895d3d0adf8f583dd",
+  "url": "https://www.huntress.com/blog/the-gentlemen-ransomware-defense-evasion-ttps",
+  "talonhound_report_id": "1b949605-9853-4420-8aa1-62bcc6409e25",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Linked 20260521_gentlemen.csv repeats the article values; the second link is the repository root."
+  },
+  "indicators": [
+   {
+    "type": "ip",
+    "value": "193.233.202.17",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "77.110.122.137",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "f918535f974591ef031bd0f30a8171e3da27a6754e6426a8ba095f83195661c8",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

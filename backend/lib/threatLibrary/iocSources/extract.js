@@ -12,6 +12,54 @@ import { fetchIocSourceUrl, publicFetchError } from './fetchSafe.js';
 import { enumerateGitHubIocSource, parseGitHubUrl, resolveGitHubCommitSha } from './github.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
 import { guardSourceUrl, loadReportScopeContext } from './inspect.js';
+import { inventoryBacklinkScope } from './campaignScope.js';
+
+const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
+
+/** host (lower-cased) + path of a URL value, or null without a path. */
+function hostPathIdentity(value) {
+  const rest = String(value || '').replace(URL_SCHEME_RE, '');
+  const slash = rest.indexOf('/');
+  if (slash <= 0) return null;
+  return `${rest.slice(0, slash).toLowerCase()}${rest.slice(slash)}`;
+}
+
+/**
+ * A scheme-less URL of a linked pack ("docsend.online/download/drivers") is
+ * the report's existing absolute URL with that host + path
+ * ("https://docsend.online/download/drivers") when exactly one such URL is
+ * known — the same folding the document extractor applies — so the union
+ * never holds the same resource twice (tl-ioc-source-scope-v3). Ambiguous
+ * (two schemes) or unknown spellings are kept as written.
+ * @param {object[]} candidates linked-source candidates
+ * @param {object[]} priorRows the report's persisted candidate rows
+ */
+export function foldSchemeLessLinkedUrls(candidates, priorRows) {
+  const absolute = new Map();
+  const note = (value) => {
+    if (!URL_SCHEME_RE.test(String(value || ''))) return;
+    const id = hostPathIdentity(value);
+    if (!id) return;
+    if (!absolute.has(id)) absolute.set(id, new Set());
+    absolute.get(id).add(value);
+  };
+  for (const r of priorRows || []) if (r.candidate_type === 'url') note(r.normalized_value);
+  for (const c of candidates) if (c.candidate_type === 'url') note(c.normalized_value);
+  const out = new Map();
+  for (const c of candidates) {
+    let next = c;
+    if (c.candidate_type === 'url' && !URL_SCHEME_RE.test(String(c.normalized_value || ''))) {
+      const targets = absolute.get(hostPathIdentity(c.normalized_value));
+      if (targets?.size === 1) {
+        const [target] = targets;
+        next = { ...c, normalized_value: target, scheme_less_alias_of: c.normalized_value };
+      }
+    }
+    const key = `${next.candidate_type}\0${next.normalized_value}`;
+    if (!out.has(key)) out.set(key, next);
+  }
+  return [...out.values()];
+}
 import {
   listSourceFiles,
   loadOriginalIndicatorKeys,
@@ -102,7 +150,17 @@ export async function extractIocSource(pool, source, deps = {}) {
     }
     const reportScope = await loadReportScopeContext(pool, source.report_id);
 
-    if ((!selected.length || !files.length) && gh) {
+    // Inspection deselected every listed file (all belong to other reports,
+    // or unattributable folder hash lists): never re-list the folder and
+    // ingest them anyway (tl-ioc-source-scope-v3).
+    if (files.length && !selected.length) {
+      await transitionSource(pool, source, 'fail_extract', {
+        error_code: 'campaign_scope_unresolved',
+        error_detail: 'Every file of this source was deselected at inspection (not attributable to this report)'
+      });
+      return { ok: false, code: 'campaign_scope_unresolved' };
+    }
+    if (!files.length && gh) {
       const listing = await enumerateGitHubIocSource(source.canonical_url || source.original_url, deps);
       if (!listing.ok) {
         await transitionSource(pool, source, 'fail_extract', {
@@ -142,6 +200,23 @@ export async function extractIocSource(pool, source, deps = {}) {
             error_detail: `File ${file.path} content hash changed since inspection; re-inspect before extract`
           });
           return { ok: false, code: 'source_content_changed', path: file.path };
+        }
+        // A folder file whose metadata row names another article is another
+        // campaign's inventory, also when the source was never inspected.
+        const backlinkScope = gh?.kind === 'dir' ? inventoryBacklinkScope(fetched.body, file.path, reportScope) : null;
+        if (backlinkScope?.verdict === 'other_report') {
+          parseResults.push({ ok: false, code: 'campaign_backlink_other_report', path: file.path });
+          fileUpdates.push({
+            path: file.path,
+            download_url: url,
+            size_bytes: fetched.bytes,
+            content_sha: fetched.contentHash,
+            content_type: fetched.contentType,
+            selected: false,
+            parse_status: 'skipped',
+            error_detail: `campaign_backlink_other_report: the file names ${backlinkScope.backlink}`
+          });
+          continue;
         }
         const parsed = await parseIocSourceContent({
           body: fetched.body,
@@ -196,7 +271,7 @@ export async function extractIocSource(pool, source, deps = {}) {
       return { ok: false, code: 'no_indicators' };
     }
 
-    let candidates = [...mergedByKey.values()];
+    let candidates = foldSchemeLessLinkedUrls([...mergedByKey.values()], priorRows);
     const matched = await bulkMatchCandidates(pool, candidates);
     candidates = Array.isArray(matched?.candidates) ? matched.candidates : candidates;
 

@@ -83,7 +83,7 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * v13 (reliability observability): check 25 surfaces section-tree → legacy
  * scope-engine fallback so degraded membership semantics are analyst-visible.
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v13';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v14';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -179,7 +179,13 @@ export const QUALITY_CODES = Object.freeze({
    * linear scope engine (check 25). Membership semantics may differ from
    * normal section-tree processing.
    */
-  SCOPE_ENGINE_FALLBACK: 'scope_engine_fallback'
+  SCOPE_ENGINE_FALLBACK: 'scope_engine_fallback',
+  /** Hosts-file sinkhole entries ("0.0.0.0 <host>") in an IOC table kept as context (check 26). */
+  HOSTS_FILE_ENTRIES_CONTEXT: 'hosts_file_entries_context',
+  /** URLs that are truncated copies of a table-listed URL kept as context (check 26). */
+  TRUNCATED_URL_DUPLICATE_CONTEXT: 'truncated_url_duplicate_context',
+  /** Publisher IOC-table rows made Context Only by a benign / provider row stance (check 27). */
+  AUTHORITATIVE_TABLE_ROWS_DEMOTED: 'authoritative_table_rows_demoted'
 });
 
 /** Row / evidence text that asserts network / domain / C2 semantics (check 24). */
@@ -1016,6 +1022,49 @@ export function assessExtractionQuality(input) {
         'were kept as Context Only; the row’s own domain or IP carries the publisher assertion.',
       candidates: resolutionContext.map(identity).sort(),
       block_ids: resolutionContext.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+  // --- 26. Hosts-file sinkhole entries / truncated URL copies kept as context (tl-quality-v14) ---
+  const hostsFileContext = candidates.filter((c) => c.policy_decision === 'context_only_hosts_file_entry');
+  if (hostsFileContext.length) {
+    push({
+      code: QUALITY_CODES.HOSTS_FILE_ENTRIES_CONTEXT,
+      severity: 'info',
+      explanation: `${hostsFileContext.length} host(s) from hosts-file mapping lines ("0.0.0.0 <host>") in an IOC table were kept ` +
+        'as Context Only: the sample blocks them; they are not its infrastructure.',
+      candidates: hostsFileContext.map(identity).sort(),
+      block_ids: hostsFileContext.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+  const truncatedContext = candidates.filter((c) => c.policy_decision === 'context_only_truncated_duplicate');
+  if (truncatedContext.length) {
+    push({
+      code: QUALITY_CODES.TRUNCATED_URL_DUPLICATE_CONTEXT,
+      severity: 'info',
+      explanation: `${truncatedContext.length} URL(s) written outside the IOC tables are truncated copies of a table-listed URL ` +
+        'and were kept as Context Only; the listed URL is the Indicator.',
+      candidates: truncatedContext.map(identity).sort(),
+      block_ids: truncatedContext.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
+    });
+  }
+  // --- 27. Authoritative IOC-table rows demoted by a benign / provider marker (tl-quality-v14) ---
+  // Never promotes anything: it lists publisher table rows whose own row text
+  // made them Context Only, so an analyst can confirm the stance applies to the
+  // value and not, say, to the service hosting it.
+  // Network values only: a hash row that calls its file legitimate is about
+  // that file; a URL / domain row can describe the service hosting it.
+  const demotedRows = modeA ? candidates.filter((c) => !c.__member && c.is_ioc !== false &&
+    ['url', 'domain'].includes(String(c.candidate_type || '')) &&
+    ['context_only_benign_component', 'context_only_provider_service'].includes(String(c.policy_decision || '')) &&
+    (c.occurrences || []).some((o) => o.form === 'table_row' && STRONG_IOC_ZONES.has(String(o.zone || '')))) : [];
+  if (demotedRows.length) {
+    push({
+      code: QUALITY_CODES.AUTHORITATIVE_TABLE_ROWS_DEMOTED,
+      severity: 'info',
+      explanation: `${demotedRows.length} value(s) listed in a publisher IOC table were kept as Context Only because their row ` +
+        'calls them legitimate / a provider service; confirm the stance is about the value itself.',
+      candidates: demotedRows.map(identity).sort(),
+      block_ids: demotedRows.flatMap((c) => (c.occurrences || []).map((o) => o.block_id)).filter(Boolean)
     });
   }
   const referenceMembers = candidates.filter((c) => c.__member &&

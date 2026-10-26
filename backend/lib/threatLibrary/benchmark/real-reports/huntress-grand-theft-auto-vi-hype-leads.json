@@ -1,0 +1,347 @@
+{
+ "id": "real-huntress-grand-theft-auto-vi-hype-leads",
+ "title": "Grand Theft Auto VI hype leads to malware | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "ca0f0842aa2ff63ec19d7d35b5af6874b5dd199974246b78cb8ea5d47a1ad936",
+  "url": "https://www.huntress.com/blog/fake-gta6-download-malware-analysis",
+  "talonhound_report_id": "7119aa96-6912-4314-878a-9b1811b18bd4",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "7.tcp.eu.ngrok.io",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "a0700877.xsph.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "141.8.197.42",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "3.67.15.169",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "3.68.56.232",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "35.157.111.131",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "0e39e8d7b641bcda4376ebbfeff7b12e",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "15eca4a3f7350423cf4db0b4c30d1968",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "2a0834560ed3770fc33d7a42f8229722",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "2a385fe7bed9899d77d05cb8e302d557",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "57b9c56ef97a7ada98257b23577bf5e3",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "60a0f58001ea7be538cd42b651924cc7",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "6b49f24d5d5b49127476bc385565f8b0",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "8da3fe3664d81226b0fb2a50a0537d4f",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "a15e280a3fd65dfaa243bbe2dbf45e97",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "b9648ec8cc806e7661aabcfc91dc836c",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "dfdf5e5b78d2ec764c0e5641cf9a0d26",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "ea991bc9334b36a6b958f564ee716776",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://discord.com/api/webhooks/995445114254139543/NmpxQmuBCD6sm3UkVvupGtx-Y0M_A86oJHp00O-l8F4jakfVhqFXzMBoy1uBDdj2rBLc",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [
+   {
+    "type": "domain",
+    "value": "app.adjust.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "app.adjust.io",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "app-sj01.marketo.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "t.appsflyer.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "analytics.ff.avast.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "analytics.ns1.ff.avast.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "v7event.stats.avcdn.net",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "v7.stats.avcdn.net",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "ads.avocet.io",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "telemetry.battle.net",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "analytics.rollout.io",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "metrics.ol.epicgames.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "a.fiksu.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "sdk.fiksu.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "settings.crashlytics.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "e.crashlytics.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "insights-collector.gog.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "ssl.google-analytics.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "ssl-google-analytics.l.google.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "static.hotjar.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "flow.lavasoft.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "telemetry.servers.getgo.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "telemetry.malwarebytes.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "ws.mcafee.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "analytics.ccs.mcafee.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "analyticsdcs.ccs.mcafee.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "gate.hockeyapp.net",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "api.mixpanel.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "decide.mixpanel.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "ads.mopub.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "incoming.telemetry.mozilla.org",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "h.online-metrix.net",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "analytics.paddle.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "treasuredata.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "in.treasuredata.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "redshell.io",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "api.redshell.io",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "carcharodon.trendmicro.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "cdn.segment.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "api.segment.io",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   },
+   {
+    "type": "domain",
+    "value": "mobile-service.segment.com",
+    "rationale": "Hosts-file sinkhole entry written by DCRAT ('0.0.0.0 <host>', row 'Entries added to the host file by DCRAT'): a blocked vendor telemetry host, not attacker infrastructure; absent from the publisher's own GTA6 IOC CSV"
+   }
+  ],
+  "not_indicators": [],
+  "ambiguous": [
+   {
+    "type": "md5",
+    "value": "1ec9eff863dc4418d1498bc3d904899d",
+    "rationale": "IOC-table row Yandex web browser (%TEMP%\\YandexPackLoader.exe): possibly the genuine Yandex installer dropped by the ISO; analyst decision (Context Only vs Indicator)"
+   }
+  ],
+  "sections": []
+ }
+}

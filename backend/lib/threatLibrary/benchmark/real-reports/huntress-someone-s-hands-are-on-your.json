@@ -1,0 +1,95 @@
+{
+ "id": "real-huntress-someone-s-hands-are-on-your",
+ "title": "Someone's Hands Are on Your Keyboard Then Your Whole Network. Courtesy of ClickFix, Potemkin, RMMProject and EtherRAT",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "c4c8fbd5517aaef55b3d9cd113a4ed213881af757ebeba7c25b7b7bb3d17344e",
+  "url": "https://www.huntress.com/blog/potemkin-loader-rmmproject-clickfix-attack",
+  "talonhound_report_id": "00b43721-06a6-4d2d-a889-b20ad2ffee29",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "anus-staylard.xyz",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cl.distritovagas.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "resumeacceptable.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "sonra.eutialyson.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "213.165.41.26",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "77.110.122.58",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "2abe5dd3a057fdef935722e50e9251c272d29fd26113187b853a1f9a9cb89d9b",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "2ada24dd6e517f37942b749c2bd57ddd97445e9853002cee70a0bc30d0b0ce3a",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "3b7ae925e2d64522b4f69b56285b05aeca8c5aab5ab46a9c02c4fafb69d881ce",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "79f7b67ce8b39070f3e1c2b90fce0ce84134782a7dedcccc1edac197ee9e089b",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "cd4e5e2c65b1660470d3446539ee68adf5faeece3eaeb46583623be9911ee145",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

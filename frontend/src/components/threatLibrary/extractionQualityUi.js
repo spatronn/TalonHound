@@ -172,6 +172,22 @@ export const QUALITY_CODE_COPY = Object.freeze({
   scope_engine_fallback: {
     title: 'Extraction used emergency legacy scope',
     why: 'Section-tree authority failed for this report, so Indicator membership used the older linear scope engine. Indicators may differ from normal processing — review carefully.'
+  },
+  hosts_file_entries_context: {
+    title: 'Hosts-file entries kept as Context Only',
+    why: 'Hosts from "0.0.0.0 <host>" lines in an IOC table are names the sample blocks in the hosts file, not infrastructure it connects to. They stay Context Only.'
+  },
+  truncated_url_duplicate_context: {
+    title: 'Truncated URL copies kept as Context Only',
+    why: 'A URL written in the analysis is a truncated copy of a URL listed in an IOC table. The listed URL is the Indicator; the copy stays Context Only.'
+  },
+  authoritative_table_rows_demoted: {
+    title: 'IOC-table rows kept as Context Only by their own wording',
+    why: 'URLs or domains listed in a publisher IOC table were kept as Context Only because their row calls them legitimate or a provider service. Confirm the wording is about the value itself, not the service hosting it.'
+  },
+  linked_ioc_source_scope_mismatch: {
+    title: 'Linked IOC Source leads to other reports',
+    why: 'The files behind a linked IOC Source name other articles, or no campaign folder for this report could be confirmed. Verify the publisher link before extracting or dismissing the source.'
   }
 });
 

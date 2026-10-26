@@ -1,0 +1,175 @@
+{
+ "id": "real-huntress-inside-fakeagent-how-a-claude-desktop",
+ "title": "Inside FakeAgent: How a Claude Desktop Malvertising Campaign Hit 29 Organizations with SectopRAT | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "6e124851058fa0178feb0c54f422f60797c347e70985ab508a39db24c0485c48",
+  "url": "https://www.huntress.com/blog/fakeagent-claude-desktop-malvertising-ends-in-dotnet-rat",
+  "talonhound_report_id": "418f827a-418a-4847-9a60-860fde4e6f60",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "5ca8758c-02d0-4a72-89c8-d468b66dda41.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "download-app.us",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "104.194.133.210",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.17.143",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.20.32",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.20.95",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.21.86",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.22.118",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.24.255",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.24.67",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "107.189.26.86",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "191.101.80.211",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "195.110.58.222",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "2.24.131.246",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.114.190",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.117.145",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.117.67",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.122.134",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.122.235",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.122.82",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.123.122",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.124.17",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.59.125.228",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "1cd58cfba596da296ab1878d74023e00c399345a1b6c2a0e5446c53563f4e3bb",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "1fe3646d27d286db8123297e06ae7badf3e26f352a04f91b6d82c28869a91664",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "26bae4d7012bf59847ab4036a065419c3d4ca47e020479f55b3b2c6d0d21394a",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "claude.ai/public/artifacts/ca456f1f-44c0-42af-b329-4f1c7534a877",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

@@ -1,0 +1,170 @@
+{
+ "id": "real-huntress-post-def-con-phishing-uses-malicious",
+ "title": "Post-DEF CON Phishing Uses Malicious Google Doc to Deliver Malware | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "6a7a6236f285d6d0173298adc0e73f1770c85b4516e1d137a500f122e7d43fb1",
+  "url": "https://www.huntress.com/blog/defcon-phishing-google-doc-malware",
+  "talonhound_report_id": "72b95668-96ab-4043-8111-d51f87dce019",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Linked CSV huntresslabs/threat-intel 2026-08/20260819_google-maldoc-defcon-targets.csv adds 67 source-only values (57 sha256, 7 domains, 3 URLs); not scored here (primary document only)."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "apple-googleapi.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "apple.eu03hub.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "microsoft.eu02hub.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "msedgewebview1.pro",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "msedgewebview2.pro",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "192.253.248.181",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "86.54.25.213",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "87.120.104.88",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "281f1d9e0638517ac90d61e47fd8be60",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "6dd77235aaa99153ad790b5e59b49372",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "8ca79bd95f73a7f984b95e487dc1552b",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "cd08e22dbfe032d15b54217f4f4ed350",
+    "assertion": "explicit"
+   },
+   {
+    "type": "md5",
+    "value": "f4769ba9e8065727ef26cca72e894f83",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "15afe14b5db2896d35a0c4f3139db85158da120fa90613c975c88f10bbbcc420",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "docsend.com/view/evdfym2aj5tend76",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "eu03hub.com/get_file?file=2Ec6QYynajHw",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "eu03hub.com/get_file?file=qV06ev1a1pOY",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "eu03hub.com/get_file?file=T3YxekrHsgfaDdXY",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "github.com/ariasalmonterachel13/gapi/releases",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://1foqo.lat/core4",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://2fksf.lat/res10.php",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://2fksf.lat/res11.php",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://3pqow.lat/res12.php",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://docsend.online/download/drivers",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://docsend.web12api.com/api/launcher/start",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "signow.web12api.com/api/launcher/start",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

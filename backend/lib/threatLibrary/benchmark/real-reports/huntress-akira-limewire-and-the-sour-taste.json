@@ -1,0 +1,45 @@
+{
+ "id": "real-huntress-akira-limewire-and-the-sour-taste",
+ "title": "Akira, LimeWire, and the Sour Taste of Data Exfiltration | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "5ed24bc936f0c49b2f0b3411e21045b0ff61cebb272b1a984d34aeddb5f26e8c",
+  "url": "https://www.huntress.com/blog/akira-ransomware-limewire-data-exfiltration",
+  "talonhound_report_id": "0622cef0-f844-4a0b-994f-9f5f1a2c3bdf",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "sha256",
+    "value": "131877a052f62750d815cf55d4c14f606a26025e3094e1b8bb18bd1668e3beaa",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

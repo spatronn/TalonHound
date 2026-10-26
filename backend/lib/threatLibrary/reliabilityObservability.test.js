@@ -139,7 +139,7 @@ test('scope-engine fallback records diagnostics and emits analyst-visible qualit
     sourceHost: 'vendor.example',
     documentMeta: doc.meta
   });
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v13');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v14');
   assert.ok(
     quality.warnings.some((w) => w.code === QUALITY_CODES.SCOPE_ENGINE_FALLBACK),
     quality.warnings.map((w) => w.code).join(',')
