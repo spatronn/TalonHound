@@ -58,9 +58,9 @@ ${rows.map(([v, d]) => `<tr><td>${v}</td><td>${d}</td></tr>`).join('\n')}
 </tbody></table>`;
 
 test('versions: tl-candidates-v39 / tl-table-v11 / tl-quality-v13', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v11');
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v13');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v40');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v12');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v14');
   assert.equal(isFilenameDomainCollisionSuffix('back.pl'), true);
   assert.equal(isFilenameDomainCollisionSuffix('tool.py'), true);
   assert.equal(isFilenameDomainCollisionSuffix('throughoutes.net'), false);

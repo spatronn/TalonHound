@@ -1,0 +1,90 @@
+{
+ "id": "real-huntress-service-agreement-email-kickstarts-rogue-rmm",
+ "title": "“Service Agreement” Email Kickstarts Rogue RMM Tiflux Triple Threat",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "ad780032fa6fd3c666d65b4b33e60b54c35e905f8bd36700e35023725f34c681",
+  "url": "https://www.huntress.com/blog/tiflux-rmm-install",
+  "talonhound_report_id": "c3b59a4d-fe58-4426-82b5-fc5af4ebaf92",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "anythinghere.woremix.icu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "lenwillfilenetwork.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "shankar.woremix.icu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "84.54.33.192",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "0b95524e5b00688f7f5efe56a74b93985feb2152d9336d44ca7a8dd9ca25d2d5",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "87074c1bfd071fc47410a52af863e9ca62b2b85950c4cf643a220f0ea5717952",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "f792d82e4472c001852998a3575e492907f38daa8d58ecdb3b3604b38d7b8a07",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "http://84.54.33.192:8040/Bin/ScreenConnect.ClientSetup.msi",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://anythinghere.woremix.icu/Viewfiles/download.php",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://lenwillfilenetwork.com/downloads/Network%20Solutions%20Agreement.msi",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

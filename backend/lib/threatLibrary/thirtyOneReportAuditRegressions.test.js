@@ -78,14 +78,14 @@ const members = (x) => x.candidates.filter((c) => isReportIndicatorMember(persis
 const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(persisted(c)));
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v40');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v8');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v16');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v8');
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v13');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v17');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v9');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v14');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');
-  assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v2');
+  assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v3');
 });
 
 // --- RC-1 -----------------------------------------------------------------------
@@ -413,7 +413,8 @@ test('RC-10. a repository root is never enumerated; the campaign folder is resol
 
 test('RC-10. an un-ingested publisher pack overlays a quality warning at read time', () => {
   const summary = summarizeLinkedIocSources([{ lifecycle_status: 'discovered' }, { lifecycle_status: 'extracted' }, { lifecycle_status: 'dismissed' }]);
-  assert.deepEqual(summary, { declared: 2, extracted: 1, pending: 1, unresolved: 0, dismissed: 1 });
+  // scope_mismatch: tl-ioc-source-scope-v3 (sources leading to other reports).
+  assert.deepEqual(summary, { declared: 2, extracted: 1, pending: 1, unresolved: 0, dismissed: 1, scope_mismatch: 0 });
   const q = withLinkedSourceQuality({ status: 'clean', counts: { high: 0, warning: 0, info: 0 }, warnings: [] }, summary);
   assert.equal(q.status, 'warning');
   assert.equal(q.warnings[0].code, LINKED_SOURCE_NOT_INGESTED_CODE);

@@ -278,6 +278,41 @@ function declaresIndicatorSection(blocks, i, chromeIds) {
   return false;
 }
 
+/**
+ * Short heading that names an indicator class ("Network", "Network
+ * indicators", "Host and file-system artifacts", "File hashes (SHA-256)",
+ * "Domains"): the label of one group of a publisher IOC inventory.
+ */
+const INDICATOR_CLASS_LABEL_RE =
+  /^(?:network|host|file|e-?mail|registry|endpoint|infrastructure|domains?|ips?|ip\s+addresses|urls?|hash(?:es)?|samples?|c2|servers?)\b/i;
+
+function isIndicatorClassLabel(t) {
+  const s = String(t || '').trim();
+  return s.length > 0 && s.length <= 60 && INDICATOR_CLASS_LABEL_RE.test(s) && !/[.!?。]$/.test(s);
+}
+
+/**
+ * The IOC heading at `i` holds only lead-in prose ("Network indicators and file
+ * hashes are provided below.") — no observable inventory — and the next real
+ * heading, at the same level, is an indicator-class label. The publisher's
+ * groups were written as sibling headings of the IOC heading, not children
+ * (tl-section-tree-v9).
+ */
+function leadInWithSiblingGroups(blocks, i, chromeIds, level) {
+  let prose = 0;
+  for (let j = i + 1; j < blocks.length; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') {
+      return prose <= 3 && Number.isInteger(b.level) && b.level === level && isIndicatorClassLabel(textOf(b)) &&
+        lookAheadInventory(blocks, j, chromeIds);
+    }
+    if (hasObservableInventory(b) || b.type === 'table' || b.type === 'list' || b.type === 'list_item') return false;
+    prose += 1;
+  }
+  return false;
+}
+
 function nearestAuthoritative(stack) {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     if (stack[i].authoritative && AUTHORITATIVE.has(stack[i].zone)) return stack[i];
@@ -384,7 +419,15 @@ export function annotateSectionTree(doc, opts = {}) {
     // the following blocks look like URL "inventory" (citation lists).
     let treatAsSubgroup = false;
     const isNegativeHeading = Boolean(zone && NEGATIVE_ZONES.has(zone));
-    if (parentAuth && !isNegativeHeading) {
+    // Same-level indicator-class siblings of a lead-in-only IOC heading
+    // continue its inventory; the first other heading closes it.
+    const siblingGroup =
+      Boolean(parentAuth?.siblingGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
+      Number.isInteger(b.level) && b.level === parentAuth.level && isIndicatorClassLabel(t) && inventoryNext;
+    if (siblingGroup) {
+      treatAsSubgroup = true;
+      pushTrace({ block_id: b.id, decision: 'continue_lead_in_sibling_group', zone: parentAuth.zone, opened_by: parentAuth.id });
+    } else if (parentAuth && !isNegativeHeading) {
       const deeper =
         Number.isInteger(b.level) &&
         Number.isInteger(parentAuth.level) &&
@@ -530,7 +573,12 @@ export function annotateSectionTree(doc, opts = {}) {
       authoritative: Boolean(effectiveZone && AUTHORITATIVE.has(effectiveZone)),
       synthetic: !isRealHeading,
       // Subgroups nested in a declared indicator section keep its reading.
-      declared: role === 'declared_indicator_section' || (inheritAuth && parentAuth?.declared === true)
+      declared: role === 'declared_indicator_section' || (inheritAuth && parentAuth?.declared === true),
+      // Lead-in-only IOC heading whose groups follow as same-level siblings.
+      siblingGroups: siblingGroup
+        ? true
+        : opensAuthoritativeZone && isRealHeading && !inferredLevels && zone === 'explicit_ioc_section' &&
+          leadInWithSiblingGroups(blocks, i, chromeIds, level)
     };
     stack.push(node);
     if (node.authoritative) {

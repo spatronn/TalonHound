@@ -78,7 +78,7 @@ function embeddedAbsoluteUrl(token) {
  * publisher-asserted domain (`evil[.]net` / “Domain contacted…”) merely because
  * sibling Item-column cells are filenames.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v11';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v12';
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -120,7 +120,8 @@ const HEADER_HINTS = Object.freeze({
 const DECLARED_TYPE_HINTS = Object.freeze([
   { type: 'sha256', re: /sha[\s_-]?256/ },
   { type: 'sha1', re: /sha[\s_-]?1(?![0-9])/ },
-  { type: 'md5', re: /\bmd5\b/ },
+  // Plural labels ("MD5s:", "SHA256s:") name the same digest type (tl-table-v12).
+  { type: 'md5', re: /\bmd5s?\b/ },
   { type: 'hash', re: /(?:^|\b)(?:hash|hashes|file\s*hash|karma|özet|ozet|哈希|散列|хеш|хэш)(?:\b|$)/ },
   { type: 'ipv6', re: /\bipv6\b/ },
   { type: 'ip', re: /(?:^|\b)(?:ip|ipv4|ip\s*address(?:es)?|ip\s*addr|ip\s*adresi|ip\s*adresleri|ip地址|ip\s*адрес|dirección\s*ip|adresse\s*ip|endereço\s*ip)(?:\b|$)/ },
@@ -138,6 +139,8 @@ const NEGATIVE_TABLE_CONTEXT_RE =
   /\b(?:victim|victims|target|targets|targeted|affected|impacted|patched|fixed|remediat|mitigat|hunting|scanned|customer|customers|internal|kurban|hedef|etkilenen|受害|目标|受影响|修复)\b/i;
 
 const HASH_DECLARED_TYPES = new Set(['md5', 'sha1', 'sha256', 'hash']);
+/** Candidate types of a file digest value. */
+const DIGEST_CANDIDATE_TYPES = new Set(['md5', 'sha1', 'sha256']);
 
 /** Header labels that name a file / component column (not an IOC value column). */
 const FILE_NAME_HEADER_RE =
@@ -285,6 +288,14 @@ function hintForDeclared(declared) {
 }
 
 const IPV4_PORT_CELL_RE = /^((?:\d{1,3}\.){3}\d{1,3})[:：](\d{1,5})$/;
+/**
+ * A DNS name with a port ("7.tcp.eu.ngrok.io:12684", "c2.example:688"): the
+ * host is the observable (a domain IOC); the port is kept on the occurrence
+ * like an ip:port endpoint (tl-table-v12). TalonHound has no endpoint IOC
+ * type, so the pair is never invented as one. The host still goes through
+ * the dotted-token typing gate (a file name with ":1234" stays a file name).
+ */
+const HOST_PORT_CELL_RE = /^((?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63})[:：](\d{1,5})$/i;
 /** DNS identity shape: labels + alphabetic TLD (version strings like 7.4.8 never qualify). */
 const DOMAIN_SHAPE_RE = /^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63}\.?$/i;
 const CELL_TOKEN_SPLIT_RE = /[\s,;，；|]+/;
@@ -302,7 +313,7 @@ function parseToken(token, declared, ctx = {}) {
   if (!isIPv6(t)) t = t.replace(TRAILING_PUNCT_RE, '');
   if (!t) return null;
   let port = null;
-  const ep = t.match(IPV4_PORT_CELL_RE);
+  const ep = t.match(IPV4_PORT_CELL_RE) || t.match(HOST_PORT_CELL_RE);
   if (ep) {
     const p = Number(ep[2]);
     if (Number.isFinite(p) && p >= 1 && p <= 65535) {
@@ -461,6 +472,7 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
       rejected.push(parsed);
     }
   }
+  markHostsFileEntries(refangedTokens, values);
   // A file identity listed with its own hash(es) in one cell: link them.
   const fileIds = values.filter((v) => v.is_ioc === false && NON_NETWORK_RESOLVED_TYPES.has(v.candidate_type));
   const iocIds = values.filter((v) => v.is_ioc !== false);
@@ -470,6 +482,34 @@ export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
     for (const v of values) v.cell_companions = v === fileIds[0] ? companions : iocIds.includes(v) ? [fileIdentity] : v.cell_companions;
   }
   return { values, rejected, reason: values.length ? null : 'no_observable' };
+}
+
+/** Sinkhole targets of a hosts-file mapping line ("0.0.0.0 host", "127.0.0.1 host"). */
+const HOSTS_FILE_SINK_RE = /^(?:0\.0\.0\.0|127\.0\.0\.1|::1?|0:0:0:0:0:0:0:[01])$/;
+
+/**
+ * A cell made only of hosts-file mapping lines — "<sinkhole> <hostname>"
+ * pairs, at least two — lists entries a sample wrote to the hosts file to
+ * block those names (security-vendor telemetry, update servers). The names
+ * are the sample's victims, not its infrastructure: each is marked
+ * `hosts_file_entry` and kept as row context, never as a network Indicator
+ * (tl-table-v12). A cell that mixes such pairs with any other value is left
+ * alone. Mutates `values`.
+ * @param {string[]} tokens refanged cell tokens
+ * @param {object[]} values parsed values of the cell
+ */
+function markHostsFileEntries(tokens, values) {
+  if (tokens.length < 4 || tokens.length % 2 !== 0) return;
+  const hosts = new Set();
+  for (let i = 0; i < tokens.length; i += 2) {
+    if (!HOSTS_FILE_SINK_RE.test(tokens[i])) return;
+    const host = String(tokens[i + 1] || '').toLowerCase();
+    if (!DOMAIN_SHAPE_RE.test(host) || HOSTS_FILE_SINK_RE.test(host)) return;
+    hosts.add(host);
+  }
+  for (const v of values) {
+    if (v.candidate_type === 'domain' && hosts.has(String(v.normalized_value).toLowerCase())) v.hosts_file_entry = true;
+  }
 }
 
 /** Brackets / quotes wrapping a token inside a mixed cell ("(SHA-256", "<hash>)"). */
@@ -556,16 +596,42 @@ function decomposeMixedCell(refanged, whole, declared, ctx) {
     // ("conhost.exe client 192.0.2.5:443 …") — is a value of the cell
     // (tl-table-v9). A bare host merely named in prose is still only reported.
     const endpoints = [];
+    // A digest the cell itself labels ("… MD5: <h>", "SHA256s: <h1> <h2>", or a
+    // hash-typed column) is a value of the cell even when another part of the
+    // remainder — a path with spaces, "[RANDOM FILE NAME].exe" — cannot be
+    // parsed: one unreadable token never discards the row's hashes
+    // (tl-table-v12). Unlabelled digests in prose stay reported only.
+    let digestLabelled = Boolean(declared && HASH_DECLARED_TYPES.has(declared.type));
     for (const rawTok of residual.split(CELL_TOKEN_SPLIT_RE).filter(Boolean)) {
       const tok = rawTok.replace(WRAPPING_PUNCT_RE, '');
-      const p = tok ? parseToken(tok, null, ctx) : null;
+      if (!tok) continue;
+      if (isInlineTypeLabelToken(rawTok) || isBareTypeLabelToken(tok)) {
+        const label = parseDeclaredType(tok.replace(/[:：]+$/, ''));
+        if (label && HASH_DECLARED_TYPES.has(label.type)) digestLabelled = true;
+        continue;
+      }
+      const p = parseToken(tok, null, ctx);
       if (!p?.ok || p.is_ioc === false) continue;
-      if (!((p.candidate_type === 'ip' && p.port != null) || p.candidate_type === 'url')) continue;
+      const endpoint = (p.candidate_type === 'ip' && p.port != null) || p.candidate_type === 'url';
+      const digest = digestLabelled && DIGEST_CANDIDATE_TYPES.has(p.candidate_type);
+      if (!endpoint && !digest) continue;
       if (endpoints.some((e) => e.candidate_type === p.candidate_type && e.normalized_value === p.normalized_value)) continue;
-      endpoints.push({ ...p, raw: tok, residual_endpoint: true });
+      endpoints.push({ ...p, raw: tok, ...(digest ? { residual_digest: true } : { residual_endpoint: true }) });
+    }
+    const digests = endpoints.filter((e) => e.residual_digest);
+    if (digests.length) {
+      // The leading file identity owns the labelled digests, as in a clean cell.
+      const fileId = `${whole.candidate_type}:${whole.normalized_value}`;
+      for (const d of digests) d.cell_companions = [fileId];
     }
     return {
-      values: [{ ...whole, raw: head, cell_residual: residual.slice(0, 160), residual_observables: residualObservables.length ? residualObservables : undefined }, ...endpoints],
+      values: [{
+        ...whole,
+        raw: head,
+        cell_residual: residual.slice(0, 160),
+        residual_observables: residualObservables.length ? residualObservables : undefined,
+        ...(digests.length ? { cell_companions: digests.map(idOf) } : {})
+      }, ...endpoints],
       rejected: [],
       reason: null,
       decomposition: { mixed: true, recovered: 0, residual_unparsed: true, residual_observables: residualObservables }

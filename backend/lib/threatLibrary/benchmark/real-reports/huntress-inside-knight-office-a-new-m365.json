@@ -1,0 +1,180 @@
+{
+ "id": "real-huntress-inside-knight-office-a-new-m365",
+ "title": "Inside Knight Office, a New M365 AiTM Phishing Kit | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "59dd9035587ec5a74abc522d73de662fce1bda87e7e4d9f31bb0ed890fb4e5ca",
+  "url": "https://www.huntress.com/blog/inside-knight-office-m365-aitm-attack",
+  "talonhound_report_id": "c7882e7e-51ba-4607-ba0d-4689c0d2106c",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "advancedplacyncement.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "amstardmzsmc.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "arandasoftzfdware.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "avisoretentiunionllc.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "capitalflwxinancialpartners.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "certififiycationedge.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "connectivnqzityltd.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "crrbcearegroup.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "digitaltrafwwrficsystems.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "exceltecbusinessbwpsolutions.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "genamewwgdiamarketing.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "globaieflsoftinc.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "globalmixeucbdmodetechnologyinc.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "globalprojectspvtltd.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "idoej.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "joinbusinessmanagementconsdjeulting.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "kentmanqhfufacturingcompany.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "kleepxrnlinecorporation.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "knsinternacshtional.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "monttmmlrustcompany.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "mtprormtductions.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "realestatecotblrp.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "siottxgroup.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "summitcapitaltrapojininggroup.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "techcompositnkoes.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "techromixsolutionlonsinc.vu",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "104.37.188.94",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "154.127.53.78",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

@@ -1,0 +1,120 @@
+{
+ "id": "real-huntress-bank-of-america-phishing-email-delivers",
+ "title": "Bank of America Phishing Email Delivers ScreenConnect Malware | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "63c685da4fb67fef1b23399d7fa8111c31369d436ef0708bfc33ea9b890bbde6",
+  "url": "https://www.huntress.com/blog/bank-spam-rmm",
+  "talonhound_report_id": "4e5f0777-367f-43e4-b531-aa067e63ac48",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Sender onlinebanking@ealerts.bkofamerica[.]com is an email address (unsupported type). Linked 2026-07 folder holds an unrelated CSV."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "bkofamerica.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "kleinschnitg.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "sectioncompil.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "217.60.195.167",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "3e404e542ae99eeb8827fa72e74dafeacc9b2a8af463a8e0789d7efb0a2dbfb8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "6d1dae4794a80caac5eee48b6189e49c4146eac123bcb03d585194bf2b2a3f10",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "bd987f9f493a234a74580eba1ab95d2178dd38d06bde7a67b991064e09cdc0ee",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "d0913e83d10cadae7af2d737b6c5172638680dfe87d04fa67b509b9c41c0f4bf",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ed9f4c15d2857260ce635aad8024b8abaaa010eb13bb0ac77f3a8c296a3c66f2",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "f580d528759829f62cba577c9126efe6478529f91609451c3a11e483b239e8a4",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://cdn.uploadtourl.com/3b154d8e-61be-4521-b3c3-75efb845a2e2_msi_base64.txt",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://kleinschnitg.com/F3bebOag/?id=email",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://sectioncompil.com/wkudpl/main.php",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://sectioncompil.com/wkudpl/notarize.php",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://sectioncompil.com/wkudpl/windows/download/AccountGuardSetup.zip",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://sectioncompil.com/wkudpl/windows/manage.html",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

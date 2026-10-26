@@ -1,0 +1,105 @@
+{
+ "id": "real-huntress-fake-claude-install-guide-leads-to",
+ "title": "Fake Claude Install Guide Leads to MacSync Stealer and RAT: What We Pulled From the Attacker’s Servers",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "df8b8b413e197baa94c03680571ac6b38ca77b08585e98bfe2ab769397826c4b",
+  "url": "https://www.huntress.com/blog/macsync-stealer-rat-reverse-engineering",
+  "talonhound_report_id": "0cccc229-07da-4c87-b684-3b92faa18682",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Network table under a sibling ## Network heading of a lead-in-only IOC heading. main.sdhomeinspectors.com/modules/wallets is written schemeless in the table and with https:// in the body; the pipeline merges both spellings into one URL identity. Template URLs with <token> placeholders are not concrete observables."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "agenticsora.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "malwareaudit.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "103.216.221.95",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "85.206.161.241",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "071bd109208eb1080ef525b5be394244cec467c59ffef5b8782cfb5e4850401d",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "230dff4bf9442a951dcd6898b2110924969a20668c20a43e3ceed6fcef65963e",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "31566a1df7070f30cb990aa5eab310c1d4e0266c8776e9438138e5438ec1cff8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "3ae26ed89d3a1a140edc89ca78513aba2895789ed0d0f64cad6605b6f2347c7e",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "3db8befc08dc02ab7a76b5193abd81653775e8f3ceac5864c7c2188b2dbd3c54",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "78dea0693ac2d70bdf8be7588667a75910e43fd84397ad484e710e37369a30f7",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "9c09c303fa058c2d3e179969bd58ca5523775ff2d310fb2f8266ac74cb21ee81",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://main.sdhomeinspectors.com/modules/wallets",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "main.southcarolinacounselor.com/modules/wallets",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

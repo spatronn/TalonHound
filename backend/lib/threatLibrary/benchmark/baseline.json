@@ -1,12 +1,12 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v38",
+    "candidates": "tl-candidates-v40",
     "zones": "tl-zones-v16",
-    "tables": "tl-table-v10",
-    "type_resolver": "tl-type-resolver-v16",
+    "tables": "tl-table-v12",
+    "type_resolver": "tl-type-resolver-v17",
     "html": "threat_library_html_v8",
     "pdf": "threat_library_pdf_v6",
-    "quality": "tl-quality-v11",
+    "quality": "tl-quality-v14",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
@@ -35,7 +35,7 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 27,
+      "info": 29,
       "cases_flagged": 3,
       "exact_cases": 90,
       "exact_cases_flagged": 3,
@@ -516,7 +516,8 @@
       "assertions_correct": 0,
       "assertions_checked": 0,
       "warning_codes": [
-        "authoritative_section_empty"
+        "authoritative_section_empty",
+        "authoritative_table_rows_demoted"
       ]
     },
     "golden-elastic-ref6045-observables": {
@@ -1425,7 +1426,8 @@
       "assertions_correct": 15,
       "assertions_checked": 15,
       "warning_codes": [
-        "authoritative_section_empty"
+        "authoritative_section_empty",
+        "authoritative_table_rows_demoted"
       ]
     },
     "golden-unit42-ai-enabled-malware": {

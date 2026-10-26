@@ -1,0 +1,141 @@
+{
+ "id": "real-huntress-clickfix-removes-your-background-but-leaves",
+ "title": "ClickFix Removes Your Background but Leaves the Malware | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_24_2026_10_26"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "8628b18b00cc9707c8e0af9660f3a79c7357380c34dfd7db6b424a0d78010989",
+  "url": "https://www.huntress.com/blog/clickfix-castleloader-backgroundfix",
+  "talonhound_report_id": "6d797078-826f-4c12-8b70-e9c31cc786af",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-26"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (24-report audit 2026-10-26): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub inventories diffed separately. Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-26)",
+   "verified_at": "2026-10-26",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "ai-scan.digital",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "background-off.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "background-ready.online",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "backgroundformat.online",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "bg-go.online",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "bg-ready.online",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "bg-removerok.online",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "bg-transparency.online",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cheeshomireciple.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "giovettiadv.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "poronto.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "38.146.28.30",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "bde21d8be65d31e1c380f2daae2f73c79f3e1f4bca70fb990db6fdf6c3768c92",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ed391a16389234f9ebb6727711baaf3e068d7f77c465708fa3e8b7d0565d7fb9",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://brionter.com/4ba0af68-0037-5f6e-afd1-64f89fc0f554/net40.bin",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://obelnamevalf.org/OaTS7yE9zd/default",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://trindastal.com/4ba0af68-0037-5f6e-afd1-64f89fc0f554/loc8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://trindastal.com/4ba0af68-0037-5f6e-afd1-64f89fc0f554/v8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://trindastal.com/8250d149-9bf8-566d-9d7d-ea925eae0a4c/",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [
+   {
+    "type": "url",
+    "value": "https://trindastal.com/8250d149-9bf8-566d-9d7d-ea925eae0a4",
+    "rationale": "Publisher typo in a body Configuration and C2 communication line (truncated UUID); the IOC table carries the correct ...ea925eae0a4c/ URL"
+   }
+  ],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

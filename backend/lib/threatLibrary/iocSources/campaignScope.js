@@ -25,7 +25,7 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v2';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v3';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
@@ -354,6 +354,50 @@ export function isReadmePath(path) {
 /** Folder-wide hash lists (ESET `samples.sha256`): unattributable in a multi-campaign folder. */
 export function isFolderHashListPath(path) {
   return /(^|\/)samples?\.(?:md5|sha1|sha256)$/i.test(String(path || ''));
+}
+
+/** Delimited inventories that can carry a metadata row naming their report. */
+const DELIMITED_INVENTORY_PATH_RE = /\.(?:csv|tsv|txt)$/i;
+/**
+ * A metadata row at the head of a delimited IOC inventory that names the
+ * article the file belongs to: `description,https://publisher/blog/x,…`,
+ * `report: https://…`, `source<TAB>https://…`. A data row of type `url` is
+ * never a back-link.
+ */
+const INVENTORY_BACKLINK_ROW_RE =
+  /^\s*["']?(?:description|report|source|reference|blog|article|publication)["']?\s*[,;:\t|]\s*["']?(https?:\/\/[^\s,;"'|]+)/i;
+
+/**
+ * The report URL a delimited inventory declares in its own metadata rows
+ * (first 8 non-empty lines), or null (tl-ioc-source-scope-v3).
+ * @param {string} body
+ * @param {string|null} path
+ * @returns {string|null}
+ */
+export function inventoryReportBacklink(body, path) {
+  if (path && !DELIMITED_INVENTORY_PATH_RE.test(String(path))) return null;
+  const lines = String(body || '').replace(/^﻿/, '').split(/\r?\n/).filter((l) => l.trim()).slice(0, 8);
+  for (const line of lines) {
+    const m = INVENTORY_BACKLINK_ROW_RE.exec(line);
+    if (m) return m[1].replace(/[.,;:)]+$/, '');
+  }
+  return null;
+}
+
+/**
+ * Scope verdict of one inventory file against the report: `matches` when the
+ * file's back-link is this report, `other_report` when it names a different
+ * article (another campaign of a shared folder), `undeclared` without one.
+ * @param {string} body
+ * @param {string|null} path
+ * @param {{ reportUrl?: string|null }} report
+ * @returns {{ verdict: 'matches'|'other_report'|'undeclared', backlink: string|null }}
+ */
+export function inventoryBacklinkScope(body, path, report = {}) {
+  const backlink = inventoryReportBacklink(body, path);
+  if (!backlink) return { verdict: 'undeclared', backlink: null };
+  if (!report.reportUrl) return { verdict: 'undeclared', backlink };
+  return { verdict: linksReport(backlink, report.reportUrl) ? 'matches' : 'other_report', backlink };
 }
 
 /**

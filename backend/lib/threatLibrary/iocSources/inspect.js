@@ -4,7 +4,13 @@
 
 import { pdfToCanonicalDocument } from '../pdfIngest.js';
 import { enumerateGitHubIocSource, gitHubFolderUrl, gitHubScopeIo, parseGitHubUrl } from './github.js';
-import { IOC_SOURCE_SCOPE_VERSION, isFolderHashListPath, isReadmePath, resolveGitHubCampaignFolder } from './campaignScope.js';
+import {
+  IOC_SOURCE_SCOPE_VERSION,
+  inventoryBacklinkScope,
+  isFolderHashListPath,
+  isReadmePath,
+  resolveGitHubCampaignFolder
+} from './campaignScope.js';
 import { BLOCKING_FETCH_CODES, fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fetchSafe.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
 import {
@@ -53,23 +59,38 @@ export async function loadReportScopeContext(pool, reportId) {
 }
 
 /**
- * Folder files to ingest under campaign scope: when the folder README is a
- * multi-campaign index, folder-wide hash lists cannot be attributed to this
- * report and are deselected (kept listed with the reason).
+ * Folder files to ingest under campaign scope (kept listed with the reason
+ * when deselected):
+ * - when the folder README is a multi-campaign index, folder-wide hash lists
+ *   cannot be attributed to this report;
+ * - an inventory whose own metadata row names a DIFFERENT article
+ *   (`description,https://publisher/blog/other-post`) belongs to another
+ *   campaign of a shared folder, such as a month directory
+ *   (tl-ioc-source-scope-v3).
  * @param {object[]} fileRows
  * @param {object[]} parseResults
  */
 export function applyCampaignFileSelection(fileRows, parseResults) {
   const multi = parseResults.some((r) => isReadmePath(r.path || '') && r.scope?.multi_campaign === true);
-  if (!multi) return { fileRows, parseResults, deselected: [] };
+  const backlinkByPath = new Map(parseResults.filter((r) => r.backlink_scope).map((r) => [r.path, r.backlink_scope]));
   const deselected = [];
+  const otherReport = [];
   const rows = fileRows.map((f) => {
-    if (!isFolderHashListPath(f.path)) return f;
-    deselected.push(f.path);
-    return { ...f, selected: false, parse_status: 'skipped', error_detail: 'multi_campaign_folder_hash_list: not attributable to this report' };
+    const scope = backlinkByPath.get(f.path);
+    if (scope?.verdict === 'other_report') {
+      deselected.push(f.path);
+      otherReport.push({ path: f.path, backlink: scope.backlink });
+      return { ...f, selected: false, parse_status: 'skipped', error_detail: `campaign_backlink_other_report: the file names ${scope.backlink}` };
+    }
+    if (multi && isFolderHashListPath(f.path)) {
+      deselected.push(f.path);
+      return { ...f, selected: false, parse_status: 'skipped', error_detail: 'multi_campaign_folder_hash_list: not attributable to this report' };
+    }
+    return f;
   });
+  if (!deselected.length) return { fileRows, parseResults, deselected, otherReport };
   const results = parseResults.filter((r) => !deselected.includes(r.path));
-  return { fileRows: rows, parseResults: results, deselected };
+  return { fileRows: rows, parseResults: results, deselected, otherReport };
 }
 
 /**
@@ -158,7 +179,9 @@ export async function inspectIocSource(pool, source, deps = {}) {
             pdfToDocument: pdfToCanonicalDocument,
             reportScope
           });
-          parseResults.push({ ...parsed, path: file.path });
+          // The inventory's own metadata row says which article it belongs to.
+          const backlinkScope = gh.kind === 'dir' ? inventoryBacklinkScope(fetched.body, file.path, reportScope) : null;
+          parseResults.push({ ...parsed, path: file.path, ...(backlinkScope ? { backlink_scope: backlinkScope } : {}) });
           fileRows.push({
             ...file,
             // Persist sha256 of fetched bytes for extract-time drift detection.
@@ -202,22 +225,30 @@ export async function inspectIocSource(pool, source, deps = {}) {
           version: IOC_SOURCE_SCOPE_VERSION,
           ...(resolvedScope || {}),
           ...(readme?.scope ? { readme: readme.scope } : {}),
-          ...(scoped.deselected.length ? { deselected_files: scoped.deselected } : {})
+          ...(scoped.deselected.length ? { deselected_files: scoped.deselected } : {}),
+          ...(scoped.otherReport?.length ? { other_report_files: scoped.otherReport } : {})
         },
         // Keep original branch/tag alongside resolved commit SHA in repo_revision.
         ...(listing.repo_ref ? { repo_ref: listing.repo_ref } : {})
       };
 
       if (!scoped.fileRows.some((f) => f.parse_status === 'ok' && f.selected !== false)) {
+        // Every parsable file declares another article: the folder holds no
+        // inventory of this report (wrong / shared folder link).
+        const onlyOtherReports = (scoped.otherReport?.length || 0) > 0 &&
+          !scoped.fileRows.some((f) => f.parse_status === 'ok' && f.selected !== false);
+        const code = onlyOtherReports ? 'campaign_scope_unresolved' : 'no_parsable_files';
         await transitionSource(pool, source, 'unsupported', {
           preview,
           source_type: listing.source_type,
           content_hash: listing.content_hash || null,
           repo_revision: listing.repo_revision || null,
-          error_code: 'no_parsable_files',
-          error_detail: 'No eligible files could be parsed for IOC preview'
+          error_code: code,
+          error_detail: onlyOtherReports
+            ? 'Folder inventories belong to other reports (their metadata rows link other articles); none is attributable to this report'
+            : 'No eligible files could be parsed for IOC preview'
         });
-        return { ok: false, code: 'no_parsable_files', preview };
+        return { ok: false, code, preview };
       }
 
       const updated = await transitionSource(pool, source, 'finish_inspect', {

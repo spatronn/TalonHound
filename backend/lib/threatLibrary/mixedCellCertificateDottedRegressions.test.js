@@ -50,9 +50,9 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contracts bumped for the six-report audit fixes', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v39');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v11');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v16');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v40');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v12');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v17');
 });
 
 // --- 1. Mixed cells -----------------------------------------------------------
@@ -109,10 +109,16 @@ test('mixed cell: a multi-pair cell links each hash to the file identity written
   ]);
 });
 
-test('mixed cell: an unquoted path with spaces is not split into a bogus second file; its hash is reported', () => {
+test('mixed cell: an unquoted path with spaces is not split into a bogus second file; its labelled hash is a value', () => {
   const r = parseIndicatorCell(`${winPath('C:', 'Program Files', 'Vendor', 'app.exe')} SHA256: ${H1}`);
-  assert.equal(r.values.length, 1, 'no fragment artifact');
+  // tl-table-v12 (24-report audit): one unreadable path fragment no longer
+  // discards the hash the cell labels — it is a value of the cell, owned by
+  // the leading file identity. Still no fragment artifact.
+  assert.equal(r.values.filter((v) => v.is_ioc === false).length, 1, 'no fragment artifact');
   assert.deepEqual(r.values[0].residual_observables, [`sha256:${H1}`]);
+  const hash = r.values.find((v) => v.candidate_type === 'sha256');
+  assert.equal(hash?.normalized_value, H1);
+  assert.deepEqual(hash.cell_companions, [`${r.values[0].candidate_type}:${r.values[0].normalized_value}`]);
 });
 
 test('appendix table with path-first and name-first hash cells: hashes are Indicators, files are Context Only, no duplicates', () => {

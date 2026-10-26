@@ -166,8 +166,10 @@ const REPORTING_CONTACT_RE =
  * "Indicators suggest a Chinese origin") does not match: the concept must lead
  * and be closed by punctuation, "of", or the end of the heading.
  */
+// Inventory-grade qualifiers ("Primary IOCs", "Full Indicators of Compromise",
+// "Supplementary IOCs") are part of the closed list (tl-section-tree-v9).
 const INDICATOR_HEAD_RE =
-  /^(?:(?:host|network|file|atomic|additional|other|related|technical|known|key|observed|associated|new|example|selected|listed|sample|ağ|dosya|ek)\s+)?(?:indicators?|iocs?|göstergeler|indicadores|威胁指标|妥协指标)\s*(?:[:：\-–—|(\[（]|of\b|$)/i;
+  /^(?:(?:host|network|file|atomic|additional|other|related|technical|known|key|observed|associated|new|example|selected|listed|sample|primary|secondary|main|core|full|complete|confirmed|extended|supplementary|supplemental|notable|ağ|dosya|ek)\s+)?(?:indicators?|iocs?|göstergeler|indicadores|威胁指标|妥协指标)\s*(?:[:：\-–—|(\[（]|of\b|$)/i;
 
 /**
  * Classify a heading as an indicator-section declaration, with its form.
@@ -351,6 +353,15 @@ const BENIGN_COMPONENT_RE =
   /\b(?:legitimate|legit|benign|genuine|clean|non-malicious|not\s+malicious|official(?:ly)?\s+signed|digitally\s+signed|signed\s+by|trusted\s+(?:binary|component|executable|application|program|file))\b/i;
 const BENIGN_NEGATION_RE =
   /\b(?:malicious|malware|trojan\w*|backdoor\w*|implant|fake|fraudulent|masquerad\w*|impersonat\w*|spoof\w*|disguis\w*|mimic\w*|look-?alike|typo-?squat\w*|legitimate[- ]looking|appears?\s+(?:to\s+be\s+)?legitimate|looks?\s+legitimate|abus\w*|hijack\w*|weaponi[sz]\w*|tamper\w*|modified|patched|compromised|infected|side-?load\w*|payload|loader|dropper)\b/i;
+
+/**
+ * A structural IOC row that names its own value a lure / phishing / decoy
+ * resource ("<url> | Lure link on legitimate dropbox service") asserts that
+ * resource, whatever the row says about the service hosting it
+ * (tl-candidates-v40). Rows only — in prose a lure is often the attacker's
+ * page while "the legitimate <site>" is where the victim signs in.
+ */
+const ROW_MALICIOUS_RESOURCE_RE = /\b(?:lures?|phish\w*|decoys?)\b/i;
 
 /**
  * Publisher stance that the value is not itself malicious: hedged negation
@@ -1151,7 +1162,7 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // <Vendor> executable") lists it for context — the side-loading
     // host beside the malicious DLL — not as an Indicator. Any maliciousness
     // or abuse cue in the same row window keeps the row assertion.
-    if (structuralRow && form !== 'ip_port' && describesBenignComponent(full)) {
+    if (structuralRow && form !== 'ip_port' && !ROW_MALICIOUS_RESOURCE_RE.test(full) && describesBenignComponent(full)) {
       return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
     }
     // A table row that states outright that its subject is not malicious
@@ -1366,9 +1377,11 @@ export function attachOccurrenceRelations(candidate) {
   for (const o of occ) {
     // A table reference / prose cell that did not assert the value is row
     // context: no relation, no assertion (tl-candidates-v37).
-    if (o.reference_cell === true || o.description_cell === true) {
+    if (o.reference_cell === true || o.description_cell === true || o.hosts_file_entry === true || o.truncated_duplicate === true) {
       o.source_relation = SOURCE_RELATIONS.CONTEXTUAL;
-      o.relation_marker = 'context_cell';
+      o.relation_marker = o.hosts_file_entry === true
+        ? 'hosts_file_entry'
+        : o.truncated_duplicate === true ? 'truncated_duplicate' : 'context_cell';
       o.occurrence_kind = 'context_cell';
       o.asserted = false;
       continue;

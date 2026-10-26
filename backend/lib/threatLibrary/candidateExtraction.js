@@ -246,7 +246,7 @@ export {
  * asserted domain in a mixed Item|Description IOC table is never rewritten
  * to a technical artifact merely because sibling cells are filenames.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v39';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v40';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -513,6 +513,41 @@ const NETWORK_ENDPOINT_RE =
   /\b(tcp|udp|tls|ssl|socks[45]h?):\/\/((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))(?::(\d{1,5}))?(?![\w.-])/gi;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
 
+/**
+ * A URL written outside any table that is a truncation of a URL the publisher
+ * lists in a table — it stops inside a path segment of the listed value
+ * ("…/8250d149-…-ea925eae0a4" vs the table's "…/8250d149-…-ea925eae0a4c/") —
+ * is a mistyped copy of that value, not a second resource. Its occurrences
+ * are marked `truncated_duplicate` (row context, never an assertion); the
+ * listed value carries the Indicator (tl-candidates-v40). A prefix that ends
+ * at a segment boundary ("https://host/" vs "https://host/gate.php") is a
+ * different resource and is left alone.
+ * @param {object[]} entries candidate entries of the document
+ */
+function markTruncatedUrlDuplicates(entries) {
+  const urls = entries.filter((e) => e.candidate_type === 'url' && Array.isArray(e.occurrences));
+  const listed = urls.filter((e) => e.occurrences.some((o) => o.form === OCCURRENCE_FORMS.TABLE_ROW));
+  if (!listed.length) return;
+  const strip = (v) => String(v || '').toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '');
+  for (const e of urls) {
+    if (e.occurrences.some((o) => o.form === OCCURRENCE_FORMS.TABLE_ROW)) continue;
+    const v = strip(e.normalized_value);
+    if (!v.includes('/') || /[/?#=&]$/.test(v)) continue;
+    const of = listed.find((l) => {
+      const lv = strip(l.normalized_value);
+      return lv.length > v.length && lv.startsWith(v) && /[A-Za-z0-9_-]/.test(lv[v.length]);
+    });
+    if (!of) continue;
+    for (const o of e.occurrences) o.truncated_duplicate = true;
+    e.truncated_duplicate_of = `url:${of.normalized_value}`;
+  }
+}
+
+/** A defanged at-sign right before an address's domain ("[@]", "(@)", "{@}", "[at]", "(at)"). */
+const DEFANGED_AT_BEFORE_RE = /\w(?:\[@\]|\(@\)|\{@\}|\[at\]|\(at\))$/i;
+/** The publisher says the sender address is forged ("Spoofed sender impersonating Boots UK"). */
+const SPOOFED_SENDER_RE = /\b(?:spoof\w*|impersonat\w*|forged|faked?\s+sender|display[\s-]?name\s+spoof\w*)\b/i;
+
 /** A redaction placeholder right before a hostname tail ("<REDACTED>", "[redacted]", "REDACTED", "xxx"). */
 const REDACTION_PLACEHOLDER_END_RE = /(?:<\s*[^<>\s]{0,24}\s*>|\[\s*[^\[\]\s]{0,24}\s*\]|\bredacted|\b[x*]{3,})\s*$/i;
 
@@ -774,6 +809,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       typing_reason: extra.typingReason || null,
       ...(extra.referenceCell === true ? { reference_cell: true } : {}),
       ...(extra.descriptionCell === true ? { description_cell: true } : {}),
+      ...(extra.hostsFileEntry === true ? { hosts_file_entry: true } : {}),
       ...(block?.list_stance ? { list_stance: block.list_stance } : {})
     };
   }
@@ -997,7 +1033,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
     // Dotted tokens: resolve per occurrence, decide per document (see pendingDotted).
     if (n.candidateType === 'domain') {
-      const token = String(extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
+      let token = String(extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
+      // "host:port" endpoint rows: the port is recorded on the occurrence; the
+      // host alone is typed (tl-table-v12).
+      if (extra.port != null) token = token.replace(new RegExp(`[:：]${extra.port}[.,;]*$`), '');
       const form = extra.form || OCCURRENCE_FORMS.STANDALONE;
       const lineText = extra.rowText || block?.text || '';
       const typed = resolveDottedTokenType(token, {
@@ -1341,7 +1380,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const related = relatedValuesFromDescription(row.description);
       for (const v of row.values) {
         t.values_asserted += 1;
-        const assertedIoc = Boolean(interp.explicit) && v.is_ioc !== false;
+        // A hosts-file mapping entry names a host the sample blocks, not its
+        // infrastructure: row context, never the row's assertion (tl-table-v12).
+        const assertedIoc = Boolean(interp.explicit) && v.is_ioc !== false && v.hosts_file_entry !== true;
         if (assertedIoc && v.candidate_type && v.normalized_value) {
           explicitTableAssertions.rememberAsserted(v.candidate_type, v.normalized_value);
         }
@@ -1392,7 +1433,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
             artifact_kind: v.artifact_kind || null,
             typing_signals: v.typing_signals || null
           },
-          explicitTable: Boolean(interp.explicit)
+          explicitTable: Boolean(interp.explicit),
+          ...(v.hosts_file_entry === true ? { hostsFileEntry: true } : {})
         });
         if (assertedIoc && entry?.digest_kind && entry.candidate_type !== v.candidate_type) {
           explicitTableAssertions.rememberReclassified(v.candidate_type, v.normalized_value, entry.candidate_type);
@@ -1723,7 +1765,15 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // `user@host.example`: the host is the address's domain (same
       // no-over-derivation rule as a URL host). Email is not a candidate type,
       // so the domain stays a candidate but never a structural row assertion.
-      const emailDomain = start > 0 && text[start - 1] === '@';
+      // A defanged at-sign ("hello[@]boots[.]com") is the same address when the
+      // publisher says the sender is spoofed / impersonated: the domain is the
+      // impersonated brand's, not the actor's (tl-candidates-v40). Other
+      // defanged addresses in an IOC list keep their row reading.
+      const emailDomain = start > 0 && (
+        text[start - 1] === '@' ||
+        (DEFANGED_AT_BEFORE_RE.test(text.slice(Math.max(0, start - 5), start)) &&
+          SPOOFED_SENDER_RE.test(text.slice(Math.max(0, start - 160), end + 160)))
+      );
       // `host.example:443`: keep the port as parsed endpoint context of the
       // domain (the occurrence form stays standalone — a port alone asserts
       // nothing about a hostname the way an ip:port endpoint does).
@@ -1750,6 +1800,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     if (!list.includes(spelling) && list.length < 8) list.push(spelling);
     entry.parsed.network_endpoints = list;
   }
+
+  markTruncatedUrlDuplicates([...byKey.values()]);
 
   // One resource written "host/path" in one place and "https://host/path" in
   // another is one identity: the scheme-less spelling joins the absolute URL

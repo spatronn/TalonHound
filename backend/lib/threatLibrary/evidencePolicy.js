@@ -214,7 +214,8 @@ export function summarizeOccurrenceEvidence(candidate) {
   // A value read from a table's reference / prose cell never carries the
   // section's authority by itself (tl-candidates-v37).
   const strongZoneOcc = occ.filter(
-    (o) => o.reference_cell !== true && o.description_cell !== true && STRONG_IOC_ZONES.has(String(o.zone || o.section_kind || ''))
+    (o) => o.reference_cell !== true && o.description_cell !== true && o.hosts_file_entry !== true && o.truncated_duplicate !== true &&
+      STRONG_IOC_ZONES.has(String(o.zone || o.section_kind || ''))
   );
   const assertedOcc = annotated ? strongZoneOcc.filter((o) => o.asserted === true) : strongZoneOcc;
   const hasStrong = occ.length ? assertedOcc.length > 0 : zones.some((z) => STRONG_IOC_ZONES.has(z));
@@ -474,7 +475,23 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   // Values only in a row's prose cell that never asserted them (no role
   // clause, or not an explicit IOC table) are row context (tl-candidates-v37).
   const onlyReferenceCells = occs.length > 0 && occs.every((o) => o?.reference_cell === true || o?.description_cell === true);
-  if (onlyReferenceCells && !reportSource) {
+  // Hosts the sample sinkholes in the hosts file ("0.0.0.0 telemetry.vendor")
+  // are what it blocks, not where it connects (tl-table-v12).
+  const onlyHostsFileEntries = occs.length > 0 && occs.every((o) => o?.hosts_file_entry === true);
+  // A mistyped / truncated copy of a URL the publisher lists in a table
+  // (tl-candidates-v40): the listed value is the Indicator.
+  const onlyTruncatedDuplicate = occs.length > 0 && occs.every((o) => o?.truncated_duplicate === true);
+  if ((onlyHostsFileEntries || onlyTruncatedDuplicate) && !reportSource) {
+    candidate.assessment = 'context_only';
+    candidate.role = 'reference';
+    candidate.match_state = 'context_only';
+    candidate.policy_decision = onlyHostsFileEntries ? 'context_only_hosts_file_entry' : 'context_only_truncated_duplicate';
+    candidate.source_assertion = SOURCE_ASSERTIONS.REFERENCE_ONLY;
+    candidate.evidence_strength = 'none';
+    candidate.ai_needed = false;
+    candidate.decision_source = 'deterministic';
+    if (candidate.confidence == null) candidate.confidence = 0.8;
+  } else if (onlyReferenceCells && !reportSource) {
     candidate.assessment = 'context_only';
     candidate.role = 'reference';
     candidate.match_state = 'context_only';
@@ -759,7 +776,11 @@ export function buildCandidateEvidenceRecord(c) {
     // A value read from a table reference column (tool homepage / download link).
     reference_cell: o.reference_cell === true ? true : undefined,
     // A value read from a table row's prose (description) cell, not asserted.
-    description_cell: o.description_cell === true ? true : undefined
+    description_cell: o.description_cell === true ? true : undefined,
+    // A host the sample sinkholes in the hosts file (tl-table-v12).
+    hosts_file_entry: o.hosts_file_entry === true ? true : undefined,
+    // A truncated copy of a table-listed URL (tl-candidates-v40).
+    truncated_duplicate: o.truncated_duplicate === true ? true : undefined
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
     table_id: r.table_id || null,
