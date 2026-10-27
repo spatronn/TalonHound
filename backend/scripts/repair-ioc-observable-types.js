@@ -203,6 +203,8 @@ async function main() {
     }
     snapshot.protected_fingerprint = fingerprintBefore;
     snapshot.report_ids = reportIds;
+    if (!snapshotPath) throw new Error('--apply requires --snapshot=<file> so the pre-image is durable');
+    fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
     const result = await retypeThreatLibraryIpv6(client, loaded.plans, snapshot);
     const fingerprintAfter = await protectedFingerprint(client);
     if (fingerprintAfter !== fingerprintBefore) {
@@ -217,7 +219,6 @@ async function main() {
       throw new Error('Verification read still has a non-ipv6 row');
     }
     await client.query('COMMIT');
-    if (snapshotPath) fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
     process.stdout.write(`${JSON.stringify({
       mode: 'apply',
       ...result,
