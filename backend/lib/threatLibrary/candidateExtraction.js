@@ -245,8 +245,15 @@ export {
  * file/TLD collisions or rows with explicit file evidence — a publisher-
  * asserted domain in a mixed Item|Description IOC table is never rewritten
  * to a technical artifact merely because sibling cells are filenames.
+ * v41 (20-report audit 33356–33375): an IPv6 address with a glued prefix
+ * length (`2607:99c0::/32`) is a CIDR, not the bare network address; a bare
+ * digest list item takes its subject from the heading above it when there is
+ * no lead-in ("SSL Thumbprint"); a table digest cell is labelled by its column
+ * header ("Imphash"); a community / open-source resource recommended to
+ * defenders is a reference; `host:port` followed by another value of the same
+ * cell stays an endpoint (tl-type-resolver-v18).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v40';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v41';
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -696,6 +703,29 @@ function listLeadInsByBlock(blocks) {
   return out;
 }
 
+/**
+ * Header of the table column that holds `value` (a digest cell), from the
+ * block's declared headers or its first row when that row holds no digest.
+ * @param {object} block
+ * @param {string} value normalized hex value
+ * @returns {string|null}
+ */
+function digestColumnHeader(block, value) {
+  const rows = block?.type === 'table' && Array.isArray(block?.table?.rows) ? block.table.rows : null;
+  if (!rows || rows.length < 2) return null;
+  const v = String(value || '').toLowerCase();
+  const declared = Array.isArray(block.table.headers) && block.table.headers.length ? block.table.headers : null;
+  const first = rows[0].map((c) => String(c ?? ''));
+  const header = declared || (first.some((c) => /\b[0-9a-f]{32,}\b/i.test(c)) ? null : first);
+  if (!header) return null;
+  for (let r = declared ? 0 : 1; r < rows.length; r += 1) {
+    const row = Array.isArray(rows[r]) ? rows[r] : [];
+    const col = row.findIndex((c) => String(c ?? '').toLowerCase().includes(v));
+    if (col >= 0) return String(header[col] ?? '').trim() || null;
+  }
+  return null;
+}
+
 export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const sourceUrl = opts.sourceUrl || doc.meta?.source_url || doc.meta?.sourceUrl || null;
   let sourceHost = '';
@@ -987,10 +1017,19 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // them as report context (technical artifact), never as a sample hash.
       // Table rows: the caption / section heading names the subject a bare
       // algorithm label leaves open ("Custom certificate …" > "SHA-256 | <v>").
+      // List items: the lead-in sentence, else the heading the list sits under
+      // ("### SSL Thumbprint" then a bare hex item) (tl-candidates-v41).
       const scopeLabel = block?.type === 'table'
         ? block?.table?.caption || block?.section || null
-        : block?.type === 'list' ? listLeadIns.get(block.id) || null : null;
-      const digest = classifyHexDigest(line, n.normalizedValue, { scopeLabel, rowDescription: extra.tableRow?.description || null });
+        : block?.type === 'list' ? listLeadIns.get(block.id) || block?.section || null : null;
+      // A table cell is labelled by its column header ("Imphash | Cluster |
+      // Role"), not by the last cell of the previous row (tl-candidates-v41).
+      const columnHeader = extra.tableRow?.column_header || digestColumnHeader(block, n.normalizedValue);
+      const digest = classifyHexDigest(line, n.normalizedValue, {
+        scopeLabel,
+        columnHeader,
+        rowDescription: extra.tableRow?.description || null
+      });
       if (NON_FILE_DIGEST_KINDS.has(digest.kind) && digest.kind !== DIGEST_KINDS.CREDENTIAL) {
         countReason(typeDiag.excluded_reasons, `non_file_digest_${digest.kind}`);
         const artifact = materialize({
@@ -1716,7 +1755,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       }
     }
     for (const t of ipv6Tokens) {
+      // A prefix length glued to the address ("2607:99c0::/32") makes it an
+      // IPv6 network block, never the bare network address (tl-candidates-v41).
+      const prefix = /^\/(\d{1,3})(?![\d./\w])/.exec(text.slice(t.end));
       if (!ipv4MatchIsStandalone(text, t.start, t.end)) continue;
+      if (prefix && Number(prefix[1]) <= 128) {
+        add(`${t.value}/${prefix[1]}`, 'cidr', block, { form: standaloneForm });
+        continue;
+      }
       add(t.value, 'ipv6', block, { form: standaloneForm });
     }
     for (const m of text.matchAll(IPV6_LOOPBACK_RE)) {

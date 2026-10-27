@@ -159,6 +159,14 @@ const REPORTING_CONTACT_RE =
   /\b(?:please\s+report|report\s+(?:significant\s+)?(?:cyber\s+)?(?:security\s+)?incidents?\s+to|file\s+a\s+complaint|report(?:ing)?\s+(?:this|the)\s+(?:incident|compromise|activity)|contact\s+(?:the\s+)?(?:general\s+intelligence|local\s+law|your\s+it|national\s+cyber)|monitored\s+24(?:\s*\/\s*|\s*)?7|internet\s+crime\s+complaint\s+center)\b/i;
 
 /**
+ * A community / open-source resource the publisher recommends to defenders
+ * ("Community-driven resources like OBSERVABLE help support this approach"):
+ * a reference, never an Indicator (MODE A or B) (tl-candidates-v41).
+ */
+const DEFENDER_RESOURCE_RE =
+  /\b(?:community[\s-]*(?:driven|maintained|curated|led|sourced)|open[\s-]*source|publicly[\s-]+available)\s+(?:[\w-]+\s+){0,3}?(?:resources?|projects?|databases?|catalogu?es?|knowledge[\s-]*bases?|repositor(?:y|ies)|references?|lists?)\s*,?\s*(?:such\s+as|like|including|e\.g\.,?)\s+OBSERVABLE\b/i;
+
+/**
  * Indicator concept at the head of a heading, then a separator or the end:
  * "Indicators: Three Casinos…", "Indicators – Network Infrastructure",
  * "IOCs (Type 3)", "Göstergeler: Ek Altyapı", "威胁指标：活动A". A heading that
@@ -1248,6 +1256,9 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   // never an Indicator (MODE A and MODE B).
   if (REPORTING_CONTACT_RE.test(text) || REPORTING_CONTACT_RE.test(full)) {
     return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'reporting_contact', authoritative: false, structural_row: false };
+  }
+  if (DEFENDER_RESOURCE_RE.test(text) || DEFENDER_RESOURCE_RE.test(full)) {
+    return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'defender_resource', authoritative: false, structural_row: false };
   }
   if (CONTEXT_RELATION_RE.test(text)) {
     return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'contextual', authoritative, structural_row: false };

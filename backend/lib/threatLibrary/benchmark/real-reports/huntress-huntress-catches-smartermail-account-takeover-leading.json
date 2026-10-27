@@ -1,0 +1,180 @@
+{
+ "id": "real-huntress-huntress-catches-smartermail-account-takeover-leading",
+ "title": "Huntress Catches SmarterMail Account Takeover Leading to RCE | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "cf82e465119a85505e37558452b4ac000e0dba3a4a9959ca58695a6bde34451e",
+  "url": "https://www.huntress.com/blog/smartermail-account-takeover-leading-to-rce",
+  "talonhound_report_id": "a64ed217-0f79-4391-8175-0ad73ebf5c70",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "ip",
+    "value": "142.111.152.150",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.151",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.154",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.155",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.159",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.160",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.165",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.222",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.229",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.45",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.46",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.47",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.49",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.51",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.53",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.54",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.56",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.57",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "142.111.152.59",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.60",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.62",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.66",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.67",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.68",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.70",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.72",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.73",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "155.2.215.74",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

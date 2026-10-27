@@ -76,8 +76,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * v15 (30-report audit): a dotted token that is a regular-expression
  * alternation branch (`|currentversion.run|`) is a regex fragment, not a
  * host, unless its suffix is DNS-strong.
+ * v18 (20-report audit 33356–33375): a host:port endpoint followed by another
+ * value of a multi-value cell (`h[.]onion:443 198.51.100.7:21668`) is still an
+ * endpoint — the port boundary no longer rejects whitespace before a digit.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v17';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v18';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -806,8 +809,10 @@ export function resolveDottedToken(raw, ctx = {}) {
   const explicitRow =
     ctx.strongZone === true && (ctx.form === 'table_row' || ctx.form === 'list_row' || ctx.indicatorRow === true);
   // Endpoint position: `host.example:443` (port glued to a delegated DNS name,
-  // then a boundary) is a network endpoint, never a `key: value` pair.
-  const portMatch = /^:(\d{1,5})(?=$|[\s,;)\]'"`\/|>.](?!\d))/.exec(after);
+  // then a boundary) is a network endpoint, never a `key: value` pair. Only a
+  // `.` boundary must not be followed by a digit (`:443.5` is a number); the
+  // next value of a multi-value cell may start with one (`h:443 198.51.…`).
+  const portMatch = /^:(\d{1,5})(?=$|[\s,;)\]'"`\/|>]|\.(?!\d))/.exec(after);
   const hostPort = Boolean(portMatch) && Number(portMatch[1]) <= 65535 && hasDelegatedDnsSuffix(lower);
   // Key position: `token = value` / `"token": value` (never `token://`).
   const assignmentKey = !hostPort && /^["'`]?\s*(?:=(?!=)|:(?!\/\/)\s*(?:["'`\d[{]|true|false|null))/.test(after) && !declaredNetwork;

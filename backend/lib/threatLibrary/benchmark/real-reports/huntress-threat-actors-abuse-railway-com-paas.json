@@ -1,0 +1,120 @@
+{
+ "id": "real-huntress-threat-actors-abuse-railway-com-paas",
+ "title": "Threat Actors Abuse Railway.com PaaS as Microsoft 365 Token Attack Infrastructure | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "3b90c44ec27733ffa1dfd393207a46dd42543fabc43b7f6b1c7042df53263b0a",
+  "url": "https://www.huntress.com/blog/railway-paas-m365-token-replay-campaign",
+  "talonhound_report_id": "0abe721c-2a05-47e7-8692-5936b8944094",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Publisher-listed CIDR blocks are Indicators (CIDR is not an ioc_items type; Create IOCs reports them unsupported). 162.220.234.0/22 as written canonicalizes to 162.220.232.0/22."
+  },
+  "indicators": [
+   {
+    "type": "cidr",
+    "value": "152.55.176.0/20",
+    "assertion": "explicit"
+   },
+   {
+    "type": "cidr",
+    "value": "162.220.232.0/22",
+    "assertion": "explicit"
+   },
+   {
+    "type": "cidr",
+    "value": "208.77.244.0/22",
+    "assertion": "explicit"
+   },
+   {
+    "type": "cidr",
+    "value": "2607:99c0::/32",
+    "assertion": "explicit"
+   },
+   {
+    "type": "cidr",
+    "value": "66.33.22.0/23",
+    "assertion": "explicit"
+   },
+   {
+    "type": "cidr",
+    "value": "69.46.46.0/24",
+    "assertion": "explicit"
+   },
+   {
+    "type": "cidr",
+    "value": "69.9.164.0/22",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.232.223",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.232.235",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.232.55",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.232.57",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.232.99",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.234.161",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.234.34",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.234.41",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.220.234.66",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}
