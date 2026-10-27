@@ -1,5 +1,6 @@
 import { normalizeObservable } from './observable-normalization.js';
 import { mapFixedIocTypeToObservableType } from './customThreatFeedUtils.js';
+import { parseNetworkObservable } from './networkObservable.js';
 
 function inferObservableType(value) {
   const v = String(value || '').trim();
@@ -83,6 +84,11 @@ function resolveObservableType(value, csvType, iocTypeMode, fixedIocType) {
       return fromCsv === 'ipv4' ? 'ip' : fromCsv;
     }
   }
+  // Auto mode must not reuse the legacy shape inference for addresses.
+  // That inference treated every IPv6 address as a domain and every CIDR
+  // (the slash) as a URL. networkObservable.js is the canonical decision.
+  const network = parseNetworkObservable(value);
+  if (network) return network.ok ? network.type : null;
   const inferred = inferObservableType(value);
   if (!inferred) return null;
   if (inferred === 'hash') return normalizeHashType(value);
@@ -103,6 +109,10 @@ function validateValueForType(value, observableType) {
 
 function normalizeParsedValue(value, observableType) {
   const t = String(observableType || '').toLowerCase();
+  if (t === 'ip' || t === 'ipv6') {
+    const network = parseNetworkObservable(value);
+    if (network?.ok && network.type === t) return network.value;
+  }
   if (t === 'url') return normalizeObservable('url', value);
   if (t === 'domain') return String(value || '').trim().toLowerCase();
   if (['hash', 'md5', 'sha1', 'sha256'].includes(t)) return String(value || '').trim().toLowerCase();
