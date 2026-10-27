@@ -128,6 +128,12 @@ jobs:
           ALLOW_THREAT_LIBRARY_DB_TESTS: '1'
         run: npm run test:threat-library-integration
 
+      - name: Historical IOC type repair (real Postgres)
+        working-directory: backend
+        env:
+          IOC_TYPE_REPAIR_ITEST: '1'
+        run: node --test lib/threatLibrary/historicalIocTypeRepair.integration.test.js
+
       - name: MCP IOC read tools (real Postgres)
         working-directory: backend
         run: npm run test:mcp-integration
