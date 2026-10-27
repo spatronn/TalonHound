@@ -3,8 +3,10 @@
  *
  * Approve = analyst accepts the candidate.
  * Create IOCs = materialize only approved, supported, new observables.
- * CIDR is first-class in Threat Library candidates but is not an ioc_items type;
- * it is never exploded into host IPs and never truncated to a single address.
+ * A CIDR Indicator is an `ip` / `ipv6` IOC record whose observable keeps the
+ * canonical network and prefix (the ioc_items contract the EmergingThreats
+ * network rows already use): never exploded into host IPs, never truncated to
+ * a single address, never the same identity as a host IP.
  */
 
 import {
@@ -17,6 +19,7 @@ import {
   reviewActionableIndicatorSql,
   NON_IOC_CANDIDATE_TYPES
 } from './indicatorMembership.js';
+import { parseNetworkObservable } from '../networkObservable.js';
 
 export {
   hasAuthoritativePublisherIocScope,
@@ -39,14 +42,35 @@ export const CREATABLE_IOC_TYPES = Object.freeze([
   'url',
   'md5',
   'sha1',
-  'sha256'
+  'sha256',
+  'cidr'
 ]);
 
 const CREATABLE = new Set(CREATABLE_IOC_TYPES);
 const NON_IOC_TYPES = new Set(NON_IOC_CANDIDATE_TYPES);
 
-export const CIDR_UNSUPPORTED_DETAIL =
-  'CIDR indicators are preserved in Threat Library but cannot yet be created as IOC records.';
+export const INVALID_NETWORK_DETAIL =
+  'The value is not a valid IP address or network, so it cannot be stored as an IOC record.';
+
+const NETWORK_CANDIDATE_TYPES = new Set(['ip', 'ipv6', 'cidr']);
+
+/**
+ * ioc_items identity (observable_type + canonical observable) of a creatable
+ * candidate. Network values (ip / ipv6 / cidr) go through the IOC layer's
+ * canonicalizer, so an IPv6 address is an `ipv6` IOC and a CIDR is an `ip` /
+ * `ipv6` network IOC with its prefix; other types keep their stored value.
+ * @returns {{ type: string, value: string } | null} null for an invalid network
+ */
+export function iocStorageIdentity(candidate) {
+  const type = typeOf(candidate);
+  const value = String(candidate?.normalized_value || '');
+  if (!NETWORK_CANDIDATE_TYPES.has(type)) return { type, value };
+  const network = parseNetworkObservable(value);
+  if (!network || !network.ok) return null;
+  // A cidr candidate must stay a network, a host candidate must stay a host.
+  if ((type === 'cidr') !== (network.kind === 'cidr')) return null;
+  return { type: network.type, value: network.value };
+}
 
 export const PROMOTION_OUTCOMES = Object.freeze({
   WILL_CREATE: 'will_create',
@@ -113,8 +137,11 @@ export function classifyPromoteEligibility(candidate) {
     return {
       ok: false,
       code: 'promote_unsupported_type',
-      detail: type === 'cidr' ? CIDR_UNSUPPORTED_DETAIL : `Type ${type || 'unknown'} cannot be stored as an IOC record.`
+      detail: `Type ${type || 'unknown'} cannot be stored as an IOC record.`
     };
+  }
+  if (!iocStorageIdentity(candidate)) {
+    return { ok: false, code: 'promote_unsupported_type', detail: INVALID_NETWORK_DETAIL };
   }
   // Promote re-classifies and then runs Create IOCs, which only materializes
   // report Indicators. Decide on the row as it would be after promotion, before
@@ -187,14 +214,6 @@ export function classifyCreateEligibility(candidate) {
     };
   }
 
-  if (type === 'cidr') {
-    return {
-      eligible: false,
-      outcome: PROMOTION_OUTCOMES.UNSUPPORTED,
-      detail: CIDR_UNSUPPORTED_DETAIL
-    };
-  }
-
   if (!CREATABLE.has(type)) {
     return {
       eligible: false,
@@ -229,6 +248,16 @@ export function classifyCreateEligibility(candidate) {
       outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
       ioc_id: candidate.matched_ioc_id ? Number(candidate.matched_ioc_id) : null,
       detail: 'An IOC record already exists for this indicator.'
+    };
+  }
+
+  // Only a value with a valid ioc_items identity can be created: a malformed
+  // network is reported, never truncated to a host or stored as written.
+  if (!iocStorageIdentity(candidate)) {
+    return {
+      eligible: false,
+      outcome: PROMOTION_OUTCOMES.UNSUPPORTED,
+      detail: INVALID_NETWORK_DETAIL
     };
   }
 

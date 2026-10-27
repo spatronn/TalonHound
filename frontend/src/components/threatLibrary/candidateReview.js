@@ -725,7 +725,7 @@ export function serializeReviewTableUrlState(state) {
 }
 
 /** Observable types that can be stored as IOC records (backend CREATABLE_IOC_TYPES). */
-const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256']);
+const PROMOTABLE_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'cidr']);
 
 const lower = (v) => String(v || '').toLowerCase();
 

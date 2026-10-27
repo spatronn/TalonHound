@@ -62,7 +62,7 @@ test('enum cells go through display labels; canonical values feed only compariso
   assert.match(pageSrc, /const \{ ids, excluded \} = selectionForAction\(action, selectedRows\);/);
   assert.match(pageSrc, /candidate_ids: ids,\s*confirm: false/);
   assert.match(pageSrc, /candidate_ids: ids,\s*confirm: true/);
-  assert.match(pageSrc, /c\.candidate_type === 'cidr'/, 'canonical comparison for the CIDR note');
+  assert.match(pageSrc, /c\.promotion_detail && c\.promotion_outcome === 'unsupported'/, 'an unsupported result shows its reason');
 });
 
 test('Overview hosts Tags; Source and Indicators stay free of that intelligence', () => {

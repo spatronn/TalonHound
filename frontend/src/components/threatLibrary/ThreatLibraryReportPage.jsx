@@ -2231,11 +2231,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
                               {resultHref ? (
                                 <Link to={resultHref} className="tl-ioc-result-link" data-testid="ioc-result-link">View IOC</Link>
                               ) : null}
-                              {c.candidate_type === 'cidr' && (!c.promotion_outcome || c.promotion_outcome === 'unsupported') ? (
-                                <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>
-                                  {c.promotion_detail || 'Preserved in Threat Library; not an IOC record.'}
-                                </div>
-                              ) : c.promotion_detail && c.promotion_outcome === 'unsupported' ? (
+                              {c.promotion_detail && c.promotion_outcome === 'unsupported' ? (
                                 <div style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>{c.promotion_detail}</div>
                               ) : null}
                             </td>

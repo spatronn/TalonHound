@@ -76,10 +76,10 @@ test('create_iocs preview does not write and reports mixed eligibility', async (
   assert.equal(result.ok, true);
   assert.equal(result.preview, true);
   assert.equal(result.summary.selected, 4);
-  assert.equal(result.summary.eligible, 1);
+  assert.equal(result.summary.eligible, 2, 'the approved CIDR is creatable');
   assert.equal(result.summary.not_approved, 1);
   assert.equal(result.summary.already_existing, 1);
-  assert.equal(result.summary.unsupported, 1);
+  assert.equal(result.summary.unsupported, 0);
   assert.equal(pool.writes.length, 0);
 });
 
@@ -118,29 +118,36 @@ test('create_iocs confirm creates only approved new rows and never duplicates ex
   ];
   const pool = fakePool(report, { candidates });
   const createdValues = [];
+  const lookups = [];
+  let nextIoc = 501;
   const result = await applyCandidateReviewActions(pool, 9, {
     action: 'create_iocs',
     candidateIds: [1, 2, 3, 4],
     confirm: true,
     createIoc: async (_pool, body) => {
       createdValues.push(body.observable);
-      return { status: 201, body: { id: 501, public_id: 'ioc-501', observable_type: 'ip' } };
+      const id = nextIoc++;
+      return { status: 201, body: { id, public_id: `ioc-${id}`, observable_type: 'ip' } };
     },
-    findExistingIoc: async () => null
+    findExistingIoc: async (_pool, type, value) => {
+      lookups.push(`${type}:${value}`);
+      return null;
+    }
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(createdValues, ['38.92.47.91']);
-  assert.equal(result.summary.created, 1);
+  // The CIDR is created once, as the ip network with its prefix — never expanded
+  // to hosts, never truncated to the network address.
+  assert.deepEqual(createdValues, ['38.92.47.91', '36.35.56.0/24']);
+  assert.deepEqual(lookups, ['ip:38.92.47.91', 'ip:36.35.56.0/24']);
+  assert.equal(result.summary.created, 2);
   assert.equal(result.summary.already_existing, 1);
   assert.equal(result.summary.not_approved, 1);
-  assert.equal(result.summary.unsupported, 1);
+  assert.equal(result.summary.unsupported, 0);
   assert.equal(result.results.find((r) => r.candidate_id === 1).outcome, 'created');
   assert.equal(result.results.find((r) => r.candidate_id === 2).outcome, 'already_existing');
-  assert.equal(result.results.find((r) => r.candidate_id === 4).outcome, 'unsupported');
-  assert.ok(result.results.find((r) => r.candidate_id === 4).detail.includes('CIDR'));
+  assert.equal(result.results.find((r) => r.candidate_id === 4).outcome, 'created');
   assert.ok(pool.writes.some((w) => /promotion_outcome/.test(w.sql)));
   assert.equal(pool.writes.some((w) => /review_status = 'created_ioc'/.test(w.sql)), false);
-  assert.equal(createdValues.some((v) => String(v).includes('/24')), false);
 });
 
 test('repeated create is idempotent when the IOC already exists', async () => {

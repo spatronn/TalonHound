@@ -4,12 +4,29 @@
  */
 
 import { normalizeObservable } from '../observable-normalization.js';
+import { parseNetworkObservable } from '../networkObservable.js';
 import { deriveMatchState } from './constants.js';
 
-const MATCHABLE_IOC_TYPES = new Set(['ip', 'ipv6', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
-/** Reviewable network/file types that are not stored in ioc_items yet (prefix preserved). */
-const REVIEW_ONLY_TYPES = new Set(['cidr']);
-const IOC_TYPES = new Set([...MATCHABLE_IOC_TYPES, ...REVIEW_ONLY_TYPES]);
+const MATCHABLE_IOC_TYPES = new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256', 'ssdeep', 'imphash', 'tlsh']);
+const IOC_TYPES = MATCHABLE_IOC_TYPES;
+const NETWORK_TYPES = new Set(['ip', 'ipv6', 'cidr']);
+
+/**
+ * ioc_items (observable_type, observable) a candidate is looked up by. Network
+ * values use the IOC layer's canonical identity: a CIDR is the ip / ipv6
+ * network IOC with its prefix (never a host), an IPv6 address an ipv6 IOC.
+ * @returns {{ type: string, value: string } | null}
+ */
+export function catalogLookupIdentity(candidateType, normalizedValue) {
+  const type = String(candidateType || '').toLowerCase();
+  const value = String(normalizedValue || '');
+  if (NETWORK_TYPES.has(type)) {
+    const network = parseNetworkObservable(value);
+    if (!network || !network.ok || (type === 'cidr') !== (network.kind === 'cidr')) return null;
+    return { type: network.type, value: network.value };
+  }
+  return { type, value: normalizeObservable(type, value) || value };
+}
 
 /**
  * @param {import('pg').Pool|import('pg').PoolClient} pool
@@ -17,7 +34,9 @@ const IOC_TYPES = new Set([...MATCHABLE_IOC_TYPES, ...REVIEW_ONLY_TYPES]);
  */
 export async function bulkMatchCandidates(pool, candidates) {
   const iocCandidates = candidates.filter(
-    (c) => c.is_ioc !== false && MATCHABLE_IOC_TYPES.has(String(c.candidate_type || '').toLowerCase())
+    (c) => c.is_ioc !== false &&
+      MATCHABLE_IOC_TYPES.has(String(c.candidate_type || '').toLowerCase()) &&
+      catalogLookupIdentity(c.candidate_type, c.normalized_value)
   );
 
   /** @type {Map<string, { id: number, public_id: string, observable: string, observable_type: string, status: string }>} */
@@ -27,8 +46,9 @@ export async function bulkMatchCandidates(pool, candidates) {
   const CHUNK = 500;
   for (let i = 0; i < iocCandidates.length; i += CHUNK) {
     const slice = iocCandidates.slice(i, i + CHUNK);
-    const types = slice.map((c) => String(c.candidate_type).toLowerCase());
-    const values = slice.map((c) => normalizeObservable(c.candidate_type, c.normalized_value) || c.normalized_value);
+    const identities = slice.map((c) => catalogLookupIdentity(c.candidate_type, c.normalized_value));
+    const types = identities.map((i) => i.type);
+    const values = identities.map((i) => i.value);
     const { rows } = await pool.query(
       `SELECT DISTINCT ON (observable_type, observable)
               id, public_id, observable, observable_type, status
@@ -51,10 +71,8 @@ export async function bulkMatchCandidates(pool, candidates) {
     const type = String(c.candidate_type || '').toLowerCase();
     const isIoc = c.is_ioc !== false && IOC_TYPES.has(type);
     let hit = null;
-    if (isIoc) {
-      const norm = normalizeObservable(type, c.normalized_value) || c.normalized_value;
-      hit = byKey.get(`${type}\0${norm}`) || null;
-    }
+    const identity = isIoc ? catalogLookupIdentity(type, c.normalized_value) : null;
+    if (identity) hit = byKey.get(`${identity.type}\0${identity.value}`) || null;
     const matchState = deriveMatchState({
       assessment: c.assessment || 'unknown',
       confidence: c.confidence ?? null,
@@ -115,7 +133,9 @@ export async function preserveStoredIocLinks(pool, candidates, previousRows) {
     if (c.matched_ioc_id != null) continue;
     const prior = priorByKey.get(`${c.candidate_type}\0${c.normalized_value}`);
     if (prior?.matched_ioc_id == null) continue;
-    const lookedUp = c.is_ioc !== false && MATCHABLE_IOC_TYPES.has(String(c.candidate_type || '').toLowerCase());
+    const lookedUp = c.is_ioc !== false &&
+      MATCHABLE_IOC_TYPES.has(String(c.candidate_type || '').toLowerCase()) &&
+      Boolean(catalogLookupIdentity(c.candidate_type, c.normalized_value));
     if (lookedUp) continue;
     pending.push({ c, prior });
   }
@@ -132,13 +152,14 @@ export async function preserveStoredIocLinks(pool, candidates, previousRows) {
   for (const { c, prior } of pending) {
     const type = String(c.candidate_type || '').toLowerCase();
     if (!MATCHABLE_IOC_TYPES.has(type)) continue;
-    const storedType = String(prior.matched_ioc_observable_type || type).toLowerCase();
-    if (storedType !== type) continue;
-    const hit = live.get(`${type}\0${Number(prior.matched_ioc_id)}`);
+    const identity = catalogLookupIdentity(type, c.normalized_value);
+    if (!identity) continue;
+    const storedType = String(prior.matched_ioc_observable_type || identity.type).toLowerCase();
+    if (storedType !== identity.type) continue;
+    const hit = live.get(`${identity.type}\0${Number(prior.matched_ioc_id)}`);
     if (!hit) continue;
     const value = String(c.normalized_value || '');
-    const norm = normalizeObservable(type, value) || value;
-    if (hit.observable !== norm && hit.observable !== value) continue;
+    if (hit.observable !== identity.value && hit.observable !== value) continue;
     const matchedIocId = Number(hit.id);
     carried.set(c, {
       ...c,

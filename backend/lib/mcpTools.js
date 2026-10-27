@@ -712,7 +712,7 @@ export function registerMcpTools(server, deps) {
       description:
         'ACTION: Create IOCs — the same backend path as the Threat Library Create IOCs button (applyCandidateReviewActions action=create_iocs). '
         + 'Requires mcp:threat_library:write and analyst/admin owner. Processes only analyst-approved, creatable Indicators (union membership including linked IOC Sources); '
-        + 'pending / ignored / Context Only / CIDR are never created. Requires explicit candidate_ids or all_matching selection — never defaults to every extracted observable. '
+        + 'pending / ignored / Context Only are never created; a CIDR Indicator becomes an ip / ipv6 network IOC that keeps its prefix (never expanded to hosts). Requires explicit candidate_ids or all_matching selection — never defaults to every extracted observable. '
         + 'confirm=true commits; omit confirm or dry_run=true for preview. Idempotent: existing IOCs are reused (already_existing), not duplicated. '
         + 'Returns newly_created_count vs existing_reused_count, skipped/failed reasons, operation_id. Concurrent Create IOCs on the same report returns create_iocs_in_progress.',
       inputSchema: {
