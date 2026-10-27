@@ -10,6 +10,7 @@ import {
 } from './apiIocService.js';
 import { getApiIoc, searchApiIocs, clampApiIocPageSize } from './apiIocReadService.js';
 import { createManualIoc, inferObservableType } from './manualIocCreate.js';
+import { parseNetworkObservable } from './networkObservable.js';
 import { isIocSourceSelectable, resolveIocSourceState } from './iocSourceLifecycle.js';
 import { serializeIocSourceRow } from './iocSourceValidation.js';
 import { iocPairKey } from './iocThreatClassifications.js';
@@ -102,7 +103,8 @@ export function resolveMcpIocInput(rawValue, explicitType, config = getMcpConfig
     if (!parsed.ok) return parsed;
     type = parsed.value;
   } else {
-    type = inferObservableType(clipped.value);
+    // An IPv6 address or a CIDR network is an IP value, not a domain / URL.
+    type = parseNetworkObservable(clipped.value) ? 'ip' : inferObservableType(clipped.value);
     if (!type) {
       return { ok: false, code: API_ERROR_CODE.INVALID_IOC_TYPE, message: 'Could not infer IOC type from value' };
     }

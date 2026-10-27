@@ -55,7 +55,8 @@ test('classifyCreateOutcome mirrors backend classifyCreateEligibility rule order
   assert.equal(classifyCreateOutcome(existingRow(2, 102)), 'already_existing');
   assert.equal(classifyCreateOutcome(newRow(3, { review_status: 'pending' })), 'not_approved');
   assert.equal(classifyCreateOutcome({ ...existingRow(4, 104), review_status: 'pending' }), 'not_approved');
-  assert.equal(classifyCreateOutcome(newRow(5, { candidate_type: 'cidr', normalized_value: '10.0.0.0/24' })), 'unsupported');
+  assert.equal(classifyCreateOutcome(newRow(5, { candidate_type: 'cidr', normalized_value: '10.0.0.0/24' })), 'will_create');
+  assert.equal(classifyCreateOutcome(newRow(5, { candidate_type: 'mutex', normalized_value: 'GlobalMutexName' })), 'unsupported');
   assert.equal(classifyCreateOutcome(newRow(6, { review_status: 'ignored' })), 'not_applicable');
   assert.equal(classifyCreateOutcome(newRow(7, { assessment: 'context_only' })), 'not_applicable');
   assert.equal(classifyCreateOutcome(newRow(8, { assessment: 'benign' })), 'not_applicable');
@@ -144,7 +145,9 @@ test('after a page refresh the persisted / deterministic result is unchanged', (
   // No pseudo-result for rows Create IOCs would not touch.
   assert.equal(iocResultLabel(newRow(5)), '—');
   assert.equal(iocResultLabel(newRow(6, { review_status: 'pending', match_state: 'existing', matched_ioc_id: 106 })), '—');
-  assert.equal(iocResultLabel(newRow(7, { promotion_outcome: 'unsupported', candidate_type: 'cidr' })), 'Not supported');
+  // A persisted "unsupported" from before CIDR IOC records clears once the row is creatable.
+  assert.equal(iocResultLabel(newRow(7, { promotion_outcome: 'unsupported', candidate_type: 'cidr', normalized_value: '10.0.0.0/24' })), '—');
+  assert.equal(iocResultLabel(newRow(7, { promotion_outcome: 'unsupported', candidate_type: 'mutex' })), 'Not supported');
   // Result filter uses the same effective outcome.
   assert.equal(candidateMatchesResultFilter(neverRun, 'already_existing'), true);
   assert.equal(candidateMatchesResultFilter(neverRun, 'not_created'), false);

@@ -80,12 +80,12 @@ function cand(overrides) {
 }
 
 function createIocsScenario() {
-  // 10 approved + new, 5 already existing, 2 not approved, 1 CIDR unsupported = 18 selected.
+  // 10 approved + new, 5 already existing, 2 not approved, 1 invalid network unsupported = 18 selected.
   const candidates = [];
   for (let i = 0; i < 10; i += 1) candidates.push(cand({ id: 100 + i }));
   for (let i = 0; i < 5; i += 1) candidates.push(cand({ id: 200 + i, matched_ioc_id: 500 + i, match_state: 'existing', matched_ioc_observable_type: 'ip' }));
   for (let i = 0; i < 2; i += 1) candidates.push(cand({ id: 300 + i, review_status: 'pending' }));
-  candidates.push(cand({ id: 400, candidate_type: 'cidr', original_value: '36.35.56.0/24', normalized_value: '36.35.56.0/24' }));
+  candidates.push(cand({ id: 400, candidate_type: 'cidr', original_value: '36.35.56.0/33', normalized_value: '36.35.56.0/33' }));
   return candidates;
 }
 
@@ -158,7 +158,7 @@ test('Create IOCs emits one parent event with backend-authoritative counts and t
   assert.deepEqual(existingRow, { candidate_id: 200, type: 'ip', value: '38.92.47.200', outcome: 'already_existing', ioc_id: 500 });
   const cidrRow = m.results.find((r) => r.candidate_id === 400);
   assert.equal(cidrRow.outcome, 'unsupported');
-  assert.equal(cidrRow.value, '36.35.56.0/24');
+  assert.equal(cidrRow.value, '36.35.56.0/33');
 });
 
 test('ioc.created rows are emitted only for new IOCs and carry the report / candidate / operation origin', async () => {
@@ -304,7 +304,9 @@ test('TLP:AMBER: audit metadata never contains evidence text, report body, docum
 
 test('bulk outcomes are bounded to 100 rows with explicit total/shown/omitted counts (never silent)', async () => {
   const candidates = [];
-  for (let i = 0; i < 130; i += 1) candidates.push(cand({ id: 1000 + i }));
+  for (let i = 0; i < 130; i += 1) {
+    candidates.push(cand({ id: 1000 + i, original_value: `38.92.48.${i}`, normalized_value: `38.92.48.${i}` }));
+  }
   const pool = fakePool(REPORT, { candidates });
   const audit = fakeAudit();
   await applyCandidateReviewActions(pool, REPORT.id, {

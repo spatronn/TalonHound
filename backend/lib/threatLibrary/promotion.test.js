@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeCandidateValue } from './candidateValue.js';
 import {
-  CIDR_UNSUPPORTED_DETAIL,
+  INVALID_NETWORK_DETAIL,
   classifyCreateEligibility,
+  iocStorageIdentity,
   isActionableReviewIndicator,
   previewCreateIocPromotion,
   summarizePromotionResults,
@@ -69,7 +70,7 @@ test('ignored and context-only are not eligible', () => {
   assert.equal(classifyCreateEligibility(cand({ is_ioc: false })).outcome, PROMOTION_OUTCOMES.NOT_APPLICABLE);
 });
 
-test('CIDR is unsupported, prefix preserved, never eligible', () => {
+test('an approved CIDR is creatable as an ip network IOC that keeps its prefix', () => {
   const cidr = cand({
     candidate_type: 'cidr',
     original_value: '36.35.56.0/24',
@@ -77,10 +78,28 @@ test('CIDR is unsupported, prefix preserved, never eligible', () => {
     review_status: 'approved'
   });
   const r = classifyCreateEligibility(cidr);
-  assert.equal(r.eligible, false);
-  assert.equal(r.outcome, PROMOTION_OUTCOMES.UNSUPPORTED);
-  assert.equal(r.detail, CIDR_UNSUPPORTED_DETAIL);
-  assert.equal(cidr.normalized_value, '36.35.56.0/24');
+  assert.equal(r.eligible, true);
+  assert.equal(r.outcome, PROMOTION_OUTCOMES.WILL_CREATE);
+  assert.deepEqual(iocStorageIdentity(cidr), { type: 'ip', value: '36.35.56.0/24' });
+  assert.equal(cidr.normalized_value, '36.35.56.0/24', 'candidate is not mutated');
+});
+
+test('IPv6 CIDR and IPv6 host map to the ipv6 IOC type; host and network stay distinct', () => {
+  assert.deepEqual(iocStorageIdentity(cand({ candidate_type: 'cidr', normalized_value: '2607:99C0:0:0:0:0:0:5/32' })), { type: 'ipv6', value: '2607:99c0::/32' });
+  assert.deepEqual(iocStorageIdentity(cand({ candidate_type: 'ipv6', normalized_value: '2607:99c0::1' })), { type: 'ipv6', value: '2607:99c0::1' });
+  assert.deepEqual(iocStorageIdentity(cand({ candidate_type: 'ip', normalized_value: '36.35.56.0' })), { type: 'ip', value: '36.35.56.0' });
+  // a cidr row must be a network and an ip row a host — never one for the other
+  assert.equal(iocStorageIdentity(cand({ candidate_type: 'cidr', normalized_value: '36.35.56.0' })), null);
+  assert.equal(iocStorageIdentity(cand({ candidate_type: 'ip', normalized_value: '36.35.56.0/24' })), null);
+});
+
+test('an invalid network is unsupported, never truncated or created', () => {
+  for (const value of ['36.35.56.0/33', '2001:db8::/129', '36.35.56.0/0', '999.1.2.0/24']) {
+    const r = classifyCreateEligibility(cand({ candidate_type: 'cidr', normalized_value: value, original_value: value, review_status: 'approved' }));
+    assert.equal(r.eligible, false, value);
+    assert.equal(r.outcome, PROMOTION_OUTCOMES.UNSUPPORTED, value);
+    assert.equal(r.detail, INVALID_NETWORK_DETAIL, value);
+  }
 });
 
 test('mixed selection preview reports exact eligibility counts', () => {
@@ -91,8 +110,8 @@ test('mixed selection preview reports exact eligibility counts', () => {
     cand({
       id: 4,
       candidate_type: 'cidr',
-      original_value: '36.49.207.0/24',
-      normalized_value: '36.49.207.0/24',
+      original_value: '36.49.207.0/33',
+      normalized_value: '36.49.207.0/33',
       review_status: 'approved'
     }),
     cand({ id: 5, review_status: 'ignored' })

@@ -19,6 +19,7 @@ import { formatIocEntityDisplay } from './auditIocContext.js';
 import { ensureIocTagAssignment } from './tagCatalogService.js';
 import { parseExcludeTagIds } from './tagHelpers.js';
 import { inferExactHashType, normalizeHashValue } from './fileArtifacts/hashNormalize.js';
+import { parseNetworkObservable } from './networkObservable.js';
 import { createServiceLogger } from './appLogger.js';
 import { runBestEffortFileArtifactDualWrite } from './fileArtifactDualWriteDiagnostics.js';
 
@@ -52,6 +53,23 @@ export function resolveStorageObservableType(value, inferredType = null) {
     };
   }
   return { ok: true, type: exact, value: normalized };
+}
+
+/**
+ * Storage identity (ioc_items observable_type + canonical observable) of one
+ * IOC value. IP addresses and CIDR networks are decided first: an IPv6 address
+ * is an `ipv6` IOC (never a domain) and a network keeps its prefix as an
+ * `ip` / `ipv6` IOC (never a URL, never truncated to a host) — see
+ * networkObservable.js. Everything else uses the value-shape inference.
+ * @param {string} value
+ * @returns {{ ok: true, type: string, value: string } | { ok: false, error: string }}
+ */
+export function resolveIocStorageIdentity(value) {
+  const network = parseNetworkObservable(value);
+  if (network) return network.ok ? { ok: true, type: network.type, value: network.value } : network;
+  const inferredType = inferObservableType(value);
+  if (!inferredType) return { ok: false, error: 'Could not infer IOC type from value' };
+  return resolveStorageObservableType(value, inferredType);
 }
 
 export function resolveManualExpirationFromSource(sourceRow, opts = {}) {
@@ -211,11 +229,7 @@ export async function createManualIoc(pool, body, opts = {}) {
     return { status: 400, body: { message: 'Selected IOC source is archived.' } };
   }
 
-  const inferredType = inferObservableType(value);
-  if (!inferredType) {
-    return { status: 400, body: { message: 'Could not infer IOC type from value' } };
-  }
-  const storage = resolveStorageObservableType(value, inferredType);
+  const storage = resolveIocStorageIdentity(value);
   if (!storage.ok) {
     return { status: 400, body: { message: storage.error } };
   }

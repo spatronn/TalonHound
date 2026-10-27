@@ -598,7 +598,8 @@ test('Context Only view: no Create IOCs / Approve high-confidence malicious / Ap
 test('promotion blockers: unsupported types and non-context rows cannot be promoted', () => {
   assert.equal(describePromoteBlocker([ctxAmazon]), null);
   assert.match(describePromoteBlocker([ctxTechnique]), /cannot be stored as an IOC record/);
-  assert.match(describePromoteBlocker([ctxCidr]), /cannot be stored as an IOC record/);
+  // A CIDR is stored as an ip / ipv6 network IOC: its type does not block promotion.
+  assert.equal(describePromoteBlocker([ctxCidr]), null);
   assert.match(describePromoteBlocker([iocA]), /Only Context Only indicators/);
   assert.match(describePromoteBlocker([]), /Select one/);
 });

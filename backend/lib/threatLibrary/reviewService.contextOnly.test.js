@@ -349,7 +349,7 @@ test('promote_to_ioc is single-row only and refuses non-context-only or unsuppor
     contextOnlyCandidate({ id: 2 }),
     contextOnlyCandidate({ id: 3, normalized_value: 'trustpilot.com' }),
     iocCandidate({ id: 1 }),
-    contextOnlyCandidate({ id: 4, candidate_type: 'cidr', normalized_value: '10.0.0.0/8' }),
+    contextOnlyCandidate({ id: 4, candidate_type: 'cidr', normalized_value: '10.0.0.0/33' }),
     contextOnlyCandidate({ id: 5, candidate_type: 'attack_technique', normalized_value: 'T1059', is_ioc: false })
   ]);
   const createIoc = async () => { throw new Error('must not be called'); };

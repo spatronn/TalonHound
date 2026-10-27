@@ -20,6 +20,7 @@ import { pickSafeFields } from './auditRedaction.js';
 import { formatIocEntityDisplay } from './auditIocContext.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
 import { inferExactHashType } from './fileArtifacts/hashNormalize.js';
+import { parseNetworkObservable } from './networkObservable.js';
 import { resolveArtifactScopedIocIds } from './fileArtifacts/read.js';
 
 export const API_IOC_TYPES = Object.freeze(['ip', 'domain', 'url', 'hash']);
@@ -60,16 +61,19 @@ export function normalizeApiIocValue(type, value) {
       };
     }
   } else if (t === 'ip') {
-    const ipv4 = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/.test(v);
-    // Minimal IPv6 acceptance (contains colon, no spaces)
-    const ipv6 = v.includes(':') && !/\s/.test(v);
-    if (!ipv4 && !ipv6) {
+    // IPv4 / IPv6 addresses and CIDR networks; the storage type is `ip` or
+    // `ipv6` and a network keeps its canonical prefix (networkObservable.js).
+    const network = parseNetworkObservable(v);
+    if (!network || !network.ok) {
       return {
         ok: false,
         code: API_ERROR_CODE.INVALID_IOC_VALUE,
-        message: 'The supplied value is not a valid IP address.'
+        message: network?.error
+          ? `The supplied value is not a valid IP address or network: ${network.error}.`
+          : 'The supplied value is not a valid IP address.'
       };
     }
+    return { ok: true, type: network.type, value: network.value };
   } else if (t === 'domain') {
     v = v.toLowerCase().replace(/\.$/, '');
     if (v.includes('/') || /\s/.test(v) || !/^[a-z0-9._-]+$/i.test(v) || !v.includes('.')) {

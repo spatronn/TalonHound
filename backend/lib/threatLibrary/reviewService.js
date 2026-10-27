@@ -49,6 +49,7 @@ import {
   canExecutePromotion,
   classifyCreateEligibility,
   classifyPromoteEligibility,
+  iocStorageIdentity,
   isContextOnlyCandidate,
   isNoneEligibleBlock,
   isPendingActionableCandidate,
@@ -663,7 +664,7 @@ async function promoteCandidate(pool, report, candidate, ctx) {
       outcome: PROMOTION_OUTCOMES.ALREADY_EXISTING,
       detail: existingDetail,
       ioc_id: Number(existing.id),
-      observable_type: existing.observable_type || candidate.candidate_type
+      observable_type: existing.observable_type || identity.type
     });
     await linkCandidateRelationships(pool, report.id, candidate.id, Number(existing.id));
     results.push({
@@ -674,7 +675,10 @@ async function promoteCandidate(pool, report, candidate, ctx) {
     });
   }
 
-  let existing = await findExisting(pool, candidate.candidate_type, candidate.normalized_value);
+  // The ioc_items identity, not the candidate spelling: a CIDR is an ip / ipv6
+  // network IOC with its prefix, an IPv6 address an ipv6 IOC.
+  const identity = iocStorageIdentity(candidate);
+  let existing = await findExisting(pool, identity.type, identity.value);
   if (existing) {
     await linkExisting(existing);
     return;
@@ -683,7 +687,7 @@ async function promoteCandidate(pool, report, candidate, ctx) {
   const result = await createIoc(
     pool,
     {
-      observable: candidate.normalized_value,
+      observable: identity.value,
       source_id: sourceId,
       confidence: candidate.confidence != null && candidate.confidence >= 0.85 ? 'high' : 'medium',
       note: `Threat Library report ${report.public_id}: ${candidate.role || 'unknown'} (${candidate.assessment})`,
@@ -709,7 +713,7 @@ async function promoteCandidate(pool, report, candidate, ctx) {
       outcome: PROMOTION_OUTCOMES.CREATED,
       detail: null,
       ioc_id: result.body.id,
-      observable_type: result.body.observable_type || candidate.candidate_type
+      observable_type: result.body.observable_type || identity.type
     });
     await linkCandidateRelationships(pool, report.id, candidate.id, result.body.id);
     created.push({ candidate_id: candidate.id, ioc_id: result.body.id, public_id: result.body.public_id });
@@ -722,7 +726,7 @@ async function promoteCandidate(pool, report, candidate, ctx) {
   }
 
   if (result.body?.skipped && result.body?.reason === 'duplicate_tuple') {
-    existing = await findExisting(pool, candidate.candidate_type, candidate.normalized_value);
+    existing = await findExisting(pool, identity.type, identity.value);
     if (existing) {
       await linkExisting(existing);
       return;
