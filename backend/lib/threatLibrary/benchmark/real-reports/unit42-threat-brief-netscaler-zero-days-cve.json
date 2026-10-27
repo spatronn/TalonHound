@@ -1,0 +1,100 @@
+{
+ "id": "real-unit42-threat-brief-netscaler-zero-days-cve",
+ "title": "Threat Brief: NetScaler Zero Days CVE-2026-88771 and CVE-2026-88772 Exploited in the Wild (Updated September 30)",
+ "publisher": "Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "ed33b18f7d1ee4a5e52c1f2394db5522012a5ba2d501b834929d804988ae511f",
+  "url": "https://unit42.paloaltonetworks.com/netscaler-zero-days-exploited/",
+  "talonhound_report_id": "08ec8395-0ed8-4ab1-88b7-96892a422d22",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "ip",
+    "value": "104.248.244.66",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "104.28.215.137",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "104.28.247.136",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "162.33.178.9",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "193.149.176.207",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "216.245.184.164",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "45.61.136.143",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "66.227.183.84",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "77.83.199.39",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "1bd314b661396c7086f6367fbbb48025e03ca2de69c073d53a8b0a38aa5fbb7d",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "79c65fa04541032e251fa4796b97800374b63c7982593dd1a2e0db605d429186",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ae22ef2517b5c0fb47f78745b9cb5260acee0e751b89bcd354640ff8bc8d29ec",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

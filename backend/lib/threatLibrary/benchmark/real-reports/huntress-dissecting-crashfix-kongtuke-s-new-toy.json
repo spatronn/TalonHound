@@ -1,0 +1,90 @@
+{
+ "id": "real-huntress-dissecting-crashfix-kongtuke-s-new-toy",
+ "title": "Dissecting CrashFix: KongTuke's New Toy | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "081d730a1d7ceda59cdf4cf45deac2445498abb1760193ffa97bdbae20d3120d",
+  "url": "https://www.huntress.com/blog/malicious-browser-extention-crashfix-kongtuke",
+  "talonhound_report_id": "373eb85d-c263-4ab1-9381-aeb5b0bc5250",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "nexsnield.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "158.247.252.178",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "170.168.103.208",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "199.217.98.108",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "6399c686eba09584bbbb02f31d398ace333a2b57529059849ef97ce7c27752f4",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "c15f44d6abb3a2a882ffdc9b90f7bb5d1a233c0aa183eb765aa8bfba5832c8c6",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "c46af9ae6ab0e7567573dbc950a8ffbe30ea848fac90cd15860045fe7640199c",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "fbfce492d1aa458c0ccc8ce4611f0e2d00913c8d51b5016ce60a7f59db67de67",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "http://temp.sh/utDKu/138d2a62b73e89fc4d09416bcefed27e139ae90016ba4493efc5fbf43b66acfa.exe",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://www.dropbox.com/scl/fi/6gscgf35byvflw4y6x4i0/b1.zip?rlkey=bk2hvxvw53ggzhbjiftppej50&st=yyxnfu71&dl=1",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

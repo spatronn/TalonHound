@@ -1,0 +1,95 @@
+{
+ "id": "real-huntress-employee-monitoring-and-simplehelp-software-abused",
+ "title": "Employee Monitoring and SimpleHelp Software Abused in | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "bf3088d60bfd6e7456fdcce227d73db8c5ae116817eaac0115fb14c200048e13",
+  "url": "https://www.huntress.com/blog/employee-monitoring-simplehelp-abused-in-ransomware-operations",
+  "talonhound_report_id": "45cd0a6c-ab74-4e42-aefc-759fbfa829c5",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "dronemaker.org",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "microuptime.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "telesupportgroup.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "104.145.210.13",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "160.191.182.41",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "192.144.34.35",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "192.144.34.42",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "0b7801af15b6d13b242e8ec53e365b42e2b37edc0fd3e182c94b7d64814d0993",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "0d332b4f5dc9c98097ccbda31847b85c1780c1a02764db3adcbaf67158fbffd0",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "aadf879d5a37de295e6a331aaa38fd138c50317761d6bb97f91d2f354790434e",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "b21f3a77031bccc6f7feb03916a6734e6823328786f993457503c5960b67922b",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

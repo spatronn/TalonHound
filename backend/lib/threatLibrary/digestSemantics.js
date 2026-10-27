@@ -153,6 +153,7 @@ export function digestLabelWindow(text, value) {
  * Semantic kind of a digest-shaped value from its governing label.
  * @param {string} text line / row / surrounding window that contains the value
  * @param {string} value hex value
+ * @param {{ scopeLabel?: string|null, columnHeader?: string|null, rowDescription?: string|null }} [opts]
  * @returns {{ kind: string, label: string, reason: string }}
  */
 export function classifyHexDigest(text, value, opts = {}) {
@@ -163,6 +164,16 @@ export function classifyHexDigest(text, value, opts = {}) {
   const label = digestLabelWindow(text, value);
   const own = classifyLabel(label, { bareKey: /^[0-9a-f]{16,}$/i.test(String(value || '').trim()) });
   if (own.kind !== DIGEST_KINDS.FILE || own.reason === 'file_noun_after_label') return own;
+  // The column header of a table cell is that cell's label ("Imphash |
+  // Cluster | Role"): a non-file digest kind there governs every row, whatever
+  // file nouns the row's other cells use ("x64 EXE (26 samples)") (tl-digest-v4).
+  const columnHeader = String(opts.columnHeader || '').trim();
+  if (columnHeader) {
+    const fromHeader = classifyLabel(columnHeader.slice(0, 120));
+    if (fromHeader.kind !== DIGEST_KINDS.FILE && fromHeader.kind !== DIGEST_KINDS.CREDENTIAL) {
+      return { kind: fromHeader.kind, label: columnHeader, reason: `${fromHeader.kind}_column_header` };
+    }
+  }
   // A table row labelled only by its algorithm ("SHA-256 | <v>") names no
   // subject itself; the table's caption / heading does ("Custom
   // certificate used for TLS communication"). A file noun on the row or in the

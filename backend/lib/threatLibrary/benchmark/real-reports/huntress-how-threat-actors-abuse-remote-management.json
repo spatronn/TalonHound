@@ -1,0 +1,161 @@
+{
+ "id": "real-huntress-how-threat-actors-abuse-remote-management",
+ "title": "How Threat Actors Abuse Remote Management Tools | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "235b9a754d7a896aacffcd70cdbeb45058cb4270cc0915d0dac3cf678316dfd4",
+  "url": "https://www.huntress.com/blog/daisy-chaining-rogue-rmm-tools",
+  "talonhound_report_id": "285b40e2-d3ad-4966-81d9-11e71da79caf",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "MODE B (no IOC heading): the terminal Filename | Hash table and the four threat-actor logon IPs are the publisher inventory."
+  },
+  "indicators": [
+   {
+    "type": "ip",
+    "value": "105.113.63.173",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "209.160.115.150",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "93.152.214.210",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "98.97.79.68",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "1a0769b8445cc27e2ddcdcee9a85a072c2be729e254f6c732548b0fb2bdfe0ef",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "22006710eaad12c4da19edaee4cb6fdd3c3face7e16bbcbd9e4f83eed7f3e7de",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "27c489d5239a3a25f51119b45b7be1ae8a38a153d708f983837d3c602bd367f8",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "429cbc557b1a9c8ceddab06b12b0fc3fc03c2908bb9ccd5ec8d2b386ccdb679a",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "42ef97c8260f9f287ead7b978378de2f27056f23dc513de5f36819159bfe5ebe",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "499d07894f730fb685ee3cbfc1a933e0da93750c1ed25a49b2eb9c32adef156a",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "6cc665057c4a4fe42a309afd3a7fa96cf1af126e9c6e08e56df5105e05378bcc",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "79f25a73e056ecb8aebf36c593ad1826cefa31346a2feca1ba3ed395453c9c48",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "83a8c175cdab60d043759ea04d62ac10a147d0b00e7a610f35e4939873416adc",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "a93c946c237b981189d2668d938a9d4d1d9681757e48dae8d9d65ed25b5da657",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ae5afb20bc1455322c089eed22c81facb19195ed816bb52b0f405a62fd92dda7",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "b775f42c9d280b115ac0aeb168186583f93d94a19a29b7fac8c5e2c98c986bdd",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "bc8b1b0c80512ba0e8ffccfee5b507df16a3355db1143c3ba81ef42dac1baa6c",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "bfa9c3298a749c8949f890ef02b4d07589bea1635150d57215b2f37b6f3acef0",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ca9ac952feaaa5cbbbdea15716ee2acd3b1072f01156b5d2fb35066703de6955",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "db341aaa9cd902b1917b70986832b96325cba577930269bcf759a20404f1d90b",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ebc81a8f91d9b18c7d642bfdcf5f8e26d8921d4501e44e1603c0b67666d8c3e1",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "ec2bdcd616d9dcfbb9bff53d9649c4456823b7384aef65ad1838b5a9fc69e879",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "f2c0c09f4871621ce6dc0cc98dbeba596f08453dd6bdc1f001f26449b1eddfb3",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "domain",
+    "value": "lolrmm.io",
+    "rationale": "Community resource recommended to defenders (\"Community-driven resources like lolrmm.io help support this approach\"); a reference, not attacker infrastructure"
+   }
+  ],
+  "ambiguous": [],
+  "sections": []
+ }
+}

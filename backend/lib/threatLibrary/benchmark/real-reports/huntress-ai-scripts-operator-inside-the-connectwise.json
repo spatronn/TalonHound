@@ -1,0 +1,60 @@
+{
+ "id": "real-huntress-ai-scripts-operator-inside-the-connectwise",
+ "title": "AI, Scripts, Operator: Inside the ConnectWise Attack | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "a377e7903844e893ef774bf7fbf6381347a0ccc383cb44be3d0554ede4588c09",
+  "url": "https://www.huntress.com/blog/connectwise-attack-ai",
+  "talonhound_report_id": "5b87f2e4-c26c-4d07-bf7b-fecc317e4623",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "194.165.16.21 is listed in the IOC table with a hedged \"possible link\"; kept as listed."
+  },
+  "indicators": [
+   {
+    "type": "ip",
+    "value": "144.172.64.128",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "144.172.64.60",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "144.172.64.99",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "194.165.16.21",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

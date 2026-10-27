@@ -1,0 +1,75 @@
+{
+ "id": "real-huntress-reflecting-on-ai-in-2025-faster",
+ "title": "Reflecting on AI in 2025: Faster Attacks, Same Old Tradecraft | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "3a7dcd57f8f8759f1110527e38346d4ecb212c3b00d021e58cf90c3c7fa84022",
+  "url": "https://www.huntress.com/blog/ai-2025-faster-attacks-same-tradecraft",
+  "talonhound_report_id": "e4bfa41e-97a8-4d04-80b1-1cc8f7e611c4",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "ip",
+    "value": "172.86.105.237",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "19d19ac8199298f7b623693f4e38cb79aba8294c258746a3c9d9a183b2bb2578",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "4574ffef886ca461a89db7b9aaaede2e20ac802a82db94e3b6e4d0e86370e7a4",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "57f2a2bb77f5400b46ebc42118f46ffaa497d5c03c24d1cb3868dde2381a0f07",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "cf289b3ab970a3d04213b7312220f769f493f2f2c666ed7a8fe512075a84e995",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "d272c90fc264fa3e4a71fbeff324273c99dd0a48fd2f0234aa6fdd3e80add936",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "f75219e2aea50b8fa618f55389ab9a58351fb6acd4ea7c7de3e656183d5a52f0",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

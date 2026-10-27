@@ -76,7 +76,7 @@ const APPENDIX_VALUES = [
 ];
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v40');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v41');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v9');
 });
 

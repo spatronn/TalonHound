@@ -1,0 +1,105 @@
+{
+ "id": "real-huntress-fake-tech-support-delivers-havoc-command",
+ "title": "Fake Tech Support Delivers Havoc Command & Control | Huntress",
+ "publisher": "Huntress",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "huntress",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "4196d11a57a066315e05e9232f5914a85a779a82edd7ad97187923bd54959694",
+  "url": "https://www.huntress.com/blog/fake-tech-support-havoc-command-control",
+  "talonhound_report_id": "1e040a72-1820-4863-8469-635e21dbf679",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "afzarkara.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "agricularly.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "alatastro.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "arcupondepago.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "bongsebing.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "egravy.com",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "0dce1175dc50d20da0fc009d0eed30fb75a004389fca0fbe0abe9835631d745c",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "1175b1c56d59b736fe25495674ee3f83848e7785fde8ba9e207d283fed9b36c7",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "59014e97287b5602bba192a04535c59c60c6eb3a9770a94293551dfd5390c5c2",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "6fbd98bbdb8a34dd563f29f45c66adf5c53b1aff225269af3ceb56d76ecd677d",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "96c3b7ec47ca5ffaac5da1fda25b1ad1afa91e57e1586165deec1e541f3def2e",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "b1ccee3d0dc7a85c117580cc08b8edcb8118b5612669300d4b006f50663b387e",
+    "assertion": "explicit"
+   },
+   {
+    "type": "sha256",
+    "value": "d96d8b01d034ca1b9b232c70d57a863320cc107e07245ef7308cbdb069031e61",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [],
+  "ambiguous": [],
+  "sections": []
+ }
+}

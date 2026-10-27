@@ -1,0 +1,426 @@
+{
+ "id": "real-unit42-the-xcode-assassin-returns-a-deep",
+ "title": "The Xcode Assassin Returns: A Deep Dive Into the Latest XCSSET Version",
+ "publisher": "Unit 42",
+ "format": "html",
+ "tags": [
+  "real_report",
+  "private",
+  "unit42",
+  "html",
+  "audit_20_2026_10_27"
+ ],
+ "source": {
+  "kind": "private_source",
+  "format": "html",
+  "sha256": "f5e83f0aa3a8a4863034f3e55e70de5f747c92ed9443c6e8eaa639cb14e72816",
+  "url": "https://unit42.paloaltonetworks.com/xcsset-v40-malware-analysis/",
+  "talonhound_report_id": "9be7e76b-5328-42cf-9e09-34e4ad3df827",
+  "distribution": {
+   "basis": "public_web_publication",
+   "evidence": "Publicly accessible publisher blog / research page at the source URL; no TLP or distribution restriction in the retained copy.",
+   "verified_at": "2026-10-27"
+  }
+ },
+ "ground_truth": {
+  "provenance": {
+   "method": "Independent publisher ground truth (20-report audit 2026-10-27, reports 33356-33375): retained publisher HTML converted with an own stdlib parser (table cells, in-cell paragraphs, links), refang and regexes; every IOC section, publisher-declared indicator section and body observable reviewed one by one; linked GitHub / gist resources checked (Sigma, YARA, code snippets: no IOC datasets). Expected = audit-verified members plus confirmed false negatives; confirmed false positives and analyst-judgment values removed.",
+   "verified_by": "manual review of the publisher text (2026-10-27)",
+   "verified_at": "2026-10-27",
+   "coverage_note": "Formal IOC section(s) only; body observables are Context Only under MODE A."
+  },
+  "indicators": [
+   {
+    "type": "domain",
+    "value": "accapple.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "adschecks.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "adsmobi.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "adsmorein.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "adsmoreme.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "amdcdn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "amzndev.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "amzndev.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "amznprod.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "applecdn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "appledisk.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "appledns.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "applehosts.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "appletime.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "bulksec.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdnamz.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdnamz.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdnapple.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdnatapple.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cdnroute.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "checkcdn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "chromeads.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "cnmag.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "devnetaps.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "dnsapple.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "dnsrelays.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "explorecdn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "fiddlejoy.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "figmacat.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "figmanets.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "funchats.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "gironetcdn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "goalmate.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "googlenets.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "greencn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "icloudsnet.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "imails.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "legalads.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "littleads.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "littledns.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "maganet.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "mindelgate.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netapsdev.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netcdnads.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netcdnamz.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netcdndev.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netcorps.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netsprot.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "netsproto.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "networkads.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "rigacdn.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "rigmajoys.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "rigmanet.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "rigmanets.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "sahusuzuki.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "stuffdns.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "testjoys.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "timewebnet.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "vigmanet.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "whitead.in",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "whiteads.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "wincdn.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "domain",
+    "value": "windsecure.ru",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "151.243.109.188",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "178.208.92.129",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "178.208.92.168",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "91.108.106.229",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "95.142.35.206",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "95.142.35.34",
+    "assertion": "explicit"
+   },
+   {
+    "type": "ip",
+    "value": "95.142.37.159",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://amzndev.in/d/zw_sfp64",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://amzndev.ru/d/zw_sfp64",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://googlenets.ru/d/zw_sfp64",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://netcdndev.in/d/zw_sfp64",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://whitead.in/d/zw_sfp64",
+    "assertion": "explicit"
+   },
+   {
+    "type": "url",
+    "value": "https://whiteads.ru/d/zw_sfp64",
+    "assertion": "explicit"
+   }
+  ],
+  "context_only": [],
+  "excluded_legitimate": [],
+  "not_indicators": [
+   {
+    "type": "sha1",
+    "value": "6e480d648fa1b70612f5d198a66875e28847547d",
+    "rationale": "Listed under \"XCSSET v40 SSL Thumbprint\": a TLS certificate thumbprint, not a file digest"
+   }
+  ],
+  "ambiguous": [],
+  "sections": []
+ }
+}
