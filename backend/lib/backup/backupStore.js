@@ -296,6 +296,25 @@ export async function listCompletedForRetention(db) {
   return rows;
 }
 
+/** backup_ids that may still own staging files under BACKUP_DIR/.tmp. */
+export async function listActiveBackupIds(db) {
+  const { rows } = await db.query(
+    `SELECT backup_id FROM system_backups WHERE status IN ('queued', 'running', 'verifying')`
+  );
+  return new Set(rows.map((r) => r.backup_id));
+}
+
+/** Newest backup that reached a terminal outcome (deleted rows keep their original outcome hidden). */
+export async function getLatestFinished(db) {
+  const { rows } = await db.query(
+    `SELECT ${SELECT_COLUMNS} FROM system_backups
+     WHERE status IN ('completed', 'failed', 'interrupted')
+     ORDER BY COALESCE(completed_at, updated_at, created_at) DESC
+     LIMIT 1`
+  );
+  return rows[0] || null;
+}
+
 export async function getProtectedBackupIds(_db) {
   // GUI restore prepare/confirm (system_restores) removed; no restore-hold protection.
   return new Set();

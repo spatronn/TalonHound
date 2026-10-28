@@ -325,4 +325,28 @@ curl -sk https://127.0.0.1/readyz
 
 Worker/queue health for operators: **System → Health** (`GET /api/system/health`).
 
+## Host disk hygiene for source-build hosts
+
+TalonHound never prunes Docker resources on its own. Hosts that build from source
+(`scripts/release/deploy-application.sh`) accumulate build cache and rollback images;
+bound them with host-level policy:
+
+- **Rollback images.** Each source deploy tags the running images
+  `talonhound-<service>:rollback-<previous HEAD>`. `scripts/release/prune-rollback-images.sh`
+  keeps the newest `TALONHOUND_ROLLBACK_KEEP` (default and minimum 2) complete generations and
+  never removes an image used by any container. It is a dry run unless `--apply` is passed; the
+  deploy script applies it only when `TALONHOUND_PRUNE_ROLLBACK_IMAGES=1`.
+- **BuildKit cache.** With the default `docker` builder the cache is limited by the daemon,
+  whose defaults let it grow until roughly 20% of the disk is free. A bounded example for
+  `/etc/docker/daemon.json` (Docker Engine 28+, takes effect after a daemon restart):
+
+  ```json
+  { "builder": { "gc": { "enabled": true, "defaultReservedSpace": "2GB",
+                          "defaultMaxUsedSpace": "8GB", "defaultMinFreeSpace": "20GB" } } }
+  ```
+
+  Until the daemon restarts, `docker builder prune --max-used-space 8GB` applies the same bound once.
+- **Throwaway PostgreSQL for tests.** Run test databases with `docker run --rm` (removes their
+  anonymous data volume) and never inside the production cluster.
+
 Deploy / migrate order: [deployment.md](./deployment.md). Timezone recreate set: [system-timezone.md](./system-timezone.md).

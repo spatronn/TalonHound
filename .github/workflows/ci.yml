@@ -34,7 +34,7 @@ jobs:
         run: |
           test -f VERSION
           node scripts/release/validate-version-tag.js "v$(tr -d '\r\n' < VERSION)"
-          node --test scripts/release/generate-manifest.test.js
+          node --test scripts/release/generate-manifest.test.js scripts/release/rollback-image-retention.test.js
           node scripts/release/latest-migration.js
 
       - name: Reject mismatched release tag simulation
@@ -87,13 +87,13 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:release && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library
+        run: npm run test:release && npm run test:storage-lifecycle && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library
 
       - name: Lint installation.sh
         run: bash -n installation.sh
 
       - name: Run release manifest tests
-        run: node --test scripts/release/generate-manifest.test.js
+        run: node --test scripts/release/generate-manifest.test.js scripts/release/rollback-image-retention.test.js
 
       - name: Apply database init scripts
         run: |

@@ -7,6 +7,7 @@ ROOT="${TALONHOUND_ROOT:-/opt/TalonHound}"
 cd "$ROOT"
 
 echo "=== TalonHound source deploy ==="
+PREVIOUS_HEAD="$(git rev-parse --short HEAD)"
 git fetch origin main
 git merge --ff-only origin/main
 
@@ -16,6 +17,20 @@ if [ -f VERSION ]; then
   export TALONHOUND_BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "Product version: ${TALONHOUND_VERSION}"
 fi
+
+echo "=== tag running images as rollback-${PREVIOUS_HEAD} ==="
+# One rollback generation per deploy; prune-rollback-images.sh bounds how many are kept.
+IMAGE_PREFIX="${TALONHOUND_IMAGE_PREFIX:-talonhound-}"
+for svc in backend frontend proxy integration-worker integration-scheduler; do
+  cid="$(docker compose ps -q "$svc" 2>/dev/null | head -n1 || true)"
+  [ -n "$cid" ] || { echo "skip $svc (not running)"; continue; }
+  ref="${IMAGE_PREFIX}${svc}:rollback-${PREVIOUS_HEAD}"
+  if docker image inspect "$ref" >/dev/null 2>&1; then
+    echo "keep existing $ref"
+  else
+    docker tag "$(docker inspect -f '{{.Image}}' "$cid")" "$ref" && echo "tagged $ref"
+  fi
+done
 
 echo "=== build backend + frontend ==="
 # backend image is shared by all backend-derived workers (see docker-compose.yml
@@ -58,5 +73,11 @@ docker compose exec -T backend node -e "fetch('http://127.0.0.1:3000/readyz').th
 
 echo "=== version ==="
 docker compose exec -T backend node -e "fetch('http://127.0.0.1:3000/api/system/version').then(async (r)=>{console.log('status', r.status); console.log(await r.text()); process.exit(r.status===401||r.status===200?0:1);}).catch(()=>process.exit(1))"
+
+echo "=== rollback image retention ==="
+# Dry run unless TALONHOUND_PRUNE_ROLLBACK_IMAGES=1; never fails the deploy.
+prune_args=()
+[ "${TALONHOUND_PRUNE_ROLLBACK_IMAGES:-0}" = "1" ] && prune_args+=(--apply)
+bash "$ROOT/scripts/release/prune-rollback-images.sh" "${prune_args[@]}"   || echo "WARN: rollback image retention reported a problem (deploy unaffected)" >&2
 
 echo "Deploy complete."

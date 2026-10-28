@@ -35,6 +35,13 @@ export function getBackupConfig() {
     cron: String(process.env.BACKUP_CRON || '0 0 * * 0').trim(),
     timezone,
     retentionDays: intFromEnv('BACKUP_RETENTION_DAYS', 30, { min: 1, max: 3650 }),
+    /** Newest verified backups kept regardless of age; manual deletes below this need confirmation. */
+    minRetained: intFromEnv('BACKUP_MIN_RETAINED', 2, { min: 1, max: 100 }),
+    /** Warn when the newest successful backup is older than this (0 = disabled). */
+    maxAgeHours: intFromEnv('BACKUP_MAX_AGE_HOURS', 8 * 24, { min: 0, max: 24 * 3650 }),
+    /** Warn when the backup filesystem falls below these free-space thresholds. */
+    diskWarnFreePercent: intFromEnv('BACKUP_DISK_WARN_FREE_PERCENT', 10, { min: 0, max: 99 }),
+    inodeWarnFreePercent: intFromEnv('BACKUP_INODE_WARN_FREE_PERCENT', 5, { min: 0, max: 99 }),
     backupDir: String(process.env.BACKUP_DIR || '/data/backups'),
     encryptionEnabled,
     encryptionKeyFile: keyFile,

@@ -35,6 +35,7 @@
     "backup:retention": "node scripts/backup-cli.js retention",
     "backup:restore": "node scripts/backup-cli.js restore",
     "test:backup": "node --test lib/backup/*.test.js routes/backups.test.js",
+    "test:storage-lifecycle": "node --test lib/backup/archive.cleanup.test.js lib/backup/tempSweep.test.js lib/backup/health.test.js lib/backup/retention.test.js routes/backups.test.js lib/threatLibrary/artifactStore.lifecycle.test.js",
     "test:audit": "node --test lib/auditRedaction.test.js lib/auditLogService.test.js lib/threatLibrary/audit.test.js",
     "test:audit-logs": "node --test lib/auditLogQuery.test.js routes/auditLogs.test.js",
     "test:tags": "node --test lib/tagHelpers.test.js lib/tagCatalogService.test.js lib/tagAdminList.test.js",
