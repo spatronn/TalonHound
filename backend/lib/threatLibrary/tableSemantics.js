@@ -77,8 +77,15 @@ function embeddedAbsoluteUrl(token) {
  * (`back.pl`, `tool.py`) or rows with explicit file evidence — never a clear
  * publisher-asserted domain (`evil[.]net` / “Domain contacted…”) merely because
  * sibling Item-column cells are filenames.
+ * v13: a row whose type cell names request content ("macOS POST body",
+ * "User-Agent", "Request header") asserts no indicator: its value is a string
+ * the malware sends, not infrastructure.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v12';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v13';
+
+/** Type cell naming the content of a request rather than an observable type (v13). */
+const REQUEST_CONTENT_TYPE_CELL_RE =
+  /\b(?:(?:post|get|put|http|request|response|beacon)\s+(?:body|bodies|data|payloads?|headers?|parameters?)|user[\s-]?agents?|cookies?)\b/i;
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -1244,6 +1251,13 @@ export function interpretIocTable(block, opts = {}) {
       continue;
     }
     const declaredRow = typeCol ? parseDeclaredType(cells[typeCol.index]) : null;
+    // A type cell naming request content ("macOS POST body", "User-Agent")
+    // types the row's value as a string the malware sends, not a host it
+    // contacts (tl-table-v13).
+    if (typeCol && !declaredRow && REQUEST_CONTENT_TYPE_CELL_RE.test(String(cells[typeCol.index] || ''))) {
+      reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [] }, 'request_content_type_cell');
+      continue;
+    }
     const description = descCols.map((c) => String(cells[c.index] || '').trim()).filter(Boolean).join(' · ') || null;
     const row = {
       row_index: i,

@@ -40,7 +40,7 @@ const HREF_ONLY_WITH_INTERNAL = `<!doctype html><html><body><article>
 </article></body></html>`;
 
 test('htmlBlocks v7 preserves destination-only href on the pointer paragraph', () => {
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v9');
   const doc = extractGenericArticleDocument(HREF_ONLY_HTML, { url: REPORT_URL });
   const pointer = doc.blocks.find((b) => /can be found/i.test(b.text || ''));
   assert.ok(pointer, 'pointer paragraph present');

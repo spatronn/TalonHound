@@ -74,12 +74,12 @@ const POINTER_IOC_SECTION = `<h2>Indicators of Compromise</h2>
 <ul><li>https://learn.vendor.example/docs/device-code</li></ul>`;
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v42');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v43');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v19');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v9');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v10');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v8');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v9');
 });
 
 // --- A. C2 authority needs an IOC inventory; provider prose does not veto ----

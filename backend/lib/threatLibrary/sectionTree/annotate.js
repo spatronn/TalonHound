@@ -284,7 +284,7 @@ function declaresIndicatorSection(blocks, i, chromeIds) {
  * "Domains"): the label of one group of a publisher IOC inventory.
  */
 const INDICATOR_CLASS_LABEL_RE =
-  /^(?:network|host|file|e-?mail|registry|endpoint|infrastructure|domains?|ips?|ip\s+addresses|urls?|hash(?:es)?|samples?|c2|servers?)\b/i;
+  /^(?:network|hosts?|files?|e-?mail|registry|endpoint|infrastructure|domains?|ips?|ip\s+addresses|urls?|hash(?:es)?|samples?|c2|servers?)\b/i;
 
 function isIndicatorClassLabel(t) {
   const s = String(t || '').trim();
@@ -311,6 +311,14 @@ function leadInWithSiblingGroups(blocks, i, chromeIds, level) {
     prose += 1;
   }
   return false;
+}
+
+/** The explicit IOC heading that opened the authoritative appendix on the stack (not an inherited subgroup). */
+function appendixRoot(stack) {
+  for (const s of stack) {
+    if (s.authoritative && s.opened && s.zone === 'explicit_ioc_section') return s;
+  }
+  return null;
 }
 
 function nearestAuthoritative(stack) {
@@ -424,7 +432,20 @@ export function annotateSectionTree(doc, opts = {}) {
     const siblingGroup =
       Boolean(parentAuth?.siblingGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
       Number.isInteger(b.level) && b.level === parentAuth.level && isIndicatorClassLabel(t) && inventoryNext;
-    if (siblingGroup) {
+    // An IOC heading already grouped into indicator-class children ("## IoCs" ›
+    // "### Files") whose next group was written at the IOC heading's own level
+    // ("## Network" over its inventory table) keeps the inventory open
+    // (tl-section-tree-v10).
+    const root = appendixRoot(stack);
+    const classSibling =
+      !siblingGroup && Boolean(root?.classGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
+      !(zone && AUTHORITATIVE.has(zone)) && Number.isInteger(b.level) && b.level === root.level &&
+      isIndicatorClassLabel(t) && inventoryNext;
+    if (classSibling) {
+      while (stack.length && stack[stack.length - 1] !== root) stack.pop();
+      treatAsSubgroup = true;
+      pushTrace({ block_id: b.id, decision: 'continue_indicator_class_sibling', zone: root.zone, opened_by: root.id });
+    } else if (siblingGroup) {
       treatAsSubgroup = true;
       pushTrace({ block_id: b.id, decision: 'continue_lead_in_sibling_group', zone: parentAuth.zone, opened_by: parentAuth.id });
     } else if (parentAuth && !isNegativeHeading) {
@@ -578,8 +599,16 @@ export function annotateSectionTree(doc, opts = {}) {
       siblingGroups: siblingGroup
         ? true
         : opensAuthoritativeZone && isRealHeading && !inferredLevels && zone === 'explicit_ioc_section' &&
-          leadInWithSiblingGroups(blocks, i, chromeIds, level)
+          leadInWithSiblingGroups(blocks, i, chromeIds, level),
+      opened: opensAuthoritativeZone
     };
+    // A deeper indicator-class subgroup of the appendix root marks the root as
+    // grouped by indicator class (see classSibling).
+    const groupRoot = appendixRoot(stack);
+    if (inheritAuth && groupRoot && isRealHeading && Number.isInteger(level) && level > groupRoot.level &&
+        isIndicatorClassLabel(t)) {
+      groupRoot.classGroups = true;
+    }
     stack.push(node);
     if (node.authoritative) {
       authoritativeOpenings += 1;

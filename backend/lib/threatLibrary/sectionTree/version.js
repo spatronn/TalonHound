@@ -35,8 +35,11 @@
  * ("## Indicators of Compromise" → "## Network", "## File hashes"); the first
  * other heading closes it. Qualified IOC headings include inventory-grade
  * qualifiers ("Primary IOCs").
+ * v10 (27-report audit): an IOC heading whose inventory is already grouped
+ * into deeper indicator-class children ("## IoCs" › "### Files") continues
+ * into a same-level indicator-class sibling over an inventory ("## Network").
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v9';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v10';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';
