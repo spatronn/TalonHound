@@ -151,6 +151,24 @@ test('URL 6: visible "Published: <date>" label / post-date class inside the arti
   assert.equal(extractVisiblePublicationDate(labelled, opts).published_date, '2026-09-15');
 });
 
+test('URL 6b: WeLiveSecurity reading-time byline ("25 Jun 2026 • , 10 min. read") is a publication date', () => {
+  const html = `<main><article>
+    <h1>Gamaredon in 2025</h1>
+    <p class="author">Zoltán Rusnák</p>
+    <p>25 Jun 2026 • , 10 min. read</p>
+    <p>Body prose about activity from September 26th, 2025 onward.</p>
+  </article></main>`;
+  const d = extractVisiblePublicationDate(html, opts);
+  assert.equal(d.source, 'visible_date');
+  assert.equal(d.published_date, '2026-06-25');
+  assert.equal(d.precision, 'date');
+  assert.equal(d.evidence.signal, 'reading_time');
+  assert.equal(d.raw_value, '25 Jun 2026');
+  // Modified / update chrome next to a reading-time stamp must not win.
+  const updated = `<article><p>Updated 18 Sep 2026 • 2 min. read</p></article>`;
+  assert.equal(extractVisiblePublicationDate(updated, opts).published_at, null);
+});
+
 test('URL 7: multiple irrelevant dates (body, copyright, comments, latest-post widget, nav) → null', () => {
   const html = `<html><head><meta name="copyright" content="2026"></head><body>
     <nav><a>Archive: September 1, 2026</a></nav>
@@ -300,6 +318,65 @@ test('detectReportPublicationDate: URL prefers HTML metadata and only falls back
   const viaDoc = detectReportPublicationDate({ sourceType: 'url', html: '<html><body><p>no metadata</p></body></html>', document: doc, now: NOW });
   assert.equal(viaDoc.source, 'visible_date');
   assert.equal(viaDoc.published_date, '2026-09-14');
+});
+
+test('Gamaredon / WeLiveSecurity: reading-time byline survives a later negative-context timeline date in front matter', () => {
+  // Mirrors report 34383: byline "25 Jun 2026 • , 10 min. read" plus body
+  // "from September 26th, 2025 onward" inside the first 30 blocks. Pre-v2 the
+  // timeline date polluted allFrontDates and wiped the byline as ambiguous.
+  const doc = {
+    title: 'Gamaredon in 2025: Leveraging tunnels, workers, dead drops, and new alliances',
+    language: 'en',
+    blocks: [
+      { id: 'b001', type: 'heading', text: 'Gamaredon in 2025: Leveraging tunnels, workers, dead drops, and new alliances' },
+      { id: 'b002', type: 'paragraph', text: 'ESET Research analyzes Gamaredon’s new toolset.' },
+      { id: 'b003', type: 'paragraph', text: 'Zoltán Rusnák' },
+      { id: 'b005', type: 'paragraph', text: '25 Jun 2026 • , 10 min. read' },
+      { id: 'b010', type: 'paragraph', text: 'In September 2024, we published a white paper covering Gamaredon activities from 2022 and 2023.' },
+      { id: 'b029', type: 'paragraph', text: 'Late in the year, the group also introduced a new technique – from September 26th, 2025 onward, it began abusing CVE-2025-8088.' },
+      { id: 'b030', type: 'paragraph', text: 'Further prose about tunnels and workers.dev infrastructure.' }
+    ],
+    meta: { adapter: 'generic_html', extractor: 'threat_library_html_v8', source_url: 'https://www.welivesecurity.com/en/eset-research/gamaredon-2025-leveraging-tunnels-workers-dead-drops-new-alliances/' }
+  };
+  const fromDoc = extractDocumentPublicationDate(doc, {
+    sourceType: 'url',
+    sourceUrl: 'https://www.welivesecurity.com/en/eset-research/gamaredon-2025-leveraging-tunnels-workers-dead-drops-new-alliances/',
+    ...opts
+  });
+  assert.equal(fromDoc.source, 'visible_date');
+  assert.equal(fromDoc.published_date, '2026-06-25');
+  assert.equal(fromDoc.precision, 'date');
+  assert.equal(fromDoc.raw_value, '25 Jun 2026');
+  assert.equal(fromDoc.evidence.signal, 'reading_time');
+  assert.equal(fromDoc.evidence.block_id, 'b005');
+
+  const bareHtml = `<html><body><main><article>
+    <h1>Gamaredon in 2025</h1>
+    <p>25 Jun 2026 • , 10 min. read</p>
+    <p>Late in the year – from September 26th, 2025 onward – the group abused CVE-2025-8088.</p>
+  </article></main></body></html>`;
+  const full = detectReportPublicationDate({
+    sourceType: 'url',
+    sourceUrl: 'https://www.welivesecurity.com/en/eset-research/gamaredon-2025-leveraging-tunnels-workers-dead-drops-new-alliances/',
+    html: bareHtml,
+    document: doc,
+    now: NOW
+  });
+  assert.equal(full.published_date, '2026-06-25');
+  assert.equal(full.source, 'visible_date');
+  assert.equal(full.precision, 'date');
+
+  // Refresh must not erase a valid date when detection later returns null.
+  const keep = resolvePublicationDateUpdate(
+    {
+      published_at: '2026-06-25T00:00:00.000Z',
+      published_at_source: 'visible_date',
+      published_at_precision: 'date'
+    },
+    { published_at: null, source: null, reason: 'no_publication_date_in_html' }
+  );
+  assert.equal(keep.action, 'keep');
+  assert.equal(keep.reason, 'no_detection_keep_existing');
 });
 
 // ---------------------------------------------------------------------------

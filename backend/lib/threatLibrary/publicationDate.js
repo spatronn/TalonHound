@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v1';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v2';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -462,6 +462,13 @@ export function extractMetaPublicationDate(html, opts = {}) {
 const NEGATIVE_CONTEXT_RE = /\b(updated|modified|last reviewed|reviewed|revised|edited|last edited|expires?|expired|comment(?:ed)?|event|webinar|deadline|register|due)\b/i;
 const PUBLISHED_LABEL_RE = /\b(published(?:\s+on)?|posted(?:\s+on)?|publication date|date published|published date|release date|released(?:\s+on)?|report date|date of publication|dated?)\s*[:\-–—]?\s*$/i;
 const PUBLISHED_CLASS_RE = /(publish|pubdate|pub-date|pub_date|posted|entry-date|entry-time|post-date|postdate|article-date|article__date|byline|dateline|date-published|datePublished|published-date|release-date)/i;
+/**
+ * Publisher chrome that pairs a calendar day with an article reading-time
+ * ("25 Jun 2026 • , 10 min. read"). Treat as a publication byline even when
+ * no "Published:" label or publish-* class is present — WeLiveSecurity / ESET
+ * and similar blogs only surface the date this way.
+ */
+const READING_TIME_BYLINE_RE = /\bmin(?:ute)?s?\.?\s*read\b/i;
 // Class / id tokens that mark a container as "not this article": related /
 // recent post lists, sidebars, widgets, comments, footers. Matched per token
 // (prefix) so a layout wrapper such as `content-sidebar-wrap` is not noise.
@@ -591,12 +598,24 @@ export function extractVisiblePublicationDate(html, opts = {}) {
     if (PUBLISHED_LABEL_RE.test(before)) signal = 'label';
     else if (PUBLISHED_CLASS_RE.test(`${a.class || ''} ${a.id || ''}`) && before.trim() === '' && after.trim() === '') signal = 'class';
     else if (PUBLISHED_LABEL_RE.test(precedingText(el, 40)) && before.trim() === '' && after.trim().length <= 3) signal = 'label';
+    else if (
+      before.trim() === ''
+      && READING_TIME_BYLINE_RE.test(after)
+      && text.length <= 80
+    ) {
+      // "25 Jun 2026 • , 10 min. read" — date leads, reading-time trails.
+      signal = 'reading_time';
+    }
     if (!signal) continue;
     considered.push({ where: 'visible', text, signal, in_article: inArticle, parsed: mention.parsed.date });
     hits.push({ parsed: mention.parsed, signal, inArticle, text });
   }
   if (!hits.length) return emptyDetection('visible_date_absent', considered);
-  hits.sort((x, y) => (x.signal === y.signal ? Number(y.inArticle) - Number(x.inArticle) : x.signal === 'label' ? -1 : 1));
+  const signalRank = { label: 0, reading_time: 1, class: 2 };
+  hits.sort((x, y) => (
+    (signalRank[x.signal] ?? 9) - (signalRank[y.signal] ?? 9)
+    || Number(y.inArticle) - Number(x.inArticle)
+  ));
   const best = hits[0];
   const peers = hits.filter((h) => h.signal === best.signal && h.inArticle === best.inArticle);
   if (new Set(peers.map((h) => h.parsed.date)).size > 1) return emptyDetection('visible_date_ambiguous', considered);
@@ -727,10 +746,25 @@ export function extractDocumentPublicationDate(document, opts = {}) {
         considered.push({ block_id: b.id, raw: m.raw, skipped: 'negative_context', context: `${before}${m.raw}${after}`.slice(0, 100) });
         continue;
       }
-      const label = DOC_LABEL_RE.test(before);
+      // Reading-time chrome ("25 Jun 2026 • , 10 min. read") is publisher
+      // byline evidence — treat it like an explicit Published: label so a
+      // later timeline date in the same front-matter window cannot wipe it.
+      const trailing = text.slice(m.index + m.raw.length);
+      const readingTimeByline = before.trim() === '' && READING_TIME_BYLINE_RE.test(trailing) && text.length <= 80;
+      const label = DOC_LABEL_RE.test(before) || readingTimeByline;
       if (label) {
-        labelled.push({ block: b, mention: m, context: `${before}${m.raw}`.trim() });
-        considered.push({ block_id: b.id, raw: m.raw, signal: 'label', page: b.page ?? null });
+        labelled.push({
+          block: b,
+          mention: m,
+          context: `${before}${m.raw}${readingTimeByline ? trailing.slice(0, 24) : ''}`.trim(),
+          signal: readingTimeByline ? 'reading_time' : 'label'
+        });
+        considered.push({
+          block_id: b.id,
+          raw: m.raw,
+          signal: readingTimeByline ? 'reading_time' : 'label',
+          page: b.page ?? null
+        });
       } else if (shortBlock || isCover) {
         unlabelled.push({ block: b, mention: m, context: `${before}${m.raw}${after}`.trim(), cover: isCover });
         considered.push({ block_id: b.id, raw: m.raw, signal: isCover ? 'cover' : 'byline', page: b.page ?? null });
@@ -748,11 +782,11 @@ export function extractDocumentPublicationDate(document, opts = {}) {
       block_id: best.block.id,
       page: best.block.page ?? null,
       zone: best.block.zone || null,
-      signal,
+      signal: best.signal || signal,
       context: best.context.slice(0, 120)
     }, considered);
   };
-  if (labelled.length) return pickFrom(labelled, 'label');
+  if (labelled.length) return pickFrom(labelled, labelled[0].signal || 'label');
   // An unlabelled date is only trusted when it is the ONLY date in the front
   // matter: a second date anywhere there (even one rejected for context)
   // means the byline cannot be told apart from a timeline entry.
