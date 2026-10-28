@@ -259,8 +259,15 @@ export {
  * exist (same inventory rule as explicit_ioc_section); a block whose visible
  * text glues a one-letter conjunction onto a defanged link ("znews[.]neti"
  * from "znews[.]net" + "i") recovers the structured link text.
+ * v43 (27-report audit): a table nested inside a heading element keeps its
+ * rows (threat_library_html_v9); an IOC heading grouped into indicator-class
+ * children continues into a same-level indicator-class sibling
+ * (tl-section-tree-v10); a scheme-less IPv4-host URL with a non-digit path
+ * ("91.92.242[.]30/lamq4") is a URL; a list lead-in naming the values as
+ * service "instances" is a provider stance; a type cell naming request
+ * content ("POST body", "User-Agent") asserts no indicator (tl-table-v13).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v42';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v43';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -571,6 +578,13 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"'`\]‘’“”«»]+/gi;
  * the value. Not preceded by a scheme separator, "@" or another label.
  */
 const HOST_PATH_RE = /(?<![\w@:\/.\-])((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})(?::\d{1,5})?(\/[^\s<>"'`\]，。；‘’“”«»]+)/gi;
+/**
+ * Scheme-less resource on an IPv4 host ("91.92.242[.]30/lamq4"). The path must
+ * carry a non-digit so a CIDR prefix ("10.0.0.0/8") never reads as a URL
+ * (tl-candidates-v43).
+ */
+const IPV4_HOST_PATH_HEAD_RE = /^(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\/(?=\S*[a-z_~%])/i;
+const IP_HOST_PATH_RE = /(?<![\w@:\/.\-])((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3})(?::\d{1,5})?(\/(?=[^\s<>"'`\]]*[a-z_~%])[^\s<>"'`\]，。；‘’“”«»]+)/gi;
 const URL_SCHEME_PREFIX_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 /**
  * Transport endpoint written with a non-HTTP scheme ("tcp://c2.example:443",
@@ -1677,12 +1691,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // invented, the path stays in the value, the host is parsed metadata only
     // (same no-over-derivation rule as absolute URLs) and the basename never
     // becomes a domain / artifact of its own.
-    for (const m of text.matchAll(HOST_PATH_RE)) {
+    const hostPathMatches = [...text.matchAll(HOST_PATH_RE), ...text.matchAll(IP_HOST_PATH_RE)].sort((a, b) => a.index - b.index);
+    for (const m of hostPathMatches) {
       const start = m.index;
       const raw = trimUrlBoundary(m[0]);
       if (!raw || insideAnySpan(spans, start, start + raw.length)) continue;
       const v = validateUrlCandidate(raw);
-      if (!v.ok || v.reason !== 'scheme_less_url_with_dns_host' || v.host_kind !== 'domain') {
+      const ipHost = v.host_kind === 'ip';
+      if (!v.ok || v.reason !== 'scheme_less_url_with_dns_host' || (ipHost && !IPV4_HOST_PATH_HEAD_RE.test(raw))) {
         countReason(typeDiag.scheme_less_resources.rejected, v.reason || 'invalid');
         continue;
       }
@@ -1696,7 +1712,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       const entry = add(raw, 'url', block, {
         form: isRow ? OCCURRENCE_FORMS.LIST_ROW : OCCURRENCE_FORMS.URL,
         originalValue: sourceSpelling(block.text, raw),
-        typing: { typing_reason: 'scheme_less_url_with_dns_host' }
+        typing: { typing_reason: ipHost ? 'scheme_less_url_with_ip_host' : 'scheme_less_url_with_dns_host' }
       });
       typeDiag.scheme_less_resources.count += 1;
       if (entry) {
@@ -1705,7 +1721,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         entry.parsed.path = path;
         if (v.host && !entry.parsed.host) {
           entry.parsed.host = v.host;
-          entry.parsed.host_kind = 'domain';
+          entry.parsed.host_kind = ipHost ? 'ip' : 'domain';
         }
         if (base && !entry.parsed.path_basename) entry.parsed.path_basename = base;
         if (!urlHostIndex.has(v.host)) urlHostIndex.set(v.host, new Set());

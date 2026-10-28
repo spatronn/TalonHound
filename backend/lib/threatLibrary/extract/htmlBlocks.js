@@ -31,10 +31,13 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v8: a table / list / pre nested behind inline wrappers inside a paragraph
  * (`<p><span style><table>`) is emitted as its own block instead of being
  * flattened into paragraph text (the rows lost their cell boundaries).
- * Document extractor contract is threat_library_html_v8 so Refresh rebuilds
+ * v9: the same nesting behind a heading element (`<h3><span><table>`) emits
+ * the heading's own inline text (if any) and the table as its own block; the
+ * table rows were flattened into one heading block.
+ * Document extractor contract is threat_library_html_v9 so Refresh rebuilds
  * retained HTML under the nested-table contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v8';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v9';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -140,6 +143,22 @@ function hasNestedBlockElement(node, depth = 0) {
     if (INLINE_WRAPPER_TAGS.has(t) && hasNestedBlockElement(c, depth + 1)) return true;
   }
   return false;
+}
+
+/**
+ * Separate a node's inline content from the block elements nested in it
+ * (directly or behind inline wrappers, bounded depth), in document order.
+ * @param {object} node
+ * @returns {{ inline: object[], nested: object[] }}
+ */
+function splitNestedBlocks(node, depth = 0, out = { inline: [], nested: [] }) {
+  for (const c of node?.children || []) {
+    const t = tagOf(c);
+    if (isElement(c) && NESTED_BLOCK_TAGS.has(t)) out.nested.push(c);
+    else if (isElement(c) && depth < 6 && INLINE_WRAPPER_TAGS.has(t) && hasNestedBlockElement(c)) splitNestedBlocks(c, depth + 1, out);
+    else out.inline.push(c);
+  }
+  return out;
 }
 
 function attr(node, name) {
@@ -461,6 +480,20 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
 
     if (HEADING_TAGS.has(tag)) {
       flushPending();
+      // A heading element wrapping a block behind inline wrappers
+      // (`<h3><span style><table>`, v9) is CMS markup damage: the heading is
+      // only its own inline text, and the table / list keeps its rows.
+      if (hasNestedBlockElement(node)) {
+        const { inline, nested } = splitNestedBlocks(node);
+        const own = textOf({ type: 'tag', name: 'span', children: inline }).replace(/\s+/g, ' ').trim();
+        if (own) {
+          currentSection = own.slice(0, 200);
+          push('heading', own, { level: Number(tag.slice(1)) });
+        }
+        for (const c of nested) walk(c);
+        flushPending();
+        return;
+      }
       const text = textOf(node);
       currentSection = text.slice(0, 200) || currentSection;
       // DOM hierarchy (h1–h6) lets zone scoping tell a nested sub-label from a sibling section.

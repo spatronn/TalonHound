@@ -1,10 +1,10 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v42",
+    "candidates": "tl-candidates-v43",
     "zones": "tl-zones-v16",
-    "tables": "tl-table-v12",
+    "tables": "tl-table-v13",
     "type_resolver": "tl-type-resolver-v19",
-    "html": "threat_library_html_v8",
+    "html": "threat_library_html_v9",
     "pdf": "threat_library_pdf_v6",
     "quality": "tl-quality-v14",
     "metrics": "tl-benchmark-metrics-v2"

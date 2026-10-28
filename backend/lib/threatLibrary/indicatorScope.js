@@ -444,11 +444,12 @@ function statesNonMaliciousStance(window) {
  */
 const PROVIDER_ROLE_NOUN_RE =
   /(?<![\w.-])(?:(?:blockchain|rpc|dns|doh|cdn|ip[\s-]?lookup|ip[\s-]?geolocation|geolocation|block|wallet)\s+(?:providers?|explorers?|resolvers?|apis?)|(?:public|legitimate|third[\s-]party|commercial)\s+(?:[\w-]+\s+)?(?:providers?|services?|platforms?|explorers?|resolvers?|apis?))(?![\w.-])/i;
-// List lead-in object phrase ("through three Blockscout providers:"): the
-// grammar already scopes the noun to the listed values.
-const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?)(?![\w.-])/i;
+// List lead-in object phrase ("through three Blockscout providers:", "on three
+// Blockscout instances:"): the grammar already scopes the noun to the listed
+// values (instances: tl-candidates-v43).
+const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?|instances?)(?![\w.-])/i;
 const MALICIOUS_VALUE_ROLE_RE =
-  /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
+  /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?|instances?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
 
 /**
  * @param {string} window row / lead-in text with this value masked as OBSERVABLE
@@ -518,7 +519,7 @@ const LEAD_OBJECT_SPLIT_RE =
 
 /** A lead-in whose last noun phrase names the listed items as providers / services. */
 const PROVIDER_LIST_LEAD_RE =
-  /\b(?:providers?|services?|explorers?|resolvers?|platforms?)\s*(?:[(（][^)）]*[)）])?\s*[:：]?\s*$/i;
+  /\b(?:providers?|services?|explorers?|resolvers?|platforms?|instances?)\s*(?:[(（][^)）]*[)）])?\s*[:：]?\s*$/i;
 
 /** "These endpoints are …" / "The above domains are …": a sentence about the preceding list. */
 const LIST_ANAPHORA_RE =
@@ -698,8 +699,8 @@ const OBSERVABLE_TOKEN_RE =
 
 /**
  * One scheme-less host/path URL value ("host.example/path/file.bin"), exactly
- * as candidate extraction accepts it: DNS-shaped host with a strong suffix and
- * a non-empty path. Relative paths / filesystem paths never qualify.
+ * as candidate extraction accepts it: DNS-shaped host with a strong suffix (or
+ * an IPv4 host with a non-digit path) and a non-empty path. Relative paths / filesystem paths never qualify.
  * @param {string} token refanged or source spelling, no surrounding prose
  */
 export function isSchemeLessUrlToken(token) {
@@ -708,7 +709,9 @@ export function isSchemeLessUrlToken(token) {
   const slash = t.indexOf('/');
   if (slash <= 0 || slash === t.length - 1) return false;
   const v = validateUrlCandidate(t);
-  return v.ok === true && v.reason === 'scheme_less_url_with_dns_host' && v.host_kind === 'domain';
+  if (v.ok !== true || v.reason !== 'scheme_less_url_with_dns_host') return false;
+  // IPv4 host: only with a non-digit path, never a CIDR prefix (tl-candidates-v43).
+  return v.host_kind === 'domain' || (v.host_kind === 'ip' && /^(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\/(?=\S*[a-z_~%])/i.test(t));
 }
 
 /**
