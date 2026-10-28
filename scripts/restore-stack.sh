@@ -94,6 +94,7 @@ if [ ! -f "$MANIFEST" ]; then
 fi
 validate_backup_manifest "$MANIFEST" || exit 1
 echo "[restore] manifest validated (TalonHound)"
+detect_threat_library_component "$BUNDLE_DIR" || exit 1
 
 echo "[restore] bundle: $BUNDLE_DIR"
 echo "[restore] dump: $PG_DUMP"
@@ -116,6 +117,19 @@ fi
 echo "[restore] validating dump readability..."
 validate_dump_readable "$PG_DUMP" || exit 1
 
+if [ "$TL_MODE" = "full" ]; then
+  echo "[restore] verifying Threat Library files (count, size, sha256, paths)..."
+  TL_VERIFY=$(tl_restore_cli verify /restore-bundle) || {
+    echo "[restore] Threat Library component verification failed: $TL_VERIFY" >&2
+    exit 1
+  }
+  echo "[restore] Threat Library files: $TL_VERIFY"
+else
+  echo "[restore] WARNING: legacy PostgreSQL-only backup — Threat Library source files are NOT included." >&2
+  echo "[restore] WARNING: existing files in threat_library_data are left as they are; reports whose retained" >&2
+  echo "[restore] WARNING: HTML/PDF is absent cannot Refresh or re-extract from source." >&2
+fi
+
 SAFETY_PLAN="safety backup of current DB (skipped automatically if target DB looks empty)"
 if [ "$SKIP_SAFETY" -eq 1 ]; then
   SAFETY_PLAN="safety backup skipped (--skip-safety)"
@@ -126,6 +140,12 @@ echo "  - $SAFETY_PLAN"
 echo "  - stop writer services"
 echo "  - DROP DATABASE ${RESTORE_DB_NAME} WITH (FORCE) and CREATE DATABASE (destructive)"
 echo "  - pg_restore into fresh database (no --clean)"
+if [ "$TL_MODE" = "full" ]; then
+  echo "  - Threat Library files: staged and verified before the database is touched;"
+  echo "    swapped in only after pg_restore succeeds (previous tree kept as .reports-pre-restore-<id>)"
+else
+  echo "  - Threat Library files: NOT in this backup (legacy format) — left unchanged"
+fi
 echo "  - npm run migrate (forward-only safety net)"
 echo "  - start writers"
 echo "  - Redis: not restored"
@@ -143,12 +163,26 @@ fi
 
 echo "[restore] WARNING: this replaces the PostgreSQL database '${RESTORE_DB_NAME}'."
 
+TL_RESTORE_ID="restore-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+tl_abort_staging() {
+  [ "$TL_MODE" = "full" ] || return 0
+  tl_restore_cli abort --id "$TL_RESTORE_ID" >/dev/null 2>&1 || true
+}
+if [ "$TL_MODE" = "full" ]; then
+  echo "[restore] staging Threat Library files (${TL_RESTORE_ID})..."
+  if ! tl_restore_cli stage /restore-bundle --id "$TL_RESTORE_ID"; then
+    tl_abort_staging
+    echo "[restore] Threat Library staging failed — nothing was changed" >&2
+    exit 1
+  fi
+fi
+
 if [ "$SKIP_SAFETY" -eq 1 ]; then
   echo "[restore] safety backup skipped (--skip-safety)"
 elif target_db_is_empty; then
   echo "[restore] target DB appears empty/fresh — skipping safety backup"
 else
-  create_safety_backup || exit 1
+  create_safety_backup || { tl_abort_staging; exit 1; }
 fi
 
 trap - EXIT INT TERM
@@ -156,14 +190,28 @@ trap - EXIT INT TERM
 stop_writers
 
 recreate_restore_target_database || {
+  tl_abort_staging
   start_writers
   exit 1
 }
 
 run_pg_restore_into_target "$PG_DUMP" || {
+  tl_abort_staging
   echo "[restore] restore failed — writers not restarted automatically; inspect DB and run start manually" >&2
+  echo "[restore] Threat Library files were not changed (staging discarded)" >&2
   exit 1
 }
+
+if [ "$TL_MODE" = "full" ]; then
+  echo "[restore] swapping in restored Threat Library files..."
+  TL_COMMIT=$(tl_restore_cli commit --id "$TL_RESTORE_ID") || {
+    echo "[restore] Threat Library swap failed: $TL_COMMIT" >&2
+    echo "[restore] database is restored; staged files remain in .restore-${TL_RESTORE_ID} — rerun:" >&2
+    echo "  docker compose run --rm --no-deps threat-library-worker node scripts/restore-threat-library-artifacts.js commit --id ${TL_RESTORE_ID}" >&2
+    exit 1
+  }
+  echo "[restore] Threat Library files restored: $TL_COMMIT"
+fi
 
 echo "[restore] running migrations (forward-only safety net)..."
 if ! docker compose run --rm --no-deps backend npm run migrate; then

@@ -27,6 +27,7 @@ import {
   markFailed
 } from './backupStore.js';
 import { getLatestMigrationMeta } from '../migrationFiles.js';
+import { captureThreatLibrarySnapshot, THREAT_LIBRARY_INDEX_FILE } from './threatLibraryComponent.js';
 
 function gitSha() {
   try {
@@ -64,9 +65,14 @@ function writeReadme(bundleDir, backupId) {
 backup_id: ${backupId}
 
 Contents:
-- database/postgres.dump  (pg_dump custom format)
+- database/postgres.dump              (pg_dump custom format)
+- files/threat-library/index.json     (Threat Library source file list + sha256)
+- files/threat-library/reports/...    (retained source HTML / PDF uploads)
 - manifest.json
 - checksums.sha256
+
+The database dump and the Threat Library files come from the same PostgreSQL
+snapshot: every artifact the dump references is in files/threat-library/.
 
 Redis, .env, TLS certs, and regenerable IOC search exports are excluded.
 
@@ -99,24 +105,46 @@ export async function executeBackupJob(db, rowId, { logger = console } = {}) {
 
   const workRoot = path.join(cfg.backupDir, '.tmp', `${backupId}-${process.pid}`);
   const bundleDir = path.join(workRoot, backupId);
+  let snapshotClient = null;
+  let threatLibrary = null;
 
   try {
     await assertPgClientTools();
     await fs.promises.mkdir(path.join(bundleDir, 'database'), { recursive: true });
+
+    // Threat Library files first, from an exported snapshot that pg_dump then
+    // reuses: the dump and the copied file set describe one database state.
+    snapshotClient = await db.connect();
+    logger.info?.(`[backup] backup_id=${backupId} threat library snapshot starting`);
+    threatLibrary = await captureThreatLibrarySnapshot(snapshotClient, {
+      storageRoot: cfg.threatLibraryStorageDir,
+      bundleDir
+    });
+    logger.info?.(
+      `[backup] backup_id=${backupId} threat library files=${threatLibrary.fileCount} bytes=${threatLibrary.totalBytes}`
+    );
 
     const dumpPath = path.join(bundleDir, 'database', 'postgres.dump');
     logger.info?.(`[backup] backup_id=${backupId} pg_dump starting`);
     await runPgDump({
       ...cfg.db,
       outPath: dumpPath,
+      snapshot: threatLibrary.snapshot,
       timeoutMs: cfg.pgDumpTimeoutMs
     });
+    await threatLibrary.release();
+    snapshotClient.release();
+    snapshotClient = null;
     const databaseSizeBytes = (await fs.promises.stat(dumpPath)).size;
     if (databaseSizeBytes <= 0) {
       throw Object.assign(new Error('Empty postgres dump'), { code: 'PG_DUMP_FAILED' });
     }
 
-    await writeChecksumsFile(bundleDir, ['database/postgres.dump']);
+    await writeChecksumsFile(bundleDir, [
+      'database/postgres.dump',
+      THREAT_LIBRARY_INDEX_FILE,
+      ...threatLibrary.relPaths
+    ]);
     await writeReadme(bundleDir, backupId);
 
     const schemaVersion = await readSchemaVersion(db);
@@ -133,8 +161,15 @@ export async function executeBackupJob(db, rowId, { logger = console } = {}) {
       triggerType: row.trigger_type,
       result: 'completed',
       encrypted: Boolean(cfg.encryptionEnabled),
-      components: { postgresBytes: databaseSizeBytes, filesBytes: 0 },
-      checksums: { 'database/postgres.dump': dumpChecksum },
+      components: {
+        postgresBytes: databaseSizeBytes,
+        filesBytes: threatLibrary.totalBytes,
+        threatLibrary: { fileCount: threatLibrary.fileCount, totalBytes: threatLibrary.totalBytes }
+      },
+      checksums: {
+        'database/postgres.dump': dumpChecksum,
+        [THREAT_LIBRARY_INDEX_FILE]: await sha256File(path.join(bundleDir, THREAT_LIBRARY_INDEX_FILE))
+      },
       included: [...BACKUP_INCLUDED],
       excluded: [...BACKUP_EXCLUDED]
     });
@@ -196,7 +231,7 @@ export async function executeBackupJob(db, rowId, { logger = console } = {}) {
       archiveSizeBytes: placed.sizeBytes || finalSize,
       checksumSha256: finalChecksum,
       databaseSizeBytes,
-      filesSizeBytes: 0,
+      filesSizeBytes: threatLibrary.totalBytes,
       encrypted,
       manifest,
       durationMs: Date.now() - started
@@ -212,6 +247,11 @@ export async function executeBackupJob(db, rowId, { logger = console } = {}) {
     logger.error?.(`[backup] backup_id=${backupId} failed code=${code} msg=${message}`);
     return markFailed(db, row.id, { errorCode: code, errorMessage: message });
   } finally {
+    if (snapshotClient) {
+      await threatLibrary?.release().catch(() => {});
+      // A client that failed mid-snapshot may still hold session state; discard it.
+      snapshotClient.release(true);
+    }
     await safeRmRf(workRoot);
   }
 }

@@ -838,3 +838,13 @@ button.br-btn.br-btn-danger:hover:not(:disabled),
   padding-top: 4px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
+
+.br-contents-full,
+.br-contents-database_only {
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+.br-contents-database_only {
+  color: rgba(251, 191, 36, 0.9);
+}

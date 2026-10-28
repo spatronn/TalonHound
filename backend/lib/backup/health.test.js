@@ -119,3 +119,16 @@ test('system health rows: storage counts toward overall, backups never do', () =
   assert.equal(unknown.status, 'unknown');
   assert.equal(resolveOverallSystemHealth({ core: [unknown] }).status, 'healthy');
 });
+
+test('warns when the newest verified backup lacks Threat Library files that exist', () => {
+  const legacy = point(1);
+  const full = point(1, { manifest: { format_version: 3, components: { threat_library: { file_count: 3, bytes: 9 } } } });
+  const codes2 = (r) => r.warnings.map((w) => w.code);
+  assert.ok(
+    codes2(evaluateBackupHealth({ cfg: CFG, completed: [legacy, point(8)], threatLibraryArtifactCount: 5, now: NOW }))
+      .includes('latest_backup_without_threat_library')
+  );
+  assert.deepEqual(codes2(evaluateBackupHealth({ cfg: CFG, completed: [full, point(8)], threatLibraryArtifactCount: 5, now: NOW })), []);
+  // nothing to back up yet: a database-only backup is complete
+  assert.deepEqual(codes2(evaluateBackupHealth({ cfg: CFG, completed: [legacy, point(8)], threatLibraryArtifactCount: 0, now: NOW })), []);
+});

@@ -9,6 +9,7 @@ import {
   TIMEZONE_CHANGED_EVENT
 } from '../lib/formatDate.js';
 import { computeOverflowMenuPosition } from '../lib/backupMenuPosition.js';
+import { describeBackupContents } from '../lib/backupContents.js';
 import './BackupRestorePage.css';
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50];
@@ -765,6 +766,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                   const completed = row.status === 'completed';
                   const canDownload = completed;
                   const canDelete = !['queued', 'running', 'verifying'].includes(row.status);
+                  const contents = describeBackupContents(row);
                   return (
                     <div className="br-history-grid-row" role="row" key={row.id}>
                       <div role="cell" className="br-cell-created">
@@ -785,7 +787,14 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                         </div>
                       </div>
                       <div role="cell"><StatusBadge status={row.status} /></div>
-                      <div role="cell">{formatBytes(row.archive_size_bytes)}</div>
+                      <div role="cell">
+                        {formatBytes(row.archive_size_bytes)}
+                        {contents.short ? (
+                          <div className={`br-muted br-contents-${contents.kind}`} data-contents={contents.kind}>
+                            {contents.short}
+                          </div>
+                        ) : null}
+                      </div>
                       <div role="cell">
                         <StatusBadge
                           status={row.verify_status}
@@ -900,6 +909,12 @@ export default function BackupRestorePage({ AppShell, useSession }) {
         <div className="br-modal-backdrop" role="presentation" onClick={() => setDetailsTarget(null)}>
           <div className="br-modal br-modal-wide" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Backup details</h2>
+            {detailsTarget.status === 'completed' && !detailsTarget.threat_library?.included ? (
+              <div className="br-banner br-banner-warn" role="status">
+                <span className="br-banner-icon">{Icons.warn}</span>
+                <div>PostgreSQL-only backup: Threat Library source files are not included and cannot be recovered from it.</div>
+              </div>
+            ) : null}
             <div className="br-detail-groups">
               <section>
                 <h3>General</h3>
@@ -920,6 +935,13 @@ export default function BackupRestorePage({ AppShell, useSession }) {
                   <dt>Filename</dt><dd className="br-mono">{detailsTarget.archive_filename || '—'}</dd>
                   <dt>Size</dt><dd>{formatBytes(detailsTarget.archive_size_bytes)}</dd>
                   <dt>Database size</dt><dd>{formatBytes(detailsTarget.database_size_bytes)}</dd>
+                  <dt>Threat Library files</dt>
+                  <dd>
+                    {detailsTarget.threat_library?.included
+                      ? `${detailsTarget.threat_library.file_count} · ${formatBytes(detailsTarget.threat_library.bytes)}`
+                      : 'Not included'}
+                  </dd>
+                  <dt>Format</dt><dd>{detailsTarget.format_version ?? '—'}</dd>
                   <dt>Encryption</dt><dd>{detailsTarget.encrypted ? 'Enabled' : 'Disabled'}</dd>
                   <dt>Checksum</dt><dd className="br-mono br-wrap">{detailsTarget.checksum_sha256 || '—'}</dd>
                 </dl>

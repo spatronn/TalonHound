@@ -60,7 +60,20 @@ export async function storeArtifactBuffer(reportId, buffer, opts = {}) {
   const fullDir = resolveStoragePath(dirKey);
   await fs.mkdir(fullDir, { recursive: true, mode: 0o750 });
   const fullPath = resolveStoragePath(fileKey);
-  await fs.writeFile(fullPath, buffer, { mode: 0o640 });
+  // Content-addressed: an existing file of the right size already holds these
+  // bytes. Otherwise write a sibling temp file and rename it into place, so a
+  // concurrent reader (backup, refresh) never sees a truncated artifact.
+  const existing = await fs.stat(fullPath).catch(() => null);
+  if (!existing || existing.size !== buffer.length) {
+    const tmpPath = path.join(fullDir, `.${sha256}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`);
+    try {
+      await fs.writeFile(tmpPath, buffer, { mode: 0o640, flag: 'wx' });
+      await fs.rename(tmpPath, fullPath);
+    } catch (err) {
+      await fs.rm(tmpPath, { force: true }).catch(() => {});
+      throw err;
+    }
+  }
   return { storageKey: fileKey.replace(/\\/g, '/'), sha256, sizeBytes: buffer.length };
 }
 

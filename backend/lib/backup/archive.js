@@ -38,9 +38,18 @@ function run(cmd, args, opts = {}) {
  */
 export function assertSafeTarMembers(members) {
   const list = Array.isArray(members) ? members : [];
+  const seen = new Set();
   for (const raw of list) {
     const name = String(raw || '').replace(/\\/g, '/');
     if (!name) continue;
+    // A repeated member would let a later entry silently overwrite an earlier one.
+    const normalized = name.replace(/\/+$/, '');
+    if (seen.has(normalized)) {
+      const err = new Error(`Duplicate archive member rejected: ${name}`);
+      err.code = 'UNSAFE_ARCHIVE_MEMBER';
+      throw err;
+    }
+    seen.add(normalized);
     if (name.startsWith('/') || /^[A-Za-z]:\//.test(name) || name.includes('://')) {
       const err = new Error(`Unsafe archive member rejected: ${name}`);
       err.code = 'UNSAFE_ARCHIVE_MEMBER';

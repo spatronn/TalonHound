@@ -36,7 +36,7 @@ export async function assertPgClientTools() {
 /**
  * Run pg_dump -Fc to outPath. Transaction-consistent custom format.
  */
-export function runPgDump({ host, port, user, password, database, outPath, timeoutMs = 7_200_000 }) {
+export function runPgDump({ host, port, user, password, database, outPath, snapshot = null, timeoutMs = 7_200_000 }) {
   return new Promise((resolve, reject) => {
     const args = [
       '-h', String(host),
@@ -46,6 +46,14 @@ export function runPgDump({ host, port, user, password, database, outPath, timeo
       '-Fc',
       '--no-password'
     ];
+    // Dump the exact snapshot the Threat Library file set was taken from.
+    if (snapshot) {
+      if (!/^[0-9A-Fa-f-]+$/.test(String(snapshot))) {
+        reject(Object.assign(new Error('Invalid snapshot id'), { code: 'PG_DUMP_FAILED' }));
+        return;
+      }
+      args.push(`--snapshot=${snapshot}`);
+    }
     const env = { ...process.env, PGPASSWORD: password == null ? '' : String(password) };
     const child = spawn('pg_dump', args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
     const out = createWriteStream(outPath);

@@ -36,6 +36,7 @@ import {
 } from '../lib/backup/backupStore.js';
 import { recoveryPointsAfterDelete } from '../lib/backup/retention.js';
 import { loadBackupHealth } from '../lib/backup/health.js';
+import { threatLibraryComponentSummary } from '../lib/backup/threatLibraryComponent.js';
 
 function actorEmail(req) {
   return String(req.user?.email || req.user?.username || '').trim() || null;
@@ -62,6 +63,8 @@ function serializeBackup(row) {
     encrypted: Boolean(row.encrypted),
     database_size_bytes: row.database_size_bytes == null ? null : Number(row.database_size_bytes),
     files_size_bytes: row.files_size_bytes == null ? null : Number(row.files_size_bytes),
+    format_version: row.manifest?.format_version == null ? null : Number(row.manifest.format_version),
+    threat_library: threatLibraryComponentSummary(row.manifest),
     error_code: row.error_code,
     error_message: row.error_message ? publicErrorMessage(row.error_code, row.error_message) : null,
     verified_at: row.verified_at,
