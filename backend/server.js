@@ -64,6 +64,7 @@ import { queryFingerprint } from './lib/iocDeepSearch/deepSearchStatus.js';
 import { registerBackupRoutes } from './routes/backups.js';
 import { BACKUP_QUEUE_NAME } from './lib/backup/config.js';
 import { loadBackupHealth, systemHealthEntries } from './lib/backup/health.js';
+import { STARTUP_RECOVERY_STATE_KEY, startupRecoveryHealthEntry } from './lib/threatLibrary/startupRecovery.js';
 import {
   parseSearchQuery,
   buildWhereClause,
@@ -6957,7 +6958,7 @@ app.get('/api/system/health', async (_req, res) => {
     }
   ];
 
-  const [providerResult, feedResult, workerResult, queueResult, schedulerHb, expirationHb, backupHealth] = await Promise.all([
+  const [providerResult, feedResult, workerResult, queueResult, schedulerHb, expirationHb, backupHealth, tlRecovery] = await Promise.all([
     loadEnrichmentProviderSummaries().catch(() => null),
     readiness.checks.postgres === 'ok' ? loadSystemFeedHealth().catch(() => null) : Promise.resolve(null),
     Promise.all([
@@ -6976,7 +6977,10 @@ app.get('/api/system/health', async (_req, res) => {
     readiness.checks.redis === 'ok'
       ? readWorkerHeartbeat(redis, HEARTBEAT_KEYS.ioc_expiration_worker).catch(() => null)
       : Promise.resolve(null),
-    readiness.checks.postgres === 'ok' ? loadBackupHealth(pool).catch(() => null) : Promise.resolve(null)
+    readiness.checks.postgres === 'ok' ? loadBackupHealth(pool).catch(() => null) : Promise.resolve(null),
+    readiness.checks.redis === 'ok'
+      ? redis.get(STARTUP_RECOVERY_STATE_KEY).then((raw) => (raw ? JSON.parse(raw) : null)).catch(() => null)
+      : Promise.resolve(null)
   ]);
   if (backupHealth) core.push(...systemHealthEntries(backupHealth));
 
@@ -7009,7 +7013,8 @@ app.get('/api/system/health', async (_req, res) => {
       'ioc_expiration_worker',
       'IOC expiration worker',
       expirationHb || { lastSeen: null, ageMs: null, status: 'unknown' }
-    )
+    ),
+    startupRecoveryHealthEntry(tlRecovery)
   ];
   const queues = queueResult
     ? [{

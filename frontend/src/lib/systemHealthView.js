@@ -47,6 +47,9 @@ export function reasonLabel(reason) {
     heartbeat_missing: 'No recent heartbeat',
     heartbeat_fresh: 'Recent worker heartbeat',
     heartbeat_stale: 'Worker heartbeat is stale',
+    startup_recovery_completed: 'Startup recovery completed',
+    startup_recovery_retrying: 'Startup recovery retrying',
+    recovery_state_missing: 'No startup recovery state reported',
     snapshot_unavailable: 'Queue evidence unavailable',
     evidence_unavailable: 'Evidence unavailable'
   };
