@@ -48,6 +48,28 @@ test('eSentire shape: destination-only "here" under IOC heading discovers the Gi
   );
 });
 
+test('Gamaredon / WeLiveSecurity IoCs section: GitHub pack + white-paper PDF are discovered; footer GitHub is not', () => {
+  // Mirrors report 34383 pointer phrasing under an IoCs heading.
+  const html = `<!doctype html><html><body><article>
+    <h1>Gamaredon in 2025: Leveraging tunnels, workers, dead drops, and new alliances</h1>
+    <p>Gamaredon operators abused workers.dev and telegra.ph as dead drops.</p>
+    <h2>IoCs</h2>
+    <p>A comprehensive list of indicators of compromise (IoCs) can be found in
+      <a href="https://github.com/eset/malware-ioc/tree/master/gamaredon">our GitHub repository</a>
+      and the <a href="https://web-assets.esetstatic.com/wls/en/papers/white-papers/gamaredon-in-2025.pdf">Gamaredon white paper</a>.</p>
+    <footer><a href="https://github.com/eset">GitHub</a></footer>
+  </article></body></html>`;
+  const found = discoverIocSourcesFromHtml(html, {
+    reportUrl: 'https://www.welivesecurity.com/en/eset-research/gamaredon-2025-leveraging-tunnels-workers-dead-drops-new-alliances/'
+  });
+  const urls = found.map((f) => f.canonical_url);
+  assert.ok(urls.some((u) => /github\.com\/eset\/malware-ioc\/tree\/master\/gamaredon/i.test(u)), urls.join(','));
+  assert.ok(urls.some((u) => /gamaredon-in-2025\.pdf/i.test(u)), urls.join(','));
+  assert.equal(found.find((f) => /malware-ioc\/tree\/master\/gamaredon/i.test(f.canonical_url))?.source_type, 'github_dir');
+  assert.equal(found.find((f) => /gamaredon-in-2025\.pdf/i.test(f.canonical_url))?.source_type, 'pdf');
+  assert.equal(found.some((f) => /github\.com\/eset\/?$/i.test(f.canonical_url)), false);
+});
+
 test('ordinary research / tooling GitHub links are not discovered', () => {
   const html = `<html><body><article>
     <h2>Analysis</h2>
