@@ -72,6 +72,19 @@ export function resolveIocStorageIdentity(value) {
   return resolveStorageObservableType(value, inferredType);
 }
 
+/**
+ * Storage identity when the caller already resolved the value's type. A
+ * Threat Library URL candidate on an IPv4 host ("91.92.242.30/lamq4") is a
+ * URL; re-inferring it from the value would read the path as a malformed
+ * CIDR prefix. Without a resolved type the value decides (resolveIocStorageIdentity).
+ * @param {string} value
+ * @param {string|null} [resolvedType]
+ */
+export function resolveCreateStorageIdentity(value, resolvedType = null) {
+  if (resolvedType === 'url') return { ok: true, type: 'url', value: String(value || '').trim() };
+  return resolveIocStorageIdentity(value);
+}
+
 export function resolveManualExpirationFromSource(sourceRow, opts = {}) {
   return parseManualExpirationInput(
     {
@@ -229,7 +242,9 @@ export async function createManualIoc(pool, body, opts = {}) {
     return { status: 400, body: { message: 'Selected IOC source is archived.' } };
   }
 
-  const storage = resolveIocStorageIdentity(value);
+  // opts.observableType: set only by internal callers that resolved the type
+  // (Threat Library Create IOCs); never read from the request body.
+  const storage = resolveCreateStorageIdentity(value, opts.observableType || null);
   if (!storage.ok) {
     return { status: 400, body: { message: storage.error } };
   }

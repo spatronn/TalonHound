@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseNetworkObservable, isCidrObservable } from './networkObservable.js';
-import { resolveIocStorageIdentity } from './manualIocCreate.js';
+import { resolveIocStorageIdentity, resolveCreateStorageIdentity } from './manualIocCreate.js';
 import { normalizeApiIocValue } from './apiIocService.js';
 import { resolveMcpIocInput } from './mcpIocService.js';
 import { API_ERROR_CODE } from './apiV1Errors.js';
@@ -63,6 +63,13 @@ test('IOC create storage identity: CIDR is an ip / ipv6 network, IPv6 never a do
   assert.equal(resolveIocStorageIdentity('http://1.2.3.4/x').type, 'url');
   assert.equal(resolveIocStorageIdentity('evil.example').type, 'domain');
   assert.equal(resolveIocStorageIdentity('198.51.100.0/33').ok, false);
+});
+
+test('IOC create with a resolved url type: an IPv4-host URL stays a URL; without it the value decides', () => {
+  assert.deepEqual(resolveCreateStorageIdentity('91.92.242.30/lamq4', 'url'), { ok: true, type: 'url', value: '91.92.242.30/lamq4' });
+  assert.equal(resolveCreateStorageIdentity('91.92.242.30/lamq4').ok, false, 'value-only inference still reads a malformed network');
+  assert.deepEqual(resolveCreateStorageIdentity('162.220.234.0/22', 'ip'), { ok: true, type: 'ip', value: '162.220.232.0/22' });
+  assert.deepEqual(resolveCreateStorageIdentity('1.2.3.4', null), { ok: true, type: 'ip', value: '1.2.3.4' });
 });
 
 test('API type "ip": IPv4 / IPv6 addresses and networks resolve to their storage type; malformed values are rejected', () => {

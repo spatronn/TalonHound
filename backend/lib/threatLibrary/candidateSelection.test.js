@@ -689,3 +689,24 @@ test('combined source filters distinguish linked sources from linked-only', () =
   assert.deepEqual(linked, [1, 2]);
   assert.deepEqual(linkedOnly, [2]);
 });
+
+test('create passes the candidate type, so a URL on an IPv4 host is created as a URL (27-report audit)', async () => {
+  const rows = [
+    member({ id: 1, review_status: 'approved', assessment: 'malicious', candidate_type: 'url', normalized_value: '91.92.242.30/lamq4', original_value: '91.92.242[.]30/lamq4' })
+  ];
+  const pool = selectionPool(rows);
+  const seen = [];
+  const result = await applyCandidateReviewActions(pool, 9, {
+    action: 'create_iocs',
+    confirm: true,
+    candidateIds: ['1'],
+    createIoc: async (_pool, body, opts) => {
+      seen.push({ observable: body.observable, observableType: opts.observableType });
+      return { status: 201, body: { id: 71, public_id: 'ioc-71', observable_type: 'url' } };
+    },
+    findExistingIoc: async () => null
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.summary.created, 1);
+  assert.deepEqual(seen, [{ observable: '91.92.242.30/lamq4', observableType: 'url' }]);
+});

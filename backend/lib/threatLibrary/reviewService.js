@@ -696,6 +696,8 @@ async function promoteCandidate(pool, report, candidate, ctx) {
     {
       user: opts.user,
       audit: opts.audit,
+      // The candidate's resolved type: a URL on an IPv4 host stays a URL.
+      observableType: identity.type,
       // `req` lets createManualIoc emit its own ioc.created row (actor, IP,
       // request id); the origin metadata ties that row back to this report.
       req: opts.req,
