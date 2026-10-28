@@ -257,6 +257,11 @@ function normalizeLabel(s) {
  * @param {string|null|undefined} label
  * @returns {{ semantics: 'network'|'artifact'|'neutral', kind?: string }}
  */
+/** Inventory-role words that mean the values beneath are network IOCs even
+ *  when the title also names a tool ("Powershell payload staging"). */
+const INFRASTRUCTURE_ROLE_RE =
+  /\b(?:staging|payload|server|address|host|domain|panel|c2|c&c|infrastructure|endpoint|callback|beacon)\b/i;
+
 export function classifyTypeLabel(label) {
   const norm = normalizeLabel(label);
   if (!norm) return { semantics: 'neutral' };
@@ -264,6 +269,13 @@ export function classifyTypeLabel(label) {
   if (norm.length > 48 || norm.split(' ').length > 3) return { semantics: 'neutral' };
   const network = NETWORK_LABEL_RE.test(norm);
   const artifact = parseArtifactTypeLabel(norm);
+  // Tool / activity titles that also name delivery infrastructure
+  // ("Powershell payload staging", "Configuration retrieval address") describe
+  // the role of the values beneath, not a non-network value kind
+  // (tl-type-resolver-v19 / 35-report audit).
+  if (artifact && INFRASTRUCTURE_ROLE_RE.test(norm)) {
+    return { semantics: 'network' };
+  }
   if (network && (!artifact || artifact.kind === 'path' || artifact.kind === 'metadata')) return { semantics: 'network' };
   if (artifact) return { semantics: 'artifact', kind: artifact.kind };
   return { semantics: 'neutral' };
