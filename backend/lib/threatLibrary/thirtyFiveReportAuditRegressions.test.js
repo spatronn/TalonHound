@@ -137,6 +137,51 @@ test('C. Securelist IoC domains survive OpenTip enrichment links in the same doc
   assert.equal(member(find(cands, 'domain', 'kristina.quest')), true, 'kristina.quest Indicator');
 });
 
+test('C. a new subgroup lead-in clears a prior Configuration type label', () => {
+  // Securelist miner shape: "Configuration retrieval address" types the IP
+  // beneath it; the following "UnamWebPanel control panel addresses" lead-in
+  // must not leave that config label on the panel domains.
+  const html = `<article>
+<h2>Indicators of Compromise</h2>
+<p>RAT C&amp;C:</p>
+<p>5d14vnfb[.]space</p>
+<p>Configuration retrieval address</p>
+<p>107[.]172[.]212[.]235</p>
+<p>UnamWebPanel control panel addresses</p>
+<p><a href="https://opentip.kaspersky.com/m4yuri.online/results">m4yuri[.]online</a></p>
+<p><a href="https://opentip.kaspersky.com/kristina.quest/results">kristina[.]quest</a></p>
+</article>`;
+  const cands = run(html, 'https://securelist.com/video-books-pirates-miners-rat/119943/');
+  assert.equal(member(find(cands, 'domain', 'm4yuri.online')), true, 'm4yuri not demoted by prior Configuration label');
+  assert.equal(member(find(cands, 'domain', 'kristina.quest')), true, 'kristina not demoted by prior Configuration label');
+  assert.equal(member(find(cands, 'ip', '107.172.212.235')), true);
+  const art = find(cands, 'technical_artifact', 'm4yuri.online') || find(cands, 'technical_artifact', 'm4yuri[.]online');
+  assert.equal(art ? member(art) : false, false);
+});
+
+test('C. Powershell/Configuration infrastructure titles do not demote domain rows', () => {
+  assert.equal(resolveDottedToken('istochnik[.]org', {
+    surroundingText: 'istochnik[.]org',
+    typeLabel: 'Powershell payload staging',
+    zone: 'explicit_ioc_section',
+    strongZone: true,
+    form: 'standalone',
+    indicatorRow: true
+  }).kind, 'domain');
+  assert.equal(resolveDottedToken('m4yuri[.]online', {
+    surroundingText: 'm4yuri[.]online',
+    typeLabel: 'Configuration retrieval address',
+    zone: 'c2_section',
+    strongZone: true,
+    form: 'standalone',
+    indicatorRow: true
+  }).kind, 'domain');
+  // A true command/mutex label still demotes.
+  assert.equal(resolveDottedToken('evil.com', {
+    typeLabel: 'Mutex'
+  }).kind, 'technical_artifact');
+});
+
 test('D. glued conjunction residue on a defanged link recovers the link domain', () => {
   // Securelist Cloud Atlas shape: block text "znews[.]neti" with section-level
   // OpenTip links whose anchor text is the correct "znews[.]net".

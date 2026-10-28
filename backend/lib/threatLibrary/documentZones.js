@@ -1292,6 +1292,12 @@ export function annotateDocumentZones(doc, opts = {}) {
         if (synthLabel) {
           currentTypeLabel = synthLabel;
           b.type_label_heading = synthLabel;
+        } else if (synthSubgroup) {
+          // A new inventory lead-in that is not itself type vocabulary
+          // ("UnamWebPanel control panel addresses") starts a fresh subgroup.
+          // Do not let a prior typed label ("Configuration retrieval address")
+          // keep typing the value rows beneath it (tl-candidates-v42).
+          currentTypeLabel = null;
         }
         b.zone_reason = synthTyped
           ? 'typed_subheading'
