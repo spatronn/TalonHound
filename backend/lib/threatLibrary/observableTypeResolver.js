@@ -80,7 +80,7 @@ import { isValidIpAddress } from '../publicIp.js';
  * value of a multi-value cell (`h[.]onion:443 198.51.100.7:21668`) is still an
  * endpoint — the port boundary no longer rejects whitespace before a digit.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v18';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v19';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -851,7 +851,21 @@ export function resolveDottedToken(raw, ctx = {}) {
   if (URN_PREFIX_BEFORE_RE.test(before)) return out('technical_artifact', 'urn_identifier');
 
   // 2. Parser knowledge: exact URL host / URL path basename.
-  if (basenames.has(lower)) return out('technical_artifact', 'url_path_basename');
+  // Enrichment / OpenTip / VT lookup links put domains in their path
+  // (`opentip.kaspersky.com/m4yuri.online/results`). That basename must not
+  // demote the same string when the publisher also lists it as a defanged or
+  // explicit IOC-row domain (tl-type-resolver-v19). File basenames
+  // (`Themes2.zip`, `report.pdf`) stay artifacts.
+  if (basenames.has(lower)) {
+    const keepDomain =
+      hasDelegatedDnsSuffix(lower) &&
+      (explicitRow ||
+        DEFANG_MARKER_RE.test(original) ||
+        declaredNetwork ||
+        inlineNetwork ||
+        clauseNetwork);
+    if (!keepDomain) return out('technical_artifact', 'url_path_basename');
+  }
   if (hosts.has(lower)) return out('domain', 'url_host');
 
   // 2b. Standard-library namespaces of managed runtimes (`javax.tools`,

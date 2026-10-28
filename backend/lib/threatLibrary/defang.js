@@ -8,6 +8,15 @@
 const HXXP_RE = /\bhxxps?(?::\/\/|\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
 // http[://], http[:]//, http[:][//]
 const SCHEME_BRACKET_RE = /\b(https?)(?:\[:\/\/\]|\[:\]\/\/|\[:\]\[\/\/\])/gi;
+// hxxp[:]host / http[:]host — bracketed colon without any authority slashes
+// (Unit42 Gremlin shape "hxxp[:]194.87.92[.]109/i.php", tl-defang-v4). Only
+// when a dotted host or IPv4 follows, so "http: status" prose stays.
+const BRACKET_COLON_NO_SLASH_SCHEME_RE =
+  /\b(h(?:tt|xx)ps?)\[:\](?!\/)(?=(?:[a-z0-9-]+(?:\.|\[\.\]|\(\.\)))+[a-z0-9-]+|\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}\b)/gi;
+// After bracket-colon → colon: "hxxp:194.87…" / "http:host.tld/path" still
+// missing "//". Same host lookahead (tl-defang-v4).
+const COLON_NO_SLASH_SCHEME_RE =
+  /\b(h(?:tt|xx)ps?):(?!\/\/)(?=(?:[a-z0-9-]+(?:\.|\[\.\]|\(\.\)))+[a-z0-9-]+(?:[:/?#\s]|$)|\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}\b)/gi;
 // Publisher typo "http//host" / "hxxps//host" (the scheme colon dropped,
 // tl-defang-v3): recovered only when a dotted host (name or IPv4, fanged or
 // bracket-defanged) follows the slashes, so prose such as "http//" alone or
@@ -57,9 +66,14 @@ export function stripInvisibleFormatChars(text) {
   return String(text || '').replace(/[­​-‍⁠﻿]/g, '');
 }
 
+function normalizeScheme(scheme) {
+  return String(scheme || '').toLowerCase().replace('hxxp', 'http');
+}
+
 function refangSchemes(text) {
   return String(text || '')
-    .replace(MISSING_COLON_SCHEME_RE, (_, scheme) => `${scheme.toLowerCase().replace('hxxp', 'http')}://`)
+    .replace(MISSING_COLON_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`)
+    .replace(BRACKET_COLON_NO_SLASH_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`)
     .replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'))
     .replace(SCHEME_BRACKET_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
 }
@@ -76,6 +90,8 @@ export function refangObservable(value) {
   v = v.replace(BRACKET_COLON_RE, ':');
   // meow:// → http:// (rare vendor defang)
   v = v.replace(/\bmeow:\/\//gi, 'http://');
+  // "hxxp:host" / "http:194.87…" left after bracket-colon → colon (tl-defang-v4).
+  v = v.replace(COLON_NO_SLASH_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`);
   v = v.replace(SINGLE_SLASH_SCHEME_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
   return v.trim();
 }
@@ -90,6 +106,7 @@ export function refangTextForExtraction(text) {
   t = refangDots(t);
   t = t.replace(BRACKET_COLON_RE, ':');
   t = t.replace(/\bmeow:\/\//gi, 'http://');
+  t = t.replace(COLON_NO_SLASH_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`);
   t = t.replace(SINGLE_SLASH_SCHEME_RE, (_, scheme) => `${scheme.toLowerCase()}://`);
   return t;
 }

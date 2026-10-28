@@ -1,6 +1,6 @@
 /**
  * Twenty-report batch audit regressions, reports 33356–33375
- * (tl-candidates-v41 / tl-type-resolver-v18). Generic shapes of the confirmed
+ * (tl-candidates-v42 / tl-type-resolver-v19). Generic shapes of the confirmed
  * defects of the 2026-10-27 audit, each with its negative control:
  *
  * D1. An IPv6 network block in an IOC list ("2607:99c0::/32") is a CIDR
@@ -53,9 +53,9 @@ const member = (out, value) => {
   return Boolean(c) && isReportIndicatorMember(persisted(c));
 };
 
-test('versions: tl-candidates-v41, tl-type-resolver-v18', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v41');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v18');
+test('versions: tl-candidates-v42, tl-type-resolver-v19', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v42');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v19');
 });
 
 // --- D1. IPv6 CIDR ----------------------------------------------------------

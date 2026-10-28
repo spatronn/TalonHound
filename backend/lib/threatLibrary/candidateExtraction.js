@@ -252,8 +252,40 @@ export {
  * header ("Imphash"); a community / open-source resource recommended to
  * defenders is a reference; `host:port` followed by another value of the same
  * cell stays an endpoint (tl-type-resolver-v18).
+ * v42 (35-report audit): `hxxp[:]host` without authority slashes refangs
+ * (tl-defang-v4); OpenTip/VT path basenames do not demote publisher IOC
+ * domains (tl-type-resolver-v19); an origin URL listed under a C2 / sample /
+ * operational inventory zone keeps Indicator membership when path siblings
+ * exist (same inventory rule as explicit_ioc_section); a block whose visible
+ * text glues a one-letter conjunction onto a defanged link ("znews[.]neti"
+ * from "znews[.]net" + "i") recovers the structured link text.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v41';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v42';
+
+/**
+ * Recover a publisher-defanged domain from structured `block.links` when the
+ * flattened block text glued a one-letter conjunction residue onto it
+ * (Securelist "Domains and IPs" rows: "znews[.]net i investika…" → block text
+ * "znews[.]neti" while the anchor text stays "znews[.]net").
+ * @param {object} block
+ * @param {string} matched DOMAIN_RE match from block text
+ * @returns {string|null} preferred original spelling, or null
+ */
+function recoverDefangedLinkDomain(block, matched) {
+  const links = Array.isArray(block?.links) ? block.links : [];
+  if (!links.length) return null;
+  const matchedRef = refangObservable(matched).toLowerCase();
+  if (!matchedRef) return null;
+  for (const link of links) {
+    const lt = String(link?.text || '').trim();
+    if (!lt || !/\[\.\]|\(\.\)|\{\.\}/.test(lt)) continue;
+    const ref = refangObservable(lt).toLowerCase();
+    if (!ref || !hasDelegatedDnsSuffix(ref)) continue;
+    if (matchedRef === ref) return lt;
+    if (matchedRef.startsWith(ref) && matchedRef.length === ref.length + 1) return lt;
+  }
+  return null;
+}
 
 const VERSION_CELL_TOKEN_SPLIT_RE = /[^0-9a-z.]+/i;
 
@@ -272,6 +304,37 @@ function samePublisherHostFamily(a, b) {
 /** True when the candidate was also written in an explicit IOC inventory. */
 function hasExplicitIocSectionOccurrence(entry) {
   return (entry.occurrences || []).some((o) => o.zone === 'explicit_ioc_section');
+}
+
+/**
+ * Origin URLs (`http://host/`) with path siblings: keep Indicator membership
+ * when the publisher listed that origin as its own inventory row — either in
+ * `explicit_ioc_section`, or as a list/table row under a C2 / sample /
+ * operational subsection (Steam wallpaper C2 servers). A bare C2 paragraph
+ * that only restates a path URL's origin stays demoted (RC-11 / MacSync).
+ * @param {object} entry
+ */
+function hasInventoryOriginOccurrence(entry) {
+  return (entry.occurrences || []).some((o) => {
+    const zone = String(o.zone || '');
+    if (zone === 'explicit_ioc_section') return true;
+    if (
+      zone !== 'c2_section' &&
+      zone !== 'sample_table' &&
+      zone !== 'operational_infrastructure' &&
+      zone !== 'delegated_ioc_scope'
+    ) {
+      return false;
+    }
+    // List/table inventory only. A bare C2 paragraph that restates a path
+    // URL's origin keeps row_shape but is not inventory (RC-11 / MacSync).
+    return (
+      o.form === 'list_row' ||
+      o.form === 'table_row' ||
+      o.block_type === 'list_item' ||
+      o.block_type === 'table'
+    );
+  });
 }
 
 /**
@@ -356,7 +419,7 @@ function markIncompleteUrlPrefixes(byKey) {
     );
     if (!longer) continue;
     if (pathname === '/') {
-      if (!hasExplicitIocSectionOccurrence(a)) a.incomplete_url_prefix = true;
+      if (!hasInventoryOriginOccurrence(a)) a.incomplete_url_prefix = true;
       continue;
     }
     if (hasExplicitSingleValueRowOccurrence(a)) continue;
@@ -1825,10 +1888,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // nothing about a hostname the way an ip:port endpoint does).
       const portM = emailDomain ? null : /^:(\d{1,5})(?!\d)/.exec(text.slice(end));
       const port = portM && Number(portM[1]) > 0 && Number(portM[1]) <= 65535 ? Number(portM[1]) : null;
+      // Prefer structured link text when flattened block text glued a
+      // one-letter conjunction onto a defanged domain (tl-candidates-v42).
+      const recovered = recoverDefangedLinkDomain(block, m[0]);
+      const spelling = recovered || m[0];
       // Original spelling: identifier segmentation (Loader.Program.Main) is case-visible.
-      add(m[0], 'domain', block, {
+      add(spelling, 'domain', block, {
         form: emailDomain ? OCCURRENCE_FORMS.EMAIL_DOMAIN : standaloneForm,
-        originalValue: m[0],
+        originalValue: spelling,
         ...(port != null ? { port } : {})
       });
     }

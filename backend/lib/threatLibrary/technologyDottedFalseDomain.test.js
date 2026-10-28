@@ -21,8 +21,8 @@ import {
 } from './observableTypeResolver.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v41');
-assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v18');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v42');
+assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v19');
 
 function extract(html) {
   const { document } = extractCanonicalDocumentFromHtml(html, {
