@@ -28,6 +28,12 @@ import { probeQuarantinedCapacity } from './lib/threatLibrary/ai/capacityRecover
 import { maybeScheduleAutoRetry } from './lib/threatLibrary/autoRetry.js';
 import { buildRetryProgress } from './lib/threatLibrary/retryState.js';
 import { AI_FAILURE_CODES, aiFailure } from './lib/threatLibrary/ai/timeouts.js';
+import {
+  STARTUP_RECOVERY_STATE_KEY,
+  STARTUP_RECOVERY_STATE_TTL_SECONDS,
+  createStartupRecovery,
+  performStartupRecovery
+} from './lib/threatLibrary/startupRecovery.js';
 
 const log = createServiceLogger('threat-library-worker');
 
@@ -291,36 +297,26 @@ async function requeueAfterShutdown(reportId, jobId, ownerToken) {
   }
 }
 
-async function recoverThenDispatch() {
-  try {
-    const active = await queue.getJobs(['active']);
-    for (const job of active) {
-      if (job.processedOn && job.processedOn < workerStartedAt - 2000) {
-        await job.moveToFailed(new Error('worker_restarted'), job.token, true).catch(() => {});
-        log.info('stale analysis recovered', {
-          bullmqJobId: job.id,
-          reportId: job.data?.reportId || null,
-          reason: 'worker_restarted'
-        });
-      }
-    }
-    const recovered = await recoverInterruptedAnalysisJobs(pool, {
-      getJobState: async (id) => {
-        const job = await queue.getJob(id);
-        return job ? job.getState() : null;
-      }
-    });
-    const dispatched = await dispatchQueuedAnalyses();
-    log.info('scheduler recovered', {
-      recovered: recovered.length,
-      claimed: dispatched.claimed.length,
-      occupied: dispatched.occupied,
-      limit: dispatched.limit
-    });
-  } catch (err) {
-    log.warn('failed to recover queued analyses', { error: err?.message });
-  }
+// PostgreSQL may not accept connections yet when the container starts (after
+// a Docker daemon restart every container starts at once): each attempt throws
+// and the recovery loop retries it with backoff.
+const recoverThenDispatch = () =>
+  performStartupRecovery({ queue, pool, workerStartedAt, log, dispatch: dispatchQueuedAnalyses });
+
+function publishRecoveryState(state) {
+  return redis.set(
+    STARTUP_RECOVERY_STATE_KEY,
+    JSON.stringify({ ...state, alive_at: new Date().toISOString() }),
+    'EX',
+    STARTUP_RECOVERY_STATE_TTL_SECONDS
+  );
 }
+
+const startupRecovery = createStartupRecovery({
+  attempt: recoverThenDispatch,
+  log,
+  onState: publishRecoveryState
+});
 
 worker.on('ready', () => {
   log.info('worker ready', {
@@ -329,7 +325,8 @@ worker.on('ready', () => {
     aiClient: 'streaming-v3',
     version: process.env.TALONHOUND_VERSION || null
   });
-  recoverThenDispatch().catch(() => {});
+  // Retries until PostgreSQL/Redis answer; idempotent if `ready` fires again on reconnect.
+  startupRecovery.start();
 });
 
 // Bounded safety net: import/complete/settings already dispatch directly.
@@ -338,6 +335,7 @@ worker.on('ready', () => {
 const DISPATCH_SAFETY_MS = 30_000;
 const safetyTimer = setInterval(async () => {
   if (shuttingDown) return;
+  publishRecoveryState(startupRecovery.status()).catch(() => {});
   try {
     const recovered = await recoverInterruptedAnalysisJobs(pool, {
       getJobState: async (id) => {
@@ -367,6 +365,8 @@ async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(safetyTimer);
+  // Abort only: an attempt blocked on a dead connection must not delay shutdown.
+  startupRecovery.stop();
   // Stop in-flight AI work now (Compose gives ~10s before SIGKILL): each run
   // cancels its provider request, releases its inference slot and is requeued.
   for (const [jobId, run] of activeRuns) {
