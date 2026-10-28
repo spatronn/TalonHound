@@ -73,6 +73,44 @@ export async function readArtifactBuffer(storageKey) {
 }
 
 /**
+ * Read-only comparison of files under reports/ with the storage keys the
+ * database references. Unreferenced files are growth nothing will ever read;
+ * missing keys are artifacts a refresh/retry would fail to load.
+ *
+ * @param {Iterable<string>} referencedKeys storage_key values from threat_report_artifacts
+ */
+export async function auditArtifactConsistency(referencedKeys) {
+  const root = path.resolve(getThreatLibraryStorageRoot());
+  const referenced = new Set([...referencedKeys].map((k) => String(k).replace(/\\/g, '/')));
+  const seen = new Set();
+  const result = { files: 0, bytes: 0, unreferenced: [], unreferenced_bytes: 0, missing: [] };
+  const reportDirs = await fs.readdir(path.join(root, 'reports'), { withFileTypes: true }).catch((err) => {
+    if (err.code === 'ENOENT') return [];
+    throw err;
+  });
+  for (const dir of reportDirs) {
+    if (!dir.isDirectory()) continue;
+    const files = await fs.readdir(path.join(root, 'reports', dir.name), { withFileTypes: true });
+    for (const f of files) {
+      if (!f.isFile()) continue;
+      const key = `reports/${dir.name}/${f.name}`;
+      const { size } = await fs.stat(path.join(root, key));
+      seen.add(key);
+      result.files += 1;
+      result.bytes += size;
+      if (!referenced.has(key)) {
+        result.unreferenced.push({ key, bytes: size });
+        result.unreferenced_bytes += size;
+      }
+    }
+  }
+  for (const key of referenced) {
+    if (!seen.has(key)) result.missing.push(key);
+  }
+  return result;
+}
+
+/**
  * Best-effort delete of report artifact directory.
  * @param {number|string} reportId
  */

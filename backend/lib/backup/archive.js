@@ -58,7 +58,10 @@ export function assertSafeTarMembers(members) {
  * Pack directory `bundleDir` (which should be named backup-...) into a temporary
  * .tar.gz under tmpDir, then atomically rename to finalPath.
  */
-export async function createTarGzAtomic(bundleDir, finalPath, { tmpDir } = {}) {
+export async function createTarGzAtomic(bundleDir, finalPath, {
+  tmpDir,
+  runTar = (args) => run('tar', args)
+} = {}) {
   const parent = path.dirname(finalPath);
   const stagingTmp = tmpDir || path.join(parent, '.tmp');
   await fs.promises.mkdir(stagingTmp, { recursive: true });
@@ -71,19 +74,26 @@ export async function createTarGzAtomic(bundleDir, finalPath, { tmpDir } = {}) {
   const bundleName = path.basename(bundleDir);
 
   try {
-    // GNU/BSD tar: create gzip archive of the single top-level directory
-    await run('tar', ['-czf', tmpArchive, '-C', bundleParent, bundleName]);
-  } catch (firstErr) {
-    // Windows host without tar may fail; try with --force-local
     try {
-      await run('tar', ['-czf', tmpArchive, '-C', bundleParent, bundleName]);
-    } catch {
-      throw firstErr;
+      // GNU/BSD tar: create gzip archive of the single top-level directory
+      await runTar(['-czf', tmpArchive, '-C', bundleParent, bundleName]);
+    } catch (firstErr) {
+      // Windows host without tar may fail; try with --force-local
+      try {
+        await runTar(['-czf', tmpArchive, '-C', bundleParent, bundleName]);
+      } catch {
+        throw firstErr;
+      }
     }
-  }
 
-  // Never leave a partial file at the final name
-  await fs.promises.rename(tmpArchive, finalPath);
+    // Never leave a partial file at the final name
+    await fs.promises.rename(tmpArchive, finalPath);
+  } catch (err) {
+    // tmpArchive is unique to this call (pid + timestamp), so removing it can
+    // never touch another process's in-flight archive.
+    await fs.promises.rm(tmpArchive, { force: true }).catch(() => {});
+    throw err;
+  }
   const size = (await fs.promises.stat(finalPath)).size;
   if (size <= 0) {
     await fs.promises.unlink(finalPath).catch(() => {});

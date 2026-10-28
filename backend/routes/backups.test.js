@@ -81,6 +81,20 @@ function createMockPool(backups) {
         return { rows: [{ n }], rowCount: 1 };
       }
 
+      if (s.includes('SELECT backup_id FROM system_backups')) {
+        const rows = [...backups.values()]
+          .filter((r) => ['queued', 'running', 'verifying'].includes(r.status))
+          .map((r) => ({ backup_id: r.backup_id }));
+        return { rows, rowCount: rows.length };
+      }
+
+      if (s.includes("status IN ('completed', 'failed', 'interrupted')") && s.includes('LIMIT 1')) {
+        const row = [...backups.values()]
+          .filter((r) => ['completed', 'failed', 'interrupted'].includes(r.status))
+          .sort((a, b) => String(b.completed_at || b.created_at).localeCompare(String(a.completed_at || a.created_at)))[0];
+        return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
+      }
+
       if (s.includes('SET job_id')) {
         const row = backups.get(params[0]);
         if (row) row.job_id = params[1];
@@ -150,7 +164,7 @@ function createMockPool(backups) {
   };
 }
 
-async function withApp(fn, { user = ADMIN, backupDir, backupQueue } = {}) {
+async function withApp(fn, { user = ADMIN, backupDir, backupQueue, auditLogService: audit } = {}) {
   const dir = backupDir || (await fs.promises.mkdtemp(path.join(os.tmpdir(), 'th-bk-api-')));
   process.env.BACKUP_DIR = dir;
   const backups = new Map();
@@ -164,7 +178,7 @@ async function withApp(fn, { user = ADMIN, backupDir, backupQueue } = {}) {
   });
   const pool = createMockPool(backups);
   const queue = backupQueue || { add: async () => ({ id: 'job-1' }) };
-  const auditLogService = { auditSuccess: async () => {}, auditFailure: async () => {} };
+  const auditLogService = audit || { auditSuccess: async () => {}, auditFailure: async () => {} };
   registerBackupRoutes(app, pool, { backupQueue: queue, auditLogService });
   const server = app.listen(0);
   const port = server.address().port;
@@ -350,4 +364,98 @@ test('status endpoint is admin-only and returns safe schedule fields', async () 
     const raw = JSON.stringify(body);
     assert.ok(!raw.includes('PGPASSWORD'));
   }, { user: ANALYST });
+});
+
+function completedBackup(n, daysAgo, extra = {}) {
+  const created = new Date(Date.now() - daysAgo * 86_400_000).toISOString();
+  return {
+    id: `00000000-0000-4000-8000-0000000007${String(n).padStart(2, '0')}`,
+    backup_id: `backup-2026100${n}-000000-0000000${n}`,
+    status: 'completed',
+    trigger_type: 'scheduled',
+    verify_status: 'passed',
+    archive_filename: null,
+    archive_size_bytes: 1000,
+    created_at: created,
+    completed_at: created,
+    ...extra
+  };
+}
+
+test('delete refuses the last verified backup unless confirmed, and audits the override', async () => {
+  const events = [];
+  const auditLogService = {
+    auditSuccess: async (e) => { events.push(e); },
+    auditFailure: async () => {}
+  };
+  await withApp(async ({ base, backups }) => {
+    const only = completedBackup(1, 2);
+    backups.set(only.id, only);
+
+    const refused = await fetch(`${base}/api/backups/${only.id}`, { method: 'DELETE', headers: authHeaders(ADMIN) });
+    assert.equal(refused.status, 409);
+    const body = await refused.json();
+    assert.equal(body.code, 'RECOVERY_POINT_PROTECTED');
+    assert.equal(body.remaining_recovery_points, 0);
+    assert.equal(backups.get(only.id).status, 'completed');
+
+    const forced = await fetch(`${base}/api/backups/${only.id}?confirm_unsafe=true`, {
+      method: 'DELETE',
+      headers: authHeaders(ADMIN)
+    });
+    assert.equal(forced.status, 200);
+    assert.equal(backups.get(only.id).status, 'deleted');
+    const deleted = events.find((e) => e.metadata?.result === 'deleted');
+    assert.equal(deleted.severity, 'warning');
+    assert.equal(deleted.metadata.below_min_retained, true);
+  }, { auditLogService });
+});
+
+test('delete above the minimum recovery points needs no confirmation', async () => {
+  await withApp(async ({ base, backups }) => {
+    for (const row of [completedBackup(1, 1), completedBackup(2, 8), completedBackup(3, 15)]) {
+      backups.set(row.id, row);
+    }
+    const target = completedBackup(3, 15);
+    const res = await fetch(`${base}/api/backups/${target.id}`, { method: 'DELETE', headers: authHeaders(ADMIN) });
+    assert.equal(res.status, 200);
+  });
+});
+
+test('delete of a failed-verification backup is never blocked by the recovery-point guard', async () => {
+  await withApp(async ({ base, backups }) => {
+    const good = completedBackup(1, 1);
+    const bad = completedBackup(2, 3, { verify_status: 'failed' });
+    backups.set(good.id, good);
+    backups.set(bad.id, bad);
+    const res = await fetch(`${base}/api/backups/${bad.id}`, { method: 'DELETE', headers: authHeaders(ADMIN) });
+    assert.equal(res.status, 200);
+  });
+});
+
+test('status reports recovery points and storage warnings', async () => {
+  await withApp(async ({ base, backups, dir }) => {
+    let res = await fetch(`${base}/api/backups/status`, { headers: authHeaders(ADMIN) });
+    let body = await res.json();
+    assert.equal(body.recovery_points, 0);
+    assert.equal(body.min_retained, 2);
+    assert.ok(body.warnings.some((w) => w.code === 'no_recovery_point' && w.severity === 'critical'));
+    assert.equal(typeof body.storage_capacity?.free_bytes, 'number');
+
+    const one = completedBackup(1, 1);
+    backups.set(one.id, one);
+    const staleDir = path.join(dir, '.tmp', `${'backup-20260101-000000-deadbeef'}-4242`);
+    await fs.promises.mkdir(staleDir, { recursive: true });
+    const old = new Date(Date.now() - 7 * 3_600_000);
+    await fs.promises.utimes(staleDir, old, old);
+
+    res = await fetch(`${base}/api/backups/status`, { headers: authHeaders(ADMIN) });
+    body = await res.json();
+    const codes = body.warnings.map((w) => w.code);
+    assert.ok(codes.includes('insufficient_recovery_points'));
+    assert.ok(codes.includes('stale_temp_artifacts'));
+    assert.ok(!codes.includes('no_recovery_point'));
+    // status never deletes staging; only the worker sweep does
+    assert.ok(fs.existsSync(staleDir));
+  });
 });

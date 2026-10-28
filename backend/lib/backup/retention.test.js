@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { selectRetentionCandidates } from './retention.js';
+import { selectRetentionCandidates, recoveryPointsAfterDelete } from './retention.js';
 
 describe('backup retention', () => {
   const now = new Date('2026-07-25T12:00:00Z');
@@ -18,6 +18,28 @@ describe('backup retention', () => {
       protectedBackupIds: new Set()
     });
     assert.deepEqual(selected.map((r) => r.backup_id), ['old']);
+  });
+
+  it('always keeps the newest minRetained verified backups regardless of age', () => {
+    const rows = [
+      { backup_id: 'a', status: 'completed', verify_status: 'passed', created_at: '2026-01-03T00:00:00Z' },
+      { backup_id: 'b', status: 'completed', verify_status: 'passed', created_at: '2026-01-02T00:00:00Z' },
+      { backup_id: 'c', status: 'completed', verify_status: 'passed', created_at: '2026-01-01T00:00:00Z' },
+      { backup_id: 'bad', status: 'completed', verify_status: 'failed', created_at: '2026-01-04T00:00:00Z' }
+    ];
+    const selected = selectRetentionCandidates(rows, { retentionDays: 30, minRetained: 2, now });
+    assert.deepEqual(selected.map((r) => r.backup_id), ['c']);
+    const single = selectRetentionCandidates(rows.slice(2, 3), { retentionDays: 30, now });
+    assert.equal(single.length, 0, 'the only recovery point is never expired');
+  });
+
+  it('recoveryPointsAfterDelete counts only verified completed backups', () => {
+    const rows = [
+      { backup_id: 'a', status: 'completed', verify_status: 'passed', created_at: '2026-07-01T00:00:00Z' },
+      { backup_id: 'b', status: 'completed', verify_status: 'failed', created_at: '2026-07-02T00:00:00Z' }
+    ];
+    assert.deepEqual(recoveryPointsAfterDelete(rows, rows[0]), { isRecoveryPoint: true, remaining: 0 });
+    assert.deepEqual(recoveryPointsAfterDelete(rows, rows[1]), { isRecoveryPoint: false, remaining: 1 });
   });
 
   it('skips protected backup ids', () => {

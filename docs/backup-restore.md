@@ -14,7 +14,8 @@ TalonHound system backups cover **PostgreSQL** (transaction-consistent `pg_dump 
 | Component | Included | Notes |
 |-----------|----------|-------|
 | PostgreSQL (`postgres_data`) | **Yes** | IOCs, feeds, memberships, custom threat feeds, suppressions, tags, enrichments, users/RBAC, audit logs, scheduler/config, `schema_migrations` |
-| Persistent user uploads | N/A | No upload volume in this deployment |
+| Threat Library source files (`threat_library_data`) | **No** | Retained source HTML/PDF used by Refresh/Retry. Report text and review state are in PostgreSQL; copy the volume separately if source files must survive a disaster |
+| Published Feed files (`published_feed_data`) | **No** | Regenerated from PostgreSQL by the feed scheduler |
 | Redis | **No** | Ephemeral BullMQ/cache — reconcile queues after restore |
 | `.env` / secret files | **No** | Store separately; not included in the archive |
 | TLS certs (`proxy/certs`) | **No** | Manual / externally managed |
@@ -64,6 +65,9 @@ Offsite copies (USB, remote host, object storage) are independent of the on-host
 | `BACKUP_CRON` | `0 0 * * 0` | Every Sunday at 00:00 in the schedule timezone |
 | `BACKUP_CRON_TIMEZONE` | _(unset)_ | IANA zone for cron wall-clock; falls back to `INTEGRATION_SCHEDULE_TIMEZONE` (default `UTC`) |
 | `BACKUP_RETENTION_DAYS` | `30` | Delete completed backups older than N days |
+| `BACKUP_MIN_RETAINED` | `2` | Newest verified backups always kept by retention; deleting below this in the UI/API needs explicit confirmation |
+| `BACKUP_MAX_AGE_HOURS` | `192` | Backup status warns when the newest verified backup is older (0 disables) |
+| `BACKUP_DISK_WARN_FREE_PERCENT` | `10` | Backup status warns below this free space (also warns when free space is under twice the last archive) |
 | `BACKUP_MAX_CONCURRENT` | `1` | Only one backup at a time |
 | `BACKUP_ENCRYPTION_ENABLED` | `false` | AES-256-GCM envelope |
 | `BACKUP_ENCRYPTION_KEY_FILE` | _(empty)_ | Path to 32-byte or 64-hex key file |
@@ -259,9 +263,30 @@ docker compose run --rm -v backup_data:/data/backups alpine \
 
 Keep encryption keys separate from the archive transport.
 
+Archives live on the same disk as PostgreSQL by default. One local copy protects against
+operator error, not against losing the disk — copy at least the newest verified archive off
+the host on a schedule that matches your RPO.
+
 ## Disk space
 
 Keep free space ≥ **2×** the PostgreSQL data directory size (dump + safety dump + temp archive). Monitor `Administration → Backup & Restore → Storage used`.
+
+The Backup & Restore page and **System → Health** (Storage / Backups rows) warn about:
+
+| Code | Meaning |
+|------|---------|
+| `no_recovery_point` / `insufficient_recovery_points` | Fewer verified backups than `BACKUP_MIN_RETAINED` |
+| `last_backup_failed` | The most recent backup failed or was interrupted |
+| `backup_overdue` | Newest verified backup older than `BACKUP_MAX_AGE_HOURS` |
+| `retention_overdue` | Expired backups were not removed (retention sweep failing) |
+| `stale_temp_artifacts` | Abandoned staging under `BACKUP_DIR/.tmp` (worker sweep failing) |
+| `low_disk_space` / `low_inodes` | Backup filesystem below `BACKUP_DISK_WARN_FREE_PERCENT` / `BACKUP_INODE_WARN_FREE_PERCENT`, or free space under twice the last archive |
+
+Deleting backups to free space is the wrong lever: retention never removes the newest
+`BACKUP_MIN_RETAINED` verified backups, and a manual delete below that minimum requires an
+explicit confirmation (`DELETE /api/backups/:id?confirm_unsafe=true`, audited at warning severity).
+Failed or crashed backups clean up their own staging; the backup worker removes staging older
+than 6 hours that no active backup owns, and never touches other files in `.tmp`.
 
 ## RPO / RTO (single VM)
 

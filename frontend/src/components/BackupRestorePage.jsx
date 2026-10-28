@@ -364,6 +364,7 @@ export default function BackupRestorePage({ AppShell, useSession }) {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteGuard, setDeleteGuard] = useState('');
   const [detailsTarget, setDetailsTarget] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -521,17 +522,28 @@ export default function BackupRestorePage({ AppShell, useSession }) {
     }
   }
 
+  function closeDelete() {
+    setDeleteTarget(null);
+    setDeleteGuard('');
+  }
+
   async function onDeleteConfirm() {
     if (!deleteTarget) return;
     setBusy(true);
     setError('');
     try {
-      await api.delete(`/backups/${deleteTarget.id}`);
+      await api.delete(`/backups/${deleteTarget.id}`, {
+        params: deleteGuard ? { confirm_unsafe: 'true' } : undefined
+      });
       flashInfo(`Deleted ${deleteTarget.backup_id}`);
-      setDeleteTarget(null);
+      closeDelete();
       await refresh();
     } catch (err) {
-      setError(err?.response?.data?.message || 'Delete failed');
+      if (err?.response?.status === 409 && err.response.data?.code === 'RECOVERY_POINT_PROTECTED') {
+        setDeleteGuard(err.response.data.message || 'This backup is a protected recovery point.');
+      } else {
+        setError(err?.response?.data?.message || 'Delete failed');
+      }
     } finally {
       setBusy(false);
     }
@@ -604,6 +616,18 @@ export default function BackupRestorePage({ AppShell, useSession }) {
             </div>
           </div>
         ) : null}
+
+        {(status?.warnings || []).map((w) => (
+          <div
+            key={w.code}
+            className={`br-banner ${w.severity === 'critical' ? 'br-banner-error' : 'br-banner-warn'}`}
+            role="status"
+            data-warning={w.code}
+          >
+            <span className="br-banner-icon">{Icons.warn}</span>
+            <div>{w.message}</div>
+          </div>
+        ))}
 
         {hasStaleQueued ? (
           <div className="br-banner br-banner-warn" role="status">
@@ -857,13 +881,16 @@ export default function BackupRestorePage({ AppShell, useSession }) {
       </div>
 
       {deleteTarget ? (
-        <div className="br-modal-backdrop" role="presentation" onClick={() => !busy && setDeleteTarget(null)}>
+        <div className="br-modal-backdrop" role="presentation" onClick={() => !busy && closeDelete()}>
           <div className="br-modal" role="dialog" onClick={(e) => e.stopPropagation()}>
             <h2>Delete backup?</h2>
             <p>Delete <span className="br-mono">{deleteTarget.backup_id}</span>? This removes the archive from storage.</p>
+            {deleteGuard ? <div className="br-banner br-banner-error" role="alert">{deleteGuard}</div> : null}
             <div className="br-modal-actions">
-              <button type="button" className="br-btn br-btn-ghost" disabled={busy} onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button type="button" className="br-btn br-btn-danger" disabled={busy} onClick={onDeleteConfirm}>Delete</button>
+              <button type="button" className="br-btn br-btn-ghost" disabled={busy} onClick={closeDelete}>Cancel</button>
+              <button type="button" className="br-btn br-btn-danger" disabled={busy} onClick={onDeleteConfirm}>
+                {deleteGuard ? 'Delete anyway' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

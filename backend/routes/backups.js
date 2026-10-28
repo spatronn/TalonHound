@@ -34,6 +34,8 @@ import {
   listCompletedForRetention,
   getProtectedBackupIds
 } from '../lib/backup/backupStore.js';
+import { recoveryPointsAfterDelete } from '../lib/backup/retention.js';
+import { loadBackupHealth } from '../lib/backup/health.js';
 
 function actorEmail(req) {
   return String(req.user?.email || req.user?.username || '').trim() || null;
@@ -125,12 +127,13 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
   app.get('/api/backups/status', admin, async (_req, res) => {
     try {
       const cfg = getBackupConfig();
-      const [last, total, active, storageUsed, itemsPreview] = await Promise.all([
+      const [last, total, active, storageUsed, itemsPreview, health] = await Promise.all([
         getLastSuccessful(pool),
         countBackups(pool),
         countActiveBackups(pool),
         sumCompletedArchiveBytes(pool),
-        listBackups(pool, { limit: 20, offset: 0 })
+        listBackups(pool, { limit: 20, offset: 0 }),
+        loadBackupHealth(pool, cfg)
       ]);
       const lastVerify = last
         ? { status: last.verify_status, at: last.verified_at, backup_id: last.backup_id }
@@ -151,6 +154,10 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
         timezone: cfg.timezone,
         schedule_summary: schedule.summary,
         retention_days: cfg.retentionDays,
+        min_retained: cfg.minRetained,
+        recovery_points: health.recovery_points,
+        storage_capacity: health.capacity,
+        warnings: health.warnings,
         encryption_enabled: cfg.encryptionEnabled,
         storage_provider: cfg.storageProvider || 'local',
         max_concurrent: cfg.maxConcurrent,
@@ -323,6 +330,23 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
     if (protectedIds.has(row.backup_id)) {
       return res.status(409).json({ message: publicErrorMessage('ACTIVE') });
     }
+    const { minRetained } = getBackupConfig();
+    const { isRecoveryPoint, remaining } = recoveryPointsAfterDelete(
+      await listCompletedForRetention(pool),
+      row
+    );
+    const unsafe = isRecoveryPoint && remaining < minRetained;
+    if (unsafe && String(req.query.confirm_unsafe || '') !== 'true') {
+      return res.status(409).json({
+        code: 'RECOVERY_POINT_PROTECTED',
+        message:
+          remaining === 0
+            ? 'This is the last verified backup. Deleting it leaves no recovery point.'
+            : `Deleting this backup leaves ${remaining} verified backup${remaining === 1 ? '' : 's'} (minimum ${minRetained}).`,
+        remaining_recovery_points: remaining,
+        min_retained: minRetained
+      });
+    }
     try {
       if (row.archive_filename) {
         const storage = createStorageProvider(getBackupConfig().backupDir);
@@ -338,7 +362,12 @@ export function registerBackupRoutes(app, pool, { backupQueue, auditLogService }
         entityType: AUDIT_ENTITY.SYSTEM_BACKUP,
         entityId: row.id,
         entityDisplay: row.backup_id,
-        metadata: { backup_id: row.backup_id, result: 'deleted' }
+        severity: unsafe ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+        metadata: {
+          backup_id: row.backup_id,
+          result: 'deleted',
+          ...(unsafe ? { below_min_retained: true, remaining_recovery_points: remaining, min_retained: minRetained } : {})
+        }
       });
       return res.json({ ok: true, backup: serializeBackup(deleted) });
     } catch (err) {
@@ -362,6 +391,7 @@ export async function runRetentionSweep(pool, auditLogService = null, { logger =
   const protectedIds = await getProtectedBackupIds(pool);
   const candidates = selectRetentionCandidates(completed, {
     retentionDays: cfg.retentionDays,
+    minRetained: cfg.minRetained,
     protectedBackupIds: protectedIds
   });
   const storage = createStorageProvider(cfg.backupDir);

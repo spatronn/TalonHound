@@ -21,8 +21,10 @@ import {
   createBackupRow,
   setJobId,
   markFailed,
-  getBackupById
+  getBackupById,
+  listActiveBackupIds
 } from './lib/backup/backupStore.js';
+import { sweepStaleBackupTemp } from './lib/backup/tempSweep.js';
 import { generateBackupId } from './lib/backup/ids.js';
 import { ensureBackupDir } from './lib/backup/config.js';
 import { runRetentionSweep } from './routes/backups.js';
@@ -179,6 +181,16 @@ async function reconcileStale() {
   for (const row of interrupted) {
     console.warn(
       `[backup-worker] reconciler interrupted stale backup_id=${row.backup_id} timeout=${cfg.staleJobTimeoutMinutes}m`
+    );
+  }
+  // Staging left behind by a killed process (the owning job cleans up on any
+  // in-process outcome). Read active ids after the reconcile above.
+  const swept = await sweepStaleBackupTemp(cfg.backupDir, {
+    activeBackupIds: await listActiveBackupIds(pool)
+  });
+  if (swept.deleted > 0 || swept.failed > 0) {
+    console.warn(
+      `[backup-worker] temp sweep deleted=${swept.deleted} bytes=${swept.deleted_bytes} failed=${swept.failed} unknown=${swept.unknown}`
     );
   }
 }

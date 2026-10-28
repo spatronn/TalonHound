@@ -63,6 +63,7 @@ import { enqueueDeepSearch } from './lib/iocDeepSearch/enqueueDeepSearch.js';
 import { queryFingerprint } from './lib/iocDeepSearch/deepSearchStatus.js';
 import { registerBackupRoutes } from './routes/backups.js';
 import { BACKUP_QUEUE_NAME } from './lib/backup/config.js';
+import { loadBackupHealth, systemHealthEntries } from './lib/backup/health.js';
 import {
   parseSearchQuery,
   buildWhereClause,
@@ -6956,7 +6957,7 @@ app.get('/api/system/health', async (_req, res) => {
     }
   ];
 
-  const [providerResult, feedResult, workerResult, queueResult, schedulerHb, expirationHb] = await Promise.all([
+  const [providerResult, feedResult, workerResult, queueResult, schedulerHb, expirationHb, backupHealth] = await Promise.all([
     loadEnrichmentProviderSummaries().catch(() => null),
     readiness.checks.postgres === 'ok' ? loadSystemFeedHealth().catch(() => null) : Promise.resolve(null),
     Promise.all([
@@ -6974,8 +6975,10 @@ app.get('/api/system/health', async (_req, res) => {
       : Promise.resolve(null),
     readiness.checks.redis === 'ok'
       ? readWorkerHeartbeat(redis, HEARTBEAT_KEYS.ioc_expiration_worker).catch(() => null)
-      : Promise.resolve(null)
+      : Promise.resolve(null),
+    readiness.checks.postgres === 'ok' ? loadBackupHealth(pool).catch(() => null) : Promise.resolve(null)
   ]);
+  if (backupHealth) core.push(...systemHealthEntries(backupHealth));
 
   const providers = providerResult
     ? providerResult.map((provider) => ({
