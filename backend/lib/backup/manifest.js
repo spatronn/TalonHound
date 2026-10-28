@@ -1,4 +1,4 @@
-// Backup manifest build / parse (format version 2).
+// Backup manifest build / parse (format version 3; 2 = PostgreSQL-only legacy).
 
 import {
   APPLICATION_NAME,
@@ -49,8 +49,17 @@ export function buildManifest(input) {
         format: 'pg_custom',
         bytes: Number(components.postgresBytes || 0)
       },
-      ...(Number(components.filesBytes || 0) > 0
-        ? { files: { path: 'files/', bytes: Number(components.filesBytes) } }
+      ...(components.threatLibrary
+        ? {
+            threat_library: {
+              path: 'files/threat-library/',
+              index: 'files/threat-library/index.json',
+              file_count: Number(components.threatLibrary.fileCount || 0),
+              bytes: Number(components.threatLibrary.totalBytes || 0),
+              storage_root: 'THREAT_LIBRARY_STORAGE_DIR',
+              layout: 'content-addressed'
+            }
+          }
         : {})
     },
     component_sizes: {

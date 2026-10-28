@@ -479,8 +479,12 @@ services:
       - BACKUP_ENCRYPTION_KEY_FILE=${BACKUP_ENCRYPTION_KEY_FILE:-}
       - BACKUP_MAX_CONCURRENT=1
       - BACKUP_QUEUE_NAME=system-backup
+      - THREAT_LIBRARY_STORAGE_DIR=/data/threat-library
     volumes:
       - backup_data:/data/backups
+      # Read-only: backups copy Threat Library source files; restore writes them
+      # through a one-off threat-library-worker container (restore-stack.sh).
+      - threat_library_data:/data/threat-library:ro
     depends_on:
       - db
       - redis

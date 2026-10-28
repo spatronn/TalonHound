@@ -55,6 +55,7 @@ export function evaluateBackupHealth({
   latestFinished = null,
   capacity = null,
   staleTemp = null,
+  threatLibraryArtifactCount = 0,
   now = new Date()
 }) {
   const warnings = [];
@@ -69,6 +70,16 @@ export function evaluateBackupHealth({
         'insufficient_recovery_points',
         'warning',
         `${points.length} verified backup${points.length === 1 ? '' : 's'} stored; ${cfg.minRetained} required.`
+      )
+    );
+  }
+
+  if (newest && threatLibraryArtifactCount > 0 && !newest.manifest?.components?.threat_library) {
+    warnings.push(
+      warning(
+        'latest_backup_without_threat_library',
+        'warning',
+        'The newest verified backup does not include Threat Library source files.'
       )
     );
   }
@@ -128,22 +139,39 @@ export function evaluateBackupHealth({
   return { recovery_points: points.length, warnings };
 }
 
+async function countThreatLibraryArtifactFiles(db) {
+  try {
+    const { rows } = await db.query(
+      `SELECT CASE WHEN to_regclass('public.threat_report_artifacts') IS NULL THEN 0
+              ELSE (SELECT COUNT(*) FROM threat_report_artifacts WHERE storage_key IS NOT NULL) END::int AS n`
+    );
+    return Number(rows[0]?.n || 0);
+  } catch {
+    return 0;
+  }
+}
+
 /**
  * Gather facts and evaluate. Read-only: the temp sweep runs as a dry run here;
  * only the backup worker deletes stale staging.
  */
 export async function loadBackupHealth(db, cfg = getBackupConfig()) {
-  const [completed, latestFinished, activeIds, capacity] = await Promise.all([
+  const [completed, latestFinished, activeIds, capacity, threatLibraryArtifactCount] = await Promise.all([
     listCompletedForRetention(db),
     getLatestFinished(db),
     listActiveBackupIds(db),
-    readFilesystemCapacity(cfg.backupDir)
+    readFilesystemCapacity(cfg.backupDir),
+    countThreatLibraryArtifactFiles(db)
   ]);
   const staleTemp = await sweepStaleBackupTemp(cfg.backupDir, {
     activeBackupIds: activeIds,
     apply: false
   }).catch(() => null);
-  return { capacity, staleTemp, ...evaluateBackupHealth({ cfg, completed, latestFinished, capacity, staleTemp }) };
+  return {
+    capacity,
+    staleTemp,
+    ...evaluateBackupHealth({ cfg, completed, latestFinished, capacity, staleTemp, threatLibraryArtifactCount })
+  };
 }
 
 const STORAGE_CODES = new Set(['low_disk_space', 'low_inodes', 'stale_temp_artifacts']);

@@ -9,6 +9,25 @@ import { parseManifest, isCompatibleFormatVersion } from './manifest.js';
 import { decryptFile, isEncryptedArchiveFilename } from './encryption.js';
 import { dumpContainsExpectedObjects, pgRestoreList } from './pgDump.js';
 import { loadEncryptionKey } from './config.js';
+import { verifyThreatLibraryComponent } from './threatLibraryComponent.js';
+
+/**
+ * Format 3+ bundles must carry a valid Threat Library component; format 2
+ * (PostgreSQL-only) bundles are accepted and reported as not including it.
+ * @returns {Promise<{ ok: true, threatLibrary: object } | { ok: false, errorCode: string, error: string }>}
+ */
+async function verifyThreatLibraryPart(bundleDir, manifest) {
+  const component = manifest.components?.threat_library;
+  if (!component) {
+    if (Number(manifest.format_version) >= 3) {
+      return { ok: false, errorCode: 'TL_COMPONENT_MISSING', error: 'Format 3 backup without Threat Library component' };
+    }
+    return { ok: true, threatLibrary: { included: false, file_count: null, bytes: null } };
+  }
+  const tl = await verifyThreatLibraryComponent(bundleDir, component);
+  if (!tl.ok) return tl;
+  return { ok: true, threatLibrary: { included: true, file_count: tl.fileCount, bytes: tl.totalBytes } };
+}
 
 /**
  * Verify a finalized archive on disk.
@@ -109,7 +128,10 @@ export async function verifyBackupArchive(archivePath, {
         }
       }
 
-      return { ok: true, manifest, archiveChecksum };
+      const tl = await verifyThreatLibraryPart(bundleDir, manifest);
+      if (!tl.ok) return { ...tl, manifest };
+
+      return { ok: true, manifest, archiveChecksum, threatLibrary: tl.threatLibrary };
     } finally {
       await safeRmRf(tmpRoot);
     }
@@ -140,5 +162,7 @@ export async function verifyBundleDirectory(bundleDir, { skipPgRestoreList = fal
       return { ok: false, errorCode: 'VERIFY_FAILED', error: `Missing: ${objs.missing.join(',')}`, manifest };
     }
   }
-  return { ok: true, manifest };
+  const tl = await verifyThreatLibraryPart(bundleDir, manifest);
+  if (!tl.ok) return { ...tl, manifest };
+  return { ok: true, manifest, threatLibrary: tl.threatLibrary };
 }

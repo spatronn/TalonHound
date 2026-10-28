@@ -7,6 +7,7 @@ import { normalizeTlp, normalizeEntityName, IOC_SOURCE_NAME } from './constants.
 import { isValidTlpSource } from './tlpPolicy.js';
 import { isValidPublicationDateSource, isValidPublicationDatePrecision } from './publicationDate.js';
 import { deleteReportArtifacts } from './artifactStore.js';
+import { THREAT_LIBRARY_ARTIFACT_LOCK } from '../backup/threatLibraryComponent.js';
 import { buildCandidateEvidenceRecord, enforceRoleTypeCompatibility } from './evidencePolicy.js';
 import {
   reportIndicatorMembershipSql,
@@ -1479,17 +1480,43 @@ export async function loadMatchedIocPublicIds(pool, candidates) {
  * Soft-delete report + hard-delete owned TL rows via CASCADE; never deletes ioc_items.
  */
 export async function deleteThreatReport(pool, reportId) {
-  await pool.query(
-    `UPDATE threat_reports SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-    [reportId]
-  );
-  // Hard-delete children to free unique constraints; IOCs remain
-  await pool.query(`DELETE FROM threat_relationships WHERE report_id = $1`, [reportId]);
-  await pool.query(`DELETE FROM threat_report_entities WHERE report_id = $1`, [reportId]);
-  await pool.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
-  await pool.query(`DELETE FROM threat_report_artifacts WHERE report_id = $1`, [reportId]);
-  await pool.query(`DELETE FROM threat_library_jobs WHERE report_id = $1`, [reportId]);
-  await deleteReportArtifacts(reportId);
+  // Shared artifact lock: a backup holds it exclusively between the snapshot
+  // that references this report's files and copying them, so files are never
+  // removed out from under it. Files go only after the rows are committed.
+  const client = typeof pool.connect === 'function' ? await pool.connect() : null;
+  const db = client || pool;
+  let locked = false;
+  try {
+    if (client) {
+      await client.query('SELECT pg_advisory_lock_shared(hashtext($1)::bigint)', [THREAT_LIBRARY_ARTIFACT_LOCK]);
+      locked = true;
+      await client.query('BEGIN');
+    }
+    await db.query(
+      `UPDATE threat_reports SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [reportId]
+    );
+    // Hard-delete children to free unique constraints; IOCs remain
+    await db.query(`DELETE FROM threat_relationships WHERE report_id = $1`, [reportId]);
+    await db.query(`DELETE FROM threat_report_entities WHERE report_id = $1`, [reportId]);
+    await db.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
+    await db.query(`DELETE FROM threat_report_artifacts WHERE report_id = $1`, [reportId]);
+    await db.query(`DELETE FROM threat_library_jobs WHERE report_id = $1`, [reportId]);
+    if (client) await client.query('COMMIT');
+    await deleteReportArtifacts(reportId);
+  } catch (err) {
+    if (client) await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    if (client) {
+      if (locked) {
+        await client
+          .query('SELECT pg_advisory_unlock_shared(hashtext($1)::bigint)', [THREAT_LIBRARY_ARTIFACT_LOCK])
+          .catch(() => {});
+      }
+      client.release();
+    }
+  }
 }
 
 export async function getThreatLibraryIocSourceId(pool) {

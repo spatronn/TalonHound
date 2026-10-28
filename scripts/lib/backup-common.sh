@@ -1,7 +1,7 @@
 # Shared helpers for backup-stack.sh and restore-stack.sh (POSIX sh).
 
 # Writer services stopped during restore to avoid concurrent writes.
-WRITER_SERVICES="backend integration-scheduler integration-worker ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker backup-worker"
+WRITER_SERVICES="backend integration-scheduler integration-worker ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker threat-library-worker backup-worker"
 
 # Staging dirs created during resolve; cleaned on failure via cleanup_restore_work.
 RESTORE_WORK_DIRS=""
@@ -307,7 +307,7 @@ start_writers() {
   docker compose up -d db redis
   docker compose up -d backend integration-scheduler integration-worker \
     ioc-expiration-worker ioc-search-export-worker ioc-deep-search-worker ioc-bulk-query-worker \
-    backup-worker frontend proxy
+    threat-library-worker backup-worker frontend proxy
 }
 
 # --- Restore target validation (identifier-safe; no secrets in logs) ---
@@ -355,11 +355,42 @@ validate_backup_manifest() {
     return 1
   fi
   _fv=$(sed -n 's/.*"format_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$_manifest" | head -n 1)
-  if [ -n "$_fv" ] && [ "$_fv" -gt 2 ]; then
+  if [ -n "$_fv" ] && [ "$_fv" -gt 3 ]; then
     echo "[restore] unsupported manifest format_version ${_fv}" >&2
     return 1
   fi
   return 0
+}
+
+# --- Threat Library source files (backup format 3) ---
+
+# Sets TL_MODE=full|legacy for the bundle; fails on a format-3 bundle without
+# its Threat Library component.
+detect_threat_library_component() {
+  _bundle="$1"
+  _manifest="${_bundle}/manifest.json"
+  _fv=$(sed -n 's/.*"format_version"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$_manifest" | head -n 1)
+  if grep -q '"threat_library"[[:space:]]*:' "$_manifest"; then
+    if [ ! -f "${_bundle}/files/threat-library/index.json" ]; then
+      echo "[restore] manifest declares Threat Library files but files/threat-library/index.json is missing" >&2
+      return 1
+    fi
+    TL_MODE=full
+  elif [ "${_fv:-2}" -ge 3 ]; then
+    echo "[restore] format ${_fv} backup without Threat Library component — refused" >&2
+    return 1
+  else
+    TL_MODE=legacy
+  fi
+  return 0
+}
+
+# Run the Threat Library restore helper in a one-off container that has the
+# threat_library_data volume mounted, with the bundle mounted read-only.
+tl_restore_cli() {
+  docker compose run --rm --no-deps -T \
+    -v "${BUNDLE_DIR:?}:/restore-bundle:ro" \
+    threat-library-worker node scripts/restore-threat-library-artifacts.js "$@"
 }
 
 # docker compose exec does not reliably pass host stdin to pg_restore on all hosts;

@@ -14,7 +14,7 @@ TalonHound system backups cover **PostgreSQL** (transaction-consistent `pg_dump 
 | Component | Included | Notes |
 |-----------|----------|-------|
 | PostgreSQL (`postgres_data`) | **Yes** | IOCs, feeds, memberships, custom threat feeds, suppressions, tags, enrichments, users/RBAC, audit logs, scheduler/config, `schema_migrations` |
-| Threat Library source files (`threat_library_data`) | **No** | Retained source HTML/PDF used by Refresh/Retry. Report text and review state are in PostgreSQL; copy the volume separately if source files must survive a disaster |
+| Threat Library source files (`threat_library_data`) | **Yes** (format 3) | Retained source HTML / uploaded PDFs referenced by `threat_report_artifacts.storage_key` — exactly the set referenced by the dumped database snapshot. Backups created before format 3 do not contain them |
 | Published Feed files (`published_feed_data`) | **No** | Regenerated from PostgreSQL by the feed scheduler |
 | Redis | **No** | Ephemeral BullMQ/cache — reconcile queues after restore |
 | `.env` / secret files | **No** | Store separately; not included in the archive |
@@ -32,20 +32,52 @@ TalonHound system backups cover **PostgreSQL** (transaction-consistent `pg_dump 
 - Encrypted backups require the same key on the restore host; without it they cannot be restored.
 - Keep offsite copies of archives and keys on separate media.
 
-## Archive layout (format version 2)
+## Archive layout (format version 3)
 
 ```text
 backup-YYYYMMDD-HHMMSS-<id>.tar.gz          # or .tar.gz.enc when encrypted
   backup-YYYYMMDD-HHMMSS-<id>/
     manifest.json
     database/postgres.dump
-    checksums.sha256
+    files/threat-library/index.json         # key, sha256, bytes, artifact/report ids per file
+    files/threat-library/reports/<report_id>/<sha256>.<ext>
+    checksums.sha256                         # every file above
     README.txt
 ```
+
+`manifest.json` → `components.threat_library` records `file_count`, `bytes`, the index path and
+the storage root by name (`THREAT_LIBRARY_STORAGE_DIR`) — never an absolute host path.
+`system_backups.files_size_bytes` is the Threat Library total.
+
+**Consistency.** The backup opens a `REPEATABLE READ` snapshot, exports it, copies every file the
+snapshot references, then runs `pg_dump --snapshot=<that snapshot>`. The dump and the file set
+therefore describe one database state. While the snapshot is taken and the files are copied
+(seconds) the backup holds an advisory lock that report deletion also takes, so a referenced file
+cannot disappear mid-copy; deletes wait only for the copy, not for the dump. Artifact files are
+written atomically (temp → rename) and are content-addressed, so a file can be checked against
+its own name as well as the database sha256.
+
+**Failure.** A missing, unreadable or checksum-mismatched referenced file fails the backup
+(`TL_ARTIFACT_MISSING` / `TL_ARTIFACT_UNREADABLE` / `TL_ARTIFACT_CORRUPT`, listing the keys). A
+failed backup publishes nothing, never touches earlier archives, and removes its staging.
+
+**Verification** (at creation and on demand) checks: archive members (no absolute paths, `..`,
+links or duplicate entries), `checksums.sha256`, the dump (`pg_restore --list`), and for format 3
+every indexed file — present once, size, sha256 against the index and its name, no undeclared
+files, count and bytes matching the manifest. Format ≥ 4 is refused.
+
+**Legacy backups.** Format 2 archives (PostgreSQL only) still verify and restore as before; the UI
+labels them *Database only* and System → Health warns while the newest verified backup lacks
+Threat Library files.
 
 Archives are written atomically (temp → rename). Incomplete files do not use the final name.
 
 Legacy Faz-1 directories (`talonhound-*/postgres.dump`) remain readable by `scripts/restore-stack.sh`.
+
+An isolated end-to-end check (throwaway PostgreSQL containers, no compose project or volume) is
+`scripts/test-backup-restore-threat-library-e2e.sh`: back up seeded reports, restore into an empty
+database and file store, and confirm every restored `storage_key` resolves to a file with the
+recorded sha256.
 
 Restore does **not** require a `system_backups` database registry row. An external archive can be restored with `--file` using only the archive’s own manifest and checksums.
 
@@ -190,8 +222,27 @@ Use this when the Compose stack is healthy enough to stop writers and overwrite 
    - stops writer services
    - **drops and recreates** the target PostgreSQL database (`DROP DATABASE … WITH (FORCE)` then `CREATE DATABASE`)
    - runs `pg_restore` into the fresh database (**without** `--clean`)
+   - format 3: swaps in the Threat Library files (see below)
    - runs `npm run migrate` (forward-only)
-   - starts services again
+   - starts services again (the writer set includes `threat-library-worker`)
+
+   **Threat Library files (format 3).** Before anything is changed, the files are verified and
+   copied into `.restore-<id>/` inside `threat_library_data`, re-hashed and given `0640`/`0750`
+   modes (`scripts/restore-threat-library-artifacts.js stage`, run in a one-off
+   `threat-library-worker` container with the bundle mounted read-only; free space is checked
+   first). Only after `pg_restore` succeeds is the live `reports/` renamed to
+   `.reports-pre-restore-<id>/` and the staged tree renamed into place. If the safety dump,
+   database recreation or `pg_restore` fails, the staging is discarded and the live files are
+   untouched.
+
+   **Rolling back the files:** stop `threat-library-worker`, move `reports/` aside, rename
+   `.reports-pre-restore-<id>/` back to `reports/`. Delete `.reports-pre-restore-<id>/` once the
+   restore is accepted. If the final swap itself fails (the database is already restored), the
+   script prints the `commit --id <id>` command to finish it.
+
+   **Legacy (format 2) archives:** the script warns that Threat Library source files are not
+   included and leaves `threat_library_data` unchanged; reports whose retained HTML/PDF is absent
+   cannot Refresh or re-extract from source.
 
    **Note:** `pg_restore --clean` is **not** used. TalonHound’s IOC schema uses declarative partitioning under `ioc_items`; `--clean` fails when dropping inherited partition primary keys.
 

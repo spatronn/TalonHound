@@ -7,7 +7,8 @@ import {
   normalizeScheduleTimezone
 } from '../integrationSchedule.js';
 
-export const BACKUP_FORMAT_VERSION = 2;
+/** 2 = PostgreSQL only; 3 = PostgreSQL + Threat Library source artifacts. */
+export const BACKUP_FORMAT_VERSION = 3;
 export const APPLICATION_NAME = 'TalonHound';
 
 function intFromEnv(name, fallback, { min, max } = {}) {
@@ -45,6 +46,7 @@ export function getBackupConfig() {
     backupDir: String(process.env.BACKUP_DIR || '/data/backups'),
     encryptionEnabled,
     encryptionKeyFile: keyFile,
+    threatLibraryStorageDir: String(process.env.THREAT_LIBRARY_STORAGE_DIR || '/data/threat-library'),
     storageProvider: 'local',
     maxConcurrent: intFromEnv('BACKUP_MAX_CONCURRENT', 1, { min: 1, max: 1 }),
     queueName: String(process.env.BACKUP_QUEUE_NAME || 'system-backup'),
@@ -70,7 +72,8 @@ export function getBackupConfig() {
 export const BACKUP_QUEUE_NAME = process.env.BACKUP_QUEUE_NAME || 'system-backup';
 
 export const BACKUP_INCLUDED = Object.freeze([
-  'postgresql'
+  'postgresql',
+  'threat_library_artifacts'
 ]);
 
 export const BACKUP_EXCLUDED = Object.freeze([

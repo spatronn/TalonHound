@@ -118,6 +118,13 @@ jobs:
           MIGRATION_CHAIN_ITEST: '1'
         run: npm run test:migration-chain-integration
 
+      - name: Backup + Threat Library restore integration (pg_dump --snapshot)
+        working-directory: backend
+        env:
+          ALLOW_BACKUP_DB_TESTS: '1'
+          REQUIRE_BACKUP_DB_TESTS: '1'
+        run: npm run test:backup-integration
+
       - name: First-run setup wizard integration tests (real Postgres)
         working-directory: backend
         run: npm run test:setup-wizard-integration
