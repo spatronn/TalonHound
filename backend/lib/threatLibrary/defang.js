@@ -27,6 +27,11 @@ const MISSING_COLON_SCHEME_RE =
 // dropped): recovered after the colon / dot refang, only before a dotted host
 // followed by a path, port, query or end (tl-defang-v3).
 const SINGLE_SLASH_SCHEME_RE = /\b(https?):\/(?!\/)(?=(?:[a-z0-9-]+\.)+[a-z0-9-]+(?:[/:?#\s]|$))/gi;
+// The bracket closes inside the authority marker ("http[:/]/host",
+// "hxxp[:]/" + "/host", tl-defang-v5): the colon and exactly two slashes split
+// across the bracket. Same dotted-host lookahead as the forms above.
+const SPLIT_BRACKET_SCHEME_RE =
+  /\b(h(?:tt|xx)ps?)\[:(\/{0,2})\](\/{0,2})(?=(?:[a-z0-9-]+(?:\.|\[\.\]|\(\.\)))+[a-z0-9-]+|\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}\b)/gi;
 const BRACKET_DOT_RE = /\[\.\]|\(\.\)|\{\.\}/g;
 // Publisher variants of the bracketed dot between two hostname characters
 // (tl-defang-v2): whitespace inside the brackets ("evil[ . ]com"), a single
@@ -72,6 +77,8 @@ function normalizeScheme(scheme) {
 
 function refangSchemes(text) {
   return String(text || '')
+    .replace(SPLIT_BRACKET_SCHEME_RE, (m, scheme, inner, outer) =>
+      (inner.length + outer.length === 2 ? `${normalizeScheme(scheme)}://` : m))
     .replace(MISSING_COLON_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`)
     .replace(BRACKET_COLON_NO_SLASH_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`)
     .replace(HXXP_RE, (m) => (m.toLowerCase().startsWith('hxxps') ? 'https://' : 'http://'))
@@ -116,6 +123,6 @@ export function refangTextForExtraction(text) {
  */
 export function looksDefanged(value) {
   const v = String(value || '');
-  return /hxxps?(?::\/\/|\[:)/i.test(v) || /\[\.\]|\(\.\)|\{\.\}/.test(v) || /\[:\]|\[:\/\/\]/.test(v)
+  return /hxxps?(?::\/\/|\[:)/i.test(v) || /\[\.\]|\(\.\)|\{\.\}/.test(v) || /\[:\]|\[:\/{1,2}\]/.test(v)
     || MD_ESCAPED_DEFANG_TEST_RE.test(v);
 }

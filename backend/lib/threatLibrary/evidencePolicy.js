@@ -773,6 +773,8 @@ export function buildCandidateEvidenceRecord(c) {
     scope_opening_id: o.scope_opening_id || undefined,
     typing_reason: o.typing_reason || undefined,
     list_stance: o.list_stance || undefined,
+    // A table row whose provider noun belongs to the operation (tl-candidates-v44).
+    operator_owned_row: o.operator_owned_row === true ? true : undefined,
     // A value read from a table reference column (tool homepage / download link).
     reference_cell: o.reference_cell === true ? true : undefined,
     // A value read from a table row's prose (description) cell, not asserted.

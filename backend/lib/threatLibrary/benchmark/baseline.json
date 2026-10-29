@@ -1,6 +1,6 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v43",
+    "candidates": "tl-candidates-v44",
     "zones": "tl-zones-v16",
     "tables": "tl-table-v13",
     "type_resolver": "tl-type-resolver-v19",

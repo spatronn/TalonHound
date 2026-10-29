@@ -449,7 +449,7 @@ const PROVIDER_ROLE_NOUN_RE =
 // values (instances: tl-candidates-v43).
 const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?|instances?)(?![\w.-])/i;
 const MALICIOUS_VALUE_ROLE_RE =
-  /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?|instances?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
+  /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?|instances?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:c2|c&c)(?=\s*(?:[/|,;]|$))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
 
 /**
  * @param {string} window row / lead-in text with this value masked as OBSERVABLE
@@ -462,6 +462,50 @@ export function namesProviderService(window, opts = {}) {
   if (STANCE_OVERRIDE_RE.test(t)) return false;
   return true;
 }
+
+/** Words that qualify a provider noun without naming who runs it. */
+const PROVIDER_QUALIFIER_STOPWORDS = new Set([
+  'a', 'an', 'the', 'its', 'their', 'his', 'her', 'our', 'and', 'or', 'of', 'for', 'as', 'via', 'using', 'with',
+  'public', 'legitimate', 'third', 'party', 'commercial', 'free', 'known', 'popular', 'external', 'shared',
+  'open', 'secondary', 'primary', 'backup', 'fallback', 'default', 'custom', 'local', 'remote'
+]);
+
+/**
+ * A typed IOC-table row whose provider noun is owned by the operation the
+ * table describes ("CaptiveCrunch DNS Resolver" among "CaptiveCrunch AitM
+ * infrastructure" rows, tl-candidates-v44): the word right before the
+ * provider noun names a subject that other non-provider rows of the same
+ * table attribute their infrastructure to, so the resolver is the operators'
+ * own, not a third-party service. A category qualifier ("Blockchain
+ * provider", "public resolver") never matches a sibling attribution.
+ * @param {{ table?: { rows?: unknown[][] } }|null|undefined} block
+ * @param {number|null|undefined} rowIndex
+ */
+export function tableRowProviderOwnedByOperation(block, rowIndex) {
+  const rows = block?.table?.rows;
+  if (!Array.isArray(rows) || !Number.isInteger(rowIndex) || !Array.isArray(rows[rowIndex])) return false;
+  const rowText = (r) => (Array.isArray(r) ? r.map((c) => String(c ?? '')).join(' | ') : '');
+  const own = rowText(rows[rowIndex]);
+  const m = PROVIDER_ROLE_NOUN_RE.exec(own);
+  if (!m) return false;
+  const q = /([A-Za-z][\w-]{2,})\s+$/.exec(own.slice(0, m.index));
+  if (!q || PROVIDER_QUALIFIER_STOPWORDS.has(q[1].toLowerCase())) return false;
+  const owner = new RegExp(`(?<![\\w.-])${q[1].replace(/[.*+?^${}()|[\]\\-]/g, '\\$&')}(?![\\w.-])`);
+  return rows.some((r, j) => {
+    if (j === rowIndex) return false;
+    const text = rowText(r);
+    return owner.test(text) && !PROVIDER_ROLE_NOUN_RE.test(text);
+  });
+}
+
+/**
+ * A structural row that says the value is the resolver the malware queries
+ * ("DOH for domain resolution using https://dns.google/dns-query"): a
+ * resolution service the operation relies on, not infrastructure it owns
+ * (tl-candidates-v44). Applied only without a malicious role / stance cue.
+ */
+const RESOLUTION_SERVICE_ROW_RE =
+  /\b(?:dns|domain|name|host(?:name)?|c2)\s+(?:name\s+)?resolution\s+(?:(?:is\s+)?(?:performed|done)\s+)?(?:using|via|through|with|against)\s+(?:the\s+)?OBSERVABLE\b/i;
 
 /** Another hash / URL / IP token: the boundary of the window that describes this observable. */
 const FOREIGN_OBSERVABLE_TOKEN_RE =
@@ -1186,7 +1230,12 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // A typed table row whose own descriptor cells call the value a provider /
     // service ("<host> | domain | Blockchain provider | C2 URL resolution")
     // lists infrastructure the malware relies on, not infrastructure it owns.
-    if (structuralRow && form === 'table_row' && namesProviderService(full.replace(/\bOBSERVABLE\b/g, ' '))) {
+    if (structuralRow && form === 'table_row' && opts.operatorOwnedRow !== true &&
+        namesProviderService(full.replace(/\bOBSERVABLE\b/g, ' '))) {
+      return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
+    }
+    if (structuralRow && form !== 'ip_port' && RESOLUTION_SERVICE_ROW_RE.test(full) &&
+        !MALICIOUS_VALUE_ROLE_RE.test(full.replace(/\bOBSERVABLE\b/g, ' ')) && !STANCE_OVERRIDE_RE.test(full)) {
       return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
     }
     return { relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS, marker: 'structural_row', authoritative, structural_row: true };
@@ -1377,7 +1426,8 @@ function relationDetailForOccurrence(candidate, o) {
     blockType: o.block_type || null,
     layout: o.layout || null,
     zoneReason: o.zone_reason || null,
-    listStance: o.list_stance || null
+    listStance: o.list_stance || null,
+    operatorOwnedRow: o.operator_owned_row === true
   });
 }
 
