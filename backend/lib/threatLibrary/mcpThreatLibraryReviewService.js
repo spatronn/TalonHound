@@ -15,6 +15,7 @@ import { finalizeBlockers, linkedSourceBlocker, loadReportSources } from './fina
 import {
   classifyCreateEligibility,
   classifyPromoteEligibility,
+  asPromotedRow,
   isPendingActionableCandidate,
   PROMOTION_OUTCOMES,
   previewCreateIocPromotion
@@ -712,7 +713,7 @@ export async function mcpThreatLibraryReviewIocs(pool, args = {}, ctx = {}) {
         detail: eligibility.ok ? null : eligibility.detail,
         candidate_id: Number(candidate.id),
         create_preview: eligibility.ok
-          ? previewCreateIocPromotion([{ ...candidate, review_status: 'approved', is_ioc: true }])
+          ? previewCreateIocPromotion([asPromotedRow(candidate)])
           : null
       }
     };

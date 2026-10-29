@@ -92,7 +92,9 @@ export function isPublisherAssertedReportIoc(candidate) {
  * benign, a provider, a reference, an example or a reserved address.
  */
 export function isAnalystConfirmedPublisherEvidence(candidate) {
-  const promoted = evidenceOf(candidate).promoted_from;
+  // Persisted rows carry it in evidence; in-memory refresh candidates
+  // (candidateAnalystState.applyAnalystState) carry it at the top level.
+  const promoted = evidenceOf(candidate).promoted_from || candidate?.promoted_from;
   if (!promoted || typeof promoted !== 'object' || Array.isArray(promoted)) return false;
   return ANALYST_CONFIRMED_REVIEWS.has(reviewOf(candidate));
 }

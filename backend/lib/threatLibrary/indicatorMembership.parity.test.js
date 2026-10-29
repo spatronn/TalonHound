@@ -181,3 +181,27 @@ test('linked-source EXISTS correlates to the candidate row with or without an al
   assert.match(reviewActionableIndicatorSql(''), /threat_report_candidates\.id/);
   assert.match(linkedSourceProvenanceColumnSql(''), /AS has_linked_source_occurrence$/);
 });
+
+test('in-memory refresh candidate: a top-level promoted_from is read like the persisted evidence copy (JS only, no DB shape)', () => {
+  const inMemory = {
+    candidate_type: 'domain',
+    normalized_value: 'c2-host.example',
+    is_ioc: true,
+    assessment: 'suspicious',
+    review_status: 'approved',
+    match_state: 'new',
+    source_assertion: 'body_mention',
+    document_has_authoritative_scope: true,
+    promoted_from: { assessment: 'context_only', review_status: 'pending' },
+    evidence: {
+      document_has_authoritative_scope: true,
+      source_assertion: 'body_mention',
+      is_direct_source_observable: true,
+      occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }]
+    }
+  };
+  assert.equal(isReportIndicatorMember(inMemory), true);
+  assert.equal(frontend.isReviewIndicator(inMemory), true);
+  assert.equal(isReportIndicatorMember({ ...inMemory, review_status: 'pending' }), false);
+  assert.equal(frontend.isReviewIndicator({ ...inMemory, review_status: 'pending' }), false);
+});

@@ -25,7 +25,7 @@ import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { extractReportCandidates } from './extractionStages.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { isReportIndicatorMember, isAnalystConfirmedPublisherEvidence } from './indicatorMembership.js';
-import { classifyPromoteEligibility } from './promotion.js';
+import { asPromotedRow, classifyPromoteEligibility, previewCreateIocPromotion } from './promotion.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { refangTextForExtraction } from './defang.js';
 
@@ -159,6 +159,11 @@ ${IOC_TABLE}`);
   assert.equal(isAnalystConfirmedPublisherEvidence(confirmed), true);
   assert.equal(isReportIndicatorMember(confirmed), true);
   assert.equal(isReportIndicatorMember({ ...confirmed, review_status: 'pending' }), false);
+  // The in-memory shape a refresh produces (promoted_from at the top level) agrees.
+  assert.equal(isReportIndicatorMember({ ...row, review_status: 'approved', assessment: 'suspicious', promoted_from: { review_status: 'pending' } }), true);
+  // The promote dry-run previews the row promotion would create, not a non-member.
+  const preview = previewCreateIocPromotion([asPromotedRow({ ...row, assessment: 'context_only', match_state: 'context_only' })]);
+  assert.equal(preview.summary.eligible, 1, JSON.stringify(preview.results));
   assert.equal(isReportIndicatorMember({ ...confirmed, review_status: 'context_only', assessment: 'context_only' }), false);
 });
 
