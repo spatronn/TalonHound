@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTIVE_SOURCES_COLUMNS, buildIocSummaryStripItems } from './iocOverviewLayout.js';
+import { ACTIVE_SOURCES_COLUMNS, buildIocSummaryStripItems, reportedAsLabel } from './iocOverviewLayout.js';
 import { computeOverflowMenuPosition } from './backupMenuPosition.js';
 import { listSourceMembershipActions } from './iocDetailTimestamps.js';
 
 test('Active Sources keeps simplified columns without timestamp bloat', () => {
   assert.deepEqual(ACTIVE_SOURCES_COLUMNS, [
     'Source',
+    'Reported as',
     'Type',
     'Status',
     'Policy expires',
@@ -18,6 +19,20 @@ test('Active Sources keeps simplified columns without timestamp bloat', () => {
   assert.equal(blob.includes('first seen'), false);
   assert.equal(blob.includes('inserted into platform'), false);
   assert.equal(blob.includes('last changed'), false);
+});
+
+test('reported-as keeps the publisher hash and marks file-identity aliases', () => {
+  assert.equal(reportedAsLabel({
+    publisher_observable_type: 'md5',
+    publisher_observable: '7c396677848776f9824ebe408bbba943',
+    relationship: 'verified_file_identity'
+  }), 'md5 7c396677…bba943 · file identity');
+  assert.equal(reportedAsLabel({
+    publisher_observable_type: 'sha256',
+    publisher_observable: 'abcd',
+    relationship: 'direct'
+  }), 'sha256 abcd');
+  assert.equal(reportedAsLabel({}), '—');
 });
 
 test('summary strip only exposes Type and Sources', () => {

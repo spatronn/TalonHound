@@ -18,6 +18,10 @@ export const AUDIT_ACTION = Object.freeze({
   IOC_CREATED: 'ioc.created',
   // One event per (IOC, feed) first import — not per re-sight.
   IOC_SOURCE_IMPORTED: 'ioc.source_imported',
+  // Written when a verified exact-hash equivalence or artifact merge changes file identity.
+  IOC_FILE_IDENTITY_LINKED: 'ioc.file_identity.linked',
+  // Read-time history only. Never inserted; recovered from stored file-artifact links.
+  IOC_FILE_IDENTITY_RECOVERED: 'ioc.file_identity.recovered',
   IOC_UPDATED: 'ioc.updated',
   IOC_DELETED: 'ioc.deleted',
   IOC_TAG_ADDED: 'ioc.tag.added',
@@ -284,6 +288,8 @@ export const AUDIT_ACTION_LABELS = Object.freeze({
   [AUDIT_ACTION.IOC_CREATED]: 'IOC Created',
   // Static fallback; IOC History API overrides with "Imported from {feed_name}".
   [AUDIT_ACTION.IOC_SOURCE_IMPORTED]: 'Imported from Feed',
+  [AUDIT_ACTION.IOC_FILE_IDENTITY_LINKED]: 'File identity linked',
+  [AUDIT_ACTION.IOC_FILE_IDENTITY_RECOVERED]: 'File identity recovered from stored links',
   [AUDIT_ACTION.IOC_UPDATED]: 'IOC Updated',
   [AUDIT_ACTION.IOC_DELETED]: 'IOC Deleted',
   [AUDIT_ACTION.IOC_TAG_ADDED]: 'IOC Tag Added',

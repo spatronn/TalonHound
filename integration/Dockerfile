@@ -83,6 +83,8 @@ COPY backend/lib/iocSourceAttributions.js ./lib/iocSourceAttributions.js
 COPY backend/lib/iocSourceAttributions.js /backend/lib/iocSourceAttributions.js
 COPY backend/lib/malwareFamilySourceResolution.js ./lib/malwareFamilySourceResolution.js
 COPY backend/lib/malwareFamilySourceResolution.js /backend/lib/malwareFamilySourceResolution.js
+COPY backend/lib/fileIdentityAudit.js /backend/lib/fileIdentityAudit.js
+COPY backend/lib/auditConstants.js /backend/lib/auditConstants.js
 COPY backend/lib/fileArtifacts /backend/lib/fileArtifacts
 # Backend modules copied into ./lib lazily import './fileArtifacts/…' (e.g. custom feed
 # dual-write). Point that at the single copy above so they resolve to the same module

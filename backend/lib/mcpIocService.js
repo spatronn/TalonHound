@@ -187,9 +187,10 @@ function sourceObservationFields(ts, row = {}) {
 }
 
 /** One IOC source membership (feed or manual IOC Source) in the MCP shape. */
-function serializeMcpSource(src, iocId) {
+function serializeMcpSource(src, row, canonicalId) {
+  const rowId = Number(row?.id);
   return {
-    ioc_id: Number(iocId),
+    ioc_id: rowId,
     source_id: src.ioc_source_id != null ? Number(src.ioc_source_id) : null,
     name: src.name || null,
     source_type: src.source_type || null,
@@ -198,7 +199,11 @@ function serializeMcpSource(src, iocId) {
     // Provider-specific: when THIS source first listed the IOC / last changed it.
     first_seen: src.first_seen_at || null,
     last_changed_at: src.last_changed_at || null,
-    expires_at: src.expires_at || null
+    expires_at: src.expires_at || null,
+    // The hash this provider published. Alias rows are not rewritten as the canonical hash.
+    relationship: rowId === Number(canonicalId) ? 'direct' : 'verified_file_identity',
+    publisher_observable_type: row?.observable_type || null,
+    publisher_observable: row?.observable || null
   };
 }
 
@@ -251,10 +256,10 @@ async function loadIocSourceViews(pool, record) {
       iocItemIds: [Number(row.id)]
     });
     for (const src of summary.activeSources) {
-      if (src.name && !active.has(src.name)) active.set(src.name, serializeMcpSource(src, row.id));
+      if (src.name && !active.has(src.name)) active.set(src.name, serializeMcpSource(src, row, recordId));
     }
     for (const src of summary.historicalSources) {
-      if (src.name && !historical.has(src.name)) historical.set(src.name, serializeMcpSource(src, row.id));
+      if (src.name && !historical.has(src.name)) historical.set(src.name, serializeMcpSource(src, row, recordId));
     }
   }
   for (const name of active.keys()) historical.delete(name);

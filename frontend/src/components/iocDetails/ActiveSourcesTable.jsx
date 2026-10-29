@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState
 import { createPortal } from 'react-dom';
 import { IocDetailIcons } from './IocDetailIcons.jsx';
 import { formatIocDetailDateTime, listSourceMembershipActions } from '../../lib/iocDetailTimestamps.js';
-import { ACTIVE_SOURCES_COLUMNS, buildIocSummaryStripItems } from '../../lib/iocOverviewLayout.js';
+import { ACTIVE_SOURCES_COLUMNS, buildIocSummaryStripItems, reportedAsLabel } from '../../lib/iocOverviewLayout.js';
 import { computeOverflowMenuPosition } from '../../lib/backupMenuPosition.js';
 import './activeSourcesMenu.css';
 
@@ -209,6 +209,7 @@ export function ActiveSourcesTable({
               {activeSources.map((src) => (
                 <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
                   <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
+                  <td title={src.publisher_observable || undefined}>{reportedAsLabel(src)}</td>
                   <td>{iocSourceTypeLabel(src)}</td>
                   <td>{iocSourceStatusBadge(src)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>{src.source_type === 'feed' ? formatIocDetailDateTime(src.policy_expires_at) : '—'}</td>

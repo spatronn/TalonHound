@@ -23,6 +23,7 @@ import {
   collectProviderMergeTargetIds,
   resolveOpenProviderHashSetConflicts
 } from './conflicts.js';
+import { recordFileIdentityLinkedAudit } from '../fileIdentityAudit.js';
 
 /**
  * @param {any} err
@@ -146,6 +147,9 @@ export async function dualWriteFileArtifactForObservable(client, input) {
       });
 
       const mergeIds = collectProviderMergeTargetIds(result);
+      let identityChanged = false;
+      let identityOperation = null;
+      const mergedArtifactIds = [];
 
       if (mergeIds.length && result?.artifact_id) {
         const candidateIds = [result.artifact_id, ...mergeIds];
@@ -170,12 +174,17 @@ export async function dualWriteFileArtifactForObservable(client, input) {
         if (canonical) {
           for (const id of candidateIds) {
             if (id === canonical.id) continue;
-            await mergeFileArtifacts(client, {
+            const merged = await mergeFileArtifacts(client, {
               canonicalArtifactId: canonical.id,
               duplicateArtifactId: id,
               method: 'provider_exact_hash_set',
               evidence: { source: input.sourceName || null, merge_fan_in: mergeIds.length }
             });
+            if (merged?.ok && !merged.noop) {
+              identityChanged = true;
+              identityOperation = 'artifact_merge';
+              mergedArtifactIds.push(id);
+            }
           }
           result.merged_into = canonical.id;
           result.artifact_id = canonical.id;
@@ -190,6 +199,50 @@ export async function dualWriteFileArtifactForObservable(client, input) {
               has_sha256_canonical: Boolean(primaryHash?.has_sha256)
             }
           }).catch(() => {});
+        }
+      }
+
+      const siblingCreated = (result?.siblings?.results || []).some((row) => row?.created_hash);
+      if (siblingCreated) {
+        identityChanged = true;
+        identityOperation = identityOperation || 'hash_equivalence';
+      }
+
+      // A newly linked IOC on an artifact that already has another exact hash is an
+      // alias join. A lone first hash is not an identity transition.
+      if (!identityChanged && result?.link?.created && result?.artifact_id) {
+        const hashCount = await client.query(
+          `SELECT COUNT(*)::int AS n FROM file_artifact_hashes WHERE artifact_id = $1::uuid`,
+          [result.artifact_id]
+        );
+        if (Number(hashCount.rows[0]?.n) > 1) {
+          identityChanged = true;
+          identityOperation = 'alias_link';
+        }
+      }
+
+      if (identityChanged && result?.artifact_id) {
+        const observedType = String(input.observableType || '').toLowerCase();
+        const observedValue = String(input.observable || '').toLowerCase();
+        const enrichment = String(input.observationType || '') === 'enrichment_derived'
+          || String(input.sourceName || '').toLowerCase() === 'virustotal';
+        try {
+          await withSavepoint(client, 'fa_identity_audit', () => recordFileIdentityLinkedAudit(client, {
+            artifactId: result.artifact_id,
+            operation: identityOperation || 'hash_equivalence',
+            observedHashType: observedType,
+            observedHashValue: observedValue,
+            sourceName: input.sourceName || null,
+            trigger: enrichment ? 'hash_enrichment' : 'feed_ingestion',
+            correlationId: input.correlationId || input.jobId || null,
+            subjectIocId: result?.link?.ioc_item_id || null,
+            subjectPublicId: null,
+            mergedArtifactIds
+          }));
+        } catch (auditErr) {
+          input.logger?.warn?.('[file-artifacts] file identity audit failed', {
+            message: auditErr?.message || String(auditErr)
+          });
         }
       }
 

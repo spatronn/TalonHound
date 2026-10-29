@@ -216,7 +216,6 @@ import { ensureRequestId } from './lib/apiRequestId.js';
 import { buildIocConfidenceSummary, buildIocConfidenceSummaryForDetails, buildDisplayConfidenceForItems, buildConfidenceProvenance, buildConfidenceSourceDescription, computeItemStoredConfidence, validateConfidenceInput, normalizeConfidence as normalizeIocConfidence, computeInheritedEffectiveConfidence } from './lib/iocConfidence.js';
 import {
   enrichItemsWithActiveSourceCounts,
-  fetchObservableMembershipSummary,
   fetchIocListStats,
   fetchActiveIocListPage,
   fetchIocStatsLastUpdate,
@@ -225,6 +224,7 @@ import {
   activeObservableHasActiveSourceSql,
   applyActiveListScope
 } from './lib/iocActiveSources.js';
+import { fetchFileIdentityMembershipSummary } from './lib/fileIdentitySources.js';
 import {
   buildIocDetailsSourceEvidence,
   fetchFeedSourceEvidenceForItems
@@ -5078,10 +5078,11 @@ app.get('/api/ioc/observable/sources', async (req, res) => {
 
     const seedRow = rows[0];
     const iocItemIds = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
-    const membershipSummary = await fetchObservableMembershipSummary(pool, {
+    const membershipSummary = await fetchFileIdentityMembershipSummary(pool, {
       observable: seedRow.observable,
       observableType: seedRow.observable_type,
-      iocItemIds
+      iocItemIds,
+      seedIocId: seedRow.id
     });
     const evidenceRows = await fetchFeedSourceEvidenceForItems(pool, {
       iocItemIds,
@@ -5713,10 +5714,11 @@ app.get('/api/ioc/details', async (req, res) => {
     const impact = null;
 
     const iocItemIds = rows.map((r) => Number(r.id)).filter((id) => Number.isFinite(id));
-    const membershipSummary = await fetchObservableMembershipSummary(pool, {
+    const membershipSummary = await fetchFileIdentityMembershipSummary(pool, {
       observable,
       observableType,
-      iocItemIds
+      iocItemIds,
+      seedIocId: seedRow.id
     });
     const evidenceRows = await fetchFeedSourceEvidenceForItems(pool, {
       iocItemIds,
@@ -5808,13 +5810,22 @@ app.get('/api/ioc/details', async (req, res) => {
       itemRows: rows,
       window: threatLibraryObservationWindow
     });
+    const timingMembershipRows = membershipSummary.timingMembershipRows || membershipSummary.membershipRows;
+    const timingObservation = timingMembershipRows === membershipSummary.membershipRows
+      ? sourceObservation
+      : resolveSourceObservationTimestamps({
+        membershipRows: timingMembershipRows,
+        itemRows: rows,
+        window: threatLibraryObservationWindow
+      });
     const globalFirstSeenAt = sourceObservation.first_seen_at;
 
     // Analyst-visible "last changed", not "last polled". Uses last_changed_in_source so
     // an unchanged re-import cannot advance it; falls back to first_seen_in_feed for
-    // rows predating migration 121.
+    // rows predating migration 121. Alias expansion uses active memberships only so an
+    // expired hash alias cannot move the canonical IOC's current last-changed time.
     const globalLastChangedAt = (() => {
-      const mDates = membershipSummary.membershipRows
+      const mDates = timingMembershipRows
         .map((m) => m.last_changed_in_source || m.first_seen_in_feed)
         .filter(Boolean);
       if (mDates.length) return mDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max);
@@ -5822,7 +5833,7 @@ app.get('/api/ioc/details', async (req, res) => {
       return iDates.length ? iDates.reduce((max, d) => new Date(d) > new Date(max) ? d : max) : null;
     })();
 
-    const globalLastSeenInSource = sourceObservation.last_seen_in_source;
+    const globalLastSeenInSource = timingObservation.last_seen_in_source;
 
     const rawFeedIntelligence = buildFeedIntelligence(evidenceRows);
     let feedIntelligence = rawFeedIntelligence;
@@ -5889,9 +5900,9 @@ app.get('/api/ioc/details', async (req, res) => {
       // Set when a timestamp above is a Threat Library report-side date (date
       // precision): { date, basis: publisher_observation|report_publication, report_id, report_title }.
       first_seen_provenance: sourceObservation.first_seen_provenance,
-      last_seen_provenance: sourceObservation.last_seen_provenance,
+      last_seen_provenance: timingObservation.last_seen_provenance,
       // Presence confirmation across feeds — null when no last_seen_in_feed (no silent fallback).
-      last_confirmed_at: resolveDetailLastConfirmedAt(membershipSummary.membershipRows),
+      last_confirmed_at: resolveDetailLastConfirmedAt(timingMembershipRows),
       // source_count kept for backward compat but now equals total_source_membership_count
       source_count: totalSourceMembershipCount,
       total_source_membership_count: totalSourceMembershipCount,
