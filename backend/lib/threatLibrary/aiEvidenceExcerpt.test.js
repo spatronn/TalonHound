@@ -207,6 +207,10 @@ test('contract: candidates stored by an earlier extraction contract are rebuilt,
     shouldReuseCandidates: false
   });
   assert.deepEqual(decideCandidateReuse({ ...base, priorExtractionVersion: 'tl-candidates-v45' }), {
+    extractionChanged: true,
+    shouldReuseCandidates: false
+  });
+  assert.deepEqual(decideCandidateReuse({ ...base, priorExtractionVersion: 'tl-candidates-v46' }), {
     extractionChanged: false,
     shouldReuseCandidates: true
   });

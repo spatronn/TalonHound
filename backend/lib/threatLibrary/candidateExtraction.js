@@ -708,6 +708,9 @@ const SPOOFED_SENDER_RE = /\b(?:spoof\w*|impersonat\w*|forged|faked?\s+sender|di
 
 /** A redaction placeholder right before a hostname tail ("<REDACTED>", "[redacted]", "REDACTED", "xxx"). */
 const REDACTION_PLACEHOLDER_END_RE = /(?:<\s*[^<>\s]{0,24}\s*>|\[\s*[^\[\]\s]{0,24}\s*\]|\bredacted|\b[x*]{3,})\s*$/i;
+// A placeholder glued onto the hostname with no separator. Email defang
+// ("user[@]onionmail[.]org") also ends in "]" and must not match.
+const GLUED_REDACTION_END_RE = /(?:<\s*(?:redacted|x{3,}|\*{3,})\s*>|\[\s*(?:redacted|x{3,}|\*{3,})\s*\])\s*$/i;
 
 /**
  * True when the DOMAIN_RE match starting at `start` is only the tail of a
@@ -723,9 +726,11 @@ function isTruncatedHostTail(text, start) {
   // "<REDACTED>.example.com" hides labels behind the dot. "[redacted]post-app.com"
   // and "<REDACTED>benefitsportal.com" glue the placeholder directly onto the
   // visible tail: that tail is not the publisher's hostname (tl-candidates-v46).
-  if (prev === '.' || prev === ']' || prev === '>') {
-    const end = prev === '.' ? start - 1 : start;
-    return REDACTION_PLACEHOLDER_END_RE.test(text.slice(Math.max(0, start - 48), end));
+  if (prev === '.') {
+    return REDACTION_PLACEHOLDER_END_RE.test(text.slice(Math.max(0, start - 48), start - 1));
+  }
+  if (prev === ']' || prev === '>') {
+    return GLUED_REDACTION_END_RE.test(text.slice(Math.max(0, start - 48), start));
   }
   return false;
 }
