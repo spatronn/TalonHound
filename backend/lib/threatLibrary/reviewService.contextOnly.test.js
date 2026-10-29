@@ -287,8 +287,33 @@ test('Normal IOC candidate workflow is unchanged: approve then create', async ()
   assert.equal(result.summary.created, 1);
 });
 
+function publisherAssertedContext(overrides = {}) {
+  return contextOnlyCandidate({
+    normalized_value: 'stealer-host.example',
+    original_value: 'stealer-host.example',
+    role: 'malicious_infrastructure',
+    source_assertion: 'explicit_ioc',
+    evidence: {
+      document_has_authoritative_scope: true,
+      policy_decision: 'explicit_report_assertion',
+      source_relation: 'operational_malicious',
+      decision_source: 'deterministic',
+      occurrences: [{
+        zone: 'explicit_ioc_section',
+        asserted: true,
+        occurrence_kind: 'list_item',
+        form: 'list_row',
+        structural_row: true,
+        source_relation: 'operational_malicious',
+        surrounding_text: 'stealer-host.example'
+      }]
+    },
+    ...overrides
+  });
+}
+
 test('promote_to_ioc: single context-only row is re-classified and created through the normal Create IOCs path', async () => {
-  const pool = statefulPool(REPORT, [contextOnlyCandidate({ id: 2 })]);
+  const pool = statefulPool(REPORT, [publisherAssertedContext({ id: 2 })]);
   const audit = fakeAudit();
   const createdBodies = [];
   const result = await applyCandidateReviewActions(pool, 9, {
@@ -305,20 +330,22 @@ test('promote_to_ioc: single context-only row is re-classified and created throu
   assert.equal(result.summary.created, 1);
   assert.equal(result.results[0].outcome, 'created');
   assert.equal(createdBodies.length, 1);
-  assert.equal(createdBodies[0].observable, 'amazon.com');
+  assert.equal(createdBodies[0].observable, 'stealer-host.example');
   assert.equal(createdBodies[0].confidence, 'medium');
   const row = pool.rows[0];
   assert.equal(row.review_status, 'approved');
   assert.equal(row.assessment, 'suspicious');
-  assert.equal(row.role, 'unknown');
+  assert.equal(row.role, 'malicious_infrastructure');
   assert.equal(row.is_ioc, true);
   assert.equal(row.match_state, 'existing', 'linked to the created record');
   assert.equal(row.matched_ioc_id, 777);
   assert.equal(row.promotion_outcome, 'created');
   assert.equal(row.evidence.promoted_from.assessment, 'context_only');
-  assert.equal(row.evidence.promoted_from.policy_decision, 'context_only_provider_service');
+  assert.equal(row.evidence.promoted_from.policy_decision, 'explicit_report_assertion');
+  assert.equal(row.evidence.promoted_from.basis, 'publisher_assertion');
   assert.equal(row.evidence.promoted_from.promoted_by, 'analyst@example.test');
   assert.equal(row.evidence.policy_decision, 'analyst_promoted_from_context_only');
+  assert.equal(audit.events[0].metadata.promotion_basis, 'publisher_assertion');
   assert.equal(isContextOnlyCandidate(row), false);
   assert.deepEqual(audit.events.map((e) => e.action), [
     AUDIT_ACTION.THREAT_LIBRARY_CANDIDATES_PROMOTED,
@@ -329,7 +356,7 @@ test('promote_to_ioc: single context-only row is re-classified and created throu
 });
 
 test('promote_to_ioc links an already existing IOC record instead of duplicating it', async () => {
-  const pool = statefulPool(REPORT, [contextOnlyCandidate({ id: 2 })]);
+  const pool = statefulPool(REPORT, [publisherAssertedContext({ id: 2 })]);
   let created = 0;
   const result = await applyCandidateReviewActions(pool, 9, {
     action: 'promote_to_ioc',
@@ -369,7 +396,26 @@ test('promote_to_ioc is single-row only and refuses non-context-only or unsuppor
   assert.equal(missing.status, 404);
   assert.equal(pool.writes.length, 0, 'refused promotions write nothing');
   assert.ok(pool.rows.every((r) => r.review_status === 'pending'));
-  assert.deepEqual(classifyPromoteEligibility(contextOnlyCandidate()), { ok: true });
+  const provider = classifyPromoteEligibility(contextOnlyCandidate());
+  assert.equal(provider.ok, false);
+  assert.equal(provider.promotable, false);
+  assert.equal(provider.blocked_class, 'provider_infrastructure');
+  const narrative = classifyPromoteEligibility(contextOnlyCandidate({
+    normalized_value: 'c2-relay.example',
+    role: 'command_and_control',
+    evidence: {
+      document_has_authoritative_scope: true,
+      policy_decision: 'pass',
+      source_relation: 'operational_malicious',
+      occurrences: [{
+        zone: 'report_body',
+        source_relation: 'operational_malicious',
+        surrounding_text: 'The payload beacons to c2-relay.example as its command and control server.'
+      }]
+    }
+  }), { corroboration: 'The narrative names this host as the command and control server.' });
+  assert.equal(narrative.ok, true);
+  assert.equal(narrative.basis, 'operational_evidence');
 });
 
 test('promote_to_ioc audit mapping is a distinct action with the approved target state', () => {

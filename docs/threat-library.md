@@ -543,6 +543,18 @@ Approving a source authorizes extraction and report association. It does **not**
 
 Lifecycle: `discovered → inspecting → inspected → attached → extracting → extracted`, with `dismissed`, `blocked`, `unsupported`, `failed`, and `stale` (refresh reserved for a later phase).
 
+## Email IOC support (backlog)
+
+Email addresses are not an IOC type in this promotion-safety change. Adding one is a separate contract, not a review-gate exception. The work has to land together:
+
+- **Data model.** A new `email` observable type on `ioc_items` and `threat_report_candidates`, with a canonical form (lowercase local-part and domain, no display name, no `mailto:`). Uniqueness stays `(observable_type, normalized_value)`. A bare domain taken from an email address stays a domain candidate only when the report states the domain itself; the address does not promote the domain.
+- **Normalization.** One normalizer shared by extraction, Create IOCs, search, and feeds. Reject display names, commas, and unexpanded placeholders. Internationalized domains go through the existing domain canonicalizer.
+- **API.** Create, lookup, bulk lookup, search, and Threat Library review accept `email` only after the type is in the creatable set. Responses include the type in the same fields as `domain` and `url`. MCP `lookup_ioc` / `search_iocs` / `import_iocs` use that type; they do not invent a side channel.
+- **UI.** Indicator tables, IOC detail, filters, and Create IOC forms offer `email` with the same validation the API enforces. Promotion still requires positive publisher evidence or an audited operational corroboration of that exact address.
+- **Integrations.** Feed import, enrichment providers, and published-feed output either carry `email` explicitly or reject it with a typed error. Silent coercion to `domain` is not part of the change.
+
+Until that contract is implemented and tested, an email-shaped token stays context or is excluded. It is not promoted by the narrative gate.
+
 ## Future STIX note
 
 Canonical entities/relationships intentionally resemble STIX concepts (threat-actor, malware, indicator, relationship) without implementing STIX 2.1 in V1.

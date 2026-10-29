@@ -245,6 +245,9 @@ export function isNeedsAttentionCandidate(candidate) {
   const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
   const review = String(candidate.review_status || 'pending').toLowerCase();
   if (review === 'ignored' || review === 'approved') return false;
+  // Malicious-assessed narrative rows the promotion gate will accept are
+  // reviewable here. The server decision is authoritative.
+  if (candidate.promote_eligibility?.promotable === true && !isUnionReviewIndicator(candidate)) return true;
   if (candidate.ai_needed === true || ev.ai_needed === true) return true;
   const policy = String(candidate.policy_decision || ev.policy_decision || '').toLowerCase();
   if (
@@ -923,11 +926,38 @@ export function describePromoteBlocker(selectedRows) {
   if (rows.length === 0) return 'Select one Context Only indicator to promote it.';
   if (rows.length > 1) return 'Promote to IOC is a single-row action: select exactly one indicator.';
   const row = rows[0];
-  if (!isContextOnlyCandidate(row)) return 'Only Context Only indicators can be promoted.';
   if (!PROMOTABLE_TYPES.has(String(row.candidate_type || '').toLowerCase())) {
     return 'This indicator type cannot be stored as an IOC record.';
   }
-  return null;
+  const decision = row.promote_eligibility;
+  if (decision && typeof decision === 'object') {
+    if (decision.promotable === true) return null;
+    return decision.detail || 'This indicator cannot be promoted.';
+  }
+  if (isReviewActionableIndicator(row) && !isContextOnlyCandidate(row)) {
+    return 'Only Context Only indicators can be promoted.';
+  }
+  return 'Promotion eligibility is not available for this indicator. Reload the report.';
+}
+
+/**
+ * Confirmation copy for Promote to IOC. Shows the server's role, publisher
+ * evidence, and reason. The backend remains the eligibility authority.
+ */
+export function formatPromoteConfirmDetail(row) {
+  const decision = row?.promote_eligibility && typeof row.promote_eligibility === 'object'
+    ? row.promote_eligibility
+    : {};
+  const lines = [
+    'The indicator will be re-classified as an approved IOC candidate and an IOC record will be created, or linked if one already exists.'
+  ];
+  if (decision.observable_role) lines.push(`Observable role: ${decision.observable_role}`);
+  if (decision.publisher_evidence) lines.push(decision.publisher_evidence);
+  if (decision.reason) lines.push(`Promotion reason: ${decision.reason}`);
+  if (decision.requires_corroboration) {
+    lines.push('This value is outside the publisher IOC set. Record why this exact observable is attacker infrastructure. The reason is stored and audited.');
+  }
+  return lines.join('\n');
 }
 
 export const NO_CREATABLE_HINT = 'No new approved indicators selected.';
@@ -971,8 +1001,11 @@ export function describeReviewToolbar({ filter, selectedRows, busy = false } = {
   // rows in a mixed selection never block the new ones.
   const creatable = rows.filter((c) => classifyCreateOutcome(c) === 'will_create').length;
   const createHint = noIocHint || (rows.length > 0 && creatable === 0 ? NO_CREATABLE_HINT : null);
+  const onePromotable = rows.length === 1 && rows[0]?.promote_eligibility?.promotable === true;
+  const promoteBlocker = onePromotable ? describePromoteBlocker(rows) : null;
   return {
     actions: [
+      ...(onePromotable ? [item('promote_to_ioc', promoteBlocker == null, { hint: promoteBlocker })] : []),
       item('approve', iocSelected > 0, { hint: noIocHint }),
       item('context_only', markableSelected > 0, { hint: noMarkHint }),
       item('ignore', rows.length > 0),

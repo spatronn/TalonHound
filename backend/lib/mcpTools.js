@@ -686,7 +686,10 @@ export function registerMcpTools(server, deps) {
         + 'Requires mcp:threat_library:write and analyst/admin owner. action = ' + REVIEW_ACTIONS.join('|') + '. '
         + 'approve / context_only / ignore require explicit candidate_ids (UUID or numeric) or an all_matching selection (commit needs scope_token from a prior dry_run). '
         + 'Never auto-approves every extracted observable. Context Only and ignored rows stay excluded from Create IOCs. '
-        + 'dry_run/preview=true reports eligible/skipped without writing. Optional expected_revision (from threat_library_get_review) rejects stale applies (STALE_REPORT). '
+        + 'dry_run/preview=true reports eligible/skipped without writing, including promote_eligibility (promotable, blocked_class, reason, publisher evidence). '
+        + 'promote_to_ioc refuses connectivity checks, generic references, documentation addresses, placeholders, and provider infrastructure that is only mentioned. '
+        + 'A narrative operational value requires corroboration (audited, min 12 characters). Publisher assertion of that exact observable does not. '
+        + 'Optional expected_revision (from threat_library_get_review) rejects stale applies (STALE_REPORT). '
         + 'Audited as the UI review events with MCP provenance.',
       inputSchema: {
         report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
@@ -695,6 +698,7 @@ export function registerMcpTools(server, deps) {
         selection: selectionSchema,
         dry_run: z.boolean().optional().describe('When true, preview only (no writes)'),
         preview: z.boolean().optional().describe('Alias of dry_run'),
+        corroboration: z.string().max(500).optional().describe('Required when promote_eligibility.requires_corroboration is true. Stored on the candidate and audited. Does not override a blocked class.'),
         expected_revision: z.string().min(1).max(128).optional().describe('report_revision from threat_library_get_review')
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }

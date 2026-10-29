@@ -71,6 +71,18 @@ test('double confirm while in flight is ignored', async () => {
   await first;
 });
 
+test('requireReason resolves to the trimmed corroboration and rejects a short one', async () => {
+  let state = { ...APP_CONFIRM_INITIAL };
+  const c = createAppConfirmController((s) => { state = s; });
+  const pending = c.request({ title: 'Promote?', requireReason: true, reasonMin: 12 });
+  assert.equal(state.requireReason, true);
+  const rejected = await c.confirm({ reason: 'too short' });
+  assert.equal(rejected.ok, false);
+  assert.equal(state.open, true);
+  await c.confirm({ reason: '  Named as the payload host in this report.  ' });
+  assert.equal(await pending, 'Named as the payload host in this report.');
+});
+
 test('initial focus contract for danger is prefer cancel', () => {
   // Documented contract consumed by AppConfirmHost (initialFocus="cancel").
   assert.equal(APP_CONFIRM_INITIAL.variant, 'primary');

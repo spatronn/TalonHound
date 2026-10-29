@@ -1775,7 +1775,11 @@ function useReasonPrompt() {
 }
 
 function AppConfirmHost({ state, controller }) {
+  const [reason, setReason] = useState('');
+  useEffect(() => { setReason(''); }, [state.open, state.title]);
   const confirmVariant = confirmButtonVariant(state.variant);
+  const reasonMin = state.reasonMin || 12;
+  const reasonBlocked = state.requireReason && reason.trim().length < reasonMin;
   const footer = (
     <>
       <button
@@ -1791,8 +1795,8 @@ function AppConfirmHost({ state, controller }) {
         <button
           type="button"
           className={buttonClassName({ variant: confirmVariant })}
-          disabled={state.submitting}
-          onClick={() => { controller.confirm().catch(() => {}); }}
+          disabled={state.submitting || reasonBlocked}
+          onClick={() => { controller.confirm({ reason }).catch(() => {}); }}
         >
           {state.submitting ? 'Working…' : state.confirmLabel}
         </button>
@@ -1813,6 +1817,29 @@ function AppConfirmHost({ state, controller }) {
         <p style={{ margin: '0 0 10px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
           {state.detail}
         </p>
+      ) : null}
+      {state.requireReason ? (
+        <label style={{ display: 'grid', gap: 6, marginBottom: 8 }}>
+          <span style={{ color: '#94a3b8', fontSize: 13 }}>Reason (required, min {reasonMin} characters)</span>
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={4}
+            placeholder="Why this exact observable is attacker infrastructure"
+            style={{
+              padding: '8px 10px',
+              borderRadius: 6,
+              border: '1px solid #475569',
+              background: '#0f172a',
+              color: '#e2e8f0',
+              fontSize: 13,
+              width: '100%',
+              boxSizing: 'border-box',
+              minHeight: 72,
+              resize: 'vertical'
+            }}
+          />
+        </label>
       ) : null}
       {state.error ? (
         <div

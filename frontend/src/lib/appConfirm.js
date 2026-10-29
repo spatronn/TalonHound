@@ -21,6 +21,8 @@ export const APP_CONFIRM_INITIAL = Object.freeze({
   cancelLabel: 'Cancel',
   variant: 'primary', // primary | warning | danger
   informational: false,
+  requireReason: false,
+  reasonMin: 12,
   submitting: false,
   error: ''
 });
@@ -84,6 +86,8 @@ export function createAppConfirmController(notify) {
         cancelLabel: String(options.cancelLabel || 'Cancel'),
         variant,
         informational,
+        requireReason: options.requireReason === true,
+        reasonMin: Number.isFinite(Number(options.reasonMin)) ? Number(options.reasonMin) : 12,
         submitting: false,
         error: ''
       });
@@ -98,8 +102,18 @@ export function createAppConfirmController(notify) {
       return state;
     },
 
-    async confirm() {
+    async confirm(extra = {}) {
       if (!state.open || state.submitting || state.informational) return { ok: false, ignored: true };
+      if (state.requireReason) {
+        const text = String(extra?.reason || '').replace(/\s+/g, ' ').trim();
+        const min = state.reasonMin || 12;
+        if (text.length < min) {
+          set({ error: `Reason is required (minimum ${min} characters).` });
+          return { ok: false, ignored: false };
+        }
+        settle(text.slice(0, 500));
+        return { ok: true };
+      }
       if (!action) {
         settle(true);
         return { ok: true };

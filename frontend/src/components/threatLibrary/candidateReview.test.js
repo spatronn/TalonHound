@@ -35,6 +35,8 @@ import {
   describeCreateIocFeedback,
   describePromoteBlocker,
   describePromoteFeedback,
+  formatPromoteConfirmDetail,
+  isNeedsAttentionCandidate,
   describeReviewToolbar,
   isContextOnlyCandidate,
   selectionForAction,
@@ -555,10 +557,30 @@ test('create IOC feedback names what happened', () => {
 
 // --- Context Only != IOC candidate -----------------------------------------
 
-const ctxAmazon = { id: 101, candidate_type: 'domain', normalized_value: 'amazon.com', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', role: 'legitimate_service', is_ioc: true };
-const ctxTrustpilot = { id: 102, candidate_type: 'domain', normalized_value: 'trustpilot.com', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', role: 'reference', is_ioc: true };
+const blockedProvider = {
+  promotable: false,
+  ok: false,
+  detail: 'The publisher describes this value as provider or service infrastructure. Promotion needs evidence this exact observable was abused, not the provider name alone.',
+  blocked_class: 'provider_infrastructure',
+  observable_role: 'legitimate_service',
+  publisher_evidence: 'Publisher assertion: body_mention\nRelation: provider_service',
+  reason: 'The publisher describes this value as provider or service infrastructure. Promotion needs evidence this exact observable was abused, not the provider name alone.'
+};
+const narrativeC2Decision = {
+  promotable: true,
+  ok: false,
+  requires_corroboration: true,
+  corroboration_min_length: 12,
+  basis: 'operational_evidence',
+  observable_role: 'command_and_control',
+  publisher_evidence: 'Section: Infrastructure overlap\nEvidence: beacons to c2-relay.example as its command and control server.',
+  reason: 'The narrative describes operational use of this exact observable (command and control, payload, phishing, or attacker infrastructure).'
+};
+const ctxAmazon = { id: 101, candidate_type: 'domain', normalized_value: 'amazon.com', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', role: 'legitimate_service', is_ioc: true, promote_eligibility: blockedProvider };
+const ctxTrustpilot = { id: 102, candidate_type: 'domain', normalized_value: 'trustpilot.com', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', role: 'reference', is_ioc: true, promote_eligibility: { promotable: false, detail: 'A narrative mention is not enough to promote this value. Promotion needs publisher evidence that this exact observable is infrastructure, or operational evidence of attacker use.' } };
 const ctxTechnique = { id: 103, candidate_type: 'attack_technique', normalized_value: 'T1059', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', is_ioc: false };
-const ctxCidr = { id: 104, candidate_type: 'cidr', normalized_value: '10.0.0.0/8', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', is_ioc: true };
+const ctxCidr = { id: 104, candidate_type: 'cidr', normalized_value: '10.0.0.0/8', assessment: 'context_only', match_state: 'context_only', review_status: 'pending', is_ioc: true, promote_eligibility: { promotable: true, requires_corroboration: true, observable_role: 'command_and_control', publisher_evidence: 'Evidence: C2 network 10.0.0.0/8', reason: 'The narrative describes operational use of this exact observable (command and control, payload, phishing, or attacker infrastructure).' } };
+const ctxC2 = { id: 105, candidate_type: 'domain', normalized_value: 'c2-relay.example', assessment: 'malicious', match_state: 'new', review_status: 'pending', role: 'command_and_control', is_ioc: true, document_has_authoritative_scope: true, source_assertion: 'body_mention', promote_eligibility: narrativeC2Decision };
 const iocA = { id: 201, candidate_type: 'domain', normalized_value: 'evil.example', assessment: 'malicious', match_state: 'new', review_status: 'pending', is_ioc: true };
 const iocB = { id: 202, candidate_type: 'ip', normalized_value: '1.2.3.4', assessment: 'malicious', match_state: 'new', review_status: 'approved', is_ioc: true };
 const ids = (t) => t.actions.map((a) => a.id);
@@ -580,9 +602,12 @@ test('Context Only view: no Create IOCs / Approve high-confidence malicious / Ap
   assert.deepEqual(ids(none), ['promote_to_ioc', 'ignore']);
   assert.deepEqual(enabled(none), []);
   assert.equal(none.actions[0].hint, 'Select one Context Only indicator to promote it.');
-  const one = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxAmazon] });
+  const one = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxC2] });
   assert.deepEqual(enabled(one), ['promote_to_ioc', 'ignore']);
   assert.equal(one.actions[0].label, 'Promote to IOC…');
+  const blocked = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxAmazon] });
+  assert.deepEqual(enabled(blocked), ['ignore']);
+  assert.match(blocked.actions[0].hint, /provider or service infrastructure/);
   const many = describeReviewToolbar({ filter: 'context_only', selectedRows: [ctxAmazon, ctxTrustpilot] });
   assert.deepEqual(enabled(many), ['ignore'], 'promotion is never bulk');
   assert.match(many.actions[0].hint, /single-row/);
@@ -596,12 +621,17 @@ test('Context Only view: no Create IOCs / Approve high-confidence malicious / Ap
 });
 
 test('promotion blockers: unsupported types and non-context rows cannot be promoted', () => {
-  assert.equal(describePromoteBlocker([ctxAmazon]), null);
+  assert.match(describePromoteBlocker([ctxAmazon]), /provider or service infrastructure/);
   assert.match(describePromoteBlocker([ctxTechnique]), /cannot be stored as an IOC record/);
   // A CIDR is stored as an ip / ipv6 network IOC: its type does not block promotion.
   assert.equal(describePromoteBlocker([ctxCidr]), null);
+  assert.equal(describePromoteBlocker([ctxC2]), null);
   assert.match(describePromoteBlocker([iocA]), /Only Context Only indicators/);
   assert.match(describePromoteBlocker([]), /Select one/);
+  assert.equal(isNeedsAttentionCandidate(ctxC2), true);
+  assert.match(formatPromoteConfirmDetail(ctxC2), /Observable role: command_and_control/);
+  assert.match(formatPromoteConfirmDetail(ctxC2), /Promotion reason:/);
+  assert.match(formatPromoteConfirmDetail(ctxC2), /beacons to c2-relay\.example/);
 });
 
 test('IOC candidate views keep the full action set and enable it from the selection', () => {

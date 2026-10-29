@@ -62,6 +62,7 @@ import {
   describeCreateIocOperationPanel,
   formatCreateIocCountLine,
   describePromoteFeedback,
+  formatPromoteConfirmDetail,
   describeReviewToolbar,
   isContextOnlyCandidate,
   selectionForAction,
@@ -1301,19 +1302,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   async function promoteToIoc() {
     if (!canWrite || selectedRows.length !== 1) return;
     const row = selectedRows[0];
-    if (!isContextOnlyCandidate(row)) return;
+    if (!row.promote_eligibility?.promotable) return;
     const value = candidateDisplayValue(row) || String(row.id);
+    const decision = row.promote_eligibility;
     const ok = await requestConfirm({
       title: 'Promote to IOC?',
-      description: `${value} is classified as Context Only. Promote it to an IOC?`,
-      detail: [
-        'This is an analyst override of the report evidence.',
-        'The indicator will be re-classified as an approved IOC candidate and an IOC record will be created, or linked if one already exists.',
-        'Context Only indicators are never created as IOCs in bulk.'
-      ].join('\n'),
+      description: `${value} can be promoted to an IOC on the evidence below.`,
+      detail: formatPromoteConfirmDetail(row),
       confirmLabel: 'Promote to IOC',
       cancelLabel: 'Cancel',
-      variant: 'warning'
+      variant: 'warning',
+      requireReason: decision.requires_corroboration === true,
+      reasonMin: decision.corroboration_min_length || 12
     });
     if (!ok) return;
     setBusy('promote_to_ioc');
@@ -1322,7 +1322,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
     try {
       const { data } = await api.post(`/threat-library/reports/${reportId}/review`, {
         action: 'promote_to_ioc',
-        candidate_ids: [row.id]
+        candidate_ids: [row.id],
+        corroboration: typeof ok === 'string' ? ok : undefined
       });
       if (data?.results) setCandidates((prev) => applyPromotionResults(prev, data.results));
       setFeedback(describePromoteFeedback(data, value));

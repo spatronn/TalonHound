@@ -192,24 +192,77 @@ test('B. promote_to_ioc refuses a MODE A row the publisher called non-malicious 
   assert.equal(row.review_status, 'pending');
 });
 
-test('B. an analyst may confirm a MODE A narrative value outside the curated IOC set (tl-candidates-v45)', () => {
-  assert.deepEqual(classifyPromoteEligibility(contextOnlyRow()), { ok: true });
-  // A value with no original-document occurrence is never confirmable.
+test('B. an analyst may confirm a MODE A narrative value that shows operational use (tl-candidates-v45)', () => {
+  const narrative = contextOnlyRow({
+    role: 'command_and_control',
+    evidence: {
+      document_has_authoritative_scope: true,
+      policy_decision: 'context_only_narrative_with_authoritative_scope',
+      source_relation: 'operational_malicious',
+      occurrences: [{
+        zone: 'report_body',
+        occurrence_kind: 'narrative_assertion',
+        form: 'url',
+        source_relation: 'operational_malicious',
+        surrounding_text: 'The malware calls to https://45.67.89.21/_api/web over TCP port 443 as its command and control endpoint.'
+      }]
+    }
+  });
+  const pending = classifyPromoteEligibility(narrative);
+  assert.equal(pending.promotable, true);
+  assert.equal(pending.requires_corroboration, true);
+  assert.equal(pending.ok, false);
+  assert.equal(pending.code, 'promote_corroboration_required');
+  const confirmed = classifyPromoteEligibility(narrative, {
+    corroboration: 'The narrative names this URL as the command and control endpoint.'
+  });
+  assert.equal(confirmed.ok, true);
+  assert.equal(confirmed.basis, 'operational_evidence');
+  // A neutral narrative mention, and a value with no original-document occurrence, are not confirmable.
+  assert.equal(classifyPromoteEligibility(contextOnlyRow()).ok, false);
+  assert.equal(classifyPromoteEligibility(contextOnlyRow()).code, 'promote_insufficient_evidence');
   assert.equal(classifyPromoteEligibility(contextOnlyRow({ has_original_document_occurrence: false })).ok, false);
 });
 
-test('B. promote_to_ioc stays available where the row can be a report Indicator', () => {
-  // MODE B (no authoritative publisher scope): an analyst may promote.
-  assert.deepEqual(classifyPromoteEligibility(contextOnlyRow({
+test('B. promote_to_ioc follows positive evidence, not the absence of a negative stance', () => {
+  // MODE B provider mention: lacking an authoritative IOC section is not permission.
+  const provider = classifyPromoteEligibility(contextOnlyRow({
     evidence: { policy_decision: 'context_only_provider_service', decision_source: 'deterministic', occurrences: [{ zone: 'report_body', form: 'url' }] }
-  })), { ok: true });
-  // MODE A, demoted to Context Only although the publisher asserted it in scope.
-  assert.deepEqual(classifyPromoteEligibility(contextOnlyRow({
+  }));
+  assert.equal(provider.ok, false);
+  assert.equal(provider.promotable, false);
+  assert.equal(provider.blocked_class, 'provider_infrastructure');
+  // An IOC-list row the extractor still called a provider, with no abuse of that value, stays blocked.
+  const listedProvider = classifyPromoteEligibility(contextOnlyRow({
     source_assertion: 'explicit_ioc',
     evidence: {
       document_has_authoritative_scope: true,
       policy_decision: 'context_only_provider_service',
       occurrences: [{ zone: 'explicit_ioc_section', asserted: true, occurrence_kind: 'list_item', form: 'list_row' }]
     }
-  })), { ok: true });
+  }));
+  assert.equal(listedProvider.ok, false);
+  assert.equal(listedProvider.blocked_class, 'provider_infrastructure');
+  // The same list row, asserted as infrastructure rather than as a provider, is promotable.
+  const listed = classifyPromoteEligibility(contextOnlyRow({
+    role: 'malicious_infrastructure',
+    source_assertion: 'explicit_ioc',
+    evidence: {
+      document_has_authoritative_scope: true,
+      policy_decision: 'explicit_report_assertion',
+      source_relation: 'operational_malicious',
+      occurrences: [{
+        zone: 'explicit_ioc_section',
+        asserted: true,
+        occurrence_kind: 'list_item',
+        form: 'list_row',
+        structural_row: true,
+        source_relation: 'operational_malicious',
+        surrounding_text: 'https://45.67.89.21/_api/web'
+      }]
+    }
+  }));
+  assert.equal(listed.ok, true);
+  assert.equal(listed.requires_corroboration, false);
+  assert.equal(listed.basis, 'publisher_assertion');
 });

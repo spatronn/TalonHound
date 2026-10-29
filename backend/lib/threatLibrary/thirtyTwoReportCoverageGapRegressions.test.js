@@ -154,7 +154,15 @@ ${IOC_TABLE}`);
   assert.ok(c);
   const row = persisted(c);
   assert.equal(isReportIndicatorMember(row), false, 'outside the curated IOC set: not automatic');
-  assert.deepEqual(classifyPromoteEligibility({ ...row, assessment: 'context_only', match_state: 'context_only' }), { ok: true });
+  const pending = classifyPromoteEligibility({ ...row, assessment: 'context_only', match_state: 'context_only' });
+  assert.equal(pending.promotable, true, JSON.stringify(pending));
+  assert.equal(pending.requires_corroboration, true);
+  assert.equal(pending.ok, false);
+  const confirmedDecision = classifyPromoteEligibility(
+    { ...row, assessment: 'context_only', match_state: 'context_only' },
+    { corroboration: 'The narrative names this host as the OctLurk C2 server.' }
+  );
+  assert.equal(confirmedDecision.ok, true);
   const confirmed = { ...row, review_status: 'approved', assessment: 'suspicious', evidence: { ...row.evidence, promoted_from: { review_status: 'pending' } } };
   assert.equal(isAnalystConfirmedPublisherEvidence(confirmed), true);
   assert.equal(isReportIndicatorMember(confirmed), true);
@@ -175,7 +183,10 @@ ${IOC_TABLE}`);
   assert.ok(c);
   const row = persisted(c, { assessment: 'malicious', match_state: 'new' });
   assert.equal(isReportIndicatorMember(row), false, 'Approve cannot reach it');
-  assert.deepEqual(classifyPromoteEligibility(row), { ok: true });
+  const elig = classifyPromoteEligibility(row);
+  assert.equal(elig.promotable, true, JSON.stringify(elig));
+  assert.equal(elig.requires_corroboration, true);
+  assert.equal(classifyPromoteEligibility(row, { corroboration: 'The narrative names this domain as the OctLurk C2.' }).ok, true);
   // An Indicator the publisher asserted is still approved, never promoted.
   const listed = find(out, '45.244.42.195');
   assert.equal(classifyPromoteEligibility(persisted(listed)).code, 'promote_not_context_only');
@@ -190,4 +201,6 @@ ${IOC_TABLE}`);
   const row = persisted(c, { assessment: 'context_only', match_state: 'context_only' });
   const elig = classifyPromoteEligibility(row);
   assert.equal(elig.ok, false, JSON.stringify(row.evidence.policy_decision));
+  assert.equal(elig.promotable, false);
+  assert.equal(classifyPromoteEligibility(row, { corroboration: 'I want this service domain in the IOC set anyway.' }).ok, false);
 });
