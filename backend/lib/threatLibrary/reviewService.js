@@ -500,7 +500,7 @@ async function promoteContextOnlyCandidate(pool, report, ids, opts) {
   const { rows: promotedRows } = await pool.query(
     `UPDATE threat_report_candidates
      SET review_status = 'approved',
-         assessment = 'suspicious',
+         assessment = CASE WHEN assessment IN ('malicious', 'suspicious') THEN assessment ELSE 'suspicious' END,
          role = CASE WHEN role IN ('reference', 'legitimate_service', 'hosting_platform') THEN 'unknown' ELSE role END,
          is_ioc = true,
          match_state = CASE WHEN matched_ioc_id IS NOT NULL THEN 'existing' ELSE 'new' END,

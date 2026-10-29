@@ -273,8 +273,15 @@ export {
  * infrastructure to ("CaptiveCrunch DNS Resolver") or that carries a bare
  * "C2" role label stays an assertion; a structural row naming the value as
  * the resolver used "for domain resolution" is a provider relation.
+ * v45 (32-report coverage audit): a shell separator glued to a URL on a command
+ * line ("…/kw2-s11;chmod", "…/d&pushd") ends the URL; an escaped-slash scheme
+ * ("hXXps:\/\/host/x") refangs (tl-defang-v6); a table-listed URL carrying a
+ * glued YubiKey OTP resolves to the corroborated URL of the same document; an
+ * analyst may confirm a MODE A narrative value the publisher did not describe
+ * as benign / provider / reference (promote_to_ioc, membership by
+ * evidence.promoted_from).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v44';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v45';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -594,6 +601,23 @@ const IPV4_HOST_PATH_HEAD_RE = /^(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?\/(?=\S*[a-
 const IP_HOST_PATH_RE = /(?<![\w@:\/.\-])((?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3})(?::\d{1,5})?(\/(?=[^\s<>"'`\]]*[a-z_~%])[^\s<>"'`\]，。；‘’“”«»]+)/gi;
 const URL_SCHEME_PREFIX_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
 /**
+ * A shell command separator glued to a URL on a command line starts the next
+ * command, not a path segment: "fetch … http://h/kw2-s11;chmod${IFS}+x …",
+ * "curl -skLo t https://h/d&pushd C:\…" (tl-candidates-v45). Only a bare word
+ * after `;` / `&` / `|` in the path is cut; a query separator ("?a=1&b") or a
+ * path parameter with a value (";jsessionid=…") is URL syntax and stays.
+ */
+const SHELL_CONTINUATION_TAIL_RE = /(?:;|&&?|\|\|?)[A-Za-z_][\w.-]*$/;
+function trimShellContinuation(url) {
+  const v = String(url || '');
+  const m = SHELL_CONTINUATION_TAIL_RE.exec(v);
+  if (!m) return v;
+  const query = v.indexOf('?');
+  if (query >= 0 && query < m.index) return v;
+  const head = v.slice(0, m.index);
+  return head.replace(URL_SCHEME_PREFIX_RE, '').includes('/') ? head : v;
+}
+/**
  * Transport endpoint written with a non-HTTP scheme ("tcp://c2.example:443",
  * "udp://198.51.100.7:53", "socks5://h:1080"). TalonHound URL values are web
  * resources, so the endpoint's host is the observable: the scheme declares it
@@ -631,6 +655,49 @@ function markTruncatedUrlDuplicates(entries) {
     if (!of) continue;
     for (const o of e.occurrences) o.truncated_duplicate = true;
     e.truncated_duplicate_of = `url:${of.normalized_value}`;
+  }
+}
+
+/**
+ * A YubiKey one-time password (44 ModHex characters, factory public id
+ * starting "cccc") pasted onto the end of a value by an accidental key touch:
+ * "…&export=download" + "cccccdcjeegr…" (tl-candidates-v45).
+ */
+const MODHEX_OTP_SUFFIX_RE = /cccc[cbdefghijklnrtuv]{40}$/;
+
+/**
+ * A table-listed URL whose value is another URL of the same document plus a
+ * glued YubiKey OTP is that URL: the publisher listed the resource and the
+ * OTP is a keyboard artifact. Only when the stripped value is corroborated
+ * verbatim elsewhere in the document; a value with no corroboration stays as
+ * written. The table occurrences (and their raw cell text, kept in
+ * `table_rows[].raw_value`) move to the corroborated identity, so the
+ * publisher's row assertion is not lost and stays traceable.
+ * @param {Map<string, object>} byKey
+ * @param {{ rememberAlias?: Function }} [tableAssertions] explicit-table tracker
+ */
+function resolveOtpSuffixedTableUrls(byKey, tableAssertions) {
+  const strip = (v) => String(v || '').replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  for (const [key, e] of [...byKey.entries()]) {
+    if (e.candidate_type !== 'url' || !Array.isArray(e.occurrences)) continue;
+    if (!e.occurrences.some((o) => o.form === OCCURRENCE_FORMS.TABLE_ROW)) continue;
+    const m = MODHEX_OTP_SUFFIX_RE.exec(e.normalized_value);
+    if (!m) continue;
+    const clean = strip(e.normalized_value.slice(0, m.index));
+    if (!clean.includes('/')) continue;
+    const target = [...byKey.values()].find((c) => c !== e && c.candidate_type === 'url' && strip(c.normalized_value) === clean);
+    if (!target) continue;
+    for (const o of e.occurrences) {
+      o.value_artifact = 'modhex_otp_suffix';
+      target.occurrences.push(o);
+    }
+    target.table_rows = [...(e.table_rows || []), ...(target.table_rows || [])].slice(0, MAX_TABLE_ROWS_PER_CANDIDATE);
+    if (STRONG_IOC_ZONES.has(e.zone) && !STRONG_IOC_ZONES.has(target.zone)) {
+      for (const f of ['evidence_text', 'block_id', 'page_number', 'section', 'zone']) target[f] = e[f];
+    }
+    target.value_artifact_resolved_from = e.original_value || e.normalized_value;
+    tableAssertions?.rememberAlias?.('url', e.normalized_value, target.normalized_value);
+    byKey.delete(key);
   }
 }
 
@@ -1672,7 +1739,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // Code interpolation ends the literal URL: `…/read?domain=${encodeURIComponent(d)}`
       // is the publisher URL "…/read?domain=" followed by a template expression.
       const literal = m[0].split('${')[0];
-      const url = trimUrlBoundary(literal);
+      const url = trimShellContinuation(trimUrlBoundary(literal));
       if (!url) continue;
       spans.push([m.index, m.index + url.length]);
       const host = hostnameFromUrl(url);
@@ -1703,7 +1770,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     const hostPathMatches = [...text.matchAll(HOST_PATH_RE), ...text.matchAll(IP_HOST_PATH_RE)].sort((a, b) => a.index - b.index);
     for (const m of hostPathMatches) {
       const start = m.index;
-      const raw = trimUrlBoundary(m[0]);
+      const raw = trimShellContinuation(trimUrlBoundary(m[0]));
       if (!raw || insideAnySpan(spans, start, start + raw.length)) continue;
       const v = validateUrlCandidate(raw);
       const ipHost = v.host_kind === 'ip';
@@ -1939,6 +2006,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     entry.parsed.network_endpoints = list;
   }
 
+  resolveOtpSuffixedTableUrls(byKey, explicitTableAssertions);
   markTruncatedUrlDuplicates([...byKey.values()]);
 
   // One resource written "host/path" in one place and "https://host/path" in

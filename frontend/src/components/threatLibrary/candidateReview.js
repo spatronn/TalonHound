@@ -103,10 +103,20 @@ function hasPublisherIocSectionOccurrence(candidate) {
   });
 }
 
+// Keep in lockstep with backend indicatorMembership.isAnalystConfirmedPublisherEvidence:
+// an audited single-row promote_to_ioc that is still approved.
+function isAnalystConfirmedPublisherEvidence(candidate) {
+  const promoted = ((candidate && candidate.evidence) || {}).promoted_from;
+  if (!promoted || typeof promoted !== 'object' || Array.isArray(promoted)) return false;
+  const review = String(candidate?.review_status || 'pending').toLowerCase();
+  return review === 'approved' || review === 'created_ioc';
+}
+
 function isPublisherAssertedReportIoc(candidate) {
   const ev = (candidate && candidate.evidence) || {};
   const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
   if (EXPLICIT_PUBLISHER_IOC_ASSERTIONS.has(assertion)) return true;
+  if (isAnalystConfirmedPublisherEvidence(candidate)) return true;
   return hasPublisherIocSectionOccurrence(candidate);
 }
 

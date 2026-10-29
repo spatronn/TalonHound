@@ -39,6 +39,7 @@ export const AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES = Object.freeze([
 ]);
 
 const NON_IOC_TYPE_SET = new Set(NON_IOC_CANDIDATE_TYPES);
+const ANALYST_CONFIRMED_REVIEWS = new Set(['approved', 'created_ioc']);
 const EXPLICIT_ASSERTION_SET = new Set(EXPLICIT_PUBLISHER_IOC_ASSERTIONS);
 const AUTHORITATIVE_ZONE_SET = new Set(AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES);
 
@@ -78,7 +79,22 @@ export function isPublisherAssertedReportIoc(candidate) {
   const ev = evidenceOf(candidate);
   const assertion = String(candidate?.source_assertion || ev.source_assertion || '').toLowerCase();
   if (EXPLICIT_ASSERTION_SET.has(assertion)) return true;
+  if (isAnalystConfirmedPublisherEvidence(candidate)) return true;
   return hasPublisherIocSectionOccurrence(candidate);
+}
+
+/**
+ * MODE A analyst confirmation (tl-candidates-v45): a narrative value the
+ * publisher described outside its curated IOC set, explicitly promoted by an
+ * analyst (single-row `promote_to_ioc`, audited, `evidence.promoted_from`) and
+ * still approved. Extraction never sets this; the promote gate
+ * (promotion.classifyPromoteEligibility) refuses values the publisher called
+ * benign, a provider, a reference, an example or a reserved address.
+ */
+export function isAnalystConfirmedPublisherEvidence(candidate) {
+  const promoted = evidenceOf(candidate).promoted_from;
+  if (!promoted || typeof promoted !== 'object' || Array.isArray(promoted)) return false;
+  return ANALYST_CONFIRMED_REVIEWS.has(reviewOf(candidate));
 }
 
 /**
@@ -216,6 +232,10 @@ export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
     COALESCE(${p}evidence->>'document_has_authoritative_scope', 'false') <> 'true'
     OR COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') IN (
       ${assertions}
+    )
+    OR (
+      jsonb_typeof(${p}evidence->'promoted_from') = 'object'
+      AND COALESCE(${p}review_status, '') IN ('approved', 'created_ioc')
     )
     OR EXISTS (
       SELECT 1
@@ -534,6 +554,36 @@ export function membershipParityCases() {
         document_has_authoritative_scope: false,
         source_assertion: 'linked_source_ioc',
         is_direct_source_observable: true
+      }
+    }, { member: false, context_only: false, pending_actionable: false }),
+    // MODE A analyst confirmation (promote_to_ioc on a narrative value).
+    wrap('mode_a_narrative_analyst_promoted_approved', {
+      review_status: 'approved',
+      assessment: 'suspicious',
+      source_assertion: 'body_mention',
+      evidence: {
+        source_assertion: 'body_mention',
+        occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }],
+        promoted_from: { assessment: 'context_only', review_status: 'pending' }
+      }
+    }, { member: true, context_only: false, pending_actionable: false }),
+    wrap('mode_a_narrative_analyst_promoted_then_context_only', {
+      review_status: 'context_only',
+      assessment: 'context_only',
+      match_state: 'context_only',
+      source_assertion: 'body_mention',
+      evidence: {
+        source_assertion: 'body_mention',
+        occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }],
+        promoted_from: { assessment: 'context_only', review_status: 'pending' }
+      }
+    }, { member: false, context_only: true, pending_actionable: false }),
+    wrap('mode_a_narrative_promoted_marker_but_pending', {
+      source_assertion: 'body_mention',
+      evidence: {
+        source_assertion: 'body_mention',
+        occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }],
+        promoted_from: { assessment: 'context_only', review_status: 'pending' }
       }
     }, { member: false, context_only: false, pending_actionable: false })
   ];

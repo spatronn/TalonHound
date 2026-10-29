@@ -52,8 +52,8 @@ const member = (out, value) => {
   return Boolean(c) && isReportIndicatorMember(persisted(c));
 };
 
-test('versions: tl-candidates-v44', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v44');
+test('versions: tl-candidates-v45', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v45');
 });
 
 // --- D1. Split-bracket scheme defang ------------------------------------------

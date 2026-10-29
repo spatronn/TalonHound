@@ -54,11 +54,11 @@ function statefulPool(report, candidates, { sourceId = 4 } = {}) {
       if (/FROM ioc_sources WHERE name/.test(sql)) return { rows: sourceId ? [{ id: sourceId }] : [] };
       writes.push({ sql, params });
       if (/^\s*UPDATE threat_report_candidates/.test(sql)) {
-        if (/review_status = 'approved',\s*assessment = 'suspicious'/.test(sql)) {
+        if (/review_status = 'approved',\s*assessment = (?:'suspicious'|CASE)/.test(sql)) {
           const row = rows.find((r) => Number(r.id) === Number(params[1]));
           if (!row) return { rows: [], rowCount: 0 };
           row.review_status = 'approved';
-          row.assessment = 'suspicious';
+          row.assessment = ['malicious', 'suspicious'].includes(row.assessment) ? row.assessment : 'suspicious';
           if (['reference', 'legitimate_service', 'hosting_platform'].includes(row.role)) row.role = 'unknown';
           row.is_ioc = true;
           row.match_state = row.matched_ioc_id ? 'existing' : 'new';

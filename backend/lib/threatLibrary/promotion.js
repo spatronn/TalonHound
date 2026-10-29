@@ -17,6 +17,9 @@ import {
   isContextOnlyCandidate as isContextOnlyFromContract,
   notContextOnlySql,
   reviewActionableIndicatorSql,
+  hasAuthoritativePublisherIocScope as hasPublisherScope,
+  isPublisherAssertedReportIoc as isPublisherAsserted,
+  isLinkedSourceAssertedIoc,
   NON_IOC_CANDIDATE_TYPES
 } from './indicatorMembership.js';
 import { parseNetworkObservable } from '../networkObservable.js';
@@ -129,7 +132,10 @@ export const NOT_CONTEXT_ONLY_SQL = notContextOnlySql();
  */
 export function classifyPromoteEligibility(candidate) {
   if (!candidate) return { ok: false, code: 'promote_not_found', detail: 'Candidate not found.' };
-  if (!isContextOnlyCandidate(candidate)) {
+  // A MODE A narrative value outside the curated IOC set is not an IOC
+  // candidate whatever its assessment, so Approve can never reach it; it is
+  // promotable like a Context Only row (subject to the stance gate below).
+  if (!isContextOnlyCandidate(candidate) && !isMissingFromPublisherScope(candidate)) {
     return { ok: false, code: 'promote_not_context_only', detail: 'Only Context Only indicators can be promoted; use Approve for IOC candidates.' };
   }
   const type = typeOf(candidate);
@@ -143,10 +149,26 @@ export function classifyPromoteEligibility(candidate) {
   if (!iocStorageIdentity(candidate)) {
     return { ok: false, code: 'promote_unsupported_type', detail: INVALID_NETWORK_DETAIL };
   }
+  // MODE A narrative value (outside the publisher's curated IOC set): the
+  // analyst may confirm it only when the publisher's own reading of it is not
+  // negative — never a value the publisher called benign / a provider / a
+  // reference / an example, and never one outside the original document
+  // (tl-candidates-v45).
+  if (isMissingFromPublisherScope(candidate)) {
+    const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
+    const policy = String(ev.policy_decision || candidate.policy_decision || '');
+    const flagged = candidate.is_report_source === true || ev.rfc_example === true || candidate.rfc_example === true;
+    if (candidate.has_original_document_occurrence === false || flagged || !NARRATIVE_PROMOTABLE_POLICIES.has(policy)) {
+      return {
+        ok: false,
+        code: 'promote_outside_publisher_scope',
+        detail: 'The publisher curated its IOC set and describes this value as non-malicious context (provider, reference, example or benign); it cannot be promoted.'
+      };
+    }
+  }
   // Promote re-classifies and then runs Create IOCs, which only materializes
   // report Indicators. Decide on the row as it would be after promotion, before
-  // anything is written: a MODE A narrative value outside the publisher's IOC
-  // scope can never be created, so promoting it would half-apply.
+  // anything is written, so a promotion never half-applies.
   if (!isUnionReportIndicatorMember(asPromotedRow(candidate))) {
     return {
       ok: false,
@@ -157,14 +179,35 @@ export function classifyPromoteEligibility(candidate) {
   return { ok: true };
 }
 
+/** MODE A: a value neither the publisher's IOC set nor a linked IOC Source asserts. */
+function isMissingFromPublisherScope(candidate) {
+  return hasPublisherScope(candidate) && !isPublisherAsserted(candidate) && !isLinkedSourceAssertedIoc(candidate);
+}
+
+/**
+ * MODE A narrative policy decisions an analyst may confirm: the extractor kept
+ * the value as context only because it sits outside the curated IOC set (or
+ * left it to the model), not because the publisher described it as benign.
+ */
+const NARRATIVE_PROMOTABLE_POLICIES = new Set([
+  'context_only_narrative_with_authoritative_scope',
+  'context_only_contextual_mention_in_indicator_section',
+  'ai_needed_authoritative_narrative',
+  'ai_needed_prose_sample_hash',
+  'demoted_weak_evidence',
+  'pass'
+]);
+
 /** The review fields promote_to_ioc writes, applied to a copy (never persisted). */
 function asPromotedRow(candidate) {
+  const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
   return {
     ...candidate,
     review_status: 'approved',
-    assessment: 'suspicious',
+    assessment: ['malicious', 'suspicious'].includes(String(candidate.assessment)) ? candidate.assessment : 'suspicious',
     is_ioc: true,
-    match_state: candidate.matched_ioc_id ? 'existing' : 'new'
+    match_state: candidate.matched_ioc_id ? 'existing' : 'new',
+    evidence: { ...ev, promoted_from: ev.promoted_from || {} }
   };
 }
 
