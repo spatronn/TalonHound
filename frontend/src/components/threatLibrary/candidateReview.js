@@ -106,7 +106,7 @@ function hasPublisherIocSectionOccurrence(candidate) {
 // Keep in lockstep with backend indicatorMembership.isAnalystConfirmedPublisherEvidence:
 // an audited single-row promote_to_ioc that is still approved.
 function isAnalystConfirmedPublisherEvidence(candidate) {
-  const promoted = ((candidate && candidate.evidence) || {}).promoted_from;
+  const promoted = ((candidate && candidate.evidence) || {}).promoted_from || candidate?.promoted_from;
   if (!promoted || typeof promoted !== 'object' || Array.isArray(promoted)) return false;
   const review = String(candidate?.review_status || 'pending').toLowerCase();
   return review === 'approved' || review === 'created_ioc';

@@ -199,7 +199,7 @@ const NARRATIVE_PROMOTABLE_POLICIES = new Set([
 ]);
 
 /** The review fields promote_to_ioc writes, applied to a copy (never persisted). */
-function asPromotedRow(candidate) {
+export function asPromotedRow(candidate) {
   const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
   return {
     ...candidate,
