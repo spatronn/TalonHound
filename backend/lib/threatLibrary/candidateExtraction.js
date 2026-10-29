@@ -280,8 +280,15 @@ export {
  * analyst may confirm a MODE A narrative value the publisher did not describe
  * as benign / provider / reference (promote_to_ioc, membership by
  * evidence.promoted_from).
+ * v46 (19-report audit): `fqdn://host` IOC-table rows stay domains; a
+ * `[redacted]` / `[xxx]` tail glued to a hostname is not that hostname; every
+ * digest of one legitimate-file row shares the description.
+ * v47 (19-report audit): a table-row occurrence keeps the row text (capped at
+ * 500) as its scope window. A 140-character focus window ended before
+ * "Legitimate binary" when a long filename sat between the earlier digests
+ * and the description, so those digests stayed Indicators.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v46';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v47';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -995,8 +1002,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       row_shape: rowShape,
       port: extra.port ?? null,
       table_row: extra.tableRow ? extra.tableRow.row_index : null,
+      // A table row is one publisher record. The 140-character focus window
+      // ends before a description that follows a long filename, so only the
+      // last digest of "hash hash hash | Long Name.exe | Legitimate binary"
+      // used to see the benign statement (tl-candidates-v47).
       surrounding_text: (extra.evidenceRowText || text)
-        ? surroundingWindow(extra.evidenceRowText || text, focus, 140, extra.focusOrdinal || 0)
+        ? (form === OCCURRENCE_FORMS.TABLE_ROW
+          ? String(extra.evidenceRowText || text).slice(0, 500)
+          : surroundingWindow(extra.evidenceRowText || text, focus, 140, extra.focusOrdinal || 0))
         : null,
       typing_reason: extra.typingReason || null,
       ...(extra.referenceCell === true ? { reference_cell: true } : {}),

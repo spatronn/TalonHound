@@ -14,6 +14,7 @@ import { annotateDocumentZones } from './documentZones.js';
 import { extractCandidatesFromDocument } from './candidateExtraction.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { isReportIndicatorMember } from './indicatorMembership.js';
+import { OBSERVABLE_TYPE_RESOLVER_VERSION, resolveDottedToken } from './observableTypeResolver.js';
 
 const MD5 = 'a'.repeat(32);
 const SHA1 = 'b'.repeat(40);
@@ -43,8 +44,9 @@ function find(cands, type, value) {
   return cands.find((c) => c.candidate_type === type && String(c.normalized_value || '').toLowerCase() === v);
 }
 
-test('versions: tl-candidates-v46', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v46');
+test('versions: tl-candidates-v47, tl-type-resolver-v20', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v47');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v20');
 });
 
 test('A. fqdn:// IOC-table hosts are domain Indicators', () => {
@@ -106,4 +108,55 @@ test('C. every hash of a legitimate-file row is Context Only; a malicious siblin
     assert.ok(c, `${type} malicious row extracted`);
     assert.equal(member(c), true, `${type} of the malicious file stays an Indicator`);
   }
+});
+
+test('D. a long filename does not hide a legitimate-file description from earlier digests', () => {
+  const longName = 'Iran Strikes U.S. Military Facilities Across Gulf Region.exe';
+  const cands = run(`<article>
+<h2>Indicators of Compromise</h2>
+<h3>File indicators</h3>
+<table>
+<tr><th>Hashes</th><th>Filename</th><th>Description</th></tr>
+<tr><td>${MD5} ${SHA1} ${SHA256}</td><td>${longName}</td><td>Legitimate binary.</td></tr>
+<tr><td>${MAL_MD5} ${MAL_SHA1} ${MAL_SHA256}</td><td>${longName}</td><td>Malicious stage 1 DLL.</td></tr>
+</table>
+</article>`);
+  for (const [type, value] of [['md5', MD5], ['sha1', SHA1], ['sha256', SHA256]]) {
+    const c = find(cands, type, value);
+    assert.ok(c, `${type} extracted`);
+    assert.equal(member(c), false, `${type} stays Context Only when the filename is long`);
+    assert.equal(c.assessment, 'context_only');
+  }
+  for (const [type, value] of [['md5', MAL_MD5], ['sha1', MAL_SHA1], ['sha256', MAL_SHA256]]) {
+    const c = find(cands, type, value);
+    assert.ok(c, `${type} malicious row extracted`);
+    assert.equal(member(c), true, `${type} of the malicious file stays an Indicator`);
+  }
+});
+
+test('E. a domains lead-in does not promote a URL-path archive; a .zip host stays a domain', () => {
+  const pathFile = resolveDottedToken('letgovip.zip', {
+    surroundingText: 'hxxp://[redacted].com/letgovip.zip',
+    declaredType: 'domain',
+    form: 'list_row',
+    strongZone: true,
+    zone: 'explicit_ioc_section'
+  });
+  assert.equal(pathFile.kind, 'technical_artifact');
+  const php = resolveDottedToken('mentalite.php', {
+    surroundingText: 'hxxp://[redacted].com/mentalite.php',
+    declaredType: 'domain',
+    form: 'list_row',
+    strongZone: true,
+    zone: 'explicit_ioc_section'
+  });
+  assert.equal(php.kind, 'technical_artifact');
+  const host = resolveDottedToken('evil.zip', {
+    surroundingText: 'evil[.]zip',
+    declaredType: 'domain',
+    form: 'list_row',
+    strongZone: true,
+    zone: 'explicit_ioc_section'
+  });
+  assert.equal(host.kind, 'domain');
 });

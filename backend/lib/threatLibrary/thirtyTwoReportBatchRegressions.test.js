@@ -53,7 +53,7 @@ const member = (out, value) => {
 };
 
 test('versions: tl-candidates-v45', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v46');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v47');
 });
 
 // --- D1. Split-bracket scheme defang ------------------------------------------

@@ -15,7 +15,7 @@ import { isReportIndicatorMember } from './indicatorMembership.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 
 test('contract bumped for the punctuation-only rule', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v46');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v47');
 });
 
 test('separators and punctuation fragments are rejected', () => {

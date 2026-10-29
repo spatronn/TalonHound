@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Section scope model: authoritative section discovery (descriptive indicator
  * headings), scope inheritance across short sub-labelled groups, structural
  * list discovery as a fallback only, and occurrence-level assertion vs
@@ -116,7 +116,7 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/casino/')
 }
 
 test('internal contracts bumped for the scope model (product VERSION untouched)', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v46');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v47');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
   assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged — inheritance no longer depends on it');
 });
