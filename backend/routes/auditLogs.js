@@ -1,6 +1,7 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { auditActionLabel } from '../lib/auditConstants.js';
-import { buildIocAuditLogsWhere, buildIocAuditMatchContext, isUuid } from '../lib/iocAuditMatch.js';
+import { buildIocAuditLogsWhere, combineIocAuditMatchContexts, isUuid } from '../lib/iocAuditMatch.js';
+import { loadFileIdentityScopeItems, loadRecoveredFileIdentityEvents } from '../lib/fileIdentityAudit.js';
 import {
   parseAuditLimit,
   resolveAuditTimeRange,
@@ -76,7 +77,8 @@ export function registerAuditLogRoutes(app, pool) {
       if (!itemRes.rowCount) return res.status(404).json({ message: 'IOC not found' });
 
       const iocItem = itemRes.rows[0];
-      const ctx = buildIocAuditMatchContext(iocItem);
+      const scopeItems = await loadFileIdentityScopeItems(pool, iocItem);
+      const ctx = combineIocAuditMatchContexts(scopeItems);
       const { whereSql, params } = buildIocAuditLogsWhere(ctx);
       // Fetch enough persisted rows to merge with derived source-import events
       // without dropping newer analyst/enrichment history when memberships are many.
@@ -93,10 +95,25 @@ export function registerAuditLogRoutes(app, pool) {
       );
 
       const persisted = listQ.rows.map(toPublicAuditRow);
-      const derived = await loadDerivedSourceImportEvents(pool, iocItem);
+      const derived = [];
+      for (const item of scopeItems) {
+        const events = await loadDerivedSourceImportEvents(pool, item);
+        const alias = Number(item.id) !== Number(iocItem.id);
+        for (const event of events) {
+          event.metadata = {
+            ...(event.metadata || {}),
+            relationship: alias ? 'verified_file_identity' : 'direct',
+            publisher_observable_type: item.observable_type || null,
+            publisher_observable: item.observable || null,
+            canonical_ioc_id: Number(iocItem.id)
+          };
+          derived.push(event);
+        }
+      }
+      const recovered = await loadRecoveredFileIdentityEvents(pool, scopeItems, persisted);
       const items = mergeIocAuditHistory({
         persistedRows: persisted,
-        derivedRows: derived,
+        derivedRows: [...derived, ...recovered],
         limit
       });
 

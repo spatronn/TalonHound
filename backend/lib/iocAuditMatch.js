@@ -58,30 +58,33 @@ export function buildIocAuditLogsWhere(ctx) {
   const exactObservables = ctx.exactObservables?.length
     ? ctx.exactObservables
     : (ctx.entityDisplays.length ? ctx.entityDisplays : ['__none__']);
-  const internalId = ctx.internalId || '__none__';
+  const internalIds = (Array.isArray(ctx.internalIds) && ctx.internalIds.length
+    ? ctx.internalIds
+    : [ctx.internalId || '__none__']
+  ).map((id) => String(id));
 
   // $1 entity ids (ioc public/internal + domain/ip self)
   // $2 entity displays for ioc / suppression rows
-  // $3 internal ioc id (text) for enrichment subject match
+  // $3 internal ioc ids (text[]) for enrichment subject match, including file-hash aliases
   // $4 exact full observable values for safe legacy enrichment fallback
-  const params = [entityIds, entityDisplays, internalId, exactObservables];
+  const params = [entityIds, entityDisplays, internalIds, exactObservables];
   const whereSql = `(
     (entity_type = 'ioc' AND (
       entity_id = ANY($1::text[])
       OR lower(COALESCE(entity_display, '')) = ANY($2::text[])
-      OR subject_ioc_id::text = $3
-      OR metadata->>'subject_ioc_id' = $3
-      OR metadata->>'ioc_id' = $3
+      OR subject_ioc_id::text = ANY($3::text[])
+      OR metadata->>'subject_ioc_id' = ANY($3::text[])
+      OR metadata->>'ioc_id' = ANY($3::text[])
     ))
     OR (entity_type = 'ioc_suppression' AND (
       lower(COALESCE(entity_display, '')) = ANY($2::text[])
       OR lower(COALESCE(metadata->>'ioc_value', '')) = ANY($2::text[])
-      OR metadata->>'ioc_id' = $3
+      OR metadata->>'ioc_id' = ANY($3::text[])
     ))
     OR (entity_type = 'enrichment' AND (
-      subject_ioc_id::text = $3
-      OR metadata->>'subject_ioc_id' = $3
-      OR metadata->>'ioc_id' = $3
+      subject_ioc_id::text = ANY($3::text[])
+      OR metadata->>'subject_ioc_id' = ANY($3::text[])
+      OR metadata->>'ioc_id' = ANY($3::text[])
       OR lower(COALESCE(subject_ioc_value, '')) = ANY($4::text[])
       OR lower(COALESCE(entity_display, '')) = ANY($4::text[])
       OR lower(COALESCE(metadata->>'subject_ioc_value', '')) = ANY($4::text[])
@@ -92,4 +95,31 @@ export function buildIocAuditLogsWhere(ctx) {
   )`;
 
   return { whereSql, params };
+}
+
+/**
+ * Union match keys for a canonical IOC and its proven file-hash aliases.
+ * Alias hashes stay searchable in History without treating them as the same publisher assertion.
+ * @param {Array<{ id?: number, public_id?: string, observable?: string, observable_type?: string }>} items
+ */
+export function combineIocAuditMatchContexts(items = []) {
+  const contexts = (items || []).map((item) => buildIocAuditMatchContext(item));
+  const entityIds = new Set();
+  const entityDisplays = new Set();
+  const exactObservables = new Set();
+  const internalIds = new Set();
+  for (const ctx of contexts) {
+    for (const id of ctx.entityIds) entityIds.add(id);
+    for (const display of ctx.entityDisplays) entityDisplays.add(display);
+    for (const value of ctx.exactObservables) exactObservables.add(value);
+    if (ctx.internalId) internalIds.add(ctx.internalId);
+  }
+  const first = contexts[0] || buildIocAuditMatchContext({});
+  return {
+    ...first,
+    entityIds: [...entityIds],
+    entityDisplays: [...entityDisplays],
+    exactObservables: [...exactObservables],
+    internalIds: [...internalIds]
+  };
 }

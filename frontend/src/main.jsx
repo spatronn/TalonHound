@@ -275,6 +275,7 @@ import ThreatLibraryAiSettingsView from './components/threatLibrary/ThreatLibrar
 import { IocHeader } from './components/iocDetails/IocHeader.jsx';
 import { IocStatusSummary } from './components/iocDetails/IocStatusSummary.jsx';
 import { ActiveSourcesTable, IocSummaryStrip } from './components/iocDetails/ActiveSourcesTable.jsx';
+import { reportedAsLabel } from './lib/iocOverviewLayout.js';
 import { IocTimestampCards } from './components/iocDetails/IocTimestampCards.jsx';
 import { IocMetadataCards, AttributionEntityBadges } from './components/iocDetails/IocMetadataCards.jsx';
 import { SourceEntityCatalogLinkDialog } from './components/iocDetails/SourceEntityCatalogLinkDialog.jsx';
@@ -17834,6 +17835,7 @@ function IOCDetailsPage() {
     setPendingSourceRemoval({
       sourceId: src.ioc_source_id,
       sourceName: src.name || 'this source',
+      publicId: src.publisher_public_id || summary?.public_id || null,
       isLastActiveSource: activeCount <= 1
     });
   }
@@ -17846,7 +17848,7 @@ function IOCDetailsPage() {
 
   async function submitSourceRemoval() {
     if (!pendingSourceRemoval || sourceRemovalLoading) return;
-    const pubId = summary?.public_id;
+    const pubId = pendingSourceRemoval.publicId || summary?.public_id;
     const sourceId = pendingSourceRemoval.sourceId;
     if (!pubId || !Number.isFinite(Number(sourceId))) return;
 
@@ -18216,7 +18218,7 @@ function IOCDetailsPage() {
     }
   }
 
-  function openExpirationAction(type, membershipId = null) {
+  function openExpirationAction(type, membershipId = null, src = null) {
     const preset = IOC_EXPIRATION_ACTION_PRESETS[type];
     if (!preset) return;
     setActionError('');
@@ -18227,7 +18229,13 @@ function IOCDetailsPage() {
       setActionExpirationPolicy('expire_after_days');
       setActionExpireDays('30');
     }
-    setPendingAction({ type, membershipId, ...preset });
+    setPendingAction({
+      type,
+      membershipId,
+      targetIocId: src?.publisher_ioc_id || null,
+      targetObservableType: src?.publisher_observable_type || null,
+      ...preset
+    });
   }
 
   function cancelExpirationAction() {
@@ -18322,6 +18330,8 @@ function IOCDetailsPage() {
     setActionRefreshWarn('');
 
     const observableType = summary.observable_type;
+    const membershipIocId = Number(pendingAction.targetIocId || summary.id);
+    const membershipType = pendingAction.targetObservableType || observableType;
     let patchData = null;
 
     try {
@@ -18367,16 +18377,16 @@ function IOCDetailsPage() {
         });
         patchData = data;
       } else if (type === 'expire_membership' && membershipId) {
-        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
-          observable_type: observableType,
+        const { data } = await api.patch(`/ioc/${membershipIocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: membershipType,
           override_enabled: true,
           override_status: 'expired',
           reason
         });
         patchData = data;
       } else if (type === 'reactivate_membership' && membershipId) {
-        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
-          observable_type: observableType,
+        const { data } = await api.patch(`/ioc/${membershipIocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: membershipType,
           override_enabled: true,
           override_status: 'active',
           override_expires_at: null,
@@ -18384,8 +18394,8 @@ function IOCDetailsPage() {
         });
         patchData = data;
       } else if (type === 'custom_expire_membership' && membershipId) {
-        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
-          observable_type: observableType,
+        const { data } = await api.patch(`/ioc/${membershipIocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: membershipType,
           override_enabled: true,
           override_expires_at: manualExpiresAt,
           override_status: null,
@@ -18393,8 +18403,8 @@ function IOCDetailsPage() {
         });
         patchData = data;
       } else if (type === 'clear_membership_override' && membershipId) {
-        const { data } = await api.patch(`/ioc/${iocId}/feed-memberships/${membershipId}/expiration-override`, {
-          observable_type: observableType,
+        const { data } = await api.patch(`/ioc/${membershipIocId}/feed-memberships/${membershipId}/expiration-override`, {
+          observable_type: membershipType,
           override_enabled: false,
           reason: reason || null
         });
@@ -18560,7 +18570,7 @@ function IOCDetailsPage() {
                       actionLoading={actionLoading}
                       onMembershipAction={(type, membershipId, src) => {
                         if (type === 'remove_manual_source') openSourceRemoval(src);
-                        else openExpirationAction(type, membershipId);
+                        else openExpirationAction(type, membershipId, src);
                       }}
                     />
 
@@ -18571,7 +18581,7 @@ function IOCDetailsPage() {
                           <table width="100%" cellPadding="8" style={{ borderCollapse: 'collapse', fontSize: 12, color: '#e2e8f0' }}>
                             <thead>
                               <tr style={{ textAlign: 'left', borderBottom: '1px solid #334155', color: '#94a3b8' }}>
-                                <th>Source</th><th>Type</th><th>Status</th>
+                                <th>Source</th><th>Reported as</th><th>Type</th><th>Status</th>
                                 <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.first.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.first.label}</th>
                                 <th title={IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.tooltip}>{IOC_SOURCE_TIMESTAMP_PRESENTATION.lastSeen.label}</th>
                                 <th>Purged at</th><th>Reason</th>
@@ -18581,6 +18591,7 @@ function IOCDetailsPage() {
                               {historicalSources.map((src) => (
                                 <tr key={src.id} style={{ borderBottom: '1px solid #1e293b' }}>
                                   <td><SourceBadge index={sourceColorIndex} label={src.name} /></td>
+                                  <td title={src.publisher_observable || undefined}>{reportedAsLabel(src)}</td>
                                   <td>{iocSourceTypeLabel(src)}</td>
                                   <td>{iocSourceStatusBadge(src)}</td>
                                   <td>{formatIocDetailDateTime(src.first_seen_at)}</td>

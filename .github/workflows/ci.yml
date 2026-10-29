@@ -87,7 +87,7 @@ jobs:
 
       - name: Run backend unit tests
         working-directory: backend
-        run: npm run test:release && npm run test:storage-lifecycle && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library
+        run: npm run test:release && npm run test:storage-lifecycle && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library && npm run test:file-identity
 
       - name: Lint installation.sh
         run: bash -n installation.sh
@@ -144,6 +144,10 @@ jobs:
       - name: MCP IOC read tools (real Postgres)
         working-directory: backend
         run: npm run test:mcp-integration
+
+      - name: File identity source provenance (real Postgres)
+        working-directory: backend
+        run: npm run test:file-identity-integration
 
       - name: Threat Library report tags → IOC effective tags (real Postgres)
         working-directory: backend

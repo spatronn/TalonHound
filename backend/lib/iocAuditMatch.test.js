@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildIocAuditMatchContext, buildIocAuditLogsWhere } from './iocAuditMatch.js';
+import { buildIocAuditMatchContext, buildIocAuditLogsWhere, combineIocAuditMatchContexts } from './iocAuditMatch.js';
 import { buildEnrichmentAuditScope } from './enrichmentAuditScope.js';
 
 test('URL IOC match context does not include shared host or root domain', () => {
@@ -42,7 +42,7 @@ test('enrichment WHERE prefers subject_ioc_id and excludes root_domain match', (
   assert.match(whereSql, /entity_type = 'ioc'/);
   assert.doesNotMatch(whereSql, /metadata->>'root_domain'/);
   assert.doesNotMatch(whereSql, /metadata->>'ip'/);
-  assert.equal(params[2], '7');
+  assert.deepEqual(params[2], ['7']);
   assert.ok(params[3].includes('https://raw.githubusercontent.com/a/project/file1.zip'));
   assert.ok(!params[0].includes('githubusercontent.com'));
   assert.ok(!params[0].includes('raw.githubusercontent.com'));
@@ -70,8 +70,8 @@ test('two URL IOCs sharing hostname produce disjoint enrichment match keys', () 
 
   const whereA = buildIocAuditLogsWhere(a);
   const whereB = buildIocAuditLogsWhere(b);
-  assert.equal(whereA.params[2], '101');
-  assert.equal(whereB.params[2], '202');
+  assert.deepEqual(whereA.params[2], ['101']);
+  assert.deepEqual(whereB.params[2], ['202']);
   assert.notEqual(whereA.params[3][0], whereB.params[3][0]);
 });
 
@@ -97,6 +97,18 @@ test('buildEnrichmentAuditScope separates subject IOC from technical target', ()
   assert.equal(scope.metadata.ioc_id, '12345');
   assert.equal(scope.metadata.target_value, 'githubusercontent.com');
   assert.equal(scope.metadata.root_domain, 'githubusercontent.com');
+});
+
+test('file-hash alias contexts stay disjoint from unrelated IOCs and include every alias id', () => {
+  const combined = combineIocAuditMatchContexts([
+    { id: 100, public_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', observable: 'ab'.repeat(32), observable_type: 'sha256' },
+    { id: 101, public_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', observable: 'cd'.repeat(16), observable_type: 'md5' }
+  ]);
+  assert.deepEqual(combined.internalIds.sort(), ['100', '101']);
+  assert.ok(combined.exactObservables.includes('ab'.repeat(32)));
+  assert.ok(combined.exactObservables.includes('cd'.repeat(16)));
+  const { params } = buildIocAuditLogsWhere(combined);
+  assert.deepEqual(params[2].sort(), ['100', '101']);
 });
 
 test('legacy enrichment fallback matches only exact original_value not host', () => {
