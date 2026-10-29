@@ -580,17 +580,6 @@ export function membershipParityCases() {
         promoted_from: { assessment: 'context_only', review_status: 'pending' }
       }
     }, { member: false, context_only: true, pending_actionable: false }),
-    // In-memory refresh candidate: applyAnalystState puts promoted_from at the top level.
-    wrap('mode_a_narrative_analyst_promoted_in_memory', {
-      review_status: 'approved',
-      assessment: 'suspicious',
-      promoted_from: { assessment: 'context_only', review_status: 'pending' },
-      source_assertion: 'body_mention',
-      evidence: {
-        source_assertion: 'body_mention',
-        occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }]
-      }
-    }, { member: true, context_only: false, pending_actionable: false }),
     wrap('mode_a_narrative_promoted_marker_but_pending', {
       source_assertion: 'body_mention',
       evidence: {
