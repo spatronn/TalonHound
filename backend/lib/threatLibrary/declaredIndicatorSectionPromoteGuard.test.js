@@ -10,8 +10,10 @@
  *    Without the declaration, or when a narrative section only points at
  *    "indicators below", nothing changes.
  * B. promote_to_ioc never half-applies: a Context Only row that cannot become
- *    a report Indicator (MODE A narrative outside publisher scope) is refused
- *    before any write, with no IOC created.
+ *    a report Indicator is refused before any write, with no IOC created. A
+ *    MODE A narrative value the publisher did not describe as benign /
+ *    provider / reference may be confirmed by an analyst (tl-candidates-v45);
+ *    one the publisher called non-malicious context may not.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -76,7 +78,7 @@ const APPENDIX_VALUES = [
 ];
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v44');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v45');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v10');
 });
 
@@ -158,11 +160,22 @@ function recordingPool(rows) {
   };
 }
 
-test('B. promote_to_ioc refuses a MODE A narrative row before any write', async () => {
-  const row = contextOnlyRow();
-  const elig = classifyPromoteEligibility(row);
-  assert.equal(elig.ok, false);
-  assert.equal(elig.code, 'promote_outside_publisher_scope');
+test('B. promote_to_ioc refuses a MODE A row the publisher called non-malicious context, before any write', async () => {
+  for (const policy of [
+    'context_only_provider_service',
+    'context_only_reference_relation',
+    'context_only_benign_component',
+    'context_only_report_source',
+    'context_only_rfc_example',
+    'context_only_truncated_duplicate'
+  ]) {
+    const elig = classifyPromoteEligibility(contextOnlyRow({
+      evidence: { ...contextOnlyRow().evidence, policy_decision: policy }
+    }));
+    assert.equal(elig.ok, false, policy);
+    assert.equal(elig.code, 'promote_outside_publisher_scope', policy);
+  }
+  const row = contextOnlyRow({ evidence: { ...contextOnlyRow().evidence, policy_decision: 'context_only_reference_relation' } });
   const pool = recordingPool([row]);
   let created = 0;
   const res = await applyCandidateReviewActions(pool, 9, {
@@ -177,6 +190,12 @@ test('B. promote_to_ioc refuses a MODE A narrative row before any write', async 
   assert.equal(created, 0);
   assert.deepEqual(pool.writes, [], 'nothing is written');
   assert.equal(row.review_status, 'pending');
+});
+
+test('B. an analyst may confirm a MODE A narrative value outside the curated IOC set (tl-candidates-v45)', () => {
+  assert.deepEqual(classifyPromoteEligibility(contextOnlyRow()), { ok: true });
+  // A value with no original-document occurrence is never confirmable.
+  assert.equal(classifyPromoteEligibility(contextOnlyRow({ has_original_document_occurrence: false })).ok, false);
 });
 
 test('B. promote_to_ioc stays available where the row can be a report Indicator', () => {

@@ -32,6 +32,10 @@ const SINGLE_SLASH_SCHEME_RE = /\b(https?):\/(?!\/)(?=(?:[a-z0-9-]+\.)+[a-z0-9-]
 // across the bracket. Same dotted-host lookahead as the forms above.
 const SPLIT_BRACKET_SCHEME_RE =
   /\b(h(?:tt|xx)ps?)\[:(\/{0,2})\](\/{0,2})(?=(?:[a-z0-9-]+(?:\.|\[\.\]|\(\.\)))+[a-z0-9-]+|\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}(?:\.|\[\.\])\d{1,3}\b)/gi;
+// A URL written as an escaped string literal in a script ("hXXps:\/\/host/x",
+// JSON "https:\/\/host\/x", tl-defang-v6): the escaped slashes are the URL's
+// own, unescaped through the end of the token.
+const ESCAPED_SLASH_SCHEME_RE = /\b(h(?:tt|xx)ps?|ftps?|wss?):\\\/\\\/([^\s"'<>`;]*)/gi;
 const BRACKET_DOT_RE = /\[\.\]|\(\.\)|\{\.\}/g;
 // Publisher variants of the bracketed dot between two hostname characters
 // (tl-defang-v2): whitespace inside the brackets ("evil[ . ]com"), a single
@@ -77,6 +81,7 @@ function normalizeScheme(scheme) {
 
 function refangSchemes(text) {
   return String(text || '')
+    .replace(ESCAPED_SLASH_SCHEME_RE, (_, scheme, rest) => `${normalizeScheme(scheme)}://${rest.replace(/\\\//g, '/')}`)
     .replace(SPLIT_BRACKET_SCHEME_RE, (m, scheme, inner, outer) =>
       (inner.length + outer.length === 2 ? `${normalizeScheme(scheme)}://` : m))
     .replace(MISSING_COLON_SCHEME_RE, (_, scheme) => `${normalizeScheme(scheme)}://`)

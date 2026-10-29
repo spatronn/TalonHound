@@ -782,7 +782,9 @@ export function buildCandidateEvidenceRecord(c) {
     // A host the sample sinkholes in the hosts file (tl-table-v12).
     hosts_file_entry: o.hosts_file_entry === true ? true : undefined,
     // A truncated copy of a table-listed URL (tl-candidates-v40).
-    truncated_duplicate: o.truncated_duplicate === true ? true : undefined
+    truncated_duplicate: o.truncated_duplicate === true ? true : undefined,
+    // A table cell whose value carried a keyboard artifact (tl-candidates-v45).
+    value_artifact: o.value_artifact || undefined
   }));
   const tableRows = (Array.isArray(c.table_rows) ? c.table_rows : []).slice(0, 20).map((r) => ({
     table_id: r.table_id || null,
@@ -852,6 +854,9 @@ export function buildCandidateEvidenceRecord(c) {
     reserved_address: c.reserved_address === true || undefined,
     // Gate 0 provenance: survives a reused-row rewrite (Retry parity).
     incomplete_url_prefix: c.incomplete_url_prefix === true || undefined,
+    // Publisher spelling of a table value resolved to its corroborated identity
+    // (a glued YubiKey OTP removed, tl-candidates-v45).
+    value_artifact_resolved_from: c.value_artifact_resolved_from ? String(c.value_artifact_resolved_from).slice(0, 300) : undefined,
     rfc_example: c.rfc_example === true || undefined,
     non_actionable_local: c.non_actionable_local === true || undefined,
     parsed: c.parsed && typeof c.parsed === 'object' ? c.parsed : {},
