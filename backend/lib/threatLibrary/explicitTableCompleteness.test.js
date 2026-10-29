@@ -36,7 +36,7 @@ function assertHealthyCompleteness(t, asserted, created) {
 }
 
 test('completeness contract is on tl-candidates-v27', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v46');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v47');
 });
 
 // ---------------------------------------------------------------------------

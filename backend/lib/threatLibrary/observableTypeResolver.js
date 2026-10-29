@@ -79,8 +79,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * v18 (20-report audit 33356–33375): a host:port endpoint followed by another
  * value of a multi-value cell (`h[.]onion:443 198.51.100.7:21668`) is still an
  * endpoint — the port boundary no longer rejects whitespace before a digit.
+ * v20 (19-report audit): a file-extension path segment (`/letgovip.zip`) is
+ * not the domain a "domains" lead-in announced. `.zip` is a gTLD, so that
+ * lead-in used to promote the archive basename.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v19';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v20';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -850,8 +853,12 @@ export function resolveDottedToken(raw, ctx = {}) {
     // Typed Domain *table* cells stay authoritative even for unusual suffixes
     // (`archive-sync.war`). A heading-inherited "Domains" label must not turn a
     // non-delegated file-extension token (`Node.js`) into a domain IOC.
+    // A URL path file (`/letgovip.zip`) is not that domain either: `.zip` is
+    // a gTLD, so the lead-in would otherwise promote the archive basename
+    // (tl-type-resolver-v20).
     const tableDeclared = ctx.form === 'table_row';
-    if (tableDeclared || !FILE_EXT_HINT.has(last) || hasDelegatedDnsSuffix(lower)) {
+    const filePath = pathSegment && FILE_EXT_HINT.has(last);
+    if (!filePath && (tableDeclared || !FILE_EXT_HINT.has(last) || hasDelegatedDnsSuffix(lower))) {
       return out('domain', 'declared_network_type', true);
     }
     // else fall through — FILE_EXT / other rules decide
