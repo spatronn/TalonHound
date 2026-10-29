@@ -557,6 +557,22 @@ export function describesBenignComponent(masked) {
   return false;
 }
 
+/**
+ * A table row whose description calls the row's file legitimate, read with
+ * sibling hashes collapsed so every digest of that one file sees the
+ * description ("H1 H2 H3 | tool.exe | Legitimate data importer …").
+ * A malicious cue anywhere in the row ("Malicious stage 1 DLL", "trojanized
+ * legitimate binary") keeps the row an assertion.
+ * @param {string} full row text with this value masked as OBSERVABLE
+ */
+function rowSharesBenignDescription(full) {
+  const collapsed = String(full || '').replace(FOREIGN_OBSERVABLE_TOKEN_RE, ' ');
+  if (ROW_MALICIOUS_RESOURCE_RE.test(collapsed)) return false;
+  if (BENIGN_NEGATION_RE.test(collapsed)) return false;
+  if (CONTRASTIVE_STANCE_RE.test(collapsed)) return false;
+  return BENIGN_COMPONENT_RE.test(collapsed);
+}
+
 /** Verbs / prepositions that introduce the object phrase of a list lead-in. */
 const LEAD_OBJECT_SPLIT_RE =
   /\b(?:through|via|using|uses|use|from|on|with|quer(?:y|ies|ied)|contacts?|relies\s+on|rel(?:y|ies)\s+on|leverag\w*|abus\w*)\b/i;
@@ -1218,6 +1234,13 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // host beside the malicious DLL — not as an Indicator. Any maliciousness
     // or abuse cue in the same row window keeps the row assertion.
     if (structuralRow && form !== 'ip_port' && !ROW_MALICIOUS_RESOURCE_RE.test(full) && describesBenignComponent(full)) {
+      return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
+    }
+    // Several hashes of one file share the description cell ("MD5 SHA1 SHA256 |
+    // tool.exe | Legitimate …"). The per-value window stops at the next hash,
+    // so only the last digest used to see the benign statement. The description
+    // covers every digest of that row (tl-candidates-v46).
+    if (structuralRow && form === 'table_row' && rowSharesBenignDescription(full)) {
       return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: true };
     }
     // A table row that states outright that its subject is not malicious

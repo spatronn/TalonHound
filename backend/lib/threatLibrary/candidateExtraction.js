@@ -281,7 +281,7 @@ export {
  * as benign / provider / reference (promote_to_ioc, membership by
  * evidence.promoted_from).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v45';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v46';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -625,7 +625,7 @@ function trimShellContinuation(url) {
  * the publisher's endpoint spelling is kept as provenance (tl-candidates-v37).
  */
 const NETWORK_ENDPOINT_RE =
-  /\b(tcp|udp|tls|ssl|socks[45]h?):\/\/((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))(?::(\d{1,5}))?(?![\w.-])/gi;
+  /\b(tcp|udp|tls|ssl|socks[45]h?|fqdn):\/\/((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))(?::(\d{1,5}))?(?![\w.-])/gi;
 const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
 
 /**
@@ -708,6 +708,9 @@ const SPOOFED_SENDER_RE = /\b(?:spoof\w*|impersonat\w*|forged|faked?\s+sender|di
 
 /** A redaction placeholder right before a hostname tail ("<REDACTED>", "[redacted]", "REDACTED", "xxx"). */
 const REDACTION_PLACEHOLDER_END_RE = /(?:<\s*[^<>\s]{0,24}\s*>|\[\s*[^\[\]\s]{0,24}\s*\]|\bredacted|\b[x*]{3,})\s*$/i;
+// A placeholder glued onto the hostname with no separator. Email defang
+// ("user[@]onionmail[.]org") also ends in "]" and must not match.
+const GLUED_REDACTION_END_RE = /(?:<\s*(?:redacted|x{3,}|\*{3,})\s*>|\[\s*(?:redacted|x{3,}|\*{3,})\s*\])\s*$/i;
 
 /**
  * True when the DOMAIN_RE match starting at `start` is only the tail of a
@@ -720,7 +723,15 @@ function isTruncatedHostTail(text, start) {
   if (start <= 0) return false;
   const prev = text[start - 1];
   if (prev === '-') return true;
-  if (prev === '.') return REDACTION_PLACEHOLDER_END_RE.test(text.slice(Math.max(0, start - 40), start - 1));
+  // "<REDACTED>.example.com" hides labels behind the dot. "[redacted]post-app.com"
+  // and "<REDACTED>benefitsportal.com" glue the placeholder directly onto the
+  // visible tail: that tail is not the publisher's hostname (tl-candidates-v46).
+  if (prev === '.') {
+    return REDACTION_PLACEHOLDER_END_RE.test(text.slice(Math.max(0, start - 48), start - 1));
+  }
+  if (prev === ']' || prev === '>') {
+    return GLUED_REDACTION_END_RE.test(text.slice(Math.max(0, start - 48), start));
+  }
   return false;
 }
 const MD5_RE = /\b[a-fA-F0-9]{32}\b/g;
@@ -1226,6 +1237,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // Dotted tokens: resolve per occurrence, decide per document (see pendingDotted).
     if (n.candidateType === 'domain') {
       let token = String(extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
+      // "fqdn://ipfs[.]io" is the publisher's spelling of the host. Typing the
+      // scheme-prefixed original returns skip and drops the table row
+      // (tl-candidates-v46).
+      token = token.replace(/^(?:fqdn):\/\//i, '');
       // "host:port" endpoint rows: the port is recorded on the occurrence; the
       // host alone is typed (tl-table-v12).
       if (extra.port != null) token = token.replace(new RegExp(`[:：]${extra.port}[.,;]*$`), '');
