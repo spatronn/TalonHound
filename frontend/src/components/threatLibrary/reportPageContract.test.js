@@ -264,9 +264,10 @@ test('copy control reuses the shared clipboard helper and overflow menu reuses t
 test('Context Only != IOC candidate: promotion is a confirmed single-row override, mixed selections drop context rows', () => {
   assert.match(pageSrc, /if \(action === 'promote_to_ioc'\) \{\s*await promoteToIoc\(\);/);
   assert.match(pageSrc, /async function promoteToIoc\(\) \{\s*if \(!canWrite \|\| selectedRows\.length !== 1\) return;/);
-  assert.match(pageSrc, /if \(!isContextOnlyCandidate\(row\)\) return;/);
-  assert.match(pageSrc, /is classified as Context Only\. Promote it to an IOC\?/, 'confirmation names the transition');
+  assert.match(pageSrc, /if \(!row\.promote_eligibility\?\.promotable\) return;/);
+  assert.match(pageSrc, /formatPromoteConfirmDetail\(row\)/, 'confirmation shows publisher evidence, role, and reason');
   assert.match(pageSrc, /action: 'promote_to_ioc',\s*candidate_ids: \[row\.id\]/, 'exactly one id is sent');
+  assert.match(pageSrc, /corroboration: typeof ok === 'string' \? ok : undefined/);
   assert.match(pageSrc, /confirmLabel: 'Promote to IOC'/);
   assert.match(pageSrc, /const \{ ids, excluded \} = selectionForAction\('create_iocs', selectedRows\);/);
   assert.match(pageSrc, /excluded: excluded \+ \(Number\(data\?\.skipped_context_only\) \|\| 0\)/, 'feedback reports skipped context rows');

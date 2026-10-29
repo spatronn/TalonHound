@@ -478,7 +478,7 @@ async function promoteContextOnlyCandidate(pool, report, ids, opts) {
   );
   const candidate = rows.find((r) => Number(r.id) === Number(candidateId)) || null;
   if (!candidate) return { ok: false, status: 404, code: 'promote_not_found', error: 'Candidate not found' };
-  const eligibility = classifyPromoteEligibility(candidate);
+  const eligibility = classifyPromoteEligibility(candidate, { corroboration: opts.corroboration });
   if (!eligibility.ok) return { ok: false, status: 409, code: eligibility.code, error: eligibility.detail };
 
   const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
@@ -492,7 +492,10 @@ async function promoteContextOnlyCandidate(pool, report, ids, opts) {
       policy_decision: ev.policy_decision || null,
       decision_source: ev.decision_source || null,
       promoted_at: new Date().toISOString(),
-      promoted_by: opts.user?.email || opts.user?.username || null
+      promoted_by: opts.user?.email || opts.user?.username || null,
+      basis: eligibility.basis || null,
+      reason: eligibility.reason || null,
+      corroboration: eligibility.accepted_corroboration || null
     },
     decision_source: 'analyst',
     policy_decision: 'analyst_promoted_from_context_only'
@@ -512,13 +515,20 @@ async function promoteContextOnlyCandidate(pool, report, ids, opts) {
   );
   const promoted = promotedRows?.[0] || null;
 
-  await emitAudit(opts, buildReviewAuditEvent({
+  const promotionAudit = buildReviewAuditEvent({
     report,
     action: 'promote_to_ioc',
     requestedIds: [candidateId],
     candidates: [candidate],
     user: opts.user
-  }));
+  });
+  if (promotionAudit?.metadata) {
+    promotionAudit.metadata.promotion_basis = eligibility.basis || null;
+    promotionAudit.metadata.promotion_reason = eligibility.reason || null;
+    promotionAudit.metadata.observable_role = eligibility.observable_role || candidate.role || null;
+    promotionAudit.metadata.corroboration = eligibility.accepted_corroboration || null;
+  }
+  await emitAudit(opts, promotionAudit);
 
   const result = await createIocsFromCandidates(
     pool,

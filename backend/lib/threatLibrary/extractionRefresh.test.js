@@ -519,7 +519,7 @@ test('3. surviving identities keep analyst state: review decisions, Context only
   Object.assign(body, {
     review_status: 'approved', assessment: 'suspicious', role: 'unknown', is_ioc: true, match_state: 'new',
     evidence: { ...body.evidence, decision_source: 'analyst', policy_decision: 'analyst_promoted_from_context_only',
-      promoted_from: { assessment: 'context_only', role: 'reference', match_state: 'context_only', review_status: 'pending', is_ioc: true, policy_decision: 'pass', decision_source: 'deterministic', promoted_at: '2026-10-02T10:00:00.000Z', promoted_by: 'analyst@example' } }
+      promoted_from: { assessment: 'context_only', role: 'reference', match_state: 'context_only', review_status: 'pending', is_ioc: true, policy_decision: 'pass', decision_source: 'deterministic', promoted_at: '2026-10-02T10:00:00.000Z', promoted_by: 'analyst@example', corroboration: 'Named as the payload host in the narrative.', basis: 'operational_evidence' } }
   });
   // Make the promoted row context-only under the refreshed reading as it was when promoted.
   const ids = new Map(db.candidates.map((c) => [key(c), { id: c.id, public_id: c.public_id, portable_id: c.portable_id }]));
@@ -542,6 +542,8 @@ test('3. surviving identities keep analyst state: review decisions, Context only
   const promoted = after(`domain|${BODY_DOMAIN}`);
   assert.equal(promoted.review_status, 'approved');
   assert.equal(promoted.evidence.promoted_from.promoted_by, 'analyst@example', 'promotion provenance kept');
+  assert.equal(promoted.evidence.promoted_from.corroboration, 'Named as the payload host in the narrative.', 'promotion corroboration kept');
+  assert.equal(promoted.review_status, 'approved');
   // Relationship rows attached to surviving candidates stay attached.
   assert.equal(db.relationships.length, 1);
   assert.equal(db.relationships[0].object_candidate_id, after(`domain|${AI_DOMAIN}`).id);

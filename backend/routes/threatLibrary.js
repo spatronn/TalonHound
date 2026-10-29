@@ -34,6 +34,7 @@ import { maskAiSettingsForClient } from '../lib/threatLibrary/ai/providers.js';
 import { exportThibBundle, validateThibBundle, previewThibImport } from '../lib/threatLibrary/thib/codec.js';
 import { importThibBundle } from '../lib/threatLibrary/thibImport.js';
 import { applyCandidateReviewActions, finalizeReport, reopenReport } from '../lib/threatLibrary/reviewService.js';
+import { publicPromoteEligibility } from '../lib/threatLibrary/promotion.js';
 import { REPORT_FINALIZED_CODE, isFinalizedReport } from '../lib/threatLibrary/reportLifecycleLock.js';
 
 /** Source-action errors that are state conflicts, not server faults. */
@@ -159,6 +160,7 @@ export function publicCandidateEvidence(evidence) {
     evidence_tier: evidence.evidence_tier || null,
     policy_decision: evidence.policy_decision || null,
     decision_source: evidence.decision_source || null,
+    source_relation: evidence.source_relation || null,
     ai_needed: evidence.ai_needed === true,
     is_direct_source_observable: evidence.is_direct_source_observable !== false,
     is_parser_derived_metadata: evidence.is_parser_derived_metadata === true,
@@ -189,7 +191,9 @@ export function publicCandidateEvidence(evidence) {
       surrounding_text: o.surrounding_text || null,
       // Indicators membership reads the occurrence's assertion, not its zone.
       occurrence_kind: o.occurrence_kind || null,
-      asserted: o.asserted === true
+      asserted: o.asserted === true,
+      source_relation: o.source_relation || null,
+      relation_marker: o.relation_marker || null
     }))
   };
 }
@@ -627,6 +631,9 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           sources: sourceLinksByCandidate.get(c.id) || [],
           document_has_authoritative_scope: c.document_has_authoritative_scope === true
             || c.evidence?.document_has_authoritative_scope === true,
+          // Backend promotion decision. The review UI enables Promote only when
+          // promotable is true; it does not re-derive the gate.
+          promote_eligibility: publicPromoteEligibility(c),
           evidence: publicCandidateEvidence(c.evidence)
         })),
         entities: snap.entities.map((e) => ({
@@ -924,6 +931,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           selection: req.body?.selection,
           confirm: req.body?.confirm === true,
           preview: req.body?.preview === true,
+          corroboration: req.body?.corroboration,
           user: await actorOf(req),
           audit,
           req

@@ -193,6 +193,7 @@ test('report list passes ?search= and the list filters to the store and keeps th
 test('public candidate evidence carries publisher IOC scope for Indicators membership', async () => {
   assert.match(routeSrc, /document_has_authoritative_scope: evidence\.document_has_authoritative_scope === true/);
   assert.match(routeSrc, /document_has_authoritative_scope: c\.document_has_authoritative_scope === true/);
+  assert.match(routeSrc, /promote_eligibility: publicPromoteEligibility\(c\)/);
   const { publicCandidateEvidence } = await import('./threatLibrary.js');
   const ev = publicCandidateEvidence({
     source_assertion: 'body_mention',

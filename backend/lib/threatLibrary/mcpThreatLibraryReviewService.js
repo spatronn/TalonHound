@@ -14,7 +14,7 @@ import { applyCandidateReviewActions, finalizeReport } from './reviewService.js'
 import { finalizeBlockers, linkedSourceBlocker, loadReportSources } from './finalizeGuard.js';
 import {
   classifyCreateEligibility,
-  classifyPromoteEligibility,
+  publicPromoteEligibility,
   asPromotedRow,
   isPendingActionableCandidate,
   PROMOTION_OUTCOMES,
@@ -700,7 +700,7 @@ export async function mcpThreatLibraryReviewIocs(pool, args = {}, ctx = {}) {
     if (!candidate) {
       return { status: 404, error: { code: 'promote_not_found', message: 'Candidate not found' } };
     }
-    const eligibility = classifyPromoteEligibility(candidate);
+    const eligibility = publicPromoteEligibility(candidate, { corroboration: args.corroboration });
     return {
       status: 200,
       body: {
@@ -709,10 +709,11 @@ export async function mcpThreatLibraryReviewIocs(pool, args = {}, ctx = {}) {
         dry_run: true,
         preview: true,
         would_promote: eligibility.ok,
+        promote_eligibility: eligibility,
         code: eligibility.ok ? undefined : eligibility.code,
         detail: eligibility.ok ? null : eligibility.detail,
         candidate_id: Number(candidate.id),
-        create_preview: eligibility.ok
+        create_preview: eligibility.promotable
           ? previewCreateIocPromotion([asPromotedRow(candidate)])
           : null
       }
@@ -726,6 +727,7 @@ export async function mcpThreatLibraryReviewIocs(pool, args = {}, ctx = {}) {
     // Explicit approve/ignore/context_only commit unless dry_run; create/promote use confirm.
     confirm: action === 'promote_to_ioc' ? true : !dryRun,
     preview: dryRun,
+    corroboration: args.corroboration,
     user,
     audit,
     req

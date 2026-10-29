@@ -23,6 +23,7 @@ import {
   NON_IOC_CANDIDATE_TYPES
 } from './indicatorMembership.js';
 import { parseNetworkObservable } from '../networkObservable.js';
+import { refangTextForExtraction } from './defang.js';
 
 export {
   hasAuthoritativePublisherIocScope,
@@ -126,77 +127,429 @@ export function isContextOnlyCandidate(candidate) {
 export const NOT_CONTEXT_ONLY_SQL = notContextOnlySql();
 
 /**
- * Row-level Context Only -> IOC override eligibility. Only a context-only row
- * with a creatable observable type may be promoted; the analyst must confirm.
- * @returns {{ ok: boolean, code?: string, detail?: string }}
+ * Minimum length of an analyst corroboration that may stand in for a publisher
+ * IOC-list assertion. The promote action stores and audits this text.
  */
-export function classifyPromoteEligibility(candidate) {
-  if (!candidate) return { ok: false, code: 'promote_not_found', detail: 'Candidate not found.' };
+export const PROMOTION_CORROBORATION_MIN = 12;
+
+/**
+ * Publisher policies that already say the value is not an IOC. Appearing in a
+ * list does not override them unless the same evidence shows operational abuse
+ * of this exact observable.
+ */
+const NEGATIVE_PUBLISHER_POLICIES = new Set([
+  'context_only_provider_service',
+  'context_only_legitimate_service_list',
+  'demoted_provider_service',
+  'context_only_reference_relation',
+  'context_only_benign_component',
+  'context_only_report_source',
+  'context_only_rfc_example',
+  'context_only_negative_zone',
+  'context_only_truncated_duplicate',
+  'context_only_hosts_file_entry',
+  'context_only_email_domain',
+  'context_only_reserved_address',
+  'context_only_non_actionable_local',
+  'context_only_reference_column',
+  'context_only_table_description',
+  'context_only_resolution_column'
+]);
+
+const PROVIDER_POLICIES = new Set([
+  'context_only_provider_service',
+  'context_only_legitimate_service_list',
+  'demoted_provider_service'
+]);
+
+/**
+ * The clause uses this observable as attacker infrastructure, a payload, a
+ * phishing destination, or a service abused for that purpose. "Connects to"
+ * is intentionally absent: a connectivity check uses the same verb.
+ */
+const POSITIVE_USE_RE =
+  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing|ed)?|payloads?|phish(?:ing|es|ed)?|malware\s+download|downloaded?\s+from|drops?\s+from|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure|endpoint)|staging\s+server|(?:used|abused|leveraged)\s+to\s+(?:host|deliver|stage|phish|serve))\b/i;
+
+/** A probe of whether the host is online, not a claim the destination is malicious. */
+const CONNECTIVITY_RE =
+  /\b(?:internet|network|outbound|external|online)\s+connectivity\b|\bconnectivity\s+(?:check|test)\b|\bby\s+resolving\b|\bresolv(?:e|es|ed|ing)\b[^.]{0,80}\b(?:connectivity|before\s+execut)/i;
+
+/** C2 / payload / phishing in the same clause overrides a connectivity reading. */
+const ABUSE_OVERRIDE_RE =
+  /\b(?:c2|c&c|command\s+and\s+control|payload|phish\w*|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|infrastructure))\b/i;
+
+const DOCUMENTATION_RE =
+  /\bdocumentation\s+(?:address|range|prefix|network)\b|\b(?:rfc\s+5737|rfc\s+3849|rfc\s+2606)\b/i;
+
+const PLACEHOLDER_RE =
+  /\{[^{}\s]{1,40}\}|\$[A-Z][A-Z0-9_]{1,40}\$|<(?:token|name|id|campaign|redacted)[^>\s]*>|%[0-9A-Za-z_]{2,40}%/i;
+
+function occurrencesOf(candidate) {
+  const ev = evidenceOf(candidate);
+  if (Array.isArray(candidate?.occurrences) && candidate.occurrences.length) return candidate.occurrences;
+  return Array.isArray(ev.occurrences) ? ev.occurrences : [];
+}
+
+function policyOf(candidate) {
+  const ev = evidenceOf(candidate);
+  return String(candidate?.policy_decision || ev.policy_decision || '').toLowerCase();
+}
+
+function relationOf(candidate) {
+  const ev = evidenceOf(candidate);
+  const top = String(candidate?.source_relation || ev.source_relation || '').toLowerCase();
+  if (top) return top;
+  for (const occ of occurrencesOf(candidate)) {
+    const rel = String(occ?.source_relation || '').toLowerCase();
+    if (rel === 'operational_malicious') return rel;
+  }
+  for (const occ of occurrencesOf(candidate)) {
+    const rel = String(occ?.source_relation || '').toLowerCase();
+    if (rel) return rel;
+  }
+  return '';
+}
+
+function clauseTexts(candidate) {
+  const texts = [];
+  for (const occ of occurrencesOf(candidate)) {
+    const raw = occ?.surrounding_text || occ?.section_heading || '';
+    if (raw) texts.push(refangTextForExtraction(String(raw)));
+  }
+  if (!texts.length && candidate?.evidence_text) {
+    texts.push(refangTextForExtraction(String(candidate.evidence_text)));
+  }
+  return texts;
+}
+
+function hasOperationalEvidence(candidate) {
+  if (relationOf(candidate) === 'operational_malicious') return true;
+  if (occurrencesOf(candidate).some((occ) => String(occ?.relation_marker || '') === 'operational')) return true;
+  return clauseTexts(candidate).some((text) => POSITIVE_USE_RE.test(text));
+}
+
+function isConnectivityCheck(candidate) {
+  return clauseTexts(candidate).some((text) => CONNECTIVITY_RE.test(text) && !ABUSE_OVERRIDE_RE.test(text));
+}
+
+function isDocumentationContext(candidate) {
+  const ev = evidenceOf(candidate);
+  if (candidate?.rfc_example === true || ev.rfc_example === true) return true;
+  if (policyOf(candidate).includes('documentation')) return true;
+  return clauseTexts(candidate).some((text) => DOCUMENTATION_RE.test(text));
+}
+
+function isPlaceholderValue(candidate) {
+  const policy = policyOf(candidate);
+  if (policy.includes('template_placeholder') || policy.includes('placeholder')) return true;
+  const value = String(candidate?.normalized_value || '');
+  if (PLACEHOLDER_RE.test(value)) return true;
+  return clauseTexts(candidate).some((text) => /template\s+placeholder|unfilled\s+placeholder/i.test(text) && PLACEHOLDER_RE.test(text));
+}
+
+/**
+ * A domain or address whose every mention is only the host of a more specific
+ * URL. The promotable identity is that URL, not the provider's whole name.
+ * A structural publisher row of the bare host is its own identity.
+ */
+function evidenceSupportsOnlyNarrowerUrl(candidate) {
+  const type = typeOf(candidate);
+  if (type !== 'domain' && type !== 'ip' && type !== 'ipv6') return false;
+  const host = String(candidate?.normalized_value || '').trim().toLowerCase();
+  if (!host || host.includes('/')) return false;
+  const occs = occurrencesOf(candidate);
+  if (!occs.length) return false;
+  if (occs.some((occ) => occ?.asserted === true && (occ?.structural_row === true || occ?.row_shape === true || occ?.form === 'list_row' || occ?.form === 'table_row'))) {
+    return false;
+  }
+  const texts = clauseTexts(candidate);
+  if (!texts.length) return false;
+  return texts.every((text) => mentionsNarrowerUrl(text, host));
+}
+
+function mentionsNarrowerUrl(text, host) {
+  const t = String(text || '').toLowerCase();
+  const markers = [`https://${host}/`, `http://${host}/`, `https://www.${host}/`, `http://www.${host}/`];
+  for (const marker of markers) {
+    let from = 0;
+    while (from < t.length) {
+      const at = t.indexOf(marker, from);
+      if (at < 0) break;
+      const rest = t.slice(at + marker.length);
+      if (rest.length && !/^[\s)\]>"']/.test(rest)) return true;
+      from = at + marker.length;
+    }
+  }
+  return false;
+}
+
+function publisherEvidenceSummary(candidate) {
+  const ev = evidenceOf(candidate);
+  const occ = occurrencesOf(candidate).find((row) => row?.surrounding_text) || occurrencesOf(candidate)[0] || null;
+  const lines = [];
+  const assertion = String(candidate?.source_assertion || ev.source_assertion || '').trim();
+  if (assertion) lines.push(`Publisher assertion: ${assertion}`);
+  const relation = relationOf(candidate);
+  if (relation) lines.push(`Relation: ${relation}`);
+  const policy = policyOf(candidate);
+  if (policy) lines.push(`Policy: ${policy}`);
+  if (occ?.section_heading) lines.push(`Section: ${occ.section_heading}`);
+  if (occ?.zone) lines.push(`Zone: ${occ.zone}`);
+  if (occ?.surrounding_text) lines.push(`Evidence: ${String(occ.surrounding_text).replace(/\s+/g, ' ').slice(0, 280)}`);
+  return lines.join('\n');
+}
+
+function blocked(code, detail, blockedClass, candidate, extra = {}) {
+  return {
+    ok: false,
+    promotable: false,
+    requires_corroboration: false,
+    corroboration_min_length: PROMOTION_CORROBORATION_MIN,
+    code,
+    detail,
+    reason: detail,
+    basis: null,
+    observable_role: String(candidate?.role || '').trim() || null,
+    publisher_evidence: publisherEvidenceSummary(candidate),
+    blocked_class: blockedClass,
+    accepted_corroboration: null,
+    ...extra
+  };
+}
+
+function acceptedCorroboration(opts) {
+  const text = String(opts?.corroboration || '').replace(/\s+/g, ' ').trim();
+  if (text.length < PROMOTION_CORROBORATION_MIN) return null;
+  return text.slice(0, 500);
+}
+
+/**
+ * Row-level Context Only / narrative → IOC override eligibility.
+ *
+ * Lacking a negative publisher stance is not enough. A narrative value becomes
+ * an IOC only with positive publisher evidence (this exact observable asserted
+ * as infrastructure) or with operational evidence of attacker use plus an
+ * explicit corroboration the promote action stores and audits.
+ *
+ * Connectivity checks, generic references, documentation addresses,
+ * placeholders, and provider infrastructure that is merely mentioned stay
+ * blocked. Corroboration does not override those classes.
+ *
+ * @param {object} candidate
+ * @param {{ corroboration?: string }} [opts]
+ * @returns {{
+ *   ok: boolean,
+ *   promotable: boolean,
+ *   requires_corroboration: boolean,
+ *   corroboration_min_length: number,
+ *   code: string|null,
+ *   detail: string|null,
+ *   reason: string|null,
+ *   basis: string|null,
+ *   observable_role: string|null,
+ *   publisher_evidence: string|null,
+ *   blocked_class: string|null,
+ *   accepted_corroboration: string|null
+ * }}
+ */
+export function classifyPromoteEligibility(candidate, opts = {}) {
+  if (!candidate) return blocked('promote_not_found', 'Candidate not found.', null, candidate);
   // A MODE A narrative value outside the curated IOC set is not an IOC
-  // candidate whatever its assessment, so Approve can never reach it; it is
-  // promotable like a Context Only row (subject to the stance gate below).
+  // candidate whatever its assessment, so Approve can never reach it.
   if (!isContextOnlyCandidate(candidate) && !isMissingFromPublisherScope(candidate)) {
-    return { ok: false, code: 'promote_not_context_only', detail: 'Only Context Only indicators can be promoted; use Approve for IOC candidates.' };
+    return blocked(
+      'promote_not_context_only',
+      'Only Context Only indicators can be promoted; use Approve for IOC candidates.',
+      null,
+      candidate
+    );
   }
   const type = typeOf(candidate);
   if (!CREATABLE.has(type)) {
-    return {
-      ok: false,
-      code: 'promote_unsupported_type',
-      detail: `Type ${type || 'unknown'} cannot be stored as an IOC record.`
-    };
+    return blocked(
+      'promote_unsupported_type',
+      `Type ${type || 'unknown'} cannot be stored as an IOC record.`,
+      'unsupported_type',
+      candidate
+    );
   }
   if (!iocStorageIdentity(candidate)) {
-    return { ok: false, code: 'promote_unsupported_type', detail: INVALID_NETWORK_DETAIL };
+    return blocked('promote_unsupported_type', INVALID_NETWORK_DETAIL, 'unsupported_type', candidate);
   }
-  // MODE A narrative value (outside the publisher's curated IOC set): the
-  // analyst may confirm it only when the publisher's own reading of it is not
-  // negative — never a value the publisher called benign / a provider / a
-  // reference / an example, and never one outside the original document
-  // (tl-candidates-v45).
-  if (isMissingFromPublisherScope(candidate)) {
-    const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
-    const policy = String(ev.policy_decision || candidate.policy_decision || '');
-    const flagged = candidate.is_report_source === true || ev.rfc_example === true || candidate.rfc_example === true;
-    if (candidate.has_original_document_occurrence === false || flagged || !NARRATIVE_PROMOTABLE_POLICIES.has(policy)) {
-      return {
-        ok: false,
-        code: 'promote_outside_publisher_scope',
-        detail: 'The publisher curated its IOC set and describes this value as non-malicious context (provider, reference, example or benign); it cannot be promoted.'
-      };
+  if (candidate.has_original_document_occurrence === false && !isLinkedSourceAssertedIoc(candidate)) {
+    return blocked(
+      'promote_outside_publisher_scope',
+      'This value has no occurrence in the original document, so it cannot be promoted from the report narrative.',
+      'outside_document',
+      candidate
+    );
+  }
+  if (isPlaceholderValue(candidate)) {
+    return blocked(
+      'promote_placeholder',
+      'This value is a placeholder or template, not an observable the publisher reported as infrastructure.',
+      'placeholder',
+      candidate
+    );
+  }
+  if (isDocumentationContext(candidate)) {
+    return blocked(
+      'promote_documentation',
+      'The publisher uses this value as a documentation or example address, not as attacker infrastructure.',
+      'documentation',
+      candidate
+    );
+  }
+  if (isConnectivityCheck(candidate)) {
+    return blocked(
+      'promote_connectivity_check',
+      'The publisher uses this value as a connectivity check, not as attacker infrastructure.',
+      'connectivity_check',
+      candidate
+    );
+  }
+
+  const policy = policyOf(candidate);
+  const operational = hasOperationalEvidence(candidate);
+  const providerPolicy = PROVIDER_POLICIES.has(policy) || relationOf(candidate) === 'provider_service';
+  const negativePolicy = NEGATIVE_PUBLISHER_POLICIES.has(policy) || policy.startsWith('ioc_excluded');
+
+  if (providerPolicy && !operational) {
+    return blocked(
+      'promote_outside_publisher_scope',
+      'The publisher describes this value as provider or service infrastructure. Promotion needs evidence this exact observable was abused, not the provider name alone.',
+      'provider_infrastructure',
+      candidate
+    );
+  }
+  if (negativePolicy && !operational) {
+    return blocked(
+      'promote_outside_publisher_scope',
+      'The publisher describes this value as non-malicious context (reference, example, or benign). It cannot be promoted.',
+      'publisher_negative',
+      candidate
+    );
+  }
+  if (evidenceSupportsOnlyNarrowerUrl(candidate)) {
+    return blocked(
+      'promote_narrower_identity',
+      'The evidence supports a specific URL, not this whole domain or address. Promote that URL instead.',
+      'narrower_identity',
+      candidate
+    );
+  }
+
+  const role = String(candidate?.role || '').trim() || null;
+  const evidenceSummary = publisherEvidenceSummary(candidate);
+  // Publisher assertion of this exact observable (IOC / C2 / operational row,
+  // or an approved linked IOC source). Not "the report never called it benign".
+  const publisherAsserted = isPublisherAsserted(candidate) || isLinkedSourceAssertedIoc(candidate);
+  if (publisherAsserted && !providerPolicy) {
+    const reason = 'The publisher asserted this exact observable as report infrastructure.';
+    if (!isUnionReportIndicatorMember(asPromotedRow(candidate))) {
+      return blocked(
+        'promote_outside_publisher_scope',
+        'Promotion cannot create an IOC for this value under the current membership contract.',
+        null,
+        candidate
+      );
     }
-  }
-  // Promote re-classifies and then runs Create IOCs, which only materializes
-  // report Indicators. Decide on the row as it would be after promotion, before
-  // anything is written, so a promotion never half-applies.
-  if (!isUnionReportIndicatorMember(asPromotedRow(candidate))) {
     return {
-      ok: false,
-      code: 'promote_outside_publisher_scope',
-      detail: 'The publisher curated its IOC set and this value is outside it; promotion cannot create an IOC for it.'
+      ok: true,
+      promotable: true,
+      requires_corroboration: false,
+      corroboration_min_length: PROMOTION_CORROBORATION_MIN,
+      code: null,
+      detail: null,
+      reason,
+      basis: 'publisher_assertion',
+      observable_role: role,
+      publisher_evidence: evidenceSummary,
+      blocked_class: null,
+      accepted_corroboration: null
     };
   }
-  return { ok: true };
+
+  if (operational) {
+    const reason = providerPolicy
+      ? 'The publisher shows this exact service observable being abused for attacker operations.'
+      : 'The narrative describes operational use of this exact observable (command and control, payload, phishing, or attacker infrastructure).';
+    const note = acceptedCorroboration(opts);
+    if (!note) {
+      return {
+        ok: false,
+        promotable: true,
+        requires_corroboration: true,
+        corroboration_min_length: PROMOTION_CORROBORATION_MIN,
+        code: 'promote_corroboration_required',
+        detail: `Record why this exact observable is attacker infrastructure (at least ${PROMOTION_CORROBORATION_MIN} characters). The reason is stored with the promotion and audited.`,
+        reason,
+        basis: 'operational_evidence',
+        observable_role: role,
+        publisher_evidence: evidenceSummary,
+        blocked_class: null,
+        accepted_corroboration: null
+      };
+    }
+    if (!isUnionReportIndicatorMember(asPromotedRow(candidate))) {
+      return blocked(
+        'promote_outside_publisher_scope',
+        'Promotion cannot create an IOC for this value under the current membership contract.',
+        null,
+        candidate
+      );
+    }
+    return {
+      ok: true,
+      promotable: true,
+      requires_corroboration: true,
+      corroboration_min_length: PROMOTION_CORROBORATION_MIN,
+      code: null,
+      detail: null,
+      reason,
+      basis: providerPolicy ? 'abused_service' : 'operational_evidence',
+      observable_role: role,
+      publisher_evidence: evidenceSummary,
+      blocked_class: null,
+      accepted_corroboration: note
+    };
+  }
+
+  return blocked(
+    'promote_insufficient_evidence',
+    'A narrative mention is not enough to promote this value. Promotion needs publisher evidence that this exact observable is infrastructure, or operational evidence of attacker use.',
+    'insufficient_evidence',
+    candidate
+  );
+}
+
+/**
+ * API / MCP view of a promotion decision. Omits the accepted corroboration
+ * text; the write path reads that from classifyPromoteEligibility.
+ * @param {object} candidate
+ * @param {{ corroboration?: string }} [opts]
+ */
+export function publicPromoteEligibility(candidate, opts = {}) {
+  const decision = classifyPromoteEligibility(candidate, opts);
+  return {
+    promotable: decision.promotable === true,
+    ok: decision.ok === true,
+    requires_corroboration: decision.requires_corroboration === true,
+    corroboration_min_length: decision.corroboration_min_length || PROMOTION_CORROBORATION_MIN,
+    code: decision.code || null,
+    detail: decision.detail || null,
+    reason: decision.reason || null,
+    basis: decision.basis || null,
+    observable_role: decision.observable_role || null,
+    publisher_evidence: decision.publisher_evidence || null,
+    blocked_class: decision.blocked_class || null
+  };
 }
 
 /** MODE A: a value neither the publisher's IOC set nor a linked IOC Source asserts. */
 function isMissingFromPublisherScope(candidate) {
   return hasPublisherScope(candidate) && !isPublisherAsserted(candidate) && !isLinkedSourceAssertedIoc(candidate);
 }
-
-/**
- * MODE A narrative policy decisions an analyst may confirm: the extractor kept
- * the value as context only because it sits outside the curated IOC set (or
- * left it to the model), not because the publisher described it as benign.
- */
-const NARRATIVE_PROMOTABLE_POLICIES = new Set([
-  'context_only_narrative_with_authoritative_scope',
-  'context_only_contextual_mention_in_indicator_section',
-  'ai_needed_authoritative_narrative',
-  'ai_needed_prose_sample_hash',
-  'demoted_weak_evidence',
-  'pass'
-]);
 
 /** The review fields promote_to_ioc writes, applied to a copy (never persisted). */
 export function asPromotedRow(candidate) {
