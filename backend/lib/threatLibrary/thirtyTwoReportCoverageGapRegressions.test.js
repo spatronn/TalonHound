@@ -162,6 +162,20 @@ ${IOC_TABLE}`);
   assert.equal(isReportIndicatorMember({ ...confirmed, review_status: 'context_only', assessment: 'context_only' }), false);
 });
 
+test('G4: a malicious-assessed MODE A narrative value (not Context Only, not an IOC candidate) is confirmable', () => {
+  const out = run(`<h2>Infrastructure overlap</h2>
+<p>This is the same SSL certificate shared by the C2 domain about.blsouqs[.]com used by the OctLurk backdoor.</p>
+${IOC_TABLE}`);
+  const c = find(out, 'about.blsouqs.com');
+  assert.ok(c);
+  const row = persisted(c, { assessment: 'malicious', match_state: 'new' });
+  assert.equal(isReportIndicatorMember(row), false, 'Approve cannot reach it');
+  assert.deepEqual(classifyPromoteEligibility(row), { ok: true });
+  // An Indicator the publisher asserted is still approved, never promoted.
+  const listed = find(out, '45.244.42.195');
+  assert.equal(classifyPromoteEligibility(persisted(listed)).code, 'promote_not_context_only');
+});
+
 test('G4 control: a value the publisher called a legitimate service is never confirmable', () => {
   const out = run(`<h2>Discovery</h2>
 <p>The stealer queries legitimate public services such as https://ipinfo[.]io/country to read the victim location.</p>

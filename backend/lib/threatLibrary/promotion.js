@@ -132,7 +132,10 @@ export const NOT_CONTEXT_ONLY_SQL = notContextOnlySql();
  */
 export function classifyPromoteEligibility(candidate) {
   if (!candidate) return { ok: false, code: 'promote_not_found', detail: 'Candidate not found.' };
-  if (!isContextOnlyCandidate(candidate)) {
+  // A MODE A narrative value outside the curated IOC set is not an IOC
+  // candidate whatever its assessment, so Approve can never reach it; it is
+  // promotable like a Context Only row (subject to the stance gate below).
+  if (!isContextOnlyCandidate(candidate) && !isMissingFromPublisherScope(candidate)) {
     return { ok: false, code: 'promote_not_context_only', detail: 'Only Context Only indicators can be promoted; use Approve for IOC candidates.' };
   }
   const type = typeOf(candidate);
@@ -151,7 +154,7 @@ export function classifyPromoteEligibility(candidate) {
   // negative — never a value the publisher called benign / a provider / a
   // reference / an example, and never one outside the original document
   // (tl-candidates-v45).
-  if (hasPublisherScope(candidate) && !isPublisherAsserted(candidate) && !isLinkedSourceAssertedIoc(candidate)) {
+  if (isMissingFromPublisherScope(candidate)) {
     const ev = candidate.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
     const policy = String(ev.policy_decision || candidate.policy_decision || '');
     const flagged = candidate.is_report_source === true || ev.rfc_example === true || candidate.rfc_example === true;
@@ -176,6 +179,11 @@ export function classifyPromoteEligibility(candidate) {
   return { ok: true };
 }
 
+/** MODE A: a value neither the publisher's IOC set nor a linked IOC Source asserts. */
+function isMissingFromPublisherScope(candidate) {
+  return hasPublisherScope(candidate) && !isPublisherAsserted(candidate) && !isLinkedSourceAssertedIoc(candidate);
+}
+
 /**
  * MODE A narrative policy decisions an analyst may confirm: the extractor kept
  * the value as context only because it sits outside the curated IOC set (or
@@ -196,7 +204,7 @@ function asPromotedRow(candidate) {
   return {
     ...candidate,
     review_status: 'approved',
-    assessment: 'suspicious',
+    assessment: ['malicious', 'suspicious'].includes(String(candidate.assessment)) ? candidate.assessment : 'suspicious',
     is_ioc: true,
     match_state: candidate.matched_ioc_id ? 'existing' : 'new',
     evidence: { ...ev, promoted_from: ev.promoted_from || {} }
