@@ -36,6 +36,7 @@ import {
   isIndicatorRowShape,
   isIndicatorValueLine,
   lineContainingObservable,
+  tableRowProviderOwnedByOperation,
   textDescribesValueAsBenign
 } from './indicatorScope.js';
 import {
@@ -266,8 +267,14 @@ export {
  * ("91.92.242[.]30/lamq4") is a URL; a list lead-in naming the values as
  * service "instances" is a provider stance; a type cell naming request
  * content ("POST body", "User-Agent") asserts no indicator (tl-table-v13).
+ * v44 (32-report audit): a scheme whose bracket splits the authority marker
+ * ("http[:/]/host") refangs (tl-defang-v5); a typed IOC-table row whose
+ * provider noun is qualified by the operation its sibling rows attribute
+ * infrastructure to ("CaptiveCrunch DNS Resolver") or that carries a bare
+ * "C2" role label stays an assertion; a structural row naming the value as
+ * the resolver used "for domain resolution" is a provider relation.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v43';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v44';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -917,7 +924,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       ...(extra.referenceCell === true ? { reference_cell: true } : {}),
       ...(extra.descriptionCell === true ? { description_cell: true } : {}),
       ...(extra.hostsFileEntry === true ? { hosts_file_entry: true } : {}),
-      ...(block?.list_stance ? { list_stance: block.list_stance } : {})
+      ...(block?.list_stance ? { list_stance: block.list_stance } : {}),
+      ...(form === OCCURRENCE_FORMS.TABLE_ROW && extra.tableRow &&
+        tableRowProviderOwnedByOperation(block, extra.tableRow.row_index) ? { operator_owned_row: true } : {})
     };
   }
 
