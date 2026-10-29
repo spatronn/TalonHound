@@ -320,6 +320,15 @@ function parseToken(token, declared, ctx = {}) {
   if (!isIPv6(t)) t = t.replace(TRAILING_PUNCT_RE, '');
   if (!t) return null;
   let port = null;
+  // Publisher IOC cells prefix a hostname with a non-HTTP scheme
+  // ("fqdn://ipfs[.]io", "fqdn://relay.example:443"). The scheme names the
+  // host; it is not a URL and must not drop the row (tl-candidates-v46).
+  const fqdnHost = /^(?:fqdn):\/\/([^/\s?#]+)(?::(\d{1,5}))?$/i.exec(t);
+  if (fqdnHost) {
+    const p = Number(fqdnHost[2]);
+    if (fqdnHost[2] && Number.isFinite(p) && p >= 1 && p <= 65535) port = p;
+    t = fqdnHost[1];
+  }
   const ep = t.match(IPV4_PORT_CELL_RE) || t.match(HOST_PORT_CELL_RE);
   if (ep) {
     const p = Number(ep[2]);
