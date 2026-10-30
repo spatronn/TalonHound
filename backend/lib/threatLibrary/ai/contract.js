@@ -71,9 +71,12 @@ export const CANDIDATE_ROLE_VALUES = Object.freeze([
  * Synthesis keeps the pre-v6 80/80 caps: it is optional, non-fatal and only
  * merges already-validated chunk results (several chunks' worth of items).
  *
- * Merged-analysis Zod caps stay at the pre-existing array ceilings so
- * concatenating several valid chunks cannot fail validation merely because
- * the per-chunk provider schema is tighter.
+ * Merged-analysis Zod caps must absorb several valid chunks after
+ * type+name dedupe. entityMaxItemsMerged is sized for ≥8×entityMaxItemsChunk
+ * (long reports such as Sekoia's ShinyHunters journey hit 123 unique
+ * entities across 6 chunks). mergeAnalyses also ranks and truncates to these
+ * ceilings so a denser report cannot fail Zod merely by concatenating
+ * in-budget chunk results.
  *
  * Last-resort Ollama `num_predict` (10240): ≈4× the largest healthy chunk
  * in tokens (10.5k chars ≈ 2.6k tokens) and enough to close a schema-capped
@@ -118,7 +121,7 @@ export const AI_OUTPUT_BOUNDS = Object.freeze({
   entityMaxItemsChunk: 30,
   entityMaxItemsRecovery: 15,
   entityMaxItemsSynthesis: 80,
-  entityMaxItemsMerged: 100,
+  entityMaxItemsMerged: 240,
   entityNameMaxLength: 300,
   entityAliasMaxItems: 20,
   entityAliasMaxLength: 200,

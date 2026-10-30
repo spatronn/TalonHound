@@ -34,6 +34,7 @@ import {
   resolveMinRepairMs
 } from './timeouts.js';
 import {
+  AI_OUTPUT_BOUNDS,
   THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
   buildProviderJsonSchema,
   candidateUpdatesMaxItemsForChunk,
@@ -208,6 +209,46 @@ export function buildChunkRequest({ document, chunk, chunkIndex, chunkTotal, par
   return { user, toClassify, resolved, refinableResolved, promptChars: user.length };
 }
 
+/** Prefer core threat entities when a long multi-chunk merge must truncate. */
+const MERGED_ENTITY_TYPE_RANK = Object.freeze({
+  threat_actor: 0,
+  malware: 1,
+  campaign: 2,
+  tool: 3,
+  vulnerability: 4,
+  attack_pattern: 5,
+  infrastructure: 6,
+  organization: 7
+});
+
+/**
+ * Rank and truncate merged entities so concatenating in-budget chunks cannot
+ * fail Zod solely because unique names exceed entityMaxItemsMerged.
+ * @param {object[]} entities
+ * @param {number} limit
+ */
+export function capMergedEntities(entities, limit = AI_OUTPUT_BOUNDS.entityMaxItemsMerged) {
+  const max = Math.max(0, Number(limit) || 0);
+  const list = Array.isArray(entities) ? entities : [];
+  if (list.length <= max) return list;
+  return [...list]
+    .sort((a, b) => {
+      const ta = MERGED_ENTITY_TYPE_RANK[a?.entity_type] ?? 50;
+      const tb = MERGED_ENTITY_TYPE_RANK[b?.entity_type] ?? 50;
+      if (ta !== tb) return ta - tb;
+      const ca = Number(a?.confidence);
+      const cb = Number(b?.confidence);
+      const confA = Number.isFinite(ca) ? ca : -1;
+      const confB = Number.isFinite(cb) ? cb : -1;
+      if (confA !== confB) return confB - confA;
+      const ea = Array.isArray(a?.evidence_block_ids) ? a.evidence_block_ids.length : 0;
+      const eb = Array.isArray(b?.evidence_block_ids) ? b.evidence_block_ids.length : 0;
+      if (ea !== eb) return eb - ea;
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    })
+    .slice(0, max);
+}
+
 /**
  * @param {object[]} parts validated chunk results
  * @param {object} [ctx] reference context; `tagSupport` (buildReportTagSupport)
@@ -229,6 +270,7 @@ export function mergeAnalyses(parts, ctx = {}) {
 
   const entityMap = new Map();
   const candidateMap = new Map();
+  const relationshipKeys = new Set();
   const summaries = [];
 
   for (const part of parts) {
@@ -253,13 +295,25 @@ export function mergeAnalyses(parts, ctx = {}) {
       }
     }
     for (const r of part.relationships || []) {
+      const key = [
+        r.subject_kind,
+        String(r.subject_ref || '').trim().toLowerCase(),
+        String(r.relationship_type || '').trim().toLowerCase().replace(/[\s-]+/g, '_'),
+        r.object_kind,
+        String(r.object_ref || '').trim().toLowerCase()
+      ].join('\0');
+      if (relationshipKeys.has(key)) continue;
+      relationshipKeys.add(key);
       merged.relationships.push(r);
     }
   }
 
-  merged.entities = [...entityMap.values()];
+  merged.entities = capMergedEntities([...entityMap.values()]);
   merged.candidate_updates = [...candidateMap.values()];
-  merged.summary = summaries.filter(Boolean).join('\n\n').slice(0, 8000) || 'Analysis complete.';
+  if (merged.relationships.length > AI_OUTPUT_BOUNDS.relationshipMaxItemsMerged) {
+    merged.relationships = merged.relationships.slice(0, AI_OUTPUT_BOUNDS.relationshipMaxItemsMerged);
+  }
+  merged.summary = summaries.filter(Boolean).join('\n\n').slice(0, AI_OUTPUT_BOUNDS.summaryMaxLengthMerged) || 'Analysis complete.';
   merged.report_tags = mergeReportTags(parts.map((p) => p?.report_tags), {
     support: ctx.tagSupport,
     entityNames: namedEntityTagKeys(merged.entities)
