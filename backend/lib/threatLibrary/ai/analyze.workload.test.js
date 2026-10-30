@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import {
   analyzeThreatDocument,
   buildAnalysisChunks,
+  capMergedEntities,
+  mergeAnalyses,
   partitionCandidatesForAi,
   selectSemanticBlocks,
   SYNTHESIS_CHUNK_KEY
@@ -139,6 +141,69 @@ function collectMaxLengths(node, acc = []) {
   for (const v of Object.values(node)) collectMaxLengths(v, acc);
   return acc;
 }
+
+test('merged entity ceiling absorbs ≥8 in-budget chunks after type+name dedupe', () => {
+  const B = AI_OUTPUT_BOUNDS;
+  assert.ok(
+    B.entityMaxItemsMerged >= B.entityMaxItemsChunk * 8,
+    'long multi-chunk reports (e.g. Sekoia ShinyHunters, 123 unique / 6 chunks) must fit'
+  );
+});
+
+test('mergeAnalyses keeps a dense multi-chunk entity union inside Zod (report 35439)', () => {
+  // Production failure: 6 completed chunks → 123 unique entities; Zod max was 100
+  // ("Array must contain at most 100 element(s)"), so Retry failed in ~100ms on merge.
+  const B = AI_OUTPUT_BOUNDS;
+  const parts = [];
+  let n = 0;
+  for (let chunk = 0; chunk < 6; chunk += 1) {
+    const count = chunk === 5 ? 7 : 30;
+    const entities = [];
+    for (let i = 0; i < count; i += 1) {
+      const type = n % 5 === 0 ? 'threat_actor' : n % 5 === 1 ? 'malware' : n % 5 === 2 ? 'organization' : 'infrastructure';
+      entities.push({
+        entity_type: type,
+        name: `Entity ${n}`,
+        confidence: 0.5 + (n % 5) * 0.1,
+        evidence_block_ids: [`b${n}`]
+      });
+      n += 1;
+    }
+    parts.push({
+      summary: `chunk ${chunk}`,
+      entities,
+      candidate_updates: [],
+      relationships: []
+    });
+  }
+  assert.equal(n, 157);
+  const uncapped = new Map();
+  for (const part of parts) {
+    for (const e of part.entities) {
+      uncapped.set(`${e.entity_type}\0${e.name.toLowerCase()}`, e);
+    }
+  }
+  assert.equal(uncapped.size, 157);
+  assert.ok(uncapped.size > 100, 'reproduces the pre-fix Zod failure class');
+  const merged = mergeAnalyses(parts);
+  assert.equal(merged.ok, true, merged.error || JSON.stringify(merged.details || []));
+  assert.equal(merged.value.entities.length, Math.min(uncapped.size, B.entityMaxItemsMerged));
+  assert.ok(merged.value.entities.some((e) => e.entity_type === 'threat_actor'));
+});
+
+test('capMergedEntities prefers actors/malware over filler when truncating', () => {
+  const entities = [
+    { entity_type: 'organization', name: 'Vendor Co', confidence: 0.99 },
+    { entity_type: 'threat_actor', name: 'APT-X', confidence: 0.4 },
+    { entity_type: 'infrastructure', name: 'cdn.example', confidence: 0.9 },
+    { entity_type: 'malware', name: 'BadRat', confidence: 0.5 }
+  ];
+  const kept = capMergedEntities(entities, 2);
+  assert.deepEqual(
+    kept.map((e) => e.name),
+    ['APT-X', 'BadRat']
+  );
+});
 
 test('provider JSON schema bounds match the documented contract and stay ≤ Zod', () => {
   const schema = buildProviderJsonSchema();
