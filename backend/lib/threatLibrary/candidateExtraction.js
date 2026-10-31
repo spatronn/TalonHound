@@ -904,6 +904,41 @@ function valueLineLeadInsByBlock(blocks) {
   return out;
 }
 
+/** A list assignment in a hunting query / code sample: `let c2ip = dynamic([`, `deliveryHosts = [`. */
+const CODE_LIST_ASSIGN_RE = /\b(?:let\s+|var\s+|const\s+|set\s+)?([A-Za-z_][\w]*)\s*=\s*(?:dynamic\s*\(\s*)?\[/g;
+
+/**
+ * block id → name of the code list the block's values belong to. Publishers
+ * render one hunting-query line per code block, so an open list (`let c2ip =
+ * dynamic([` …) continues over the following code blocks until it closes
+ * (tl-candidates-v48). The name is recorded on the occurrence only; it never
+ * changes the relation or membership.
+ * @param {object[]} blocks
+ */
+function codeListNamesByBlock(blocks) {
+  const out = new Map();
+  let open = null;
+  for (const b of blocks) {
+    if (b?.type !== 'code') {
+      open = null;
+      continue;
+    }
+    const t = String(b?.text || '');
+    let name = open;
+    CODE_LIST_ASSIGN_RE.lastIndex = 0;
+    let m;
+    let at = -1;
+    while ((m = CODE_LIST_ASSIGN_RE.exec(t)) !== null) {
+      name = m[1];
+      at = m.index + m[0].length;
+    }
+    if (name) out.set(b.id, name);
+    const tail = at >= 0 ? t.slice(at) : t;
+    open = name && !/\]/.test(tail) ? name : null;
+  }
+  return out;
+}
+
 /**
  * Header of the table column that holds `value` (a digest cell), from the
  * block's declared headers or its first row when that row holds no digest.
@@ -945,6 +980,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // scope of every list item up to the next non-list block.
   const listLeadIns = listLeadInsByBlock(annotated.blocks || []);
   const valueLineLeadIns = valueLineLeadInsByBlock(annotated.blocks || []);
+  const codeListNames = codeListNamesByBlock(annotated.blocks || []);
   /** @type {Map<string, object>} */
   const byKey = new Map();
   const urlPathBasenames = new Set();
@@ -1049,6 +1085,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       ...(extra.descriptionCell === true ? { description_cell: true } : {}),
       ...(extra.hostsFileEntry === true ? { hosts_file_entry: true } : {}),
       ...(block?.list_stance ? { list_stance: block.list_stance } : {}),
+      ...(codeListNames.has(block?.id) ? { code_list_name: codeListNames.get(block.id).slice(0, 64) } : {}),
       ...(form === OCCURRENCE_FORMS.STANDALONE && valueLineLeadIns.has(block?.id)
         ? { value_line_lead_in: valueLineLeadIns.get(block.id).slice(0, 400) }
         : {}),

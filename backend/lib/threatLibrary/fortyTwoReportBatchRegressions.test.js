@@ -21,6 +21,7 @@ import { extractReportCandidates } from './extractionStages.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { isReportIndicatorMember } from './indicatorMembership.js';
+import { publicPromoteEligibility } from './promotion.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 import { TABLE_SEMANTICS_VERSION, interpretIocTable } from './tableSemantics.js';
 
@@ -234,4 +235,36 @@ test('H. bullet value paragraphs take the stance of the lead-in that introduces 
   assert.ok(!resolver || !resolver.occurrences.some((o) => o.source_relation === 'operational_malicious'),
     'a benign lead-in never makes its values operational');
   assert.equal(member(find(cands, 'ip', '193.42.11.108')), true);
+});
+
+test('I. a role-labelled body column or hunting list makes a MODE A value promotable, never a member', () => {
+  const cands = run(`<article>${BODY}
+<h2>Brand-impersonation infrastructure</h2>
+<table><tr><th>Impersonated brand</th><th>Spoofed domain (defanged)</th><th>Category</th></tr>
+<tr><td>Sejda PDF</td><td>sejda[.]hl[.]cn</td><td>Productivity</td></tr></table>
+<h2>Advanced hunting</h2>
+<pre>let c2ip = dynamic(["202.95.14.237",</pre>
+<pre>"47.239.232.245"]);</pre>
+<pre>let ncsi_endpoints = dynamic(["13.107.4.52"]);</pre>
+<h2>Indicators of compromise (IOC)</h2>
+<table><tr><th>Indicator</th><th>Type</th></tr>
+<tr><td>202.95.14[.]237</td><td>IP</td></tr></table>
+</article>`);
+  const eligible = (c) => publicPromoteEligibility({
+    ...c,
+    has_original_document_occurrence: true,
+    review_status: 'context_only',
+    evidence: buildCandidateEvidenceRecord(c)
+  }).promotable;
+  const spoofed = find(cands, 'domain', 'sejda.hl.cn');
+  assert.ok(spoofed);
+  assert.equal(member(spoofed), false);
+  assert.equal(eligible(spoofed), true, 'a Spoofed-domain column value is promotable');
+  const c2 = find(cands, 'ip', '47.239.232.245');
+  assert.ok(c2);
+  assert.equal(member(c2), false);
+  assert.ok(c2.occurrences.some((o) => o.code_list_name === 'c2ip'), 'the open list name carries to the next code line');
+  assert.equal(eligible(c2), true, 'a c2ip hunting-list value is promotable');
+  const ncsi = find(cands, 'ip', '13.107.4.52');
+  assert.ok(!ncsi || eligible(ncsi) === false, 'a neutral list name is not role evidence');
 });

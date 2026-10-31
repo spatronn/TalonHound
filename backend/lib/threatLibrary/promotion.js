@@ -228,6 +228,25 @@ function hasOperationalEvidence(candidate) {
   return clauseTexts(candidate).some((text) => POSITIVE_USE_RE.test(text));
 }
 
+/** A column header / list name that labels its values as attacker infrastructure. */
+const ROLE_COLUMN_HEADER_RE =
+  /\b(?:spoof\w*|look-?alike|typo-?squat\w*|impersonat\w*|malicious|c2|c&c|command\s*(?:and|&)\s*control|phishing|attacker|actor[- ]controlled)\b/i;
+const ROLE_LIST_NAME_RE = /(?:c2|cnc|payload|delivery|malicious|campaign|attacker|phish|exfil|beacon)/i;
+
+/**
+ * The publisher labelled the value's role outside its own sentence: the
+ * column of a body table ("Spoofed domain (defanged)") or the name of a
+ * hunting-query list (`let c2ip = dynamic([…])`, `deliveryHosts`,
+ * `campaignSha256`). Evidence for an analyst promotion only — never
+ * membership (tl-candidates-v48).
+ */
+function hasPublisherRoleLabel(candidate) {
+  const ev = evidenceOf(candidate);
+  const rows = Array.isArray(ev.table_rows) ? ev.table_rows : [];
+  if (rows.some((r) => ROLE_COLUMN_HEADER_RE.test(String(r?.column_header || '')))) return true;
+  return occurrencesOf(candidate).some((occ) => ROLE_LIST_NAME_RE.test(String(occ?.code_list_name || '')));
+}
+
 function isConnectivityCheck(candidate) {
   return clauseTexts(candidate).some((text) => CONNECTIVITY_RE.test(text) && !ABUSE_OVERRIDE_RE.test(text));
 }
@@ -410,9 +429,11 @@ export function classifyPromoteEligibility(candidate, opts = {}) {
   }
 
   const policy = policyOf(candidate);
-  const operational = hasOperationalEvidence(candidate);
   const providerPolicy = PROVIDER_POLICIES.has(policy) || relationOf(candidate) === 'provider_service';
   const negativePolicy = NEGATIVE_PUBLISHER_POLICIES.has(policy) || policy.startsWith('ioc_excluded');
+  // A role label never outweighs a provider / benign reading of the value itself.
+  const operational = hasOperationalEvidence(candidate) ||
+    (!providerPolicy && !negativePolicy && hasPublisherRoleLabel(candidate));
 
   if (providerPolicy && !operational) {
     return blocked(
