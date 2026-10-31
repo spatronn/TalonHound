@@ -14,7 +14,10 @@ const CAN_INSPECT = new Set([
   L.BLOCKED,
   L.ATTACHED,
   L.EXTRACTED,
-  L.STALE
+  L.STALE,
+  // Analysts may re-inspect a dismissed pack after reopening the report
+  // (mistaken dismiss, or a parser fix that changes the preview).
+  L.DISMISSED
 ]);
 
 const CAN_APPROVE = new Set([L.INSPECTED, L.ATTACHED, L.EXTRACTED, L.FAILED, L.STALE]);
@@ -66,11 +69,6 @@ export function transitionPatch(source, action, extra = {}) {
 
   switch (action) {
     case 'start_inspect': {
-      if (status === L.DISMISSED) {
-        const err = new Error('Dismissed sources cannot be inspected');
-        err.code = 'source_dismissed';
-        throw err;
-      }
       if (!canStartInspection(status) && status !== L.INSPECTING) {
         const err = new Error(`Cannot inspect source in status ${status}`);
         err.code = 'invalid_source_transition';
@@ -79,6 +77,10 @@ export function transitionPatch(source, action, extra = {}) {
       return {
         lifecycle_status: L.INSPECTING,
         inspection_status: 'running',
+        // Re-inspecting a dismissed pack clears the dismiss decision so approve
+        // / extract can proceed from the fresh preview.
+        dismissed_by: null,
+        dismissed_at: null,
         error_code: null,
         error_detail: null,
         updated_at: nowIso
