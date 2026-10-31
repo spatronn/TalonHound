@@ -1454,7 +1454,7 @@ function legacyRecordedRow(o) {
 }
 
 function relationDetailForOccurrence(candidate, o) {
-  return classifySourceRelationDetail(o.surrounding_text || '', {
+  const opts = {
     form: o.form,
     zone: o.zone || o.section_kind,
     value: candidate.normalized_value,
@@ -1465,7 +1465,22 @@ function relationDetailForOccurrence(candidate, o) {
     zoneReason: o.zone_reason || null,
     listStance: o.list_stance || null,
     operatorOwnedRow: o.operator_owned_row === true
-  });
+  };
+  const own = classifySourceRelationDetail(o.surrounding_text || '', opts);
+  // A bare value line ("• 93.115[.]10.35") says nothing by itself; the lead-in
+  // that introduces its run ("… these IPs are part of the C2 infrastructure.")
+  // states what every value of the run is (tl-candidates-v48). It only adds an
+  // operational reading — never overrides a benign / provider one.
+  if (o.value_line_lead_in && own.relation === SOURCE_RELATIONS.CONTEXTUAL &&
+      isIndicatorValueLine(String(o.surrounding_text || ''))) {
+    const value = o.original_value || candidate.original_value || candidate.normalized_value;
+    const lead = `${String(o.value_line_lead_in).replace(/[.\s]+$/, '')}: ${value}`;
+    const fromLead = classifySourceRelationDetail(lead, { ...opts, structuralRow: false });
+    if (fromLead.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS) {
+      return { ...fromLead, marker: 'lead_in' };
+    }
+  }
+  return own;
 }
 
 /**

@@ -210,3 +210,28 @@ test('G. a legitimate runtime download source is not an Indicator; an attacker d
   assert.ok(payload, 'payload URL extracted');
   assert.equal(member(payload), true, 'the attacker payload URL stays an Indicator');
 });
+
+test('H. bullet value paragraphs take the stance of the lead-in that introduces them', () => {
+  const cands = run(`<article>${BODY}
+<h2>Certificate pivoting</h2>
+<p>Using OSINT, this TLS certificate was presented by 3 IP addresses. Microsoft assesses that these IPs are part of the C2 infrastructure.</p>
+<p>• 93.115[.]10.35</p>
+<p>• 198.23[.]185.238</p>
+<h2>Connectivity checks</h2>
+<p>The loader first checks these legitimate public resolvers.</p>
+<p>• 9.9.9[.]9</p>
+<h2>Indicators of compromise</h2>
+<table><tr><th>Indicator</th><th>Type</th><th>Description</th></tr>
+<tr><td>193.42.11[.]108</td><td>IP address</td><td>ScreenConnect relay</td></tr></table>
+</article>`);
+  for (const ip of ['93.115.10.35', '198.23.185.238']) {
+    const c = find(cands, 'ip', ip);
+    assert.ok(c, `${ip} extracted`);
+    assert.ok(c.occurrences.some((o) => o.source_relation === 'operational_malicious'), `${ip} reads as C2 from its lead-in`);
+    assert.equal(member(c), false, 'a MODE A body value is still not an automatic Indicator');
+  }
+  const resolver = find(cands, 'ip', '9.9.9.9');
+  assert.ok(!resolver || !resolver.occurrences.some((o) => o.source_relation === 'operational_malicious'),
+    'a benign lead-in never makes its values operational');
+  assert.equal(member(find(cands, 'ip', '193.42.11.108')), true);
+});

@@ -879,6 +879,31 @@ function listLeadInsByBlock(blocks) {
   return out;
 }
 
+/** A lead-in that introduces the run of values after it ("these IPs …", "the following …"). */
+const VALUE_RUN_LEAD_IN_RE = /\b(?:these|the\s+following|following|below)\b/i;
+
+/**
+ * block id → lead-in of a run of bare value lines written as paragraphs
+ * ("Microsoft assesses that these IPs are part of the C2 infrastructure." then
+ * "• 93.115[.]10.35" paragraphs): the prose paragraph right before the run,
+ * when it introduces it (tl-candidates-v48). A heading or any other block ends
+ * the run.
+ * @param {object[]} blocks
+ */
+function valueLineLeadInsByBlock(blocks) {
+  const out = new Map();
+  let leadIn = null;
+  for (const b of blocks) {
+    const t = String(b?.text || '').trim();
+    if ((b?.type === 'paragraph' || b?.type === 'list_item') && isIndicatorValueLine(t)) {
+      if (leadIn) out.set(b.id, leadIn);
+      continue;
+    }
+    leadIn = b?.type === 'paragraph' && t.length <= 400 && VALUE_RUN_LEAD_IN_RE.test(t) ? t : null;
+  }
+  return out;
+}
+
 /**
  * Header of the table column that holds `value` (a digest cell), from the
  * block's declared headers or its first row when that row holds no digest.
@@ -919,6 +944,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // subject of its unlabelled items (tl-candidates-v33): it is the digest
   // scope of every list item up to the next non-list block.
   const listLeadIns = listLeadInsByBlock(annotated.blocks || []);
+  const valueLineLeadIns = valueLineLeadInsByBlock(annotated.blocks || []);
   /** @type {Map<string, object>} */
   const byKey = new Map();
   const urlPathBasenames = new Set();
@@ -1023,6 +1049,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       ...(extra.descriptionCell === true ? { description_cell: true } : {}),
       ...(extra.hostsFileEntry === true ? { hosts_file_entry: true } : {}),
       ...(block?.list_stance ? { list_stance: block.list_stance } : {}),
+      ...(form === OCCURRENCE_FORMS.STANDALONE && valueLineLeadIns.has(block?.id)
+        ? { value_line_lead_in: valueLineLeadIns.get(block.id).slice(0, 400) }
+        : {}),
       ...(form === OCCURRENCE_FORMS.TABLE_ROW && extra.tableRow &&
         tableRowProviderOwnedByOperation(block, extra.tableRow.source_row_index ?? extra.tableRow.row_index)
         ? { operator_owned_row: true }
