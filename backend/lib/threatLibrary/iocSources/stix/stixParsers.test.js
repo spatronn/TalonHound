@@ -37,6 +37,34 @@ test('STIX pattern: OR of SHA-1/SHA-256 flattens; AND across types does not', ()
   assert.equal(andCross.code, 'unsupported_pattern');
 });
 
+test('STIX pattern: CISA file digests narrowed by the file name flatten to the digests', () => {
+  const sha1 = 'BB79502D301BA77745B7DBC5DF4269FC7B074CDA';
+  const sha256 = 'A82E496B7B5279CB6B93393EC167DD3F50AFF1557366784B25F9E51CB23689D9';
+  const md5 = '7DD26568049FAC1B87F676ECFAAC9B11';
+  const p = parseStixPattern(
+    `[(file:hashes.'SHA-1' = '${sha1}' OR file:hashes.'SHA-256' = '${sha256}' OR file:hashes.MD5 = '${md5}') AND file:name = 'msmp.exe']`
+  );
+  assert.equal(p.ok, true);
+  assert.deepEqual(p.observables.map((o) => o.type).sort(), ['md5', 'sha1', 'sha256']);
+  assert.deepEqual(p.dropped_properties, ['file:name']);
+
+  const single = parseStixPattern(`[file:hashes.'SHA-256' = '${sha256}' AND file:name = 'msmp.exe']`);
+  assert.equal(single.ok, true);
+  assert.deepEqual(single.observables.map((o) => o.type), ['sha256']);
+
+  // A name alternative (OR at the outer level) is not one narrowed file.
+  const orName = parseStixPattern(`[file:hashes.'SHA-256' = '${sha256}' OR file:name = 'msmp.exe']`);
+  assert.equal(orName.ok, false);
+  // Two separately named files joined by AND are not flattened.
+  const twoFiles = parseStixPattern(
+    `[(file:hashes.MD5 = '${md5}' AND file:name = 'a.exe') AND (file:hashes.'SHA-1' = '${sha1}' AND file:name = 'b.exe')]`
+  );
+  assert.equal(twoFiles.ok, false);
+  // A network value beside the file is never dropped as an attribute.
+  const crossType = parseStixPattern(`[file:hashes.MD5 = '${md5}' AND domain-name:value = 'evil.example']`);
+  assert.equal(crossType.ok, false);
+});
+
 test('STIX pattern: escaped quotes and MATCHES unsupported', () => {
   assert.equal(unescapeStixString("a\\'b\\\\c"), "a'b\\c");
   const bad = parseStixPattern("[domain-name:value MATCHES '.*\\.evil']");

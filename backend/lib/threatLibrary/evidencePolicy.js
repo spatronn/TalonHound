@@ -773,6 +773,8 @@ export function buildCandidateEvidenceRecord(c) {
     scope_opening_id: o.scope_opening_id || undefined,
     typing_reason: o.typing_reason || undefined,
     list_stance: o.list_stance || undefined,
+    // Lead-in of a run of bare value-line paragraphs (tl-candidates-v48).
+    value_line_lead_in: o.value_line_lead_in || undefined,
     // A table row whose provider noun belongs to the operation (tl-candidates-v44).
     operator_owned_row: o.operator_owned_row === true ? true : undefined,
     // A value read from a table reference column (tool homepage / download link).

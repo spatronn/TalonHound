@@ -357,8 +357,11 @@ const CONTEXT_RELATION_RE =
  * MD5 …)"). Negated by any maliciousness / abuse cue in the same
  * window ("a trojanized version of the legitimate …", "legitimate-looking").
  */
+// "signed by" names a code signer — never a DKIM / mail signature, nor a
+// signature the operators made themselves ("DKIM-signed by the operator",
+// tl-candidates-v48).
 const BENIGN_COMPONENT_RE =
-  /\b(?:legitimate|legit|benign|genuine|clean|non-malicious|not\s+malicious|official(?:ly)?\s+signed|digitally\s+signed|signed\s+by|trusted\s+(?:binary|component|executable|application|program|file))\b/i;
+  /\b(?:legitimate|legit|benign|genuine|clean|non-malicious|not\s+malicious|official(?:ly)?\s+signed|digitally\s+signed|(?<!(?:dkim|dmarc|mail|e-?mail)[-\s])signed\s+by(?!\s+(?:the\s+|an?\s+)?(?:operators?|attackers?|actors?|threat[\s-]+actors?|adversar\w*|campaign|operation|intruders?)\b)|trusted\s+(?:binary|component|executable|application|program|file))\b/i;
 const BENIGN_NEGATION_RE =
   /\b(?:malicious|malware|trojan\w*|backdoor\w*|implant|fake|fraudulent|masquerad\w*|impersonat\w*|spoof\w*|disguis\w*|mimic\w*|look-?alike|typo-?squat\w*|legitimate[- ]looking|appears?\s+(?:to\s+be\s+)?legitimate|looks?\s+legitimate|abus\w*|hijack\w*|weaponi[sz]\w*|tamper\w*|modified|patched|compromised|infected|side-?load\w*|payload|loader|dropper)\b/i;
 
@@ -506,6 +509,10 @@ export function tableRowProviderOwnedByOperation(block, rowIndex) {
  */
 const RESOLUTION_SERVICE_ROW_RE =
   /\b(?:dns|domain|name|host(?:name)?|c2)\s+(?:name\s+)?resolution\s+(?:(?:is\s+)?(?:performed|done)\s+)?(?:using|via|through|with|against)\s+(?:the\s+)?OBSERVABLE\b/i;
+
+/** A genuine tool / runtime named as fetched from the value ("the legitimate X v1.2 from OBSERVABLE"). */
+const LEGITIMATE_SOURCE_CLAUSE_RE =
+  /\b(?:legitimate|genuine|official|unmodified)\s+(?:[^\s;,]+\s+){0,5}?(?:from|at|via|off)\s+(?:the\s+)?OBSERVABLE\b/i;
 
 /** Another hash / URL / IP token: the boundary of the window that describes this observable. */
 const FOREIGN_OBSERVABLE_TOKEN_RE =
@@ -1276,6 +1283,13 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     return { relation: SOURCE_RELATIONS.CONTEXTUAL, marker: 'detection_alert', authoritative, structural_row: false };
   }
 
+  // "downloads the legitimate Bun runtime v1.3.13 from OBSERVABLE": the value
+  // is where a genuine tool is fetched from, not attacker infrastructure, however
+  // operational the download verb (tl-candidates-v48).
+  if (LEGITIMATE_SOURCE_CLAUSE_RE.test(text) && !STANCE_OVERRIDE_RE.test(text)) {
+    return { relation: SOURCE_RELATIONS.REFERENCE, marker: 'benign', authoritative, structural_row: false };
+  }
+
   // Direction: the hosted object ("… used to host the domain OBSERVABLE") was
   // served by infrastructure — an operational reading, never "provider".
   if (HOSTED_OBJECT_RE.test(text) || HOSTED_OBJECT_RE.test(full)) {
@@ -1440,7 +1454,7 @@ function legacyRecordedRow(o) {
 }
 
 function relationDetailForOccurrence(candidate, o) {
-  return classifySourceRelationDetail(o.surrounding_text || '', {
+  const opts = {
     form: o.form,
     zone: o.zone || o.section_kind,
     value: candidate.normalized_value,
@@ -1451,7 +1465,22 @@ function relationDetailForOccurrence(candidate, o) {
     zoneReason: o.zone_reason || null,
     listStance: o.list_stance || null,
     operatorOwnedRow: o.operator_owned_row === true
-  });
+  };
+  const own = classifySourceRelationDetail(o.surrounding_text || '', opts);
+  // A bare value line ("• 93.115[.]10.35") says nothing by itself; the lead-in
+  // that introduces its run ("… these IPs are part of the C2 infrastructure.")
+  // states what every value of the run is (tl-candidates-v48). It only adds an
+  // operational reading — never overrides a benign / provider one.
+  if (o.value_line_lead_in && own.relation === SOURCE_RELATIONS.CONTEXTUAL &&
+      isIndicatorValueLine(String(o.surrounding_text || ''))) {
+    const value = o.original_value || candidate.original_value || candidate.normalized_value;
+    const lead = `${String(o.value_line_lead_in).replace(/[.\s]+$/, '')}: ${value}`;
+    const fromLead = classifySourceRelationDetail(lead, { ...opts, structuralRow: false });
+    if (fromLead.relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS) {
+      return { ...fromLead, marker: 'lead_in' };
+    }
+  }
+  return own;
 }
 
 /**

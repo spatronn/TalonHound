@@ -38,8 +38,12 @@
  * v10 (27-report audit): an IOC heading whose inventory is already grouped
  * into deeper indicator-class children ("## IoCs" › "### Files") continues
  * into a same-level indicator-class sibling over an inventory ("## Network").
+ * v11 (42-report audit): an indicator-class label may carry a qualifier
+ * ("Observed C2 IPs", "Representative observed domains"), and that sibling's
+ * inventory may sit under its own deeper group headings
+ * ("### Representative observed domains" › "#### Wave 1 domains" › table).
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v10';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v11';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';
