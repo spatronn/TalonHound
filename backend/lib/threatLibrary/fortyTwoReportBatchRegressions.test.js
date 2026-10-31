@@ -268,3 +268,28 @@ test('I. a role-labelled body column or hunting list makes a MODE A value promot
   const ncsi = find(cands, 'ip', '13.107.4.52');
   assert.ok(!ncsi || eligible(ncsi) === false, 'a neutral list name is not role evidence');
 });
+
+test('J. values the publisher enumerates as delivery hosts are promotable, never members', () => {
+  const cands = run(`<article>${BODY}
+<h2>Delivery</h2>
+<p>Telemetry ties each downloaded archive to rotating delivery hosts (yimxg25tiy[.]com/73inst, cc8ttkv35b[.]com/7qinst) and the impersonation page that served it.</p>
+<p>Users later browsed docs-portal[.]example for documentation.</p>
+<h2>Indicators of compromise (IOC)</h2>
+<table><tr><th>Indicator</th><th>Type</th></tr>
+<tr><td>gehie246[.]com</td><td>Domain</td></tr></table>
+</article>`);
+  const eligible = (c) => publicPromoteEligibility({
+    ...c,
+    has_original_document_occurrence: true,
+    review_status: 'context_only',
+    evidence: buildCandidateEvidenceRecord(c)
+  }).promotable;
+  for (const u of ['yimxg25tiy.com/73inst', 'cc8ttkv35b.com/7qinst']) {
+    const c = find(cands, 'url', u);
+    assert.ok(c, `${u} extracted`);
+    assert.equal(member(c), false);
+    assert.equal(eligible(c), true, `${u} is promotable as a delivery host`);
+  }
+  const doc = find(cands, 'domain', 'docs-portal.example');
+  assert.ok(!doc || eligible(doc) === false, 'an unrelated narrative domain is not promotable');
+});
