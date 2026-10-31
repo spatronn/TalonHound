@@ -287,8 +287,15 @@ export {
  * 500) as its scope window. A 140-character focus window ended before
  * "Legitimate binary" when a long filename sat between the earlier digests
  * and the description, so those digests stayed Indicators.
+ * v48 (42-report audit): tl-section-tree-v11 / tl-table-v14 (qualified
+ * indicator-class sibling groups, bullet / backtick cells, category cells keep
+ * the column's declared network type); the operation-owned provider row check
+ * reads the publisher grid row (a promoted header row shifted it by one);
+ * "DKIM-signed by the operator" is no signed-component stance; a genuine tool
+ * named as fetched from a value ("the legitimate <tool> from <URL>") makes
+ * that value a benign source.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v47';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v48';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -1017,7 +1024,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       ...(extra.hostsFileEntry === true ? { hosts_file_entry: true } : {}),
       ...(block?.list_stance ? { list_stance: block.list_stance } : {}),
       ...(form === OCCURRENCE_FORMS.TABLE_ROW && extra.tableRow &&
-        tableRowProviderOwnedByOperation(block, extra.tableRow.row_index) ? { operator_owned_row: true } : {})
+        tableRowProviderOwnedByOperation(block, extra.tableRow.source_row_index ?? extra.tableRow.row_index)
+        ? { operator_owned_row: true }
+        : {})
     };
   }
 
@@ -1610,6 +1619,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           table_id: block.id,
           page: block.page ?? null,
           row_index: row.row_index,
+          source_row_index: row.source_row_index,
           column_index: v.column_index,
           // Publisher header of the value's own column ("Domain / IP", "URL").
           column_header: columnLabels?.[v.column_index] || null,
@@ -1646,7 +1656,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           tableRow,
           rowText,
           evidenceRowText: fullRowText,
-          typeLabel: row.type_cell || null,
+          typeLabel: v.type_label !== undefined ? v.type_label : row.type_cell || null,
           declaredType: v.declared_type || null,
           typing: {
             typing_reason: v.typing_reason || null,

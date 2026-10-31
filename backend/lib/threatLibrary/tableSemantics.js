@@ -80,8 +80,13 @@ function embeddedAbsoluteUrl(token) {
  * v13: a row whose type cell names request content ("macOS POST body",
  * "User-Agent", "Request header") asserts no indicator: its value is a string
  * the malware sends, not infrastructure.
+ * v14 (42-report audit): bullet glyphs separate the values of one cell
+ * ("•h1 •h2", one bullet per value) and backticks wrapping a cell value
+ * ("`host`") are formatting, not part of the value. A free-text category
+ * cell that declares no type never overrides the network type the indicator
+ * column's own header declares ("Spoofed domain" over "Input method").
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v13';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v14';
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
@@ -305,7 +310,20 @@ const IPV4_PORT_CELL_RE = /^((?:\d{1,3}\.){3}\d{1,3})[:：](\d{1,5})$/;
 const HOST_PORT_CELL_RE = /^((?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63})[:：](\d{1,5})$/i;
 /** DNS identity shape: labels + alphabetic TLD (version strings like 7.4.8 never qualify). */
 const DOMAIN_SHAPE_RE = /^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z]{2,63}\.?$/i;
-const CELL_TOKEN_SPLIT_RE = /[\s,;，；|]+/;
+const CELL_TOKEN_SPLIT_RE = /[\s,;，；|•●▪◦‣∙]+/;
+/** List bullets written inside one cell ("•h1 •h2"): value separators, never value text. */
+const CELL_BULLET_RE = /[•●▪◦‣∙]/g;
+
+/**
+ * Cell text as the publisher meant it: bullets between values become spaces
+ * and a value wrapped whole in backticks ("`host`") is unwrapped (tl-table-v14).
+ * @param {unknown} cellText
+ */
+function normalizeCellText(cellText) {
+  const text = String(cellText || '').replace(CELL_BULLET_RE, ' ').replace(/\s+/g, ' ').trim();
+  const wrapped = /^`([^`]+)`$/.exec(text);
+  return wrapped ? wrapped[1].trim() : text;
+}
 const TRAILING_PUNCT_RE = /[,;:.，；。]+$/;
 
 /**
@@ -425,7 +443,7 @@ export function joinWrappedUrlTail(text) {
  * @param {{ typeLabel?: string|null }} [ctx] row type cell / column label
  */
 export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
-  const source = String(cellText || '').replace(/\s+/g, ' ').trim();
+  const source = normalizeCellText(cellText);
   // A URL the publisher's layout wrapped inside one cell ("http://h:443/" then
   // "payload.exe" on the next line): one value; `raw` keeps the cell as written.
   const refanged = refangObservable(joinWrappedUrlTail(source) || source);
@@ -529,7 +547,7 @@ function markHostsFileEntries(tokens, values) {
 }
 
 /** Brackets / quotes wrapping a token inside a mixed cell ("(SHA-256", "<hash>)"). */
-const WRAPPING_PUNCT_RE = /^[(\[{<"'“‘«]+|[)\]}>"'”’»,;.]+$/g;
+const WRAPPING_PUNCT_RE = /^[(\[{<"'“‘«`]+|[)\]}>"'”’»,;.`]+$/g;
 /** Separator tokens between a file identity and its metadata ("-", "|", "=", "→"). */
 const SEPARATOR_TOKEN_RE = /^[-–—|/=:→>]+$/;
 
@@ -785,7 +803,7 @@ function subHeaderRowDeclarations(cells, indicatorCols) {
 }
 
 function cellIsObservable(cellText) {
-  const text = String(cellText || '').replace(/\s+/g, ' ').trim();
+  const text = normalizeCellText(cellText);
   const refanged = refangObservable(joinWrappedUrlTail(text) || text);
   if (!refanged) return null;
   if (refanged.length <= 512 && !/\s/.test(refanged)) {
@@ -1270,6 +1288,9 @@ export function interpretIocTable(block, opts = {}) {
     const description = descCols.map((c) => String(cells[c.index] || '').trim()).filter(Boolean).join(' · ') || null;
     const row = {
       row_index: i,
+      // Index of this row in the block's own `table.rows` (a promoted header
+      // row shifts it by one): what consumers of the raw grid must read (v14).
+      source_row_index: i + (result.header_promoted ? 1 : 0),
       declared_type: declaredRow,
       type_cell: typeCol ? String(cells[typeCol.index] || '').trim() || null : null,
       description,
@@ -1284,14 +1305,21 @@ export function interpretIocTable(block, opts = {}) {
       if (!cell.trim()) continue;
       const segment = segmentDeclared && segmentDeclared.has(col.index) ? segmentDeclared.get(col.index) : undefined;
       const declared = segment !== undefined ? segment.declared || declaredRow : col.declared_type || declaredRow;
+      // A type cell that declares no type ("Input method", "Peripherals") is a
+      // category, not a type label: the indicator column's own declared header
+      // ("Spoofed domain") keeps typing the value (tl-table-v14).
+      const typeCell = typeCol ? String(cells[typeCol.index] || '').trim() : '';
+      const typeCellLabels = Boolean(typeCell) && (Boolean(declaredRow) || !col.declared_type || segment !== undefined);
       const typeLabel =
-        (typeCol ? String(cells[typeCol.index] || '').trim() : '') || (segment !== undefined ? segment.label : col.header) || null;
+        (typeCellLabels ? typeCell : '') || (segment !== undefined ? segment.label : col.header) || null;
       const parsed = parseIndicatorCell(cell, declared, { typeLabel });
       for (const v of parsed.values) {
         row.values.push({
           ...v,
           column_index: col.index,
           indicator_cell: cell.trim(),
+          // The label that typed this value (category cells excluded, v14).
+          type_label: typeLabel,
           declared_type: declared ? declared.type : null,
           declared_endpoint: declared ? declared.endpoint : false
         });

@@ -284,7 +284,7 @@ function declaresIndicatorSection(blocks, i, chromeIds) {
  * "Domains"): the label of one group of a publisher IOC inventory.
  */
 const INDICATOR_CLASS_LABEL_RE =
-  /^(?:network|hosts?|files?|e-?mail|registry|endpoint|infrastructure|domains?|ips?|ip\s+addresses|urls?|hash(?:es)?|samples?|c2|servers?)\b/i;
+  /^(?:(?:observed|representative|additional|known|associated|related|malicious|other|selected|campaign)\s+){0,2}(?:network|hosts?|files?|e-?mail|registry|endpoint|infrastructure|domains?|ips?|ip\s+addresses|urls?|hash(?:es)?|samples?|c2|servers?)\b/i;
 
 function isIndicatorClassLabel(t) {
   const s = String(t || '').trim();
@@ -309,6 +309,27 @@ function leadInWithSiblingGroups(blocks, i, chromeIds, level) {
     }
     if (hasObservableInventory(b) || b.type === 'table' || b.type === 'list' || b.type === 'list_item') return false;
     prose += 1;
+  }
+  return false;
+}
+
+/**
+ * The heading at `i` (level `level`) groups its inventory under deeper
+ * headings ("### Representative observed domains" › "#### Wave 1 domains" ›
+ * table): an inventory block follows within its own subtree before any heading
+ * at `level` or above (tl-section-tree-v11).
+ */
+function lookAheadGroupedInventory(blocks, i, chromeIds, level, depth = 6) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < depth; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') {
+      if (!Number.isInteger(b.level) || b.level <= level) return false;
+      continue;
+    }
+    seen += 1;
+    if (isInventoryish(b)) return true;
   }
   return false;
 }
@@ -440,7 +461,7 @@ export function annotateSectionTree(doc, opts = {}) {
     const classSibling =
       !siblingGroup && Boolean(root?.classGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
       !(zone && AUTHORITATIVE.has(zone)) && Number.isInteger(b.level) && b.level === root.level &&
-      isIndicatorClassLabel(t) && inventoryNext;
+      isIndicatorClassLabel(t) && (inventoryNext || lookAheadGroupedInventory(blocks, i, chromeIds, b.level));
     if (classSibling) {
       while (stack.length && stack[stack.length - 1] !== root) stack.pop();
       treatAsSubgroup = true;
