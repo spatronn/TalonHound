@@ -113,6 +113,26 @@ function classifyCompound(body, comparisonCount) {
   return comparisonCount > 1 ? 'unknown' : 'single';
 }
 
+/** File attributes that only narrow which file the digests describe. */
+const FILE_ATTRIBUTE_PROP_RE = /^(?:name|size|mime_type)$/i;
+
+/**
+ * The file digests are one parenthesised OR group (or a single digest), joined
+ * to the file's attributes by AND only: `(h1 OR h2) AND file:name = 'x'`.
+ * @param {string} body
+ */
+function sameFileHashAlternatives(body) {
+  const masked = String(body || '').replace(COMPARISON_RE, (m) => (/:hashes\./i.test(m) ? ' H ' : ' A '));
+  const groups = masked.match(/\(([^()]*)\)/g) || [];
+  for (const g of groups) {
+    if (/\bA\b/.test(g) || /\bAND\b/i.test(g)) return false;
+  }
+  const outer = masked.replace(/\([^()]*\)/g, ' G ').toUpperCase();
+  if (/[()]/.test(outer) || /\bOR\b/.test(outer)) return false;
+  const hashTerms = (outer.match(/\b[HG]\b/g) || []).length;
+  return hashTerms === 1;
+}
+
 /**
  * Parse a STIX Indicator pattern into observables when semantics are preserved.
  * OR of hash alternatives for the same file → multiple hash observables (OK).
@@ -159,6 +179,24 @@ export function parseStixPattern(pattern) {
   // is an attribute of that file, not a reason to drop its supported hashes.
   const fileHashCompound = comparisons.length > 1
     && comparisons.every((c) => c.objectType === 'file' && /^hashes\./i.test(c.property));
+  // One file whose digests are alternatives, narrowed by that file's own
+  // attributes (CISA: `[(file:hashes.'SHA-1' = … OR file:hashes.MD5 = …) AND
+  // file:name = 'x.exe']`): the name / size only narrow the same object, so the
+  // supported digests are the file's Indicators and the attributes are dropped.
+  const fileAttributes = comparisons.filter((c) => c.objectType === 'file' && FILE_ATTRIBUTE_PROP_RE.test(c.property));
+  const fileHashes = comparisons.filter((c) => c.objectType === 'file' && /^hashes\./i.test(c.property) && c.type && c.value);
+  if (
+    fileAttributes.length && fileHashes.length &&
+    fileAttributes.length + fileHashes.length === comparisons.length &&
+    sameFileHashAlternatives(body)
+  ) {
+    return {
+      ok: true,
+      observables: fileHashes.map((c) => ({ type: c.type, value: c.value, property: `${c.objectType}:${c.property}` })),
+      compound: fileHashes.length > 1 ? 'or_same_object' : 'single',
+      dropped_properties: fileAttributes.map((c) => `${c.objectType}:${c.property}`)
+    };
+  }
   const droppedProperties = [];
   const usable = fileHashCompound
     ? comparisons.filter((c) => {
