@@ -20,7 +20,9 @@ import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { extractReportCandidates } from './extractionStages.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
-import { isReportIndicatorMember } from './indicatorMembership.js';
+import { isReportIndicatorMember, isUnionReportIndicatorMember } from './indicatorMembership.js';
+import { toLinkedSourceCandidate } from './iocSources/linkedCandidate.js';
+import { demoteFilenameDomains } from './iocSources/extract.js';
 import { publicPromoteEligibility } from './promotion.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 import { TABLE_SEMANTICS_VERSION, interpretIocTable } from './tableSemantics.js';
@@ -292,4 +294,26 @@ test('J. values the publisher enumerates as delivery hosts are promotable, never
   }
   const doc = find(cands, 'domain', 'docs-portal.example');
   assert.ok(!doc || eligible(doc) === false, 'an unrelated narrative domain is not promotable');
+});
+
+test('K. a linked pack that publishes a report file name as a domain is Context Only', () => {
+  const prior = [
+    { candidate_type: 'technical_artifact', normalized_value: 'sqlmap.py', has_original_document_occurrence: true },
+    { candidate_type: 'technical_artifact', normalized_value: 'BBScan.py', has_original_document_occurrence: true },
+    { candidate_type: 'domain', normalized_value: 'natcloudservice.com', has_original_document_occurrence: true }
+  ];
+  const linked = [
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'sqlmap.py' }),
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'bbscan.py' }),
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'natcloudservice.com' }),
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'evil-update.pl' })
+  ];
+  const out = demoteFilenameDomains(linked, prior);
+  const by = (v) => out.find((c) => c.normalized_value === v);
+  for (const v of ['sqlmap.py', 'bbscan.py']) {
+    assert.equal(by(v).assessment, 'context_only', `${v} is the report's file, not a host`);
+    assert.equal(isUnionReportIndicatorMember(by(v)), false);
+  }
+  assert.equal(isUnionReportIndicatorMember(by('natcloudservice.com')), true, 'a real domain stays a linked Indicator');
+  assert.equal(isUnionReportIndicatorMember(by('evil-update.pl')), true, 'a .pl domain the report never lists as a file stays');
 });
