@@ -104,12 +104,35 @@ export async function createManualIocSource(pool, reportId, { url, requestedBy }
 }
 
 async function insertManualSource(pool, reportId, url, canonical, requestedBy) {
+  // Re-adding a previously dismissed URL reopens it as discovered so the
+  // subsequent inspect job (queued by the Add Source route) is legal.
+  // Extracted / in-flight rows are left untouched (updated_at only).
   const { rows } = await pool.query(
     `INSERT INTO threat_report_ioc_sources (
        report_id, original_url, canonical_url, source_type, discovery_method,
        discovery_evidence, lifecycle_status
      ) VALUES ($1,$2,$3,'unknown','manual',$4::jsonb,$5)
      ON CONFLICT (report_id, canonical_url) DO UPDATE SET
+       lifecycle_status = CASE
+         WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN 'discovered'
+         ELSE threat_report_ioc_sources.lifecycle_status
+       END,
+       dismissed_by = CASE
+         WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN NULL
+         ELSE threat_report_ioc_sources.dismissed_by
+       END,
+       dismissed_at = CASE
+         WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN NULL
+         ELSE threat_report_ioc_sources.dismissed_at
+       END,
+       error_code = CASE
+         WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN NULL
+         ELSE threat_report_ioc_sources.error_code
+       END,
+       error_detail = CASE
+         WHEN threat_report_ioc_sources.lifecycle_status = 'dismissed' THEN NULL
+         ELSE threat_report_ioc_sources.error_detail
+       END,
        updated_at = NOW()
      RETURNING *`,
     [
@@ -128,6 +151,10 @@ export async function applySourcePatch(pool, sourceId, patch) {
     const { rows } = await pool.query(`SELECT * FROM threat_report_ioc_sources WHERE id = $1`, [sourceId]);
     return rows[0] || null;
   }
+  // dismissed_* must be clearable (re-inspect / approve after dismiss). COALESCE
+  // would keep the prior UUID when the patch sets null.
+  const clearDismissedBy = Object.hasOwn(patch, 'dismissed_by');
+  const clearDismissedAt = Object.hasOwn(patch, 'dismissed_at');
   const { rows } = await pool.query(
     `UPDATE threat_report_ioc_sources SET
        lifecycle_status = COALESCE($2, lifecycle_status),
@@ -142,8 +169,8 @@ export async function applySourcePatch(pool, sourceId, patch) {
        error_detail = $11,
        approved_by = COALESCE($12::uuid, approved_by),
        approved_at = COALESCE($13, approved_at),
-       dismissed_by = COALESCE($14::uuid, dismissed_by),
-       dismissed_at = COALESCE($15, dismissed_at),
+       dismissed_by = CASE WHEN $16::boolean THEN $14::uuid ELSE COALESCE($14::uuid, dismissed_by) END,
+       dismissed_at = CASE WHEN $17::boolean THEN $15 ELSE COALESCE($15, dismissed_at) END,
        updated_at = NOW()
      WHERE id = $1
      RETURNING *`,
@@ -162,7 +189,9 @@ export async function applySourcePatch(pool, sourceId, patch) {
       patch.approved_by ?? null,
       patch.approved_at ?? null,
       patch.dismissed_by ?? null,
-      patch.dismissed_at ?? null
+      patch.dismissed_at ?? null,
+      clearDismissedBy,
+      clearDismissedAt
     ]
   );
   return rows[0] || null;

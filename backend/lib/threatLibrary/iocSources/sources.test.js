@@ -76,6 +76,18 @@ test('source state machine: dismiss and approve guards', () => {
   assert.equal(transitionPatch({ lifecycle_status: 'attached' }, 'approve').idempotent, true);
 });
 
+test('source state machine: dismissed packs can be re-inspected', () => {
+  const dismissed = {
+    lifecycle_status: 'dismissed',
+    dismissed_by: 'u1',
+    dismissed_at: '2026-01-01T00:00:00.000Z'
+  };
+  const patch = transitionPatch(dismissed, 'start_inspect');
+  assert.equal(patch.lifecycle_status, 'inspecting');
+  assert.equal(patch.dismissed_by, null);
+  assert.equal(patch.dismissed_at, null);
+});
+
 test('json indicator schema extraction', () => {
   const text = jsonIndicatorsToText(JSON.stringify({
     indicators: [
