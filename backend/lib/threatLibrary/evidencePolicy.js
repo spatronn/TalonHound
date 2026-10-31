@@ -775,6 +775,8 @@ export function buildCandidateEvidenceRecord(c) {
     list_stance: o.list_stance || undefined,
     // Lead-in of a run of bare value-line paragraphs (tl-candidates-v48).
     value_line_lead_in: o.value_line_lead_in || undefined,
+    // Name of the hunting-query / code list the value sits in (tl-candidates-v48).
+    code_list_name: o.code_list_name || undefined,
     // A table row whose provider noun belongs to the operation (tl-candidates-v44).
     operator_owned_row: o.operator_owned_row === true ? true : undefined,
     // A value read from a table reference column (tool homepage / download link).

@@ -124,10 +124,14 @@ const FILE_ATTRIBUTE_PROP_RE = /^(?:name|size|mime_type)$/i;
 function sameFileHashAlternatives(body) {
   const masked = String(body || '').replace(COMPARISON_RE, (m) => (/:hashes\./i.test(m) ? ' H ' : ' A '));
   const groups = masked.match(/\(([^()]*)\)/g) || [];
+  // A group of digests is one OR set of alternatives; a group of attributes
+  // only (`(file:name = 'a' OR file:name = 'b')`) narrows the same file.
   for (const g of groups) {
-    if (/\bA\b/.test(g) || /\bAND\b/i.test(g)) return false;
+    if (/\bH\b/.test(g) && (/\bA\b/.test(g) || /\bAND\b/i.test(g))) return false;
   }
-  const outer = masked.replace(/\([^()]*\)/g, ' G ').toUpperCase();
+  const outer = masked
+    .replace(/\([^()]*\)/g, (g) => (/\bH\b/.test(g) ? ' G ' : ' A '))
+    .toUpperCase();
   if (/[()]/.test(outer) || /\bOR\b/.test(outer)) return false;
   const hashTerms = (outer.match(/\b[HG]\b/g) || []).length;
   return hashTerms === 1;
@@ -152,7 +156,9 @@ export function parseStixPattern(pattern) {
     return { ok: false, code: 'unsupported_pattern', message: 'Pattern is not a bracketed STIX comparison' };
   }
 
-  const body = normalized.slice(1, -1).trim();
+  // A numeric file attribute (`file:size = 4388888`) is written unquoted; quote
+  // it so it parses as the attribute comparison it is.
+  const body = normalized.slice(1, -1).trim().replace(/(\bfile:size\s*=\s*)(\d+)\b/gi, "$1'$2'");
   // Reject MATCHES / LIKE / EXISTS / ISSUBSET-of-object-path complexity beyond value ISSUBSET.
   if (/\b(?:MATCHES|LIKE|EXISTS|FOLLOWEDBY)\b/i.test(body)) {
     return { ok: false, code: 'unsupported_pattern', message: 'Pattern uses MATCHES/LIKE/EXISTS/FOLLOWEDBY' };
@@ -184,17 +190,20 @@ export function parseStixPattern(pattern) {
   // file:name = 'x.exe']`): the name / size only narrow the same object, so the
   // supported digests are the file's Indicators and the attributes are dropped.
   const fileAttributes = comparisons.filter((c) => c.objectType === 'file' && FILE_ATTRIBUTE_PROP_RE.test(c.property));
-  const fileHashes = comparisons.filter((c) => c.objectType === 'file' && /^hashes\./i.test(c.property) && c.type && c.value);
+  const fileDigests = comparisons.filter((c) => c.objectType === 'file' && /^hashes\./i.test(c.property));
+  const fileHashes = fileDigests.filter((c) => c.type && c.value);
   if (
     fileAttributes.length && fileHashes.length &&
-    fileAttributes.length + fileHashes.length === comparisons.length &&
+    fileAttributes.length + fileDigests.length === comparisons.length &&
     sameFileHashAlternatives(body)
   ) {
+    // An algorithm TalonHound does not index (SSDEEP, TLSH) is dropped like an attribute.
+    const dropped = [...fileDigests.filter((c) => !(c.type && c.value)), ...fileAttributes];
     return {
       ok: true,
       observables: fileHashes.map((c) => ({ type: c.type, value: c.value, property: `${c.objectType}:${c.property}` })),
       compound: fileHashes.length > 1 ? 'or_same_object' : 'single',
-      dropped_properties: fileAttributes.map((c) => `${c.objectType}:${c.property}`)
+      dropped_properties: dropped.map((c) => `${c.objectType}:${c.property}`)
     };
   }
   const droppedProperties = [];

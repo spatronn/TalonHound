@@ -60,6 +60,17 @@ test('STIX pattern: CISA file digests narrowed by the file name flatten to the d
     `[(file:hashes.MD5 = '${md5}' AND file:name = 'a.exe') AND (file:hashes.'SHA-1' = '${sha1}' AND file:name = 'b.exe')]`
   );
   assert.equal(twoFiles.ok, false);
+  // A set of alternative names and an unquoted size still narrow the same file.
+  const nameSet = parseStixPattern(
+    `[(file:hashes.'SHA-1' = '${sha1}' OR file:hashes.MD5 = '${md5}' OR file:hashes.SSDEEP = '384:abc:def') AND (file:name = 'nb.dat' OR file:name = 'nbtscan.exe')]`
+  );
+  assert.equal(nameSet.ok, true);
+  assert.deepEqual(nameSet.observables.map((o) => o.type).sort(), ['md5', 'sha1']);
+  const sized = parseStixPattern(
+    `[(file:hashes.'SHA-256' = '${sha256}' OR file:hashes.MD5 = '${md5}') AND file:name = 'dllhost.exe' AND file:size = 4388888]`
+  );
+  assert.equal(sized.ok, true);
+  assert.deepEqual(sized.observables.map((o) => o.type).sort(), ['md5', 'sha256']);
   // A network value beside the file is never dropped as an attribute.
   const crossType = parseStixPattern(`[file:hashes.MD5 = '${md5}' AND domain-name:value = 'evil.example']`);
   assert.equal(crossType.ok, false);
