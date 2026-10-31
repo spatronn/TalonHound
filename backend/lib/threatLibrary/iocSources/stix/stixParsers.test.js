@@ -350,3 +350,22 @@ test('EVIDENCE_MEMBERSHIP constants stable', () => {
   assert.equal(EVIDENCE_MEMBERSHIP.INDICATOR, 'indicator');
   assert.equal(EVIDENCE_MEMBERSHIP.CONTEXT_ONLY, 'context_only');
 });
+
+test('STIX JSON: a url object holding only a hostname is that domain', () => {
+  const bundle = {
+    type: 'bundle',
+    id: 'bundle--host',
+    objects: [
+      { type: 'indicator', id: 'indicator--h1', pattern_type: 'stix', pattern: "[url:value = 'www.96html.com']", valid_from: '2026-01-01T00:00:00.000Z' },
+      { type: 'indicator', id: 'indicator--h2', pattern_type: 'stix', pattern: "[url:value = 'upl.natcloudservice.com/ews']", valid_from: '2026-01-01T00:00:00.000Z' },
+      { type: 'indicator', id: 'indicator--h3', pattern_type: 'stix', pattern: "[url:value = 'https://evil.example/x']", valid_from: '2026-01-01T00:00:00.000Z' }
+    ]
+  };
+  const parsed = parseStixJsonSource(JSON.stringify(bundle), { now: new Date('2026-06-01T00:00:00Z') });
+  assert.equal(parsed.ok, true);
+  const ids = candidatesFromStixEvidence(parsed.evidence).map((c) => `${c.candidate_type}:${c.normalized_value}`);
+  assert.ok(ids.includes('domain:www.96html.com'), ids.join(' '));
+  assert.ok(!ids.some((i) => i.startsWith('url:') && i.includes('www.96html.com')), 'no http://host/ URL identity');
+  assert.ok(ids.some((i) => i.startsWith('url:') && i.includes('upl.natcloudservice.com/ews')), 'a host with a path stays a URL');
+  assert.ok(ids.includes('url:https://evil.example/x'));
+});

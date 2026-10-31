@@ -7,6 +7,23 @@ import { EVIDENCE_MEMBERSHIP } from './evidence.js';
 
 const NETWORK_TYPES = new Set(['ip', 'ipv6', 'cidr', 'domain', 'url', 'md5', 'sha1', 'sha256']);
 
+/** A hostname with no scheme and no path: what CISA writes as `url:value = 'www.example.com'`. */
+const BARE_HOST_RE = /^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?\.)+[a-z][a-z0-9-]{1,62}\.?$/i;
+
+/**
+ * A STIX `url` object whose value is only a hostname names that host, not a
+ * resource: read it as the domain so the pack never adds an `http://host/`
+ * URL identity beside the advisory's own domain (42-report audit, 35483).
+ * @param {string} type
+ * @param {{ original_value?: string, normalized_value?: string }} e
+ */
+function bareHostUrlAsDomain(type, e) {
+  if (type !== 'url') return null;
+  const raw = String(e.original_value || '').trim();
+  if (!raw || raw.includes('/') || raw.includes(':') || !BARE_HOST_RE.test(raw)) return null;
+  return raw.replace(/\.$/, '').toLowerCase();
+}
+
 /**
  * @param {import('./evidence.js').StixEvidence[]} evidence
  * @param {{ sourcePublicId?: string, filePath?: string }} [meta]
@@ -15,11 +32,13 @@ export function candidatesFromStixEvidence(evidence, meta = {}) {
   const out = [];
   const seen = new Set();
 
-  for (const e of evidence || []) {
+  for (let e of evidence || []) {
     if (!e) continue;
     if (e.membership === EVIDENCE_MEMBERSHIP.UNSUPPORTED) continue;
     if (e.membership === EVIDENCE_MEMBERSHIP.EXCLUDED) continue;
 
+    const bareHost = bareHostUrlAsDomain(String(e.observable_type || '').toLowerCase(), e);
+    if (bareHost) e = { ...e, observable_type: 'domain', normalized_value: bareHost, original_value: e.original_value };
     const type = String(e.observable_type || '').toLowerCase();
     // email and other non-network types stay out of Indicator candidate lists
     // (they remain in evidence/summary as context_only).

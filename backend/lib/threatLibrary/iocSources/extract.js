@@ -25,6 +25,37 @@ function hostPathIdentity(value) {
 }
 
 /**
+ * A linked pack that publishes a file name as a domain ("domain-name:value =
+ * 'sqlmap.py'" in a CISA STIX bundle) when the report itself lists that exact
+ * value as a file / tool: `.py`, `.pl` are real TLDs, so syntax alone cannot
+ * tell. The report's own typing wins and the linked row is Context Only, never
+ * an Indicator (42-report audit, 35483).
+ * @param {object[]} candidates linked-source candidates
+ * @param {object[]} priorRows the report's persisted candidate rows
+ */
+export function demoteFilenameDomains(candidates, priorRows) {
+  const artifacts = new Set(
+    (priorRows || [])
+      .filter((r) => r.has_original_document_occurrence !== false && FILE_IDENTITY_TYPES.has(String(r.candidate_type || '')))
+      .map((r) => String(r.normalized_value || '').toLowerCase())
+  );
+  if (!artifacts.size) return candidates;
+  return candidates.map((c) => {
+    if (c.candidate_type !== 'domain' || !artifacts.has(String(c.normalized_value || '').toLowerCase())) return c;
+    return {
+      ...c,
+      assessment: 'context_only',
+      role: 'reference',
+      match_state: 'context_only',
+      evidence: { ...(c.evidence || {}), linked_type_conflict: 'original_document_file_identity' }
+    };
+  });
+}
+
+/** Original-document types that name a file, never a host. */
+const FILE_IDENTITY_TYPES = new Set(['technical_artifact', 'file_name', 'file_path', 'relative_path']);
+
+/**
  * A scheme-less URL of a linked pack ("docsend.online/download/drivers") is
  * the report's existing absolute URL with that host + path
  * ("https://docsend.online/download/drivers") when exactly one such URL is
@@ -271,7 +302,7 @@ export async function extractIocSource(pool, source, deps = {}) {
       return { ok: false, code: 'no_indicators' };
     }
 
-    let candidates = foldSchemeLessLinkedUrls([...mergedByKey.values()], priorRows);
+    let candidates = demoteFilenameDomains(foldSchemeLessLinkedUrls([...mergedByKey.values()], priorRows), priorRows);
     const matched = await bulkMatchCandidates(pool, candidates);
     candidates = Array.isArray(matched?.candidates) ? matched.candidates : candidates;
 

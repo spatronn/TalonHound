@@ -168,7 +168,7 @@ const PROVIDER_POLICIES = new Set([
  * is intentionally absent: a connectivity check uses the same verb.
  */
 const POSITIVE_USE_RE =
-  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing|ed)?|payloads?|phish(?:ing|es|ed)?|malware\s+download|downloaded?\s+from|drops?\s+from|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure|endpoint)|staging\s+server|(?:used|abused|leveraged)\s+to\s+(?:host|deliver|stage|phish|serve))\b/i;
+  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing|ed)?|payloads?|phish(?:ing|es|ed)?|malware\s+download|downloaded?\s+from|drops?\s+from|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure|endpoint)|staging\s+server|delivery\s+(?:hosts?|domains?|servers?|endpoints?|infrastructure)|(?:used|abused|leveraged)\s+to\s+(?:host|deliver|stage|phish|serve))\b/i;
 
 /** A probe of whether the host is online, not a claim the destination is malicious. */
 const CONNECTIVITY_RE =

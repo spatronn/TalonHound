@@ -20,7 +20,9 @@ import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { extractReportCandidates } from './extractionStages.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
-import { isReportIndicatorMember } from './indicatorMembership.js';
+import { isReportIndicatorMember, isUnionReportIndicatorMember } from './indicatorMembership.js';
+import { toLinkedSourceCandidate } from './iocSources/linkedCandidate.js';
+import { demoteFilenameDomains } from './iocSources/extract.js';
 import { publicPromoteEligibility } from './promotion.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 import { TABLE_SEMANTICS_VERSION, interpretIocTable } from './tableSemantics.js';
@@ -267,4 +269,51 @@ test('I. a role-labelled body column or hunting list makes a MODE A value promot
   assert.equal(eligible(c2), true, 'a c2ip hunting-list value is promotable');
   const ncsi = find(cands, 'ip', '13.107.4.52');
   assert.ok(!ncsi || eligible(ncsi) === false, 'a neutral list name is not role evidence');
+});
+
+test('J. values the publisher enumerates as delivery hosts are promotable, never members', () => {
+  const cands = run(`<article>${BODY}
+<h2>Delivery</h2>
+<p>Telemetry ties each downloaded archive to rotating delivery hosts (yimxg25tiy[.]com/73inst, cc8ttkv35b[.]com/7qinst) and the impersonation page that served it.</p>
+<p>Users later browsed docs-portal[.]example for documentation.</p>
+<h2>Indicators of compromise (IOC)</h2>
+<table><tr><th>Indicator</th><th>Type</th></tr>
+<tr><td>gehie246[.]com</td><td>Domain</td></tr></table>
+</article>`);
+  const eligible = (c) => publicPromoteEligibility({
+    ...c,
+    has_original_document_occurrence: true,
+    review_status: 'context_only',
+    evidence: buildCandidateEvidenceRecord(c)
+  }).promotable;
+  for (const u of ['yimxg25tiy.com/73inst', 'cc8ttkv35b.com/7qinst']) {
+    const c = find(cands, 'url', u);
+    assert.ok(c, `${u} extracted`);
+    assert.equal(member(c), false);
+    assert.equal(eligible(c), true, `${u} is promotable as a delivery host`);
+  }
+  const doc = find(cands, 'domain', 'docs-portal.example');
+  assert.ok(!doc || eligible(doc) === false, 'an unrelated narrative domain is not promotable');
+});
+
+test('K. a linked pack that publishes a report file name as a domain is Context Only', () => {
+  const prior = [
+    { candidate_type: 'technical_artifact', normalized_value: 'sqlmap.py', has_original_document_occurrence: true },
+    { candidate_type: 'technical_artifact', normalized_value: 'BBScan.py', has_original_document_occurrence: true },
+    { candidate_type: 'domain', normalized_value: 'natcloudservice.com', has_original_document_occurrence: true }
+  ];
+  const linked = [
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'sqlmap.py' }),
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'bbscan.py' }),
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'natcloudservice.com' }),
+    toLinkedSourceCandidate({ candidate_type: 'domain', normalized_value: 'evil-update.pl' })
+  ];
+  const out = demoteFilenameDomains(linked, prior);
+  const by = (v) => out.find((c) => c.normalized_value === v);
+  for (const v of ['sqlmap.py', 'bbscan.py']) {
+    assert.equal(by(v).assessment, 'context_only', `${v} is the report's file, not a host`);
+    assert.equal(isUnionReportIndicatorMember(by(v)), false);
+  }
+  assert.equal(isUnionReportIndicatorMember(by('natcloudservice.com')), true, 'a real domain stays a linked Indicator');
+  assert.equal(isUnionReportIndicatorMember(by('evil-update.pl')), true, 'a .pl domain the report never lists as a file stays');
 });
