@@ -53,8 +53,8 @@ function find(cands, type, value) {
 const BODY = '<h2>Analysis</h2><p>The operators ran a multi-stage intrusion against technology targets during the quarter.</p>'
   + '<p>They staged payloads on rented servers and rotated infrastructure every few days.</p>';
 
-test('versions: tl-candidates-v49, tl-section-tree-v12, tl-table-v15, tl-type-resolver-v21', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v49');
+test('versions: tl-candidates-v50, tl-section-tree-v12, tl-table-v15, tl-type-resolver-v21', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v50');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v12');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v15');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
@@ -232,4 +232,19 @@ test('H. promote gate: actor-controlled / attacker\'s server / served malware / 
     const c = find(cands, 'domain', v);
     assert.ok(!c || eligible(c) === false, `${v} is not promotable`);
   }
+});
+
+test('I. a defanged mixed-case host in prose / a plain-text pack stays a domain (v50)', async () => {
+  const { plainTextToCanonicalDocument } = await import('./urlIngest.js');
+  const { extractCandidatesWithDiagnostics } = await import('./candidateExtraction.js');
+  const doc = plainTextToCanonicalDocument([
+    '54e18978c6405f56cd59ba55a62291436639f21cf325ae509f0599b15e8f7f53',
+    'txjIQslrRIg[.]MSwINSOFTUPDLoaD[.]DesiGN',
+    'YHDJTyLNsMWVuU[.]DEEPinSPeCTioNsyStEM[.]OnLiNe',
+    'Loader.Program.Main'
+  ].join('\n\n'), {});
+  const cands = extractCandidatesWithDiagnostics(doc, {}).candidates;
+  assert.ok(find(cands, 'domain', 'txjiqslrrig.mswinsoftupdload.design'), 'defanged mixed-case host is a domain');
+  assert.ok(find(cands, 'domain', 'yhdjtylnsmwvuu.deepinspectionsystem.online'));
+  assert.ok(!find(cands, 'domain', 'loader.program.main'), 'an undefanged code identifier is still not a domain');
 });
