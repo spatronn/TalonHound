@@ -29,6 +29,7 @@ import {
   parseAiSchedulingSetting,
   AI_SCHEDULING_SETTING_BOUNDS
 } from './analysisConcurrency.js';
+import { linkedAssertionOverridesDeferral, overlayEvidence } from './iocSources/linkedOverlay.js';
 import { loadReportReviewProgress } from './reviewProgress.js';
 import {
   ReportFinalizedError,
@@ -879,6 +880,42 @@ export async function reconcileReportCandidates(pool, reportId, candidates, opti
         rows.push(ins[0]);
         persistedByKey.set(key, ins[0]);
         added.push({ candidate_type: col.candidate_type, normalized_value: col.normalized_value });
+        continue;
+      }
+
+      if (isSourceScope && prior.has_original_document_occurrence !== false && linkedAssertionOverridesDeferral(prior, col)) {
+        // The body deferred this value to the pack the report links; the pack
+        // asserts it, so the overlap row takes the linked assertion
+        // (tl-linked-overlay-v1). Body evidence and provenance are kept.
+        const { rows: upd } = await client.query(
+          `UPDATE threat_report_candidates SET
+             assessment = $2,
+             role = $3,
+             match_state = $4,
+             matched_ioc_id = $5,
+             matched_ioc_observable_type = $6,
+             is_ioc = TRUE,
+             evidence = $7::jsonb,
+             updated_at = NOW()
+           WHERE id = $1
+           RETURNING *`,
+          [
+            prior.id,
+            col.assessment,
+            col.role,
+            col.match_state === 'context_only' ? 'new' : col.match_state,
+            col.matched_ioc_id,
+            col.matched_ioc_observable_type,
+            JSON.stringify(overlayEvidence(prior, { sourceId }))
+          ]
+        );
+        rows.push(upd[0]);
+        persistedByKey.set(key, upd[0]);
+        updated.push({
+          candidate_type: col.candidate_type,
+          normalized_value: col.normalized_value,
+          columns: ['assessment', 'role', 'match_state', 'evidence']
+        });
         continue;
       }
 

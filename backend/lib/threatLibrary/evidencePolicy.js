@@ -868,6 +868,10 @@ export function buildCandidateEvidenceRecord(c) {
     // Analyst Context Only → IOC override (reviewService.promoteContextOnlyCandidate);
     // only present on promoted rows, carried by the extraction refresh.
     ...(c.promoted_from && typeof c.promoted_from === 'object' ? { promoted_from: c.promoted_from } : {}),
+    // A delegated linked pack asserts this deferred body value (iocSources/linkedOverlay.js).
+    ...(c.linked_assertion_over_deferral && typeof c.linked_assertion_over_deferral === 'object'
+      ? { linked_assertion_over_deferral: c.linked_assertion_over_deferral }
+      : {}),
     table_rows: tableRows,
     // Publisher observation dates of this value (its own table rows), distinct
     // from the report publication date and from TalonHound import time.
