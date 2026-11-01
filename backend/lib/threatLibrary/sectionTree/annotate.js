@@ -22,7 +22,8 @@ import {
   zoneForSectionRole,
   isIndicatorValueLine,
   isObservableListLine,
-  isAnnotatedIndicatorRowLine
+  isAnnotatedIndicatorRowLine,
+  isAnnotatedHashList
 } from '../indicatorScope.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
 import { refangTextForExtraction } from '../defang.js';
@@ -62,6 +63,9 @@ function looksHeadingLike(b) {
   if (b.type !== 'paragraph' && b.type !== 'caption') return false;
   const t = textOf(b);
   if (!t || t.length > 90 || /[.!?。]$/.test(t)) return false;
+  // The tail of a label cut by a page break ("replaced 0528))") closes
+  // parentheses it never opened: a continuation, not a heading.
+  if ((t.match(/\)/g) || []).length > (t.match(/\(/g) || []).length) return false;
   // Observable inventory / annotated IOC rows are content, never synthetic headings
   // (e.g. "8.218.50[.]207 - Staging server …" must not open a C2 scope from "C2").
   if (isIndicatorValueLine(t) || isObservableListLine(t) || isAnnotatedIndicatorRowLine(t)) return false;
@@ -197,7 +201,7 @@ function lookAheadStrongInventory(blocks, i, chromeIds, depth = 6) {
     // HTTP/API examples are technical prose, not publisher IOC inventory.
     if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(t.trim())) continue;
     if (/^(?:\d+\s+){2,}\|\s*(?:GET|POST|\{)/i.test(t.trim())) continue;
-    if (isIndicatorValueLine(t) || isAnnotatedIndicatorRowLine(t) || isObservableListLine(t)) return true;
+    if (isIndicatorValueLine(t) || isAnnotatedIndicatorRowLine(t) || isObservableListLine(t) || isAnnotatedHashList(t)) return true;
     if (
       (b.type === 'list' || b.type === 'list_item') &&
       OBSERVABLE_RE.test(refangTextForExtraction(t)) &&
@@ -497,6 +501,31 @@ export function annotateSectionTree(doc, opts = {}) {
         if (deeper || levelUnknown || !isRealHeading) {
           treatAsSubgroup = groupLabel || inventoryNext || (zone && AUTHORITATIVE.has(zone));
         }
+      }
+    }
+    // PDF inferred levels can invert an appendix ("INDICATORS OF COMPROMISE"
+    // read as level 4, its "Domains" / "Hashes" children as level 3). Inside
+    // an open appendix, an indicator-class label — or, once one was seen, a
+    // short family label ("Laplas", "PickleShell") — whose own content is a
+    // strong inventory continues the appendix whatever the inferred level
+    // (tl-section-tree-v13).
+    if (
+      !treatAsSubgroup && inferredLevels && isRealHeading && parentAuth && !isNegativeHeading &&
+      !(zone && AUTHORITATIVE.has(zone))
+    ) {
+      const classLabel = isIndicatorClassLabel(t);
+      const familyLabel =
+        stack.some((e) => e.authoritative && e.classLabelSeen) && t.length <= 40 && t.split(/\s+/).length <= 4 && !/[.!?:：]$/.test(t);
+      if ((classLabel || familyLabel) && lookAheadStrongInventory(blocks, i, chromeIds)) {
+        treatAsSubgroup = true;
+        if (classLabel) parentAuth.classLabelSeen = true;
+        pushTrace({
+          block_id: b.id,
+          decision: 'continue_inferred_level_inventory_group',
+          zone: parentAuth.zone,
+          opened_by: parentAuth.id,
+          via: classLabel ? 'indicator_class_label' : 'family_label'
+        });
       }
     }
 

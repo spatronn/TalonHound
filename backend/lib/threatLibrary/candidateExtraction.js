@@ -300,8 +300,12 @@ export {
  * redacted "/XXXXX" path segments); a host in parentheses after an address
  * ("1.2.3.0 (Railway.com)") and a value listed among "trusted services like"
  * are providers; "suspicious" negates a signed-component stance.
+ * v50 (52-report audit): prose / plain-text domains are typed from the
+ * publisher's spelling, so a defanged mixed-case host
+ * ("txjIQslrRIg[.]MSwINSOFTUPDLoaD[.]DesiGN") stays a domain (the
+ * tl-type-resolver-v16 defang rule) instead of a code identifier.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v49';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v50';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -794,6 +798,21 @@ function sourceSpelling(blockText, refanged) {
     /* fall through */
   }
   return refanged;
+}
+
+/**
+ * The publisher's spelling of `refanged` when it stands alone on a line of
+ * the block ("txjIQslrRIg[.]MSwINSOFTUPDLoaD[.]DesiGN" in a pack), else null.
+ * @param {string} blockText
+ * @param {string} refanged
+ */
+function standaloneLineSpelling(blockText, refanged) {
+  const want = String(refanged || '').toLowerCase();
+  for (const line of String(blockText || '').split(/\r?\n/)) {
+    const t = line.trim().replace(/^[-*•·▪]\s*/, '');
+    if (t && (refangObservable(t) || t).toLowerCase() === want) return t;
+  }
+  return null;
 }
 
 /**
@@ -1330,7 +1349,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
     // Dotted tokens: resolve per occurrence, decide per document (see pendingDotted).
     if (n.candidateType === 'domain') {
-      let token = String(extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
+      // Typing reads the publisher's spelling: a defang marker ("[.]") is the
+      // network assertion that keeps a mixed-case host a domain (v50).
+      let token = String(extra.typingSpelling || extra.originalValue || n.originalValue || raw).trim().replace(/\.$/, '');
       // "fqdn://ipfs[.]io" is the publisher's spelling of the host. Typing the
       // scheme-prefixed original returns skip and drops the table row
       // (tl-candidates-v46).
@@ -2098,6 +2119,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       add(spelling, 'domain', block, {
         form: emailDomain ? OCCURRENCE_FORMS.EMAIL_DOMAIN : standaloneForm,
         originalValue: spelling,
+        // Only a token alone on its line (an indicator list / pack row): inside
+        // prose or code the refanged reading decides, as before.
+        typingSpelling: standaloneLineSpelling(block.text, spelling),
         ...(port != null ? { port } : {})
       });
     }

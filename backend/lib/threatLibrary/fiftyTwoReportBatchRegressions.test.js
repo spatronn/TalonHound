@@ -53,9 +53,9 @@ function find(cands, type, value) {
 const BODY = '<h2>Analysis</h2><p>The operators ran a multi-stage intrusion against technology targets during the quarter.</p>'
   + '<p>They staged payloads on rented servers and rotated infrastructure every few days.</p>';
 
-test('versions: tl-candidates-v49, tl-section-tree-v12, tl-table-v15, tl-type-resolver-v21', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v49');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v12');
+test('versions: tl-candidates-v50, tl-section-tree-v13, tl-table-v15, tl-type-resolver-v21', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v50');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v13');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v15');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
 });
@@ -232,4 +232,50 @@ test('H. promote gate: actor-controlled / attacker\'s server / served malware / 
     const c = find(cands, 'domain', v);
     assert.ok(!c || eligible(c) === false, `${v} is not promotable`);
   }
+});
+
+test('I. a defanged mixed-case host in prose / a plain-text pack stays a domain (v50)', async () => {
+  const { plainTextToCanonicalDocument } = await import('./urlIngest.js');
+  const { extractCandidatesWithDiagnostics } = await import('./candidateExtraction.js');
+  const doc = plainTextToCanonicalDocument([
+    '54e18978c6405f56cd59ba55a62291436639f21cf325ae509f0599b15e8f7f53',
+    'txjIQslrRIg[.]MSwINSOFTUPDLoaD[.]DesiGN',
+    'YHDJTyLNsMWVuU[.]DEEPinSPeCTioNsyStEM[.]OnLiNe',
+    'Loader.Program.Main'
+  ].join('\n\n'), {});
+  const cands = extractCandidatesWithDiagnostics(doc, {}).candidates;
+  assert.ok(find(cands, 'domain', 'txjiqslrrig.mswinsoftupdload.design'), 'defanged mixed-case host is a domain');
+  assert.ok(find(cands, 'domain', 'yhdjtylnsmwvuu.deepinspectionsystem.online'));
+  assert.ok(!find(cands, 'domain', 'loader.program.main'), 'an undefanged code identifier is still not a domain');
+});
+
+test('J. PDF appendix: inverted inferred levels and "<sha256> (<label>)" runs stay in the IOC inventory (35552)', async () => {
+  const { createCanonicalDocument } = await import('./canonicalDocument.js');
+  const { THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } = await import('./pdfIngest.js');
+  const h = (c) => c.repeat(64);
+  let n = 0;
+  const blk = (type, text, extra = {}) => ({ id: `p9-b${(n += 1)}`, type, page: 9, text, ...extra });
+  const blocks = [
+    blk('heading', 'ATTRIBUTION ASSESSMENT', { level: 3 }),
+    blk('paragraph', 'The operators reused the same tooling across several intrusions in the region during the year.'),
+    blk('heading', 'INDICATORS OF COMPROMISE', { level: 4 }),
+    blk('heading', 'Domains', { level: 3 }),
+    blk('list_item', 'evil-relay[.]example'),
+    blk('heading', 'Hashes', { level: 3 }),
+    blk('heading', 'Laplas', { level: 3 }),
+    blk('list_item', `${h('a')} (Laplas TLS)`),
+    blk('heading', 'Chvost', { level: 3 }),
+    blk('paragraph', `${h('b')} (chvost (2022 plaintext TCP, C:\Users\w)) ${h('c')} (chvost (2024 TLS x64)) ${h('d')} (chvost (2025 TLS x86,`),
+    blk('paragraph', 'replaced 0528))'),
+    blk('heading', 'GitHub usernames', { level: 3 }),
+    blk('paragraph', 'GoBuster7777 and xzj4 published the loaders.'),
+    blk('heading', 'Notes', { level: 3 }),
+    blk('paragraph', `The sample ${h('e')} (sibling build) is discussed in prose only and should not be read as a row of the appendix.`)
+  ];
+  const doc = createCanonicalDocument({ title: 'paper', blocks, meta: { extractor: THREAT_LIBRARY_PDF_EXTRACTOR_VERSION, adapter: 'pdf' } });
+  const cands = extractReportCandidates({ source_type: 'pdf', source_url: null }, doc).candidates;
+  for (const c of ['a', 'b', 'c', 'd']) assert.equal(member(find(cands, 'sha256', h(c))), true, `appendix hash ${c} is an Indicator`);
+  assert.equal(member(find(cands, 'domain', 'evil-relay.example')), true);
+  const prose = find(cands, 'sha256', h('e'));
+  assert.ok(!prose || member(prose) === false, 'a prose hash after the appendix closed is not an inventory row');
 });

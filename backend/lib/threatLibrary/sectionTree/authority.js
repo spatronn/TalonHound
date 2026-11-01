@@ -13,7 +13,8 @@ import {
   isAnnotatedIndicatorRowLine,
   isObservableListLine,
   lineContainingObservable,
-  textDescribesValueAsBenign
+  textDescribesValueAsBenign,
+  isAnnotatedHashList
 } from '../indicatorScope.js';
 import { refangTextForExtraction } from '../defang.js';
 import { annotateSectionTree } from './annotate.js';
@@ -108,6 +109,9 @@ function shouldForceStructuralRow(candidateType, text, value, occ, block) {
   ) {
     return true;
   }
+  // PDF text layer runs several "<sha256> (PickleShell)" rows into one line
+  // (tl-section-tree-v13).
+  if (HASH_TYPES.has(type) && isAnnotatedHashList(line)) return true;
   // Appendix metadata rows: "SHA256 hash: <digest> File size: …"
   if (HASH_TYPES.has(type) && textContainsValue(text, value)) {
     if (
