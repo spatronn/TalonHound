@@ -44,7 +44,9 @@ export const MCP_DEFAULTS = Object.freeze({
   // threat_library_import_url: each new report = an outbound fetch + an AI analysis run.
   RATE_LIMIT_REPORT_IMPORT_PER_MIN: 10,
   // threat_library_review_iocs / create_iocs / finalize / review_ioc_source.
-  RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN: 30
+  RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN: 30,
+  // threat_library_list_reports / threat_library_check_report_urls (read-only catalog).
+  RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN: 60
 });
 
 export function isMcpEnabled(env = process.env) {
@@ -104,6 +106,12 @@ export function getMcpConfig(env = process.env) {
       'MCP_RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN',
       MCP_DEFAULTS.RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN,
       { min: 1, max: 300 }
+    ),
+    rateLimitThreatLibraryCatalogPerMin: intEnv(
+      env,
+      'MCP_RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN',
+      MCP_DEFAULTS.RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN,
+      { min: 1, max: 1000 }
     )
   });
 }

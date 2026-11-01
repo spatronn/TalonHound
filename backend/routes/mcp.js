@@ -93,6 +93,14 @@ export function registerMcpRoutes(app, pool, audit, deps = {}) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP Threat Library review rate limit exceeded', req);
       }
     }
+    if (method === 'tools/call' && (
+      toolName === 'threat_library_list_reports'
+      || toolName === 'threat_library_check_report_urls'
+    )) {
+      if (!limiter.check(`mcp:tl-catalog:${key}`, cfg.rateLimitThreatLibraryCatalogPerMin)) {
+        return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP Threat Library catalog rate limit exceeded', req);
+      }
+    }
     if (method === 'tools/call' && toolName === 'bulk_lookup_iocs') {
       if (!limiter.check(`mcp:bulk:${key}`, cfg.rateLimitBulkPerMin)) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP bulk lookup rate limit exceeded', req);
@@ -156,6 +164,7 @@ export function registerMcpRoutes(app, pool, audit, deps = {}) {
         tag_write_max: config.tagWriteMax,
         report_import_rate_limit_per_min: config.rateLimitReportImportPerMin,
         threat_library_write_rate_limit_per_min: config.rateLimitThreatLibraryWritePerMin,
+        threat_library_catalog_rate_limit_per_min: config.rateLimitThreatLibraryCatalogPerMin,
         rate_limit_per_min: config.rateLimitPerMin
       },
       request_id: req.requestId || randomUUID()

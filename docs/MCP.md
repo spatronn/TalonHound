@@ -16,6 +16,7 @@ Through MCP, a client can:
 - Bulk-check extracted IOCs from a threat report
 - List selectable IOC Sources
 - Import missing IOCs into an **existing** IOC Source (with optional dry-run)
+- Check which threat reports are already in the Threat Library before recommending imports: list the report catalog by import/publication window, publisher and status (`threat_library_list_reports`) and batch-check report source URLs against the import identity (`threat_library_check_report_urls`)
 - Import a threat report into the Threat Library by URL (`threat_library_import_url`, the Import Intelligence → URL operation) and poll its processing state
 - After ingestion completes: read the review surface (`threat_library_get_review` / `threat_library_get_workflow_status`), apply explicit candidate review decisions (`threat_library_review_iocs`), run Create IOCs (`threat_library_create_iocs`), finalize the report (`threat_library_finalize_report`), and approve/dismiss linked IOC Sources (`threat_library_review_ioc_source`) — the same application services as the UI
 
@@ -133,6 +134,8 @@ Profile presets:
 | `add_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Add 1–10 existing, enabled catalog tags to one IOC as analyst (`manual`) tags. All-or-nothing; never creates or re-enables catalog tags. See [Tags](#tags-action-tools). |
 | `remove_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Remove analyst tags from one IOC. Source/feed and Threat Library tags are never removed (`not_removable`). |
 | `threat_library_import_url` | `mcp:ioc:read` + `mcp:threat_library:import` | **No — action** | Import a public report URL into the Threat Library: the same operation as Import Intelligence → URL → Start Import. Returns `outcome` (`import_started` / `already_exists`), `report_id`, `job_id` and the persisted processing state. See [Threat Library URL import](#threat-library-url-import-action-tool). |
+| `threat_library_list_reports` | `mcp:ioc:read` | Yes | Report catalog: filters `imported_from`/`imported_to`, `published_from`/`published_to` (UTC day or ISO timestamp), `publisher`, `import_status`, `review_phase`; `sort` (default `imported_desc`); `limit` ≤ 200; keyset `cursor`. Metadata only. See [Threat Library report catalog](#threat-library-report-catalog-read-only). |
+| `threat_library_check_report_urls` | `mcp:ioc:read` | Yes | Up to 100 report source URLs → per URL `exists`, `normalized_url`, `matched_report_id`, `ambiguous`, `finalized`, `requires_*`, `matches[]`, in input order. |
 | `get_threat_library_import_status` | `mcp:ioc:read` | Yes | Processing state of one report by `report_id`: `review_phase`, import/analysis status, `failure`, latest job, `ingestion_complete` / `ingestion_failed` / `readable_with_get_threat_report`. |
 | `threat_library_get_review` | `mcp:ioc:read` | Yes | Review surface: counts, gates, linked IOC Sources, paged candidates. See [Threat Library review lifecycle](#threat-library-review-lifecycle-post-import). |
 | `threat_library_get_workflow_status` | `mcp:ioc:read` | Yes | Lifecycle stages + remaining actions. |
@@ -307,6 +310,59 @@ MCP threat_library_import_url { url }
   A re-import of a failed URL is still a duplicate, as in the UI. Retry is a UI action.
 - **What it never does:** auto-approve IOC candidates, run Create IOCs, change review decisions, write IOCs, or mark a job complete. Those are separate tools under `mcp:threat_library:write` (below).
 
+## Threat Library report catalog (read-only)
+
+Discovery agents call these tools before recommending a report for import. Both read only `threat_reports` catalog metadata (`lib/threatLibrary/reportCatalog.js`); neither returns report bodies, summaries, candidates or IOCs, and neither imports, refreshes, reviews or finalizes anything. They match report **source** URLs, never URL IOCs. Required scope: `mcp:ioc:read` (any owner role, same as `get_threat_report`). Both are rate limited together (`MCP_RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN`, default 60).
+
+Both tools return the same report item:
+
+```json
+{
+  "report_id": "4f6c…", "title": "…", "publisher": "CrowdStrike", "source_type": "url",
+  "source_url": "https://www.crowdstrike.com/en-us/blog/…/", "source_url_identity": "https://www.crowdstrike.com/en-us/blog/…",
+  "tlp": "clear", "imported_at": "2026-10-30T12:00:00.123Z",
+  "published_at": "2026-10-07T00:00:00.000Z", "published_date": "2026-10-07", "published_at_precision": "date",
+  "import_status": "ready", "analysis_status": "ready", "review_phase": "finalized",
+  "finalized": true, "finalized_at": "2026-10-30T13:02:11.000Z",
+  "processing_state": "complete", "fully_processed": true, "requires_review": false,
+  "requires_further_processing": false, "next_action": "none", "failure": null
+}
+```
+
+`processing_state` / `next_action`: `processing` / `wait_for_processing` (preparing), `needs_review` / `analyst_review` (review_ready), `complete` / `none` (finalized), `failed` / `investigate_failure` (analysis failed or `import_status = failed`; `failure {stage, code}`). A failed or review-pending report **exists** but is **not** fully processed.
+
+### `threat_library_list_reports`
+
+- `imported_*` filter the persisted import time (`created_at`); `published_*` filter the original publication date (reports without one are excluded when a `published_*` filter is set). A bare `YYYY-MM-DD` is a whole UTC day: `imported_from = imported_to = 2026-10-30` lists exactly that day. A timestamp is an inclusive bound; one without an offset is UTC. The applied bounds are echoed in `filters` (`gte` / `lt` / `lte`).
+- `publisher`: case-insensitive contains match on the report source name. `import_status` / `review_phase`: one value or a list.
+- `sort`: `imported_desc` (default), `imported_asc`, `published_desc`, `published_asc` (unknown publication dates last). Every order ends in import time then id, and the cursor carries the import time at microsecond precision, so reports imported at the same instant are never skipped or repeated. `next_cursor` is valid only with the same filters and sort (`INVALID_CURSOR` otherwise).
+- Response: `{ items, count, limit, sort, has_more, next_cursor, filters }`. Latest report: `{ "limit": 1 }`.
+
+### `threat_library_check_report_urls`
+
+- Input `{ "urls": [ … ] }`, 1–100 entries; `null` / empty / non-http(s) entries are answered as `valid: false` (`invalid_reason` `empty` | `not_http_url`) instead of failing the batch.
+- Identity = the import duplicate identity (`canonicalizeReportUrl`): scheme/host lowercased, default port, fragment, credentials, empty `?` and one trailing path slash dropped. `http` vs `https`, path case and the query string are **kept**, so those are different reports. Only active (not deleted) URL-imported reports match; one indexed query per batch.
+- Per URL (input order, with `index`): `queried_url`, `normalized_url`, `valid`, `exists`, `match_count`, `ambiguous`, `matched_report_id`, `finalized`, `requires_further_processing`, `requires_review`, `report`, `matches[]`.
+- Several reports with one identity (historical duplicates): `ambiguous: true`, `matched_report_id: null`, `report: null`, and every match in `matches` (oldest import first, ≤ 20; `match_count` is the full number). `threat_library_import_url` resolves such a URL to the oldest. Item-level `finalized` is true only when every match is finalized.
+- `summary`: `queried`, `valid`, `invalid`, `existing`, `missing`, `ambiguous`, `finalized`, `requiring_action`.
+
+```json
+{
+  "results": [
+    { "index": 0, "queried_url": "https://Example.com/blog/post/#top", "normalized_url": "https://example.com/blog/post",
+      "valid": true, "invalid_reason": null, "exists": true, "match_count": 1, "ambiguous": false,
+      "matched_report_id": "4f6c…", "finalized": false, "requires_further_processing": false, "requires_review": true,
+      "report": { "report_id": "4f6c…", "review_phase": "review_ready", "processing_state": "needs_review", "…": "…" },
+      "matches": [ { "report_id": "4f6c…", "…": "…" } ] },
+    { "index": 1, "queried_url": "https://example.com/new", "normalized_url": "https://example.com/new",
+      "valid": true, "invalid_reason": null, "exists": false, "match_count": 0, "ambiguous": false,
+      "matched_report_id": null, "finalized": false, "requires_further_processing": false, "requires_review": false,
+      "report": null, "matches": [] }
+  ],
+  "summary": { "queried": 2, "valid": 2, "invalid": 0, "existing": 1, "missing": 1, "ambiguous": 0, "finalized": 0, "requiring_action": 1 }
+}
+```
+
 ## Threat Library review lifecycle (post-import)
 
 After `ingestion_complete`, the same analyst workflow as the Threat Library report page is available over MCP. Every mutation calls the shared application services used by the UI (`applyCandidateReviewActions`, `finalizeReport`, linked IOC Source approve/dismiss) — there is no parallel MCP engine.
@@ -390,6 +446,8 @@ Defaults from `backend/lib/mcpConfig.js` (overridable via environment):
 | `list_tags` max | **100** | `MCP_TAG_LIST_MAX` (max 200) |
 | `threat_library_import_url` / minute | **10** | `MCP_RATE_LIMIT_REPORT_IMPORT_PER_MIN` (max 60) |
 | Threat Library review write tools / minute | **30** | `MCP_RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN` (max 300) |
+| `threat_library_list_reports` + `threat_library_check_report_urls` / minute | **60** | `MCP_RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN` (max 1000) |
+| Report URLs per `threat_library_check_report_urls` / catalog page size | **100** / **200** | fixed |
 
 Exceeding limits returns HTTP **429**. Disable MCP entirely with `MCP_ENABLED=false`.
 
