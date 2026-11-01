@@ -36,6 +36,9 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   threat_library_import_url: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_IMPORT],
   // Processing state of one report (persisted status only).
   get_threat_library_import_status: [API_SCOPE.MCP_IOC_READ],
+  // Report catalog discovery (persisted report metadata only; read-only).
+  threat_library_list_reports: [API_SCOPE.MCP_IOC_READ],
+  threat_library_check_report_urls: [API_SCOPE.MCP_IOC_READ],
   // Post-import Threat Library review surface (persisted candidates + gates).
   threat_library_get_review: [API_SCOPE.MCP_IOC_READ],
   threat_library_get_workflow_status: [API_SCOPE.MCP_IOC_READ],

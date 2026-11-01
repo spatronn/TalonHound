@@ -25,6 +25,17 @@ import { mcpListEnrichmentProviders, mcpEnrichIocs, mcpGetEnrichmentJob } from '
 import { mcpListTags, mcpAddIocTags, mcpRemoveIocTags } from './mcpTagService.js';
 import { mcpListIocsByMalwareFamily, mcpListMalwareFamilies } from './mcpMalwareFamilyService.js';
 import { mcpThreatLibraryImportUrl, mcpGetThreatLibraryImportStatus } from './mcpThreatLibraryImportService.js';
+import { mcpThreatLibraryListReports, mcpThreatLibraryCheckReportUrls } from './mcpThreatLibraryCatalogService.js';
+import {
+  CATALOG_DEFAULT_LIMIT,
+  CATALOG_MAX_LIMIT,
+  CATALOG_URL_CHECK_MAX,
+  CATALOG_URL_MATCHES_MAX,
+  CATALOG_IMPORT_STATUSES,
+  CATALOG_REVIEW_PHASES,
+  CATALOG_SORTS,
+  CATALOG_PUBLISHER_MAX_LENGTH
+} from './threatLibrary/reportCatalog.js';
 import {
   mcpThreatLibraryGetReview,
   mcpThreatLibraryGetWorkflowStatus,
@@ -612,6 +623,71 @@ export function registerMcpTools(server, deps) {
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
     },
     async (args) => withAuth('get_threat_library_import_status', ctxFrom(), () => mcpGetThreatLibraryImportStatus(deps.pool, args))
+  );
+
+  // ---------------------------------------------------------------------------
+  // Threat Library: report catalog discovery (read-only, report source URLs).
+  // ---------------------------------------------------------------------------
+
+  const catalogBound = z.string().min(1).max(64);
+  const oneOrMany = (values) => z.union([z.enum(values), z.array(z.enum(values)).min(1).max(values.length)]);
+
+  server.registerTool(
+    'threat_library_list_reports',
+    {
+      title: 'List Threat Library reports',
+      description:
+        'Read-only catalog of reports already imported into the Threat Library — use it before recommending new imports. '
+        + 'Each item: report_id, title, publisher (report source name), source_type, source_url (stored original), source_url_identity (canonical import identity), tlp, '
+        + 'imported_at (when TalonHound imported it — persisted, drives import order), published_at / published_date / published_at_precision (original publication; null when unknown), '
+        + 'import_status, analysis_status, review_phase (preparing | review_ready | finalized | failed), finalized, finalized_at, processing_state (processing | needs_review | complete | failed), '
+        + 'fully_processed, requires_review, requires_further_processing, next_action and failure {stage, code} when failed. A failed or still-in-review report exists but is not fully processed. '
+        + 'Filters (AND): imported_from / imported_to and published_from / published_to take a UTC day (YYYY-MM-DD = the whole UTC day, so from=to=day lists one day) or an ISO-8601 timestamp (inclusive; no offset = UTC); '
+        + 'a published_* filter excludes reports without a publication date. publisher = case-insensitive contains match on the publisher; '
+        + `import_status (${CATALOG_IMPORT_STATUSES.join('|')}) and review_phase (${CATALOG_REVIEW_PHASES.join('|')}) take one value or a list. `
+        + `sort: ${CATALOG_SORTS.join(' | ')} (default imported_desc = newest imported first; published sorts put unknown dates last); ties always break on import time then id, so paging is stable. `
+        + `limit default ${CATALOG_DEFAULT_LIMIT}, max ${CATALOG_MAX_LIMIT}; pass next_cursor back as cursor with the SAME filters and sort while has_more is true. `
+        + 'Examples: latest report = limit 1; reports imported on a day = imported_from=imported_to=YYYY-MM-DD. '
+        + 'Never returns report bodies, summaries, extracted IOCs or candidates; never imports, refreshes, reviews or finalizes anything.',
+      inputSchema: {
+        imported_from: catalogBound.optional().describe('Imported at or after: UTC day YYYY-MM-DD or ISO-8601 timestamp'),
+        imported_to: catalogBound.optional().describe('Imported at or before: UTC day (whole day included) or ISO-8601 timestamp'),
+        published_from: catalogBound.optional().describe('Published at or after: UTC day or ISO-8601 timestamp'),
+        published_to: catalogBound.optional().describe('Published at or before: UTC day (whole day included) or ISO-8601 timestamp'),
+        publisher: z.string().min(1).max(CATALOG_PUBLISHER_MAX_LENGTH).optional().describe('Publisher contains (case-insensitive)'),
+        import_status: oneOrMany(CATALOG_IMPORT_STATUSES).optional().describe('Persisted import_status value(s)'),
+        review_phase: oneOrMany(CATALOG_REVIEW_PHASES).optional().describe('Review phase value(s)'),
+        sort: z.enum(CATALOG_SORTS).optional().describe('Default imported_desc'),
+        limit: z.number().int().min(1).max(CATALOG_MAX_LIMIT).optional().describe(`Page size (default ${CATALOG_DEFAULT_LIMIT}, max ${CATALOG_MAX_LIMIT})`),
+        cursor: z.string().min(1).max(1024).optional().describe('next_cursor from the previous page (same filters and sort)')
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    async (args) => withAuth('threat_library_list_reports', ctxFrom(), () => mcpThreatLibraryListReports(deps.pool, args))
+  );
+
+  server.registerTool(
+    'threat_library_check_report_urls',
+    {
+      title: 'Check report URLs against the Threat Library',
+      description:
+        `Read-only batch check whether report SOURCE URLs (articles / advisories / PDFs by URL — not URL IOCs) are already in the Threat Library. Up to ${CATALOG_URL_CHECK_MAX} URLs per call; results keep input order (each carries its \`index\`). `
+        + 'Matching uses the exact import identity of threat_library_import_url: normalized_url = canonical form (scheme and host lowercased, default port, fragment, credentials, empty `?` and one trailing path slash dropped; '
+        + 'http vs https, path case and the query string are kept, so those variants are different reports) compared against active URL-imported reports. '
+        + 'Per URL: queried_url, normalized_url, valid (+ invalid_reason empty | not_http_url), exists, match_count, ambiguous, matched_report_id (only when exactly one report matches), '
+        + 'finalized (true only when every match is finalized), requires_further_processing, requires_review, report (the single match) and matches[] '
+        + `(all matching reports, oldest import first, ≤${CATALOG_URL_MATCHES_MAX}; same item shape as threat_library_list_reports: report_id, title, publisher, source_url, imported_at, published_at, import_status, analysis_status, review_phase, finalized, processing_state, next_action …). `
+        + 'When several reports share one identity, ambiguous=true and matched_report_id=null — read matches (threat_library_import_url resolves such a duplicate to the oldest). '
+        + 'A failed, still-processing or review-pending report counts as existing (exists=true) but not finalized: do not re-import it — it needs processing or analyst review. '
+        + '`summary` totals the batch. Never fetches the URLs, never imports, refreshes, reviews or finalizes anything, and returns no IOCs or report content.',
+      inputSchema: {
+        urls: z.array(z.string().max(config.valueMaxChars).nullable())
+          .min(1).max(CATALOG_URL_CHECK_MAX)
+          .describe(`Report source URLs (1–${CATALOG_URL_CHECK_MAX}); empty/null entries are answered as invalid`)
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    async (args) => withAuth('threat_library_check_report_urls', ctxFrom(), () => mcpThreatLibraryCheckReportUrls(deps.pool, args))
   );
 
   // ---------------------------------------------------------------------------

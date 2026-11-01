@@ -54,6 +54,8 @@ export function createTalonHoundMcpServer(deps) {
         + 'it queues a public report URL for the normal background fetch/extraction/analysis (duplicates return outcome already_exists with the existing report_id); '
         + 'poll get_threat_library_import_status until ingestion_complete or ingestion_failed, then read it with get_threat_report or threat_library_get_review. '
         + 'Importing a report never auto-approves IOC candidates or creates IOCs. '
+        + 'Before recommending a report for import, check the library: threat_library_check_report_urls (≤100 report source URLs, same identity as import dedup) '
+        + 'and threat_library_list_reports (catalog by import/publication window, publisher, status; cursor-paged, newest imported first) are read-only and match report SOURCE URLs, not URL IOCs. '
         + 'Post-import lifecycle (requires mcp:threat_library:write): threat_library_get_review / threat_library_get_workflow_status (read), '
         + 'threat_library_review_iocs (explicit approve|context_only|ignore — never auto-approve all extracted), '
         + 'threat_library_create_iocs (same Create IOCs as the UI; confirm=true to commit), '
