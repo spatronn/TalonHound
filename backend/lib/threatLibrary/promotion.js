@@ -168,7 +168,7 @@ const PROVIDER_POLICIES = new Set([
  * is intentionally absent: a connectivity check uses the same verb.
  */
 const POSITIVE_USE_RE =
-  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing|ed)?|payloads?|phish(?:ing|es|ed)?|malware\s+download|downloaded?\s+from|drops?\s+from|attacker[- ]controlled|malicious\s+(?:server|host|domain|url|ip|infrastructure|endpoint)|staging\s+server|delivery\s+(?:hosts?|domains?|servers?|endpoints?|infrastructure)|(?:used|abused|leveraged)\s+to\s+(?:host|deliver|stage|phish|serve))\b/i;
+  /\b(?:c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|beacon(?:s|ing|ed)?|payloads?|phish(?:ing|es|ed)?|malware\s+download|downloaded?\s+from|drops?\s+from|attacker[- ]controlled|actor[- ]controlled|attacker['’]s\s+(?:server|host|domain|infrastructure)|serv(?:es|ed|ing)\s+(?:an?\s+)?(?:malware|malicious)|malicious\s+(?:server|host|domain|url|ip|infrastructure|endpoint)|staging\s+server|delivery\s+(?:hosts?|domains?|servers?|endpoints?|infrastructure)|(?:used|abused|leveraged)\s+to\s+(?:host|deliver|stage|phish|serve))\b/i;
 
 /** A probe of whether the host is online, not a claim the destination is malicious. */
 const CONNECTIVITY_RE =
@@ -232,6 +232,8 @@ function hasOperationalEvidence(candidate) {
 const ROLE_COLUMN_HEADER_RE =
   /\b(?:spoof\w*|look-?alike|typo-?squat\w*|impersonat\w*|malicious|c2|c&c|command\s*(?:and|&)\s*control|phishing|attacker|actor[- ]controlled)\b/i;
 const ROLE_LIST_NAME_RE = /(?:c2|cnc|payload|delivery|malicious|campaign|attacker|phish|exfil|beacon)/i;
+// `ioc_domains` / `iocHashes`: the publisher's own IOC list in a hunting query (52-report audit).
+const IOC_LIST_NAME_RE = /^iocs?(?:_|[A-Z]|$)/;
 
 /**
  * The publisher labelled the value's role outside its own sentence: the
@@ -244,7 +246,10 @@ function hasPublisherRoleLabel(candidate) {
   const ev = evidenceOf(candidate);
   const rows = Array.isArray(ev.table_rows) ? ev.table_rows : [];
   if (rows.some((r) => ROLE_COLUMN_HEADER_RE.test(String(r?.column_header || '')))) return true;
-  return occurrencesOf(candidate).some((occ) => ROLE_LIST_NAME_RE.test(String(occ?.code_list_name || '')));
+  return occurrencesOf(candidate).some((occ) => {
+    const name = String(occ?.code_list_name || '');
+    return ROLE_LIST_NAME_RE.test(name) || IOC_LIST_NAME_RE.test(name);
+  });
 }
 
 function isConnectivityCheck(candidate) {

@@ -201,3 +201,35 @@ test('G. a redacted /XXXXX path segment is a template, not a URL Indicator', () 
   assert.ok(!member(find(cands, 'url', 'https://vscodesettingtask.vercel.app/api/settings/XXXXX')));
   assert.equal(member(find(cands, 'url', 'https://coredeal2.vercel.app/api/auth')), true);
 });
+
+test('H. promote gate: actor-controlled / attacker\'s server / served malware / ioc_* lists are operational evidence', async () => {
+  const { publicPromoteEligibility } = await import('./promotion.js');
+  const cands = run(`<article>${BODY}
+<h2>Attack chain</h2>
+<p>The nested Google URL in the email body points to actor-controlled domain scanuae[.]com. This domain acts as a redirector.</p>
+<p>If clicked, this domain redirected to tax-statments2025[.]com, which in turn served a malware executable named 1099-FR2025.exe.</p>
+<p>The loader is downloaded later, from the attacker’s server at 69[.]67[.]173[.]30/b.</p>
+<pre>let ioc_domains = dynamic(["uw05webzoom.us", "uw03webzoom.us"]);</pre>
+<pre>let watched_domains = dynamic(["neutral-list.example"]);</pre>
+<p>Victims also browsed travel-portal[.]example during the week.</p>
+<h2>Indicators of compromise</h2>
+<table><tr><th>Indicator</th><th>Type</th></tr>
+<tr><td>uw04webzoom[.]us</td><td>Domain</td></tr></table>
+</article>`);
+  const eligible = (c) => publicPromoteEligibility({
+    ...c,
+    has_original_document_occurrence: true,
+    review_status: 'context_only',
+    evidence: buildCandidateEvidenceRecord(c)
+  }).promotable;
+  for (const [type, v] of [['domain', 'scanuae.com'], ['domain', 'tax-statments2025.com'], ['url', '69.67.173.30/b'], ['domain', 'uw05webzoom.us']]) {
+    const c = find(cands, type, v);
+    assert.ok(c, `${v} extracted`);
+    assert.equal(member(c), false, `${v} is not a member by itself`);
+    assert.equal(eligible(c), true, `${v} is promotable`);
+  }
+  for (const v of ['neutral-list.example', 'travel-portal.example']) {
+    const c = find(cands, 'domain', v);
+    assert.ok(!c || eligible(c) === false, `${v} is not promotable`);
+  }
+});
