@@ -35,6 +35,7 @@ import {
   isCredentialLabeledHex,
   isIndicatorRowShape,
   isIndicatorValueLine,
+  isObservableListLine,
   lineContainingObservable,
   tableRowProviderOwnedByOperation,
   textDescribesValueAsBenign
@@ -304,8 +305,13 @@ export {
  * publisher's spelling, so a defanged mixed-case host
  * ("txjIQslrRIg[.]MSwINSOFTUPDLoaD[.]DesiGN") stays a domain (the
  * tl-type-resolver-v16 defang rule) instead of a code identifier.
+ * v51 (52-report audit, 35552 / 35573): a block that is only observables (a
+ * plain-text pack whose lines were joined) also types from that spelling; in a
+ * run of "<digest> (<label>)" rows each digest is classified by its own
+ * trailing label ("<sha256> (Ligolo TLS certificate)" is a certificate
+ * fingerprint, the next row's agent hash is not).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v50';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v51';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -812,7 +818,40 @@ function standaloneLineSpelling(blockText, refanged) {
     const t = line.trim().replace(/^[-*•·▪]\s*/, '');
     if (t && (refangObservable(t) || t).toLowerCase() === want) return t;
   }
+  // A block that is only observables (a plain-text pack whose lines the
+  // document joined) lists the token as one of its rows.
+  if (isObservableListLine(refangTextForExtraction(String(blockText || '')))) {
+    const spelled = sourceSpelling(blockText, refanged);
+    if (spelled && spelled !== refanged) return spelled;
+  }
   return null;
+}
+
+/**
+ * "<label>: <digest>" for a digest in a run of "<digest> (<label>)" rows
+ * (tl-candidates-v50), else null.
+ * @param {string} line
+ * @param {string} value
+ */
+function annotatedDigestWindow(line, value) {
+  const text = String(line || '');
+  if ((text.match(/\b(?:[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})\b\s*\(/gi) || []).length < 2) return null;
+  const at = text.toLowerCase().indexOf(String(value || '').toLowerCase());
+  if (at < 0) return null;
+  let i = at + String(value).length;
+  while (i < text.length && /\s/.test(text[i])) i += 1;
+  if (text[i] !== '(') return null;
+  let depth = 0;
+  let j = i;
+  for (; j < text.length; j += 1) {
+    if (text[j] === '(') depth += 1;
+    else if (text[j] === ')') {
+      depth -= 1;
+      if (depth === 0) break;
+    }
+  }
+  // The label as the digest's own lead label ("Ligolo TLS certificate: <hex>").
+  return `${text.slice(i + 1, j).trim()}: ${text.slice(at, at + String(value).length)}`;
 }
 
 /**
@@ -1302,7 +1341,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // A table cell is labelled by its column header ("Imphash | Cluster |
       // Role"), not by the last cell of the previous row (tl-candidates-v41).
       const columnHeader = extra.tableRow?.column_header || digestColumnHeader(block, n.normalizedValue);
-      const digest = classifyHexDigest(line, n.normalizedValue, {
+      // In a "<hash> (<label>)" run the label is the parenthetical after the
+      // hash, never the previous row's ("… (Ligolo TLS certificate) <hash> (agent)").
+      const digest = classifyHexDigest(annotatedDigestWindow(line, n.normalizedValue) || line, n.normalizedValue, {
         scopeLabel,
         columnHeader,
         rowDescription: extra.tableRow?.description || null

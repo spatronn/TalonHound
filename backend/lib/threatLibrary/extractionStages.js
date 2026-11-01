@@ -9,6 +9,7 @@
  */
 
 import { pdfToCanonicalDocument, THREAT_LIBRARY_PDF_EXTRACTOR_VERSION } from './pdfIngest.js';
+import { refangObservable } from './defang.js';
 import { reextractStoredHtmlDocument } from './urlIngest.js';
 import { CURRENT_HTML_EXTRACTOR_VERSIONS, titleMeta } from './extract/extractHtml.js';
 import { selectHtmlTitle } from './extract/titleSelection.js';
@@ -384,11 +385,27 @@ export function observationNotAfterFor(report, now = new Date()) {
  * @param {{ candidate_updates?: object[] }|null} aiValue
  * @param {{ sourceText?: string, document?: object }} [opts]
  */
+/** A table-row occurrence whose own indicator cell is exactly this value. */
+function assertedByOwnTableCell(c) {
+  const v = String(c.normalized_value || '').toLowerCase();
+  const rows = [
+    ...(Array.isArray(c.table_rows) ? c.table_rows : []),
+    ...(Array.isArray(c.occurrences) ? c.occurrences.map((o) => o?.table_row).filter(Boolean) : [])
+  ];
+  return rows.some((row) => {
+    const cell = row?.indicator_cell;
+    return cell != null && (refangObservable(String(cell).trim()) || String(cell).trim()).toLowerCase() === v;
+  });
+}
+
 export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
   const sourceText = opts.sourceText || (opts.document ? sourceTextFromDocument(opts.document) : '');
   const keep = (c) => {
     if (!sourceText) return true;
     if (c.candidate_type !== 'ip' && c.candidate_type !== 'ipv6') return true;
+    // An IOC-table cell that holds exactly this address (a glued run the
+    // table split, tl-table-v15) asserts it; the run is not a hostname.
+    if (assertedByOwnTableCell(c)) return true;
     return !isOnlyEmbeddedInDnsHostname(sourceText, c.candidate_type, c.normalized_value);
   };
   const byKey = new Map(

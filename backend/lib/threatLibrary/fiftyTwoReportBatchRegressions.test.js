@@ -53,8 +53,8 @@ function find(cands, type, value) {
 const BODY = '<h2>Analysis</h2><p>The operators ran a multi-stage intrusion against technology targets during the quarter.</p>'
   + '<p>They staged payloads on rented servers and rotated infrastructure every few days.</p>';
 
-test('versions: tl-candidates-v50, tl-section-tree-v13, tl-table-v15, tl-type-resolver-v21', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v50');
+test('versions: tl-candidates-v51, tl-section-tree-v13, tl-table-v15, tl-type-resolver-v21', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v51');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v13');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v15');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
@@ -278,4 +278,45 @@ test('J. PDF appendix: inverted inferred levels and "<sha256> (<label>)" runs st
   assert.equal(member(find(cands, 'domain', 'evil-relay.example')), true);
   const prose = find(cands, 'sha256', h('e'));
   assert.ok(!prose || member(prose) === false, 'a prose hash after the appendix closed is not an inventory row');
+});
+
+test('I2. the real Talos pack shape (one value per line, single newlines) keeps the defanged mixed-case hosts', async () => {
+  const { plainTextToCanonicalDocument } = await import('./urlIngest.js');
+  const { extractCandidatesWithDiagnostics } = await import('./candidateExtraction.js');
+  const doc = plainTextToCanonicalDocument([
+    '54e18978c6405f56cd59ba55a62291436639f21cf325ae509f0599b15e8f7f53 ',
+    'CJiTDrpwnnA[.]MswINsoFTUPDLoad[.]deSigN ',
+    'txjIQslrRIg[.]MSwINSOFTUPDLoaD[.]DesiGN ',
+    'hxxp[://]CJiTDrpwnnA[.]MswINsoFTUPDLoad[.]deSigN/x111111 '
+  ].join('\n'), {});
+  const cands = extractCandidatesWithDiagnostics(doc, {}).candidates;
+  assert.ok(find(cands, 'domain', 'txjiqslrrig.mswinsoftupdload.design'), 'a pack-only mixed-case host is a domain');
+  assert.ok(find(cands, 'domain', 'cjitdrpwnna.mswinsoftupdload.design'));
+});
+
+test('K. in a "<digest> (<label>)" run each digest takes its own label (35552)', () => {
+  const h = (c) => c.repeat(64);
+  const cands = run(`<article>${BODY}
+<h2>Indicators of compromise</h2>
+<h3>Hashes</h3>
+<p>Dual-use tooling staged by the actor (Ligolo, Cobalt Strike, certs) ${h('1')} (Cobalt Strike beacon (staged on C2)) ${h('2')} (Ligolo TLS certificate) ${h('3')} (Ligolo-mp agent (custom build))</p>
+</article>`);
+  assert.equal(member(find(cands, 'sha256', h('1'))), true, 'beacon hash is a file IOC despite the "certs" lead-in');
+  assert.equal(member(find(cands, 'sha256', h('3'))), true, 'agent hash is not the previous row certificate');
+  assert.ok(!member(find(cands, 'sha256', h('2'))), 'the certificate fingerprint is not a file-hash Indicator');
+});
+
+test('C3. split IPs from a glued IOC-table cell survive the merge step (35528 refresh)', async () => {
+  const { mergeAiCandidateUpdates } = await import('./extractionStages.js');
+  const r = extractCanonicalDocumentFromHtml(`<article>${BODY}
+<h2>Indicators of compromise</h2>
+<table><tr><td>Indicators</td><td>Type</td><td>Description</td></tr>
+<tr><td>136[.]0[.]157[.]51154[.]16[.]171[.]203</td><td>IP address</td><td>Attacker-controlled IP addresses delivering backdoor ScreenConnect</td></tr>
+<tr><td>Pacdashed[.]com</td><td>Domain</td><td>Attacker-controlled domain delivering backdoor Tactical RMM</td></tr>
+</table></article>`, { url: SOURCE, finalUrl: SOURCE, httpStatus: 200 });
+  const ex = extractReportCandidates({ source_type: 'url', source_url: SOURCE }, r.document);
+  const merged = mergeAiCandidateUpdates(ex.candidates, { candidate_updates: [] }, { document: ex.document });
+  for (const ip of ['136.0.157.51', '154.16.171.203']) {
+    assert.ok(find(merged, 'ip', ip), `${ip} kept after merge`);
+  }
 });
