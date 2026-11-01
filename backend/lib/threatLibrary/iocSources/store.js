@@ -2,6 +2,7 @@
  * Persistence helpers for Additional IOC Sources.
  */
 
+import { normalizeGitHubDirectoryUrl } from './github.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 import { reportIndicatorMembershipSql } from '../indicatorMembership.js';
 import { IOC_SOURCE_LIFECYCLE } from './constants.js';
@@ -87,7 +88,8 @@ export async function listSourceFiles(pool, sourceId) {
   return rows;
 }
 
-export async function createManualIocSource(pool, reportId, { url, requestedBy }) {
+export async function createManualIocSource(pool, reportId, { url: rawUrl, requestedBy }) {
+  const url = normalizeGitHubDirectoryUrl(rawUrl);
   const canonical = canonicalizeReportUrl(url);
   if (!canonical) {
     const err = new Error('Invalid URL');

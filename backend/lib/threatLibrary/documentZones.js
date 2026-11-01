@@ -228,7 +228,11 @@ const HEADING_HINTS = Object.freeze({
     /örnek\s+hash/i
   ],
   reference_section: [
-    /^references?\b/i,
+    // "Reference IoCs" (Securelist) heads an indicator list, not a bibliography.
+    /^references?\b(?!\s+(?:iocs?|indicators?)\b)/i,
+    // Credits / "Existing blogs with similar behavior tracked:" after an IOC
+    // table (Microsoft): citations, never indicators (tl-section-tree-v12).
+    /^acknowledge?ments?\b/i,
     /bibliography/i,
     // A contact / "Contact us" block, not a topic that starts with the word
     // ("Contact Form Engagement" is the lure narrative, not chrome).

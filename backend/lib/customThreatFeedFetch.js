@@ -36,7 +36,7 @@ async function readLimitedBody(res, maxBytes) {
     chunks.push(buf);
   }
   const body = Buffer.concat(chunks, fetchedBytes);
-  return { bodyText: body.toString('utf-8'), fetchedBytes };
+  return { bodyText: body.toString('utf-8'), bodyBuffer: body, fetchedBytes };
 }
 
 function buildHopHeaders(authHeaders, previousUrl, nextUrl, isFirstHop) {
@@ -220,13 +220,15 @@ export async function fetchFeedUrl(url, options = {}) {
       }
 
       const contentType = String(res.headers?.['content-type'] || '');
-      const { bodyText, fetchedBytes } = await readLimitedBody(res, maxBytes);
+      const { bodyText, bodyBuffer, fetchedBytes } = await readLimitedBody(res, maxBytes);
 
       return {
         ok: status >= 200 && status < 300,
         httpStatus: status,
         contentType,
         bodyText,
+        // Raw bytes for binary callers (Threat Library URL → PDF); bodyText is a lossy UTF-8 decode.
+        bodyBuffer,
         fetchedBytes,
         finalUrl: destination.url
       };

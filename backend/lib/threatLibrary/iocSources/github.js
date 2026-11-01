@@ -12,14 +12,34 @@ const GITHUB_REPO_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/?$/
 const GITHUB_TREE_ROOT_RE = /^https?:\/\/(?:www\.)?github\.com\/([^/]+)\/([^/]+)\/tree\/([^/]+)\/?$/i;
 const GITHUB_RAW_RE = /^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/([^/]+)\/(.+)$/i;
 
+const GITHUB_BLOB_DIR_RE = /^(https?:\/\/(?:www\.)?github\.com\/[^/]+\/[^/]+)\/blob\/([^/?#]+)\/([^?#]*?)\/+(?:[?#].*)?$/i;
+
+/**
+ * A `/blob/` link that ends in "/" names a folder, not a file (GitHub
+ * redirects it to `/tree/`): "IOCs … in our GitHub repository here" →
+ * `github.com/Cisco-Talos/IOCs/blob/main/2026/07/`. Rewritten to the tree URL
+ * before canonicalization drops the trailing slash and leaves an
+ * extension-less "file" (tl-ioc-source-discovery-v4).
+ * @param {string} url
+ */
+export function normalizeGitHubDirectoryUrl(url) {
+  const href = String(url || '').trim();
+  const m = href.match(GITHUB_BLOB_DIR_RE);
+  return m && m[3] ? `${m[1]}/tree/${m[2]}/${m[3]}` : href;
+}
+
 /**
  * @param {string} url
  * @returns {{ kind: 'dir'|'file'|'raw'|'unknown', owner?: string, repo?: string, ref?: string, path?: string }|null}
  */
 export function parseGitHubUrl(url) {
-  const href = String(url || '').trim();
+  const href = normalizeGitHubDirectoryUrl(url);
   let m = href.match(GITHUB_RAW_RE);
   if (m) {
+    // raw.githubusercontent.com/<o>/<r>/refs/heads/<branch>/<path>: the ref is
+    // the branch, not the literal "refs" segment.
+    const fullRef = m[3] === 'refs' && /^(?:heads|tags)\/[^/]+\/.+/i.test(m[4]) ? m[4].match(/^(?:heads|tags)\/([^/]+)\/(.+)$/i) : null;
+    if (fullRef) return { kind: 'raw', owner: m[1], repo: m[2], ref: fullRef[1], path: decodeURIComponent(fullRef[2]) };
     return { kind: 'raw', owner: m[1], repo: m[2], ref: m[3], path: decodeURIComponent(m[4]) };
   }
   m = href.match(GITHUB_TREE_RE);

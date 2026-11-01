@@ -82,8 +82,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * v20 (19-report audit): a file-extension path segment (`/letgovip.zip`) is
  * not the domain a "domains" lead-in announced. `.zip` is a gTLD, so that
  * lead-in used to promote the archive basename.
+ * v21 (52-report audit): a redacted path segment (`/api/settings/XXXXX`)
+ * makes a URL a template, not an observable.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v20';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v21';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -572,7 +574,9 @@ const URL_TEMPLATE_PLACEHOLDER_RE = new RegExp([
   // read as ".../curl/<token") — tl-type-resolver-v17.
   /<[A-Za-z_][\w.-]{0,40}(?:>|$)/.source,
   /%3C[A-Za-z_][\w.-]{0,40}(?:%3E|$)/.source,
-  /\/\[[A-Za-z_][\w.-]{2,40}(?:\]|$)/.source
+  /\/\[[A-Za-z_][\w.-]{2,40}(?:\]|$)/.source,
+  // A redacted path segment ("/api/settings/XXXXX") — tl-type-resolver-v21.
+  /\/X{3,}(?=[/?#]|$)/.source
 ].join('|'), 'i');
 
 /**

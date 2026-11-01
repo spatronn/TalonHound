@@ -294,8 +294,14 @@ export {
  * "DKIM-signed by the operator" is no signed-component stance; a genuine tool
  * named as fetched from a value ("the legitimate <tool> from <URL>") makes
  * that value a benign source.
+ * v49 (52-report audit): tl-section-tree-v12 / tl-table-v15 / tl-type-resolver-v21
+ * (Acknowledgments closes IOC scope, "Reference IoCs" is an IOC heading, glued
+ * cell values split, description-labeled digests, POST-body description rows,
+ * redacted "/XXXXX" path segments); a host in parentheses after an address
+ * ("1.2.3.0 (Railway.com)") and a value listed among "trusted services like"
+ * are providers; "suspicious" negates a signed-component stance.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v48';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v49';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
