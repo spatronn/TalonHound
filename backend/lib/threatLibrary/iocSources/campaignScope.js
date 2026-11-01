@@ -25,7 +25,7 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v3';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v4';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
@@ -398,6 +398,39 @@ export function inventoryBacklinkScope(body, path, report = {}) {
   if (!backlink) return { verdict: 'undeclared', backlink: null };
   if (!report.reportUrl) return { verdict: 'undeclared', backlink };
   return { verdict: linksReport(backlink, report.reportUrl) ? 'matches' : 'other_report', backlink };
+}
+
+/** File name without directory and extension(s): `2026/01/uat-8837.json` → `uat-8837`. */
+function fileStem(path) {
+  const base = String(path || '').split('/').pop() || '';
+  return base.replace(/(?:\.[a-z0-9]{1,8})+$/i, '');
+}
+
+/**
+ * Files of a shared folder named after the report (tl-ioc-source-scope-v4).
+ * A publisher month folder (Cisco Talos `IOCs/2026/01`) holds one inventory
+ * per article, named by the article slug: `uat-8837.txt` belongs to
+ * `/uat-8837/`, `UAT-7290.json` to another post. When at least one file stem
+ * equals (or extends, `<slug>-keyword.txt`) the report URL slug and others do
+ * not, only the slug-named files are this report's; otherwise nothing is
+ * decided here (a campaign folder's `samples.sha256` / `domains.txt` carry
+ * no slug at all).
+ * @param {string[]} paths
+ * @param {string|null|undefined} reportUrl
+ * @returns {Set<string>|null} paths to deselect, or null when undecided
+ */
+export function reportSlugForeignFiles(paths, reportUrl) {
+  let slug = '';
+  try {
+    slug = normToken(pathSlug(new URL(String(reportUrl || '')).pathname));
+  } catch {
+    return null;
+  }
+  if (slug.length < 6) return null;
+  const files = (paths || []).filter((p) => !isReadmePath(p));
+  const own = files.filter((p) => normToken(fileStem(p)).startsWith(slug));
+  if (!own.length || own.length === files.length) return null;
+  return new Set(files.filter((p) => !own.includes(p)));
 }
 
 /**

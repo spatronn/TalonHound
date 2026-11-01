@@ -1,6 +1,6 @@
 /**
  * Fifty-two-report batch audit regressions (tl-candidates-v49,
- * tl-section-tree-v12, tl-table-v15, tl-type-resolver-v21).
+ * tl-section-tree-v12, tl-table-v16, tl-type-resolver-v22).
  *
  * A. An "Acknowledgments" heading under the IOC heading closes IOC scope: the
  *    citation links under it are references (35522, 35523).
@@ -53,11 +53,11 @@ function find(cands, type, value) {
 const BODY = '<h2>Analysis</h2><p>The operators ran a multi-stage intrusion against technology targets during the quarter.</p>'
   + '<p>They staged payloads on rented servers and rotated infrastructure every few days.</p>';
 
-test('versions: tl-candidates-v51, tl-section-tree-v13, tl-table-v15, tl-type-resolver-v21', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v51');
+test('versions: tl-candidates-v52, tl-section-tree-v13, tl-table-v16, tl-type-resolver-v22', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v52');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v13');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v15');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v16');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');
 });
 
 test('A. Acknowledgments under the IOC heading closes scope: citation links are references', () => {

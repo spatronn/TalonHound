@@ -54,8 +54,8 @@ const member = (out, value) => {
 };
 
 test('versions: tl-candidates-v42, tl-type-resolver-v19', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v51');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v52');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');
 });
 
 // --- D1. IPv6 CIDR ----------------------------------------------------------

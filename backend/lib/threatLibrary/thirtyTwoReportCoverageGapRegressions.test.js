@@ -58,7 +58,7 @@ const IOC_TABLE = `<h2>Indicators Of Compromise (IOCs)</h2>
 </tbody></table>`;
 
 test('versions: tl-candidates-v45', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v51');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v52');
 });
 
 // --- G1. Shell separators ----------------------------------------------------
