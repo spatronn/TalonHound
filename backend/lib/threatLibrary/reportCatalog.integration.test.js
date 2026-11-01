@@ -60,6 +60,12 @@ const SEED = [
     import_status: 'review_required', analysis_status: 'review_required', finalized: false },
   // PDF upload: no URL at all.
   { key: 'pdf', created_at: '2026-08-01T00:00:00Z', source_type: 'pdf', source_name: null, url: null },
+  // PDF uploads whose analyst-set source_url points at an article: no import
+  // identity, matched only through the stored URL (same canonical form).
+  { key: 'pdf_url', created_at: '2026-08-01T12:00:00Z', source_type: 'pdf', source_name: null, url: null,
+    stored_url: ' https://user@Talos.example:443/end/#appendix ' },
+  { key: 'pdf_other', created_at: '2026-08-01T06:00:00Z', source_type: 'pdf', source_name: null, url: null,
+    stored_url: 'https://talos.example/END' },
   // Soft-deleted copy of a live identity: never listed, never matched.
   { key: 'deleted', created_at: '2026-10-30T13:00:00Z', source_name: 'Talos', url: 'https://talos.example/next', deleted: true }
 ];
@@ -132,7 +138,7 @@ test('latest imported first; ties break on id; deleted reports never listed', op
     assert.equal(all.has_more, false);
     assert.equal(all.next_cursor, null);
     assert.deepEqual(keysOf(ids, all.items), [
-      'next_day', 'day_end', 'tie_us', 'tie_c', 'tie_b', 'tie_a', 'day_start', 'prev_day_end', 'dup_new', 'dup_old', 'pdf'
+      'next_day', 'day_end', 'tie_us', 'tie_c', 'tie_b', 'tie_a', 'day_start', 'prev_day_end', 'dup_new', 'dup_old', 'pdf_url', 'pdf_other', 'pdf'
     ]);
     const asc = await listReportCatalog(db, { limit: 200, sort: 'imported_asc' });
     assert.deepEqual(keysOf(ids, asc.items), keysOf(ids, all.items).reverse());
@@ -171,10 +177,10 @@ test('imported date is not the publication date', opts, async () => {
     // Published sort: known dates first (desc), unknown last, then import order.
     const byPub = await listAll(db, { sort: 'published_desc', limit: 3 });
     assert.deepEqual(keysOf(ids, byPub).slice(0, 3), ['next_day', 'day_start', 'day_end']);
-    assert.equal(byPub.length, 11);
+    assert.equal(byPub.length, 13);
     const byPubAsc = await listAll(db, { sort: 'published_asc', limit: 2 });
     assert.deepEqual(keysOf(ids, byPubAsc).slice(0, 3), ['day_start', 'next_day', 'pdf']);
-    assert.equal(new Set(byPubAsc.map((i) => i.report_id)).size, 11);
+    assert.equal(new Set(byPubAsc.map((i) => i.report_id)).size, 13);
   });
 });
 
@@ -260,6 +266,27 @@ test('batch URL check: matches, misses, equivalent spellings, non-equivalent URL
   });
 });
 
+test('stored source_url of a PDF upload is matched with the import canonical form, never loosely', opts, async () => {
+  await withSeededTx(async (db, ids) => {
+    const { results } = await checkReportUrls(db, ['https://talos.example/end', 'https://talos.example/other', 'https://talos.example/End']);
+    // URL import of the article + PDF upload of the same article: both, nothing chosen.
+    assert.deepEqual([results[0].exists, results[0].ambiguous, results[0].match_count, results[0].matched_report_id],
+      [true, true, 2, null]);
+    assert.deepEqual(results[0].matches.map((m) => [m.report_id, m.match_basis]), [
+      [ids.get('pdf_url'), 'source_url'],
+      [ids.get('day_end'), 'import_identity']
+    ]);
+    assert.equal(results[0].import_would_deduplicate, true);
+    assert.equal(results[0].matches[0].source_url, ' https://user@Talos.example:443/end/#appendix ');
+    assert.equal(results[1].exists, false);
+    // Path case is kept: /End matches neither /end nor the stored /END.
+    assert.equal(results[2].exists, false);
+    const pdfOnly = await checkReportUrls(db, ['https://TALOS.example/END']);
+    assert.deepEqual([pdfOnly.results[0].matched_report_id, pdfOnly.results[0].import_would_deduplicate, pdfOnly.results[0].report.match_basis],
+      [ids.get('pdf_other'), false, 'source_url']);
+  });
+});
+
 test('list and URL check agree on every listed URL report', opts, async () => {
   await withSeededTx(async (db) => {
     const listed = await listAll(db, { limit: 4 });
@@ -269,7 +296,9 @@ test('list and URL check agree on every listed URL report', opts, async () => {
       const r = results[n];
       assert.equal(r.exists, true, item.source_url);
       const match = r.matches.find((m) => m.report_id === item.report_id);
-      assert.deepEqual(match, item, 'same serialized report from both tools');
+      const { match_basis: basis, ...same } = match;
+      assert.equal(basis, 'import_identity');
+      assert.deepEqual(same, item, 'same serialized report from both tools');
     });
   });
 });

@@ -673,10 +673,11 @@ export function registerMcpTools(server, deps) {
       description:
         `Read-only batch check whether report SOURCE URLs (articles / advisories / PDFs by URL — not URL IOCs) are already in the Threat Library. Up to ${CATALOG_URL_CHECK_MAX} URLs per call; results keep input order (each carries its \`index\`). `
         + 'Matching uses the exact import identity of threat_library_import_url: normalized_url = canonical form (scheme and host lowercased, default port, fragment, credentials, empty `?` and one trailing path slash dropped; '
-        + 'http vs https, path case and the query string are kept, so those variants are different reports) compared against active URL-imported reports. '
-        + 'Per URL: queried_url, normalized_url, valid (+ invalid_reason empty | not_http_url), exists, match_count, ambiguous, matched_report_id (only when exactly one report matches), '
+        + 'http vs https, path case and the query string are kept, so those variants are different reports) compared against active URL-imported reports (match_basis import_identity) '
+        + 'and against the stored source_url of active non-URL reports such as a PDF upload of the same article (match_basis source_url, same canonical form; import dedup does not see these). '
+        + 'Per URL: queried_url, normalized_url, valid (+ invalid_reason empty | not_http_url), exists, match_count, ambiguous, import_would_deduplicate (threat_library_import_url would answer already_exists), matched_report_id (only when exactly one report matches), '
         + 'finalized (true only when every match is finalized), requires_further_processing, requires_review, report (the single match) and matches[] '
-        + `(all matching reports, oldest import first, ≤${CATALOG_URL_MATCHES_MAX}; same item shape as threat_library_list_reports: report_id, title, publisher, source_url, imported_at, published_at, import_status, analysis_status, review_phase, finalized, processing_state, next_action …). `
+        + `(all matching reports, oldest import first, ≤${CATALOG_URL_MATCHES_MAX}; same item shape as threat_library_list_reports plus match_basis: report_id, title, publisher, source_type, source_url, imported_at, published_at, import_status, analysis_status, review_phase, finalized, processing_state, next_action …). `
         + 'When several reports share one identity, ambiguous=true and matched_report_id=null — read matches (threat_library_import_url resolves such a duplicate to the oldest). '
         + 'A failed, still-processing or review-pending report counts as existing (exists=true) but not finalized: do not re-import it — it needs processing or analyst review. '
         + '`summary` totals the batch. Never fetches the URLs, never imports, refreshes, reviews or finalizes anything, and returns no IOCs or report content.',

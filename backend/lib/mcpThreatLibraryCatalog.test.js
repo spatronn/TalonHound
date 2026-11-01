@@ -69,6 +69,16 @@ function recordingPool(rows = []) {
           }))
         };
       }
+      if (/source_type <> 'url'/.test(sql)) {
+        // Host prefilter of the stored source_url (the SQL extracts the authority host).
+        const hosts = new Set(params[0]);
+        return {
+          rows: rows.filter((r) => {
+            if (r.source_type === 'url' || !r.source_url) return false;
+            try { return hosts.has(new URL(r.source_url.trim()).hostname); } catch { return false; }
+          })
+        };
+      }
       return { rows };
     }
   };
@@ -292,7 +302,8 @@ test('batch check: one query, input order kept, matches / misses / invalid / dup
     ]
   });
   assert.equal(error, null);
-  assert.equal(pool.queries.length, 1, 'one batched statement (no N+1)');
+  assert.equal(pool.queries.length, 2, 'two batched statements per request (no N+1)');
+  assert.deepEqual(pool.queries[1].params, [['example.com']], 'stored-URL lookup prefiltered on the queried hosts');
   assert.match(pool.queries[0].sql, /^SELECT /);
   assert.match(pool.queries[0].sql, /source_type = 'url' AND r\.deleted_at IS NULL/);
   assert.deepEqual(
@@ -336,6 +347,37 @@ test('batch check: one query, input order kept, matches / misses / invalid / dup
   assert.deepEqual(data.summary, {
     queried: 9, valid: 7, invalid: 2, existing: 5, missing: 2, ambiguous: 1, finalized: 2, requiring_action: 3
   });
+  assert.ok(r[1].matches.every((m) => m.match_basis === 'import_identity'));
+  assert.equal(r[1].import_would_deduplicate, true);
+});
+
+test('batch check: a PDF upload whose stored source_url is the queried report URL exists (match_basis source_url)', async () => {
+  // Production shape: the article was uploaded as a PDF and the analyst set
+  // source_url to the article; URL import dedup cannot see it.
+  const pdf = reportRow({
+    source_type: 'pdf', source_url: ' https://www.Sophos.com/en-us/blog/aur0ra/ ', source_url_canonical: null
+  });
+  const pdfOtherPath = reportRow({ source_type: 'pdf', source_url: 'https://www.sophos.com/en-us/blog/other', source_url_canonical: null });
+  const pdfQuery = reportRow({ source_type: 'pdf', source_url: 'https://www.sophos.com/en-us/blog/aur0ra?page=2', source_url_canonical: null });
+  const urlCopy = reportRow({ source_url_canonical: 'https://news.example/x' });
+  const pdfCopy = reportRow({ source_type: 'pdf', source_url: 'https://news.example/x#ref', source_url_canonical: null });
+  const pool = recordingPool([pdf, pdfOtherPath, pdfQuery, urlCopy, pdfCopy]);
+  const { results } = await checkReportUrls(pool, [
+    'https://www.sophos.com/en-us/blog/aur0ra',
+    'http://www.sophos.com/en-us/blog/aur0ra',
+    'https://news.example/x'
+  ]);
+  assert.deepEqual(
+    [results[0].exists, results[0].match_count, results[0].matched_report_id, results[0].import_would_deduplicate],
+    [true, 1, pdf.public_id, false]
+  );
+  assert.equal(results[0].report.match_basis, 'source_url');
+  assert.equal(results[0].report.source_type, 'pdf');
+  assert.equal(results[1].exists, false, 'scheme still distinguishes');
+  // A URL import and a PDF of the same article: both shown, nothing chosen.
+  assert.deepEqual([results[2].ambiguous, results[2].match_count, results[2].matched_report_id], [true, 2, null]);
+  assert.deepEqual(results[2].matches.map((m) => m.match_basis).sort(), ['import_identity', 'source_url']);
+  assert.equal(results[2].import_would_deduplicate, true);
 });
 
 test('batch check: limits enforced in the service as well as the schema', async () => {

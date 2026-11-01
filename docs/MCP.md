@@ -135,7 +135,7 @@ Profile presets:
 | `remove_ioc_tags` | `mcp:ioc:read` + `mcp:tags:write` | **No — action** | Remove analyst tags from one IOC. Source/feed and Threat Library tags are never removed (`not_removable`). |
 | `threat_library_import_url` | `mcp:ioc:read` + `mcp:threat_library:import` | **No — action** | Import a public report URL into the Threat Library: the same operation as Import Intelligence → URL → Start Import. Returns `outcome` (`import_started` / `already_exists`), `report_id`, `job_id` and the persisted processing state. See [Threat Library URL import](#threat-library-url-import-action-tool). |
 | `threat_library_list_reports` | `mcp:ioc:read` | Yes | Report catalog: filters `imported_from`/`imported_to`, `published_from`/`published_to` (UTC day or ISO timestamp), `publisher`, `import_status`, `review_phase`; `sort` (default `imported_desc`); `limit` ≤ 200; keyset `cursor`. Metadata only. See [Threat Library report catalog](#threat-library-report-catalog-read-only). |
-| `threat_library_check_report_urls` | `mcp:ioc:read` | Yes | Up to 100 report source URLs → per URL `exists`, `normalized_url`, `matched_report_id`, `ambiguous`, `finalized`, `requires_*`, `matches[]`, in input order. |
+| `threat_library_check_report_urls` | `mcp:ioc:read` | Yes | Up to 100 report source URLs → per URL `exists`, `normalized_url`, `matched_report_id`, `ambiguous`, `import_would_deduplicate`, `finalized`, `requires_*`, `matches[]` (each with `match_basis`), in input order. |
 | `get_threat_library_import_status` | `mcp:ioc:read` | Yes | Processing state of one report by `report_id`: `review_phase`, import/analysis status, `failure`, latest job, `ingestion_complete` / `ingestion_failed` / `readable_with_get_threat_report`. |
 | `threat_library_get_review` | `mcp:ioc:read` | Yes | Review surface: counts, gates, linked IOC Sources, paged candidates. See [Threat Library review lifecycle](#threat-library-review-lifecycle-post-import). |
 | `threat_library_get_workflow_status` | `mcp:ioc:read` | Yes | Lifecycle stages + remaining actions. |
@@ -341,9 +341,11 @@ Both tools return the same report item:
 ### `threat_library_check_report_urls`
 
 - Input `{ "urls": [ … ] }`, 1–100 entries; `null` / empty / non-http(s) entries are answered as `valid: false` (`invalid_reason` `empty` | `not_http_url`) instead of failing the batch.
-- Identity = the import duplicate identity (`canonicalizeReportUrl`): scheme/host lowercased, default port, fragment, credentials, empty `?` and one trailing path slash dropped. `http` vs `https`, path case and the query string are **kept**, so those are different reports. Only active (not deleted) URL-imported reports match; one indexed query per batch.
-- Per URL (input order, with `index`): `queried_url`, `normalized_url`, `valid`, `exists`, `match_count`, `ambiguous`, `matched_report_id`, `finalized`, `requires_further_processing`, `requires_review`, `report`, `matches[]`.
-- Several reports with one identity (historical duplicates): `ambiguous: true`, `matched_report_id: null`, `report: null`, and every match in `matches` (oldest import first, ≤ 20; `match_count` is the full number). `threat_library_import_url` resolves such a URL to the oldest. Item-level `finalized` is true only when every match is finalized.
+- Identity = the import duplicate identity (`canonicalizeReportUrl`): scheme/host lowercased, default port, fragment, credentials, empty `?` and one trailing path slash dropped. `http` vs `https`, path case and the query string are **kept**, so those are different reports. Only active (not deleted) reports match, on two bases:
+  - `match_basis: "import_identity"`: a URL-imported report with that identity (one indexed query per batch). `import_would_deduplicate: true` means `threat_library_import_url` would answer `already_exists`.
+  - `match_basis: "source_url"`: a non-URL report (e.g. a PDF upload of the article) whose stored `source_url` has exactly the same canonical form (one host-prefiltered query per batch). Import dedup does **not** see these, so an import of the URL would create a second copy of the report.
+- Per URL (input order, with `index`): `queried_url`, `normalized_url`, `valid`, `exists`, `match_count`, `ambiguous`, `import_would_deduplicate`, `matched_report_id`, `finalized`, `requires_further_processing`, `requires_review`, `report`, `matches[]`.
+- Several reports with one identity (historical duplicates, or a URL import plus a PDF of the same article): `ambiguous: true`, `matched_report_id: null`, `report: null`, and every match in `matches` (oldest import first, ≤ 20; `match_count` is the full number). `threat_library_import_url` resolves such a URL to the oldest. Item-level `finalized` is true only when every match is finalized.
 - `summary`: `queried`, `valid`, `invalid`, `existing`, `missing`, `ambiguous`, `finalized`, `requiring_action`.
 
 ```json
@@ -351,12 +353,12 @@ Both tools return the same report item:
   "results": [
     { "index": 0, "queried_url": "https://Example.com/blog/post/#top", "normalized_url": "https://example.com/blog/post",
       "valid": true, "invalid_reason": null, "exists": true, "match_count": 1, "ambiguous": false,
-      "matched_report_id": "4f6c…", "finalized": false, "requires_further_processing": false, "requires_review": true,
-      "report": { "report_id": "4f6c…", "review_phase": "review_ready", "processing_state": "needs_review", "…": "…" },
-      "matches": [ { "report_id": "4f6c…", "…": "…" } ] },
+      "import_would_deduplicate": true, "matched_report_id": "4f6c…", "finalized": false, "requires_further_processing": false, "requires_review": true,
+      "report": { "report_id": "4f6c…", "match_basis": "import_identity", "review_phase": "review_ready", "processing_state": "needs_review", "…": "…" },
+      "matches": [ { "report_id": "4f6c…", "match_basis": "import_identity", "…": "…" } ] },
     { "index": 1, "queried_url": "https://example.com/new", "normalized_url": "https://example.com/new",
       "valid": true, "invalid_reason": null, "exists": false, "match_count": 0, "ambiguous": false,
-      "matched_report_id": null, "finalized": false, "requires_further_processing": false, "requires_review": false,
+      "import_would_deduplicate": false, "matched_report_id": null, "finalized": false, "requires_further_processing": false, "requires_review": false,
       "report": null, "matches": [] }
   ],
   "summary": { "queried": 2, "valid": 2, "invalid": 0, "existing": 1, "missing": 1, "ambiguous": 0, "finalized": 0, "requiring_action": 1 }
