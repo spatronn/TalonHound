@@ -149,7 +149,7 @@ const OPERATIONAL_INFRA_RE =
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 
 const REFERENCE_INTENT_RE =
-  /^(?:references?|bibliography|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|^contact(?:s|ing)?(?:\s+(?:us|information|info|details|the\s+(?:authors?|team|researchers?)|our\s+team))?\s*[:.!]?\s*$|参考链接|参考文献|相关链接|联系方式/i;
+  /^(?:references?(?!\s+(?:iocs?|indicators?)\b)|acknowledge?ments?|bibliography|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|^contact(?:s|ing)?(?:\s+(?:us|information|info|details|the\s+(?:authors?|team|researchers?)|our\s+team))?\s*[:.!]?\s*$|参考链接|参考文献|相关链接|联系方式/i;
 
 /**
  * Surrounding prose that names a reporting / law-enforcement contact channel
@@ -328,6 +328,18 @@ const OPERATIONAL_RELATION_RE =
 const HOSTED_OBJECT_RE =
   /\bhost(?:s|ed|ing)?\s+(?:the\s+|a\s+|an\s+)?(?:(?:malicious|phishing|attacker|fake|rogue|c2|c&c)\s+)?(?:(?:domains?|sites?|websites?|pages?|payloads?|servers?|urls?|files?)\s+)?[-–—:]?\s*["'“”‘’`]?\s*OBSERVABLE/i;
 
+/**
+ * The value is one of the trusted platforms the operation builds on ("built on
+ * well-known, trusted services like OBSERVABLE (a popular PaaS), Cloudflare"):
+ * a provider, even inside an IOC table (tl-candidates-v49).
+ */
+const TRUSTED_SERVICE_LEAD_RE =
+  /\b(?:trusted|legitimate|popular|well[\s-]known)\s+(?:services?|platforms?|providers?)\s+(?:like|such\s+as|including)\s+(?:[^.;]{0,80}?,\s*)?OBSERVABLE\b/i;
+
+/** An address (or range) annotated with its hosting provider: "1.2.3.0 (Railway.com)". */
+const IP_PROVIDER_ANNOTATION_RE =
+  /(?<![\d.])\d{1,3}(?:\[?\.\]?\d{1,3}){3}(?:\/\d{1,2})?\s*[(（]\s*OBSERVABLE\s*[)）]/;
+
 const PROVIDER_RELATION_RE =
   /\b(?:purchased?|bought|rented?|leased?|registered?\s+(?:via|through|with|at)|subscri(?:bed|be)|procur(?:ed|e)|to\s+purchase|(?:rent|purchas|bought|buy|leas|subscrib|procur|acquir)\w*\b[^.;]{0,60}?\bto\s+host|services?\s+such\s+as|infrastructure\s+provider|cloud\s+provider|hosting\s+provider|vps\s+provider|vpn\s+provider|used\s+(?:the\s+)?(?:commercial\s+)?(?:services?|providers?|vendors?|platforms?|vpn|vps|proxy|cloud(?:\s+provider)?)|from\s+(?:a\s+)?(?:vps|vpn|proxy|hosting|cloud)\s+(?:provider|vendor|service)|commercial\s+vpn)\b|satın\s+al|satın\s+ald|购买|租用|注册于/i;
 
@@ -363,7 +375,7 @@ const CONTEXT_RELATION_RE =
 const BENIGN_COMPONENT_RE =
   /\b(?:legitimate|legit|benign|genuine|clean|non-malicious|not\s+malicious|official(?:ly)?\s+signed|digitally\s+signed|(?<!(?:dkim|dmarc|mail|e-?mail)[-\s])signed\s+by(?!\s+(?:the\s+|an?\s+)?(?:operators?|attackers?|actors?|threat[\s-]+actors?|adversar\w*|campaign|operation|intruders?)\b)|trusted\s+(?:binary|component|executable|application|program|file))\b/i;
 const BENIGN_NEGATION_RE =
-  /\b(?:malicious|malware|trojan\w*|backdoor\w*|implant|fake|fraudulent|masquerad\w*|impersonat\w*|spoof\w*|disguis\w*|mimic\w*|look-?alike|typo-?squat\w*|legitimate[- ]looking|appears?\s+(?:to\s+be\s+)?legitimate|looks?\s+legitimate|abus\w*|hijack\w*|weaponi[sz]\w*|tamper\w*|modified|patched|compromised|infected|side-?load\w*|payload|loader|dropper)\b/i;
+  /\b(?:malicious|malware|(?<!\bnot\s)suspicious|trojan\w*|backdoor\w*|implant|fake|fraudulent|masquerad\w*|impersonat\w*|spoof\w*|disguis\w*|mimic\w*|look-?alike|typo-?squat\w*|legitimate[- ]looking|appears?\s+(?:to\s+be\s+)?legitimate|looks?\s+legitimate|abus\w*|hijack\w*|weaponi[sz]\w*|tamper\w*|modified|patched|compromised|infected|side-?load\w*|payload|loader|dropper)\b/i;
 
 /**
  * A structural IOC row that names its own value a lure / phishing / decoy
@@ -1264,6 +1276,11 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
         namesProviderService(full.replace(/\bOBSERVABLE\b/g, ' '))) {
       return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
     }
+    // "162.220.232.0 (Railway.com) | IP Range | …": the parenthesised host is
+    // the address's hosting provider (tl-candidates-v49).
+    if (structuralRow && form !== 'ip_port' && (IP_PROVIDER_ANNOTATION_RE.test(full) || TRUSTED_SERVICE_LEAD_RE.test(full))) {
+      return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
+    }
     if (structuralRow && form !== 'ip_port' && RESOLUTION_SERVICE_ROW_RE.test(full) &&
         !MALICIOUS_VALUE_ROLE_RE.test(full.replace(/\bOBSERVABLE\b/g, ' ')) && !STANCE_OVERRIDE_RE.test(full)) {
       return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
@@ -1297,6 +1314,12 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
   }
 
   if (INTERCEPTED_SERVICE_RE.test(text) && !STANCE_OVERRIDE_RE.test(text)) {
+    return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: false };
+  }
+  // "162.220.232.0 (Railway.com)": the host named in parentheses right after
+  // an address is the address's hosting provider, not a second indicator
+  // (tl-candidates-v49).
+  if (IP_PROVIDER_ANNOTATION_RE.test(text) || IP_PROVIDER_ANNOTATION_RE.test(full) || TRUSTED_SERVICE_LEAD_RE.test(text)) {
     return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: false };
   }
 

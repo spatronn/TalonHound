@@ -582,7 +582,7 @@ export function registerMcpTools(server, deps) {
         + 'Otherwise `outcome` = `import_started`: a report and an analyze job are created and queued for the normal Threat Library worker (fetch → extraction → analysis); '
         + 'the response carries report_id, job_id and the persisted processing state (`report.review_phase` preparing | review_ready | finalized | failed, import/analysis status, job status). '
         + 'A queued job is NOT a finished import: poll get_threat_library_import_status until `ingestion_complete` or `ingestion_failed`, then read the report with get_threat_report / threat_library_get_review. '
-        + 'URLs that serve a PDF are not ingested by URL import (the job fails with pdf_via_url_unsupported, as in the UI). '
+        + 'A URL that serves a PDF is extracted with the PDF extractor and the PDF is retained with the report, as in the UI. '
         + 'Never auto-approves IOC candidates and never runs Create IOCs or finalize — those are separate MCP tools (threat_library_review_iocs / threat_library_create_iocs / threat_library_finalize_report) that require explicit analyst decisions and mcp:threat_library:write. Audited as the UI import events with MCP provenance.',
       inputSchema: {
         url: z.string().min(1).max(config.valueMaxChars).describe('Public http(s) URL of the threat report')

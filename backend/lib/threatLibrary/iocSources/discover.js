@@ -19,6 +19,7 @@ import {
   scoreIocSourceCandidate
 } from './externalIocReference.js';
 import { guessTypeFromUrl } from './sourceType.js';
+import { normalizeGitHubDirectoryUrl } from './github.js';
 
 export { EXTERNAL_IOC_POINTER_RE, scoreIocSourceCandidate } from './externalIocReference.js';
 
@@ -143,7 +144,7 @@ export function discoverIocSourcesFromHtml(html, opts = {}) {
     }
     let absolute;
     try {
-      absolute = new URL(hrefRaw, opts.reportUrl || undefined).href;
+      absolute = normalizeGitHubDirectoryUrl(new URL(hrefRaw, opts.reportUrl || undefined).href);
     } catch {
       continue;
     }
@@ -194,7 +195,7 @@ export function discoverIocSourcesFromBlocks(blocks, opts = {}) {
   const found = findExternalIocReferencesInBlocks(blocks, opts);
   const byCanon = new Map();
   for (const item of found) {
-    const canonical = canonicalizeReportUrl(item.href);
+    const canonical = canonicalizeReportUrl(normalizeGitHubDirectoryUrl(item.href));
     if (!canonical) continue;
     const prev = byCanon.get(canonical);
     if (prev && prev.score >= item.score) continue;

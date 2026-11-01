@@ -185,6 +185,25 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           document = fetched.document;
           sourceHtml = fetched.bodyText || null;
           let stored = null;
+          if (fetched.pdf?.buffer) {
+            // URL that serves a PDF: retained as the report's stored PDF, so a
+            // later extractor contract change re-extracts it like an upload.
+            const pdfStored = await storeArtifactBuffer(report.id, fetched.pdf.buffer, {
+              fileName: fetched.pdf.fileName,
+              ext: '.pdf'
+            });
+            await insertArtifact(pool, report.id, {
+              artifact_type: 'pdf_upload',
+              file_name: fetched.pdf.fileName,
+              mime_type: 'application/pdf',
+              size_bytes: pdfStored.sizeBytes,
+              sha256: pdfStored.sha256,
+              storage_key: pdfStored.storageKey,
+              requires_ocr: false,
+              source_metadata: { page_count: fetched.pdf.pageCount, url: fetched.url, final_url: fetched.finalUrl },
+              text_excerpt: (document.blocks || []).slice(0, 3).map((b) => b.text).join('\n').slice(0, 1000)
+            });
+          }
           if (fetched.bodyText) {
             try {
               stored = await storeArtifactBuffer(report.id, Buffer.from(fetched.bodyText, 'utf8'), {

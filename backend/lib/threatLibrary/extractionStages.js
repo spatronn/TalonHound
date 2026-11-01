@@ -61,7 +61,8 @@ export function hasUsableDocument(doc) {
  */
 export function isDocumentContractCurrent(report, doc) {
   if (!hasUsableDocument(doc)) return false;
-  if (report?.source_type === 'pdf') {
+  // A URL that served a PDF carries a PDF-extracted document.
+  if (report?.source_type === 'pdf' || (report?.source_type === 'url' && doc.meta?.adapter === 'pdf')) {
     return doc.meta?.extractor === THREAT_LIBRARY_PDF_EXTRACTOR_VERSION;
   }
   if (report?.source_type === 'url') {
@@ -109,7 +110,9 @@ export async function loadStoredPdfArtifact(pool, reportId) {
  * @returns {Promise<{ document: object, sourceHtml: string|null }|null>}
  */
 export async function rebuildDocumentFromRetainedSource(pool, report) {
-  if (report?.source_type === 'url') {
+  // A URL report whose URL served a PDF retains that PDF (pipeline.js), never HTML.
+  const urlPdf = report?.source_type === 'url' ? await loadStoredPdfArtifact(pool, report.id) : null;
+  if (report?.source_type === 'url' && !urlPdf) {
     const retained = await loadRetainedHtmlArtifact(pool, report.id);
     if (!retained?.storage_key) return null;
     const html = (await readArtifactBuffer(retained.storage_key)).toString('utf8');
@@ -120,8 +123,8 @@ export async function rebuildDocumentFromRetainedSource(pool, report) {
     });
     return reextracted?.document ? { document: reextracted.document, sourceHtml: html } : null;
   }
-  if (report?.source_type === 'pdf') {
-    const artifact = await loadStoredPdfArtifact(pool, report.id);
+  if (report?.source_type === 'pdf' || urlPdf) {
+    const artifact = urlPdf || (await loadStoredPdfArtifact(pool, report.id));
     if (!artifact?.storage_key) return null;
     const pdf = await pdfToCanonicalDocument(await readArtifactBuffer(artifact.storage_key), {
       fileName: report.source_file_name || artifact.file_name

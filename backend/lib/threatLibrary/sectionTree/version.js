@@ -42,8 +42,11 @@
  * ("Observed C2 IPs", "Representative observed domains"), and that sibling's
  * inventory may sit under its own deeper group headings
  * ("### Representative observed domains" › "#### Wave 1 domains" › table).
+ * v12 (52-report audit): an "Acknowledgments" heading closes IOC scope like
+ * "References" (citation links under an IOC table), and "Reference IoCs"
+ * heads an indicator list rather than a bibliography.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v11';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v12';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';

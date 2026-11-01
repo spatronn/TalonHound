@@ -9,6 +9,7 @@
  * a concrete destination (visible URL or structured hyperlink href).
  */
 
+import { normalizeGitHubDirectoryUrl } from './github.js';
 import {
   IOC_SOURCE_DISCOVERY_CUES,
   IOC_SOURCE_DISCOVERY_SCORE_THRESHOLD,
@@ -84,7 +85,8 @@ const OBSERVABLE_LINK_TEXT_RE =
  * are not IOC packs.
  * @returns {{ score: number, matchedCues: string[], hasTextEvidence: boolean, rejected?: string }}
  */
-export function scoreIocSourceCandidate({ href, linkText, surrounding, headingText, reportHost, leadIn }) {
+export function scoreIocSourceCandidate({ href: rawHref, linkText, surrounding, headingText, reportHost, leadIn }) {
+  const href = normalizeGitHubDirectoryUrl(rawHref);
   // Strip absolute URLs from prose before cue / pointer matching so a bare
   // https://github.com/... hostname cannot satisfy "… available … github …".
   // The publisher's lead-in for the anchor's list ("For a downloadable copy of

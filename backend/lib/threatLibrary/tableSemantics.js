@@ -85,12 +85,140 @@ function embeddedAbsoluteUrl(token) {
  * ("`host`") are formatting, not part of the value. A free-text category
  * cell that declares no type never overrides the network type the indicator
  * column's own header declares ("Spoofed domain" over "Input method").
+ * v15 (52-report audit): values glued together by the publisher's markup
+ * split where the boundary is certain — a hex run that is an exact multiple
+ * of the declared digest length, a URL scheme opening right after the
+ * previous URL, a dotted-digit run with exactly one reading as consecutive
+ * IPv4 addresses (domains never: TLD boundaries are ambiguous). A digest the
+ * description cell labels ("SHA-256: <hex>") is a value of its row. An
+ * untyped row whose description says the value is "sent as POST body" is
+ * request content, like a v13 type cell.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v14';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v15';
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
   /\b(?:(?:post|get|put|http|request|response|beacon)\s+(?:body|bodies|data|payloads?|headers?|parameters?)|user[\s-]?agents?|cookies?)\b/i;
+
+/** Description saying the row's value is sent inside a request ("Sent as POST body to C2", v15). */
+const REQUEST_CONTENT_DESCRIPTION_RE =
+  /\bsent\s+(?:as|in|inside)\s+(?:the\s+|a\s+|an\s+)?(?:post|get|put|http|request|beacon)\s+(?:body|bodies|data|payloads?|headers?|parameters?)\b/i;
+
+const GLUED_HASH_LENGTH = Object.freeze({ sha256: 64, sha1: 40, md5: 32 });
+/** A (possibly defanged) URL scheme opening a value: "https://", "hxxps[://]", "hxxp[:]//". */
+const GLUED_SCHEME_START_RE = /(?:h[tx]{2}ps?|ftp)(?:\[:\/\/\]|\[:\]\/\/|:\/\/|\[:\/\/|:\[\/\/\])/gi;
+const IPV4_OCTET_RE = /^(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
+
+/**
+ * Every way a run of dotted digits reads as consecutive IPv4 addresses whose
+ * last and next first octet are glued ("1.2.3.45.6.7.8" = 1.2.3.4 + 5.6.7.8
+ * or 1.2.3.45 + …). Stops counting past two readings.
+ * @param {string[]} groups digit groups between dots
+ */
+function gluedIpv4Readings(groups) {
+  const out = [];
+  const walk = (gi, carry, acc) => {
+    if (out.length > 1) return;
+    if (gi === groups.length && !carry) {
+      out.push(acc);
+      return;
+    }
+    // One address = 4 octets; the 1st may be the tail of a split group.
+    const take = (octets, idx, rest) => {
+      if (out.length > 1) return;
+      if (octets.length === 4) {
+        const ip = octets.join('.');
+        if (rest) walk(idx, rest, [...acc, ip]);
+        else walk(idx, '', [...acc, ip]);
+        return;
+      }
+      if (idx >= groups.length) return;
+      const g = groups[idx];
+      if (octets.length < 3) {
+        if (IPV4_OCTET_RE.test(g)) take([...octets, g], idx + 1, '');
+        return;
+      }
+      // 4th octet: the whole group, or a prefix whose remainder opens the next address.
+      if (IPV4_OCTET_RE.test(g)) take([...octets, g], idx + 1, '');
+      for (let k = 1; k <= 3 && k < g.length; k += 1) {
+        const head = g.slice(0, k);
+        const tail = g.slice(k);
+        if (IPV4_OCTET_RE.test(head) && IPV4_OCTET_RE.test(tail)) take([...octets, head], idx + 1, tail);
+      }
+    };
+    if (carry) take([carry], gi, '');
+    else if (gi < groups.length) take([], gi, '');
+  };
+  walk(0, '', []);
+  return out;
+}
+
+/**
+ * Split one cell token holding several glued values; null when nothing is
+ * certain. Hashes: a hex run that is an exact multiple of the declared digest
+ * length. URLs: a scheme that opens right after an alphanumeric (the previous
+ * URL's last character) — never "=https://" / "/https://" redirect targets.
+ * IPv4: a dotted-digit run with exactly one reading as consecutive addresses.
+ * Domains are never split: TLD boundaries are ambiguous ("co"/"com").
+ * @param {string} token
+ * @param {{ type: string }|null} declared
+ * @returns {string[]|null}
+ */
+function splitGluedToken(token, declared) {
+  const hashLen = declared ? GLUED_HASH_LENGTH[declared.type] : null;
+  if (hashLen && /^[0-9a-f]+$/i.test(token) && token.length > hashLen && token.length % hashLen === 0) {
+    const parts = [];
+    for (let i = 0; i < token.length; i += hashLen) parts.push(token.slice(i, i + hashLen));
+    return parts;
+  }
+  const cuts = [];
+  for (const m of token.matchAll(GLUED_SCHEME_START_RE)) {
+    if (m.index > 0 && /[A-Za-z0-9]/.test(token[m.index - 1])) cuts.push(m.index);
+  }
+  if (cuts.length && GLUED_SCHEME_START_RE.test(token.slice(0, 12))) {
+    GLUED_SCHEME_START_RE.lastIndex = 0;
+    const parts = [];
+    let from = 0;
+    for (const c of cuts) {
+      parts.push(token.slice(from, c));
+      from = c;
+    }
+    parts.push(token.slice(from));
+    return parts;
+  }
+  GLUED_SCHEME_START_RE.lastIndex = 0;
+  if (declared?.type === 'ip') {
+    const dotted = refangObservable(token);
+    if (/^\d{1,3}(?:\.\d+){4,}$/.test(dotted)) {
+      const readings = gluedIpv4Readings(dotted.split('.'));
+      if (readings.length === 1 && readings[0].length > 1) return readings[0];
+    }
+  }
+  return null;
+}
+
+/**
+ * @param {string} source normalized cell text
+ * @param {{ type: string }|null} declared
+ * @returns {string[]|null} the cell's values, one per entry, when any token was split
+ */
+function splitGluedCellValues(source, declared) {
+  const tokens = String(source || '').split(/\s+/).filter(Boolean);
+  let changed = false;
+  const out = [];
+  for (const t of tokens) {
+    const parts = splitGluedToken(t, declared);
+    if (parts && parts.length > 1) {
+      changed = true;
+      out.push(...parts);
+    } else out.push(t);
+  }
+  return changed ? out : null;
+}
+
+/** A digest labeled by its algorithm inside a description cell ("SHA-256: <hex>", v15). */
+const DESCRIPTION_LABELED_HASH_RE =
+  /\b(SHA-?256|SHA-?1|MD5)\s*[:=]\s*([0-9a-fA-F]{64}|[0-9a-fA-F]{40}|[0-9a-fA-F]{32})\b/g;
 
 export const COLUMN_INTENTS = Object.freeze({
   TYPE: 'type',
@@ -444,6 +572,17 @@ export function joinWrappedUrlTail(text) {
  */
 export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
   const source = normalizeCellText(cellText);
+  // Values the publisher's markup glued together (a CMS that dropped the <br>
+  // between them): split only where the boundary is certain (tl-table-v15).
+  if (!ctx.unglued) {
+    const unglued = splitGluedCellValues(source, declared);
+    if (unglued) {
+      const split = parseIndicatorCell(unglued.join('\n'), declared, { ...ctx, unglued: true });
+      // Each value's own part is its cell text: the glued run around it is
+      // not context ("…51154…" is not a hostname holding the address).
+      return { ...split, values: split.values.map((v) => ({ ...v, unglued_cell: String(v.raw || v.refanged || '').trim() })) };
+    }
+  }
   // A URL the publisher's layout wrapped inside one cell ("http://h:443/" then
   // "payload.exe" on the next line): one value; `raw` keeps the cell as written.
   const refanged = refangObservable(joinWrappedUrlTail(source) || source);
@@ -1278,14 +1417,18 @@ export function interpretIocTable(block, opts = {}) {
       continue;
     }
     const declaredRow = typeCol ? parseDeclaredType(cells[typeCol.index]) : null;
+    const description = descCols.map((c) => String(cells[c.index] || '').trim()).filter(Boolean).join(' · ') || null;
     // A type cell naming request content ("macOS POST body", "User-Agent")
     // types the row's value as a string the malware sends, not a host it
-    // contacts (tl-table-v13).
-    if (typeCol && !declaredRow && REQUEST_CONTENT_TYPE_CELL_RE.test(String(cells[typeCol.index] || ''))) {
+    // contacts (tl-table-v13). v15: so does an untyped row whose description
+    // says so ("npm identifier (Windows)" | "Sent as POST body to C2").
+    if (
+      typeCol && !declaredRow &&
+      (REQUEST_CONTENT_TYPE_CELL_RE.test(String(cells[typeCol.index] || '')) || REQUEST_CONTENT_DESCRIPTION_RE.test(description || ''))
+    ) {
       reject({ row_index: i, cells: cells.map((c) => String(c || '').trim()), values: [] }, 'request_content_type_cell');
       continue;
     }
-    const description = descCols.map((c) => String(cells[c.index] || '').trim()).filter(Boolean).join(' · ') || null;
     const row = {
       row_index: i,
       // Index of this row in the block's own `table.rows` (a promoted header
@@ -1317,7 +1460,7 @@ export function interpretIocTable(block, opts = {}) {
         row.values.push({
           ...v,
           column_index: col.index,
-          indicator_cell: cell.trim(),
+          indicator_cell: v.unglued_cell || cell.trim(),
           // The label that typed this value (category cells excluded, v14).
           type_label: typeLabel,
           declared_type: declared ? declared.type : null,
@@ -1326,6 +1469,30 @@ export function interpretIocTable(block, opts = {}) {
       }
       rejected.push(...parsed.rejected);
       if (!parsed.values.length && parsed.reason) rejected.push({ raw: cell, error: parsed.reason });
+    }
+    // A digest the description cell labels for the row's file
+    // ("%TEMP%\6202033.ps1 | PowerShell payload | … SHA-256: <hex>") is a
+    // value of the row, typed by its own label (tl-table-v15).
+    for (const col of descCols) {
+      const text = String(cells[col.index] || '');
+      for (const m of text.matchAll(DESCRIPTION_LABELED_HASH_RE)) {
+        const declared = parseDeclaredType(m[1]);
+        if (!declared || !['sha256', 'sha1', 'md5'].includes(declared.type)) continue;
+        const parsed = parseIndicatorCell(m[2], declared, { typeLabel: m[1] });
+        for (const v of parsed.values) {
+          if (v.candidate_type !== declared.type) continue;
+          if (row.values.some((x) => x.candidate_type === v.candidate_type && x.normalized_value === v.normalized_value)) continue;
+          row.values.push({
+            ...v,
+            column_index: col.index,
+            indicator_cell: m[0].trim(),
+            type_label: m[1],
+            declared_type: declared.type,
+            declared_endpoint: false,
+            labeled_in_description: true
+          });
+        }
+      }
     }
     if (!row.values.length) {
       const allEmpty = indicatorCols.every((c) => !String(cells[c.index] || '').trim());

@@ -301,7 +301,7 @@ MCP threat_library_import_url { url }
   - `MISSING_SCOPE` and `RBAC_DENIED` are returned before any database access.
 - **Failures after acceptance** happen in the worker and are read with `get_threat_library_import_status`: `review_phase: "failed"`, `ingestion_failed: true`, `failure {stage, code, reason}`. Example failure codes:
   - `redirect_blocked` / `destination_blocked`: unsafe redirect or DNS answer.
-  - `pdf_via_url_unsupported`: the URL serves a PDF. URL import does not ingest PDFs; upload the PDF in the UI instead.
+  - `pdf_ocr_required`: the URL serves a PDF without a text layer. A URL that serves a text PDF is extracted with the PDF extractor and the PDF is retained with the report. Reports that failed earlier with `pdf_via_url_unsupported` recover with Retry.
   - fetch or HTTP errors.
 
   A re-import of a failed URL is still a duplicate, as in the UI. Retry is a UI action.

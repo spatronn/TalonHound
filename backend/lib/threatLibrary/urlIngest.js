@@ -18,6 +18,7 @@ import {
 import { extractCanonicalDocumentFromHtml, extractGenericArticleDocument } from './extract/extractHtml.js';
 import { assessDocumentQuality } from './extract/quality.js';
 import { textToBlocksWithTables } from './extract/textTables.js';
+import { pdfToCanonicalDocument } from './pdfIngest.js';
 
 export const THREAT_LIBRARY_TEXT_EXTRACTOR_VERSION = 'threat_library_text_v2';
 
@@ -41,6 +42,21 @@ export function plainTextToCanonicalDocument(text, meta = {}) {
     blocks,
     meta: { source_url: meta.sourceUrl || null, extractor: THREAT_LIBRARY_TEXT_EXTRACTOR_VERSION, adapter: 'text_plain' }
   });
+}
+
+/**
+ * File name of a PDF served at a URL (last path segment, `.pdf` ensured).
+ * @param {string} url
+ */
+export function pdfFileNameFromUrl(url) {
+  let last = '';
+  try {
+    last = decodeURIComponent(new URL(url).pathname.split('/').filter(Boolean).pop() || '');
+  } catch {
+    last = '';
+  }
+  const base = last.replace(/[^\w.\- ]+/g, '_').slice(0, 200) || 'report';
+  return /\.pdf$/i.test(base) ? base : `${base}.pdf`;
 }
 
 /**
@@ -103,7 +119,7 @@ export function reextractStoredHtmlDocument(html, meta) {
 /**
  * Fetch URL with SSRF protections and convert to canonical document.
  * @param {string} url
- * @param {{ timeoutMs?: number, maxBytes?: number }} [opts]
+ * @param {{ timeoutMs?: number, maxBytes?: number, fetchDeps?: { lookup?: Function, isForbiddenAddress?: Function } }} [opts]
  */
 export async function ingestUrlToCanonicalDocument(url, opts = {}) {
   const policy = validateThreatLibraryUrl(url);
@@ -116,7 +132,9 @@ export async function ingestUrlToCanonicalDocument(url, opts = {}) {
   const result = await fetchFeedUrl(policy.url, {
     timeoutMs: opts.timeoutMs || URL_FETCH_TIMEOUT_MS,
     maxBytes: opts.maxBytes || URL_FETCH_MAX_BYTES,
-    credentials: null
+    credentials: null,
+    // Test seam only (loopback fixture server); production keeps the default DNS policy.
+    ...(opts.fetchDeps || {})
   });
 
   const contentType = result.contentType || '';
@@ -140,10 +158,45 @@ export async function ingestUrlToCanonicalDocument(url, opts = {}) {
 
   const ct = String(contentType).toLowerCase();
   if (ct.includes('application/pdf') || bodyText.startsWith('%PDF')) {
-    const err = new Error('URL resolved to a PDF; upload the PDF via the PDF import tab instead');
-    err.code = 'pdf_via_url_unsupported';
-    err.fetchMeta = fetchMeta;
-    throw err;
+    // A report published as a PDF (conference papers, advisories) goes through
+    // the same extractor as a PDF upload; the raw bytes are returned so the
+    // caller retains them like an uploaded PDF.
+    if (result.ok === false) {
+      const err = new Error(`Upstream fetch returned HTTP ${result.httpStatus || 'error'}`);
+      err.code = 'fetch_http_error';
+      err.fetchMeta = fetchMeta;
+      throw err;
+    }
+    const pdfBuffer = Buffer.isBuffer(result.bodyBuffer) ? result.bodyBuffer : Buffer.from(bodyText, 'latin1');
+    let pdf;
+    try {
+      pdf = await pdfToCanonicalDocument(pdfBuffer, { fileName: pdfFileNameFromUrl(finalUrl) });
+    } catch (e) {
+      e.fetchMeta = fetchMeta;
+      throw e;
+    }
+    if (pdf.requiresOcr) {
+      const err = new Error('The PDF appears to contain only scanned images or no extractable text layer. OCR is not enabled in V1.');
+      err.code = 'pdf_ocr_required';
+      err.fetchMeta = fetchMeta;
+      throw err;
+    }
+    return {
+      url: policy.url,
+      finalUrl,
+      fetchedBytes: result.fetchedBytes ?? pdfBuffer.length,
+      contentType: 'application/pdf',
+      httpStatus: result.httpStatus ?? null,
+      bodyText: null,
+      pdf: { buffer: pdfBuffer, fileName: pdf.fileName, pageCount: pdf.pageCount },
+      document: { ...pdf.document, meta: { ...(pdf.document.meta || {}), source_url: policy.url } },
+      extraction: {
+        path: ['pdf'],
+        adapter: 'pdf',
+        block_count: pdf.document.blocks?.length || 0,
+        meaningful_chars: assessDocumentQuality(pdf.document).chars
+      }
+    };
   }
 
   // Prefer classifying HTTP failures after we can inspect body (captcha pages are often 200).
