@@ -9,9 +9,12 @@
  *    timestamp are never skipped or repeated between pages.
  *  - checkReportUrls: batch "is this report URL already imported?" using the
  *    import identity itself (canonicalizeReportUrl + the same active URL-report
- *    predicate findExistingReportImport uses), in one indexed query. Every
- *    matching active report is returned — several matches are surfaced as
- *    `ambiguous`, never collapsed to an arbitrary row.
+ *    predicate findExistingReportImport uses), in one indexed query. A second
+ *    query finds active non-URL reports (e.g. a PDF upload) whose stored
+ *    source_url canonicalizes to the same identity — the same report, but one
+ *    URL import dedup would not catch — labelled match_basis 'source_url'.
+ *    Every matching active report is returned — several matches are surfaced
+ *    as `ambiguous`, never collapsed to an arbitrary row.
  *
  * Both share one row serializer so the list and the URL check always describe
  * a report the same way. Only catalog metadata is selected: no summary, body,
@@ -353,6 +356,10 @@ export async function checkReportUrls(pool, urls) {
   const identities = [...new Set(queried.map((x) => x.identity).filter(Boolean))];
 
   const byIdentity = new Map();
+  const entryFor = (identity) => {
+    if (!byIdentity.has(identity)) byIdentity.set(identity, { count: 0, importIdentity: 0, reports: [] });
+    return byIdentity.get(identity);
+  };
   if (identities.length) {
     // Same predicate as the import duplicate check (findExistingReportImport),
     // served by idx_threat_reports_url_import_identity; one statement per batch.
@@ -370,9 +377,36 @@ export async function checkReportUrls(pool, urls) {
       [identities, CATALOG_URL_MATCHES_MAX]
     );
     for (const row of rows) {
-      const entry = byIdentity.get(row.source_url_canonical) || { count: row.identity_match_count, reports: [] };
-      entry.reports.push(serializeCatalogReport(row));
-      byIdentity.set(row.source_url_canonical, entry);
+      const entry = entryFor(row.source_url_canonical);
+      entry.count = row.identity_match_count;
+      entry.importIdentity = row.identity_match_count;
+      entry.reports.push({ ...serializeCatalogReport(row), match_basis: 'import_identity', created_at_key: row.created_at_key, id: row.id });
+    }
+
+    // Non-URL reports (PDF / THIB) carry no import identity, only the stored
+    // source_url. Prefilter on the URL's host in SQL, then require the exact
+    // same canonical form as the import identity — no looser matching.
+    const hosts = [...new Set(identities.map((u) => new URL(u).hostname))];
+    const { rows: byStoredUrl } = await pool.query(
+      `SELECT ${CATALOG_COLUMNS}
+       FROM threat_reports r
+       WHERE r.source_type <> 'url' AND r.deleted_at IS NULL AND r.source_url IS NOT NULL
+         AND lower(regexp_replace(regexp_replace(
+               substring(btrim(r.source_url) from '^[A-Za-z][A-Za-z0-9+.-]*://([^/?#]*)'),
+               '^.*@', ''), ':[0-9]*$', '')) = ANY($1::text[])
+       ORDER BY r.created_at ASC, r.id ASC`,
+      [hosts]
+    );
+    for (const row of byStoredUrl) {
+      const identity = canonicalizeReportUrl(row.source_url);
+      if (!identity || !identities.includes(identity)) continue;
+      const entry = entryFor(identity);
+      entry.count += 1;
+      entry.reports.push({ ...serializeCatalogReport(row), match_basis: 'source_url', created_at_key: row.created_at_key, id: row.id });
+    }
+    for (const entry of byIdentity.values()) {
+      entry.reports.sort((a, b) => (a.created_at_key < b.created_at_key ? -1 : a.created_at_key > b.created_at_key ? 1 : Number(a.id) - Number(b.id)));
+      entry.reports = entry.reports.slice(0, CATALOG_URL_MATCHES_MAX).map(({ created_at_key, id, ...report }) => report);
     }
   }
 
@@ -387,6 +421,7 @@ export async function checkReportUrls(pool, urls) {
         exists: false,
         match_count: 0,
         ambiguous: false,
+        import_would_deduplicate: false,
         matched_report_id: null,
         finalized: false,
         requires_further_processing: false,
@@ -408,6 +443,8 @@ export async function checkReportUrls(pool, urls) {
       exists: matchCount > 0,
       match_count: matchCount,
       ambiguous: matchCount > 1,
+      // threat_library_import_url would answer already_exists (URL import identity hit).
+      import_would_deduplicate: (entry?.importIdentity || 0) > 0,
       // Only an unambiguous match is named; with several, read `matches`.
       matched_report_id: single ? single.report_id : null,
       // Conservative across duplicates: finalized only when every match is.
