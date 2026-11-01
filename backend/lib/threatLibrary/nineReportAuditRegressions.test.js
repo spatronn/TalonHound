@@ -63,7 +63,7 @@ const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.cod
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v50');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v12');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v13');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
 });
 

@@ -45,8 +45,14 @@
  * v12 (52-report audit): an "Acknowledgments" heading closes IOC scope like
  * "References" (citation links under an IOC table), and "Reference IoCs"
  * heads an indicator list rather than a bibliography.
+ * v13 (52-report audit, 35552): under PDF inferred levels an appendix whose
+ * children read shallower than the IOC heading ("Domains" / "Hashes" at 3,
+ * "INDICATORS OF COMPROMISE" at 4) stays open for indicator-class labels and,
+ * after one, short family labels over a strong inventory; runs of
+ * "<digest> (<label>)" are inventory rows; a page-break label tail
+ * ("replaced 0528))") is never a heading.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v12';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v13';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';

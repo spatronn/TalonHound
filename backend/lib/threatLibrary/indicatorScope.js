@@ -897,11 +897,42 @@ export function lineContainingObservable(text, value) {
  * @param {string} text
  * @param {string} value normalized or original observable spelling
  */
+/**
+ * A line that is only digests, each with its parenthesised label: the PDF
+ * text layer runs several "<sha256> (PickleShell)" rows into one line
+ * (tl-candidates-v50).
+ * @param {string} text
+ */
+export function isAnnotatedHashList(text) {
+  let rest = String(text || '');
+  if (!/\b(?:[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})\b/i.test(rest)) return false;
+  // Labels may nest ("(chvost (2022 plaintext TCP))"): strip innermost first.
+  // A label holding another digest ("<sha256> (<md5>)") is not a row label.
+  let labelHasDigest = false;
+  for (let k = 0; k < 6 && /\([^()]*\)/.test(rest); k += 1) {
+    rest = rest.replace(/\([^()]*\)/g, (m) => {
+      if (/\b(?:[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})\b/i.test(m)) labelHasDigest = true;
+      return ' ';
+    });
+  }
+  // A label cut by a page break ("(PickleShell (pickl … 0528" continued on
+  // the next page) is still the last row's label.
+  for (let k = 0; k < 3 && /\([^()]*$/.test(rest); k += 1) {
+    rest = rest.replace(/\([^()]*$/, (m) => {
+      if (/\b(?:[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})\b/i.test(m)) labelHasDigest = true;
+      return ' ';
+    });
+  }
+  rest = rest.replace(/\b(?:[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})\b/gi, ' ');
+  return !labelHasDigest && !/[^\s,;•·\-–]/.test(rest);
+}
+
 export function isIndicatorRowShape(text, value) {
   const focused = lineContainingObservable(text, value);
   const t = refangTextForExtraction(String(focused || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
   if (!t) return false;
   if (isObservableListLine(t)) return true;
+  if (/^[a-f0-9]{32,64}$/i.test(String(value || '').trim()) && isAnnotatedHashList(t)) return true;
   if (t.length > 160) return false;
   if (isIndicatorValueLine(t)) return true;
   const v = refangTextForExtraction(String(value || '').trim());
