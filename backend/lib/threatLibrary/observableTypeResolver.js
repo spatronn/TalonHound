@@ -84,8 +84,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * lead-in used to promote the archive basename.
  * v21 (52-report audit): a redacted path segment (`/api/settings/XXXXX`)
  * makes a URL a template, not an observable.
+ * v22 (29-report audit 35575–35605): a bracketed redaction marker in a URL
+ * (`?client=[redacted]`) ends the URL like an `<id>` placeholder, so the
+ * table value and its prose mention share one identity.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v21';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v22';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -593,6 +596,10 @@ export function trimUrlBoundary(urlish) {
   // "(?…)" / "(#…)": an optional query / fragment annotation, never URL syntax.
   const note = v.search(/\([?#]/);
   if (note > 0) v = v.slice(0, note);
+  // "…/expire?client=[redacted]": the publisher's redaction marker ends the
+  // URL the same way an "<id>" placeholder does (tl-type-resolver-v22).
+  const redaction = v.search(/\[\s*(?:redacted|removed|omitted|x{3,}|\*{3,})\s*(?:\]|$)/i);
+  if (redaction > 0) v = v.slice(0, redaction);
   for (;;) {
     const before = v;
     v = v.replace(/[,.;:!?\]。，；‘’“”«»'"]+$/, '');

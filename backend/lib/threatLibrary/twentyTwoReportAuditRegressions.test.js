@@ -55,8 +55,8 @@ const values = (x) => x.candidates.map((c) => `${c.candidate_type}:${c.normalize
 const BODY = '<h2>Technical Analysis</h2><p>The loader decrypts its configuration and contacts the operator infrastructure listed below.</p>';
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v51');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v21');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v52');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');
 });
 
 // ------------------------------------------------- D-1. uncommon delegated TLDs

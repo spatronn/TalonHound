@@ -336,9 +336,13 @@ const HOSTED_OBJECT_RE =
 const TRUSTED_SERVICE_LEAD_RE =
   /\b(?:trusted|legitimate|popular|well[\s-]known)\s+(?:services?|platforms?|providers?)\s+(?:like|such\s+as|including)\s+(?:[^.;]{0,80}?,\s*)?OBSERVABLE\b/i;
 
-/** An address (or range) annotated with its hosting provider: "1.2.3.0 (Railway.com)". */
+/**
+ * An address (or range) annotated with its hosting provider: "1.2.3.0
+ * (Railway.com)". An autonomous-system number names its operator the same
+ * way: "AS207043 (dedik[.]io) | ASN | Hosting for …" (tl-candidates-v52).
+ */
 const IP_PROVIDER_ANNOTATION_RE =
-  /(?<![\d.])\d{1,3}(?:\[?\.\]?\d{1,3}){3}(?:\/\d{1,2})?\s*[(（]\s*OBSERVABLE\s*[)）]/;
+  /(?:(?<![\d.])\d{1,3}(?:\[?\.\]?\d{1,3}){3}(?:\/\d{1,2})?|(?<![\w-])AS\d{1,10})\s*[(（]\s*OBSERVABLE\s*[)）]/;
 
 const PROVIDER_RELATION_RE =
   /\b(?:purchased?|bought|rented?|leased?|registered?\s+(?:via|through|with|at)|subscri(?:bed|be)|procur(?:ed|e)|to\s+purchase|(?:rent|purchas|bought|buy|leas|subscrib|procur|acquir)\w*\b[^.;]{0,60}?\bto\s+host|services?\s+such\s+as|infrastructure\s+provider|cloud\s+provider|hosting\s+provider|vps\s+provider|vpn\s+provider|used\s+(?:the\s+)?(?:commercial\s+)?(?:services?|providers?|vendors?|platforms?|vpn|vps|proxy|cloud(?:\s+provider)?)|from\s+(?:a\s+)?(?:vps|vpn|proxy|hosting|cloud)\s+(?:provider|vendor|service)|commercial\s+vpn)\b|satın\s+al|satın\s+ald|购买|租用|注册于/i;
@@ -414,7 +418,18 @@ const MALICE_ELSEWHERE_RE =
   /[,;]?\s*(?:while\s+|whereas\s+|and\s+|but\s+)?(?:all|the|any)\s+(?:of\s+the\s+)?malicious\s+(?:logic|code|functionality|behaviou?r|content)\s+(?:is|are|was|were|resides?|lives?|sits?)\s+(?:entirely\s+|only\s+|solely\s+)?(?:contained\s+|located\s+|embedded\s+|implemented\s+)?(?:with)?in(?:side)?\s+(?:the\s+|a\s+|an\s+)?(?!\s*OBSERVABLE)[^.;!?]*?(?=$|[.;!?])/gi;
 
 /** An outright (unhedged) row statement that the row's subject is not malicious. */
-const ROW_NOT_MALICIOUS_RE = /(?<![\w-])(?:not|non)[\s-]malicious(?![\w-])/i;
+// "Certificate CN only, placeholder name. Do not block as a domain": the
+// publisher's own instruction that the row is not an Indicator
+// (tl-candidates-v52). "Check before blocking" is a caveat, not a negation.
+// The same holds for "abused legitimate infrastructure, not itself malicious"
+// and "a shared … default certificate …, not operator-specific".
+const ROW_NOT_MALICIOUS_RE = new RegExp([
+  /(?<![\w-])(?:not|non)[\s-](?:itself\s+|inherently\s+|necessarily\s+)?malicious(?![\w-])/.source,
+  /\b(?:do\s+not|don['’]t|never)\s+block\b/.source,
+  /\bplaceholder\s+(?:name|domain|host(?:name)?|value)\b/.source,
+  /\b(?:abused|misused)\s+legitimate\s+(?:infrastructure|services?|platforms?|providers?)\b/.source,
+  /\bnot\s+(?:operator|actor|attacker|campaign)[\s-]specific\b/.source
+].join('|'), 'i');
 const CONTRASTIVE_STANCE_RE =
   /\b(?:alongside|unlike|besides|other\s+than|apart\s+from|in\s+addition\s+to|in\s+contrast|whereas|rather\s+than|instead\s+of|beyond\s+the)\b|\bwhile\s+the\s+(?:[\w-]+\s+){0,10}?(?:are|were|is|was)\b/i;
 
@@ -462,7 +477,10 @@ const PROVIDER_ROLE_NOUN_RE =
 // List lead-in object phrase ("through three Blockscout providers:", "on three
 // Blockscout instances:"): the grammar already scopes the noun to the listed
 // values (instances: tl-candidates-v43).
-const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?|instances?)(?![\w.-])/i;
+// "It obtains this public IP from public IP address identification services:"
+// names third-party IP-echo utilities (api.ipify.org, ipinfo.io), even under
+// a C&C heading (tl-candidates-v52).
+const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?|instances?|ip(?:[\s-]+address)?[\s-]+(?:identification|lookup|geolocation|check(?:er|ing)?|echo|discovery)[\s-]+(?:services?|apis?|sites?))(?![\w.-])/i;
 const MALICIOUS_VALUE_ROLE_RE =
   /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?|instances?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:c2|c&c)(?=\s*(?:[/|,;]|$))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
 
@@ -643,7 +661,20 @@ export function annotateListStances(blocks) {
     const objectPhrase = s.split(LEAD_OBJECT_SPLIT_RE).pop();
     return namesProviderService(objectPhrase, { lead: true });
   };
+  const benignHeading = (h) => BENIGN_COMPONENT_RE.test(h) && !BENIGN_NEGATION_RE.test(h) && !CONTRASTIVE_STANCE_RE.test(h);
   for (let i = 0; i < list.length; i += 1) {
+    // A table directly under a sub-heading that names its rows legitimate
+    // ("Legitimate File Hashes (SHA-256)") is the publisher's benign-file
+    // inventory: a row saying the genuine binary was "abused for sideloading"
+    // describes misuse, not a malicious file (tl-candidates-v52).
+    if (list[i]?.type === 'table') {
+      let lead = i - 1;
+      while (lead >= 0 && isCaption(list[lead])) lead -= 1;
+      if (lead >= 0 && list[lead]?.type === 'heading' && benignHeading(String(list[lead].text || ''))) {
+        list[i].list_stance = 'non_malicious';
+        continue;
+      }
+    }
     // Paragraph value lines directly under a sub-heading: heading stance only.
     if (isValueLine(list[i]) && list[i - 1]?.type === 'heading' && !isListBlock(list[i])) {
       const h = String(list[i - 1].text || '');

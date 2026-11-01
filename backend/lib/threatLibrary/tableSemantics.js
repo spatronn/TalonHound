@@ -93,8 +93,10 @@ function embeddedAbsoluteUrl(token) {
  * description cell labels ("SHA-256: <hex>") is a value of its row. An
  * untyped row whose description says the value is "sent as POST body" is
  * request content, like a v13 type cell.
+ * v16 (29-report audit): "Handle" / "Author" / "Credit" columns over links
+ * are attribution reference columns, like "Repository".
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v15';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v16';
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
@@ -325,10 +327,11 @@ export function attributeColumnKind(header) {
  * Column headers that name where the row's subject is published — a tool's
  * project page, download location or reference article — rather than an
  * observable of the actor: "Source", "Reference", "Download", "Homepage",
- * "Project", "Repository".
+ * "Project", "Repository". An attribution column ("Handle", "Author",
+ * "Credit") names who published a tool the same way (tl-table-v16).
  */
 const REFERENCE_COLUMN_HEADER_RE =
-  /^(?:sources?|references?|refs?|downloads?|download\s+(?:link|links|url|urls|page|location)|(?:tool\s+)?home\s*pages?|projects?|project\s+(?:page|url|site|link)s?|repository|repositories|repos?|websites?|web\s*sites?|more\s+info(?:rmation)?|documentation|further\s+reading|tool\s+(?:url|link|source)s?|kaynak|referans|quelle|fuente|fonte|来源|参考|источник)$/;
+  /^(?:sources?|references?|refs?|downloads?|download\s+(?:link|links|url|urls|page|location)|(?:tool\s+)?home\s*pages?|projects?|project\s+(?:page|url|site|link)s?|repository|repositories|repos?|websites?|web\s*sites?|more\s+info(?:rmation)?|documentation|handles?|authors?|credits?|further\s+reading|tool\s+(?:url|link|source)s?|kaynak|referans|quelle|fuente|fonte|来源|参考|источник)$/;
 
 /**
  * A reference column: a reference header over cells whose observables are

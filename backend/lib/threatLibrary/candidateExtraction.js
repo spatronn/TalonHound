@@ -310,8 +310,17 @@ export {
  * run of "<digest> (<label>)" rows each digest is classified by its own
  * trailing label ("<sha256> (Ligolo TLS certificate)" is a certificate
  * fingerprint, the next row's agent hash is not).
+ * v52 (29-report audit 35575–35605): tl-table-v16 / tl-type-resolver-v22.
+ * A table under a "Legitimate File Hashes" heading is a benign inventory; an
+ * "AS<n> (host)" annotation names the ASN operator; rows saying "do not
+ * block", "placeholder name", "not itself malicious", "abused legitimate
+ * infrastructure" or "not operator-specific" are context; "public IP
+ * address identification services:" introduces IP-echo providers; values of
+ * a non-indicator table's reference / attribution columns ("Handle |
+ * Repository") stay provenance under an IOC heading; "log.events.vc0" never
+ * yields the host "log.events".
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v51';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v52';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -1295,6 +1304,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       countReason(typeDiag.rejected_values, lastAddRejection);
       return null;
     }
+    if (extra.referenceCell !== true &&
+        referenceColumnValues.get(block?.id)?.has(`${n.candidateType}:${String(n.normalizedValue).toLowerCase()}`)) {
+      extra = { ...extra, referenceCell: true, typingReason: extra.typingReason || 'reference_column' };
+    }
     // Credential / token labels: a hex run is not a malware hash just because
     // it matches md5/sha length. Hash vocabulary on the same label ("SHA-256:",
     // "Hardcoded Hash:") keeps the hash reading; length/type still follow value.
@@ -1672,6 +1685,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   /** Blocks handled row-by-row (typed indicator tables) — skipped by the regex passes. */
   const tableHandled = new Set();
+  /** Non-indicator table id → `type:value` keys of its reference-column cells. */
+  const referenceColumnValues = new Map();
   // Publisher observation dates in indicator rows: slash-date order is decided
   // once per document from its own table cells (sourceObservation.js).
   const slashDateOrder = inferSlashDateOrder(tableCellTexts(blocks));
@@ -1700,7 +1715,25 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       rejected_rows: []
     };
     t.tables.push(summary);
-    if (!interp || (interp.kind !== 'ioc_table' && interp.kind !== 'artifact_table')) continue;
+    if (!interp || (interp.kind !== 'ioc_table' && interp.kind !== 'artifact_table')) {
+      // A table without indicator columns is read by the regex passes; the
+      // values of its reference columns ("Handle | Repository | Role":
+      // where a tool is published / who is credited) stay provenance there
+      // too, even under an IOC heading (tl-candidates-v52).
+      const refValues = new Set();
+      for (const col of (interp?.columns || []).filter((c) => c.attribute_kind === 'reference')) {
+        for (const row of block.table.rows || []) {
+          const cell = String((Array.isArray(row) ? row : row?.cells || [])[col.index] || '').trim();
+          if (!cell) continue;
+          for (const v of parseIndicatorCell(cell, null).values) {
+            const n = v.is_ioc === false ? null : normalizeCandidateValue(v.refanged, v.candidate_type);
+            if (n?.ok) refValues.add(`${n.candidateType}:${n.normalizedValue.toLowerCase()}`);
+          }
+        }
+      }
+      if (refValues.size) referenceColumnValues.set(block.id, refValues);
+      continue;
+    }
     if (interp.kind === 'ioc_table') t.ioc_tables += 1;
     if (interp.explicit) t.explicit_tables += 1;
     tableHandled.add(block.id);
@@ -2130,6 +2163,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // matches DOMAIN_RE as the prefix "...kro" because a 1-char final label
       // cannot be a TLD. Do not invent a shorter complete domain from that.
       if (/^\.[a-z0-9](?![a-z0-9-])/i.test(text.slice(end))) continue;
+      // "log.events.vc0" (an appliance log file): the dotted token goes on
+      // with a label carrying a digit, which no TLD has, so its prefix
+      // "log.events" is not a hostname of its own (tl-candidates-v52).
+      if (/^\.[a-z0-9-]*\d[a-z0-9-]*(?![a-z0-9.-])/i.test(text.slice(end))) continue;
       // Redacted / truncated publisher hostname: "<REDACTED>-my.sharepoint.com"
       // matches only its tail "my.sharepoint.com". A hostname label never
       // starts with "-", and a redaction placeholder glued with "." hides the

@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v2';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v3';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -566,6 +566,24 @@ export function extractHtmlTimePublicationDate(html, opts = {}) {
 }
 
 /**
+ * A bare-date element inside a byline-sized container whose own class marks
+ * it as the publication info — CrowdStrike's
+ * `<div class="publish_info"><p>October 07, 2026</p> • Author • Category</div>`.
+ * The date must be the container's first element child and must not follow
+ * update / modified wording.
+ */
+function isPublishedBylineChild(el) {
+  const parent = el.parent;
+  if (!parent || parent.type !== 'tag') return false;
+  const pa = parent.attribs || {};
+  if (!PUBLISHED_CLASS_RE.test(`${pa.class || ''} ${pa.id || ''}`)) return false;
+  if (textOf(parent).length > 160) return false;
+  const firstTag = (parent.children || []).find((c) => c.type === 'tag');
+  if (firstTag !== el) return false;
+  return !NEGATIVE_CONTEXT_RE.test(precedingText(el, 40));
+}
+
+/**
  * Visible article date: a short element whose text is "Published: <date>" /
  * "Posted on <date>" (label required) or whose class marks it as the post
  * date and whose text is exactly a date. Body prose, copyright lines,
@@ -595,8 +613,10 @@ export function extractVisiblePublicationDate(html, opts = {}) {
       continue;
     }
     let signal = null;
+    const exactDate = before.trim() === '' && after.trim() === '';
     if (PUBLISHED_LABEL_RE.test(before)) signal = 'label';
-    else if (PUBLISHED_CLASS_RE.test(`${a.class || ''} ${a.id || ''}`) && before.trim() === '' && after.trim() === '') signal = 'class';
+    else if (PUBLISHED_CLASS_RE.test(`${a.class || ''} ${a.id || ''}`) && exactDate) signal = 'class';
+    else if (exactDate && isPublishedBylineChild(el)) signal = 'class';
     else if (PUBLISHED_LABEL_RE.test(precedingText(el, 40)) && before.trim() === '' && after.trim().length <= 3) signal = 'label';
     else if (
       before.trim() === ''

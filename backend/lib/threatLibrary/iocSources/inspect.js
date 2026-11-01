@@ -9,6 +9,7 @@ import {
   inventoryBacklinkScope,
   isFolderHashListPath,
   isReadmePath,
+  reportSlugForeignFiles,
   resolveGitHubCampaignFolder
 } from './campaignScope.js';
 import { BLOCKING_FETCH_CODES, fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fetchSafe.js';
@@ -66,13 +67,18 @@ export async function loadReportScopeContext(pool, reportId) {
  * - an inventory whose own metadata row names a DIFFERENT article
  *   (`description,https://publisher/blog/other-post`) belongs to another
  *   campaign of a shared folder, such as a month directory
- *   (tl-ioc-source-scope-v3).
+ *   (tl-ioc-source-scope-v3);
+ * - in a folder of per-article inventories named by article slug (a
+ *   publisher month directory), files named after another article
+ *   (tl-ioc-source-scope-v4).
  * @param {object[]} fileRows
  * @param {object[]} parseResults
+ * @param {{ reportUrl?: string|null }} [reportScope]
  */
-export function applyCampaignFileSelection(fileRows, parseResults) {
+export function applyCampaignFileSelection(fileRows, parseResults, reportScope = {}) {
   const multi = parseResults.some((r) => isReadmePath(r.path || '') && r.scope?.multi_campaign === true);
   const backlinkByPath = new Map(parseResults.filter((r) => r.backlink_scope).map((r) => [r.path, r.backlink_scope]));
+  const foreignBySlug = reportSlugForeignFiles(fileRows.map((f) => f.path), reportScope?.reportUrl) || new Set();
   const deselected = [];
   const otherReport = [];
   const rows = fileRows.map((f) => {
@@ -81,6 +87,10 @@ export function applyCampaignFileSelection(fileRows, parseResults) {
       deselected.push(f.path);
       otherReport.push({ path: f.path, backlink: scope.backlink });
       return { ...f, selected: false, parse_status: 'skipped', error_detail: `campaign_backlink_other_report: the file names ${scope.backlink}` };
+    }
+    if (foreignBySlug.has(f.path)) {
+      deselected.push(f.path);
+      return { ...f, selected: false, parse_status: 'skipped', error_detail: 'report_slug_other_file: named after another article of a shared folder' };
     }
     if (multi && isFolderHashListPath(f.path)) {
       deselected.push(f.path);
@@ -213,7 +223,7 @@ export async function inspectIocSource(pool, source, deps = {}) {
         }
       }
 
-      const scoped = applyCampaignFileSelection(fileRows, parseResults);
+      const scoped = applyCampaignFileSelection(fileRows, parseResults, reportScope);
       await replaceSourceFiles(pool, source.id, scoped.fileRows);
       const readme = parseResults.find((r) => isReadmePath(r.path || '') && r.scope);
       const preview = {

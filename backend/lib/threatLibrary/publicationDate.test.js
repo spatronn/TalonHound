@@ -169,6 +169,61 @@ test('URL 6b: WeLiveSecurity reading-time byline ("25 Jun 2026 • , 10 min. rea
   assert.equal(extractVisiblePublicationDate(updated, opts).published_at, null);
 });
 
+// Real CrowdStrike blog shape (reports 35581 / 35583): JSON-LD is a WebPage
+// with dateModified only, og:updated_time is a modification, the related-post
+// rail uses `<div class="date">`, and the byline is a publish_info container.
+const crowdStrikePage = (byline) => `<html><head>
+  <script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"Organization","name":"CrowdStrike"},{"@type":"WebPage","author":["Counter Adversary Operations"],"dateModified":"2026-10-13T18:12Z"}]}</script>
+  <meta name="og:updated_time" content="2026-10-13T18:12:52"/>
+  </head><body>
+  <div class="cmp-wp-headline" id="headline-en-us">
+    <h1>Unknown Threat Actor Uses AI-Driven ARTEX to Target South Korean Finance</h1>
+    ${byline}
+  </div>
+  <p>The campaign began on September 22, 2026 and infrastructure was observed until October 3, 2026.</p>
+  <ul><li><a href="/x"><div class="d-flex flex-column"><div class="title">Other post</div><div class="date">Oct 30, 2026</div></div></a></li></ul>
+  <dl><dd><a href="/y"><div class="title">Older post</div></a><div class="date">03/24/26 </div></dd></dl>
+  </body></html>`;
+
+test('URL 6c: CrowdStrike publish_info byline → visible publication date, never dateModified / related posts', () => {
+  const html = crowdStrikePage(`<div class="publish_info">
+      <p>October 07, 2026</p>
+      <span>•</span>
+      <a href="/en-us/blog/author.counter-adversary-operations/" rel="author">Counter Adversary Operations</a>
+      <span>•</span>
+      <a href="/en-us/blog/category.counter-adversary-operations/">Threat Hunting &amp; Intel</a>
+    </div>`);
+  const d = extractHtmlPublicationDate(html, { now: new Date('2026-11-01T12:00:00Z') });
+  assert.equal(d.source, 'visible_date');
+  assert.equal(d.published_date, '2026-10-07');
+  assert.equal(d.precision, 'date');
+  assert.equal(d.raw_value, 'October 07, 2026');
+  assert.equal(d.evidence.signal, 'class');
+});
+
+test('URL 6c: publish-class byline negatives — no byline, updated wording, conflicting dates, malformed value', () => {
+  const now = { now: new Date('2026-11-01T12:00:00Z') };
+  // Without the byline only dateModified / related-post dates exist → unresolved.
+  const none = extractHtmlPublicationDate(crowdStrikePage(''), now);
+  assert.equal(none.published_at, null);
+  assert.equal(none.reason, 'no_publication_date_in_html');
+  // An update stamp is not the publication date.
+  const updated = crowdStrikePage(`<div class="publish_info"><span>Updated</span><p>October 13, 2026</p></div>`);
+  assert.equal(extractHtmlPublicationDate(updated, now).published_at, null);
+  // Two distinct dates in publish containers → ambiguous, never a guess.
+  const conflicting = crowdStrikePage(`<div class="publish_info"><p>October 07, 2026</p></div><div class="publish_info"><p>October 13, 2026</p></div>`);
+  assert.equal(extractHtmlPublicationDate(conflicting, now).published_at, null);
+  // Malformed / ambiguous numeric value is never parsed.
+  const malformed = crowdStrikePage(`<div class="publish_info"><p>10/07/26</p><a>Author</a></div>`);
+  assert.equal(extractHtmlPublicationDate(malformed, now).published_at, null);
+  // A date that is not the container's leading element (e.g. trailing prose) does not qualify.
+  const trailing = crowdStrikePage(`<div class="publish_info"><a>Author</a><p>October 07, 2026</p></div>`);
+  assert.equal(extractHtmlPublicationDate(trailing, now).published_at, null);
+  // A long container is body text, not a byline.
+  const long = crowdStrikePage(`<div class="publish_info"><p>October 07, 2026</p><p>${'Body prose. '.repeat(20)}</p></div>`);
+  assert.equal(extractHtmlPublicationDate(long, now).published_at, null);
+});
+
 test('URL 7: multiple irrelevant dates (body, copyright, comments, latest-post widget, nav) → null', () => {
   const html = `<html><head><meta name="copyright" content="2026"></head><body>
     <nav><a>Archive: September 1, 2026</a></nav>
