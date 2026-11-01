@@ -38,6 +38,7 @@
  * removed identity is deleted; state never moves between identities.
  */
 
+import { reapplyLinkedOverlay } from './iocSources/linkedOverlay.js';
 import { finalizationObligations, isFinalizedStatus, lockReportForFinalize } from './reportLifecycleLock.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import {
@@ -202,7 +203,9 @@ export async function computeExtractionRefresh(pool, { report, document, previou
   // Deterministic publisher reading (extraction + AI replay + catalog match),
   // with the stored global-IOC links of identities the lookup skipped kept.
   const linked = await preserveStoredIocLinks(pool, matched.candidates, previousRows);
-  const candidates = preserveAnalystCandidates(linked.candidates, previousRows);
+  // A body value the report deferred to its linked pack keeps the pack's
+  // assertion across a document refresh (iocSources/linkedOverlay.js).
+  const candidates = reapplyLinkedOverlay(preserveAnalystCandidates(linked.candidates, previousRows), previousRows);
   // Where replayed analyst state moves membership away from the deterministic
   // reading, quality says so (an explicit override is a note; anything else warns).
   const quality = withPostMergeQuality(withReplayMembershipDivergence(extracted.diagnostics?.quality || null, {
