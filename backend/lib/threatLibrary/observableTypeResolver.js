@@ -344,6 +344,20 @@ export function hasDelegatedDnsSuffix(value) {
 }
 
 /**
+ * The whole value is a public suffix ("co.uk") or a shared-platform suffix
+ * the registry delegates to many tenants ("trycloudflare.com", "github.io"):
+ * it names no operator-owned registrable domain, so a publisher's wildcard
+ * ("*.trycloudflare.com") over it never makes the suffix itself an Indicator.
+ * @param {string} value hostname-syntax value
+ */
+export function isPublicOrSharedPlatformSuffix(value) {
+  const v = String(value || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!v) return false;
+  const parsed = parseDomainSuffix(v, { allowPrivateDomains: true, detectIp: false, validateHostname: false });
+  return !parsed.domain;
+}
+
+/**
  * Compact "looks like DNS" suffix knowledge: the ISO 3166 ccTLD set plus the
  * most common gTLDs. This is a SYNTAX signal (strong vs weak suffix), never a
  * safety allowlist — unknown suffixes still resolve as domains when the

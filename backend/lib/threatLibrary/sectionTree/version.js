@@ -51,8 +51,12 @@
  * after one, short family labels over a strong inventory; runs of
  * "<digest> (<label>)" are inventory rows; a page-break label tail
  * ("replaced 0528))") is never a heading.
+ * v14 (hunt.io Need-Review FNs): a heading that leads with a closed pair of
+ * inventory terms ("IOCs and Observables", "IOCs and network observables")
+ * declares an IOC inventory, so the infrastructure-lookup table under it is
+ * in scope.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v13';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v14';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';
