@@ -122,10 +122,33 @@ export function validateFeedUrlPolicy(urlString) {
 }
 
 /**
+ * Resolve A + AAAA via c-ares (dns.resolve4/6). Used when getaddrinfo-based
+ * dns.lookup fails with transient dual-stack errors under Alpine/Docker.
+ * @param {string} host
+ * @returns {Promise<{ address: string, family: number }[]>}
+ */
+async function resolveFeedHostViaCares(host) {
+  const [v4, v6] = await Promise.all([
+    dns.resolve4(host).catch((err) => {
+      if (err?.code === 'ENODATA' || err?.code === 'ENOTFOUND') return [];
+      throw err;
+    }),
+    dns.resolve6(host).catch((err) => {
+      if (err?.code === 'ENODATA' || err?.code === 'ENOTFOUND') return [];
+      throw err;
+    })
+  ]);
+  return [
+    ...v4.map((address) => ({ address, family: 4 })),
+    ...v6.map((address) => ({ address, family: 6 }))
+  ];
+}
+
+/**
  * Resolve hostname and require every A/AAAA record to be an allowed destination.
  *
  * @param {string} hostname
- * @param {{ lookup?: typeof dns.lookup, isForbiddenAddress?: (address: string) => boolean }} [options]
+ * @param {{ lookup?: typeof dns.lookup, resolveAll?: (host: string) => Promise<{ address: string, family: number }[]>, isForbiddenAddress?: (address: string) => boolean }} [options]
  * @returns {Promise<{ address: string, family: number }[]>}
  */
 export async function resolveSafeFeedHost(hostname, options = {}) {
@@ -144,6 +167,7 @@ export async function resolveSafeFeedHost(hostname, options = {}) {
 
   const isForbidden = options.isForbiddenAddress || isForbiddenFeedDestinationIp;
   const lookup = options.lookup || dns.lookup;
+  const resolveAll = options.resolveAll || resolveFeedHostViaCares;
 
   if (isIP(host)) {
     if (isForbidden(host)) {
@@ -158,10 +182,25 @@ export async function resolveSafeFeedHost(hostname, options = {}) {
   try {
     records = await lookup(host, { all: true, verbatim: true });
   } catch (cause) {
-    const err = new Error(`DNS lookup failed for feed host: ${host}`);
-    err.code = 'dns_lookup_failed';
-    err.cause = cause;
-    throw err;
+    // Alpine/musl getaddrinfo through Docker's embedded DNS often returns
+    // EAI_AGAIN on dual-stack lookups while c-ares A/AAAA resolution still
+    // succeeds. Fall back only for the default resolver — injected test
+    // lookups stay authoritative.
+    if (lookup === dns.lookup && (cause?.code === 'EAI_AGAIN' || cause?.code === 'ENOTFOUND')) {
+      try {
+        records = await resolveAll(host);
+      } catch (fallbackCause) {
+        const err = new Error(`DNS lookup failed for feed host: ${host}`);
+        err.code = 'dns_lookup_failed';
+        err.cause = fallbackCause;
+        throw err;
+      }
+    } else {
+      const err = new Error(`DNS lookup failed for feed host: ${host}`);
+      err.code = 'dns_lookup_failed';
+      err.cause = cause;
+      throw err;
+    }
   }
 
   const list = Array.isArray(records) ? records : [];

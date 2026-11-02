@@ -103,6 +103,44 @@ test('resolveSafeFeedHost accepts host when every address is public', async () =
   assert.equal(addrs.length, 2);
 });
 
+test('resolveSafeFeedHost falls back to resolveAll when default lookup returns EAI_AGAIN', async () => {
+  const dnsPromises = await import('node:dns/promises');
+  const original = dnsPromises.lookup;
+  dnsPromises.lookup = async () => {
+    const err = new Error('getaddrinfo EAI_AGAIN');
+    err.code = 'EAI_AGAIN';
+    throw err;
+  };
+  try {
+    let resolveAllCalls = 0;
+    const recovered = await resolveSafeFeedHost('fallback.example', {
+      resolveAll: async (host) => {
+        resolveAllCalls += 1;
+        assert.equal(host, 'fallback.example');
+        return [{ address: '1.1.1.1', family: 4 }];
+      }
+    });
+    assert.equal(resolveAllCalls, 1);
+    assert.deepEqual(recovered, [{ address: '1.1.1.1', family: 4 }]);
+  } finally {
+    dnsPromises.lookup = original;
+  }
+});
+
+test('resolveSafeFeedHost does not fall back when an injected lookup fails', async () => {
+  await assert.rejects(
+    () => resolveSafeFeedHost('ti.example.com', {
+      lookup: async () => {
+        const err = new Error('getaddrinfo EAI_AGAIN');
+        err.code = 'EAI_AGAIN';
+        throw err;
+      },
+      resolveAll: async () => [{ address: '8.8.8.8', family: 4 }]
+    }),
+    (err) => err.code === 'dns_lookup_failed'
+  );
+});
+
 test('assertSafeFeedDestination uses shared policy before DNS', async () => {
   await assert.rejects(
     () => assertSafeFeedDestination('file:///tmp/x'),
