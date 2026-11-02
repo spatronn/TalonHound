@@ -27,7 +27,7 @@ import {
 } from './candidateTyping.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { normalizeCandidateValue } from './candidateValue.js';
-import { joinWrappedUrlTail, parseIndicatorCell } from './tableSemantics.js';
+import { findTruncatedDigests, joinWrappedUrlTail, parseIndicatorCell } from './tableSemantics.js';
 import { ipv4VersionContext } from './ipv4VersionContext.js';
 import {
   annotateListStances,
@@ -319,8 +319,18 @@ export {
  * a non-indicator table's reference / attribution columns ("Handle |
  * Repository") stay provenance under an IOC heading; "log.events.vc0" never
  * yields the host "log.events".
+ * v54 (hunt.io Need-Review FNs): tl-table-v17 / tl-section-tree-v14.
+ * A wildcard host in an IOC table cell ("*.example.st") asserts its
+ * operator-owned apex; tcp:// / udp:// / tls:// endpoints in a table cell
+ * assert their host like fqdn://; a domain-only cell in a certificate
+ * Common Name column is an indicator candidate; a hash truncated with an
+ * ellipsis links to the unique full digest elsewhere in the report instead
+ * of becoming a bogus shorter-digest candidate; "closed pair" IOC headings
+ * ("IOCs and Observables") open an IOC scope; rows that publish a host as a
+ * historical resolution pivot stay context-only in an infrastructure lookup
+ * table.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v53';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v54';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -901,6 +911,11 @@ function hitOffsets(text, value) {
   return out;
 }
 
+/** A row description naming the value a passive-DNS answer for another name ("Historical resolution for x[.]com"). */
+const HISTORICAL_RESOLUTION_ROW_RE = /\bhistorical(?:ly)?\s+(?:dns\s+)?resol(?:ution|ved|ves)\b/i;
+const HASH_CANDIDATE_TYPES = new Set(['md5', 'sha1', 'sha256']);
+/** A truncated digest shorter than this identifies nothing (tl-candidates-v54). */
+const MIN_TRUNCATED_DIGEST_PREFIX = 16;
 /** File hashes, longest first: `\b` keeps a shorter length from matching inside a longer hex run. */
 const HASH_PATTERNS = [
   [SHA256_RE, 'sha256'],
@@ -1159,6 +1174,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       typing_reason: extra.typingReason || null,
       ...(extra.referenceCell === true ? { reference_cell: true } : {}),
       ...(extra.descriptionCell === true ? { description_cell: true } : {}),
+      ...(extra.truncatedDigest === true ? { truncated_digest: true } : {}),
       ...(extra.hostsFileEntry === true ? { hosts_file_entry: true } : {}),
       ...(block?.list_stance ? { list_stance: block.list_stance } : {}),
       ...(codeListNames.has(block?.id) ? { code_list_name: codeListNames.get(block.id).slice(0, 64) } : {}),
@@ -1263,6 +1279,18 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     if (extra.tableRow && entry.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) {
       entry.table_rows.push(extra.tableRow);
     }
+    anchorEntry(entry, block, extra);
+    return entry;
+  }
+
+  /**
+   * Evidence anchor preference after an occurrence joined `entry`: a strong
+   * IOC zone beats a weaker one, a body mention beats a footer / reference.
+   * @param {object} entry
+   * @param {object} block
+   * @param {object} extra
+   */
+  function anchorEntry(entry, block, extra) {
     // Prefer strong-zone evidence text / anchor block
     const anchorIsStrong = STRONG_IOC_ZONES.has(entry.zone);
     if (STRONG_IOC_ZONES.has(block?.zone) && (block?.text || extra.rowText) && !anchorIsStrong) {
@@ -1280,7 +1308,65 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       entry.section = block.zone || 'unknown';
       entry.zone = block.zone || 'unknown';
     }
-    return entry;
+  }
+
+  /**
+   * Hashes the publisher cut short with an ellipsis ("SHA256: e76f54b7…"),
+   * waiting for the document's full digests to exist (tl-candidates-v54).
+   * @type {Array<{ prefix: string, labelLength: number|null, spelling: string, block: object, linkExtra: object, fallback: (() => void)|null }>}
+   */
+  const deferredTruncatedDigests = [];
+
+  /**
+   * @param {{ prefix: string, label_length?: number|null, labelLength?: number|null, spelling: string }} trunc
+   * @param {object} block
+   * @param {object} linkExtra occurrence extra for the linked full digest
+   * @param {(() => void)|null} fallback what the cell produced before this contract
+   */
+  function deferTruncatedDigest(trunc, block, linkExtra, fallback) {
+    deferredTruncatedDigests.push({
+      prefix: trunc.prefix,
+      labelLength: trunc.label_length ?? trunc.labelLength ?? null,
+      spelling: trunc.spelling,
+      block,
+      linkExtra,
+      fallback: fallback || null
+    });
+  }
+
+  /**
+   * A truncated digest is a prefix of exactly one full digest elsewhere in the
+   * report: the full digest then also occurs where the publisher wrote the
+   * truncation (the same row, with that row's zone / table provenance), the
+   * way markTruncatedUrlDuplicates ties a cut-short URL to its full form.
+   * Several or no full digests: the cell reads as before (no invention).
+   */
+  function resolveTruncatedDigests() {
+    const digests = [...byKey.values()].filter((e) => HASH_CANDIDATE_TYPES.has(e.candidate_type) && e.normalized_value);
+    for (const d of deferredTruncatedDigests) {
+      const matches = digests.filter((e) => {
+        const value = String(e.normalized_value).toLowerCase();
+        if (value.length <= d.prefix.length || !value.startsWith(d.prefix)) return false;
+        return !d.labelLength || value.length === d.labelLength;
+      });
+      if (matches.length !== 1 || d.prefix.length < MIN_TRUNCATED_DIGEST_PREFIX) {
+        if (d.fallback) d.fallback();
+        continue;
+      }
+      const entry = matches[0];
+      const extra = { ...d.linkExtra, originalValue: d.spelling, truncatedDigest: true };
+      pushOccurrence(entry, d.block, extra);
+      if (extra.tableRow && entry.table_rows.length < MAX_TABLE_ROWS_PER_CANDIDATE) {
+        entry.table_rows.push({ ...extra.tableRow, raw_value: d.spelling, truncated_digest: true });
+      }
+      const original = entry.original_value;
+      anchorEntry(entry, d.block, extra);
+      // The anchor takes the publisher's spelling of a value; this one is a
+      // truncation, never the digest's own spelling.
+      entry.original_value = original;
+      entry.parsed.truncated_in_table = true;
+      entry.parsed.truncated_spellings = [...new Set([...(entry.parsed.truncated_spellings || []), d.spelling])].slice(0, 4);
+    }
   }
 
   /**
@@ -1412,10 +1498,15 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       // "fqdn://ipfs[.]io" is the publisher's spelling of the host. Typing the
       // scheme-prefixed original returns skip and drops the table row
       // (tl-candidates-v46).
-      token = token.replace(/^(?:fqdn):\/\//i, '');
+      // "tcp://host:443" / "udp://" / "tls://" / "socks5://" name the host the
+      // same way (tl-candidates-v54).
+      token = token.replace(/^(?:fqdn|tcp|udp|tls|ssl|socks[45]h?):\/\//i, '').replace(/\/+$/, '');
       // "host:port" endpoint rows: the port is recorded on the occurrence; the
       // host alone is typed (tl-table-v12).
       if (extra.port != null) token = token.replace(new RegExp(`[:：]${extra.port}[.,;]*$`), '');
+      // A publisher wildcard cell asserts its base domain: type that name,
+      // not the glob (tl-candidates-v54).
+      if (extra.wildcardApex === true) token = token.replace(/^\*\./, '');
       const form = extra.form || OCCURRENCE_FORMS.STANDALONE;
       const lineText = extra.rowText || block?.text || '';
       const typed = resolveDottedTokenType(token, {
@@ -1781,7 +1872,19 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         t.values_asserted += 1;
         // A hosts-file mapping entry names a host the sample blocks, not its
         // infrastructure: row context, never the row's assertion (tl-table-v12).
-        const assertedIoc = Boolean(interp.explicit) && v.is_ioc !== false && v.hosts_file_entry !== true;
+        // A digest the publisher truncated is a prefix of another value, not
+        // an assertion of its own (resolved against the report's full digests).
+        // A row the publisher describes as the historical resolution of another
+        // name ("Historical resolution for example[.]com.") lists a passive-DNS
+        // pivot, not an address the publisher attributes to the actor: row
+        // context like a "Resolved IP" column (tl-candidates-v54). Firm
+        // C2 / staging / case-observed rows of the same table keep asserting.
+        const historicalPivot =
+          v.is_ioc !== false &&
+          ['ip', 'ipv6', 'domain'].includes(v.candidate_type) &&
+          HISTORICAL_RESOLUTION_ROW_RE.test(String(row.description || ''));
+        const assertedIoc =
+          Boolean(interp.explicit) && v.is_ioc !== false && v.hosts_file_entry !== true && !v.truncated_digest && !historicalPivot;
         if (assertedIoc && v.candidate_type && v.normalized_value) {
           explicitTableAssertions.rememberAsserted(v.candidate_type, v.normalized_value);
         }
@@ -1807,7 +1910,11 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
           observation: observation || undefined,
           // Mixed cell provenance: the file identity and the hash(es) it carries.
           cell_companions: v.cell_companions?.length ? v.cell_companions : undefined,
-          cell_residual: v.cell_residual || undefined
+          cell_residual: v.cell_residual || undefined,
+          // Publisher conventions that named the host (tl-table-v17).
+          wildcard_apex: v.wildcard_apex || undefined,
+          endpoint_scheme: v.endpoint_scheme || undefined,
+          certificate_cn: v.certificate_cn || undefined
         };
         if (v.cell_companions?.length && v.is_ioc !== false) t.mixed_cells.recovered_values += 1;
         if (v.cell_companions?.length && v.is_ioc === false) t.mixed_cells.decomposed += 1;
@@ -1819,7 +1926,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
             }
           }
         }
-        const entry = add(v.refanged, v.candidate_type, block, {
+        const valueExtra = {
           form: OCCURRENCE_FORMS.TABLE_ROW,
           port: v.port ?? null,
           originalValue: v.raw,
@@ -1834,8 +1941,29 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
             typing_signals: v.typing_signals || null
           },
           explicitTable: Boolean(interp.explicit),
-          ...(v.hosts_file_entry === true ? { hostsFileEntry: true } : {})
-        });
+          ...(v.wildcard_apex === true ? { wildcardApex: true } : {}),
+          ...(v.hosts_file_entry === true ? { hostsFileEntry: true } : {}),
+          ...(historicalPivot
+            ? {
+                form: OCCURRENCE_FORMS.STANDALONE,
+                explicitTable: false,
+                referenceCell: true,
+                typingReason: 'resolution_column',
+                typing: { typing_reason: 'resolution_column' }
+              }
+            : {})
+        };
+        if (v.truncated_digest) {
+          // Link to the report's full digest when it is unique; otherwise the
+          // cell reads as before.
+          deferTruncatedDigest(v.truncated_digest, block, valueExtra, () => add(v.refanged, v.candidate_type, block, valueExtra));
+          continue;
+        }
+        const entry = add(v.refanged, v.candidate_type, block, valueExtra);
+        if (v.endpoint_scheme && entry && v.normalized_value && v.raw) {
+          // The publisher's "tcp://host:port" spelling stays on the host identity.
+          networkEndpoints.push([v.candidate_type, v.normalized_value, String(v.raw).slice(0, 200)]);
+        }
         if (assertedIoc && entry?.digest_kind && entry.candidate_type !== v.candidate_type) {
           explicitTableAssertions.rememberReclassified(v.candidate_type, v.normalized_value, entry.candidate_type);
         }
@@ -1858,7 +1986,51 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       for (const col of descriptionCols) {
         const cell = String(row.cells?.[col.index] || '').trim();
         if (!cell) continue;
-        for (const v of parseIndicatorCell(cell, null).values) {
+        const parsedCell = parseIndicatorCell(cell, null);
+        // A digest this cell shows cut short with an ellipsis ("SHA256: e76f54…")
+        // belongs to the one full digest the report states elsewhere: the row
+        // then carries that digest as its own value (tl-candidates-v54).
+        for (const trunc of parsedCell.truncated_digests || []) {
+          const truncRowText = (row.cells || []).filter(Boolean).join(' | ');
+          const lookalike = parsedCell.values.find((v) => v.truncated_digest === trunc);
+          deferTruncatedDigest(
+            trunc,
+            block,
+            {
+              form: OCCURRENCE_FORMS.TABLE_ROW,
+              rowText: truncRowText,
+              evidenceRowText: truncRowText,
+              tableRow: {
+                table_id: block.id,
+                page: block.page ?? null,
+                row_index: row.row_index,
+                source_row_index: row.source_row_index,
+                column_index: col.index,
+                column_header: columnLabels?.[col.index] || null,
+                declared_type: null,
+                type_cell: row.type_cell || null,
+                indicator_cell: cell,
+                raw_value: trunc.spelling,
+                description: row.description,
+                explicit: Boolean(interp.explicit),
+                description_value: true
+              },
+              explicitTable: Boolean(interp.explicit)
+            },
+            // Unlinked: the look-alike stays the row's description context.
+            lookalike && !rowValues.has(candidateKey(lookalike.candidate_type, lookalike.normalized_value))
+              ? () =>
+                  add(lookalike.refanged, lookalike.candidate_type, block, {
+                    form: OCCURRENCE_FORMS.STANDALONE,
+                    originalValue: lookalike.raw,
+                    rowText: truncRowText,
+                    descriptionCell: true
+                  })
+              : null
+          );
+        }
+        for (const v of parsedCell.values) {
+          if (v.truncated_digest) continue;
           if (v.is_ioc === false || rowValues.has(candidateKey(v.candidate_type, v.normalized_value))) continue;
           if (v.candidate_type === 'domain' && !String(v.normalized_value).includes('.')) continue;
           const rowText = (row.cells || []).filter(Boolean).join(' | ');
@@ -2139,9 +2311,28 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     // Containment is per occurrence: a standalone spelling of the same value
     // in this block (or elsewhere) still creates the hash, and its evidence
     // window is anchored on that spelling, not on the URL copy.
+    // A digest the publisher cut short with an ellipsis ("SHA256: e76f54b7…")
+    // is a prefix of the full digest stated elsewhere in the report, never a
+    // shorter digest of its own: link it to that digest when it is unique,
+    // otherwise read the run as before (tl-candidates-v54).
+    const truncatedDigestSpans = [];
+    for (const trunc of findTruncatedDigests(text)) {
+      const truncEnd = trunc.index + trunc.spelling.length;
+      if (insideAnySpan(urlSpans, trunc.index, truncEnd)) continue;
+      truncatedDigestSpans.push([trunc.index, truncEnd]);
+      const line = lineContainingObservable(text, trunc.spelling);
+      const lookalikeType = trunc.prefix.length === 32 ? 'md5' : trunc.prefix.length === 40 ? 'sha1' : null;
+      deferTruncatedDigest(
+        trunc,
+        block,
+        { form: standaloneForm, rowText: line, evidenceRowText: line },
+        lookalikeType ? () => add(trunc.prefix, lookalikeType, block, { form: standaloneForm }) : null
+      );
+    }
     for (const [re, type] of HASH_PATTERNS) {
       for (const m of text.matchAll(re)) {
         if (insideAnySpan(urlSpans, m.index, m.index + m[0].length)) continue;
+        if (insideAnySpan(truncatedDigestSpans, m.index, m.index + m[0].length)) continue;
         // `pub-<hex>.r2.dev`: the run is part of a hostname label, not a hash.
         if (hexRunIsHostnameLabelFragment(text, m.index, m.index + m[0].length)) continue;
         const focusOrdinal = hitOffsets(text.slice(0, m.index), m[0]).length;
@@ -2207,6 +2398,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       });
     }
   }
+
+  // Truncated digests join the report's unique full digest (or read as before).
+  resolveTruncatedDigests();
 
   // Decide deferred dotted tokens (domain vs technical artifact) per document.
   resolvePendingDotted();

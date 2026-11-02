@@ -179,6 +179,20 @@ const DEFENDER_RESOURCE_RE =
 const INDICATOR_HEAD_RE =
   /^(?:(?:host|network|file|atomic|additional|other|related|technical|known|key|observed|associated|new|example|selected|listed|sample|primary|secondary|main|core|full|complete|confirmed|extended|supplementary|supplemental|notable|ağ|dosya|ek)\s+)?(?:indicators?|iocs?|göstergeler|indicadores|威胁指标|妥协指标)\s*(?:[:：\-–—|(\[（]|of\b|$)/i;
 
+const IOC_PAIR_QUALIFIER = '(?:(?:network|host|file|technical|additional|atomic)\\s+)?';
+const IOC_PAIR_TERM =
+  '(?:iocs?|indicators?(?:\\s+of\\s+compromise)?|observables?|artifacts?|artefacts?)';
+/**
+ * Head-anchored, closed pair of inventory terms joined by and / & / + and
+ * closed by punctuation or the end of the heading. A heading that only
+ * mentions the terms mid-sentence ("Mixed benign and malicious observables
+ * near IOC inventory") never matches.
+ */
+const IOC_PAIR_HEAD_RE = new RegExp(
+  `^${IOC_PAIR_QUALIFIER}${IOC_PAIR_TERM}\\s*(?:and|&|\\+)\\s*${IOC_PAIR_QUALIFIER}${IOC_PAIR_TERM}\\s*(?:[:：\\-–—|(\\[（]|$)`,
+  'i'
+);
+
 /**
  * Classify a heading as an indicator-section declaration, with its form.
  * @param {string} text
@@ -220,6 +234,11 @@ export function classifySectionRole(text, opts = {}) {
   // mid-title / hyphenated mentions ("IOC-shaped", "near IOC inventory",
   // "IOC inventory methodology discussion", "without an appendix heading")
   // are narrative chrome, not MODE A openers.
+  // Closed "<indicator concept> and <indicator concept>" pair that leads the
+  // heading ("IOCs and Observables", "IOCs and network observables",
+  // "Indicators & Artifacts"): both halves are inventory vocabulary, so the
+  // heading is an IOC inventory declaration, not narrative (tl-section-tree-v14).
+  if (IOC_PAIR_HEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
   if (IOC_INTENT_RE.test(t)) {
     if (/\biocs?-/i.test(t)) {
       // Hyphenated compound (IOC-shaped): only accept if a non-bare synonym

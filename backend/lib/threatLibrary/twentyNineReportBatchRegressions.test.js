@@ -1,6 +1,6 @@
 /**
- * Twenty-nine-report batch audit regressions (35575–35605): tl-candidates-v53,
- * tl-table-v16, tl-type-resolver-v22, tl-ioc-source-scope-v4. Shapes of the
+ * Twenty-nine-report batch audit regressions (35575–35605): tl-candidates-v54,
+ * tl-table-v17, tl-type-resolver-v22, tl-ioc-source-scope-v4. Shapes of the
  * confirmed production defects with the publishers' own row wording.
  *
  * A. A table under "Legitimate File Hashes (SHA-256)" lists benign files, even
@@ -61,9 +61,9 @@ const SHA_MAL = '5837bc26a73cfb46ffd466cf889f03ce2f6a48f1f3fd42ec8be22189d51cab1
 const SHA_LEGIT = '2d99e9d732ff9304d97c7856b052ca520ae689fec1ce86df724de741913afa4b';
 const SHA_ABUSED = 'd71a119b4950ee88dd36205176d989a64df5248ac268591d4bbb78621a73acbd';
 
-test('versions: tl-candidates-v53, tl-table-v16, tl-type-resolver-v22, tl-ioc-source-scope-v4', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v53');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v16');
+test('versions: tl-candidates-v54, tl-table-v17, tl-type-resolver-v22, tl-ioc-source-scope-v4', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v54');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v17');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v4');
 });

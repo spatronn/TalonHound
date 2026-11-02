@@ -21,7 +21,13 @@ import { isIPv6 } from 'node:net';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
 import { resolveDottedTokenType } from './candidateTyping.js';
-import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, trimUrlBoundary } from './observableTypeResolver.js';
+import {
+  FILE_EXT_HINT,
+  NON_NETWORK_RESOLVED_TYPES,
+  hasDelegatedDnsSuffix,
+  isPublicOrSharedPlatformSuffix,
+  trimUrlBoundary
+} from './observableTypeResolver.js';
 
 /**
  * The absolute http(s) URL embedded after other text in one whitespace-free
@@ -95,8 +101,13 @@ function embeddedAbsoluteUrl(token) {
  * request content, like a v13 type cell.
  * v16 (29-report audit): "Handle" / "Author" / "Credit" columns over links
  * are attribution reference columns, like "Repository".
+ * v17 (hunt.io Need-Review FNs): a whole-cell wildcard ("*.example.st") asserts
+ * its registrable apex; "tcp://" / "udp://" / "tls://" / "ssl://" / "socks5://"
+ * cells assert their host like "fqdn://"; a plain domain in a certificate
+ * Common Name column is a domain value of the row; a hash cut short with an
+ * ellipsis is marked `truncated_digest` instead of read as a shorter digest.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v16';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v17';
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
@@ -300,6 +311,32 @@ const FILE_NAME_HEADER_RE =
 const ATTRIBUTE_COLUMN_HEADER_RE =
   /(?:^|\b)(?:certificate|certificates|cert|certs|code[\s-]*signing|thumbprint|thumbprints|serial(?:\s*(?:number|no))?|signer|signers|signing\s*(?:identity|subject|issuer)|issuer|issued\s*(?:by|to)|imphash|ssdeep|tlsh|sertifika|parmak\s*izi|zertifikat|certificado|сертификат|отпечаток|证书|指纹)(?:\b|$)/i;
 
+/** Certificate-attribute headers whose cell is the certificate's name ("TLS Cert Common Name", "Cert CN"). */
+const CERT_CN_HEADER_RE =
+  /\b(?:cn|common\s*name|subject\s*(?:cn|common\s*name|name)|san|subject\s*alt(?:ernative)?\s*names?|cert(?:ificate)?s?\s*(?:domain|host(?:name)?))\b/i;
+
+/**
+ * The domain a certificate Common Name cell names: a single whole-cell
+ * hostname (optionally "CN=" prefixed or a "*." wildcard over a registrable
+ * name) on a delegated DNS suffix. Issuer names, organisations, lists and
+ * anything else are not observables of the row.
+ * @param {string} cell
+ * @returns {object|null} parsed value or null
+ */
+function parseCertificateCnCell(cell) {
+  const text = String(cell || '')
+    .replace(/^\s*(?:CN|common\s*name)\s*[=:]\s*/i, '')
+    .replace(/^["'`]+|["'`]+$/g, '')
+    .trim();
+  if (!text || /\s/.test(text)) return null;
+  const parsed = parseIndicatorCell(text, { type: 'domain', endpoint: false }, { typeLabel: 'Domain' });
+  if (parsed.values.length !== 1) return null;
+  const v = parsed.values[0];
+  if (v.candidate_type !== 'domain' || v.is_ioc === false || v.port) return null;
+  if (!hasDelegatedDnsSuffix(v.normalized_value) || isPublicOrSharedPlatformSuffix(v.normalized_value)) return null;
+  return v;
+}
+
 /**
  * Column headers that name what the row's own indicator RESOLVED to ("Resolved
  * IP", "Resolves to", "A record", "DNS resolution"): a passive-DNS answer for
@@ -456,6 +493,25 @@ function normalizeCellText(cellText) {
   return wrapped ? wrapped[1].trim() : text;
 }
 const TRAILING_PUNCT_RE = /[,;:.，；。]+$/;
+const IPV4_ONLY_RE = /^(?:\d{1,3}\.){3}\d{1,3}$/;
+
+/**
+ * May a publisher wildcard over this base ("*.<base>") assert <base> itself?
+ * Needs a delegated DNS suffix, a registrable name (not "co.uk" or a shared
+ * platform such as "trycloudflare.com"), and not a file-name shape
+ * ("*.tar.gz", "*.exe.config").
+ * @param {string} base lower-case host the wildcard sits over
+ */
+function isWildcardApexAssertable(base) {
+  if (!DOMAIN_SHAPE_RE.test(base)) return false;
+  const labels = base.split('.');
+  if (labels.length < 2) return false;
+  if (!hasDelegatedDnsSuffix(base)) return false;
+  if (isPublicOrSharedPlatformSuffix(base)) return false;
+  // "*.tar.gz" / "*.exe.config": the wildcard is a file glob.
+  if (labels.slice(0, -1).every((l) => FILE_EXT_HINT.has(l))) return false;
+  return true;
+}
 
 /**
  * Parse one token (already refanged) as an observable.
@@ -472,11 +528,22 @@ function parseToken(token, declared, ctx = {}) {
   // Publisher IOC cells prefix a hostname with a non-HTTP scheme
   // ("fqdn://ipfs[.]io", "fqdn://relay.example:443"). The scheme names the
   // host; it is not a URL and must not drop the row (tl-candidates-v46).
-  const fqdnHost = /^(?:fqdn):\/\/([^/\s?#]+)(?::(\d{1,5}))?$/i.exec(t);
+  // Raw transport schemes (tcp:// udp:// tls:// ssl:// socks5://) are the
+  // same publisher convention: "tcp://host.example:443" names a C2 endpoint
+  // whose host is the observable (tl-table-v17). Only a bare host[:port]
+  // qualifies — a path / query makes it something else.
+  let endpointScheme = null;
+  const fqdnHost = /^(fqdn|tcp|udp|tls|ssl|socks[45]h?):\/\/([^/\s?#]+?)(?::(\d{1,5}))?\/?$/i.exec(t);
   if (fqdnHost) {
-    const p = Number(fqdnHost[2]);
-    if (fqdnHost[2] && Number.isFinite(p) && p >= 1 && p <= 65535) port = p;
-    t = fqdnHost[1];
+    endpointScheme = fqdnHost[1].toLowerCase();
+    const p = Number(fqdnHost[3]);
+    if (fqdnHost[3] && Number.isFinite(p) && p >= 1 && p <= 65535) port = p;
+    t = fqdnHost[2];
+    // The scheme asserts a network host: a declared non-network column type
+    // ("URL" over a tcp:// cell) does not override it.
+    if (endpointScheme !== 'fqdn' && !IPV4_ONLY_RE.test(t) && (!declared || declared.type !== 'domain')) {
+      declared = { type: 'domain', endpoint: true };
+    }
   }
   const ep = t.match(IPV4_PORT_CELL_RE) || t.match(HOST_PORT_CELL_RE);
   if (ep) {
@@ -484,6 +551,20 @@ function parseToken(token, declared, ctx = {}) {
     if (Number.isFinite(p) && p >= 1 && p <= 65535) {
       port = p;
       t = ep[1];
+    }
+  }
+  // A publisher wildcard ("*.botlesscucks.st") asserts the operator-owned
+  // base domain; the wildcard label itself is never part of the identity.
+  // Only a clean whole-cell wildcard over a registrable, delegated,
+  // non-file, non-shared-platform base qualifies (tl-table-v17).
+  let wildcardApex = false;
+  const wildcard = /^\*\.([^*\s/]+)$/.exec(t);
+  if (wildcard) {
+    const base = wildcard[1].toLowerCase().replace(/\.$/, '');
+    if (isWildcardApexAssertable(base)) {
+      wildcardApex = true;
+      t = wildcard[1].replace(/\.$/, '');
+      if (!declared || declared.type !== 'domain') declared = { type: 'domain', endpoint: false };
     }
   }
   const hint = hintForDeclared(declared);
@@ -538,6 +619,8 @@ function parseToken(token, declared, ctx = {}) {
     is_ioc: n.isIoc !== false,
     likely_context_only: n.likelyContextOnly === true,
     port,
+    endpoint_scheme: endpointScheme && endpointScheme !== 'fqdn' ? endpointScheme : undefined,
+    wildcard_apex: wildcardApex && n.candidateType === 'domain' ? true : undefined,
     declared_type_mismatch: mismatch || undefined,
     resolved_type: n.resolvedType || n.candidateType,
     typing_reason: n.typingReason || null,
@@ -574,6 +657,49 @@ export function joinWrappedUrlTail(text) {
  * @param {{ typeLabel?: string|null }} [ctx] row type cell / column label
  */
 export function parseIndicatorCell(cellText, declared = null, ctx = {}) {
+  const result = parseIndicatorCellValues(cellText, declared, ctx);
+  const truncated = findTruncatedDigests(normalizeCellText(cellText));
+  if (!truncated.length) return result;
+  // A digest the publisher cut short with an ellipsis ("SHA256: e76f54…") is
+  // a prefix of a digest elsewhere in the report, never a shorter digest of
+  // its own: mark the look-alike value so callers link instead of asserting it
+  // (tl-table-v17).
+  for (const v of result.values || []) {
+    if (!HASH_DECLARED_TYPES.has(v.candidate_type)) continue;
+    const hit = truncated.find((t) => t.prefix === String(v.normalized_value || '').toLowerCase());
+    if (hit) v.truncated_digest = hit;
+  }
+  return { ...result, truncated_digests: truncated };
+}
+
+const TRUNCATED_HEX_RE = /(?<![0-9a-z_])([0-9a-f]{16,63})(?:\.{2,}|…)(?![0-9a-z])/gi;
+const DIGEST_LABEL_TAIL_RE = /(sha-?256|sha-?1|md5)\s*[:=]?\s*$/i;
+const DIGEST_LABEL_LENGTH = { md5: 32, sha1: 40, sha256: 64 };
+
+/**
+ * Hex prefixes the text shows cut short by an ellipsis. A prefix whose length
+ * equals its own algorithm label ("MD5: <32 hex>...") is a full digest.
+ * @param {string} text
+ * @returns {{ prefix: string, label_length: number|null, spelling: string, index: number }[]}
+ */
+export function findTruncatedDigests(text) {
+  const src = String(text || '');
+  const out = [];
+  TRUNCATED_HEX_RE.lastIndex = 0;
+  let m;
+  while ((m = TRUNCATED_HEX_RE.exec(src))) {
+    const prefix = m[1].toLowerCase();
+    const before = src.slice(Math.max(0, m.index - 24), m.index);
+    const label = DIGEST_LABEL_TAIL_RE.exec(before);
+    const labelLength = label ? DIGEST_LABEL_LENGTH[label[1].toLowerCase().replace('-', '')] || null : null;
+    if (labelLength && prefix.length >= labelLength) continue;
+    if (out.some((o) => o.prefix === prefix)) continue;
+    out.push({ prefix, label_length: labelLength, spelling: m[0], index: m.index });
+  }
+  return out;
+}
+
+function parseIndicatorCellValues(cellText, declared = null, ctx = {}) {
   const source = normalizeCellText(cellText);
   // Values the publisher's markup glued together (a CMS that dropped the <br>
   // between them): split only where the boundary is certain (tl-table-v15).
@@ -1355,7 +1481,18 @@ export function interpretIocTable(block, opts = {}) {
     }
     if (attributeKind) {
       // Never an indicator column, even when every cell parses (thumbprints).
-      columns.push({ index: c, header, intent: 'other', method: 'attribute_column', attribute_kind: attributeKind, declared_type: null, ...stats });
+      columns.push({
+        index: c,
+        header,
+        intent: 'other',
+        method: 'attribute_column',
+        attribute_kind: attributeKind,
+        declared_type: null,
+        // "TLS Cert Common Name": the certificate attribute whose cell IS a
+        // domain name the publisher lists beside the row's address (v17).
+        ...(attributeKind === 'certificate' && CERT_CN_HEADER_RE.test(normalizeHeaderLabel(header)) ? { cert_cn: true } : {}),
+        ...stats
+      });
       continue;
     }
     let intent = header ? headerIntent(header) : null;
@@ -1495,6 +1632,26 @@ export function interpretIocTable(block, opts = {}) {
             labeled_in_description: true
           });
         }
+      }
+    }
+    // A certificate Common Name column ("TLS Cert Common Name") holding a
+    // plain domain: the publisher's listing of that name beside the row's
+    // address is a domain observable of the row — never an Indicator-less row
+    // on its own (tl-table-v17).
+    if (row.values.length) {
+      for (const col of columns.filter((c) => c.cert_cn)) {
+        const cn = parseCertificateCnCell(String(cells[col.index] || ''));
+        if (!cn) continue;
+        if (row.values.some((x) => x.candidate_type === cn.candidate_type && x.normalized_value === cn.normalized_value)) continue;
+        row.values.push({
+          ...cn,
+          column_index: col.index,
+          indicator_cell: String(cells[col.index] || '').trim(),
+          type_label: 'Domain',
+          declared_type: 'domain',
+          declared_endpoint: false,
+          certificate_cn: true
+        });
       }
     }
     if (!row.values.length) {
