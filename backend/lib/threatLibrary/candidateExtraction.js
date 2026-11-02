@@ -911,8 +911,13 @@ function hitOffsets(text, value) {
   return out;
 }
 
-/** A row description naming the value a passive-DNS answer for another name ("Historical resolution for x[.]com"). */
-const HISTORICAL_RESOLUTION_ROW_RE = /\bhistorical(?:ly)?\s+(?:dns\s+)?resol(?:ution|ved|ves)\b/i;
+/**
+ * A row description that LEADS with "Historical resolution for / of <name>":
+ * the value is that name's passive-DNS answer. A description that merely
+ * mentions the history ("Open-directory staging server; historically resolved
+ * C2 domains via x.com") asserts the value itself and never matches.
+ */
+const HISTORICAL_RESOLUTION_ROW_RE = /(?:^|·\s*)\s*historical\s+(?:dns\s+)?resolutions?\s+(?:for|of)\b/i;
 const HASH_CANDIDATE_TYPES = new Set(['md5', 'sha1', 'sha256']);
 /** A truncated digest shorter than this identifies nothing (tl-candidates-v54). */
 const MIN_TRUNCATED_DIGEST_PREFIX = 16;

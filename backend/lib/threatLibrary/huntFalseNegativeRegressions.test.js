@@ -264,7 +264,16 @@ test('FN-5 unit. closed IOC-term pairs head an IOC inventory; narrative headings
   assert.equal(classifySectionRole('Indicators & Artifacts'), SECTION_ROLES.IOC_APPENDIX);
   assert.equal(classifySectionRole('Mixed benign and malicious observables near IOC inventory'), null);
   assert.equal(classifySectionRole('IOCs and why they matter for this campaign'), null);
-  assert.equal(classifySectionRole('Observables and detection notes'), null);
+  assert.equal(classifySectionRole('Why IOCs and observables matter'), null);
+});
+
+test('FN-5 negative. a row that only mentions past resolution still asserts its address', () => {
+  const x = run(`<h2>Appendix: Indicators of Compromise</h2>
+<table>
+<tr><th>Indicator</th><th>Notes</th></tr>
+<tr><td>91.215.85.30</td><td>Open-directory staging server; historically resolved C2 domains via vpn-example.com since 2023</td></tr>
+</table>`);
+  assert.ok(members(x).includes('ip:91.215.85.30'), members(x).join(','));
 });
 
 test('FN-5. firm C2 / staging / case-observed table rows assert; historical resolution pivots stay context', () => {
