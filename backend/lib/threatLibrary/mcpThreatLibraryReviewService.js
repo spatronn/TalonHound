@@ -38,7 +38,11 @@ import {
   publicIocSource,
   summarizeIocSources
 } from './iocSources/store.js';
-import { approveLinkedIocSource, dismissLinkedIocSource } from './iocSources/analystActions.js';
+import {
+  approveLinkedIocSource,
+  dismissLinkedIocSource,
+  inspectLinkedIocSource
+} from './iocSources/analystActions.js';
 import {
   isFinalizeAllowed,
   isReviewMutationAllowed,
@@ -933,7 +937,8 @@ export async function mcpThreatLibraryFinalizeReport(pool, args = {}, ctx = {}) 
 }
 
 /**
- * threat_library_review_ioc_source — approve or dismiss a linked IOC Source.
+ * threat_library_review_ioc_source — inspect, approve, or dismiss a linked IOC Source.
+ * Inspect is required before approve when lifecycle_status is discovered (same as UI).
  */
 export async function mcpThreatLibraryReviewIocSource(pool, args = {}, ctx = {}, deps = {}) {
   const resolved = await resolveReport(pool, args.report_id);
@@ -941,10 +946,10 @@ export async function mcpThreatLibraryReviewIocSource(pool, args = {}, ctx = {},
   const { report } = resolved;
 
   const action = String(args.action || '').trim();
-  if (action !== 'approve' && action !== 'dismiss') {
+  if (action !== 'approve' && action !== 'dismiss' && action !== 'inspect') {
     return {
       status: 400,
-      error: { code: 'INVALID_ACTION', message: 'action must be approve or dismiss' }
+      error: { code: 'INVALID_ACTION', message: 'action must be inspect, approve, or dismiss' }
     };
   }
   const sourceId = String(args.source_id || '').trim();
@@ -956,6 +961,36 @@ export async function mcpThreatLibraryReviewIocSource(pool, args = {}, ctx = {},
   }
 
   const { req, user, actorFields, audit } = reviewActorContext(ctx);
+  const extras = { ...actorFields.metadataExtras, tool: 'threat_library_review_ioc_source' };
+
+  if (action === 'inspect') {
+    const result = await inspectLinkedIocSource(pool, deps.threatLibraryQueue || null, {
+      sourcePublicId: sourceId,
+      report,
+      actor: user,
+      audit,
+      req,
+      auditMetadataExtras: extras
+    });
+    if (!result.ok) {
+      return {
+        status: result.status || 400,
+        error: { code: result.code || 'IOC_SOURCE_REVIEW_FAILED', message: result.error }
+      };
+    }
+    return {
+      status: 200,
+      body: {
+        report_id: report.public_id,
+        action: 'inspect',
+        source: result.source,
+        job_id: result.job_id,
+        audit_via: 'mcp',
+        actor: actorFields.metadataExtras
+      }
+    };
+  }
+
   if (action === 'approve') {
     const result = await approveLinkedIocSource(pool, deps.threatLibraryQueue || null, {
       sourcePublicId: sourceId,
@@ -964,7 +999,7 @@ export async function mcpThreatLibraryReviewIocSource(pool, args = {}, ctx = {},
       selectedPaths: Array.isArray(args.selected_paths) ? args.selected_paths : null,
       audit,
       req,
-      auditMetadataExtras: { ...actorFields.metadataExtras, tool: 'threat_library_review_ioc_source' }
+      auditMetadataExtras: extras
     });
     if (!result.ok) {
       return {
@@ -991,7 +1026,7 @@ export async function mcpThreatLibraryReviewIocSource(pool, args = {}, ctx = {},
     actor: user,
     audit,
     req,
-    auditMetadataExtras: { ...actorFields.metadataExtras, tool: 'threat_library_review_ioc_source' }
+    auditMetadataExtras: extras
   });
   if (!result.ok) {
     return {

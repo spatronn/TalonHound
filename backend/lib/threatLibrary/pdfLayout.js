@@ -657,8 +657,10 @@ function dropEmptyColumns(rows) {
   return rows.map((r) => ({ ...r, cells: keep.map((c) => r.cells[c]) }));
 }
 
+// Absolute URL line tokens include wss/ftp (aligned with ABSOLUTE_URL_RE /
+// tl-candidates-v53) so WebSocket C2 rows stay indicator value lines.
 const OBSERVABLE_LINE_RE =
-  /^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s*|[-•*·]\s*)?(?:https?:\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})\s*$/i;
+  /^(?:[\[(]?\d{1,3}[\])]?[.、)]?\s*|[-•*·]\s*)?(?:(?:https?|ftps?|wss?):\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63})\s*$/i;
 
 /**
  * True when a line is a single indicator value (optionally with a bullet or
@@ -679,7 +681,7 @@ export function isObservableOnlyLine(text) {
   // URLs, IPs, CIDRs and hashes are network/hash IOC lines even when a path
   // ends in a file extension (`…/uni.txt`). Only bare dotted tokens are gated.
   if (
-    /^(?:https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|[0-9a-f:]+\/)/i.test(bare) ||
+    /^(?:(?:https?|ftps?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|[0-9a-f:]+\/)/i.test(bare) ||
     /^[a-f0-9]{32}$/i.test(bare) ||
     /^[a-f0-9]{40}$/i.test(bare) ||
     /^[a-f0-9]{64}$/i.test(bare) ||

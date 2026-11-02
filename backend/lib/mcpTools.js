@@ -838,15 +838,17 @@ export function registerMcpTools(server, deps) {
   server.registerTool(
     'threat_library_review_ioc_source',
     {
-      title: 'Approve or dismiss a linked IOC Source',
+      title: 'Inspect, approve, or dismiss a linked IOC Source',
       description:
-        'ACTION: approve (queue extract) or dismiss a publisher-linked IOC Source on a Threat Library report — same path as the UI IOC Source approve/dismiss buttons. '
+        'ACTION: inspect / approve / dismiss a publisher-linked IOC Source on a Threat Library report — same paths as the UI IOC Source buttons. '
         + 'Requires mcp:threat_library:write and analyst/admin owner. report_id + source_id (from threat_library_get_review.linked_ioc_sources). '
-        + 'approve may include selected_paths. Extract runs asynchronously; poll threat_library_get_review / get_threat_library_import_status for new candidates.',
+        + 'Discovered packs must be inspected before approve (approve while discovered returns invalid_source_transition). '
+        + 'inspect queues preview fetch; approve (after inspected) queues extract and may include selected_paths; dismiss records intentional omission. '
+        + 'Poll threat_library_get_review / get_threat_library_import_status for lifecycle and new candidates.',
       inputSchema: {
         report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
         source_id: z.string().min(36).max(36).describe('Linked IOC Source public id (uuid)'),
-        action: z.enum(['approve', 'dismiss']).describe('approve queues extract; dismiss removes from review'),
+        action: z.enum(['inspect', 'approve', 'dismiss']).describe('inspect queues preview; approve queues extract; dismiss omits the pack'),
         selected_paths: z.array(z.string().min(1).max(1024)).max(500).optional()
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }

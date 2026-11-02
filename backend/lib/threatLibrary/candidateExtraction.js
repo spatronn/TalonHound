@@ -320,7 +320,7 @@ export {
  * Repository") stay provenance under an IOC heading; "log.events.vc0" never
  * yields the host "log.events".
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v52';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v53';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -624,7 +624,10 @@ const IPV6_LOOPBACK_RE = /(?<![0-9a-fA-F:])::1(?![0-9a-fA-F:])/g;
 // percent-encoded); in prose they close a quoted URL ("“https://x/y.exe”").
 // ")" is matched and then balanced by trimUrlBoundary, so path parentheses
 // ("report_(final).pdf") survive while prose / annotation parentheses do not.
-const URL_RE = /\bhttps?:\/\/[^\s<>"'`\]‘’“”«»]+/gi;
+// Keep schemes aligned with observableTypeResolver ABSOLUTE_URL_RE (http(s),
+// ftp(s), ws(s)). WebSocket C2 URLs in publisher IOC lists must stay URLs —
+// matching only http(s) collapses `wss://host` to a bare domain (tl-candidates-v53).
+const URL_RE = /\b(?:https?|ftps?|wss?):\/\/[^\s<>"'`\]‘’“”«»]+/gi;
 /**
  * Scheme-less network resource: DNS-shaped host + path ("js.cache-mcp.com/layer.js").
  * The publisher gave no scheme, so none is invented: the exact host/path is

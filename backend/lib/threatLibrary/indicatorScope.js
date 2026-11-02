@@ -339,7 +339,7 @@ const TRUSTED_SERVICE_LEAD_RE =
 /**
  * An address (or range) annotated with its hosting provider: "1.2.3.0
  * (Railway.com)". An autonomous-system number names its operator the same
- * way: "AS207043 (dedik[.]io) | ASN | Hosting for …" (tl-candidates-v52).
+ * way: "AS207043 (dedik[.]io) | ASN | Hosting for …" (tl-candidates-v53).
  */
 const IP_PROVIDER_ANNOTATION_RE =
   /(?:(?<![\d.])\d{1,3}(?:\[?\.\]?\d{1,3}){3}(?:\/\d{1,2})?|(?<![\w-])AS\d{1,10})\s*[(（]\s*OBSERVABLE\s*[)）]/;
@@ -420,7 +420,7 @@ const MALICE_ELSEWHERE_RE =
 /** An outright (unhedged) row statement that the row's subject is not malicious. */
 // "Certificate CN only, placeholder name. Do not block as a domain": the
 // publisher's own instruction that the row is not an Indicator
-// (tl-candidates-v52). "Check before blocking" is a caveat, not a negation.
+// (tl-candidates-v53). "Check before blocking" is a caveat, not a negation.
 // The same holds for "abused legitimate infrastructure, not itself malicious"
 // and "a shared … default certificate …, not operator-specific".
 const ROW_NOT_MALICIOUS_RE = new RegExp([
@@ -479,7 +479,7 @@ const PROVIDER_ROLE_NOUN_RE =
 // values (instances: tl-candidates-v43).
 // "It obtains this public IP from public IP address identification services:"
 // names third-party IP-echo utilities (api.ipify.org, ipinfo.io), even under
-// a C&C heading (tl-candidates-v52).
+// a C&C heading (tl-candidates-v53).
 const PROVIDER_LEAD_NOUN_RE = /(?<![\w.-])(?:providers?|explorers?|resolvers?|instances?|ip(?:[\s-]+address)?[\s-]+(?:identification|lookup|geolocation|check(?:er|ing)?|echo|discovery)[\s-]+(?:services?|apis?|sites?))(?![\w.-])/i;
 const MALICIOUS_VALUE_ROLE_RE =
   /\b(?:c2|c&c|command\s*(?:and|&)\s*control)\s+(?:servers?|panels?|domains?|hosts?|ips?|nodes?|addresses|infrastructure|endpoints?|urls?|instances?)\b(?!\s+(?:resolution|resolv\w*|lookups?|retrieval|discovery))|\b(?:c2|c&c)(?=\s*(?:[/|,;]|$))|\b(?:staging|phishing|malware|payloads?|droppers?|loaders?|exfil\w*|beacons?|implants?|backdoors?|stealers?|trojans?|ransomware|botnets?|malicious|attacker[- ]controlled|actor[- ]controlled|operator[- ]controlled|fake|spoof\w*|impersonat\w*|typo-?squat\w*|look-?alike|compromised|bulletproof|weaponi[sz]\w*|trojani[sz]\w*|backdoored|abus\w*|hijack\w*|rogue|lure|operational|operators?|tasking|lookalikes?)\b/i;
@@ -666,7 +666,7 @@ export function annotateListStances(blocks) {
     // A table directly under a sub-heading that names its rows legitimate
     // ("Legitimate File Hashes (SHA-256)") is the publisher's benign-file
     // inventory: a row saying the genuine binary was "abused for sideloading"
-    // describes misuse, not a malicious file (tl-candidates-v52).
+    // describes misuse, not a malicious file (tl-candidates-v53).
     if (list[i]?.type === 'table') {
       let lead = i - 1;
       while (lead >= 0 && isCaption(list[lead])) lead -= 1;
@@ -742,7 +742,8 @@ const ANAPHOR_BY_KIND = Object.freeze({
 
 function observableKind(value) {
   const v = String(Array.isArray(value) ? value[0] : value || '').trim();
-  if (/^https?:\/\//i.test(v) || /^[^\s/]+\.[^\s/]+\/\S/.test(v)) return 'url';
+  // Absolute URL schemes match observableTypeResolver ABSOLUTE_URL_RE (incl. wss).
+  if (/^(?:https?|ftps?|wss?):\/\//i.test(v) || /^[^\s/]+\.[^\s/]+\/\S/.test(v)) return 'url';
   if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-f:]+:[0-9a-f:]*$/i.test(v)) return 'ip';
   if (/^[a-f0-9]{32}$|^[a-f0-9]{40}$|^[a-f0-9]{64}$/i.test(v)) return 'hash';
   return 'domain';
@@ -783,7 +784,7 @@ const RECORD_FIELD_LABEL =
 export const RECORD_FIELD_LINE_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]\\s*\\S`, 'i');
 const RECORD_FIELD_PREFIX_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]`, 'i');
 const OTHER_OBSERVABLE_RE =
-  /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
+  /(?:https?|ftps?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
 
 /** Separator-only tokens between values on one publisher row. */
 const ROW_SEPARATOR_TOKEN_RE = /^(?:[-–—=]+>?|→|⇒|:)$/;
@@ -804,8 +805,10 @@ const NON_HTTP_NETWORK_SCHEME_RE = /^(?:ftps?|sftp|scp|smb|ssh|telnet|tcp|udp|ir
 const TRANSPORT_ENDPOINT_LINE_RE =
   /^(?:tcp|udp|tls|ssl|socks[45]h?):\/\/(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})?\/?$/i;
 
+// Absolute URL tokens include wss/ftp — matching only http(s) left WebSocket
+// C2 rows looking like prose inside IOC lists (tl-candidates-v53).
 const OBSERVABLE_TOKEN_RE =
-  /^(?:https?:\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
+  /^(?:(?:https?|ftps?|wss?):\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
 
 /**
  * One scheme-less host/path URL value ("host.example/path/file.bin"), exactly
@@ -1020,7 +1023,7 @@ export function isCredentialLabeledHex(text, value) {
  */
 function annotationHasOtherObservable(annotation) {
   const a = String(annotation || '');
-  if (/https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b/i.test(a)) return true;
+  if (/(?:https?|ftps?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b/i.test(a)) return true;
   for (const m of a.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/gi)) {
     const labels = m[0].toLowerCase().split('.');
     const last = labels[labels.length - 1];

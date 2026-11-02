@@ -1,10 +1,14 @@
 /**
- * Linked IOC Source analyst approve / dismiss — shared by the HTTP Threat
- * Library routes and MCP threat_library_review_ioc_source.
+ * Linked IOC Source analyst inspect / approve / dismiss — shared by the HTTP
+ * Threat Library routes and MCP threat_library_review_ioc_source.
  *
+ * Inspect queues the inspect job (same as POST …/ioc-sources/:id/inspect).
  * Approve transitions the source and queues the extract job (same as
  * POST /api/threat-library/ioc-sources/:id/approve). Dismiss only transitions
  * state (POST …/dismiss). Neither invents a parallel lifecycle.
+ *
+ * Approve requires lifecycle inspected|attached|extracted|failed|stale —
+ * discovered packs must be inspected first (same gate as the UI).
  */
 
 import { AUDIT_ACTION, AUDIT_SEVERITY, AUDIT_STATUS } from '../../auditConstants.js';
@@ -46,6 +50,73 @@ async function queueIocSourceJob(pool, queue, report, source, jobType, actor, di
       ...dispatchExtra
     }
   });
+}
+
+/**
+ * Queue inspection for a linked IOC Source (discovered → inspecting).
+ * Same path as POST /api/threat-library/ioc-sources/:id/inspect.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {import('bullmq').Queue|null} queue
+ * @param {{
+ *   sourcePublicId: string,
+ *   report: object,
+ *   actor: object,
+ *   audit?: object,
+ *   req?: object,
+ *   auditMetadataExtras?: object
+ * }} opts
+ */
+export async function inspectLinkedIocSource(pool, queue, opts) {
+  const source = await getIocSourceByPublicId(pool, opts.sourcePublicId);
+  if (!source) {
+    return { ok: false, status: 404, code: 'NOT_FOUND', error: 'IOC source not found' };
+  }
+  if (String(source.report_public_id) !== String(opts.report.public_id)) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'SOURCE_REPORT_MISMATCH',
+      error: 'IOC source does not belong to this report'
+    };
+  }
+  if (opts.report?.finalized_at) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'report_finalized',
+      error: 'The report is finalized. Reopen it for review before inspecting or extracting its IOC Sources again.'
+    };
+  }
+  // Match the HTTP inspect route: queue the job; the worker owns start_inspect.
+  const { jobRow } = await queueIocSourceJob(
+    pool,
+    queue,
+    opts.report,
+    source,
+    IOC_SOURCE_JOB_MODES.INSPECT,
+    opts.actor
+  );
+  await writeAudit(opts.audit, opts.req, {
+    action: AUDIT_ACTION.THREAT_LIBRARY_IOC_SOURCE_INSPECT_QUEUED,
+    ...reportAuditEntity(opts.report),
+    severity: AUDIT_SEVERITY.INFO,
+    status: AUDIT_STATUS.SUCCESS,
+    metadata: {
+      ...reportAuditSnapshot(opts.report),
+      source_public_id: source.public_id,
+      job_id: jobRow.public_id,
+      initiated_by: initiatedBy(opts.actor),
+      ...(opts.auditMetadataExtras || {})
+    }
+  });
+  const files = await listSourceFiles(pool, source.id);
+  return {
+    ok: true,
+    status: 202,
+    source: publicIocSource(source, files),
+    job_id: jobRow.public_id
+  };
 }
 
 /**
