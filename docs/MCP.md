@@ -142,7 +142,7 @@ Profile presets:
 | `threat_library_review_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Explicit candidate approve / context_only / ignore (and related review actions). |
 | `threat_library_create_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Create IOCs from approved Indicators (`confirm: true` to commit). |
 | `threat_library_finalize_report` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Finalize report after review. |
-| `threat_library_review_ioc_source` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Inspect, approve, or dismiss a linked IOC Source pack. Discovered packs must be inspected before approve. |
+| `threat_library_review_ioc_source` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Inspect / approve / dismiss a linked IOC Source pack. Discovered packs must be inspected before approve. |
 
 There are no IOC/source delete, update-admin, feed, or user-management tools.
 

@@ -624,10 +624,10 @@ const IPV6_LOOPBACK_RE = /(?<![0-9a-fA-F:])::1(?![0-9a-fA-F:])/g;
 // percent-encoded); in prose they close a quoted URL ("“https://x/y.exe”").
 // ")" is matched and then balanced by trimUrlBoundary, so path parentheses
 // ("report_(final).pdf") survive while prose / annotation parentheses do not.
-// Keep schemes aligned with observableTypeResolver ABSOLUTE_URL_RE (http(s),
-// ftp(s), ws(s)). WebSocket C2 URLs in publisher IOC lists must stay URLs —
-// matching only http(s) collapses `wss://host` to a bare domain (tl-candidates-v53).
-const URL_RE = /\b(?:https?|ftps?|wss?):\/\/[^\s<>"'`\]‘’“”«»]+/gi;
+// http(s) plus WebSocket C2 (wss?/ws). FTP/SSH/etc. stay host-only via
+// NON_HTTP_NETWORK_SCHEME_RE — matching only http(s) collapsed `wss://host`
+// to a bare domain (tl-candidates-v53).
+const URL_RE = /\b(?:https?|wss?):\/\/[^\s<>"'`\]‘’“”«»]+/gi;
 /**
  * Scheme-less network resource: DNS-shaped host + path ("js.cache-mcp.com/layer.js").
  * The publisher gave no scheme, so none is invented: the exact host/path is

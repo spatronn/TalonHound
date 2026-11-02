@@ -742,8 +742,8 @@ const ANAPHOR_BY_KIND = Object.freeze({
 
 function observableKind(value) {
   const v = String(Array.isArray(value) ? value[0] : value || '').trim();
-  // Absolute URL schemes match observableTypeResolver ABSOLUTE_URL_RE (incl. wss).
-  if (/^(?:https?|ftps?|wss?):\/\//i.test(v) || /^[^\s/]+\.[^\s/]+\/\S/.test(v)) return 'url';
+  // http(s) + WebSocket; FTP/SSH/etc. are host-bearing transport schemes.
+  if (/^(?:https?|wss?):\/\//i.test(v) || /^[^\s/]+\.[^\s/]+\/\S/.test(v)) return 'url';
   if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(v) || /^[0-9a-f:]+:[0-9a-f:]*$/i.test(v)) return 'ip';
   if (/^[a-f0-9]{32}$|^[a-f0-9]{40}$|^[a-f0-9]{64}$/i.test(v)) return 'hash';
   return 'domain';
@@ -784,7 +784,7 @@ const RECORD_FIELD_LABEL =
 export const RECORD_FIELD_LINE_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]\\s*\\S`, 'i');
 const RECORD_FIELD_PREFIX_RE = new RegExp(`^${RECORD_FIELD_LABEL}\\s*[:：]`, 'i');
 const OTHER_OBSERVABLE_RE =
-  /(?:https?|ftps?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
+  /(?:https?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
 
 /** Separator-only tokens between values on one publisher row. */
 const ROW_SEPARATOR_TOKEN_RE = /^(?:[-–—=]+>?|→|⇒|:)$/;
@@ -805,10 +805,11 @@ const NON_HTTP_NETWORK_SCHEME_RE = /^(?:ftps?|sftp|scp|smb|ssh|telnet|tcp|udp|ir
 const TRANSPORT_ENDPOINT_LINE_RE =
   /^(?:tcp|udp|tls|ssl|socks[45]h?):\/\/(?:(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:\d{1,3}\.){3}\d{1,3})(?::\d{1,5})?\/?$/i;
 
-// Absolute URL tokens include wss/ftp — matching only http(s) left WebSocket
-// C2 rows looking like prose inside IOC lists (tl-candidates-v53).
+// Absolute URL tokens include wss — matching only http(s) left WebSocket C2
+// rows looking like prose inside IOC lists (tl-candidates-v53). FTP stays
+// host-only (NON_HTTP_NETWORK_SCHEME_RE).
 const OBSERVABLE_TOKEN_RE =
-  /^(?:(?:https?|ftps?|wss?):\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
+  /^(?:(?:https?|wss?):\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
 
 /**
  * One scheme-less host/path URL value ("host.example/path/file.bin"), exactly
@@ -1023,7 +1024,7 @@ export function isCredentialLabeledHex(text, value) {
  */
 function annotationHasOtherObservable(annotation) {
   const a = String(annotation || '');
-  if (/(?:https?|ftps?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b/i.test(a)) return true;
+  if (/(?:https?|wss?):\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b/i.test(a)) return true;
   for (const m of a.matchAll(/\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/gi)) {
     const labels = m[0].toLowerCase().split('.');
     const last = labels[labels.length - 1];
