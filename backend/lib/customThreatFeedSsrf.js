@@ -127,20 +127,36 @@ export function validateFeedUrlPolicy(urlString) {
  * @param {string} host
  * @returns {Promise<{ address: string, family: number }[]>}
  */
+/** DNS codes that mean "this address family has no usable answer". */
+const CARES_EMPTY_CODES = new Set(['ENODATA', 'ENOTFOUND', 'ESERVFAIL', 'ETIMEOUT']);
+
+/**
+ * Resolve one address family via c-ares; empty on no-data / SERVFAIL / timeout.
+ * Hard failures (unexpected codes) still throw.
+ * @param {() => Promise<string[]>} resolveFn
+ * @returns {Promise<{ ok: true, addresses: string[] } | { ok: false, error: Error }>}
+ */
+async function resolveFamilyOrEmpty(resolveFn) {
+  try {
+    return { ok: true, addresses: await resolveFn() };
+  } catch (err) {
+    if (CARES_EMPTY_CODES.has(err?.code)) return { ok: true, addresses: [] };
+    return { ok: false, error: err };
+  }
+}
+
 async function resolveFeedHostViaCares(host) {
+  // Resolve A and AAAA independently. Docker's embedded DNS often SERVFAILs
+  // AAAA for CloudFront-fronted hosts while A succeeds; requiring both would
+  // discard a usable IPv4 answer (observed on securitylabs.datadoghq.com).
   const [v4, v6] = await Promise.all([
-    dns.resolve4(host).catch((err) => {
-      if (err?.code === 'ENODATA' || err?.code === 'ENOTFOUND') return [];
-      throw err;
-    }),
-    dns.resolve6(host).catch((err) => {
-      if (err?.code === 'ENODATA' || err?.code === 'ENOTFOUND') return [];
-      throw err;
-    })
+    resolveFamilyOrEmpty(() => dns.resolve4(host)),
+    resolveFamilyOrEmpty(() => dns.resolve6(host))
   ]);
+  if (!v4.ok && !v6.ok) throw v4.error || v6.error;
   return [
-    ...v4.map((address) => ({ address, family: 4 })),
-    ...v6.map((address) => ({ address, family: 6 }))
+    ...(v4.ok ? v4.addresses : []).map((address) => ({ address, family: 4 })),
+    ...(v6.ok ? v6.addresses : []).map((address) => ({ address, family: 6 }))
   ];
 }
 

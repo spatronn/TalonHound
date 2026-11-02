@@ -127,6 +127,32 @@ test('resolveSafeFeedHost falls back to resolveAll when default lookup returns E
   }
 });
 
+test('resolveFeedHostViaCares keeps A records when AAAA returns ESERVFAIL', async () => {
+  const dnsPromises = await import('node:dns/promises');
+  const original = dnsPromises.lookup;
+  const original4 = dnsPromises.resolve4;
+  const original6 = dnsPromises.resolve6;
+  dnsPromises.lookup = async () => {
+    const err = new Error('getaddrinfo EAI_AGAIN');
+    err.code = 'EAI_AGAIN';
+    throw err;
+  };
+  dnsPromises.resolve4 = async () => ['8.8.8.8'];
+  dnsPromises.resolve6 = async () => {
+    const err = new Error('queryAaaa ESERVFAIL');
+    err.code = 'ESERVFAIL';
+    throw err;
+  };
+  try {
+    const recovered = await resolveSafeFeedHost('ipv4-only.example');
+    assert.deepEqual(recovered, [{ address: '8.8.8.8', family: 4 }]);
+  } finally {
+    dnsPromises.lookup = original;
+    dnsPromises.resolve4 = original4;
+    dnsPromises.resolve6 = original6;
+  }
+});
+
 test('resolveSafeFeedHost does not fall back when an injected lookup fails', async () => {
   await assert.rejects(
     () => resolveSafeFeedHost('ti.example.com', {
