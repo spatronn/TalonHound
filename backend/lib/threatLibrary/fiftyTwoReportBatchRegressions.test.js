@@ -53,8 +53,8 @@ function find(cands, type, value) {
 const BODY = '<h2>Analysis</h2><p>The operators ran a multi-stage intrusion against technology targets during the quarter.</p>'
   + '<p>They staged payloads on rented servers and rotated infrastructure every few days.</p>';
 
-test('versions: tl-candidates-v52, tl-section-tree-v13, tl-table-v16, tl-type-resolver-v22', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v52');
+test('versions: tl-candidates-v53, tl-section-tree-v13, tl-table-v16, tl-type-resolver-v22', () => {
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v53');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v13');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v16');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');

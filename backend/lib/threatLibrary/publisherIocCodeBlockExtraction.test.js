@@ -56,7 +56,26 @@ const membersOf = (cands) => cands.filter((c) => isMember(c));
 
 test('contract: html v4 + candidates v15', () => {
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v9');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v52');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v53');
+});
+
+test('13. publisher IOC list keeps wss:// C2 URLs as URL Indicators (not host-only domains)', () => {
+  const wssA = 'wss://stream-a.example-c2.test';
+  const wssB = 'wss://stream-b.example-c2.test';
+  const { candidates } = extract(`
+<h2>Indicators of Compromise (IOCs)</h2>
+<ul>
+<li>hxxps://api.example-c2[.]test/</li>
+<li>wss://stream-a.example-c2[.]test</li>
+<li>wss://stream-b.example-c2[.]test</li>
+</ul>`);
+  const urlA = find(candidates, 'url', `${wssA}/`) || find(candidates, 'url', wssA);
+  const urlB = find(candidates, 'url', `${wssB}/`) || find(candidates, 'url', wssB);
+  assert.ok(urlA, 'wss A extracted as url');
+  assert.ok(urlB, 'wss B extracted as url');
+  assert.ok(isMember(urlA), 'wss A is Indicator member');
+  assert.ok(isMember(urlB), 'wss B is Indicator member');
+  assert.equal(find(candidates, 'domain', 'stream-a.example-c2.test'), null, 'host not demoted to domain-only when wss URL present');
 });
 
 test('preTextLinesOf keeps author newlines inside fenced code', () => {
