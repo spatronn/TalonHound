@@ -162,6 +162,27 @@ export function hexRunIsHostnameLabelFragment(text, start, end) {
   return /^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/i.test(token);
 }
 
+/** Algorithm / hash words that may lead a digest with a hyphen ("SHA256-<hex>"). */
+const DIGEST_WORD_PREFIX_RE = /^(?:md5|sha|sha1|sha256|sha512|hash|digest|checksum|imphash|ssdeep|tlsh)$/i;
+
+/**
+ * True when a hex run at [start, end) is the generated suffix of a word
+ * identifier joined with "-" (`anonymous-<32 hex>` account names, `user-<hex>`):
+ * the run names an account / object, it is not a file hash (tl-candidates-v55).
+ * A digest the text labels with its algorithm (`SHA256-<hex>`) and a hash
+ * opening a file name (`<hash>.bin`) are untouched.
+ * @param {string} text already-refanged haystack
+ * @param {number} start
+ * @param {number} end
+ */
+export function hexRunIsIdentifierSuffix(text, start, end) {
+  const hay = String(text || '');
+  if (hay[start - 1] !== '-') return false;
+  const word = /(?:^|[^A-Za-z0-9_.-])([A-Za-z][A-Za-z_]{2,})-$/.exec(hay.slice(Math.max(0, start - 40), start));
+  if (!word || DIGEST_WORD_PREFIX_RE.test(word[1])) return false;
+  return !/^[A-Za-z0-9_-]/.test(hay.slice(end, end + 1));
+}
+
 /**
  * Match-time gate for a regex hit in already-refanged extractor text.
  * @param {string} refangedText

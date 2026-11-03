@@ -143,8 +143,11 @@ export function isQualifiedIocInventoryHeading(text) {
   return QUALIFIED_IOC_INVENTORY_HEADING_RE.test(t);
 }
 
+// "Suspected source / scan-node infrastructure", "Attacker infrastructure",
+// "Observed techniques and source IPs" title the publisher's own address
+// inventory (tl-section-tree-v15).
 const OPERATIONAL_INFRA_RE =
-  /\b(?:vpn\s+nodes?|admin(?:istrative)?\s+(?:nodes?|infrastructure)|(?:ip|ipv4|ipv6)\s+(?:address\s+)?ranges?|address\s+ranges?|malicious\s+infrastructure|threat\s+infrastructure|operator\s+infrastructure|admin(?:istering|istration)\b.{0,48}(?:infrastructure|nodes?|ranges?)|(?:infrastructure|nodes?|ranges?).{0,48}admin(?:istering|istration)?)\b|基础设施|运营节点/i;
+  /\b(?:vpn\s+nodes?|admin(?:istrative)?\s+(?:nodes?|infrastructure)|(?:ip|ipv4|ipv6)\s+(?:address\s+)?ranges?|address\s+ranges?|malicious\s+infrastructure|threat\s+infrastructure|operator\s+infrastructure|suspected\s+(?:[a-z]+[\s-]){0,2}infrastructure\s*$|(?:attacker|adversary|scanning|scan[\s-]nodes?|staging)\s+infrastructure\s*$|(?:suspected|malicious|attacker|attacking)\s+(?:source\s+)?(?:ips|ipv4s|ip\s+addresses)|source\s+(?:ips|ip\s+addresses)\s*$|admin(?:istering|istration)\b.{0,48}(?:infrastructure|nodes?|ranges?)|(?:infrastructure|nodes?|ranges?).{0,48}admin(?:istering|istration)?)\b|基础设施|运营节点/i;
 
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 

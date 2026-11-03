@@ -106,8 +106,11 @@ function embeddedAbsoluteUrl(token) {
  * cells assert their host like "fqdn://"; a plain domain in a certificate
  * Common Name column is a domain value of the row; a hash cut short with an
  * ellipsis is marked `truncated_digest` instead of read as a shorter digest.
+ * v18 (70-report audit): a spaced label tail glued to the value ("MD5 :<hex>")
+ * is not value text; a hex run exactly as long as another supported digest
+ * (64 hex under an "MD5" header) is that digest, never glued MD5s.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v17';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v18';
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
@@ -179,7 +182,11 @@ function gluedIpv4Readings(groups) {
  */
 function splitGluedToken(token, declared) {
   const hashLen = declared ? GLUED_HASH_LENGTH[declared.type] : null;
-  if (hashLen && /^[0-9a-f]+$/i.test(token) && token.length > hashLen && token.length % hashLen === 0) {
+  // A run exactly as long as another supported digest is that one digest
+  // under a mislabeled column ("MD5" header over a 64-hex SHA-256), never two
+  // glued MD5s (tl-table-v18).
+  const otherDigestLength = Object.values(GLUED_HASH_LENGTH).some((len) => len !== hashLen && len === token.length);
+  if (hashLen && !otherDigestLength && /^[0-9a-f]+$/i.test(token) && token.length > hashLen && token.length % hashLen === 0) {
     const parts = [];
     for (let i = 0; i < token.length; i += hashLen) parts.push(token.slice(i, i + hashLen));
     return parts;
@@ -815,7 +822,9 @@ function markHostsFileEntries(tokens, values) {
 }
 
 /** Brackets / quotes wrapping a token inside a mixed cell ("(SHA-256", "<hash>)"). */
-const WRAPPING_PUNCT_RE = /^[(\[{<"'“‘«`]+|[)\]}>"'”’»,;.`]+$/g;
+// A leading ":" / "=" is the tail of a spaced label ("MD5 :<hex>", "SHA1 =<hex>",
+// tl-table-v18), never part of the value.
+const WRAPPING_PUNCT_RE = /^[(\[{<"'“‘«`:=]+|[)\]}>"'”’»,;.`]+$/g;
 /** Separator tokens between a file identity and its metadata ("-", "|", "=", "→"). */
 const SEPARATOR_TOKEN_RE = /^[-–—|/=:→>]+$/;
 

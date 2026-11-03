@@ -9,7 +9,7 @@
  *
  *   network cue at the token ("C2 IP", "server", "connected to") → address
  *   version cue (keyword / non-IPv4 range sibling / "and earlier" /
- *   product name right before)                                  → version
+ *   product name right before / User-Agent product token)       → version
  *   neither                                                      → address
  */
 
@@ -35,6 +35,13 @@ const VERSION_CUE_BEFORE_RE = new RegExp(
 /** Version phrase right after the token ("is vulnerable", "and earlier"). */
 const VERSION_CUE_AFTER_RE =
   /^\s*\)?\s*(?:(?:and|or)\s+(?:earlier|later|prior|older|newer|above|below|lower|higher)\b|(?:is|are|was|were)\s+(?:vulnerable|affected|impacted|patched|fixed|unsupported|end[-\s]of[-\s]life|deprecated)\b|(?:release|build|version)\b)/i;
+
+/**
+ * A User-Agent product token glued to the token ("… Gecko) Chrome/149.0.0.1
+ * Safari/…"): the browser / engine version, never an address.
+ */
+const UA_PRODUCT_BEFORE_RE =
+  /(?:^|[\s(;,])(?:Chrome|Chromium|CriOS|Firefox|FxiOS|Safari|Version|Edg|EdgA|EdgiOS|Edge|OPR|Opera|YaBrowser|SamsungBrowser|UCBrowser|AppleWebKit|Gecko|Trident|MSIE|Electron|Brave|Vivaldi|Mobile)\/$/i;
 
 /** Role / network nouns that may precede an address in title case ("Server 1.2.3.4"). */
 const NOT_A_PRODUCT = new Set(
@@ -82,6 +89,7 @@ export function ipv4VersionContext(text, start, end, opts = {}) {
   const head = listTail ? before.slice(0, listTail.index) : before;
   // A network relation at the token always wins (also when it introduces a list).
   if (NETWORK_CUE_BEFORE_RE.test(before) || NETWORK_CUE_BEFORE_RE.test(head)) return null;
+  if (UA_PRODUCT_BEFORE_RE.test(before)) return { kind: 'version', cue: 'user_agent_product' };
   if (VERSION_CUE_BEFORE_RE.test(before) || (listTail && VERSION_CUE_BEFORE_RE.test(head))) return { kind: 'version', cue: 'version_keyword' };
   // A range whose other end is a release number, never an address ("2.3.19 to 2.3.20.2").
   const prevSibling = before.match(new RegExp(`(${VERSIONISH})\\s*${RANGE_CONNECTOR}\\s*$`, 'i'));

@@ -48,11 +48,17 @@ const BRACKET_DOT_RIGHT_SPACE_RE = /([A-Za-z0-9-])[[{] *\. *[\]}] ?(?=[A-Za-z0-9
 /** Bracketed-dot defang residue left in a value after refanging. */
 export const DEFANG_RESIDUE_RE = /[[({] *\. *[\])}]|\[ *\.|\. *\]|\{ *\.|\. *\}/;
 
+// WordPress-style typography turns a digit-"x"-digit run into a multiplication
+// sign ("8x255[.]com" published as "8×255[.]com", tl-defang-v7). Inside a
+// hostname label (a dotted name follows) the sign is the letter x.
+const TYPOGRAPHIC_TIMES_IN_LABEL_RE = /(?<=\d)×(?=\d[A-Za-z0-9-]*\.[A-Za-z])/g;
+
 function refangDots(text) {
   return String(text || '')
     .replace(BRACKET_DOT_LEFT_SPACE_RE, '$1.')
     .replace(BRACKET_DOT_RIGHT_SPACE_RE, '$1.')
-    .replace(BRACKET_DOT_RE, '.');
+    .replace(BRACKET_DOT_RE, '.')
+    .replace(TYPOGRAPHIC_TIMES_IN_LABEL_RE, 'x');
 }
 const BRACKET_COLON_RE = /\[:\]|\(:\)|\{:\}/g;
 // Markdown-escaped bracket defang emitted verbatim by some CMSes inside code

@@ -62,9 +62,9 @@ const SHA_LEGIT = '2d99e9d732ff9304d97c7856b052ca520ae689fec1ce86df724de741913af
 const SHA_ABUSED = 'd71a119b4950ee88dd36205176d989a64df5248ac268591d4bbb78621a73acbd';
 
 test('versions: tl-candidates-v54, tl-table-v17, tl-type-resolver-v22, tl-ioc-source-scope-v4', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v54');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v17');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v55');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v4');
 });
 
