@@ -79,6 +79,8 @@ function poolWith(artifacts) {
       if (text.includes('FROM threat_report_artifacts') && text.includes("artifact_type = 'pdf_upload'")) {
         return { rows: artifacts.filter((a) => Number(a.report_id) === Number(params[0])) };
       }
+      // Extraction run ledger (append-only; asserted in extractionLedger.integration.test.js).
+      if (/INTO threat_report_(extraction_run|observable_dispositions|dropped_regions)|FROM threat_report_extraction_runs/.test(text)) return { rows: /INSERT INTO threat_report_extraction_runs/.test(text) ? [{ id: 1 }] : [], rowCount: 1 };
       throw new Error(`unexpected SQL: ${text.slice(0, 120)}`);
     }
   };

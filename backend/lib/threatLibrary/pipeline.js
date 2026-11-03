@@ -57,6 +57,7 @@ import { withPostMergeQuality, withReplayMembershipDivergence } from './extracti
 import { createServiceLogger } from '../appLogger.js';
 import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
 import { groundAiPublisherEntities } from './publisherEntityGrounding.js';
+import { recordExtractionRun } from './extractionRuns.js';
 
 // Deterministic stages live in extractionStages.js (shared with the
 // AI-free extraction refresh); re-exported for existing callers.
@@ -329,6 +330,8 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
     let candidates;
     let extractionDiagnostics = report.analysis_progress?.extraction_diagnostics || null;
     let freshExtraction = false;
+    /** Evidence inputs of this run's extraction for the run ledger (absent on a stored-row reuse). */
+    let runEvidence = { tokenLog: [], blocks: [] };
     const existingCount = previousRows.length;
     const reuse = decideCandidateReuse({
       priorExtractionVersion: report.analysis_progress?.candidate_extraction_version || null,
@@ -370,6 +373,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       candidates = preserveAnalystCandidates(reusedReextraction.candidates, previousRows, { carryStoredMatch: true });
       extractionDiagnostics = reusedReextraction.diagnostics;
       freshExtraction = true;
+      runEvidence = { tokenLog: reusedReextraction.tokenLog || [], blocks: reusedReextraction.annotated?.blocks || [] };
       progressCarry.candidate_extraction_version = THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
       progressCarry.extraction_diagnostics = compactExtractionDiagnostics(extractionDiagnostics);
       log.info('reusing candidates (re-read from stored document)', {
@@ -385,6 +389,7 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
       candidates = preserveAnalystCandidates(extracted.candidates, previousRows, { carryStoredMatch: true });
       extractionDiagnostics = extracted.diagnostics;
       freshExtraction = true;
+      runEvidence = { tokenLog: extracted.tokenLog || [], blocks: extracted.annotated?.blocks || [] };
       await reconcileReportCandidates(pool, report.id, candidates);
       progressCarry.candidate_extraction_version = THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION;
       progressCarry.extraction_diagnostics = compactExtractionDiagnostics(extractionDiagnostics);
@@ -730,6 +735,26 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         });
       }
       await replaceRelationships(db, report.id, relRows);
+
+      // Immutable record of this completed result, in the outcome transaction.
+      await recordExtractionRun(db, {
+        report,
+        jobId: ctx.jobId ?? null,
+        jobType: ctx.jobType || THREAT_LIBRARY_JOB_MODES.ANALYZE,
+        document,
+        candidates: savedCandidates,
+        tokenLog: runEvidence.tokenLog,
+        blocks: runEvidence.blocks,
+        diagnostics: extractionDiagnostics,
+        aiProvenance: {
+          provider: aiSettings?.provider || null,
+          model: aiSettings?.model || null,
+          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
+          ai_calls: aiMeta?.ai_calls ?? null,
+          chunks_total: aiMeta?.chunks_total ?? null
+        },
+        startedAt: analysisStartedAt
+      });
 
 
       // Effective TLP: manual override > explicit marking in the document >

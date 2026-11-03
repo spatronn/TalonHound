@@ -5,6 +5,7 @@
 import { loadLinkedIocSourceSummary, withLinkedSourceQuality } from '../lib/threatLibrary/iocSources/linkedSourceStatus.js';
 import multer from 'multer';
 import { isAdminRole, requireRole, ROLES } from '../lib/rbac.js';
+import { compareReferenceRunToCurrent, listExtractionRuns } from '../lib/threatLibrary/extractionRuns.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from '../lib/auditConstants.js';
 import {
   buildDeleteAuditEvent,
@@ -676,6 +677,18 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
       });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to load status', detail: err.message });
+    }
+  });
+
+  // Immutable extraction history (read-only).
+  app.get('/api/threat-library/reports/:publicId/extraction-runs', async (req, res) => {
+    try {
+      const report = await getReportByPublicId(pool, req.params.publicId);
+      if (!report) return res.status(404).json({ message: 'Report not found' });
+      const runs = await listExtractionRuns(pool, report.id);
+      return res.json({ runs, comparison: await compareReferenceRunToCurrent(pool, report.id) });
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to load extraction runs', detail: err.message });
     }
   });
 

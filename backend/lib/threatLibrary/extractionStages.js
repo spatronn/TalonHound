@@ -348,7 +348,9 @@ export function extractReportCandidates(report, document) {
     candidates,
     diagnostics: extracted.diagnostics,
     // Zone-annotated view of `document` (never persisted; read-only consumers).
-    annotated: extracted.annotated
+    annotated: extracted.annotated,
+    // Tokens rejected before becoming candidates (observableDispositions.js).
+    tokenLog: extracted.tokenLog || []
   };
 }
 

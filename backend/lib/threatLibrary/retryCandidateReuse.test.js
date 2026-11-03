@@ -70,6 +70,8 @@ function fakeCandidateTable() {
     if (/FROM threat_report_candidates WHERE report_id = \$1 ORDER BY id/.test(s)) {
       return { rows: rows.filter((r) => r.report_id === params[0]).map((r) => JSON.parse(JSON.stringify(r))) };
     }
+    // Extraction run ledger (append-only; asserted in extractionLedger.integration.test.js).
+    if (/INTO threat_report_(extraction_run|observable_dispositions|dropped_regions)|FROM threat_report_extraction_runs/.test(s)) return { rows: /INSERT INTO threat_report_extraction_runs/.test(s) ? [{ id: 1 }] : [], rowCount: 1 };
     throw new Error(`unexpected SQL: ${s.slice(0, 80)}`);
   };
   return {

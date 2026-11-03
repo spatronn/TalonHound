@@ -220,6 +220,21 @@ function delegatedStructuralRow(candidate, occ, text, value) {
  *   demoted_occurrences: number
  * }}
  */
+/**
+ * Authority of the section holding a block: the section either asserts
+ * indicators, is known not to (references, chrome, vendor text), or the
+ * structure cannot say (ordinary body sections).
+ * @param {object|null|undefined} block tree-annotated block
+ * @returns {'asserting'|'non_asserting'|'uncertain'}
+ */
+export function sectionAuthorityOf(block) {
+  if (block?.authoritative_zone && STRONG_IOC_ZONES.has(block.authoritative_zone)) return 'asserting';
+  if (block?.negative_scope === true || (block?.tree_zone && (NEGATIVE_ZONES.has(block.tree_zone) || block.tree_zone === 'header_footer'))) {
+    return 'non_asserting';
+  }
+  return 'uncertain';
+}
+
 export function applySectionTreeAuthority(document, candidates, opts = {}) {
   const tree = opts.tree || annotateSectionTree(document);
   const byId = new Map(tree.blocks.map((b) => [b.id, b]));
@@ -235,6 +250,12 @@ export function applySectionTreeAuthority(document, candidates, opts = {}) {
           const next = { ...o };
           const block = byId.get(o.block_id);
           const authZone = block?.authoritative_zone;
+          // Every occurrence names its section and that section's authority.
+          if (Array.isArray(block?.section_path)) {
+            next.section_path = block.section_path.slice(0, 8);
+            next.section_path_ids = Array.isArray(block.section_path_ids) ? block.section_path_ids.slice(0, 8) : [];
+          }
+          next.section_authority = sectionAuthorityOf(block);
           const text = String(
             block?.text || o.evidence_text || o.text || c.original_value || c.normalized_value || ''
           );

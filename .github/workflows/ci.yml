@@ -73,6 +73,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The extraction-change gate diffs against the merge base.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -88,6 +91,16 @@ jobs:
       - name: Run backend unit tests
         working-directory: backend
         run: npm run test:release && npm run test:storage-lifecycle && npm run test:migrate && npm run test:sprint-smoke && npm run test:setup-wizard && npm run test:malware-families && npm run test:test-support && npm run test:mcp && npm run test:threat-library && npm run test:file-identity
+
+      - name: Threat Library evaluation gate (no silent skips)
+        working-directory: backend
+        run: npm run test:threat-library-benchmark && npm run benchmark:threat-library -- --scorecard
+
+      - name: Extraction changes carry evaluation evidence
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          node scripts/release/check-extraction-contract-change.js "origin/${{ github.base_ref }}"
 
       - name: Lint installation.sh
         run: bash -n installation.sh

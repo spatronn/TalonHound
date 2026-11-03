@@ -72,6 +72,7 @@ import {
   requiresReviewAfterExtractionRefresh
 } from './candidateAnalystState.js';
 import { createServiceLogger } from '../appLogger.js';
+import { recordExtractionRun } from './extractionRuns.js';
 import { compactExtractionQuality, storedExtractionQuality, withPostMergeQuality, withReplayMembershipDivergence } from './extractionQuality.js';
 import { preserveStoredIocLinks } from './iocMatch.js';
 import { createFencedDb } from './jobFence.js';
@@ -219,7 +220,9 @@ export async function computeExtractionRefresh(pool, { report, document, previou
     candidates,
     summary: summarizeResolvedCandidates(candidates),
     replayedAiDecisions: replay.length,
-    iocLinksPreserved: linked.preserved
+    iocLinksPreserved: linked.preserved,
+    tokenLog: extracted.tokenLog || [],
+    annotatedBlocks: extracted.annotated?.blocks || []
   };
 }
 
@@ -608,6 +611,20 @@ export async function runExtractionRefresh(pool, ctx) {
       removed_identities: persisted.removed.slice(0, 40),
       membership_diff: compactLockedDiff
     };
+
+    // Immutable record of this refresh; earlier runs (first pass included) stay as written.
+    await recordExtractionRun(db, {
+      report,
+      jobId: ctx.jobId ?? null,
+      jobType: MODE,
+      document: refreshed.document,
+      candidates: persisted.rows,
+      tokenLog: refreshed.tokenLog || [],
+      blocks: refreshed.annotatedBlocks || [],
+      diagnostics: refreshed.diagnostics,
+      aiProvenance: { ai_invoked: false, replayed_ai_decisions: refreshed.replayedAiDecisions ?? 0 },
+      startedAt
+    });
 
     await updateReportStatus(db, report.id, {
       canonical_document: refreshed.document,

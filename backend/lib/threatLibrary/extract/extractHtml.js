@@ -17,11 +17,14 @@ import {
 } from './classifySourcePage.js';
 import { assessDocumentQuality, meaningfulCharCount } from './quality.js';
 import {
+  compactDroppedRegions,
   extractBlocksFromNode,
   extractHtmlLanguage,
   findElement,
   findElements,
-  parseHtml
+  parseHtml,
+  summarizeObservableShapes,
+  textOf
 } from './htmlBlocks.js';
 import { extractWeixinDocument, WEIXIN_EXTRACTOR_VERSION } from './adapters/weixin.js';
 import { selectHtmlTitle } from './titleSelection.js';
@@ -162,17 +165,15 @@ export function extractGenericArticleDocument(html, meta = {}) {
   const title = selection.title;
   const dom = parseHtml(raw);
 
-  /** @type {{ score: number, blocks: object[], kind: string }[]} */
+  /** @type {{ score: number, blocks: object[], kind: string, dropped: object[] }[]} */
   const scored = [];
-  const blockOpts = { baseUrl: meta.url || null };
-  for (const el of findElements(dom, (n) => tagOf(n) === 'article')) {
-    const blocks = extractBlocksFromNode(el, { blockId }, blockOpts);
-    scored.push({ score: blockCharMass(blocks), blocks, kind: 'article' });
-  }
-  for (const el of findElements(dom, (n) => tagOf(n) === 'main')) {
-    const blocks = extractBlocksFromNode(el, { blockId }, blockOpts);
-    scored.push({ score: blockCharMass(blocks), blocks, kind: 'main' });
-  }
+  const scoreRoot = (el, kind) => {
+    const dropped = [];
+    const blocks = extractBlocksFromNode(el, { blockId }, { baseUrl: meta.url || null, droppedLog: dropped });
+    scored.push({ score: blockCharMass(blocks), blocks, kind, dropped });
+  };
+  for (const el of findElements(dom, (n) => tagOf(n) === 'article')) scoreRoot(el, 'article');
+  for (const el of findElements(dom, (n) => tagOf(n) === 'main')) scoreRoot(el, 'main');
 
   let chosen = pickBestContentRoot(scored);
   let skipTags;
@@ -180,8 +181,9 @@ export function extractGenericArticleDocument(html, meta = {}) {
     const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
     // Strip site chrome headers when falling back to full body
     skipTags = new Set(['header']);
-    const blocks = extractBlocksFromNode(body, { blockId }, { ...blockOpts, skipTags });
-    chosen = { score: blockCharMass(blocks), blocks, kind: 'body' };
+    const dropped = [];
+    const blocks = extractBlocksFromNode(body, { blockId }, { baseUrl: meta.url || null, skipTags, droppedLog: dropped });
+    chosen = { score: blockCharMass(blocks), blocks, kind: 'body', dropped };
   }
 
   return createCanonicalDocument({
@@ -193,9 +195,39 @@ export function extractGenericArticleDocument(html, meta = {}) {
       extractor: THREAT_LIBRARY_HTML_EXTRACTOR_VERSION,
       adapter: 'generic_html',
       content_root: chosen.kind,
+      source_accounting: buildSourceAccounting(dom, chosen),
       ...titleMeta(selection)
     }
   });
+}
+
+/**
+ * What this document left out of the page: discarded elements inside the chosen
+ * root, and observable-shaped text in the page outside it (a sidebar, or an IOC
+ * listing the root selection missed). Counts and tokens only, never markup.
+ * @param {object} dom
+ * @param {{ blocks: object[], dropped?: object[], kind: string }} chosen
+ */
+function buildSourceAccounting(dom, chosen) {
+  const regions = [...(chosen.dropped || [])];
+  const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
+  const kept = new Set();
+  const keptText = (chosen.blocks || []).map((b) => String(b.text || '')).join('\n').toLowerCase();
+  const outside = summarizeObservableShapes(textOf(body));
+  for (const sample of outside.samples) if (!keptText.includes(sample.toLowerCase())) kept.add(sample);
+  if (kept.size) {
+    regions.push({
+      region_kind: 'outside_content_root',
+      reason: `not_in_selected_root:${chosen.kind}`,
+      locator: chosen.kind,
+      text_chars: 0,
+      observable_count: kept.size,
+      observable_types: {},
+      sample_observables: [...kept],
+      significant: true
+    });
+  }
+  return { version: 1, dropped_regions: compactDroppedRegions(regions) };
 }
 
 const CONTENT_ROOT_HINT_RE = /(article-body|post-content|entry-content|article_content|content-body|story-body|main-content|wp-block-post-content)/i;
@@ -224,21 +256,23 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
   });
 
   let bestBlocks = [];
+  let bestDropped = [];
   let bestScore = 0;
-  const blockOpts = { baseUrl: meta.url || null };
   for (const el of candidates) {
-    const blocks = extractBlocksFromNode(el, { blockId }, blockOpts);
+    const dropped = [];
+    const blocks = extractBlocksFromNode(el, { blockId }, { baseUrl: meta.url || null, droppedLog: dropped });
     const score = blocks.map((b) => (b.text || '').replace(/\s+/g, '').length).reduce((a, b) => a + b, 0);
     if (score > bestScore) {
       bestScore = score;
       bestBlocks = blocks;
+      bestDropped = dropped;
     }
   }
 
   // Last resort: cleaned body text density — only if substantial
   if (bestBlocks.length === 0) {
     const body = findElement(dom, (el) => tagOf(el) === 'body') || dom;
-    bestBlocks = extractBlocksFromNode(body, { blockId }, { ...blockOpts, skipTags: new Set(['header', 'aside']) });
+    bestBlocks = extractBlocksFromNode(body, { blockId }, { baseUrl: meta.url || null, skipTags: new Set(['header', 'aside']), droppedLog: bestDropped });
   }
 
   return createCanonicalDocument({
@@ -249,6 +283,7 @@ export function extractStructuredFallbackDocument(html, meta = {}) {
       source_url: meta.url || null,
       extractor: THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION,
       adapter: 'structured_fallback',
+      source_accounting: buildSourceAccounting(dom, { blocks: bestBlocks, dropped: bestDropped, kind: 'structured_fallback' }),
       ...titleMeta(selection)
     }
   });
