@@ -246,3 +246,23 @@ SHA256: ed980f2fa0642b1a5ba0bca65f5b3baee8a7b3f5d149bf295aa4ac7a70b92cec
   assert.ok(m.includes('sha256:ed980f2fa0642b1a5ba0bca65f5b3baee8a7b3f5d149bf295aa4ac7a70b92cec'), m.join(','));
   assert.equal(x.candidates.some((c) => String(c.normalized_value).includes('tracker.example-ads.com')), false);
 });
+
+// --- FN-6: labelled multi-value IOC list rows -----------------------------------------
+
+test('FN-6. "<label>: v1, v2 (note)" rows of an IOC list are Indicators; image tags and body lists are not', () => {
+  const x = run(`<h2>Indicators of Compromise</h2>
+<ul>
+<li>Post exploitation IPs using stolen credentials: 198.51.100.57, 203.0.113.8</li>
+<li>Exfiltration domain: exfil-lookalike.dev and www.exfil-lookalike.dev (registered recently, behind a CDN)</li>
+<li>CI secret exfiltration endpoints: https://hooks.example-bad.site/65a42464, https://hooks.example-bad.site/4da03473</li>
+<li>Additional reported images: ghcr.io/example-org/tool:v1.2.3, docker.io/example-org/tool:v1.2.3</li>
+</ul>
+<h2>Background</h2>
+<p>Reported resolvers: 192.0.2.53, 192.0.2.54</p>`);
+  const m = members(x);
+  for (const v of ['ip:198.51.100.57', 'ip:203.0.113.8', 'domain:exfil-lookalike.dev', 'domain:www.exfil-lookalike.dev', 'url:https://hooks.example-bad.site/65a42464']) {
+    assert.ok(m.includes(v), `${v} missing from ${m.join(',')}`);
+  }
+  assert.equal(m.some((v) => v.includes('ghcr.io') || v.includes('docker.io')), false, m.join(','));
+  assert.equal(m.includes('ip:192.0.2.53'), false);
+});
