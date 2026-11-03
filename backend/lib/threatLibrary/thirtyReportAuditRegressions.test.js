@@ -82,12 +82,12 @@ const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(
 const codes = (x) => [...new Set((x.diagnostics?.quality?.warnings || []).map((w) => w.code))].sort();
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v55');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v14');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v15');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
 });
 

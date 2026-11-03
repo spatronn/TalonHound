@@ -82,8 +82,10 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * that discarded a network IOC identity.
  * v13 (reliability observability): check 25 surfaces section-tree → legacy
  * scope-engine fallback so degraded membership semantics are analyst-visible.
+ * v15 (evidence-first): check 28 reports observable-shaped text in page regions
+ * normalization discarded (document.meta.source_accounting).
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v14';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v15';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });
@@ -184,6 +186,8 @@ export const QUALITY_CODES = Object.freeze({
   HOSTS_FILE_ENTRIES_CONTEXT: 'hosts_file_entries_context',
   /** URLs that are truncated copies of a table-listed URL kept as context (check 26). */
   TRUNCATED_URL_DUPLICATE_CONTEXT: 'truncated_url_duplicate_context',
+  /** Observable-shaped text in page regions normalization discarded (check 28). */
+  SOURCE_REGION_OBSERVABLES_DROPPED: 'source_region_observables_dropped',
   /** Publisher IOC-table rows made Context Only by a benign / provider row stance (check 27). */
   AUTHORITATIVE_TABLE_ROWS_DEMOTED: 'authoritative_table_rows_demoted'
 });
@@ -939,6 +943,20 @@ export function assessExtractionQuality(input) {
         fallback: true,
         error: err || null
       }
+    });
+  }
+
+  // Check 28: observable-shaped text in page regions normalization discarded
+  // (a form field, an embedded document, a footer, text outside the content root).
+  const droppedRegions = (input?.documentMeta?.source_accounting?.dropped_regions || []).filter((r) => r?.significant === true);
+  if (droppedRegions.length) {
+    push({
+      code: QUALITY_CODES.SOURCE_REGION_OBSERVABLES_DROPPED,
+      severity: 'warning',
+      explanation: `${droppedRegions.reduce((n, r) => n + (r.observable_count || 0), 0)} observable-shaped values sit in page regions the document left out. Check whether any is a publisher indicator.`,
+      candidates: droppedRegions.flatMap((r) => r.sample_observables || []).slice(0, T.maxListedCandidates),
+      block_ids: [],
+      section: { regions: droppedRegions.slice(0, T.maxListedBlocks).map((r) => ({ kind: r.region_kind, reason: r.reason, locator: r.locator, observables: r.observable_count })) }
     });
   }
 

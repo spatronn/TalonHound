@@ -1,12 +1,12 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v55",
+    "candidates": "tl-candidates-v56",
     "zones": "tl-zones-v16",
     "tables": "tl-table-v18",
     "type_resolver": "tl-type-resolver-v23",
     "html": "threat_library_html_v10",
     "pdf": "threat_library_pdf_v6",
-    "quality": "tl-quality-v14",
+    "quality": "tl-quality-v15",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
@@ -20,6 +20,7 @@
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
       "fn_not_member": 0,
+      "fn_needs_review": 0,
       "precision": 1,
       "recall": 1,
       "f1": 1
@@ -101,8 +102,7 @@
     },
     "control-mode-b-narrative": {
       "members": [
-        "domain:c2-update.info",
-        "url:https://learn.microsoft.com/en-us/windows/win32/api/wincred/"
+        "domain:c2-update.info"
       ],
       "tp": 1,
       "fp": 0,
@@ -118,10 +118,6 @@
     },
     "golden-checkpoint-jsceal-appendix-b": {
       "members": [
-        "domain:cursor.click",
-        "domain:iapi.kraken.com",
-        "ip:1.1.1.1",
-        "ip:8.8.8.8",
         "md5:03f4e47b9c2283c32bb8f8f042ce6e41",
         "md5:09dbfac09f9cafdbc7d225eb144f0e69",
         "md5:0b8015cbb1ffdc6efe6a306ff5b1115f",
@@ -753,13 +749,7 @@
     "golden-elastic-tycoon2fa-detection": {
       "members": [
         "domain:77185425430.apps.googleusercontent.com",
-        "domain:any.run",
-        "domain:client.id",
-        "domain:device.id",
-        "domain:sites.google.com",
-        "domain:storage.googleapis.com",
-        "url:https://www.google.com/accounts/OAuthLogin",
-        "url:login.microsoftonline.com/common/oauth2/token"
+        "url:https://www.google.com/accounts/OAuthLogin"
       ],
       "tp": 0,
       "fp": 0,

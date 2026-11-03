@@ -9,6 +9,7 @@
 import { applyEvidencePolicy, buildCandidateEvidenceRecord } from '../evidencePolicy.js';
 import { DELEGATED_IOC_ZONE, NEGATIVE_ZONES, STRONG_IOC_ZONES } from '../documentZones.js';
 import {
+  isStructuredCodeRow,
   isIndicatorValueLine,
   isAnnotatedIndicatorRowLine,
   isObservableListLine,
@@ -102,6 +103,7 @@ function isObservableLedAnnotation(text, value) {
 
 function shouldForceStructuralRow(candidateType, text, value, occ, block) {
   if (isInventoryPlacement(occ, block)) return true;
+  if (String(block?.type || '') === 'code' && isStructuredCodeRow(lineContainingObservable(text, value) || text, value)) return true;
   const type = String(candidateType || '').toLowerCase();
   const line = lineContainingObservable(text, value) || text;
   // Publisher annotation rows: "8.218.50[.]207 - Staging server …"

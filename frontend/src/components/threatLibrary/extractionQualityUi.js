@@ -169,6 +169,10 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Filename-column typing discarded a network IOC',
     why: 'An IOC-table value was typed as a file name because sibling cells were filenames, while the publisher row still describes a domain, C2 host, or contacted infrastructure. Confirm the network identity was not dropped.'
   },
+  source_region_observables_dropped: {
+    title: 'Values in discarded page regions',
+    why: 'Part of the page was left out of the report text, and it holds IOC-shaped values. Check the source page for publisher indicators.'
+  },
   scope_engine_fallback: {
     title: 'Extraction used emergency legacy scope',
     why: 'Section-tree authority failed for this report, so Indicator membership used the older linear scope engine. Indicators may differ from normal processing — review carefully.'

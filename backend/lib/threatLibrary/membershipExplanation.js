@@ -184,6 +184,7 @@ export function explainMembershipDecision(candidate) {
   const occs = occurrencesOf(candidate);
 
   let outcome = MEMBERSHIP_OUTCOMES.EXCLUDED;
+  const decision = candidate.membership_decision || evidence.membership_decision || null;
   if (linkedOnly) outcome = MEMBERSHIP_OUTCOMES.LINKED_ONLY_INDICATOR;
   else if (member) outcome = MEMBERSHIP_OUTCOMES.INDICATOR;
   else if (contextOnly) outcome = MEMBERSHIP_OUTCOMES.CONTEXT_ONLY;
@@ -238,6 +239,11 @@ export function explainMembershipDecision(candidate) {
     original_value: candidate.original_value || null,
     outcome,
     reason_code: reasonCode,
+    // The decision contract, for a row extracted under it.
+    decision: decision
+      ? { outcome: decision.outcome, reason_code: decision.reason_code, rule_id: decision.rule_id, contract_version: decision.contract_version }
+      : null,
+    needs_review: decision?.outcome === 'needs_review' && !member && !contextOnly,
     member,
     context_only: contextOnly,
     linked_only: linkedOnly,

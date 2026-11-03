@@ -105,6 +105,7 @@ function scoreTier(cases, tier) {
     with_section_path: 0,
     with_char_offsets: 0,
     publishers: {},
+    review_path_cases: [],
     failures: []
   };
   for (const c of cases) {
@@ -122,7 +123,9 @@ function scoreTier(cases, tier) {
     out.candidate_recall_checked += m.expected;
     out.candidate_recall_found += m.expected - (m.fn_not_extracted || 0);
     if (!m.fp && !m.fn) out.exact += 1;
-    else out.failures.push({ id: c.id, fp: m.fp, fn: m.fn });
+    // A value that reached review is visible and is reported, not a silent failure.
+    else if (!m.fp && m.fn === (m.fn_needs_review || 0)) out.review_path_cases.push({ id: c.id, fn: m.fn });
+    else out.failures.push({ id: c.id, fp: m.fp, fn: m.fn, fn_needs_review: m.fn_needs_review || 0 });
     const publisher = c.publisher || 'synthetic_or_unlabelled';
     out.publishers[publisher] = (out.publishers[publisher] || 0) + 1;
     const a = caseEvidenceAccounting(c);

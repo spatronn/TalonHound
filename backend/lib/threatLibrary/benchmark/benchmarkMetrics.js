@@ -14,7 +14,7 @@
 
 import { normalizeCandidateValue } from '../candidateValue.js';
 import { buildCandidateEvidenceRecord, SOURCE_ASSERTIONS } from '../evidencePolicy.js';
-import { isContextOnlyCandidate, isReportIndicatorMember } from '../indicatorMembership.js';
+import { isContextOnlyCandidate, isNeedsReviewCandidate, isReportIndicatorMember } from '../indicatorMembership.js';
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES } from '../documentZones.js';
 import { refangTextForExtraction } from '../defang.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
@@ -177,6 +177,7 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
     byId.set(candidateIdentity(raw), {
       ...raw,
       __member: isReportIndicatorMember(persisted),
+      __needs_review: isNeedsReviewCandidate(persisted),
       __context_only: isContextOnlyCandidate(persisted)
     });
   }
@@ -286,6 +287,8 @@ export function scoreBenchmarkCase({ groundTruth, candidates, blocks = [] }) {
       fn_not_extracted: falseNegatives.filter((x) => !x.extracted && !x.mistyped_as).length,
       fn_mistyped: falseNegatives.filter((x) => !x.extracted && x.mistyped_as).length,
       fn_not_member: falseNegatives.filter((x) => x.extracted).length,
+      // Still a false negative for recall, but an analyst sees it: not silent.
+      fn_needs_review: falseNegatives.filter((x) => byId.get(x.id)?.__needs_review === true).length,
       precision,
       recall,
       f1: f1(precision, recall),
@@ -357,6 +360,7 @@ export function aggregateBenchmark(results) {
       fn_not_extracted: sum((m) => m.indicators.fn_not_extracted),
       fn_mistyped: sum((m) => m.indicators.fn_mistyped),
       fn_not_member: sum((m) => m.indicators.fn_not_member),
+      fn_needs_review: sum((m) => m.indicators.fn_needs_review || 0),
       precision,
       recall,
       f1: f1(precision, recall)

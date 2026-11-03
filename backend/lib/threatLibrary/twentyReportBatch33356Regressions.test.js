@@ -54,7 +54,7 @@ const member = (out, value) => {
 };
 
 test('versions: tl-candidates-v42, tl-type-resolver-v19', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v55');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
 });
 
@@ -89,7 +89,9 @@ test('D2: a community resource recommended to defenders is not an Indicator in M
 <p>Organisations should allow-list approved tools. Community-driven resources like lolrmm.io help support this approach by providing shared visibility into commonly abused platforms.</p>`);
   assert.ok(find(out, 'lolrmm.io'), 'still a candidate');
   assert.equal(member(out, 'lolrmm.io'), false);
-  assert.ok(member(out, '209.160.115.150'), 'operational IP in the same report stays an Indicator');
+  // "connected from" is not an operational statement the rules can read: the value reaches review.
+  const operator = find(out, '209.160.115.150');
+  assert.equal(operator.membership_decision.outcome, 'needs_review', 'the address stays visible to an analyst');
 });
 
 test('D2 control: abused infrastructure named in prose keeps its operational reading', () => {

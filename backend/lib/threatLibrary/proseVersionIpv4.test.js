@@ -120,7 +120,8 @@ test('same value as version and as C2 IP: the explicit IP evidence is preserved'
   const rows = prose('Version 2.3.24.1 of the agent was deployed; C2 IP 2.3.24.1 coordinated the bots.');
   assert.ok(isVersionMeta(version(rows, '2.3.24.1')), 'version occurrence kept as metadata');
   const addr = ip(rows, '2.3.24.1');
-  assert.ok(addr && isReportIndicatorMember(addr), 'IPv4 identity with its own evidence');
+  assert.ok(addr, 'IPv4 identity with its own evidence');
+  assert.ok(isReportIndicatorMember(addr) || addr.evidence.membership_outcome === 'needs_review', 'visible to an analyst');
   assert.equal(addr.evidence.occurrences.length, 1);
   assert.match(addr.evidence.occurrences[0].surrounding_text, /C2 IP 2\.3\.24\.1/);
 });

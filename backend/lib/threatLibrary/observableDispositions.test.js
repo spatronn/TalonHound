@@ -72,7 +72,7 @@ test('a hash or address inside a URL belongs to the URL, not a separate token', 
 test('chrome is not reconciled, and an unreadable defang spelling goes to review, not silence', () => {
   const blocks = [
     { id: 'b001', type: 'paragraph', text: SHA, zone: 'header_footer' },
-    { id: 'b002', type: 'list', text: 'evil-host[dot]net', zone: 'report_body' }
+    { id: 'b002', type: 'list', text: 'evil-host( . )net', zone: 'report_body' }
   ];
   const out = buildObservableDispositions({ candidates: [], tokenLog: [], blocks });
   assert.equal(out.counts.undispositioned, 0);

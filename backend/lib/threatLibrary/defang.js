@@ -53,8 +53,18 @@ export const DEFANG_RESIDUE_RE = /[[({] *\. *[\])}]|\[ *\.|\. *\]|\{ *\.|\. *\}/
 // hostname label (a dotted name follows) the sign is the letter x.
 const TYPOGRAPHIC_TIMES_IN_LABEL_RE = /(?<=\d)×(?=\d[A-Za-z0-9-]*\.[A-Za-z])/g;
 
+// "evil[dot]net", "evil(dot)net", "evil{dot}net"; "evil\\.net" (a markdown-escaped
+// dot); "evil．net" (a full-width dot). Only between hostname characters, so
+// "\\.NET" and ordinary prose stay as written.
+const WORD_DOT_RE = /([a-z0-9-])\s?(?:\[dot\]|\(dot\)|\{dot\})\s?(?=[a-z0-9-])/gi;
+const ESCAPED_DOT_RE = /([a-z0-9-])\\\.(?=[a-z0-9-])/gi;
+const FULLWIDTH_DOT_RE = /([a-z0-9-])．(?=[a-z0-9-])/gi;
+
 function refangDots(text) {
   return String(text || '')
+    .replace(WORD_DOT_RE, '$1.')
+    .replace(ESCAPED_DOT_RE, '$1.')
+    .replace(FULLWIDTH_DOT_RE, '$1.')
     .replace(BRACKET_DOT_LEFT_SPACE_RE, '$1.')
     .replace(BRACKET_DOT_RIGHT_SPACE_RE, '$1.')
     .replace(BRACKET_DOT_RE, '.')
