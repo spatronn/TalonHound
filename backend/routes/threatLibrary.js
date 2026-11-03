@@ -161,6 +161,8 @@ export function publicCandidateEvidence(evidence) {
     evidence_tier: evidence.evidence_tier || null,
     policy_decision: evidence.policy_decision || null,
     decision_source: evidence.decision_source || null,
+    membership_outcome: evidence.membership_outcome || null,
+    membership_decision: evidence.membership_decision || null,
     source_relation: evidence.source_relation || null,
     ai_needed: evidence.ai_needed === true,
     is_direct_source_observable: evidence.is_direct_source_observable !== false,

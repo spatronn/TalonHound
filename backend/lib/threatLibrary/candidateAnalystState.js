@@ -94,7 +94,7 @@ export function applyAnalystState(candidate, prior) {
   const promotedFrom = evidenceOf(prior).promoted_from;
   if (promotedFrom && typeof promotedFrom === 'object') {
     candidate.promoted_from = promotedFrom;
-    if (review === 'approved' && (isContextOnlyCandidate(candidate) || candidate.is_ioc === false)) {
+    if (review === 'approved' && (isContextOnlyCandidate(candidate) || candidate.is_ioc === false || candidate.membership_decision?.outcome === 'needs_review' || candidate.assessment === 'unknown')) {
       // reviewService promote_to_ioc override, re-applied after extraction / AI.
       candidate.assessment = 'suspicious';
       if (['reference', 'legitimate_service', 'hosting_platform'].includes(String(candidate.role))) {

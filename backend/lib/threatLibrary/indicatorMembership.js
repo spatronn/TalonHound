@@ -9,12 +9,18 @@
  *   Review actionability         = membership ∧ pending (Approve / Create eligibility
  *                                  layers on top via promotion.js)
  *
- * MODE A (document_has_authoritative_scope): membership requires a publisher
- * assertion (explicit_* source_assertion or an asserted occurrence in an
- * authoritative zone). Narrative-only rows may still exist under All / Context Only.
+ * A row extracted under tl-membership-decision-v1 carries the outcome of
+ * membershipDecision.decideMembership in evidence.membership_outcome, and this
+ * module reads that decision: member, or needs_review once an analyst approved
+ * it. needs_review rows are review-actionable until an analyst decides them.
  *
- * MODE B (no authoritative scope): this module does not restrict membership;
- * the remaining membership gates (is_ioc, type, context_only, reserved, …) still apply.
+ * Rows stored before that contract have no outcome and keep the reading they
+ * were finalized under:
+ *   MODE A (document_has_authoritative_scope): membership requires a publisher
+ *   assertion (explicit_* source_assertion or an asserted occurrence in an
+ *   authoritative zone). Narrative-only rows may still exist under All / Context Only.
+ *   MODE B (no authoritative scope): this module does not restrict membership;
+ *   the remaining membership gates (is_ioc, type, context_only, reserved, …) still apply.
  *
  * Frontend `isReviewIndicator` and SQL `REVIEW_CANDIDATE_WHERE` MUST stay
  * behaviourally identical to `isReportIndicatorMember`. Parity is enforced by
@@ -103,8 +109,31 @@ export function isAnalystConfirmedPublisherEvidence(candidate) {
  * MODE A gate only. MODE B returns true (no publisher restriction).
  */
 export function isPublisherAuthoritativeReportIocMember(candidate) {
+  const outcome = membershipOutcomeOf(candidate);
+  if (outcome) {
+    if (outcome === 'member') return true;
+    if (outcome === 'needs_review') return ANALYST_CONFIRMED_REVIEWS.has(reviewOf(candidate));
+    return isAnalystConfirmedPublisherEvidence(candidate);
+  }
   if (!hasAuthoritativePublisherIocScope(candidate)) return true;
   return isPublisherAssertedReportIoc(candidate);
+}
+
+/**
+ * The stored decideMembership outcome, or null for a row extracted before the
+ * decision contract existed.
+ * @param {object} candidate
+ * @returns {'member'|'needs_review'|'context_only'|'excluded'|null}
+ */
+export function membershipOutcomeOf(candidate) {
+  const ev = evidenceOf(candidate);
+  return candidate?.membership_decision?.outcome || ev.membership_outcome || null;
+}
+
+/** A value the decision sent to review (whether or not an analyst decided yet). */
+export function isNeedsReviewCandidate(candidate) {
+  if (!candidate || candidate.has_original_document_occurrence === false) return false;
+  return membershipOutcomeOf(candidate) === 'needs_review' && passesIndicatorTypeGates(candidate);
 }
 
 export function isContextOnlyCandidate(candidate) {
@@ -204,7 +233,7 @@ export function isActionableReviewIndicator(candidate) {
  * A finalized original report may still review subsequently attached linked packs.
  */
 export function isReviewActionableIndicator(candidate) {
-  return isUnionReportIndicatorMember(candidate);
+  return isUnionReportIndicatorMember(candidate) || isNeedsReviewCandidate(candidate);
 }
 
 /**
@@ -219,7 +248,15 @@ export function isPendingReviewActionableIndicator(candidate) {
  * SQL equivalent of isReviewActionableIndicator (approve UPDATE / bulk eligibility).
  */
 export function reviewActionableIndicatorSql(alias = 'c') {
-  return unionReportIndicatorMembershipSql(alias);
+  return `(${unionReportIndicatorMembershipSql(alias)} OR (${needsReviewCandidateSql(alias)}))`;
+}
+
+/** SQL equivalent of isNeedsReviewCandidate. */
+export function needsReviewCandidateSql(alias = 'c') {
+  const p = alias ? `${alias}.` : '';
+  return `${p}has_original_document_occurrence = true
+  AND COALESCE(${p}evidence->>'membership_outcome', '') = 'needs_review'
+  AND ${indicatorTypeGatesSql(alias)}`.replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -231,13 +268,16 @@ export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
   const assertions = EXPLICIT_PUBLISHER_IOC_ASSERTIONS.map((a) => `'${a}'`).join(', ');
   const zones = AUTHORITATIVE_PUBLISHER_OCCURRENCE_ZONES.map((z) => `'${z}'`).join(', ');
   return `(
-    COALESCE(${p}evidence->>'document_has_authoritative_scope', 'false') <> 'true'
-    OR COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') IN (
-      ${assertions}
-    )
+    COALESCE(${p}evidence->>'membership_outcome', '') = 'member'
+    OR (COALESCE(${p}evidence->>'membership_outcome', '') = 'needs_review' AND COALESCE(${p}review_status, '') IN ('approved', 'created_ioc'))
     OR (
       jsonb_typeof(${p}evidence->'promoted_from') = 'object'
       AND COALESCE(${p}review_status, '') IN ('approved', 'created_ioc')
+    )
+    OR (${p}evidence->>'membership_outcome' IS NULL AND (
+    COALESCE(${p}evidence->>'document_has_authoritative_scope', 'false') <> 'true'
+    OR COALESCE(${p}source_assertion, ${p}evidence->>'source_assertion', '') IN (
+      ${assertions}
     )
     OR EXISTS (
       SELECT 1
@@ -247,6 +287,7 @@ export function publisherAuthoritativeIocMembershipSql(alias = 'c') {
       )
         AND (occ->>'asserted' = 'true' OR COALESCE(occ->>'occurrence_kind', '') = '')
     )
+    ))
   )`;
 }
 
@@ -579,6 +620,39 @@ export function membershipParityCases() {
         occurrences: [{ zone: 'report_body', asserted: false, occurrence_kind: 'narrative_mention' }],
         promoted_from: { assessment: 'context_only', review_status: 'pending' }
       }
+    }, { member: false, context_only: true, pending_actionable: false }),
+    // Decision-contract rows: the stored outcome is the reading.
+    wrap('decision_member', {
+      source_assertion: 'body_mention',
+      evidence: { source_assertion: 'body_mention', membership_outcome: 'member', occurrences: [] }
+    }, { member: true, context_only: false, pending_actionable: true }),
+    wrap('decision_needs_review_pending', {
+      assessment: 'unknown',
+      match_state: 'needs_review',
+      source_assertion: 'body_mention',
+      evidence: { source_assertion: 'body_mention', membership_outcome: 'needs_review', occurrences: [] }
+    }, { member: false, context_only: false, pending_actionable: true }),
+    wrap('decision_needs_review_approved', {
+      assessment: 'unknown',
+      review_status: 'approved',
+      source_assertion: 'body_mention',
+      evidence: { source_assertion: 'body_mention', membership_outcome: 'needs_review', occurrences: [] }
+    }, { member: true, context_only: false, pending_actionable: false }),
+    wrap('decision_needs_review_analyst_context_only', {
+      assessment: 'context_only',
+      match_state: 'context_only',
+      review_status: 'context_only',
+      source_assertion: 'body_mention',
+      evidence: { source_assertion: 'body_mention', membership_outcome: 'needs_review', occurrences: [] }
+    }, { member: false, context_only: true, pending_actionable: false }),
+    wrap('decision_context_only_overrides_explicit_fields', {
+      evidence: { membership_outcome: 'context_only' }
+    }, { member: false, context_only: false, pending_actionable: false }),
+    wrap('decision_excluded', {
+      is_ioc: false,
+      assessment: 'context_only',
+      match_state: 'context_only',
+      evidence: { membership_outcome: 'excluded' }
     }, { member: false, context_only: true, pending_actionable: false }),
     wrap('mode_a_narrative_promoted_marker_but_pending', {
       source_assertion: 'body_mention',

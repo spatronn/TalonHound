@@ -50,7 +50,7 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contracts bumped for the six-report audit fixes', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v55');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
 });

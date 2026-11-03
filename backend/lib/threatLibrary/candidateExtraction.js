@@ -335,8 +335,13 @@ export {
  * quad glued to a User-Agent product token ("Chrome/149.0.0.1") is a version;
  * a WordPress multiplication sign inside a hostname label ("8×255[.]com") is
  * the letter x.
+ * v56: membership is decided by membershipDecision.decideMembership from
+ * per-section authority. Structured rows, operational statements and grounded
+ * model verdicts outside a curated section reach needs_review instead of silently
+ * becoming non-members; CSV / JSON lines in code blocks are rows; [dot], (dot),
+ * {dot}, escaped and full-width dots refang.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v55';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v56';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the

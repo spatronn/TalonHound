@@ -107,9 +107,10 @@ test('1b. the model decides the narrative hash: malicious → promotable, contex
   assert.equal(mal.source_assertion, 'body_mention');
   assert.equal(
     classifyCreateEligibility({ ...mal, review_status: 'approved' }).eligible,
-    false,
-    'malicious narrative hash is not a publisher-declared report IOC'
+    true,
+    'a grounded verdict reaches review; only an analyst approval makes it creatable'
   );
+  assert.equal(mal.membership_decision.outcome, 'needs_review');
   assert.equal(classifyCreateEligibility(mal).eligible, false, 'promotion still requires analyst approval');
 
   const ctx = run({ assessment: 'context_only', role: 'reference', confidence: 0.6 });

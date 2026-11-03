@@ -125,7 +125,23 @@ function isPublisherAssertedReportIoc(candidate) {
  * MODE B: no such section — existing review predicates still apply.
  * Canonical: backend indicatorMembership.isPublisherAuthoritativeReportIocMember.
  */
+/** Stored decideMembership outcome (backend membershipOutcomeOf); null on a pre-decision row. */
+export function membershipOutcomeOf(candidate) {
+  const ev = candidate?.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
+  return candidate?.membership_decision?.outcome || ev.membership_outcome || null;
+}
+
 export function isPublisherAuthoritativeReportIocMember(candidate) {
+  const outcome = membershipOutcomeOf(candidate);
+  if (outcome) {
+    const ev = candidate?.evidence && typeof candidate.evidence === 'object' ? candidate.evidence : {};
+    const review = String(candidate?.review_status || 'pending').toLowerCase();
+    const confirmed = review === 'approved' || review === 'created_ioc';
+    if (outcome === 'member') return true;
+    if (outcome === 'needs_review') return confirmed;
+    const promoted = ev.promoted_from || candidate?.promoted_from;
+    return Boolean(promoted && typeof promoted === 'object' && !Array.isArray(promoted)) && confirmed;
+  }
   if (!hasAuthoritativePublisherIocScope(candidate)) return true;
   return isPublisherAssertedReportIoc(candidate);
 }
@@ -219,7 +235,13 @@ export function isReportIndicatorMember(candidate) {
  * Mirrors backend isReviewActionableIndicator.
  */
 export function isReviewActionableIndicator(candidate) {
-  return isUnionReviewIndicator(candidate);
+  return isUnionReviewIndicator(candidate) || isNeedsReviewCandidate(candidate);
+}
+
+/** A value the decision sent to review. Mirrors backend isNeedsReviewCandidate. */
+export function isNeedsReviewCandidate(candidate) {
+  if (!candidate || candidate.has_original_document_occurrence === false) return false;
+  return membershipOutcomeOf(candidate) === 'needs_review' && passesIndicatorTypeGates(candidate);
 }
 
 /**
@@ -289,7 +311,7 @@ export function matchReviewFilter(candidate, filter) {
   // backend review_progress pending count (reviewProgress.js) and the
   // backend selection tab. match_state needs_review alone is a match bucket.
   if (filter === 'needs_review') {
-    return review === 'pending' && isUnionReviewIndicator(candidate);
+    return review === 'pending' && isReviewActionableIndicator(candidate);
   }
   if (filter === 'needs_attention') return isNeedsAttentionCandidate(candidate);
   // Source-scoped filter: `source:<public_id>`

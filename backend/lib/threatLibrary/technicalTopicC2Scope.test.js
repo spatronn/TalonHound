@@ -91,7 +91,7 @@ test('technical C2 topic: the Graph API endpoint is discovered but is not a publ
   assert.deepEqual(memberKeys(candidates), ['domain:evil-example.com', 'ip:192.0.2.10']);
 });
 
-test('technical C2 topic: model maliciousness and analyst approval never make the endpoint actionable', () => {
+test('technical C2 topic: a model verdict alone never makes the endpoint an Indicator; it reaches review', () => {
   const { candidates, document } = extract(`${TECHNICAL}${IOC_SECTION}`);
   const after = mergeAiCandidateUpdates(
     candidates,
@@ -100,9 +100,8 @@ test('technical C2 topic: model maliciousness and analyst approval never make th
   );
   const [graph] = find(after, 'url', GRAPH);
   assert.equal(isMember(graph), false);
-  const eligibility = classifyCreateEligibility({ ...persisted(graph), review_status: 'approved' });
-  assert.equal(eligibility.eligible, false);
-  assert.equal(eligibility.outcome, 'not_applicable');
+  assert.equal(graph.membership_decision.outcome, 'needs_review');
+  assert.equal(classifyCreateEligibility({ ...persisted(graph), review_status: 'pending' }).eligible, false);
   assert.deepEqual(memberKeys(after), ['domain:evil-example.com', 'ip:192.0.2.10']);
 });
 

@@ -47,7 +47,7 @@ test('parity matrix: frontend == backend JS for every membership branch', () => 
     );
     assert.equal(
       isReviewActionableIndicator(candidate),
-      isUnionReportIndicatorMember(candidate),
+      isUnionReportIndicatorMember(candidate) || candidate.evidence?.membership_outcome === 'needs_review' && !expect.context_only,
       `${row.id} review actionable == union`
     );
     assert.equal(

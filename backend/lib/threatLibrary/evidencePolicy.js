@@ -13,9 +13,15 @@
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES, evidenceTierForZone } from './documentZones.js';
 import { CONFIDENCE_POLICY } from './constants.js';
 import { aggregateSourceObservation } from './sourceObservation.js';
+import { decideMembership, MEMBERSHIP_OUTCOME, SECTION_AUTHORITY } from './membershipDecision.js';
 import {
   SOURCE_RELATIONS,
   attachOccurrenceRelations,
+  isIndicatorValueLine,
+  isAnnotatedIndicatorRowLine,
+  isObservableListLine,
+  isStructuredCodeRow,
+  lineContainingObservable,
   strongestSourceRelation
 } from './indicatorScope.js';
 import { NON_NETWORK_RESOLVED_TYPES, NETWORK_IOC_TYPES, validateCanonicalIocValue } from './observableTypeResolver.js';
@@ -265,7 +271,108 @@ function excludeFromIoc(candidate, summary, opts) {
   candidate.ai_needed = false;
   candidate.decision_source = 'deterministic';
   candidate.ai_role_suggestion = null;
+  candidate.membership_decision = decideMembership(
+    { excluded: true, exclusion_reason: opts.policy, refs: occurrenceRefs(candidate) },
+    { explicit: false, source_assertion: SOURCE_ASSERTIONS.NON_IOC },
+    { role: opts.role },
+    {},
+    { document_has_asserting_section: candidate.document_has_authoritative_scope === true },
+    {}
+  );
   return candidate;
+}
+
+/** Bounded evidence references of a decision (where the value was read). */
+function occurrenceRefs(candidate) {
+  return (Array.isArray(candidate.occurrences) ? candidate.occurrences : []).slice(0, 8).map((o) => ({
+    block_id: o.block_id || null,
+    section_path: Array.isArray(o.section_path) ? o.section_path.slice(-2) : null,
+    form: o.form || null,
+    table_row: o.table_row ?? null
+  }));
+}
+
+/** Authority of the section holding an occurrence. */
+function occurrenceAuthority(o) {
+  if (o.section_authority) return o.section_authority;
+  const zone = String(o.zone || o.section_kind || '');
+  if (STRONG_IOC_ZONES.has(zone)) return SECTION_AUTHORITY.ASSERTING;
+  if (NEGATIVE_ZONES.has(zone)) return SECTION_AUTHORITY.NON_ASSERTING;
+  return SECTION_AUTHORITY.UNCERTAIN;
+}
+
+const RELATION_MARKERS_NOT_EVIDENCE = new Set(['benign', 'provider', 'citation', 'excluded_zone', 'detection_alert', 'context_cell', 'hosts_file_entry', 'truncated_duplicate']);
+
+/**
+ * The occurrence is a publisher row, read from its structure: a typed table
+ * cell, or a line that holds the value as a list entry. A bullet of narrative
+ * text is not a row, even though it sits in a list element.
+ */
+function isStructuredRowOccurrence(candidate, o) {
+  if (RELATION_MARKERS_NOT_EVIDENCE.has(String(o.relation_marker || ''))) return false;
+  if (o.reference_cell === true || o.description_cell === true) return false;
+  if (String(o.form || '') === 'email_domain') return false;
+  // Only an indicator column of an interpreted table produces this form.
+  if (String(o.form || '') === 'table_row') return true;
+  const text = String(o.surrounding_text || '');
+  const line = lineContainingObservable(text, candidate.normalized_value) || text;
+  if (String(o.block_type || '') === 'code') return isStructuredCodeRow(line, candidate.normalized_value);
+  return isIndicatorValueLine(line) || isObservableListLine(line) || isAnnotatedIndicatorRowLine(line);
+}
+
+/** Policies that record a publisher stance or a non-actionable identity. */
+const SCOPE_DEPENDENT_CONTEXT_POLICIES = new Set([
+  'context_only_narrative_with_authoritative_scope',
+  'context_only_contextual_mention_in_indicator_section'
+]);
+
+/**
+ * Decide membership from the evidence the policy read, and align the row's
+ * review fields with the outcome. A needs_review value is not context: it keeps
+ * the model's assessment or stays unknown, and the model is asked about it.
+ * @param {object} candidate
+ * @param {{ relation: string|null, summary: object, undecidedSampleHash: boolean }} ctx
+ */
+function applyMembershipDecision(candidate, { relation, summary, undecidedSampleHash, aiUpdate = null }) {
+  const occ = Array.isArray(candidate.occurrences) ? candidate.occurrences : [];
+  const policy = String(candidate.policy_decision || '');
+  const stanceBlocked = policy.startsWith('context_only_') && !SCOPE_DEPENDENT_CONTEXT_POLICIES.has(policy)
+    || policy === 'demoted_provider_service' || policy === 'demoted_weak_evidence';
+  // The merge records ai_classification after this pass: an update being applied now counts as applied.
+  const ai = candidate.ai_classification && typeof candidate.ai_classification === 'object'
+    ? candidate.ai_classification
+    : aiUpdate?.assessment ? { assessment: aiUpdate.assessment, applied: true, supported: null } : {};
+  const decision = decideMembership(
+    {
+      structured_row: occ.some((o) => occurrenceAuthority(o) !== SECTION_AUTHORITY.NON_ASSERTING && isStructuredRowOccurrence(candidate, o)),
+      operational_clause: relation === SOURCE_RELATIONS.OPERATIONAL_MALICIOUS,
+      undecided_sample_hash: undecidedSampleHash || isUndecidedProseSampleHash(candidate),
+      unresolved_section_narrative: summary.hasUnresolvedStrongNarrative === true,
+      refs: occurrenceRefs(candidate)
+    },
+    { explicit: policy === 'explicit_report_assertion', source_assertion: candidate.source_assertion || null },
+    { role: candidate.role || null },
+    { blocked: stanceBlocked, reason: stanceBlocked ? policy : null },
+    { sections: occ.map(occurrenceAuthority), document_has_asserting_section: candidate.document_has_authoritative_scope === true },
+    {
+      assessment: ai.assessment || (candidate.decision_source === 'ai' ? candidate.assessment : null),
+      supported: ai.supported ?? null,
+      applied: ai.applied ?? null
+    }
+  );
+  candidate.membership_decision = decision;
+  if (decision.outcome === MEMBERSHIP_OUTCOME.NEEDS_REVIEW && candidate.assessment === 'context_only') {
+    const modelSaid = String(ai.assessment || '').toLowerCase();
+    candidate.assessment = (modelSaid === 'malicious' || modelSaid === 'suspicious') && ai.supported === true ? modelSaid : 'unknown';
+    if (!candidate.role || candidate.role === 'reference') candidate.role = 'unknown';
+    candidate.match_state = undefined;
+    candidate.source_assertion = SOURCE_ASSERTIONS.BODY_MENTION;
+    candidate.evidence_strength = 'medium';
+    candidate.ai_needed = !ai.assessment;
+    candidate.decision_source = ai.assessment ? 'ai' : 'pending';
+  } else if (decision.outcome === MEMBERSHIP_OUTCOME.NEEDS_REVIEW && !ai.assessment && candidate.decision_source !== 'ai') {
+    candidate.ai_needed = true;
+  }
 }
 
 function deterministicRole(candidate, summary) {
@@ -698,10 +805,11 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
     }
   }
 
+  if (!candidate.policy_decision) candidate.policy_decision = 'pass';
+  applyMembershipDecision(candidate, { relation, summary, undecidedSampleHash: proseForModel, aiUpdate });
   enforceRoleTypeCompatibility(candidate);
   candidate.evidence_tier = summary.tier;
   candidate.evidence_summary = summary;
-  if (!candidate.policy_decision) candidate.policy_decision = 'pass';
   return candidate;
 }
 
@@ -831,6 +939,10 @@ export function buildCandidateEvidenceRecord(c) {
     evidence_tier: c.evidence_tier || null,
     policy_decision: c.policy_decision || null,
     decision_source: c.decision_source || null,
+    // The membership decision: the contract JS, SQL and the frontend read.
+    ...(c.membership_decision && typeof c.membership_decision === 'object'
+      ? { membership_outcome: c.membership_decision.outcome, membership_decision: c.membership_decision }
+      : {}),
     ai_needed: c.ai_needed === true,
     is_direct_source_observable: c.is_direct_source_observable !== false,
     is_parser_derived_metadata: c.is_parser_derived_metadata === true,

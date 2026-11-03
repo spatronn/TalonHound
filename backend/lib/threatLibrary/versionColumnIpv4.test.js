@@ -95,7 +95,7 @@ test('MODE B: Struts versions in "Versions Affected" are version metadata, not I
     assert.equal(ip(rows, v), null);
   }
   const real = ip(rows, '45.32.140.182');
-  assert.ok(real && isReportIndicatorMember(real), 'narrative IPv4 keeps MODE B review membership');
+  assert.ok(real && real.evidence.membership_outcome === 'needs_review', 'a narrative IPv4 with no curated section reaches review');
 });
 
 test('the same strings in an explicitly malicious IP column stay IPv4 IOC candidates', () => {

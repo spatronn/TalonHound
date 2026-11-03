@@ -14,7 +14,7 @@
  */
 
 import { collapseLetterSpacing, isObservableOnlyLine } from './pdfLayout.js';
-import { looksDefanged, refangTextForExtraction } from './defang.js';
+import { looksDefanged, refangObservable, refangTextForExtraction } from './defang.js';
 import { FILE_EXT_HINT, hasDelegatedDnsSuffix, suffixStrength, trimUrlBoundary, validateUrlCandidate } from './observableTypeResolver.js';
 
 /**
@@ -1067,6 +1067,28 @@ export function isIndicatorRowShape(text, value, opts = {}) {
  * @param {string} value hex hash spelling
  * @returns {boolean} true when the occurrence must NOT become md5/sha1/sha256
  */
+/**
+ * A line of machine-readable data that holds this value as a field: CSV
+ * ("domain,evil[.]net"), or a JSON string or key-value line
+ * ("\"evil[.]net\"," / "\"domain\": \"evil[.]net\""). Other fields must look like
+ * labels or values, not prose, so a sentence with commas never qualifies.
+ * @param {string} line
+ * @param {string} value normalized value
+ */
+export function isStructuredCodeRow(line, value) {
+  const text = String(line || '').trim();
+  const target = String(value || '').toLowerCase();
+  if (!text || !target || text.length > 600) return false;
+  const clean = (s) => refangObservable(String(s).trim().replace(/^[\s"'`[{(]+|[\s"'`\]})]+$/g, '')).toLowerCase();
+  const pair = /^["'][^"']{1,40}["']\s*:\s*(.+?),?$/.exec(text);
+  if (pair) return clean(pair[1].replace(/,\s*$/, '')) === target;
+  if (/^["'`][^"'`]+["'`],?$/.test(text)) return clean(text.replace(/,\s*$/, '')) === target;
+  const fields = text.split(/\s*[,;\t]\s*/).filter(Boolean);
+  if (fields.length < 2 || fields.length > 8) return false;
+  if (!fields.some((f) => clean(f) === target)) return false;
+  return fields.every((f) => clean(f) === target || (f.length <= 80 && !/\s\S+\s/.test(f)));
+}
+
 export function isCredentialLabeledHex(text, value) {
   const focused = lineContainingObservable(text, value) || text;
   const t = refangTextForExtraction(String(focused || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
