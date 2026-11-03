@@ -143,8 +143,11 @@ export function isQualifiedIocInventoryHeading(text) {
   return QUALIFIED_IOC_INVENTORY_HEADING_RE.test(t);
 }
 
+// "Suspected source / scan-node infrastructure", "Attacker infrastructure",
+// "Observed techniques and source IPs" title the publisher's own address
+// inventory (tl-section-tree-v15).
 const OPERATIONAL_INFRA_RE =
-  /\b(?:vpn\s+nodes?|admin(?:istrative)?\s+(?:nodes?|infrastructure)|(?:ip|ipv4|ipv6)\s+(?:address\s+)?ranges?|address\s+ranges?|malicious\s+infrastructure|threat\s+infrastructure|operator\s+infrastructure|admin(?:istering|istration)\b.{0,48}(?:infrastructure|nodes?|ranges?)|(?:infrastructure|nodes?|ranges?).{0,48}admin(?:istering|istration)?)\b|基础设施|运营节点/i;
+  /\b(?:vpn\s+nodes?|admin(?:istrative)?\s+(?:nodes?|infrastructure)|(?:ip|ipv4|ipv6)\s+(?:address\s+)?ranges?|address\s+ranges?|malicious\s+infrastructure|threat\s+infrastructure|operator\s+infrastructure|suspected\s+(?:[a-z]+[\s-]){0,2}infrastructure\s*$|(?:attacker|adversary|scanning|scan[\s-]nodes?|staging)\s+infrastructure\s*$|(?:suspected|malicious|attacker|attacking)\s+(?:source\s+)?(?:ips|ipv4s|ip\s+addresses)|source\s+(?:ips|ip\s+addresses)\s*$|admin(?:istering|istration)\b.{0,48}(?:infrastructure|nodes?|ranges?)|(?:infrastructure|nodes?|ranges?).{0,48}admin(?:istering|istration)?)\b|基础设施|运营节点/i;
 
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 
@@ -876,7 +879,8 @@ export function isAnnotatedIndicatorRowLine(text) {
   const raw = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
   if (!raw || raw.length > 160) return false;
   // HTTP request / API examples are technical prose, not publisher IOC rows.
-  if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(raw)) return false;
+  // Request lines use upper-case methods: "Post exploitation IPs: …" is a label.
+  if (HTTP_REQUEST_LINE_RE.test(raw)) return false;
   if (isObservableListLine(raw) || isIndicatorValueLine(raw)) return true;
   const t = refangTextForExtraction(raw);
   const tokens = t.split(/\s+/).filter(Boolean);
@@ -895,9 +899,44 @@ export function isAnnotatedIndicatorRowLine(text) {
       isSchemeLessUrlToken(clean) ||
       isIndicatorValueLine(clean) ||
       isObservableOnlyLine(clean);
-    if (looksObservable && isIndicatorRowShape(t, clean)) return true;
+    if (looksObservable && isIndicatorRowShape(t, clean, { labeledLists: false })) return true;
   }
   return false;
+}
+
+/**
+ * An HTTP request / curl example line ("POST /api/x", "curl -s …"). Methods
+ * are upper-case and followed by whitespace, so prose that opens with "Post" /
+ * "Head" ("Post exploitation IPs: …") is not a request (tl-candidates-v55).
+ */
+export const HTTP_REQUEST_LINE_RE = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|curl\b)/;
+
+/** "<label>: <values>" — a short label with no observable of its own, then the values. */
+const LABELED_LIST_LINE_RE = /^([^:：]{2,80}?)\s*[:：]\s+(\S.*)$/;
+
+/**
+ * A labelled publisher IOC row whose value part lists only observables
+ * ("Post exploitation IPs using stolen AWS credentials: 1.2.3.4, 5.6.7.8",
+ * "Exfiltration domain: a.example and www.a.example (registered …)"): the
+ * values joined by commas / "and", an optional trailing parenthetical note
+ * (tl-candidates-v55).
+ * @param {string} text
+ */
+export function isLabeledObservableListLine(text) {
+  const raw = String(text || '').trim().replace(BULLET_PREFIX_RE, '').trim();
+  if (!raw || raw.length > 400) return false;
+  const m = LABELED_LIST_LINE_RE.exec(raw);
+  if (!m) return false;
+  const label = refangTextForExtraction(m[1]);
+  if (OTHER_OBSERVABLE_RE.test(label) || label.split(/\s+/).length > 10) return false;
+  const values = m[2]
+    .replace(/\s*\([^()]*\)\s*$/, '')
+    .replace(/\s+(?:and|or|&)\s+/gi, ', ')
+    .trim();
+  if (!values || !/[,]/.test(values) && values.split(/\s+/).length > 1) return false;
+  // Container image references ("ghcr.io/org/image:v1.2") are not URLs.
+  if (values.split(/[\s,]+/).some((tok) => !/:\/\//.test(tok) && /\/[^\s,]*:[\w.-]+$/.test(tok))) return false;
+  return isObservableListLine(values);
 }
 
 /**
@@ -981,11 +1020,15 @@ export function isAnnotatedHashList(text) {
   return !labelHasDigest && !/[^\s,;•·\-–]/.test(rest);
 }
 
-export function isIndicatorRowShape(text, value) {
+export function isIndicatorRowShape(text, value, opts = {}) {
   const focused = lineContainingObservable(text, value);
   const t = refangTextForExtraction(String(focused || '').trim()).replace(BULLET_PREFIX_RE, '').trim();
   if (!t) return false;
   if (isObservableListLine(t)) return true;
+  // A labelled multi-value row ("Post exploitation IPs …: a, b") is a row of
+  // the value it lists. Structural zone detection opts out: it never opens
+  // authority from such a line in body prose.
+  if (opts.labeledLists !== false && isLabeledObservableListLine(t)) return true;
   if (/^[a-f0-9]{32,64}$/i.test(String(value || '').trim()) && isAnnotatedHashList(t)) return true;
   if (t.length > 160) return false;
   if (isIndicatorValueLine(t)) return true;

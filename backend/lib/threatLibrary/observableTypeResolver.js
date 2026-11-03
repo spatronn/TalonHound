@@ -87,8 +87,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * v22 (29-report audit 35575–35605): a bracketed redaction marker in a URL
  * (`?client=[redacted]`) ends the URL like an `<id>` placeholder, so the
  * table value and its prose mention share one identity.
+ * v23 (70-report audit 35700–35769): a masked IPv4 address ("1.226.82.xxx")
+ * is never a host under the .xxx TLD; a search-query field before a grouped
+ * condition ("host.services: (port=22 AND …)") is a field name.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v22';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v23';
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -829,6 +832,12 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   if (labels.length < 2) return out('skip', 'not_dotted');
   if (!isHostnameSyntax(lower)) return out('skip', 'not_hostname_syntax');
+  // A masked IPv4 address ("1.226.82.xxx", "10.0.x.x"): numeric octets with
+  // the rest written as x placeholders — never a host under the .xxx TLD
+  // (tl-type-resolver-v23).
+  if (labels.length === 4 && labels.every((l) => /^(?:\d{1,3}|x{1,3})$/.test(l)) && /^\d/.test(labels[0]) && labels.some((l) => /^x+$/.test(l))) {
+    return out('skip', 'redacted_ipv4');
+  }
 
   const basenames = ctx.urlPathBasenames || new Set();
   const hosts = ctx.knownUrlHosts || new Set();
@@ -949,6 +958,12 @@ export function resolveDottedToken(raw, ctx = {}) {
   // 6. Assignment / key position (`agent.server.host = …`, `"a.b.c": …`) is a
   //    configuration key whatever the suffix looks like.
   if (assignmentKey) return out('technical_artifact', 'config_context');
+  // 6a. Search-query field (`host.services: (port=22 AND …)` in a Censys /
+  //     Shodan / KQL hunting query): a field name before a grouped condition,
+  //     in a clause joined by upper-case boolean operators (tl-type-resolver-v23).
+  if (!hostPort && !declaredNetwork && !inlineNetwork && /^:\s*\(/.test(after) && /\b(?:AND|OR|NOT)\b/.test(surrounding)) {
+    return out('technical_artifact', 'query_field');
+  }
 
   // 6b. Regular-expression fragment (`|currentversion.run\b|` in a hunting
   //     query): an alternation branch, inside a clause dense with regex

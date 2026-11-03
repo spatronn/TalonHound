@@ -52,7 +52,7 @@ import {
   validateCanonicalIocValue,
   validateUrlCandidate
 } from './observableTypeResolver.js';
-import { hexRunIsHostnameLabelFragment, ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
+import { hexRunIsHostnameLabelFragment, hexRunIsIdentifierSuffix, ipv4MatchIsStandalone, isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { findIpv6Tokens } from './ipv6Tokens.js';
 import { DIGEST_KINDS, NON_FILE_DIGEST_KINDS, classifyHexDigest } from './digestSemantics.js';
 import { createExplicitTableAssertionTracker, structuralCompleteness } from './explicitTableCompleteness.js';
@@ -329,8 +329,14 @@ export {
  * ("IOCs and Observables") open an IOC scope; rows that publish a host as a
  * historical resolution pivot stay context-only in an infrastructure lookup
  * table.
+ * v55 (70-report audit 35700–35769): tl-table-v18 / tl-type-resolver-v23 /
+ * tl-section-tree-v15. A hex run that is the generated suffix of a word
+ * identifier ("anonymous-<32 hex>" account names) is not a digest; a dotted
+ * quad glued to a User-Agent product token ("Chrome/149.0.0.1") is a version;
+ * a WordPress multiplication sign inside a hostname label ("8×255[.]com") is
+ * the letter x.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v54';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v55';
 
 /**
  * Recover a publisher-defanged domain from structured `block.links` when the
@@ -2340,6 +2346,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         if (insideAnySpan(truncatedDigestSpans, m.index, m.index + m[0].length)) continue;
         // `pub-<hex>.r2.dev`: the run is part of a hostname label, not a hash.
         if (hexRunIsHostnameLabelFragment(text, m.index, m.index + m[0].length)) continue;
+        // `anonymous-<hex>`: the generated suffix of an account name (v55).
+        if (hexRunIsIdentifierSuffix(text, m.index, m.index + m[0].length)) continue;
         const focusOrdinal = hitOffsets(text.slice(0, m.index), m[0]).length;
         add(m[0], type, block, { form: standaloneForm, focusOrdinal });
       }

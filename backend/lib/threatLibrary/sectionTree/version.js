@@ -55,8 +55,13 @@
  * inventory terms ("IOCs and Observables", "IOCs and network observables")
  * declares an IOC inventory, so the infrastructure-lookup table under it is
  * in scope.
+ * v15 (70-report audit 35700–35769): a short same-level sibling of an open IOC
+ * heading that ends with an indicator class ("<Family> infrastructure") and
+ * holds an inventory continues it; "Suspected source / scan-node
+ * infrastructure" and "… source IPs" headings title the publisher's address
+ * inventory.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v14';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v15';
 
 /** Membership-preview / authority remap contract. */
 export const SECTION_TREE_MEMBERSHIP_PREVIEW_VERSION = 'tl-section-tree-membership-preview-v2';

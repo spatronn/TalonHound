@@ -59,10 +59,10 @@ const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(
 const find = (x, type, value) => x.candidates.find((c) => c.candidate_type === type && c.normalized_value === value);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v54');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v22');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v55');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v14');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v14');
 });
 

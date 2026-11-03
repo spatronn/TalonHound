@@ -12,9 +12,11 @@ import {
   isIndicatorValueLine,
   isAnnotatedIndicatorRowLine,
   isObservableListLine,
+  isLabeledObservableListLine,
   lineContainingObservable,
   textDescribesValueAsBenign,
-  isAnnotatedHashList
+  isAnnotatedHashList,
+  HTTP_REQUEST_LINE_RE
 } from '../indicatorScope.js';
 import { refangTextForExtraction } from '../defang.js';
 import { annotateSectionTree } from './annotate.js';
@@ -77,7 +79,7 @@ function textContainsValue(text, value) {
 function isHttpExampleLine(text) {
   const line = String(text || '').trim();
   if (!line) return false;
-  if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(line)) return true;
+  if (HTTP_REQUEST_LINE_RE.test(line)) return true;
   if (/^(?:\d+\s+){1,10}\|\s*(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl|\{)/i.test(line)) return true;
   return false;
 }
@@ -105,6 +107,7 @@ function shouldForceStructuralRow(candidateType, text, value, occ, block) {
     isIndicatorValueLine(line) ||
     isAnnotatedIndicatorRowLine(line) ||
     isObservableListLine(line) ||
+    isLabeledObservableListLine(line) ||
     isObservableLedAnnotation(line, value)
   ) {
     return true;

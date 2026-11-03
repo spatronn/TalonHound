@@ -34,10 +34,13 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v9: the same nesting behind a heading element (`<h3><span><table>`) emits
  * the heading's own inline text (if any) and the table as its own block; the
  * table rows were flattened into one heading block.
- * Document extractor contract is threat_library_html_v9 so Refresh rebuilds
+ * v10 (70-report audit): a `<noscript>` holding a `<pre>` / `<table>` is the
+ * static fallback of a script-rendered code viewer (Jamf `<jamf-script-editor>`
+ * IOC listings) and is content, not noise.
+ * Document extractor contract is threat_library_html_v10 so Refresh rebuilds
  * retained HTML under the nested-table contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v9';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v10';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -69,6 +72,30 @@ export function cleanNoiseHtml(html) {
 
 /** Elements whose subtree is never content. */
 const NOISE_TAGS = new Set(['script', 'style', 'noscript', 'svg', 'nav', 'footer', 'template', 'iframe', 'head', 'canvas', 'video', 'audio', 'object', 'embed', 'select', 'option', 'button', 'input', 'textarea']);
+/**
+ * A `<noscript>` holding a `<pre>` / `<table>` is the static fallback of a
+ * script-rendered code viewer (`<x-script-editor><noscript><pre><code>`): the
+ * only copy of the publisher's IOC listing in the HTML, so it is content
+ * (v10). Tracking-pixel / banner noscripts stay noise.
+ * @param {object} node
+ * @param {string} tag
+ */
+function isNoiseElement(node, tag) {
+  if (!NOISE_TAGS.has(tag)) return false;
+  return !(tag === 'noscript' && hasDescendantTag(node, STATIC_FALLBACK_TAGS));
+}
+
+const STATIC_FALLBACK_TAGS = new Set(['pre', 'table']);
+
+function hasDescendantTag(node, tags, depth = 0) {
+  if (depth > 8) return false;
+  for (const c of node?.children || []) {
+    if (c?.type !== 'tag') continue;
+    if (tags.has(String(c.name || '').toLowerCase()) || hasDescendantTag(c, tags, depth + 1)) return true;
+  }
+  return false;
+}
+
 const HEADING_TAGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
 const PARAGRAPH_TAGS = new Set(['p', 'blockquote', 'dd', 'dt', 'address', 'summary']);
 const CAPTION_TAGS = new Set(['caption', 'figcaption']);
@@ -181,7 +208,7 @@ export function collectHyperlinks(node, baseUrl = null) {
       return;
     }
     const tag = tagOf(n);
-    if (NOISE_TAGS.has(tag)) return;
+    if (isNoiseElement(n, tag)) return;
     if (tag === 'a') {
       const hrefRaw = String(attr(n, 'href') || '').trim();
       if (hrefRaw && !hrefRaw.startsWith('#') && !hrefRaw.startsWith('mailto:') && !hrefRaw.startsWith('javascript:')) {
@@ -286,7 +313,7 @@ function renderedText(node, lineBreaks) {
     }
     if (!isElement(n)) return;
     const tag = tagOf(n);
-    if (NOISE_TAGS.has(tag)) return;
+    if (isNoiseElement(n, tag)) return;
     if (tag === 'br') {
       parts.push(lineBreaks ? LINE_BREAK : ' ');
       return;
@@ -317,7 +344,7 @@ function renderedPreText(node) {
     }
     if (!isElement(n)) return;
     const tag = tagOf(n);
-    if (NOISE_TAGS.has(tag)) return;
+    if (isNoiseElement(n, tag)) return;
     if (tag === 'br') {
       parts.push(LINE_BREAK);
       return;
@@ -476,7 +503,7 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
       return;
     }
     const tag = tagOf(node);
-    if (NOISE_TAGS.has(tag) || skip.has(tag)) return;
+    if (isNoiseElement(node, tag) || skip.has(tag)) return;
 
     if (HEADING_TAGS.has(tag)) {
       flushPending();
