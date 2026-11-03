@@ -79,8 +79,8 @@ const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(
 
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v55');
-  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v9');
-  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v9');
+  assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v10');
+  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v10');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v14');

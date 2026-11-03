@@ -231,3 +231,18 @@ test('FN-4. Source address | Handling rows under a suspected-infrastructure head
   assert.ok(m.includes('ip:198.51.100.31'), m.join(','));
   assert.ok(m.includes('ip:198.51.100.36'), m.join(','));
 });
+
+// --- FN-5: script-rendered code viewer with a <noscript> fallback --------------------
+
+test('FN-5. a <noscript><pre> fallback of a code viewer is content; tracking noscripts stay noise', () => {
+  const x = run(`<h2>Indicators of compromise</h2>
+<div class="code-block"><x-script-editor readonly><noscript><pre><code>--- C2 ---
+Domain: c2-panel[.]example-bad[.]space
+SHA256: ed980f2fa0642b1a5ba0bca65f5b3baee8a7b3f5d149bf295aa4ac7a70b92cec
+</code></pre></noscript></x-script-editor></div>
+<noscript><img src="https://tracker.example-ads.com/pixel.gif"></noscript>`);
+  const m = members(x);
+  assert.ok(m.includes('domain:c2-panel.example-bad.space'), m.join(','));
+  assert.ok(m.includes('sha256:ed980f2fa0642b1a5ba0bca65f5b3baee8a7b3f5d149bf295aa4ac7a70b92cec'), m.join(','));
+  assert.equal(x.candidates.some((c) => String(c.normalized_value).includes('tracker.example-ads.com')), false);
+});
