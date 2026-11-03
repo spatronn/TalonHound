@@ -911,6 +911,9 @@ export function isAnnotatedIndicatorRowLine(text) {
  */
 export const HTTP_REQUEST_LINE_RE = /^(?:(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s|curl\b)/;
 
+const NON_INDICATOR_LIST_LABEL_RE =
+  /\b(?:legitimate|legit|benign|clean|safe|trusted|victims?|targets?|targeted|affected|impacted|compromised\s+(?:hosts?|sites?|servers?)|decoys?|sinkhole[ds]?|allow(?:ed|list(?:ed)?)?|whitelist(?:ed)?|false\s+positives?|not\s+malicious|researchers?|example|historic(?:al)?)\b/i;
+
 /** "<label>: <values>" — a short label with no observable of its own, then the values. */
 const LABELED_LIST_LINE_RE = /^([^:：]{2,80}?)\s*[:：]\s+(\S.*)$/;
 
@@ -929,8 +932,11 @@ export function isLabeledObservableListLine(text) {
   if (!m) return false;
   const label = refangTextForExtraction(m[1]);
   if (OTHER_OBSERVABLE_RE.test(label) || label.split(/\s+/).length > 10) return false;
+  // A label that calls the values legitimate / victims / decoys lists no indicator.
+  if (NON_INDICATOR_LIST_LABEL_RE.test(label)) return false;
+  // Per-value notes ("a (Agent Platform API), b (release day)") are annotations.
   const values = m[2]
-    .replace(/\s*\([^()]*\)\s*$/, '')
+    .replace(/\s*\([^()]*\)/g, '')
     .replace(/\s+(?:and|or|&)\s+/gi, ', ')
     .trim();
   if (!values || !/[,]/.test(values) && values.split(/\s+/).length > 1) return false;

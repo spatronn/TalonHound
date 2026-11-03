@@ -95,6 +95,8 @@ function isObservableLedAnnotation(text, value) {
   if (!lower.startsWith(vl)) return false;
   const after = refanged.slice(v.length).trim();
   if (!after) return true;
+  // "139.84.223.178 (resolved to by all known subdomains)": a parenthesised note.
+  if (/^\([^()]{1,120}\)\.?$/.test(after)) return true;
   return /^[-–—|:·]\s+\S/.test(after);
 }
 
