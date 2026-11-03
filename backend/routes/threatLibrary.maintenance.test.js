@@ -128,6 +128,8 @@ function harness(reportPatch = {}, { jobs = [], audit = null, preview = null } =
         }
         return { rows: job ? [{ ...job }] : [] };
       }
+      // Extraction run ledger (append-only; asserted in extractionLedger.integration.test.js).
+      if (/INTO threat_report_(extraction_run|observable_dispositions|dropped_regions)|FROM threat_report_extraction_runs/.test(t)) return { rows: /INSERT INTO threat_report_extraction_runs/.test(t) ? [{ id: 1 }] : [], rowCount: 1 };
       throw new Error(`unexpected SQL: ${t.slice(0, 100)}`);
     },
     async connect() {

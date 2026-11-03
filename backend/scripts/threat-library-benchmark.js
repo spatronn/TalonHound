@@ -13,6 +13,7 @@
  *   node scripts/threat-library-benchmark.js --json          full JSON report
  *   node scripts/threat-library-benchmark.js --case <prefix> only matching case ids
  *   node scripts/threat-library-benchmark.js --private-dir <dir>
+ *   node scripts/threat-library-benchmark.js --scorecard     every dataset tier with its limits
  *   node scripts/threat-library-benchmark.js --write-baseline
  *       rewrite lib/threatLibrary/benchmark/baseline.json after a REVIEWED change
  *
@@ -39,6 +40,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (a === '--json') args.json = true;
     else if (a === '--write-baseline') args.writeBaseline = true;
+    else if (a === '--scorecard') args.scorecard = true;
     else if (a === '--case') args.casePrefix = argv[++i] || null;
     else if (a === '--private-dir') args.privateDir = argv[++i] || null;
     else if (a === '--source-dir') args.sourceDir = argv[++i] || null;
@@ -111,6 +113,11 @@ function printTable(run, comparison) {
 }
 
 const args = parseArgs(process.argv.slice(2));
+if (args.scorecard) {
+  const { buildScorecard, formatScorecard } = await import('../lib/threatLibrary/benchmark/scorecard.js');
+  console.log(formatScorecard(buildScorecard()));
+  process.exit(0);
+}
 if (args.help) {
   console.log('usage: node scripts/threat-library-benchmark.js [--json] [--case <prefix>] [--private-dir <dir>] [--source-dir <private source store>] [--write-baseline]');
   process.exit(0);

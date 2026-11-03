@@ -404,6 +404,92 @@ export function tableToRows(tableEl) {
   return { headers, rows, caption };
 }
 
+/** Elements whose content is markup or code rather than publisher text: counted, never significant. */
+const NON_TEXT_REGION_TAGS = new Set(['script', 'style', 'svg', 'canvas', 'video', 'audio', 'object', 'embed', 'head']);
+/** Attribute values a page may carry text in (copy buttons, form fields, embedded documents). */
+const TEXT_BEARING_ATTRIBUTES = ['data-clipboard-text', 'value', 'srcdoc', 'data-content'];
+
+const OBSERVABLE_SHAPES = Object.freeze([
+  ['url', /\b(?:https?|hxxps?|wss?|ftp):\/\/[^\s<>"']+/gi],
+  ['hash', /(?<![0-9a-f])(?:[0-9a-f]{64}|[0-9a-f]{40}|[0-9a-f]{32})(?![0-9a-f])/gi],
+  ['ip', /(?<![\d.])(?:\d{1,3}(?:\.|\[\.\])){3}\d{1,3}(?![\d.])/g],
+  ['defanged', /\b[a-z0-9-]+(?:\[\.\]|\(\.\)|\[dot\])[a-z0-9.-]+/gi]
+]);
+
+/** Observable-shaped tokens kept from a dropped region, per region. */
+const MAX_REGION_SAMPLES = 20;
+
+function rawTextOf(node, out = []) {
+  if (!node) return out;
+  if (node.type === 'text') out.push(String(node.data || ''));
+  if (node.attribs) {
+    for (const name of TEXT_BEARING_ATTRIBUTES) {
+      if (node.attribs[name]) out.push(String(node.attribs[name]));
+    }
+  }
+  for (const c of node.children || []) rawTextOf(c, out);
+  return out;
+}
+
+/**
+ * Count observable-shaped tokens in text that left the document (bounded sample
+ * of the tokens only: the discarded markup itself is never retained).
+ * @param {string} text
+ */
+export function summarizeObservableShapes(text) {
+  const types = {};
+  const samples = new Set();
+  let count = 0;
+  for (const [type, re] of OBSERVABLE_SHAPES) {
+    for (const m of String(text || '').matchAll(re)) {
+      types[type] = (types[type] || 0) + 1;
+      count += 1;
+      if (samples.size < MAX_REGION_SAMPLES) samples.add(m[0].slice(0, 200));
+    }
+  }
+  return { count, types, samples: [...samples] };
+}
+
+function describeDroppedRegion(node, tag, reason) {
+  const text = rawTextOf(node).join(' ');
+  const shapes = summarizeObservableShapes(text);
+  const nonText = NON_TEXT_REGION_TAGS.has(tag);
+  const cls = String(node.attribs?.class || node.attribs?.id || '').trim().slice(0, 60);
+  return {
+    region_kind: tag,
+    reason,
+    locator: cls ? `${tag}.${cls}` : tag,
+    text_chars: text.length,
+    observable_count: shapes.count,
+    observable_types: shapes.types,
+    // Script / style content is counted, its tokens are not kept.
+    sample_observables: nonText ? [] : shapes.samples,
+    significant: !nonText && shapes.count > 0
+  };
+}
+
+/**
+ * Merge per-element records: repeated empty regions become one row per kind,
+ * regions holding observables stay separate (bounded).
+ * @param {object[]} log
+ */
+export function compactDroppedRegions(log, limit = 50) {
+  const empty = new Map();
+  const withObservables = [];
+  for (const r of log || []) {
+    if (r.observable_count > 0) {
+      withObservables.push(r);
+      continue;
+    }
+    const key = `${r.region_kind}\0${r.reason}`;
+    const prior = empty.get(key);
+    if (prior) prior.text_chars += r.text_chars;
+    else empty.set(key, { ...r, locator: r.region_kind });
+  }
+  withObservables.sort((a, b) => Number(b.significant) - Number(a.significant) || b.observable_count - a.observable_count);
+  return [...withObservables, ...empty.values()].slice(0, limit);
+}
+
 /**
  * Extract ordered blocks from an HTML fragment (or full document).
  * @param {string} fragmentHtml
@@ -503,7 +589,10 @@ export function extractBlocksFromNode(root, ids, opts = {}) {
       return;
     }
     const tag = tagOf(node);
-    if (isNoiseElement(node, tag) || skip.has(tag)) return;
+    if (isNoiseElement(node, tag) || skip.has(tag)) {
+      if (Array.isArray(opts.droppedLog)) opts.droppedLog.push(describeDroppedRegion(node, tag, skip.has(tag) ? 'skipped_chrome_element' : 'noise_element'));
+      return;
+    }
 
     if (HEADING_TAGS.has(tag)) {
       flushPending();

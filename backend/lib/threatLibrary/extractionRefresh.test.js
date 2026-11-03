@@ -251,6 +251,8 @@ function createFakeDb({ report, iocCatalog = [] }) {
     if (/FROM threat_library_ai_settings/.test(s)) {
       return { rows: [{ id: 1, enabled: true, provider: 'ollama', model: 'test-model', base_url: 'http://model.invalid', max_input_chars: 120000 }] };
     }
+    // Extraction run ledger (append-only; asserted in extractionLedger.integration.test.js).
+    if (/INTO threat_report_(extraction_run|observable_dispositions|dropped_regions)|FROM threat_report_extraction_runs/.test(t)) return { rows: /INSERT INTO threat_report_extraction_runs/.test(t) ? [{ id: 1 }] : [], rowCount: 1 };
     throw new Error(`fake db: unexpected SQL: ${t.slice(0, 120)}`);
   };
   return { db, pool: { query: exec, connect: async () => ({ query: exec, release() {} }) } };

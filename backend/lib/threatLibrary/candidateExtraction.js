@@ -923,6 +923,38 @@ function hitOffsets(text, value) {
  * mentions the history ("Open-directory staging server; historically resolved
  * C2 domains via x.com") asserts the value itself and never matches.
  */
+const DEFANGED_DOT_PATTERN = '(?:\\.|\\s?\\\\?\\[\\.\\\\?\\]\\s?|\\(\\.\\)|\\{\\.\\}|\\[dot\\]|\\(dot\\))';
+const DEFANGED_SCHEME_PATTERN = '[a-z]{2,6}';
+const DEFANGED_AUTHORITY_PATTERN = '(?:\\[?:\\]?|\\[:/?\\]?)(?:\\\\?/){1,2}';
+
+/** Bound on tokens logged as rejected per document. */
+const MAX_TOKEN_LOG = 4000;
+
+/**
+ * Character offsets of a value in its block's text (the publisher's spelling
+ * first, then case-insensitive). Null when the spelling is not verbatim there,
+ * e.g. a value joined from a wrapped cell.
+ * @param {string|null|undefined} text
+ * @param {string|null|undefined} value
+ */
+function locateInBlockText(text, value) {
+  const hay = String(text || '');
+  const needle = String(value || '');
+  if (!hay || !needle) return null;
+  let at = hay.indexOf(needle);
+  if (at < 0) at = hay.toLowerCase().indexOf(needle.toLowerCase());
+  if (at >= 0) return { start: at, end: at + needle.length };
+  // The block holds the publisher's defanged spelling of a normalized value.
+  const pattern = needle
+    .slice(0, 400)
+    .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\\\./g, DEFANGED_DOT_PATTERN)
+    .replace(/^(?:https?|wss?|ftp)/i, DEFANGED_SCHEME_PATTERN)
+    .replace(/:\/\//, DEFANGED_AUTHORITY_PATTERN);
+  const m = new RegExp(pattern, 'i').exec(hay);
+  return m ? { start: m.index, end: m.index + m[0].length } : null;
+}
+
 const HISTORICAL_RESOLUTION_ROW_RE = /(?:^|·\s*)\s*historical\s+(?:dns\s+)?resolutions?\s+(?:for|of)\b/i;
 const HASH_CANDIDATE_TYPES = new Set(['md5', 'sha1', 'sha256']);
 /** A truncated digest shorter than this identifies nothing (tl-candidates-v54). */
@@ -1075,6 +1107,9 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const normalizedSourceUrl = sourceUrl ? normalizeObservable('url', refangObservable(sourceUrl)) : null;
 
   const annotated = annotateDocumentZones(doc, { sourceUrl, sourceHost });
+  const blocks = annotated.blocks || [];
+  /** table block id → ordinal among the document's tables (evidence locator). */
+  const tableOrdinals = new Map(blocks.filter((b) => b.type === 'table').map((b, i) => [b.id, i]));
   const documentScope = discoverDocumentIndicatorScope(annotated.blocks || []);
   // The lead-in sentence a publisher writes above a list ("Certificate
   // SHA-256 Hashes for Fingerprints and Corresponding Hosts:") names the
@@ -1136,6 +1171,20 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   const explicitTableAssertions = createExplicitTableAssertionTracker();
   /** Last rejection reason from add(); diagnostic only. */
   let lastAddRejection = null;
+  /** Tokens rejected before becoming a candidate: each gets a disposition record. */
+  const tokenLog = [];
+  const noteRejectedToken = (raw, type, block, reason, disposition = 'rejected') => {
+    if (tokenLog.length >= MAX_TOKEN_LOG) return;
+    tokenLog.push({
+      observable_type: type || 'unknown',
+      raw_value: String(raw ?? '').slice(0, 500),
+      normalized_value: String(raw ?? '').trim().toLowerCase().slice(0, 500) || null,
+      disposition,
+      reason_code: reason,
+      block_id: block?.id || null,
+      excerpt: block?.text ? String(block.text).slice(0, 240) : null
+    });
+  };
 
   function occurrenceFor(block, extra = {}, focusValue = '') {
     const zone = block?.zone || 'unknown';
@@ -1158,7 +1207,12 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       block?.zone_reason === 'cidr_list' ||
       block?.zone_reason === 'ioc_table');
     const rowShape = !emailPart && !structuralRow && text ? isIndicatorRowShape(text, focus || focusValue) : false;
+    const located = locateInBlockText(block?.text, focus || focusValue);
+    const tableOrdinal = block?.type === 'table' ? tableOrdinals.get(block?.id) : undefined;
     return {
+      ...(located ? { char_start: located.start, char_end: located.end } : {}),
+      ...(Number.isInteger(tableOrdinal) ? { table_index: tableOrdinal } : {}),
+      ...(extra.tableRow && Number.isInteger(extra.tableRow.column_index) ? { table_column: extra.tableRow.column_index } : {}),
       block_id: block?.id || null,
       page: block?.page ?? null,
       zone,
@@ -1402,6 +1456,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     if (!n.ok) {
       lastAddRejection = n.error || 'unrecognized';
       countReason(typeDiag.rejected_values, lastAddRejection);
+      noteRejectedToken(raw, hintType, block, lastAddRejection, 'invalid');
       return null;
     }
     if (extra.referenceCell !== true &&
@@ -1417,6 +1472,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (isCredentialLabeledHex(line, n.normalizedValue)) {
         lastAddRejection = 'credential_labeled_hex';
         countReason(typeDiag.rejected_values, lastAddRejection);
+        noteRejectedToken(n.normalizedValue, n.candidateType, block, lastAddRejection);
         return null;
       }
       // The value's own type label (sub-heading / table type cell) names a
@@ -1494,6 +1550,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (sourceHay && isOnlyEmbeddedInDnsHostname(sourceHay, n.candidateType, n.normalizedValue)) {
         lastAddRejection = 'embedded_in_dns_hostname';
         countReason(typeDiag.rejected_values, lastAddRejection);
+        noteRejectedToken(n.normalizedValue, n.candidateType, block, lastAddRejection);
         return null;
       }
     }
@@ -1539,6 +1596,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       if (typed.kind === 'skip') {
         lastAddRejection = typed.reason;
         countReason(typeDiag.rejected_values, lastAddRejection);
+        noteRejectedToken(n.normalizedValue, 'domain', block, lastAddRejection);
         return null;
       }
       const id = n.normalizedValue;
@@ -1667,6 +1725,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         if (!retain) {
           // Incidental identifiers in prose (bytes.Index, Foo.Bar.Baz) are not report intelligence.
           typeDiag.artifact_occurrences_dropped += pending.occurrences.length;
+          noteRejectedToken(pending.token, 'domain', pending.occurrences[0]?.block, `incidental_identifier:${typed.reason}`, 'unsupported');
           rememberExample(
             buildTypeResolutionRecord({
               raw: pending.token,
@@ -1766,7 +1825,6 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
     }
   }
 
-  const blocks = annotated.blocks || [];
   // Publisher stance about a whole list ("These endpoints are legitimate …").
   annotateListStances(blocks);
   // Format-agnostic "indicator row": PDF list rows, HTML <li>/<td>, or any line that is a single observable.
@@ -2105,6 +2163,14 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         }
       }
     }
+    // Attribute columns (a certificate thumbprint or fuzzy hash beside the
+    // sample) are never read as rows: record what their cells hold and why.
+    for (const col of (interp.columns || []).filter((c) => c.attribute_kind && c.attribute_kind !== 'reference' && c.attribute_kind !== 'resolution')) {
+      for (const row of interp.rows || []) {
+        const cell = String(row.cells?.[col.index] || '').trim();
+        if (cell) noteRejectedToken(cell, 'attribute_cell', block, `attribute_column:${col.attribute_kind}`, 'unsupported');
+      }
+    }
     // Version-column release numbers of an indicator table are never row
     // values (tl-table-v5); keep them as version metadata, as the text pass does.
     const versionTokens = versionColumnTokens(block);
@@ -2345,9 +2411,15 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
         if (insideAnySpan(urlSpans, m.index, m.index + m[0].length)) continue;
         if (insideAnySpan(truncatedDigestSpans, m.index, m.index + m[0].length)) continue;
         // `pub-<hex>.r2.dev`: the run is part of a hostname label, not a hash.
-        if (hexRunIsHostnameLabelFragment(text, m.index, m.index + m[0].length)) continue;
+        if (hexRunIsHostnameLabelFragment(text, m.index, m.index + m[0].length)) {
+          noteRejectedToken(m[0], type, block, 'hex_in_hostname_label');
+          continue;
+        }
         // `anonymous-<hex>`: the generated suffix of an account name (v55).
-        if (hexRunIsIdentifierSuffix(text, m.index, m.index + m[0].length)) continue;
+        if (hexRunIsIdentifierSuffix(text, m.index, m.index + m[0].length)) {
+          noteRejectedToken(m[0], type, block, 'hex_identifier_suffix');
+          continue;
+        }
         const focusOrdinal = hitOffsets(text.slice(0, m.index), m[0]).length;
         add(m[0], type, block, { form: standaloneForm, focusOrdinal });
       }
@@ -2500,7 +2572,7 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
 
   // `annotated` is the zone-annotated document the candidates were read from
   // (read-only consumers: quality assessment, benchmark scoring).
-  return { candidates: out, diagnostics, annotated };
+  return { candidates: out, diagnostics, annotated, tokenLog };
 }
 
 /**
