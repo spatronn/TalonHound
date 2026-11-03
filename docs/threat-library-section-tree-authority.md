@@ -1,50 +1,50 @@
-# Section-tree authoritative scope engine
+# Section graph: the single structural authority
 
-## Engine selector
+`annotateSectionTree` builds the section graph of a document. It is the only structural decision in the
+pipeline: `annotateDocumentZones` reads its zones from the graph, and candidate extraction, table semantics,
+AI block selection, relationship policy, publication date and extraction quality all consume that reading.
+There is no engine switch, no fallback engine and no shadow evaluation.
 
-| Env | Default | Effect |
-|---|---|---|
-| `THREAT_LIBRARY_SCOPE_ENGINE=legacy` | emergency rollback | Linear `annotateDocumentZones` owns occurrence authority |
-| `THREAT_LIBRARY_SCOPE_ENGINE=section_tree` | **production default** (compose default since tl-scope-engine-section-tree-v2) | Heading-ancestry remaps occurrence zones; evidence policy re-runs |
+## Pipeline
 
-Exactly one engine determines final Indicator membership. Shadow diagnostics (`THREAT_LIBRARY_SECTION_TREE_SHADOW`) remain independent and never override the selector. Invalid values fail extraction (`strict`) rather than silently changing membership.
+```
+Publisher document -> Canonical document
+  -> Section graph (heading ancestry, section authority)
+  -> Candidate extraction (traversal, type resolution, evidence construction)
+  -> applySectionTreeAuthority (one pass inside extraction)
+  -> Evidence policy -> decideMembership (one outcome per candidate)
+  -> Candidate persistence and extraction ledger -> Analyst review
+```
 
-Compose wires the flag to both `backend` and `threat-library-worker`.
+## Modules
+
+| Module | Responsibility |
+|---|---|
+| `sectionTree/annotate.js` | Section graph, heading classification, zones |
+| `sectionTree/authority.js` | Per-occurrence section authority |
+| `documentZones.js` | Zone reading of the graph for consumers |
+| `candidateExtraction.js` | Orchestration, post-resolution, diagnostics |
+| `candidateTablePass.js` | Typed indicator tables |
+| `candidateTextPass.js` | URLs and free-text observable shapes |
+| `candidateAccumulator.js` | Identity map; the one place a token becomes a candidate |
+| `candidateHelpers.js` | Token patterns and small readers |
+| `evidencePolicy.js`, `membershipDecision.js` | Assertion and role, then the membership outcome |
 
 ## Rollback
 
-1. Set `THREAT_LIBRARY_SCOPE_ENGINE=legacy` in `/opt/TalonHound/.env`
-2. `docker compose up -d --no-deps --force-recreate backend threat-library-worker`
-3. Verify both containers: `printenv THREAT_LIBRARY_SCOPE_ENGINE` → `legacy`
-
-Do not automatically reprocess historical reports when switching engines.
-
-## Offline compare
-
-```bash
-docker compose exec -T backend node scripts/section-tree-authority-compare.js --fixtures
-docker compose exec -T backend node scripts/section-tree-authority-compare.js --db-export /app/tmp/st-corpus-export
-```
+Roll back by deploying the previous image. Stored reports do not change when the code does: a report's
+candidates change only on an explicit refresh.
 
 ## Provenance
 
-Candidates and diagnostics stamp:
+Candidates and diagnostics stamp `scope_engine`, `scope_engine_version` and `section_tree_version`. The
+extraction ledger records the whole contract bundle per run.
 
-- `scope_engine` / `scope_engine_version` (`tl-scope-engine-section-tree-v3`)
-- `section_tree_version` (`tl-section-tree-v6`)
+## Known limitations
 
-## Architecture
-
-```
-Publisher document → Canonical document
-  → Section-tree construction (heading ancestry)
-  → applySectionTreeAuthority (sole zone authority when selected)
-  → Deterministic observable extraction (already run) + evidence policy recompute
-  → MODE A / MODE B membership
-  → Candidate persistence → Analyst review
-```
-
-Legacy linear zones remain available as the `legacy` engine and still participate in typing/table/quality paths before authority remap.
+- A bold sibling line does not close a C2 scope; only a heading does.
+- A deeper heading that is not a subgroup label inherits authority from its parent section, so a trailing
+  section such as "About the Author" can reach review as needs_review.
 
 ## Empty formal IOC sections (delegated scope, tl-section-tree-v3)
 
@@ -144,7 +144,7 @@ heading ("Observations", "Key observations") opens an IOC section only when the 
 section, before the next heading, is a self-proving IOC table: an indicator column plus a declared
 observable-type column (`interpretIocTable` `explicit` with `declared_type_column`). Prose, a
 descriptive table or a value table without a type column leaves it narrative, so the heading alone
-never sets MODE A. Both engines share the check (`confirmedQualifiedIocHeading`).
+never sets MODE A. The check is `confirmedQualifiedIocHeading`.
 
 Inside such a table, a row whose own descriptor cells name the value a category-qualified provider
 ("Blockchain provider", "DNS resolver") or an explicitly public / legitimate / third-party service is

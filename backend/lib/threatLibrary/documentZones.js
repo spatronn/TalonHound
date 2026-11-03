@@ -150,22 +150,6 @@ export function typeLabelHeading(text) {
 /** Minimum consecutive indicator-only rows that form a structural IOC list without a heading. */
 export const OBSERVABLE_LIST_MIN_ROWS = 3;
 
-export const DOCUMENT_ZONES = Object.freeze([
-  'report_body',
-  'explicit_ioc_section',
-  'c2_section',
-  'sample_table',
-  'operational_infrastructure',
-  'delegated_ioc_scope',
-  'reference_section',
-  'source_metadata',
-  'header_footer',
-  'navigation',
-  'vendor_about',
-  'code',
-  'unknown'
-]);
-
 /**
  * Body scope of a document whose every formal IOC section is empty (the
  * publisher released its indicators elsewhere — "available for download
@@ -357,64 +341,8 @@ export function detectRepeatedHeaderFooterBlockIds(blocks) {
   return flagged;
 }
 
-const ZONE_OPENING_HEADINGS = new Set([
-  'explicit_ioc_section',
-  'c2_section',
-  'sample_table',
-  'operational_infrastructure',
-  'reference_section',
-  'vendor_about',
-  'code'
-]);
-
 const CIDR_IN_TEXT_RE =
   /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\/(?:3[0-2]|[12]?\d)\b/g;
-
-/**
- * Join a wrapped heading with the next same-page heading when a title split
- * across visual lines (e.g. "...Administering PurpleBravo" + "Infrastructure").
- *
- * Never merge a parent section label with a child subsection title: combining
- * "Indicators of compromise" + "C2" would open c2_section and lose the
- * publisher IOC appendix parent. Distinct heading levels, or a next heading
- * that opens its own zone while this one already opens a different zone, stay
- * separate.
- * @param {object[]} blocks
- * @param {number} index
- */
-export function combinedHeadingText(blocks, index) {
-  const b = blocks[index];
-  if (!b || b.type !== 'heading') return String(b?.text || '').trim();
-  const a = collapseLetterSpacing(String(b.text || '').trim());
-  const next = blocks[index + 1];
-  if (
-    next &&
-    next.type === 'heading' &&
-    next.page === b.page &&
-    next.layout !== 'page_edge' &&
-    String(next.text || '').trim().length <= 40 &&
-    !/[.!?。]$/.test(a)
-  ) {
-    const thisLevel = Number.isInteger(b.level) ? b.level : null;
-    const nextLevel = Number.isInteger(next.level) ? next.level : null;
-    if (thisLevel != null && nextLevel != null && nextLevel !== thisLevel) return a;
-    const nextText = collapseLetterSpacing(String(next.text || '').trim());
-    const aloneZone = classifyHeadingText(a, { isHeading: true });
-    const nextZone = classifyHeadingText(nextText, { isHeading: true });
-    if (aloneZone === 'explicit_ioc_section') return a;
-    if (
-      aloneZone &&
-      nextZone &&
-      aloneZone !== nextZone &&
-      ZONE_OPENING_HEADINGS.has(aloneZone) &&
-      ZONE_OPENING_HEADINGS.has(nextZone)
-    ) {
-      return a;
-    }
-    return `${a} ${nextText}`.trim();
-  }
-  return a;
-}
 
 /**
  * Short list items that are article tags / categories / topic chips rather than
@@ -492,61 +420,6 @@ const OBSERVABLE_IN_TEXT_RE =
  */
 const GROUP_LABEL_CONCEPT_RE =
   /\b(?:domains?|ips?|ip\s+addresses?|addresses?|urls?|hash(?:es)?|hosts?|hostnames?|servers?|c2|c&c|indicators?|iocs?|samples?|files?|infrastructure|decoys?|types?|campaigns?|clusters?|groups?|waves?|stages?|additional|supporting|related|other|network|emails?|sha-?\d*|md5|mutex(?:es)?|endpoints?|ranges?|cidrs?|payloads?|droppers?|loaders?|implants?|beacons?|alan\s+ad(?:ı|ları)|adres(?:ler)?|sunucu(?:lar)?|ek|ilgili|diğer)\b|域名|地址|服务器|样本|哈希|相关|其他|附加|基础设施|诱饵/i;
-
-/**
- * Sub-label inside an open indicator section ("Scambling Domains (Type 2)",
- * "Supporting IP Addresses…", "Decoy domains"): a short heading that opens no
- * other section, names an indicator group concept, and is either nested
- * deeper than the opening heading (DOM hierarchy) or directly followed by
- * indicator rows. It inherits the section scope. "Frequently Asked Questions"
- * or "Conclusion" name a new topic and close the section.
- * @param {object} b heading block
- * @param {object[]} blocks
- * @param {number} i
- * @param {{ level: number|null }} opening
- * @param {Set<string>} chromeIds
- * @param {{ inferredLevels?: boolean }} [opts] heading levels are estimates
- *   (PDF numbering / font height), not document structure
- */
-function isSubgroupLabelHeading(b, blocks, i, opening, chromeIds, opts = {}) {
-  const text = collapseLetterSpacing(String(b.text || '').trim());
-  if (!text || text.length > 72 || /[.!?。]$/.test(text)) return false;
-  if (!GROUP_LABEL_CONCEPT_RE.test(text)) return false;
-  const level = Number.isInteger(b.level) ? b.level : null;
-  // Real same-or-shallower HTML siblings are new topics ("Additional Resources"),
-  // not appendix subgroups — even when "additional"/"related" matches the
-  // group-label vocabulary and a following link row looks indicator-shaped.
-  if (
-    level != null &&
-    opening.level != null &&
-    level <= opening.level &&
-    opts.inferredLevels !== true
-  ) {
-    return false;
-  }
-  if (level != null && opening.level != null && level > opening.level) return true;
-  const next = nextContentBlock(blocks, i, chromeIds);
-  if (!next) return false;
-  if (isIndicatorRowBlock(next)) return true;
-  // An IOC table beneath the label (Filename | MD5 inventory) is the same
-  // publisher content as rows when the hierarchy is unknown — level-less, or
-  // PDF levels that only estimate rank. A real same-level HTML sibling
-  // ("Related infrastructure") is a new section, so a table there must
-  // self-prove on its own (tl-table-v7). Called only inside an open
-  // authoritative section.
-  const hierarchyUnknown = level == null || opening.level == null || (opts.inferredLevels === true && level === opening.level);
-  return hierarchyUnknown && isIndicatorContentBlock(next, { underAuthoritativeTopic: true });
-}
-
-/**
- * Heading levels of a PDF canonical document are inferred from numbering and
- * relative font height (pdfLayout.inferPdfHeadingLevel): equal levels are an
- * absence of evidence, not proof that two headings are siblings.
- * @param {{ meta?: object }} doc
- */
-function hasInferredHeadingLevels(doc) {
-  return doc?.meta?.adapter === 'pdf' || /^threat_library_pdf_/.test(String(doc?.meta?.extractor || ''));
-}
 
 /**
  * Previous content block before index i (skipping running headers / footers / page edges).
@@ -637,9 +510,6 @@ export function sectionHasIndicatorStructure(blocks, i, chromeIds, limit = 80) {
   return false;
 }
 
-/** Section zones whose label headings also title narrative topics. */
-const TOPIC_LABEL_ZONES = new Set(['c2_section', 'operational_infrastructure']);
-
 /**
  * A block that carries publisher indicator content itself: an indicator row
  * (value line, list of values, short list item / unstructured table row with
@@ -649,66 +519,6 @@ const TOPIC_LABEL_ZONES = new Set(['c2_section', 'operational_infrastructure']);
  * observables its text happens to contain.
  * @param {object} b
  */
-/**
- * @param {object} b
- * @param {{ underAuthoritativeTopic?: boolean }} [opts]
- *   underAuthoritativeTopic: the caller is confirming a C2 / operational /
- *   IOC topic label. IOC-shaped tables (including Domain|IP|First seen) may
- *   confirm that label. Without this flag, only self-proving tables confirm —
- *   otherwise a body analysis grid would open a C2 section that then marks
- *   the same grid authoritative (circular promotion).
- */
-function isIndicatorContentBlock(b, opts = {}) {
-  if (!b || b.type === 'heading' || b.layout === 'page_edge') return false;
-  if (b.type === 'table' && b.table) {
-    const underTopic = opts.underAuthoritativeTopic === true;
-    const interp = interpretIocTable(b, { inAuthoritativeScope: underTopic });
-    if (interp.kind !== 'ioc_table') return false;
-    if (underTopic) return true;
-    return interp.explicit === true;
-  }
-  return isIndicatorRowBlock(b);
-}
-
-/**
- * Publisher indicator content in the immediate section after block i (until
- * the next real heading). Used for level-less / synthetic topic headings that
- * cannot use DOM subtree bounds.
- * @param {object[]} blocks
- * @param {number} i
- * @param {Set<string>} chromeIds
- * @param {number} [limit]
- * @param {{ underAuthoritativeTopic?: boolean }} [opts]
- */
-export function sectionHasIndicatorContent(blocks, i, chromeIds, limit = 80, opts = {}) {
-  let seen = 0;
-  for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
-    const n = blocks[j];
-    if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
-    if (n.type === 'heading') return false;
-    seen += 1;
-    if (isIndicatorContentBlock(n, opts)) return true;
-  }
-  return false;
-}
-
-/**
- * Whether a C2 / operational topic heading is structurally confirmed as an
- * authoritative section. Real headings with a known level use the subtree;
- * synthetic/bold paragraphs and level-less PDF headings use the section walk
- * with the same indicator-content predicate (Invariant A).
- * @param {object} b
- * @param {object[]} blocks
- * @param {number} i
- * @param {Set<string>} chromeIds
- */
-function topicHeadingHasIndicatorContent(b, blocks, i, chromeIds) {
-  const opts = { underAuthoritativeTopic: true };
-  if (b.type === 'heading' && Number.isInteger(b.level)) {
-    return subtreeHasIndicatorStructure(blocks, i, chromeIds, 200, opts);
-  }
-  return sectionHasIndicatorContent(blocks, i, chromeIds, 80, opts);
-}
 
 /**
  * A type-label heading continues an open authoritative section only when it is
@@ -723,25 +533,6 @@ function topicHeadingHasIndicatorContent(b, blocks, i, chromeIds) {
  * @param {{ level: number|null }} opening
  * @param {Set<string>} chromeIds
  */
-/** Same-level sibling headings that are pure per-type IOC list labels. */
-const PURE_TYPE_LIST_HEADING_RE =
-  /^(?:(?:list\s+of\s+|observed\s+|extracted\s+)?)?(?:domains?|ip(?:v[46])?(?:\s+addresses?)?|urls?|hosts?(?:names?)?|emails?|hashes?|hash\s+values?|md5|sha-?1|sha-?256|sha-?512|file\s+hashes?|samples?|filenames?|mutex(?:es)?|c2s?(?:\s+servers?)?)(?:\s*\([^)]*\))?$/i;
-
-function isTypedSubheadingContinuation(labelHeading, b, blocks, i, opening, chromeIds) {
-  if (!labelHeading) return false;
-  const level = Number.isInteger(b.level) ? b.level : null;
-  const networkOrDeclared = labelHeading.semantics === 'network' || Boolean(labelHeading.declared_type);
-  // Same-or-shallower than the current opening: only pure per-type list labels
-  // continue ("Hash Values" / "IP Addresses" / "Domain"). Compound sibling
-  // topics ("Related infrastructure", "Additional findings") close the appendix
-  // even when they mention network vocabulary.
-  if (level != null && opening.level != null && level <= opening.level) {
-    const text = String(b.text || labelHeading.label || '').trim();
-    return networkOrDeclared && PURE_TYPE_LIST_HEADING_RE.test(text);
-  }
-  if (networkOrDeclared) return true;
-  return sectionOpensWithIndicatorContent(blocks, i, chromeIds);
-}
 
 /**
  * Whether a non-heading block is label/title shaped (bold paragraph headings)
@@ -772,46 +563,6 @@ export function looksLikeLabelHeading(text) {
   // Determiner-led multi-word lines are sentences, not headings.
   if (/^(?:the|a|an|this|these|those|we|they|it|our|their)\b/i.test(t) && words.length >= 4) return false;
   return true;
-}
-
-/**
- * Structural confirmation over a heading's whole subtree (every block until a
- * heading at the same or a shallower level), so typed sub-headings ("C2 › IPs")
- * stay inside. Requires an integer level on heading i. Only publisher
- * indicator content confirms (isIndicatorContentBlock): a topic heading that
- * merely names C2 ("Outlook calendar events as a C2 channel") over prose, code
- * listings and protocol tables stays narrative.
- * @param {object[]} blocks
- * @param {number} i heading index
- * @param {Set<string>} chromeIds
- */
-export function subtreeHasIndicatorStructure(blocks, i, chromeIds, limit = 200, opts = {}) {
-  const level = blocks[i].level;
-  let seen = 0;
-  for (let j = i + 1; j < blocks.length && seen < limit; j += 1) {
-    const n = blocks[j];
-    if (n.layout === 'page_edge' || chromeIds.has(n.id)) continue;
-    if (n.type === 'heading') {
-      if (!Number.isInteger(n.level) || n.level <= level) return false;
-      continue;
-    }
-    seen += 1;
-    if (isIndicatorContentBlock(n, opts)) return true;
-  }
-  return false;
-}
-
-/**
- * True when the content directly under heading i starts with indicator
- * structure: an indicator row (value line, list of values, scheme-less URL
- * row) or a table that reads as an IOC table. Prose first → false. Used to
- * keep arbitrarily-labelled nested sub-headings inside an IOC section.
- * @param {object[]} blocks
- * @param {number} i heading index
- * @param {Set<string>} chromeIds
- */
-export function sectionOpensWithIndicatorContent(blocks, i, chromeIds) {
-  return isIndicatorContentBlock(nextContentBlock(blocks, i, chromeIds));
 }
 
 /**

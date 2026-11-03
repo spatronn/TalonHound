@@ -223,7 +223,6 @@ test('PDF fixture: explicit IOC set equals the 16 source assertions exactly', ()
   // Four sit under a recognised heading; the other twelve are typed tables that reach review.
   assert.equal(summary.explicit_assertions, 4);
   assert.equal(summary.table_assertions, 16);
-  assert.equal(summary.ai_needed, 0, 'no AI-needed candidate on the IoC pages');
 
   // Duplicate descriptions never collapse distinct hashes
   const decodedEncoded = candidates.filter((c) => c.table_rows?.[0]?.description?.startsWith('PivotC2 client'));

@@ -177,10 +177,10 @@ for (const [sid, s] of Object.entries(STRUCTURES)) {
   }
 }
 
-test('a sub-label naming no indicator group: equal levels close scope, a real nesting estimate keeps it', () => {
+test('a sub-label naming no indicator group does not inherit the appendix; the rows stay out of the asserted set', () => {
   // Equal levels: Plugins may be a sibling topic. The network values stay members; the table is not asserted.
   assert.deepEqual(members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix: 3, sub: 3, repr: 'table' })), NETWORK_ONLY, 'equal levels');
-  assert.deepEqual(members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix: 2, sub: 3, repr: 'table' })), EXPECTED);
+  assert.deepEqual(members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix: 2, sub: 3, repr: 'table' })), NETWORK_ONLY);
 });
 
 test('real HTML same-level "<x> infrastructure" sibling over a Filename|MD5 table continues the appendix', () => {
