@@ -266,3 +266,25 @@ test('FN-6. "<label>: v1, v2 (note)" rows of an IOC list are Indicators; image t
   assert.equal(m.some((v) => v.includes('ghcr.io') || v.includes('docker.io')), false, m.join(','));
   assert.equal(m.includes('ip:192.0.2.53'), false);
 });
+
+test('FN-7. IOC rows with parenthesised notes ("v (note)", "label: a (x), b (y)") assert their values', () => {
+  const x = run(`<h2>Indicators of Compromise</h2>
+<ul>
+<li>198.51.100.178 (resolved to by all known subdomains)</li>
+<li>Attacker IPs: 203.0.113.143 (Agent Platform API, October 10), 203.0.113.39 (release day)</li>
+</ul>`);
+  const m = members(x);
+  for (const v of ['ip:198.51.100.178', 'ip:203.0.113.143', 'ip:203.0.113.39']) assert.ok(m.includes(v), `${v} missing from ${m.join(',')}`);
+});
+
+test('FN-7 negative. labelled lists of legitimate / victim values assert nothing', () => {
+  const x = run(`<h2>Indicators of Compromise</h2>
+<ul>
+<li>Attacker IPs: 203.0.113.143 (staging)</li>
+<li>Legitimate cloud IPs observed: 198.51.100.20 and 198.51.100.21 (sign-in service)</li>
+<li>Victim IPs observed: 192.0.2.30 (corporate egress)</li>
+</ul>`);
+  const m = members(x);
+  assert.ok(m.includes('ip:203.0.113.143'), m.join(','));
+  for (const v of ['ip:198.51.100.20', 'ip:198.51.100.21', 'ip:192.0.2.30']) assert.equal(m.includes(v), false, v);
+});
