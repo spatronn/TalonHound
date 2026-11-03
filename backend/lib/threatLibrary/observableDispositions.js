@@ -15,6 +15,7 @@
 import { refangTextForExtraction } from './defang.js';
 import { isReportIndicatorMember, isLinkedSourceIndicatorMember } from './indicatorMembership.js';
 import { ipv4MatchIsStandalone } from './sourceOccurrence.js';
+import { normalizeCandidateValue } from './candidateValue.js';
 
 export const OBSERVABLE_DISPOSITION_VERSION = 'tl-dispositions-v1';
 
@@ -204,6 +205,11 @@ export function buildObservableDispositions({ candidates = [], tokenLog = [], bl
       if (seen.has(key)) continue;
       seen.add(key);
       if (accounted.has(value) || (t.type === 'url' && accounted.has(value.replace(/\/$/, '')))) continue;
+      // The candidate holds the normalized URL ("https://host:443/x" -> "https://host/x").
+      if (t.type === 'url') {
+        const n = normalizeCandidateValue(t.value, 'url');
+        if (n?.ok && accounted.has(String(n.normalizedValue).toLowerCase())) continue;
+      }
       // A URL token the extractor bounded differently (a trailing fragment it
       // trimmed) or a value that is part of an accounted URL is accounted for.
       if (urlValues.some((u) => u.includes(value) || value.startsWith(u))) continue;
