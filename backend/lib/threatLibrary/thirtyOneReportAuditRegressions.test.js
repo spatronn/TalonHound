@@ -51,7 +51,6 @@ import { applyCampaignFileSelection } from './iocSources/inspect.js';
 import { parseGitHubUrl, enumerateGitHubIocSource } from './iocSources/github.js';
 import { summarizeLinkedIocSources, withLinkedSourceQuality, LINKED_SOURCE_NOT_INGESTED_CODE } from './iocSources/linkedSourceStatus.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/thirty-one/';
 const H1 = 'a'.repeat(63) + '1';

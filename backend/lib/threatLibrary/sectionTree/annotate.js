@@ -12,13 +12,16 @@
 import {
   classifyHeadingText,
   confirmedQualifiedIocHeading,
+  sectionHasIndicatorStructure,
   DELEGATED_IOC_ZONE,
   STRONG_IOC_ZONES,
   NEGATIVE_ZONES,
   detectRepeatedHeaderFooterBlockIds
 } from '../documentZones.js';
 import {
+  classifyIndicatorHeading,
   classifySectionRole,
+  INDICATOR_HEADING_FORMS,
   zoneForSectionRole,
   isIndicatorValueLine,
   isObservableListLine,
@@ -34,7 +37,6 @@ import {
 } from '../iocSources/externalIocReference.js';
 import { SECTION_TREE_VERSION } from './version.js';
 
-const AUTHORITATIVE = STRONG_IOC_ZONES;
 
 /** Intent vocabulary for synthetic subgroup labels (not publisher names). */
 const GROUP_LABEL_RE =
@@ -222,6 +224,11 @@ function headingLevel(b, stack) {
 }
 
 function zoneForHeading(text, isRealHeading, blocks, i, chromeIds) {
+  // "Indicators: <a descriptive title>" is an appendix only when the section it
+  // opens holds indicator structure; otherwise it is a narrative title.
+  if (classifyIndicatorHeading(text)?.form === INDICATOR_HEADING_FORMS.DESCRIPTIVE_SUFFIX && !sectionHasIndicatorStructure(blocks, i, chromeIds)) {
+    return { zone: null, role: null };
+  }
   const role = classifySectionRole(text);
   const fromRole = zoneForSectionRole(role);
   if (fromRole) return { zone: fromRole, role };
@@ -356,7 +363,7 @@ function appendixRoot(stack) {
 
 function nearestAuthoritative(stack) {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
-    if (stack[i].authoritative && AUTHORITATIVE.has(stack[i].zone)) return stack[i];
+    if (stack[i].authoritative && STRONG_IOC_ZONES.has(stack[i].zone)) return stack[i];
   }
   return null;
 }
@@ -441,7 +448,7 @@ export function annotateSectionTree(doc, opts = {}) {
     let { zone, role } = zoneForHeading(t, isRealHeading, blocks, i, chromeIds);
     if (
       isRealHeading &&
-      !(zone && (AUTHORITATIVE.has(zone) || NEGATIVE_ZONES.has(zone))) &&
+      !(zone && (STRONG_IOC_ZONES.has(zone) || NEGATIVE_ZONES.has(zone))) &&
       declaresIndicatorSection(blocks, i, chromeIds)
     ) {
       zone = DELEGATED_IOC_ZONE;
@@ -472,7 +479,7 @@ export function annotateSectionTree(doc, opts = {}) {
     const root = appendixRoot(stack);
     const classSibling =
       !siblingGroup && Boolean(root?.classGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
-      !(zone && AUTHORITATIVE.has(zone)) && Number.isInteger(b.level) && b.level === root.level &&
+      !(zone && STRONG_IOC_ZONES.has(zone)) && Number.isInteger(b.level) && b.level === root.level &&
       isIndicatorClassLabel(t) && (inventoryNext || lookAheadGroupedInventory(blocks, i, chromeIds, b.level));
     // A same-level sibling of an open IOC heading that names one more class of
     // the same inventory ("Indicators of Compromise" then "<Family>
@@ -480,7 +487,7 @@ export function annotateSectionTree(doc, opts = {}) {
     // (tl-section-tree-v15).
     const inventoryTailSibling =
       !siblingGroup && !classSibling && Boolean(parentAuth) && !isNegativeHeading && isRealHeading && !inferredLevels &&
-      !(zone && AUTHORITATIVE.has(zone)) && Number.isInteger(b.level) && b.level === parentAuth.level &&
+      !(zone && STRONG_IOC_ZONES.has(zone)) && Number.isInteger(b.level) && b.level === parentAuth.level &&
       INVENTORY_TAIL_LABEL_RE.test(t) && inventoryNext;
     if (classSibling) {
       while (stack.length && stack[stack.length - 1] !== root) stack.pop();
@@ -509,7 +516,7 @@ export function annotateSectionTree(doc, opts = {}) {
         sameLevelInferred &&
         isRealHeading &&
         !groupLabel &&
-        !(zone && AUTHORITATIVE.has(zone))
+        !(zone && STRONG_IOC_ZONES.has(zone))
       ) {
         treatAsSubgroup = false;
       } else {
@@ -518,7 +525,7 @@ export function annotateSectionTree(doc, opts = {}) {
           !Number.isInteger(parentAuth.level) ||
           sameLevelInferred;
         if (deeper || levelUnknown || !isRealHeading) {
-          treatAsSubgroup = groupLabel || inventoryNext || (zone && AUTHORITATIVE.has(zone));
+          treatAsSubgroup = groupLabel || inventoryNext || (zone && STRONG_IOC_ZONES.has(zone));
         }
       }
     }
@@ -530,7 +537,7 @@ export function annotateSectionTree(doc, opts = {}) {
     // (tl-section-tree-v13).
     if (
       !treatAsSubgroup && inferredLevels && isRealHeading && parentAuth && !isNegativeHeading &&
-      !(zone && AUTHORITATIVE.has(zone))
+      !(zone && STRONG_IOC_ZONES.has(zone))
     ) {
       const classLabel = isIndicatorClassLabel(t);
       const familyLabel =
@@ -570,15 +577,15 @@ export function annotateSectionTree(doc, opts = {}) {
     } else if (isRealHeading && (inferredLevels || !Number.isInteger(b.level))) {
       if (zone && NEGATIVE_ZONES.has(zone)) {
         while (stack.length) stack.pop();
-      } else if (zone && AUTHORITATIVE.has(zone) && !treatAsSubgroup) {
-        while (stack.length && !AUTHORITATIVE.has(stack[stack.length - 1].zone)) stack.pop();
+      } else if (zone && STRONG_IOC_ZONES.has(zone) && !treatAsSubgroup) {
+        while (stack.length && !STRONG_IOC_ZONES.has(stack[stack.length - 1].zone)) stack.pop();
         while (stack.length && stack[stack.length - 1].level >= level && !stack[stack.length - 1].authoritative) {
           stack.pop();
         }
       } else if (
         !treatAsSubgroup &&
         parentAuth &&
-        !(zone && AUTHORITATIVE.has(zone)) &&
+        !(zone && STRONG_IOC_ZONES.has(zone)) &&
         !(zone && NEGATIVE_ZONES.has(zone))
       ) {
         // Non-IOC real heading (including unzoned topic titles) under an open
@@ -615,7 +622,7 @@ export function annotateSectionTree(doc, opts = {}) {
         while (stack.length) stack.pop();
       } else if (parentAuth && treatAsSubgroup) {
         // nest under appendix — do not clear
-      } else if (parentAuth && zone && !AUTHORITATIVE.has(zone) && !treatAsSubgroup) {
+      } else if (parentAuth && zone && !STRONG_IOC_ZONES.has(zone) && !treatAsSubgroup) {
         annotateContentFields(b, stack);
         b.tree_is_heading = true;
         b.tree_heading_zone = zone;
@@ -642,12 +649,12 @@ export function annotateSectionTree(doc, opts = {}) {
     // groupLabel is for nested appendix subgroups only — a heading that merely
     // contains the word "C2" must not open MODE A without inventory evidence.
     const opensAuthoritativeZone =
-      Boolean(zone && AUTHORITATIVE.has(zone)) && (!isC2orOps || strongInventory);
+      Boolean(zone && STRONG_IOC_ZONES.has(zone)) && (!isC2orOps || strongInventory);
 
     const inheritAuth = Boolean(parentAuth && treatAsSubgroup);
     const authoritative = opensAuthoritativeZone || inheritAuth;
     const effectiveZone = authoritative
-      ? opensAuthoritativeZone && zone && AUTHORITATIVE.has(zone)
+      ? opensAuthoritativeZone && zone && STRONG_IOC_ZONES.has(zone)
         ? zone
         : parentAuth?.zone || (opensAuthoritativeZone ? zone : null)
       : zone && NEGATIVE_ZONES.has(zone)
@@ -660,7 +667,7 @@ export function annotateSectionTree(doc, opts = {}) {
       level,
       zone: effectiveZone || null,
       role: role || null,
-      authoritative: Boolean(effectiveZone && AUTHORITATIVE.has(effectiveZone)),
+      authoritative: Boolean(effectiveZone && STRONG_IOC_ZONES.has(effectiveZone)),
       synthetic: !isRealHeading,
       // Subgroups nested in a declared indicator section keep its reading.
       declared: role === 'declared_indicator_section' || (inheritAuth && parentAuth?.declared === true),
@@ -691,7 +698,7 @@ export function annotateSectionTree(doc, opts = {}) {
       const formalLabelAppendix =
         node.synthetic && node.zone === 'explicit_ioc_section' && FORMAL_IOC_TITLE_LABEL_RE.test(t.trim()) &&
         lookAheadStrongInventory(blocks, i, chromeIds, 8);
-      if ((!node.synthetic || formalLabelAppendix) && node.zone && AUTHORITATIVE.has(node.zone)) {
+      if ((!node.synthetic || formalLabelAppendix) && node.zone && STRONG_IOC_ZONES.has(node.zone)) {
         realAuthoritativeOpenings += 1;
         realOpeningIds.push(node.id);
       }

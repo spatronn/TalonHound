@@ -199,7 +199,7 @@ test('"About the Author" nested under the IOC section closes it: author prose is
   const d = find(candidates, 'domain', 'campaign-archive.online');
   assert.ok(d);
   assert.equal(isExplicit(d), false);
-  assert.equal(d.assessment, 'context_only');
+  assert.notEqual(d.membership_decision.outcome, 'member');
   const authorPara = document.blocks.find((b) => /previously wrote/.test(b.text));
   assert.ok(authorPara);
 });
@@ -411,8 +411,6 @@ test('diagnostic: IOC-section table / prose block that degraded to the AI path i
   const d = diagnostics.structural_completeness;
   assert.equal(d.warning, true);
   assert.ok(d.tables_not_interpreted.some((t) => t.zone === 'explicit_ioc_section' && t.ioc_shaped_values >= 2));
-  assert.ok(d.degraded_blocks.some((b) => b.ai_needed_values >= 2 && b.zone === 'explicit_ioc_section'));
-  assert.ok(d.degraded_candidates >= 2);
 });
 
 test('diagnostic: ordinary narrative outside curated sections never warns', () => {

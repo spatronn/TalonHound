@@ -806,6 +806,8 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
   }
 
   if (!candidate.policy_decision) candidate.policy_decision = 'pass';
+  if (candidate.assessment == null) candidate.assessment = 'unknown';
+  if (candidate.role == null) candidate.role = 'unknown';
   applyMembershipDecision(candidate, { relation, summary, undecidedSampleHash: proseForModel, aiUpdate });
   enforceRoleTypeCompatibility(candidate);
   candidate.evidence_tier = summary.tier;

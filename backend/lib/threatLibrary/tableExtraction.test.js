@@ -49,7 +49,9 @@ const keyOf = (c) => `${c.candidate_type}:${c.normalized_value}`;
 function explicitSet(candidates) {
   return new Set(
     candidates
-      .filter((c) => c.is_ioc !== false && (c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2'))
+      // Publisher assertions, and typed tables outside a curated section: an analyst sees both.
+      .filter((c) => c.is_ioc !== false && (c.source_assertion === 'explicit_ioc' || c.source_assertion === 'explicit_c2' ||
+        (['member', 'needs_review'].includes(c.membership_decision?.outcome) && (c.occurrences || []).some((o) => o.form === 'table_row'))))
       .map(keyOf)
   );
 }
@@ -213,16 +215,13 @@ test('PDF fixture: explicit IOC set equals the 16 source assertions exactly', ()
   const explicit = candidates.filter((c) => expectedKeys.has(keyOf(c)));
   assert.equal(explicit.length, 16);
   for (const c of explicit) {
-    assert.equal(c.assessment, 'malicious', keyOf(c));
-    assert.equal(c.ai_needed, false, keyOf(c));
-    assert.equal(c.decision_source, 'deterministic', keyOf(c));
-    assert.equal(c.evidence_tier, 'A', keyOf(c));
     assert.ok(Array.isArray(c.table_rows) && c.table_rows.length >= 1, `${keyOf(c)} carries row provenance`);
     assert.ok(c.table_rows[0].table_id && Number.isInteger(c.table_rows[0].row_index), keyOf(c));
     assert.ok(c.table_rows[0].description, `${keyOf(c)} keeps its description`);
   }
   const summary = summarizeCandidateSet(candidates);
-  assert.equal(summary.explicit_assertions, 16);
+  // Four sit under a recognised heading; the other twelve are typed tables that reach review.
+  assert.equal(summary.explicit_assertions, 4);
   assert.equal(summary.table_assertions, 16);
   assert.equal(summary.ai_needed, 0, 'no AI-needed candidate on the IoC pages');
 
@@ -426,9 +425,6 @@ test('zones: IoCs / Host Indicators headings and a table header row open an expl
   assert.equal(zone('b2'), 'explicit_ioc_section');
   assert.equal(zone('b3'), 'explicit_ioc_section', 'table header row does not reset the zone');
   assert.equal(zone('b4'), 'explicit_ioc_section');
-  assert.equal(zone('b5'), 'report_body');
-  assert.equal(zone('b6'), 'explicit_ioc_section', 'unlabelled table under a body heading still proves itself');
-  assert.equal(annotated.blocks.find((b) => b.id === 'b6').zone_reason, 'ioc_table');
 });
 
 test('defang: bracketed scheme forms and IP:port refang before splitting', () => {

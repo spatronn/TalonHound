@@ -20,6 +20,7 @@ import { normalizeObservable } from '../observable-normalization.js';
 import { isValidIpAddress } from '../publicIp.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
 import { annotateDocumentZones, NEGATIVE_ZONES, STRONG_IOC_ZONES } from './documentZones.js';
+import { applySectionTreeAuthority } from './sectionTree/authority.js';
 import {
   resolveDottedTokenType,
   hostnameFromUrl,
@@ -2517,8 +2518,8 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   // Incomplete path prefixes of sibling URLs (…/t/ when …/t/abc exists).
   markIncompleteUrlPrefixes(byKey);
 
-  // Finalize: evidence policy + parser-derived host cross references
-  const out = [];
+  // Finalize: parser-derived host cross references
+  const drafts = [];
   for (const entry of byKey.values()) {
     if (entry.candidate_type === 'url' && entry.parsed.host) {
       const hostType = entry.parsed.host_kind === 'ip' ? 'ip' : 'domain';
@@ -2535,8 +2536,25 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
       delete entry.table_rows;
     }
     entry.occurrence_count = entry.occurrences.length;
-    entry.document_has_authoritative_scope = documentScope.has_authoritative_indicator_scope;
-    applyEvidencePolicy(entry);
+    entry.document_has_authoritative_scope = annotated.section_graph.meta.has_authoritative_scope === true;
+    drafts.push(entry);
+  }
+
+  // The one policy pass: section authority from the graph, then the evidence policy.
+  const applied = applySectionTreeAuthority(annotated, drafts, { tree: annotated.section_graph });
+  diagnostics.scope_engine = {
+    engine: applied.scope_engine,
+    version: applied.scope_engine_version,
+    section_tree_version: applied.section_tree_version,
+    has_authoritative_scope: applied.has_authoritative_scope === true,
+    remapped_occurrences: applied.remapped_occurrences,
+    demoted_occurrences: applied.demoted_occurrences,
+    delegated_scope: applied.delegated_scope === true,
+    external_ioc_pointer: applied.external_ioc_pointer === true,
+    delegated_occurrences: applied.delegated_occurrences || 0
+  };
+  const out = [];
+  for (const entry of applied.candidates) {
     const canonical = entry.is_ioc !== false ? validateCanonicalIocValue(entry.candidate_type, entry.normalized_value) : null;
     if (canonical && !canonical.ok) typeDiag.canonical_rejections += 1;
     entry.type_resolution = buildTypeResolutionRecord({
@@ -2572,7 +2590,10 @@ export function extractCandidatesWithDiagnostics(doc, opts = {}) {
   Object.assign(t, explicitTableAssertions.finalize(out));
   // Structured IOC section / table that degraded to the AI path (diagnostic only).
   diagnostics.structural_completeness = structuralCompleteness(annotated.blocks || [], out);
-  diagnostics.document_scope = documentScope;
+  diagnostics.document_scope = {
+    ...documentScope,
+    has_authoritative_indicator_scope: applied.has_authoritative_scope === true
+  };
   diagnostics.scope = buildScopeDiagnostics(annotated, out);
 
   // `annotated` is the zone-annotated document the candidates were read from

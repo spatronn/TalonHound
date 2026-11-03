@@ -34,7 +34,6 @@ import { THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from './documentZones.js';
 import { EXTRACTION_QUALITY_VERSION } from './extractionQuality.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/ten-report-audit/';
 const BS = '\\';
@@ -61,7 +60,7 @@ const find = (x, type, value) => x.candidates.find((c) => c.candidate_type === t
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v15');
 });

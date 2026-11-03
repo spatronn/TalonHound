@@ -178,8 +178,8 @@ test('structural IOC list (no recognised heading) is still an explicit assertion
   );
   assert.equal(cands.length, 3);
   for (const c of cands) {
-    assert.equal(c.assessment, 'malicious', c.normalized_value);
-    assert.equal(c.ai_needed, false);
+    // With no curated section, a structured list is the publisher's statement.
+    assert.equal(c.membership_decision.outcome, 'member', c.normalized_value);
   }
 });
 

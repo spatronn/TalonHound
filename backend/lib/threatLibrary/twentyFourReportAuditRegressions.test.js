@@ -50,7 +50,6 @@ import {
   withLinkedSourceQuality
 } from './iocSources/linkedSourceStatus.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = 'https://vendor-research.example/blog/twenty-four-report-audit/';

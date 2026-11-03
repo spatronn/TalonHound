@@ -32,7 +32,6 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { TABLE_SEMANTICS_VERSION } from './tableSemantics.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/twenty-seven-report-batch/';
 

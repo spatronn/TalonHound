@@ -21,7 +21,6 @@ import { groundTruthIdentity } from './benchmarkMetrics.js';
 
 // The gate measures the production scope engine (section-tree owns Indicator
 // membership); `legacy` is an emergency rollback and is not benchmarked here.
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = process.env.THREAT_LIBRARY_SCOPE_ENGINE || 'section_tree';
 
 // Public cases only: real-report labels are scored in realReports.test.js.
 const cases = loadBenchmarkCases({ privateDir: null, sourceDir: null });

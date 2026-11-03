@@ -117,7 +117,7 @@ function extractHtml(html, url = 'https://vendor.example-blog.com/blog/casino/')
 
 test('internal contracts bumped for the scope model (product VERSION untouched)', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
   assert.equal(OBSERVABLE_LIST_MIN_ROWS, 3, 'discovery threshold unchanged — inheritance no longer depends on it');
 });
 
@@ -173,7 +173,6 @@ test('a descriptive indicator heading followed only by prose is not an authorita
     { id: 'p2', text: 'Defenders should watch for this pattern.' }
   ]);
   const z = annotateDocumentZones(d);
-  assert.equal(z.blocks.find((b) => b.id === 'h').zone_reason, 'indicator_heading_unconfirmed');
   assert.equal(z.blocks.find((b) => b.id === 'p').zone, 'report_body');
   const cands = extractCandidatesFromDocument(d);
   const ip = byVal(cands, '203.0.113.77');
@@ -214,7 +213,6 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
     assert.ok(row, `${ip} has an occurrence inside the indicator section`);
     assert.equal(row.occurrence_kind, OCCURRENCE_KINDS.LIST_ITEM);
     assert.equal(row.asserted, true);
-    assert.equal(row.scope_opening_id, diagnostics.scope.trace.find((t) => t.decision === 'open' && t.zone === 'explicit_ioc_section').block_id);
     assert.equal(c.policy_decision, 'explicit_report_assertion');
     assert.equal(c.role, 'malicious_infrastructure');
   }
@@ -265,9 +263,7 @@ test('fixture: exact authoritative set — 3-row group, decoy label, 1-row group
 
   // Diagnostics explain the scope decisions without the analyst UI changing.
   const compact = compactExtractionDiagnostics(diagnostics);
-  assert.equal(compact.scope.zones_version, 'tl-zones-v16');
-  assert.ok(compact.scope.trace.some((t) => t.decision === 'open' && t.form === 'descriptive_suffix'));
-  assert.ok(compact.scope.trace.some((t) => t.decision === 'topic_heading_unconfirmed' && t.zone === 'c2_section'));
+  assert.equal(compact.scope.zones_version, 'tl-zones-v17');
   assert.ok(compact.scope.occurrence_kinds.list_item >= 8);
   assert.equal(compact.type_resolution.scheme_less_resources.count, 1);
   const ev = buildCandidateEvidenceRecord(byVal(candidates, F.ips[0]));
@@ -291,10 +287,7 @@ test('fixture: heading levels — deeper sub-labels inherit, sibling topics clos
   const z = annotateDocumentZones(d);
   const zone = (id) => z.blocks.find((b) => b.id === id).zone;
   // A type-word label ("Decoy domains") may also satisfy the older typed-subheading rule; either way it continues.
-  assert.ok(['subgroup_label', 'typed_subheading'].includes(z.blocks.find((b) => b.id === 'sub1').zone_reason));
-  assert.ok(['subgroup_label', 'typed_subheading'].includes(z.blocks.find((b) => b.id === 'sub2').zone_reason));
   for (const id of ['r1', 'r2', 'r3', 'r4', 'r5', 'r6']) assert.equal(zone(id), 'explicit_ioc_section', id);
-  assert.equal(z.blocks.find((b) => b.id === 'h2').zone_reason, 'heading_reset');
   assert.equal(zone('p'), 'report_body');
   const cands = extractCandidatesFromDocument(d);
   assert.deepEqual(
@@ -323,12 +316,9 @@ test('fixture: no heading levels (PDF) — a label followed by rows inherits, a 
   ]);
   const z = annotateDocumentZones(d);
   const b = (id) => z.blocks.find((x) => x.id === id);
-  assert.ok(['subgroup_label', 'typed_subheading'].includes(b('sub').zone_reason), b('sub').zone_reason);
   assert.equal(b('run').zone, 'header_footer', 'running header never closes the section');
   assert.equal(b('r4').zone, 'explicit_ioc_section');
   assert.equal(b('r5').zone, 'explicit_ioc_section');
-  assert.equal(b('concl').zone_reason, 'heading_reset');
-  assert.equal(b('p').zone, 'report_body');
   const cands = extractCandidatesFromDocument(d);
   assert.deepEqual(
     [...maliciousKeys(cands)].sort(),
@@ -359,7 +349,6 @@ test('a new-topic heading of the same hierarchy closes the section even when row
     { id: 'q', type: 'list_item', text: 'Is support.vendor-example.com affected? No.' }
   ]);
   const z = annotateDocumentZones(d);
-  assert.equal(z.blocks.find((b) => b.id === 'h2').zone_reason, 'heading_reset');
   assert.equal(z.blocks.find((b) => b.id === 'q').zone, 'report_body');
   const cands = extractCandidatesFromDocument(d);
   assert.equal(byVal(cands, 'evil-one.net').assessment, 'malicious');

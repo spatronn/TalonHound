@@ -26,7 +26,6 @@ import { classifyPromoteEligibility } from './promotion.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/declared-indicator-appendix/';
 const BEACON = 'ab12'.repeat(16);

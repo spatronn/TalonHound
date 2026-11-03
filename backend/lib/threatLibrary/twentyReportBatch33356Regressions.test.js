@@ -32,7 +32,6 @@ import { classifyHexDigest, DIGEST_KINDS } from './digestSemantics.js';
 import { resolveDottedToken, OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/twenty-report-batch-33356/';
 

@@ -14,7 +14,6 @@ import {
   scanObservableTokens
 } from './observableDispositions.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const url = 'https://blog.example-research.test/post';
 const SHA = '9f2c7a1be34d5c60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8';

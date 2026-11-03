@@ -176,12 +176,6 @@ export const QUALITY_CODES = Object.freeze({
    * (check 24). Silent Indicator loss; review typing.
    */
   FILE_NAME_COLUMN_NETWORK_CONFLICT: 'file_name_column_network_conflict',
-  /**
-   * Section-tree authority failed and extraction fell back to the legacy
-   * linear scope engine (check 25). Membership semantics may differ from
-   * normal section-tree processing.
-   */
-  SCOPE_ENGINE_FALLBACK: 'scope_engine_fallback',
   /** Hosts-file sinkhole entries ("0.0.0.0 <host>") in an IOC table kept as context (check 26). */
   HOSTS_FILE_ENTRIES_CONTEXT: 'hosts_file_entries_context',
   /** URLs that are truncated copies of a table-listed URL kept as context (check 26). */
@@ -538,12 +532,12 @@ export function assessExtractionQuality(input) {
     for (let j = i + 1; j < blocks.length; j += 1) {
       const b = blocks[j];
       if (isChrome(b)) continue;
-      if (!STRONG_IOC_ZONES.has(String(b.zone || ''))) break;
+      if (!STRONG_IOC_ZONES.has(String(b.zone || '')) || b.delegated_scope === true) break;
       if (isContent(b)) region.push(b);
     }
     // A region nested in an earlier opening's region was already assessed.
     const prev = blocks.slice(0, i).reverse().find((b) => !isChrome(b));
-    if (prev && STRONG_IOC_ZONES.has(String(prev.zone || ''))) continue;
+    if (prev && STRONG_IOC_ZONES.has(String(prev.zone || '')) && prev.delegated_scope !== true) continue;
     const hasMember = region.some((b) => memberBlocks.has(b.id));
     if (hasMember) continue;
     const shaped = region.filter((b) => IOC_SHAPE_RE.test(String(b.text || '')));
@@ -924,28 +918,6 @@ export function assessExtractionQuality(input) {
     }
   }
 
-  // --- 25. Scope-engine fallback (section-tree failed → legacy membership) ---
-  const scopeEngine = diagnostics.scope_engine || {};
-  if (scopeEngine.fallback === true || (scopeEngine.engine === 'legacy' && scopeEngine.error)) {
-    const err = String(scopeEngine.error || '').slice(0, 160);
-    push({
-      code: QUALITY_CODES.SCOPE_ENGINE_FALLBACK,
-      severity: 'warning',
-      explanation:
-        'Section-tree authority failed for this report, so Indicator membership used the legacy linear scope engine. ' +
-        'Membership may differ from normal section-tree processing. Review Indicators carefully' +
-        (err ? ` (debug: ${err})` : '.') +
-        (err ? '.' : ''),
-      candidates: [],
-      block_ids: [],
-      section: {
-        engine: scopeEngine.engine || 'legacy',
-        fallback: true,
-        error: err || null
-      }
-    });
-  }
-
   // Check 28: observable-shaped text in page regions normalization discarded
   // (a form field, an embedded document, a footer, text outside the content root).
   const droppedRegions = (input?.documentMeta?.source_accounting?.dropped_regions || []).filter((r) => r?.significant === true);
@@ -961,6 +933,7 @@ export function assessExtractionQuality(input) {
   }
 
   // --- 13. Delegated authority (every formal IOC section empty; section-tree) ---
+  const scopeEngine = diagnostics.scope_engine || {};
   if (scopeEngine.delegated_scope === true) {
     const delegatedMembers = candidates.filter((c) => c.__member &&
       (c.occurrences || []).some((o) => o.zone === 'delegated_ioc_scope' && o.asserted === true));

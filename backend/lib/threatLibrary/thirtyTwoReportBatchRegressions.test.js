@@ -30,7 +30,6 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { refangObservable, refangTextForExtraction, looksDefanged } from './defang.js';
 import { tableRowProviderOwnedByOperation } from './indicatorScope.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/thirty-two-report-batch/';
 

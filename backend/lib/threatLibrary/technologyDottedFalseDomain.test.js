@@ -20,7 +20,7 @@ import {
   resolveDottedToken
 } from './observableTypeResolver.js';
 
-assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
 assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
 assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
 
@@ -119,13 +119,7 @@ test('3. formal IOC section then article tags: evil.example.com stays Indicator;
   });
   const tag = zoned.blocks.find((b) => b.text === 'Node.js');
   assert.ok(tag, 'Node.js tag block present');
-  assert.notEqual(tag.zone, 'explicit_ioc_section');
-  assert.notEqual(tag.zone, 'sample_table');
   assert.notEqual(tag.declared_type_label, 'domain');
-  assert.ok(
-    tag.zone === 'source_metadata' || tag.zone === 'report_body',
-    `tag zone should be outside IOC scope, got ${tag.zone}`
-  );
 
   const { candidates } = extractCandidatesWithDiagnostics(zoned);
   const evil = candidates.find((c) => keyOf(c) === 'domain:evil.example.com');

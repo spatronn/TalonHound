@@ -33,7 +33,6 @@ import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 import { SECTION_ROLES, classifySectionRole } from './indicatorScope.js';
 import { isPublicOrSharedPlatformSuffix } from './observableTypeResolver.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/hunt-false-negatives/';
 

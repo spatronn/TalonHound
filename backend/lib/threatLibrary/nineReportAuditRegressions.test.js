@@ -34,7 +34,6 @@ import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 import { SECTION_TREE_VERSION, SECTION_TREE_SCOPE_ENGINE_VERSION } from './sectionTree/version.js';
 import { annotateSectionTree } from './sectionTree/annotate.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/nine-report-audit/';
 const S1 = '1'.repeat(63) + 'a';
