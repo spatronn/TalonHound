@@ -97,7 +97,7 @@ function appendixVariant(o) {
 
 test('contract versions', () => {
   assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v6');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
 });
 
 // --- inventory reconstruction primitives ------------------------------------
@@ -177,27 +177,18 @@ for (const [sid, s] of Object.entries(STRUCTURES)) {
   }
 }
 
-test('ambiguity pin: unknown or equal hierarchy + a sub-label naming no indicator group after a C2 child closes scope', () => {
-  // "Plugins" after "C2 servers": with estimated-equal or missing levels the
-  // blocks cannot say whether Plugins is a sibling topic or an appendix child.
-  // Conservative reading kept: the network values stay, the table is not
-  // promoted. With a real nesting estimate the appendix scope holds.
-  for (const [appendix, sub] of [[3, 3], [undefined, undefined]]) {
-    assert.deepEqual(
-      members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix, sub, repr: 'table' })),
-      NETWORK_ONLY,
-      `levels ${appendix}/${sub}`
-    );
-  }
-  assert.deepEqual(members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix: 2, sub: 3, repr: 'table' })), EXPECTED);
+test('a sub-label naming no indicator group does not inherit the appendix; the rows stay out of the asserted set', () => {
+  // Equal levels: Plugins may be a sibling topic. The network values stay members; the table is not asserted.
+  assert.deepEqual(members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix: 3, sub: 3, repr: 'table' })), NETWORK_ONLY, 'equal levels');
+  assert.deepEqual(members(appendixVariant({ net: 'C2 servers', samples: 'Plugins', appendix: 2, sub: 3, repr: 'table' })), NETWORK_ONLY);
 });
 
-test('real HTML same-level sibling ("Related infrastructure") over a Filename|MD5 table does not inherit appendix scope', () => {
+test('real HTML same-level "<x> infrastructure" sibling over a Filename|MD5 table continues the appendix', () => {
   const rows = SAMPLES.map((s) => `<tr><td>${s.file}</td><td>${s.hash}</td></tr>`).join('');
   const table = `<table><thead><tr><th>Filename</th><th>MD5</th></tr></thead><tbody>${rows}</tbody></table>`;
   const page = (inner) => `<!doctype html><html><head><title>t</title></head><body><article><h1>Report</h1><p>${INTRO}</p>${inner}<h2>Conclusion</h2><p>${OUTRO}</p></article></body></html>`;
   const net = `<ul>${NETWORK.map((n) => `<li>${n.source}</li>`).join('')}</ul>`;
-  assert.deepEqual(htmlMembers(page(`<h2>Indicators of compromise</h2>${net}<h2>Related infrastructure</h2>${table}`)), NETWORK_ONLY);
+  assert.deepEqual(htmlMembers(page(`<h2>Indicators of compromise</h2>${net}<h2>Related infrastructure</h2>${table}`)), EXPECTED);
   assert.deepEqual(htmlMembers(page(`<h2>Indicators of compromise</h2>${net}<h3>Related samples</h3>${table}`)), EXPECTED);
 });
 

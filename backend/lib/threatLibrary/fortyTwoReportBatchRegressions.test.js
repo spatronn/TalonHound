@@ -27,7 +27,6 @@ import { publicPromoteEligibility } from './promotion.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 import { TABLE_SEMANTICS_VERSION, interpretIocTable } from './tableSemantics.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://www.microsoft.com/en-us/security/blog/2026/06/25/example-report/';
 

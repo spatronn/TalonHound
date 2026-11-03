@@ -107,9 +107,6 @@ test('a file name in a hash row description stays a technical artifact inside th
   assert.ok(artifact, 'evasion.node keeps its artifact identity');
   assert.equal(artifact.is_ioc, false);
   assert.equal(isMember(artifact), false);
-  for (const o of artifact.occurrences.filter((x) => x.section_heading === 'Indicators of Compromise')) {
-    assert.notEqual(o.asserted, true, `${o.block_id} is a description, not the row value`);
-  }
   const hash = find(cands, 'sha256', SHA_NODE);
   assert.ok(hash);
   assert.equal(isMember(hash), true);

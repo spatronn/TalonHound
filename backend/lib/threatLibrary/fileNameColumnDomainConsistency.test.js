@@ -23,7 +23,6 @@ import {
 } from './extractionQuality.js';
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/filename-column-domain/';
 const md5 = (s) => createHash('md5').update(s).digest('hex');

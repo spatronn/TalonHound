@@ -25,7 +25,6 @@ import {
 import { applyCandidateReviewActions } from './reviewService.js';
 import { CANDIDATE_REVIEW_MODULE, importFrontendModule } from '../../test-support/frontendModule.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/promotion-safety/';
 const CORROBORATION = 'The narrative names this exact observable as attacker infrastructure.';

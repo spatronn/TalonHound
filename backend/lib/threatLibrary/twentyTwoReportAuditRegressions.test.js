@@ -28,7 +28,6 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { OBSERVABLE_TYPE_RESOLVER_VERSION, validateUrlCandidate } from './observableTypeResolver.js';
 import { parseIndicatorCell } from './tableSemantics.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/twenty-two-report-audit/';
 const H1 = 'a1'.repeat(32);

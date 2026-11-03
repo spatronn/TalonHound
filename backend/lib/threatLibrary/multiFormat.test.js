@@ -131,9 +131,9 @@ test('unknown-language headings: structural observable list still yields explici
   const cands = extractCandidatesFromDocument(doc);
   const k = byKey(cands);
   // "Indikatoren der Kompromittierung" is not in the hint table → the 3-row list itself is the evidence
-  assert.equal(k.get('url:https://update.schlecht-beispiel.de/m.dll').assessment, 'malicious');
-  assert.equal(k.get('ip:198.51.100.200').assessment, 'malicious');
-  assert.equal(k.get('domain:relay.schlecht-beispiel.de').assessment, 'malicious');
+  assert.equal(k.get('url:https://update.schlecht-beispiel.de/m.dll').membership_decision.outcome, 'member');
+  assert.equal(k.get('ip:198.51.100.200').membership_decision.outcome, 'member');
+  assert.equal(k.get('domain:relay.schlecht-beispiel.de').membership_decision.outcome, 'member');
   // "Quellen" unknown too → citation-marked list is recognised as references
   for (const key of ['url:https://blog.sicherheit-beispiel.org/analyse', 'url:https://news.beispiel-medien.de/artikel', 'url:https://cert.beispiel-behoerde.de/warnung']) {
     assert.equal(k.get(key).assessment, 'context_only', key);
@@ -145,8 +145,8 @@ test('unknown-language headings: structural observable list still yields explici
   const bodyIp = k.get('ip:198.51.100.77');
   assert.equal(bodyIp.assessment, 'context_only');
   const part = partitionCandidatesForAi(cands);
-  assert.deepEqual(part.toClassify.map((c) => c.normalized_value), []);
-  assert.equal(part.explicit.length, 3);
+  // Uncertain-section rows go to the model too; it advises, an analyst decides.
+  assert.deepEqual(part.toClassify.map((c) => c.normalized_value).sort(), ['198.51.100.200', 'https://update.schlecht-beispiel.de/m.dll', 'relay.schlecht-beispiel.de']);
 });
 
 test('HTML navigation/footer/source blocks are stripped from the model input regardless of language', () => {

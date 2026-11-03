@@ -8,7 +8,6 @@ import { buildScorecard, formatScorecard, SEALED_MIN_REPORTS } from './scorecard
 import { extractorVersions, loadBenchmarkCases, readBaseline } from './benchmarkRunner.js';
 import { contractFingerprint, extractionContractBundle } from '../contractBundle.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = process.env.THREAT_LIBRARY_SCOPE_ENGINE || 'section_tree';
 
 const card = buildScorecard();
 

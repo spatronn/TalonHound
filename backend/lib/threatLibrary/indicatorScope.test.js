@@ -313,8 +313,8 @@ test('HTML IOC table is authoritative; markdown table is format-independent afte
     { nextIndex: () => `t${(n += 1)}`, page: 1 }
   );
   const mdCands = extractCandidatesFromDocument(createCanonicalDocument({ title: 'md', blocks: mdBlocks }));
-  assert.equal(byVal(mdCands, '198.51.100.9')?.assessment, 'malicious');
-  assert.equal(byVal(mdCands, 'md-c2.badhost-example.net')?.assessment, 'malicious');
+  assert.equal(byVal(mdCands, '198.51.100.9')?.membership_decision.outcome, 'member');
+  assert.equal(byVal(mdCands, 'md-c2.badhost-example.net')?.membership_decision.outcome, 'member');
 });
 
 test('review set excludes narrative provider domains when appendices exist', () => {

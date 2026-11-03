@@ -1,7 +1,7 @@
 {
   "versions": {
     "candidates": "tl-candidates-v56",
-    "zones": "tl-zones-v16",
+    "zones": "tl-zones-v17",
     "tables": "tl-table-v18",
     "type_resolver": "tl-type-resolver-v23",
     "html": "threat_library_html_v10",
@@ -36,7 +36,7 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 29,
+      "info": 23,
       "cases_flagged": 3,
       "exact_cases": 90,
       "exact_cases_flagged": 3,
@@ -317,9 +317,7 @@
       "sections_checked": 1,
       "assertions_correct": 23,
       "assertions_checked": 23,
-      "warning_codes": [
-        "authoritative_section_empty"
-      ]
+      "warning_codes": []
     },
     "golden-elastic-coding-agent-tunnels": {
       "members": [],
@@ -512,7 +510,6 @@
       "assertions_correct": 0,
       "assertions_checked": 0,
       "warning_codes": [
-        "authoritative_section_empty",
         "authoritative_table_rows_demoted"
       ]
     },
@@ -1031,9 +1028,7 @@
       "sections_checked": 2,
       "assertions_correct": 4,
       "assertions_checked": 4,
-      "warning_codes": [
-        "authoritative_section_empty"
-      ]
+      "warning_codes": []
     },
     "golden-proofpoint-cruciferra": {
       "members": [
@@ -1416,7 +1411,6 @@
       "assertions_correct": 15,
       "assertions_checked": 15,
       "warning_codes": [
-        "authoritative_section_empty",
         "authoritative_table_rows_demoted"
       ]
     },
@@ -1479,7 +1473,6 @@
       "assertions_correct": 18,
       "assertions_checked": 18,
       "warning_codes": [
-        "authoritative_section_empty",
         "indicator_rows_outside_authoritative_scope",
         "non_file_digest_reclassified"
       ]

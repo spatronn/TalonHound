@@ -32,7 +32,6 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from '../lib/threatLibrar
 import { loadRealReportLabels } from '../lib/threatLibrary/benchmark/benchmarkRunner.js';
 import { groundTruthIdentity } from '../lib/threatLibrary/benchmark/benchmarkMetrics.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = process.env.THREAT_LIBRARY_SCOPE_ENGINE || 'section_tree';
 
 const STUB_POOL = Object.freeze({ query: async () => ({ rows: [], rowCount: 0 }) });
 

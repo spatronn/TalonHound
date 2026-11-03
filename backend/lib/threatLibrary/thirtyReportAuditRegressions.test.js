@@ -46,7 +46,6 @@ import { discoverIocSourcesFromHtml } from './iocSources/discover.js';
 import { rereadForReuse } from './pipeline.js';
 import { refangTextForExtraction, refangObservable } from './defang.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/thirty-report-audit/';
 const H1 = '1'.repeat(63) + 'a';

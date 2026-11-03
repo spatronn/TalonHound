@@ -38,7 +38,6 @@ import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtracti
 import { THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } from './documentZones.js';
 import { SECTION_TREE_SCOPE_ENGINE_VERSION, SECTION_TREE_VERSION } from './sectionTree/version.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/twelve-report-audit/';
 const H1 = '1'.repeat(63) + 'a';
@@ -76,7 +75,7 @@ const POINTER_IOC_SECTION = `<h2>Indicators of Compromise</h2>
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v10');

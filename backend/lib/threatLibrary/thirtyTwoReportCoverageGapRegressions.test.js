@@ -29,7 +29,6 @@ import { asPromotedRow, classifyPromoteEligibility, previewCreateIocPromotion } 
 import { THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION } from './candidateExtraction.js';
 import { refangTextForExtraction } from './defang.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/thirty-two-report-coverage/';
 

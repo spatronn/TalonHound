@@ -26,7 +26,6 @@ import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 import { SECTION_TREE_VERSION } from './sectionTree/version.js';
 import { TABLE_SEMANTICS_VERSION, parseDeclaredType, parseIndicatorCell } from './tableSemantics.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://www.microsoft.com/en-us/security/blog/2026/04/16/example-report/';
 

@@ -15,7 +15,6 @@ import { extractReportCandidates } from './extractionStages.js';
 import { createCanonicalDocument } from './canonicalDocument.js';
 import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 function persisted(c) {
   return { ...c, evidence: buildCandidateEvidenceRecord(c) };

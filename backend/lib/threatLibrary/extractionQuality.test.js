@@ -44,27 +44,6 @@ test('contract: version, central thresholds, stable codes', () => {
   assert.equal(new Set(Object.values(QUALITY_CODES)).size, Object.keys(QUALITY_CODES).length);
 });
 
-test('scope-engine fallback surfaces warning without mutating candidates', () => {
-  const x = run(`<h2>Indicators of compromise</h2><ul><li>evil-c2[.]example</li></ul>`);
-  const cands = structuredClone(x.candidates);
-  const q = assessExtractionQuality({
-    blocks: x.annotated?.blocks || [],
-    candidates: cands,
-    diagnostics: {
-      ...(x.diagnostics || {}),
-      scope_engine: { engine: 'legacy', fallback: true, error: 'boom' }
-    },
-    sourceHost: 'example.test',
-    documentMeta: x.document?.meta
-  });
-  assert.ok(q.warnings.some((w) => w.code === QUALITY_CODES.SCOPE_ENGINE_FALLBACK));
-  assert.deepEqual(
-    cands.map((c) => c.assessment),
-    x.candidates.map((c) => c.assessment),
-    'quality must not mutate assessments'
-  );
-});
-
 test('clean IOC appendix: no warning', () => {
   const x = run(`<h2>Indicators of compromise</h2>
 <h3>Network</h3><ul><li>evil-c2[.]example</li><li>198.51.100.21</li></ul>
@@ -141,7 +120,6 @@ test('an IOC heading without observables is info (published elsewhere)', () => {
   assert.ok(codes(q).includes(QUALITY_CODES.AUTHORITATIVE_SECTION_EMPTY), JSON.stringify(codes(q)));
   const empty = q.warnings.find((w) => w.code === QUALITY_CODES.AUTHORITATIVE_SECTION_EMPTY);
   assert.equal(empty.severity, 'info');
-  assert.equal(codes(q).includes(QUALITY_CODES.SCOPE_ENGINE_FALLBACK), false);
 });
 
 test('merged value paragraph inside the appendix: values left to the model warn', () => {
@@ -282,7 +260,6 @@ test('persisted diagnostics keep a bounded quality record', () => {
   // Empty appendix is informational; delegated authority (when applied) is a warning.
   assert.ok(['info', 'warning', 'clean'].includes(compact.quality.status), compact.quality.status);
   assert.ok(compact.quality.warnings.every((w) => w.code && w.severity && Array.isArray(w.candidates)));
-  assert.equal(codes(compact.quality).includes(QUALITY_CODES.SCOPE_ENGINE_FALLBACK), false);
   assert.equal(compactExtractionQuality(null), null);
   const many = assessExtractionQuality({
     blocks: [],
@@ -412,10 +389,8 @@ test('body IOC table that exclusively contributes Indicators still warns', () =>
 <tr><td>Domain</td><td>only-in-body.example</td><td>sighting</td></tr>
 </tbody></table>`);
   const q = x.diagnostics.quality;
-  // Type|Indicator tables may still self-prove; exclusive body members warn.
-  if (members(x.candidates).some((id) => id === 'domain:only-in-body.example' || id.startsWith('ip:203.0.113.8'))) {
-    assert.ok(codes(q).includes(QUALITY_CODES.BODY_IOC_TABLE_OUTSIDE_APPENDIX) || codes(q).includes(QUALITY_CODES.INDICATORS_FROM_STRUCTURAL_DISCOVERY), JSON.stringify(q.warnings));
-  }
+  // A same-level "<x> infrastructure" sibling over an inventory continues the appendix.
+  assert.ok(members(x.candidates).includes('domain:only-in-body.example'), JSON.stringify(codes(q)));
 });
 
 test('legitimate-service lead-in demotes unlabelled list; chrome discovery no longer warns as Indicators', () => {

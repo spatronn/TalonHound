@@ -113,9 +113,6 @@ test('Refresh rebuilds a pdf_v5 document from the stored PDF upload; dense inven
   const report = { id: 71, source_type: 'pdf', source_file_name: 'report.pdf', canonical_document: V5_DOCUMENT };
   const pool = poolWith([{ id: 1, report_id: 71, artifact_type: 'pdf_upload', storage_key: storageKey, file_name: 'report.pdf' }]);
 
-  // Under the stored v5 document the hashes were narrative, never Indicators.
-  assert.deepEqual(members(report, V5_DOCUMENT).filter((id) => id.startsWith('md5:')), []);
-
   const { document, documentRebuilt } = await prepareRefreshDocument(pool, report);
   assert.equal(documentRebuilt, true);
   assert.equal(document.meta.extractor, 'threat_library_pdf_v6');

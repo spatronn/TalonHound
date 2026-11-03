@@ -31,7 +31,6 @@ import { TABLE_SEMANTICS_VERSION } from './tableSemantics.js';
 import { IOC_SOURCE_SCOPE_VERSION, reportSlugForeignFiles } from './iocSources/campaignScope.js';
 import { applyCampaignFileSelection } from './iocSources/inspect.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://research.example/blog/twenty-nine-report/';
 

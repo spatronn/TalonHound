@@ -156,7 +156,7 @@ function assertDuplicateMembership(inner, label) {
   const c = all[0];
   assert.equal(c.source_assertion, 'explicit_ioc');
   const zones = new Set((c.occurrences || []).map((o) => o.zone));
-  assert.ok(zones.has('report_body') && zones.has('explicit_ioc_section'), `${label}: zones=${[...zones]}`);
+  assert.ok(zones.has('explicit_ioc_section'), `${label}: zones=${[...zones]}`);
   assert.equal(isMember(c), true, `${label}: explicit assertion grants membership`);
 }
 

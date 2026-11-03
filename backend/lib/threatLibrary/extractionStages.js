@@ -20,14 +20,6 @@ import {
 } from './candidateExtraction.js';
 import { applyEvidencePolicy } from './evidencePolicy.js';
 import { assessExtractionQuality, compactExtractionQuality } from './extractionQuality.js';
-import {
-  attachSectionTreeShadowDiagnostics,
-  compactSectionTreeShadow,
-  getScopeEngine,
-  isSectionTreeScopeAuthoritative,
-  applySectionTreeAuthority,
-  SCOPE_ENGINE_LEGACY
-} from './sectionTree/index.js';
 import { hostnameFromUrl } from './candidateTyping.js';
 import { isOnlyEmbeddedInDnsHostname, sourceTextFromDocument } from './sourceOccurrence.js';
 import { bulkMatchCandidates } from './iocMatch.js';
@@ -268,52 +260,11 @@ export function extractReportCandidates(report, document) {
     observationNotAfter: observationNotAfterFor(report)
   });
 
-  // Authoritative scope engine: exactly one engine owns final membership zones.
-  // section_tree remaps occurrence authority from heading ancestry and re-runs
-  // evidence policy. legacy keeps linear documentZones unchanged.
-  // Invalid THREAT_LIBRARY_SCOPE_ENGINE must fail closed at extraction time
-  // rather than silently changing membership semantics.
-  getScopeEngine(process.env, { strict: true });
-  let candidates = extracted.candidates;
-  if (isSectionTreeScopeAuthoritative()) {
-    try {
-      const applied = applySectionTreeAuthority(stamped, extracted.candidates);
-      candidates = applied.candidates;
-      extracted.diagnostics = extracted.diagnostics || {};
-      extracted.diagnostics.scope_engine = {
-        engine: applied.scope_engine,
-        version: applied.scope_engine_version,
-        section_tree_version: applied.section_tree_version,
-        has_authoritative_scope: applied.has_authoritative_scope === true,
-        remapped_occurrences: applied.remapped_occurrences,
-        demoted_occurrences: applied.demoted_occurrences,
-        delegated_scope: applied.delegated_scope === true,
-        external_ioc_pointer: applied.external_ioc_pointer === true,
-        delegated_occurrences: applied.delegated_occurrences || 0
-      };
-      stamped.meta.scope_engine = applied.scope_engine;
-      stamped.meta.scope_engine_version = applied.scope_engine_version;
-      stamped.meta.section_tree_version = applied.section_tree_version;
-    } catch (err) {
-      // Fail closed to legacy membership rather than shipping partial remap.
-      extracted.diagnostics = extracted.diagnostics || {};
-      extracted.diagnostics.scope_engine = {
-        engine: SCOPE_ENGINE_LEGACY,
-        version: null,
-        error: String(err?.message || err).slice(0, 240),
-        fallback: true
-      };
-      stamped.meta.scope_engine = SCOPE_ENGINE_LEGACY;
-      candidates = extracted.candidates;
-    }
-  } else {
-    stamped.meta.scope_engine = SCOPE_ENGINE_LEGACY;
-    extracted.diagnostics = extracted.diagnostics || {};
-    extracted.diagnostics.scope_engine = {
-      engine: SCOPE_ENGINE_LEGACY,
-      version: null
-    };
-  }
+  // The section graph is the only structural authority (candidateExtraction).
+  const candidates = extracted.candidates;
+  stamped.meta.scope_engine = extracted.diagnostics.scope_engine.engine;
+  stamped.meta.scope_engine_version = extracted.diagnostics.scope_engine.version;
+  stamped.meta.section_tree_version = extracted.diagnostics.scope_engine.section_tree_version;
 
   // Report-level publisher disclaimer ("… should not be treated as standalone
   // malicious indicators", tl-candidates-v33): the publisher's stance covers
@@ -337,11 +288,6 @@ export function extractReportCandidates(report, document) {
     zonesVersion: extracted.annotated?.meta?.zones_version || null,
     documentMeta: stamped.meta
   });
-
-  // Optional shadow diagnostics (independent of authoritative engine).
-  // When section_tree is already authoritative, shadow still compares but must
-  // not mutate candidates again.
-  attachSectionTreeShadowDiagnostics(stamped, candidates, extracted.diagnostics);
 
   return {
     document: stamped,
@@ -576,9 +522,6 @@ export function compactExtractionDiagnostics(diagnostics) {
           error: diagnostics.scope_engine.error || undefined,
           fallback: diagnostics.scope_engine.fallback === true || undefined
         }
-      : undefined,
-    section_tree_shadow: diagnostics.section_tree_shadow
-      ? compactSectionTreeShadow(diagnostics.section_tree_shadow)
       : undefined,
     structural_completeness: diagnostics.structural_completeness
       ? {

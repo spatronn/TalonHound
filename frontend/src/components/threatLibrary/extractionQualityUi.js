@@ -173,10 +173,6 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'Values in discarded page regions',
     why: 'Part of the page was left out of the report text, and it holds IOC-shaped values. Check the source page for publisher indicators.'
   },
-  scope_engine_fallback: {
-    title: 'Extraction used emergency legacy scope',
-    why: 'Section-tree authority failed for this report, so Indicator membership used the older linear scope engine. Indicators may differ from normal processing — review carefully.'
-  },
   hosts_file_entries_context: {
     title: 'Hosts-file entries kept as Context Only',
     why: 'Hosts from "0.0.0.0 <host>" lines in an IOC table are names the sample blocks in the hosts file, not infrastructure it connects to. They stay Context Only.'

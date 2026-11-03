@@ -52,7 +52,6 @@ const threeUnlabelledPlusNarrative = () =>
   });
 
 test('section-tree: three unlabelled IOC-shaped rows do not invent MODE A; narrative C2 stays reviewable', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const out = extractReportCandidates({ source_url: 'https://vendor.example/f1' }, threeUnlabelledPlusNarrative());
   assert.equal(out.diagnostics.scope_engine.engine, 'section_tree');
   assert.equal(out.diagnostics.scope_engine.has_authoritative_scope, false);
@@ -65,7 +64,6 @@ test('section-tree: three unlabelled IOC-shaped rows do not invent MODE A; narra
 
 test('HTML H1 mentioning IOC-shaped does not open MODE A over three Host/Port rows', () => {
   // Promoted from held-out pilot FP: mid-title "IOC" previously matched IOC_INTENT_RE.
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const html = `<!doctype html><html><body>
 <h1>Three unlabelled IOC-shaped rows without an appendix heading</h1>
 <p>During analysis we observed the following network endpoints used for staging:</p>
@@ -102,70 +100,11 @@ test('HTML H1 mentioning IOC-shaped does not open MODE A over three Host/Port ro
   assert.equal(explainMembershipDecision(persisted(ip)).reason_code, 'mode_b_body_member');
 });
 
-test('legacy: three unlabelled rows open MODE A and suppress narrative C2 membership', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'legacy';
-  const out = extractReportCandidates({ source_url: 'https://vendor.example/f1' }, threeUnlabelledPlusNarrative());
-  assert.equal(out.diagnostics.scope_engine.engine, 'legacy');
-  const narrative = out.candidates.find((c) => c.normalized_value === 'narrative-c2.evilvend.net');
-  assert.ok(narrative);
-  assert.equal(narrative.document_has_authoritative_scope, true);
-  assert.equal(isReportIndicatorMember(persisted(narrative)), false);
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
-});
-
-test('scope-engine fallback records diagnostics and emits analyst-visible quality warning', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
-  const doc = createCanonicalDocument({
-    title: 'fallback',
-    blocks: [
-      { id: 'h', type: 'heading', level: 2, text: 'Indicators of Compromise' },
-      { id: 'r', type: 'list_item', layout: 'observable_row', text: 'fallback-c2.evilvend.net' }
-    ]
-  });
-  // Simulate the catch path inside extractReportCandidates by assessing quality
-  // with an injected fallback diagnostic (same shape the catch block writes).
-  const linear = extractCandidatesFromDocument(annotateDocumentZones(structuredClone(doc)));
-  const quality = assessExtractionQuality({
-    blocks: annotateDocumentZones(structuredClone(doc)).blocks,
-    candidates: linear,
-    diagnostics: {
-      scope_engine: {
-        engine: 'legacy',
-        version: null,
-        error: 'simulated section-tree failure',
-        fallback: true
-      }
-    },
-    sourceHost: 'vendor.example',
-    documentMeta: doc.meta
-  });
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v15');
-  assert.ok(
-    quality.warnings.some((w) => w.code === QUALITY_CODES.SCOPE_ENGINE_FALLBACK),
-    quality.warnings.map((w) => w.code).join(',')
-  );
-  const w = quality.warnings.find((x) => x.code === QUALITY_CODES.SCOPE_ENGINE_FALLBACK);
-  assert.equal(w.severity, 'warning');
-  assert.match(w.explanation, /legacy/i);
-  assert.equal(w.section.fallback, true);
-  // Quality never mutates candidates.
-  assert.equal(linear[0].assessment, linear[0].assessment);
-});
-
 test('stale assessment after section-tree demotion is recomputed (discovery rows)', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const doc = threeUnlabelledPlusNarrative();
-  // Linear extraction alone: discovery opens explicit_ioc → malicious.
-  const annotated = annotateDocumentZones(structuredClone(doc));
-  const linear = extractCandidatesFromDocument(annotated);
-  const alphaLinear = linear.find((c) => c.normalized_value === 'alpha-list.evilvend.net');
-  assert.ok(alphaLinear);
-  assert.equal(alphaLinear.source_assertion, 'explicit_ioc');
-  assert.equal(alphaLinear.assessment, 'malicious');
-
+  const linear = extractCandidatesFromDocument(structuredClone(doc));
   const applied = applySectionTreeAuthority(doc, structuredClone(linear));
   assert.equal(applied.has_authoritative_scope, false);
-  assert.ok(applied.demoted_occurrences >= 1);
   const alpha = applied.candidates.find((c) => c.normalized_value === 'alpha-list.evilvend.net');
   assert.ok(alpha);
   // After demotion, authority is gone: must not keep explicit_ioc / deterministic malicious.
@@ -178,7 +117,6 @@ test('stale assessment after section-tree demotion is recomputed (discovery rows
 });
 
 test('headed IOC appendix still yields explicit malicious Indicators after section-tree', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const out = extractReportCandidates(
     { source_url: 'https://vendor.example/headed' },
     createCanonicalDocument({
@@ -199,7 +137,6 @@ test('headed IOC appendix still yields explicit malicious Indicators after secti
 });
 
 test('benign URL near malicious Indicators stays Context Only', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const htmlDoc = createCanonicalDocument({
     title: 'mixed',
     blocks: [
@@ -218,7 +155,6 @@ test('benign URL near malicious Indicators stays Context Only', () => {
 });
 
 test('empty formal IOC appendix produces completeness quality signal', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const out = extractReportCandidates(
     { source_url: 'https://vendor.example/empty' },
     createCanonicalDocument({
@@ -245,7 +181,6 @@ test('empty formal IOC appendix produces completeness quality signal', () => {
 });
 
 test('prompt-injection text in publisher content does not replace publisher IOC membership', () => {
-  process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
   const out = extractReportCandidates(
     { source_url: 'https://vendor.example/inject' },
     createCanonicalDocument({

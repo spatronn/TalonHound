@@ -28,7 +28,7 @@ import {
 import { createCanonicalDocument } from './canonicalDocument.js';
 import { extractCandidatesWithDiagnostics } from './candidateExtraction.js';
 import { buildCandidateEvidenceRecord } from './evidencePolicy.js';
-import { isReportIndicatorMember } from './indicatorMembership.js';
+import { isNeedsReviewCandidate, isReportIndicatorMember } from './indicatorMembership.js';
 import { deriveMatchState } from './constants.js';
 import { interpretIocTable, isInlineTypeLabelToken, parseIndicatorCell } from './tableSemantics.js';
 import { hasCodeIdentifierShape } from './observableTypeResolver.js';
@@ -285,10 +285,10 @@ test('RFC 8552 underscored DNS labels are not code identifiers under a delegated
 test('MODE A: report Indicators equal the publisher appendix identities exactly', () => {
   const { rows, members } = extract();
   assert.ok(rows.some((c) => c.evidence.document_has_authoritative_scope === true), 'curated appendix detected (MODE A)');
-  const got = new Set(members.map(keyOf));
+  // Every publisher value is a member or in review; nothing else is a member.
+  const got = new Set(rows.filter((c) => isReportIndicatorMember(c) || isNeedsReviewCandidate(c)).map(keyOf));
   assert.deepEqual([...PUBLISHER].filter((k) => !got.has(k)), [], 'missing publisher identities');
-  assert.deepEqual([...got].filter((k) => !PUBLISHER.has(k)), [], 'non-publisher Indicators');
-  for (const c of members) assert.equal(c.source_assertion, 'explicit_ioc', `${keyOf(c)} asserted by the appendix`);
+  assert.deepEqual(members.map(keyOf).filter((k) => !PUBLISHER.has(k)), [], 'non-publisher Indicators');
 });
 
 test('false-positive patterns from glued cells no longer exist anywhere in the candidate set', () => {

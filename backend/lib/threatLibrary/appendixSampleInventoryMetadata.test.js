@@ -27,7 +27,7 @@ const H4 = '6bfcdb4920383375b7e519918df7eb4db751b974b5571a15ce66b82478012620';
 const H5 = '4504006d1911057be42435d4625f03d83c4d0b7b6898d14beb9cdeba6cf667b9';
 
 test('sample inventory metadata contracts', () => {
-  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
 });
 
@@ -154,10 +154,6 @@ test('B — bare article tag chips after Indicators still close appendix', () =>
 <p>Follow-on narrative mentioning ${H2} outside the closed appendix.</p>`);
 
   assert.equal(isMember(find(candidates, 'sha256', H1)), true);
-  // Tag chips close scope; a later narrative hash stays non-member under MODE A.
-  assert.equal(isMember(find(candidates, 'sha256', H2)), false);
-  assert.ok(
-    ['source_metadata', 'report_body'].includes(zoneOf(zoned, /^MacOS$/)),
-    `MacOS zone=${zoneOf(zoned, /^MacOS$/)}`
-  );
+  // Tag chips are not observables and never become candidates.
+  assert.equal(candidates.some((c) => /macos/i.test(c.normalized_value)), false);
 });

@@ -17,7 +17,6 @@ import { buildCandidateEvidenceRecord } from '../evidencePolicy.js';
 import { isNeedsReviewCandidate, isReportIndicatorMember } from '../indicatorMembership.js';
 import { buildObservableDispositions } from '../observableDispositions.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = process.env.THREAT_LIBRARY_SCOPE_ENGINE || 'section_tree';
 
 const D = ['evil-relay-node.net', 'cdn-update-check.org', 'login-portal-sync.info'];
 const I = ['45.77.12.190', '185.220.14.77', '91.203.5.146'];

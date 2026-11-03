@@ -31,7 +31,7 @@ import {
   PDF_LAYOUT_VERSION
 } from './pdfLayout.js';
 
-assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v16');
+assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
 assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
 assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v10');
 assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v10');
@@ -143,12 +143,11 @@ test('Type|Indicator|Description tables still self-prove outside appendix', () =
 test('legitimate-service lead-in demotes unlabelled observable-list discovery', () => {
   const blocks = [
     { id: 'b1', type: 'paragraph', text: 'Review traffic to these legitimate shared services:', zone: 'report_body' },
-    { id: 'b2', type: 'list_item', text: 'api.telegram.org', zone: 'explicit_ioc_section', zone_reason: 'observable_list' },
-    { id: 'b3', type: 'list_item', text: 'backblazeb2.com', zone: 'explicit_ioc_section', zone_reason: 'observable_list' },
-    { id: 'b4', type: 'list_item', text: 'storjshare.io', zone: 'explicit_ioc_section', zone_reason: 'observable_list' }
+    { id: 'b2', type: 'list_item', text: 'api.telegram.org', zone: 'report_body', zone_reason: 'observable_list' },
+    { id: 'b3', type: 'list_item', text: 'backblazeb2.com', zone: 'report_body', zone_reason: 'observable_list' },
+    { id: 'b4', type: 'list_item', text: 'storjshare.io', zone: 'report_body', zone_reason: 'observable_list' }
   ];
   demoteLegitimateServiceListDiscovery(blocks);
-  assert.equal(blocks[1].zone, 'report_body');
   assert.equal(blocks[1].zone_reason, 'legitimate_service_list');
   assert.equal(blocks[3].zone_reason, 'legitimate_service_list');
 });

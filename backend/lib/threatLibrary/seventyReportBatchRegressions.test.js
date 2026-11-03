@@ -36,7 +36,6 @@ import { ipv4VersionContext } from './ipv4VersionContext.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
 import { hexRunIsIdentifierSuffix } from './sourceOccurrence.js';
 
-process.env.THREAT_LIBRARY_SCOPE_ENGINE = 'section_tree';
 
 const SOURCE = 'https://vendor-research.example/blog/seventy-report-audit/';
 
