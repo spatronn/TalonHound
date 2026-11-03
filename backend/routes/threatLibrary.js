@@ -4,6 +4,7 @@
 
 import { loadLinkedIocSourceSummary, withLinkedSourceQuality } from '../lib/threatLibrary/iocSources/linkedSourceStatus.js';
 import { loadSourceDiscoveryLedger } from '../lib/threatLibrary/iocSources/discoveryLedger.js';
+import { loadObligationSnapshot, reportStatusAxes } from '../lib/threatLibrary/reportQualityStatus.js';
 import multer from 'multer';
 import { isAdminRole, requireRole, ROLES } from '../lib/rbac.js';
 import { compareReferenceRunToCurrent, listExtractionRuns } from '../lib/threatLibrary/extractionRuns.js';
@@ -603,6 +604,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         reportBody.linked_ioc_sources = linkedSources;
         reportBody.extraction_quality = withLinkedSourceQuality(reportBody.extraction_quality, linkedSources);
         reportBody.package_coverage = linkedSources.package_coverage || null;
+        reportBody.status_axes = reportStatusAxes(await loadObligationSnapshot(pool, snap.report, { candidates: snap.candidates }));
       } catch {
         /* non-fatal: detail still renders without the overlay */
       }
@@ -1013,7 +1015,10 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const sourceOverride = req.body?.linked_source_override && typeof req.body.linked_source_override === 'object'
           ? { reason: String(req.body.linked_source_override.reason || '') }
           : null;
-        const result = await finalizeReport(pool, report.id, { user: await actorOf(req), audit, req, sourceOverride });
+        const obligationException = req.body?.obligation_exception && typeof req.body.obligation_exception === 'object'
+          ? { reason: String(req.body.obligation_exception.reason || '') }
+          : null;
+        const result = await finalizeReport(pool, report.id, { user: await actorOf(req), audit, req, sourceOverride, obligationException });
         if (!result.ok) {
           return res.status(result.status || 400).json({
             message: result.error,

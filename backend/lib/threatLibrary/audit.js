@@ -222,18 +222,19 @@ export function summarizeFinalizeCandidates(candidates) {
   return summary;
 }
 
-export function buildFinalizeAuditEvent({ report, candidates, user, sourceOverride = null }) {
+export function buildFinalizeAuditEvent({ report, candidates, user, sourceOverride = null, obligationException = null }) {
   return {
     action: AUDIT_ACTION.THREAT_LIBRARY_REPORT_FINALIZED,
     ...reportAuditEntity(report),
     // Finalizing over unresolved linked IOC Sources is an administrator
     // override of the completeness guard (tl-finalize-guard-v1).
-    severity: sourceOverride ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
+    severity: sourceOverride || obligationException ? AUDIT_SEVERITY.WARNING : AUDIT_SEVERITY.INFO,
     status: AUDIT_STATUS.SUCCESS,
     metadata: {
       ...reportAuditSnapshot(report),
       initiated_by: initiatedBy(user),
       ...summarizeFinalizeCandidates(candidates),
+      ...(obligationException ? { finalize_obligation_exception: obligationException } : {}),
       ...(sourceOverride
         ? {
             linked_source_override: {

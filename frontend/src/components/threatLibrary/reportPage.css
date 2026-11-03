@@ -1681,3 +1681,20 @@
 .tl-refresh__accept {
   margin-top: 16px;
 }
+
+.tl-quality__axes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem 1rem;
+  margin: 0 0 0.75rem;
+}
+
+.tl-quality__axis dt {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.tl-quality__axis dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

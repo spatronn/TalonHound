@@ -296,3 +296,44 @@ export function describeQualityChip(quality) {
     title: `${d.statusLabel}: ${d.headline}. Automatic signal, not a confirmed error. See Overview.`
   };
 }
+
+const AXIS_VALUES = Object.freeze({
+  not_recorded: 'Not recorded',
+  completed: 'Completed',
+  degraded: 'Degraded',
+  accounted: 'Accounted for',
+  regions_unaccounted: 'Regions not read',
+  complete: 'Complete',
+  partial: 'Partly read',
+  pending: 'Pending',
+  unresolved: 'Unresolved',
+  dismissed: 'Dismissed',
+  discovery_incomplete: 'Discovery incomplete',
+  announced_not_found: 'Announced, not found',
+  no_package_declared: 'None declared',
+  open: 'Open',
+  none: 'None',
+  current: 'Current',
+  older_contract: 'Older contract'
+});
+
+/**
+ * Report status axes as label and value rows. Each axis stands alone: a finalized
+ * report can still have coverage that was never recorded.
+ * @param {object|null|undefined} axes
+ */
+export function describeStatusAxes(axes) {
+  if (!axes || typeof axes !== 'object') return [];
+  const value = (status) => AXIS_VALUES[status] || 'Not recorded';
+  const count = (status, n) => (n ? `${value(status)} (${n})` : value(status));
+  return [
+    { key: 'operational', label: 'Extraction run', value: value(axes.operational_execution?.status) },
+    { key: 'document', label: 'Document coverage', value: count(axes.document_coverage?.status, axes.document_coverage?.regions_unaccounted) },
+    { key: 'package', label: 'Publisher packages', value: value(axes.package_discovery?.status) },
+    { key: 'uncertain', label: 'Uncertain Indicators', value: count(axes.classification_uncertainty?.status, axes.classification_uncertainty?.needs_review) },
+    { key: 'review', label: 'Analyst review', value: count(axes.analyst_review?.status, axes.analyst_review?.pending) },
+    { key: 'linking', label: 'IOC linking', value: count(axes.ioc_linking?.status, axes.ioc_linking?.not_linked) },
+    { key: 'contract', label: 'Extraction contract', value: value(axes.contract_freshness?.status) },
+    ...(axes.exceptions?.length ? [{ key: 'exceptions', label: 'Finalize exceptions', value: String(axes.exceptions.length) }] : [])
+  ];
+}

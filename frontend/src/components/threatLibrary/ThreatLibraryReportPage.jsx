@@ -1377,6 +1377,24 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         }
         return;
       }
+      if (err?.response?.data?.code === 'finalize_obligations_unmet') {
+        // Server-enforced for new reports. An administrator may record a reasoned exception.
+        if (!isAdmin) {
+          setError(err.response.data.message);
+          return;
+        }
+        const reason = window.prompt(`${err.response.data.message}\n\nFinalize anyway? State the reason for the record:`);
+        if (reason && reason.trim()) {
+          try {
+            const { data } = await api.post(`/threat-library/reports/${reportId}/finalize`, { obligation_exception: { reason: reason.trim() } });
+            if (data?.report) setReport((prev) => ({ ...prev, ...data.report }));
+            setFeedback('Finalized with a recorded exception.');
+          } catch (retryErr) {
+            setError(retryErr?.response?.data?.message || 'Finalize failed');
+          }
+        }
+        return;
+      }
       if (err?.response?.data?.code === 'linked_ioc_sources_unresolved') {
         // Server-enforced (finalizeGuard): extract or dismiss every linked IOC Source first.
         const ok = await requestConfirm({
@@ -1944,6 +1962,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
             <ExtractionQualitySection
               key={`${report.extraction_quality?.version || 'none'}:${report.extraction_quality?.status || 'none'}:${report.extraction_quality?.warnings_total ?? 0}`}
               quality={report.extraction_quality}
+              axes={report.status_axes}
             />
             {(Array.isArray(report.tags) && report.tags.length) || canWrite ? (
               <section className="tl-intel" data-testid="overview-tags">

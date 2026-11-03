@@ -113,3 +113,22 @@ test('unknown codes degrade to a generic, internal-free item', () => {
   assert.equal(m.items[0].title, 'Extraction check');
   assert.equal(JSON.stringify(m).includes('zone=foo'), false);
 });
+
+test('status axes read independently and historical gaps stay unrecorded', async () => {
+  const { describeStatusAxes } = await import('./extractionQualityUi.js');
+  assert.deepEqual(describeStatusAxes(null), []);
+  const rows = Object.fromEntries(describeStatusAxes({
+    operational_execution: { status: 'not_recorded' },
+    document_coverage: { status: 'not_recorded' },
+    package_discovery: { status: 'not_recorded' },
+    classification_uncertainty: { status: 'none', needs_review: 0 },
+    analyst_review: { status: 'complete', pending: 0 },
+    ioc_linking: { status: 'open', not_linked: 3 },
+    contract_freshness: { status: 'older_contract' },
+    exceptions: []
+  }).map((r) => [r.key, r.value]));
+  assert.equal(rows.package, 'Not recorded');
+  assert.equal(rows.linking, 'Open (3)');
+  assert.equal(rows.contract, 'Older contract');
+  assert.equal(rows.exceptions, undefined);
+});
