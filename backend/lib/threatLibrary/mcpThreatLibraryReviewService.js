@@ -1024,6 +1024,7 @@ export async function mcpThreatLibraryReviewIocSource(pool, args = {}, ctx = {},
     sourcePublicId: sourceId,
     report,
     actor: user,
+    reason: args?.reason,
     audit,
     req,
     auditMetadataExtras: extras

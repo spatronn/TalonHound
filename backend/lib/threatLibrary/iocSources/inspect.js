@@ -3,15 +3,17 @@
  */
 
 import { pdfToCanonicalDocument } from '../pdfIngest.js';
-import { enumerateGitHubIocSource, gitHubFolderUrl, gitHubScopeIo, parseGitHubUrl } from './github.js';
+import { enumerateGitHubFiles, enumerateGitHubIocSource, gitHubFolderUrl, gitHubScopeIo, parseGitHubUrl } from './github.js';
 import {
   IOC_SOURCE_SCOPE_VERSION,
   inventoryBacklinkScope,
   isFolderHashListPath,
   isReadmePath,
   reportSlugForeignFiles,
+  resolveGitHubCampaignFiles,
   resolveGitHubCampaignFolder
 } from './campaignScope.js';
+import { withResolutionEvent } from './discoveryLedger.js';
 import { BLOCKING_FETCH_CODES, fetchIocSourceUrl, publicFetchError, validateIocSourceUrl } from './fetchSafe.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
 import {
@@ -109,6 +111,10 @@ export function applyCampaignFileSelection(fileRows, parseResults, reportScope =
  * @param {{ fetchImpl?: Function, destinationGuard?: Function }} [deps]
  */
 export async function inspectIocSource(pool, source, deps = {}) {
+  return withResolutionEvent(pool, source, 'inspection', () => runInspection(pool, source, deps));
+}
+
+async function runInspection(pool, source, deps) {
   await transitionSource(pool, source, 'start_inspect');
 
   const policy = validateIocSourceUrl(source.canonical_url || source.original_url);
@@ -142,25 +148,43 @@ export async function inspectIocSource(pool, source, deps = {}) {
       // report; otherwise nothing is ingested (tl-ioc-source-scope-v1).
       let packUrl = source.canonical_url || source.original_url;
       let resolvedScope = null;
+      let resolvedFiles = null;
       if (gh.kind === 'dir' && !String(gh.path || '').replace(/^\/+|\/+$/g, '')) {
-        const resolution = await resolveGitHubCampaignFolder(gh, reportScope, gitHubScopeIo(gh, deps));
-        if (!resolution.ok) {
-          await transitionSource(pool, source, 'unsupported', {
-            error_code: 'campaign_scope_unresolved',
-            error_detail: `Repository root: no campaign folder corroborated for this report (${resolution.reason})`,
-            preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, ...resolution } }
-          });
-          return { ok: false, code: 'campaign_scope_unresolved' };
+        const io = gitHubScopeIo(gh, deps);
+        const resolution = await resolveGitHubCampaignFolder(gh, reportScope, io);
+        if (resolution.ok) {
+          packUrl = gitHubFolderUrl(gh, resolution.path);
+          resolvedScope = {
+            repository_root: true,
+            resolved_path: resolution.path,
+            reason: resolution.reason,
+            candidates_checked: resolution.candidates_checked
+          };
+        } else {
+          // No campaign folder: a shared repository can still name a file for
+          // this report. Only names are read; the file is inspected next.
+          const byName = await resolveGitHubCampaignFiles(gh, reportScope, io);
+          if (!byName.ok) {
+            await transitionSource(pool, source, 'unsupported', {
+              error_code: 'campaign_scope_unresolved',
+              error_detail: `Repository root: nothing in it could be tied to this report (${resolution.reason}; ${byName.reason})`,
+              preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, ...resolution, file_search: { reason: byName.reason, candidates_checked: byName.candidates_checked, files_seen: byName.files_seen, truncated: byName.truncated } } }
+            });
+            return { ok: false, code: 'campaign_scope_unresolved' };
+          }
+          resolvedFiles = byName.files;
+          resolvedScope = {
+            repository_root: true,
+            reason: byName.reason,
+            matched_files: byName.files,
+            ...(byName.not_listed ? { matched_files_not_listed: byName.not_listed } : {}),
+            candidates_checked: byName.candidates_checked,
+            files_seen: byName.files_seen,
+            truncated: byName.truncated
+          };
         }
-        packUrl = gitHubFolderUrl(gh, resolution.path);
-        resolvedScope = {
-          repository_root: true,
-          resolved_path: resolution.path,
-          reason: resolution.reason,
-          candidates_checked: resolution.candidates_checked
-        };
       }
-      const listing = await enumerateGitHubIocSource(packUrl, deps);
+      const listing = resolvedFiles ? await enumerateGitHubFiles(gh, resolvedFiles, deps) : await enumerateGitHubIocSource(packUrl, deps);
       if (!listing.ok) {
         const action = listing.code === 'blocked_url' ? 'block' : listing.code?.includes('unsupported') ? 'unsupported' : 'fail_inspect';
         await transitionSource(pool, source, action, {
@@ -236,7 +260,8 @@ export async function inspectIocSource(pool, source, deps = {}) {
           ...(resolvedScope || {}),
           ...(readme?.scope ? { readme: readme.scope } : {}),
           ...(scoped.deselected.length ? { deselected_files: scoped.deselected } : {}),
-          ...(scoped.otherReport?.length ? { other_report_files: scoped.otherReport } : {})
+          ...(scoped.otherReport?.length ? { other_report_files: scoped.otherReport } : {}),
+          ...(listing.skipped_files?.length ? { skipped_files: listing.skipped_files } : {})
         },
         // Keep original branch/tag alongside resolved commit SHA in repo_revision.
         ...(listing.repo_ref ? { repo_ref: listing.repo_ref } : {})

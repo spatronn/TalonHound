@@ -849,7 +849,8 @@ export function registerMcpTools(server, deps) {
         report_id: z.string().min(36).max(36).describe('Threat Library report id (uuid)'),
         source_id: z.string().min(36).max(36).describe('Linked IOC Source public id (uuid)'),
         action: z.enum(['inspect', 'approve', 'dismiss']).describe('inspect queues preview; approve queues extract; dismiss omits the pack'),
-        selected_paths: z.array(z.string().min(1).max(1024)).max(500).optional()
+        selected_paths: z.array(z.string().min(1).max(1024)).max(500).optional(),
+        reason: z.string().min(12).max(1000).optional().describe('Dismiss: the evidence that this link is not the report\'s package. Required to finalize a newly imported report.')
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
     },

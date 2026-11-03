@@ -12,6 +12,7 @@ import { fetchIocSourceUrl, publicFetchError } from './fetchSafe.js';
 import { enumerateGitHubIocSource, parseGitHubUrl, resolveGitHubCommitSha } from './github.js';
 import { buildPreviewFromParses, parseIocSourceContent } from './parseContent.js';
 import { guardSourceUrl, loadReportScopeContext } from './inspect.js';
+import { withResolutionEvent } from './discoveryLedger.js';
 import { inventoryBacklinkScope } from './campaignScope.js';
 
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:\/\//i;
@@ -133,6 +134,10 @@ function pinnedDownloadUrl(file, gh, repoRevision) {
  * @param {{ fetchImpl?: Function, destinationGuard?: Function }} [deps]
  */
 export async function extractIocSource(pool, source, deps = {}) {
+  return withResolutionEvent(pool, source, 'extraction', () => runExtraction(pool, source, deps));
+}
+
+async function runExtraction(pool, source, deps) {
   await transitionSource(pool, source, 'start_extract');
 
   // Intelligence can change between inspection and approval: re-check first.
@@ -154,7 +159,9 @@ export async function extractIocSource(pool, source, deps = {}) {
     const gh = parseGitHubUrl(source.canonical_url || source.original_url);
 
     // Refuse silent branch drift: if tip commit differs from inspected SHA, fail and require re-inspect.
-    if (gh && source.repo_revision && GIT_SHA_RE.test(String(source.repo_revision))) {
+    // A repository root moves with every unrelated commit; its files are read pinned to the inspected revision.
+    const isRepositoryRoot = gh && !String(gh.path || '').replace(/^\/+|\/+$/g, '');
+    if (gh && !isRepositoryRoot && source.repo_revision && GIT_SHA_RE.test(String(source.repo_revision))) {
       const tip = await resolveGitHubCommitSha(gh, deps);
       if (tip.ok && tip.repo_revision && tip.repo_revision !== String(source.repo_revision).toLowerCase()) {
         await transitionSource(pool, source, 'fail_extract', {

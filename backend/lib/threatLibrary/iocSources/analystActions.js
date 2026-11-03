@@ -11,6 +11,7 @@
  * discovered packs must be inspected first (same gate as the UI).
  */
 
+import { recordResolutionEvent } from './discoveryLedger.js';
 import { AUDIT_ACTION, AUDIT_SEVERITY, AUDIT_STATUS } from '../../auditConstants.js';
 import {
   initiatedBy,
@@ -225,9 +226,12 @@ export async function dismissLinkedIocSource(pool, opts) {
   }
   let updated;
   try {
+    const reason = String(opts.reason || '').trim().slice(0, 1000) || null;
     updated = await transitionSource(pool, source, 'dismiss', {
-      dismissed_by: actorPublicId(opts.actor)
+      dismissed_by: actorPublicId(opts.actor),
+      dismissal_reason: reason
     });
+    await recordResolutionEvent(pool, source.id, 'dismissal', { detail: reason, actorPublicId: actorPublicId(opts.actor) });
   } catch (err) {
     if (err?.code === 'invalid_source_transition' || err?.code === 'source_dismissed' || err?.code === 'report_finalized') {
       return { ok: false, status: 409, code: err.code, error: err.message };
@@ -243,6 +247,7 @@ export async function dismissLinkedIocSource(pool, opts) {
       ...reportAuditSnapshot(opts.report),
       source_public_id: source.public_id,
       initiated_by: initiatedBy(opts.actor),
+      dismissal_reason: String(opts.reason || '').trim().slice(0, 1000) || null,
       ...(opts.auditMetadataExtras || {})
     }
   });
