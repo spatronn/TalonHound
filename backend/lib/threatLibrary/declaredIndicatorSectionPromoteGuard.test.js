@@ -77,8 +77,8 @@ const APPENDIX_VALUES = [
 ];
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v16');
 });
 
 test('A. a section that declares it adds indicators is publisher indicator scope', () => {

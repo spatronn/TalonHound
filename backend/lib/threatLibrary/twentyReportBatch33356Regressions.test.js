@@ -53,8 +53,8 @@ const member = (out, value) => {
 };
 
 test('versions: tl-candidates-v42, tl-type-resolver-v19', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
 });
 
 // --- D1. IPv6 CIDR ----------------------------------------------------------
@@ -93,10 +93,11 @@ test('D2: a community resource recommended to defenders is not an Indicator in M
   assert.equal(operator.membership_decision.outcome, 'needs_review', 'the address stays visible to an analyst');
 });
 
-test('D2 control: abused infrastructure named in prose keeps its operational reading', () => {
+test('D2 control: abused infrastructure named in prose reaches review as an operational statement', () => {
   const out = run(`<h2>Delivery</h2>
 <p>The loader downloaded the next stage from update-check-cdn.top, which served the encrypted payload.</p>`);
-  assert.ok(member(out, 'update-check-cdn.top'));
+  assert.equal(find(out, 'update-check-cdn.top').membership_decision.rule_id, 'R31_operational_statement');
+  assert.equal(find(out, 'update-check-cdn.top').membership_decision.outcome, 'needs_review');
 });
 
 // --- D3. host:port followed by another value -------------------------------

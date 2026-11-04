@@ -78,10 +78,10 @@ ${rows.map(([v, d]) => `<tr><td>${v}</td><td><p>${d}</p></td></tr>`).join('\n')}
 </table>`;
 
 test('versions: tl-candidates-v40, tl-table-v12, tl-type-resolver-v17, tl-section-tree-v9, tl-quality-v14, tl-ioc-source-scope-v3', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v16');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v15');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v5');
 });

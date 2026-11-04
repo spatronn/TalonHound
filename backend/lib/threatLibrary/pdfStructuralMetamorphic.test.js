@@ -96,7 +96,7 @@ function appendixVariant(o) {
 }
 
 test('contract versions', () => {
-  assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v6');
+  assert.equal(PDF_LAYOUT_VERSION, 'threat_library_pdf_v7');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
 });
 

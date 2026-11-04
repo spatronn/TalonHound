@@ -56,7 +56,7 @@ const membersOf = (cands) => cands.filter((c) => isMember(c));
 
 test('contract: html v4 + candidates v15', () => {
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v10');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
 });
 
 test('13. publisher IOC list keeps wss:// C2 URLs as URL Indicators (not host-only domains)', () => {
@@ -251,14 +251,14 @@ loader.bin ${H2}
   assert.ok(isMember(find(candidates, 'ip', PUBLIC_IP)));
 });
 
-test('12. MODE B: reports with no publisher IOC section still promote narrative malicious IPs via AI path unchanged', () => {
+test('12. MODE B: a narrative IP with no publisher IOC section reaches review', () => {
   const { candidates, diagnostics } = extract(`
 <p>The malware beacons to ${PUBLIC_IP} every thirty seconds.</p>`);
   assert.equal(diagnostics.document_scope.has_authoritative_indicator_scope, false);
   const ip = find(candidates, 'ip', PUBLIC_IP);
   assert.ok(ip);
-  // Without publisher scope, membership is not restricted by MODE A.
-  assert.equal(isPublisherAuthoritativeReportIocMember(reviewRow(ip)), true);
+  assert.equal(ip.membership_decision.outcome, 'needs_review');
+  assert.equal(ip.membership_decision.rule_id, 'R31_operational_statement');
 });
 
 test('lineContainingObservable focuses filename+HASH rows inside a multi-line block', () => {

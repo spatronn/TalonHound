@@ -52,9 +52,9 @@ ${rows.map(([v, d]) => `<tr><td>${v}</td><td>${d}</td></tr>`).join('\n')}
 </table>`;
 
 test('versions: tl-candidates-v39, tl-ipv6-tokens-v1, tl-type-resolver-v16', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
   assert.equal(IPV6_TOKENS_VERSION, 'tl-ipv6-tokens-v1');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
 });
 
 test('A: IPv6 tokenizer accepts every valid spelling as one address', () => {

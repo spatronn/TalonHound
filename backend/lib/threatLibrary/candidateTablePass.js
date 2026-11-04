@@ -8,6 +8,21 @@ import { RESOLVED_TYPES } from './observableTypeResolver.js';
 import { buildRowObservation } from './sourceObservation.js';
 import { descriptionClauseAssertsRole, tableColumnLabels, versionColumnTokens, OCCURRENCE_FORMS, HISTORICAL_RESOLUTION_ROW_RE, candidateKey, relatedValuesFromDescription } from './candidateHelpers.js';
 
+/** Plain words (no dots, digits or slashes) around a value make the cell a sentence. */
+const SENTENCE_CELL_MIN_PLAIN_WORDS = 4;
+const PLAIN_WORD_RE = /^[A-Za-z][a-z'-]*[,:;]?$/;
+
+function isValueInsideSentence(cell, raw) {
+  const text = String(cell || '').trim();
+  const value = String(raw || '').trim();
+  if (!text || !value) return false;
+  const at = text.indexOf(value);
+  if (at <= 0) return false;
+  const plainBefore = text.slice(0, at).split(/\s+/).filter((w) => PLAIN_WORD_RE.test(w)).length;
+  const plainAll = text.split(/\s+/).filter((w) => PLAIN_WORD_RE.test(w)).length;
+  return plainBefore >= 2 && plainAll >= SENTENCE_CELL_MIN_PLAIN_WORDS;
+}
+
 /**
  * @param {object[]} blocks zone-annotated blocks
  * @param {ReturnType<import('./candidateAccumulator.js').createCandidateAccumulator>} acc
@@ -116,8 +131,13 @@ export function readTypedTables(blocks, acc, ctx) {
           v.is_ioc !== false &&
           ['ip', 'ipv6', 'domain'].includes(v.candidate_type) &&
           HISTORICAL_RESOLUTION_ROW_RE.test(String(row.description || ''));
+        // "8,192 outbound connections to *.speedtest.net followed by …" describes
+        // behaviour: the host inside the sentence is row context, not the row's value.
+        const embeddedInSentence =
+          v.is_ioc !== false && ['ip', 'ipv6', 'domain', 'url'].includes(v.candidate_type) && isValueInsideSentence(v.indicator_cell, v.raw);
+        const rowContextOnly = historicalPivot || embeddedInSentence;
         const assertedIoc =
-          Boolean(interp.explicit) && v.is_ioc !== false && v.hosts_file_entry !== true && !v.truncated_digest && !historicalPivot;
+          Boolean(interp.explicit) && v.is_ioc !== false && v.hosts_file_entry !== true && !v.truncated_digest && !rowContextOnly;
         if (assertedIoc && v.candidate_type && v.normalized_value) {
           explicitTableAssertions.rememberAsserted(v.candidate_type, v.normalized_value);
         }
@@ -176,7 +196,7 @@ export function readTypedTables(blocks, acc, ctx) {
           explicitTable: Boolean(interp.explicit),
           ...(v.wildcard_apex === true ? { wildcardApex: true } : {}),
           ...(v.hosts_file_entry === true ? { hostsFileEntry: true } : {}),
-          ...(historicalPivot
+          ...(rowContextOnly
             ? {
                 form: OCCURRENCE_FORMS.STANDALONE,
                 explicitTable: false,

@@ -58,10 +58,10 @@ const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(
 const find = (x, type, value) => x.candidates.find((c) => c.candidate_type === type && c.normalized_value === value);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v16');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v15');
 });
 
@@ -216,7 +216,8 @@ test('E. MODE B: citations, own tooling, URN audiences, product names and interc
 <p>[3] Disassembler (original): https://github.com/tool-author/disassembler</p>
 <p>[4] Compression library: https://github.com/compression/library</p>`);
   assert.equal(modeA(x), false);
-  assert.deepEqual(members(x), ['url:https://beacon.bad-actor.example/gate.php']);
+  assert.deepEqual(members(x), []);
+  assert.equal(find(x, 'url', 'https://beacon.bad-actor.example/gate.php').membership_decision.outcome, 'needs_review');
   const own = find(x, 'url', 'https://github.com/research-lab/deobfuscator');
   assert.ok(own && isContextOnlyCandidate(persisted(own)), 'own tooling link is context only');
   assert.equal(find(x, 'domain', 'enterpriseregistration.service-cloud.example'), undefined, 'URN audience is not a domain');

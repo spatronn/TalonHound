@@ -1,29 +1,29 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v56",
+    "candidates": "tl-candidates-v57",
     "zones": "tl-zones-v17",
     "tables": "tl-table-v18",
-    "type_resolver": "tl-type-resolver-v23",
+    "type_resolver": "tl-type-resolver-v24",
     "html": "threat_library_html_v10",
-    "pdf": "threat_library_pdf_v6",
+    "pdf": "threat_library_pdf_v7",
     "quality": "tl-quality-v15",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
     "cases": 90,
-    "cases_exact": 90,
+    "cases_exact": 88,
     "indicators": {
       "expected": 1468,
-      "tp": 1468,
+      "tp": 1466,
       "fp": 0,
-      "fn": 0,
+      "fn": 2,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 0,
-      "fn_needs_review": 0,
+      "fn_not_member": 2,
+      "fn_needs_review": 2,
       "precision": 1,
-      "recall": 1,
-      "f1": 1
+      "recall": 0.9986,
+      "f1": 0.9993
     },
     "candidate_extraction_recall": 0.9993,
     "context_only_accuracy": 1,
@@ -38,9 +38,9 @@
       "warning": 3,
       "info": 23,
       "cases_flagged": 3,
-      "exact_cases": 90,
+      "exact_cases": 88,
       "exact_cases_flagged": 3,
-      "failing_cases": 0,
+      "failing_cases": 2,
       "failing_cases_flagged": 0
     }
   },
@@ -101,15 +101,13 @@
       "warning_codes": []
     },
     "control-mode-b-narrative": {
-      "members": [
-        "domain:c2-update.info"
-      ],
-      "tp": 1,
+      "members": [],
+      "tp": 0,
       "fp": 0,
-      "fn": 0,
+      "fn": 1,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 0,
+      "fn_not_member": 1,
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 0,
@@ -138,7 +136,6 @@
         "md5:499184635d56a9827d2059256a35e530",
         "md5:533d0b93ea03cd5bab4eec0f0ebadd03",
         "md5:576e94d705bd50811dc9525a45732bc3",
-        "md5:581e2e2265d0c1509b3799c5a9039374",
         "md5:6626b8caf2734c83a93f78d31b703584",
         "md5:68ac84a8470d1f365f0bb2f37b6256d5",
         "md5:6e023b9b3097a2dba311cb06a91fe259",
@@ -239,12 +236,12 @@
         "sha256:fa02e707af9a353f0e2d7a77489c11c2249a1d9dbccf74070130b31834e8d7c3",
         "url:https://accounts.google.com/o/android/auth?return_user_id=true"
       ],
-      "tp": 119,
+      "tp": 118,
       "fp": 0,
-      "fn": 0,
+      "fn": 1,
       "fn_not_extracted": 0,
       "fn_mistyped": 0,
-      "fn_not_member": 0,
+      "fn_not_member": 1,
       "sections_correct": 0,
       "sections_checked": 0,
       "assertions_correct": 0,

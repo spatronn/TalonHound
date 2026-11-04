@@ -519,7 +519,9 @@ export function applyEvidencePolicy(candidate, aiUpdate = null) {
 
   const relation = candidate.source_relation || strongestSourceRelation(candidate);
   const hasAuthoritativeScope = candidate.document_has_authoritative_scope === true;
-  const explicit = summary.hasStrong;
+  // A bare documentation domain is a placeholder wherever it is listed.
+  const placeholderApex = candidate.candidate_type === 'domain' && /^(?:www\.)?example\.(?:com|org|net)$/.test(String(candidate.normalized_value || ''));
+  const explicit = summary.hasStrong && !placeholderApex;
   const reportSource = candidate.is_report_source === true;
   const benignComponent = !explicit && (isBenignComponentOnly(candidate) || isDisclaimedUnasserted(candidate));
   candidate.stance_conflict = hasStanceConflict(candidate) || undefined;

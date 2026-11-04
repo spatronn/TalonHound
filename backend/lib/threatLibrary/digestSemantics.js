@@ -229,7 +229,12 @@ export function labelWords(label) {
     .replace(/(?<=[a-z])\.(?=[a-z])/gi, ' ');
 }
 
-function bestKindIn(text) {
+/** "based on TLSH pivot", "via imphash": how a sample was found, not what the digest is. */
+const SIMILARITY_METHOD_PHRASE_RE =
+  /\b(?:based\s+on|via|using|through|found\s+(?:by|with)|pivot(?:ing|ed)?\s+(?:on|from))\s+(?:an?\s+|the\s+)?(?:vhash|imphash|ssdeep|tlsh|authentihash|telfhash)(?:\s+(?:pivot|similarity|match|cluster|overlap))?/gi;
+
+function bestKindIn(rawText) {
+  const text = String(rawText || '').replace(SIMILARITY_METHOD_PHRASE_RE, ' ');
   let best = null;
   for (const [kind, re] of KIND_PATTERNS) {
     const all = [...text.matchAll(new RegExp(re.source, 'gi'))];

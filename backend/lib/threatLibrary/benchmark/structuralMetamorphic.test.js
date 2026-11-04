@@ -261,7 +261,7 @@ test('member decisions name their rule, reason, evidence and contract', () => {
   const d = doc.byId.get('domain:evil-relay-node.net').evidence.membership_decision;
   assert.equal(d.outcome, 'member');
   assert.equal(d.rule_id, 'R10_publisher_assertion');
-  assert.equal(d.contract_version, 'tl-membership-decision-v1');
+  assert.equal(d.contract_version, 'tl-membership-decision-v2');
   assert.ok(d.evidence_refs.length >= 1);
   assert.deepEqual(d.inputs.section_authority, ['asserting']);
 });

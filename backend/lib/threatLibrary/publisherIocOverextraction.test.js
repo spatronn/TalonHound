@@ -139,7 +139,7 @@ test('curated IOC appendix: AI maliciousness on narrative values does not change
   assert.deepEqual(memberKeys(after), DECLARED);
 });
 
-test('no curated IOC section (MODE B): narrative values the model calls malicious remain Indicators', () => {
+test('no curated IOC section (MODE B): narrative values the model calls malicious stay reviewable', () => {
   const { candidates, document, diagnostics } = extract(`
 <h2>C2 infrastructure</h2>
 <p>The domain “update-flash[.]com” served samples from “https://update-flash[.]com/download/setup_x.exe”.</p>
@@ -156,8 +156,10 @@ test('no curated IOC section (MODE B): narrative values the model calls maliciou
     },
     { document }
   );
+  // A model verdict grounded in the publisher's wording carries membership (R32).
   assert.ok(isMember(find(after, 'domain', 'relay-node-17.net')));
-  assert.ok(isMember(find(after, 'url', 'https://update-flash.com/download/setup_x.exe')));
+  // Its verdict on this URL has no support in the prose, so the statement goes to review.
+  assert.equal(find(after, 'url', 'https://update-flash.com/download/setup_x.exe').membership_decision.outcome, 'needs_review');
 });
 
 // ---------------------------------------------------------------------------

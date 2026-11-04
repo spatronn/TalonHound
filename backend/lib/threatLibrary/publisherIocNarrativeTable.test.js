@@ -243,6 +243,6 @@ test('MODE B: prose-only C2 topic without curated rows does not open publisher s
   for (const ip of [HOST_A, HOST_B, HOST_C]) {
     const row = reviewRow(candidates.find((c) => c.normalized_value === ip));
     assert.ok(row, ip);
-    assert.equal(isPublisherAuthoritativeReportIocMember(row), true, `${ip} MODE B membership gate open`);
+    assert.equal(candidates.find((c) => c.normalized_value === ip).membership_decision.outcome, 'needs_review', `${ip} reaches review`);
   }
 });

@@ -503,7 +503,7 @@ export function createCandidateAccumulator(ctx) {
     url_host: 40, explicit_indicator_row: 40, url_path_basename: 40,
     code_identifier_shape: 30, code_context: 30, multi_dot_ext: 30, file_extension: 30, extension_without_host_context: 20,
     method_suffix: 30, code_call: 30, code_block_weak_suffix: 20,
-    network_context: 10, network_context_mixed_case: 10,
+    network_context: 10, network_context_mixed_case: 10, title_case_tld_list: 35,
     artifact_context: 10, code_context_label: 10, config_context: 10, registry_context: 10, path_context: 10,
     command_context: 10, process_context: 10, metadata_context: 10, file_context: 10,
     hostname_shape: 1,

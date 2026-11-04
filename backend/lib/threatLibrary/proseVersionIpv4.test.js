@@ -99,14 +99,14 @@ test('MODE B: release numbers in prose are version metadata; network-asserted va
   }
   for (const v of ['45.77.11.47', '36.249.156.51']) {
     const c = ip(rows, v);
-    assert.ok(c && isReportIndicatorMember(c), `${v} stays a reviewable IPv4 Indicator`);
+    assert.equal(c?.evidence.membership_decision.outcome, 'needs_review', `${v} stays an IPv4 candidate an analyst reviews`);
   }
 });
 
 test('the brief table: identical values under network cues stay IPv4', () => {
   const rows = prose('The C2 server is 2.3.24.1 and it answered every beacon.', 'Attacker connected to 2.3.20.2 over TCP port 443.');
-  assert.ok(ip(rows, '2.3.24.1') && isReportIndicatorMember(ip(rows, '2.3.24.1')));
-  assert.ok(ip(rows, '2.3.20.2') && isReportIndicatorMember(ip(rows, '2.3.20.2')));
+  assert.equal(ip(rows, '2.3.24.1')?.evidence.membership_decision.outcome, 'needs_review');
+  assert.equal(ip(rows, '2.3.20.2')?.evidence.membership_decision.outcome, 'needs_review');
   assert.equal(version(rows, '2.3.24.1'), null);
 });
 
