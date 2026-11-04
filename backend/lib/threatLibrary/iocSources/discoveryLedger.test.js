@@ -1,5 +1,6 @@
 import test from 'node:test';
 import { resolveGitHubCommitSha } from './github.js';
+import { isAllowedIocSourceContentType } from './fetchSafe.js';
 import assert from 'node:assert/strict';
 import { buildReferenceRows, isRelevantRejection, MAX_RECORDED_REFERENCES, packageCoverage } from './discoveryLedger.js';
 import { examineReportReferences } from './runDiscovery.js';
@@ -326,10 +327,11 @@ test('a repository root pins to the commit SHA without reading the commit, howev
   const sha = 'a'.repeat(40);
   const seen = [];
   const fetchImpl = async (url, init) => {
-    seen.push(init?.headers?.Accept || init?.headers?.accept);
-    return new Response(sha, { status: 200, headers: { 'content-type': 'application/vnd.github.sha' } });
+    seen.push(init?.headers?.Accept);
+    return { body: sha, contentType: 'application/vnd.github.sha; charset=utf-8' };
   };
   const r = await resolveGitHubCommitSha({ owner: 'rapid7', repo: 'Rapid7-Labs', ref: 'HEAD', path: '' }, { fetchImpl, destinationGuard: async () => {} });
   assert.deepEqual([r.ok, r.repo_revision], [true, sha]);
   assert.equal(seen[0], 'application/vnd.github.sha');
+  assert.equal(isAllowedIocSourceContentType('application/vnd.github.sha; charset=utf-8'), true, 'the real transport accepts the reply');
 });
