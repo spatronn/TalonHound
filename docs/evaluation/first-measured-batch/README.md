@@ -27,10 +27,10 @@ Synthetic report 35772 (soft-deleted afterwards) produced run 693: `is_first_pas
 |---|---|
 | Feed items not in the library | 1,547 from 16 publisher feeds. Titles and URLs only |
 | Dated from 2026-08-01 | 258 |
-| Title rule removes product, marketing and digest posts (`popfilter` terms below) | 212 |
-| Already in the library, by title or resolved URL | 6 removed (all Fortinet feed redirects) |
-| Translated copies removed, locale and tracking normalized | see `population.json` |
-| Screened: page visibly carries indicators | `indicators_visible` |
+| Title rule removes product, marketing and digest posts (46 removed by terms such as "weekly", "integration", "named a leader", "webinar") | 212 |
+| Already in the library, by title or resolved URL (all Fortinet feed redirects); the 41 with indicators were also checked against production's import identity | 206 |
+| Translated copies removed; locale and tracking parameters normalized | 204 |
+| Screened: page visibly carries indicators / does not / could not be fetched | 39 / 163 / 2 |
 | **Drawn** | **32 with indicators + 8 negative controls = 40, 9 for a second labeler** |
 
 Seeds: `first-measured-batch-2026-11-04:indicators`, `first-measured-batch-2026-11-04:controls`. Files: [population.json](population.json), [manifest.json](manifest.json).
