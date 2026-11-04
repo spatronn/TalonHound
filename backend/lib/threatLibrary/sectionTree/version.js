@@ -61,7 +61,7 @@
  * infrastructure" and "… source IPs" headings title the publisher's address
  * inventory.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v15';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v16';
 
 /**
  * Authoritative scope-engine stamp when section-tree owns membership zones.

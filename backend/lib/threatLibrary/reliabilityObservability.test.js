@@ -59,7 +59,8 @@ test('section-tree: three unlabelled IOC-shaped rows do not invent MODE A; narra
   const narrative = out.candidates.find((c) => c.normalized_value === 'narrative-c2.evilvend.net');
   assert.ok(narrative);
   assert.equal(narrative.document_has_authoritative_scope, false);
-  assert.equal(isReportIndicatorMember(persisted(narrative)), true);
+  assert.equal(isReportIndicatorMember(persisted(narrative)), false);
+  assert.equal(narrative.membership_decision.outcome, 'needs_review');
 });
 
 test('HTML H1 mentioning IOC-shaped does not open MODE A over three Host/Port rows', () => {

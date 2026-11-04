@@ -60,9 +60,9 @@ const find = (x, value) => x.candidates.find((c) => c.normalized_value === value
 const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.code))].sort();
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v15');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v16');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
 });
 
@@ -147,7 +147,8 @@ test('D: a publisher dual-use stance keeps tunnel brokers out of MODE B Indicato
   assert.ok(!m.includes('domain:tunnel-broker-example.run'), m.join(','));
   assert.ok(!m.includes('domain:broker-sub-example.life'), m.join(','));
   assert.ok(!m.includes('domain:api.broker-sub-example.life'), m.join(','));
-  assert.ok(m.includes('domain:beacon-relay-example.net'), 'a real operational relation stays a MODE B Indicator');
+  // A prose statement with no inventory in the document: an analyst decides.
+  assert.equal(x.candidates.find((c) => c.normalized_value === 'beacon-relay-example.net').membership_decision.outcome, 'needs_review');
 });
 
 test('D: "not inherently malicious" in an IOC row is a benign stance; a malicious row stays', () => {

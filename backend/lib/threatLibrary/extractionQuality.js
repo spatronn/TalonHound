@@ -540,6 +540,10 @@ export function assessExtractionQuality(input) {
     // A region nested in an earlier opening's region was already assessed.
     const prev = blocks.slice(0, i).reverse().find((b) => !isChrome(b));
     if (prev && STRONG_IOC_ZONES.has(String(prev.zone || '')) && prev.delegated_scope !== true) continue;
+    // So was a subgroup of an appendix that opened above it: a section between the
+    // two ended authority for its own content, not the appendix.
+    const ancestors = Array.isArray(opening.section_path_ids) ? opening.section_path_ids.slice(0, -1) : [];
+    if (ancestors.some((id) => STRONG_IOC_ZONES.has(String(blocks.find((b) => b.id === id)?.zone || '')))) continue;
     const hasMember = region.some((b) => memberBlocks.has(b.id));
     if (hasMember) continue;
     const shaped = region.filter((b) => IOC_SHAPE_RE.test(String(b.text || '')));

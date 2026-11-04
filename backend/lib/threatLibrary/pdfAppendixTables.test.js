@@ -324,10 +324,11 @@ test('MODE A: a narrative-only malicious value stays out; narrative + appendix i
   assert.ok(pages.has(1) && pages.has(2), 'narrative and appendix occurrences kept');
 });
 
-test('MODE B unchanged: without the appendix the narrative value is a reviewable Indicator', () => {
+test('without the appendix the narrative value reaches review', () => {
   const { rows, members } = extract([PAGES[0]]);
   assert.equal(rows.some((c) => c.evidence.document_has_authoritative_scope === true), false);
-  assert.ok(members.some((c) => c.normalized_value === NARRATIVE_ONLY.replace('[.]', '.')));
+  assert.ok(!members.some((c) => c.normalized_value === NARRATIVE_ONLY.replace('[.]', '.')));
+  assert.equal(rows.find((c) => c.normalized_value === NARRATIVE_ONLY.replace('[.]', '.')).evidence.membership_decision.outcome, 'needs_review');
 });
 
 test('re-extraction is deterministic (same identities, assertions and memberships)', () => {

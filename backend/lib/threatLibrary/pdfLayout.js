@@ -29,7 +29,7 @@ import { FILE_EXT_HINT, hasDelegatedDnsSuffix } from './observableTypeResolver.j
  * table detector did not split) is an observable row with one pair per line,
  * instead of a narrative paragraph that can absorb an adjacent lead-in sentence.
  */
-export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v6';
+export const PDF_LAYOUT_VERSION = 'threat_library_pdf_v7';
 
 /** Fraction of page height (top/bottom) treated as printed header/footer band. */
 const PAGE_EDGE_FRACTION = 0.055;
@@ -881,6 +881,16 @@ export function joinWrappedUrl(current, next) {
  * @param {PdfLine[]} lines
  * @param {{ pageNum: number, startIdx: number, bodyFonts?: Set<string>, bodyHeight: number }} ctx
  */
+/** Whole-line titles of the sections that decide indicator scope. */
+const FORMAL_SECTION_TITLE_RE =
+  /^(?:\d{1,2}(?:\.\d{1,2})*[.)]?\s+)?(?:indicators?\s+of\s+compromise(?:\s*\(iocs?\))?|iocs?|appendix(?:\s+[a-z0-9]+)?[:\s-]*(?:indicators?(?:\s+of\s+compromise)?|iocs?)|network\s+indicators|file\s+indicators|references|bibliography|recommendations?|mitigations?|conclusions?|acknowledge?ments?|about\s+the\s+authors?)\s*:?$/i;
+
+/** @param {string} text */
+export function isFormalSectionTitleLine(text) {
+  const t = String(text || '').trim();
+  return t.length <= 60 && FORMAL_SECTION_TITLE_RE.test(t);
+}
+
 export function linesToBlocks(lines, ctx) {
   const blocks = [];
   let idx = ctx.startIdx;
@@ -987,6 +997,16 @@ export function linesToBlocks(lines, ctx) {
       continue;
     }
     if (isStructuralHeading(line, ctx)) {
+      flushPara();
+      mk('heading', line.text, {
+        section: line.text.slice(0, 200),
+        level: inferPdfHeadingLevel(line, ctx)
+      });
+      continue;
+    }
+    // A body-font line that is a formal section title, standing between sentences,
+    // is the section's heading: plain PDFs set headings in the body font.
+    if (isFormalSectionTitleLine(line.text) && (!para.length || /[.!?:;。]$/.test(para[para.length - 1].trim()))) {
       flushPara();
       mk('heading', line.text, {
         section: line.text.slice(0, 200),

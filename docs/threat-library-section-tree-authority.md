@@ -40,11 +40,29 @@ candidates change only on an explicit refresh.
 Candidates and diagnostics stamp `scope_engine`, `scope_engine_version` and `section_tree_version`. The
 extraction ledger records the whole contract bundle per run.
 
+## Where authority ends (tl-section-tree-v16)
+
+A heading or label under an open appendix keeps its authority only when it is an inventory group:
+it holds rows, has deeper groups with rows, or is a real heading naming an indicator class. Otherwise
+its own content is not asserted, and a later sibling group is asserted again. Headings naming advice
+or page furniture ("About the Author", "Recommendations", "Legitimate files …") never inherit, whatever
+follows them. A short line holding a field or a value ("Description: …", an IPv6 row) stays a row.
+
+Plain PDFs set headings in the body font: a whole line that is a formal section title, standing between
+sentences, becomes a heading (`isFormalSectionTitleLine`, threat_library_pdf_v7).
+
+## Membership without a curated section (tl-membership-decision-v2)
+
+Structured rows remain the publisher's inventory (R30). A prose statement goes to review (R31) unless a
+model verdict grounded in publisher text carries it (R32). Both reach the analyst, who approves through
+the audited path; the difference is that nothing is presented as asserted on prose alone.
+
 ## Known limitations
 
-- A bold sibling line does not close a C2 scope; only a heading does.
-- A deeper heading that is not a subgroup label inherits authority from its parent section, so a trailing
-  section such as "About the Author" can reach review as needs_review.
+- Documentation-range addresses (192.0.2.0/24 and similar) listed in an IOC section are still read as
+  asserted. None occur in the 690 stored reports. Bare `example.com` / `.org` / `.net` are placeholders;
+  subdomains of them are not treated so.
+- A title-cased TLD is read as a domain only when the clause names domains or the block lists several.
 
 ## Empty formal IOC sections (delegated scope, tl-section-tree-v3)
 

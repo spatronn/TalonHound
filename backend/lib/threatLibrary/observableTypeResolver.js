@@ -91,7 +91,11 @@ import { isValidIpAddress } from '../publicIp.js';
  * is never a host under the .xxx TLD; a search-query field before a grouped
  * condition ("host.services: (port=22 AND …)") is a field name.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v23';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v24';
+
+const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
+const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
+const DOMAIN_NOUN_RE = /\b(?:domains?|hostnames?)\b/i;
 
 /** Dot-defang spellings a publisher writes around a hostname label separator. */
 const DEFANG_MARKER_RE = /\[\.\]|\(\.\)|\{\.\}|\[dot\]|\(dot\)/i;
@@ -996,6 +1000,13 @@ export function resolveDottedToken(raw, ctx = {}) {
     if (hasDelegatedDnsSuffix(lower) && DEFANG_MARKER_RE.test(original)) return out('domain', 'defanged_mixed_case');
     if (strength === 'strong' && explicitRow) return out('domain', 'explicit_row_mixed_case');
     if (strength === 'strong' && clauseNetwork && !clauseArtifact) return out('domain', 'network_context_mixed_case');
+    // Styled text ("chumchuru.Com, cycl.Top"): a lowercase host with a title-cased
+    // delegated TLD, named as a domain or listed with others. "System.Net" and
+    // "obj.Method" do not fit: their first label is capitalized or they stand alone.
+    if (ctx.blockType !== 'code' && hasDelegatedDnsSuffix(lower) && TITLE_CASE_TLD_HOST_RE.test(original) &&
+        (DOMAIN_NOUN_RE.test(clause) || (surrounding.match(TITLE_CASE_TLD_HOST_GLOBAL_RE) || []).length >= 2)) {
+      return out('domain', 'title_case_tld_list');
+    }
     return out('technical_artifact', codeContext ? 'code_context' : 'code_identifier_shape');
   }
   if (clauseNetwork && !clauseArtifact) {

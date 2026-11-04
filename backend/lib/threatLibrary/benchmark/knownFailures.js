@@ -39,3 +39,14 @@ export function knownFailureFor(caseId) {
   const cause = KNOWN_BENCHMARK_FAILURES[caseId];
   return cause ? { cause, ...KNOWN_FAILURE_CAUSES[cause] } : null;
 }
+
+/**
+ * Labelled Indicators the membership policy deliberately sends to review (a prose
+ * statement in a report with no inventory: tl-membership-decision-v2). They stay
+ * false negatives in every score. The labels are not weakened; this only says why the
+ * exact-match gate accepts them, and a listed value that becomes a member fails it.
+ */
+export const REVIEW_PATH_BY_POLICY = Object.freeze({
+  'control-mode-b-narrative': Object.freeze(['domain:c2-update.info']),
+  'golden-checkpoint-jsceal-appendix-b': Object.freeze(['md5:581e2e2265d0c1509b3799c5a9039374'])
+});

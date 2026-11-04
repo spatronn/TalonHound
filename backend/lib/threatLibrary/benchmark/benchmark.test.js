@@ -16,7 +16,7 @@ import {
   readBaseline,
   runBenchmark
 } from './benchmarkRunner.js';
-import { knownFailureFor } from './knownFailures.js';
+import { knownFailureFor, REVIEW_PATH_BY_POLICY } from './knownFailures.js';
 import { groundTruthIdentity } from './benchmarkMetrics.js';
 
 // The gate measures the production scope engine (section-tree owns Indicator
@@ -45,7 +45,12 @@ test('every case that is not a recorded known failure matches its ground truth e
       false_negatives: r.metrics.indicators.false_negatives.map((x) => x.id),
       false_positives: r.metrics.indicators.false_positives.map((x) => x.id)
     }));
-  assert.deepEqual(wrong, []);
+  // Values policy sends to review are named exactly; anything else, or one that
+  // becomes a member again, fails here.
+  const unexplained = wrong.filter((w) =>
+    w.false_positives.length || JSON.stringify(w.false_negatives) !== JSON.stringify(REVIEW_PATH_BY_POLICY[w.id] || []));
+  assert.deepEqual(unexplained, []);
+  assert.deepEqual(wrong.map((w) => w.id).sort(), Object.keys(REVIEW_PATH_BY_POLICY).sort(), 'every policy entry is still a review-path value');
 });
 
 test('known-clean controls: no legitimate, contextual or narrative observable becomes an Indicator', () => {
@@ -149,10 +154,11 @@ test('quality detector: no warning on exact cases, every failing case flagged', 
   const silentFailures = run.results
     .filter((r) => r.metrics.indicators.fp !== 0 || r.metrics.indicators.fn !== 0)
     .filter((r) => r.quality.counts.high + r.quality.counts.warning === 0)
-    .map((r) => r.id);
+    .map((r) => r.id)
+    .filter((id) => !REVIEW_PATH_BY_POLICY[id]);
   assert.deepEqual(silentFailures, [], 'failing cases the detector does not flag');
   // Aggregate exact_cases_flagged also counts review prompts / ambiguous-only
   // warnings; the false-alarm check above is the gate.
   assert.ok(q.exact_cases_flagged >= flaggedExact.length);
-  assert.equal(q.failing_cases_flagged, q.failing_cases);
+  assert.equal(q.failing_cases_flagged + Object.keys(REVIEW_PATH_BY_POLICY).length, q.failing_cases);
 });

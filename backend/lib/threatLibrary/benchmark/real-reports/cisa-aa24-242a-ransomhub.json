@@ -747,7 +747,7 @@
    },
    {
     "type": "url",
-    "value": "https://samuelelena.co/npm/module.external/jquery.min.js&nbsp",
+    "value": "https://samuelelena.co/npm/module.external/jquery.min.js",
     "assertion": "explicit",
     "evidence": "#StopRansomware: RansomHub Ransomware > Indicators of Compromise"
    },

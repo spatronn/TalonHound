@@ -45,6 +45,13 @@ const GROUP_LABEL_RE =
 const OBSERVABLE_RE =
   /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
 
+const IPV6_LEADING_RE = /^\[?[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,}\b/i;
+
+/** "Description: Per-victim rule delivery": a field of a record, not a section label. */
+const KEY_VALUE_RECORD_LINE_RE = /^[A-Za-z][\w /-]{0,30}:\s+\S/;
+
+const LABELLED_DIGEST_ROW_RE = /^(?:sha-?(?:1|256|512)|md-?5)\b[\s:|-]+[a-f0-9]{32,128}\b/i;
+
 const MAX_TRACE = 80;
 
 function textOf(b) {
@@ -71,6 +78,8 @@ function looksHeadingLike(b) {
   // Observable inventory / annotated IOC rows are content, never synthetic headings
   // (e.g. "8.218.50[.]207 - Staging server …" must not open a C2 scope from "C2").
   if (isIndicatorValueLine(t) || isObservableListLine(t) || isAnnotatedIndicatorRowLine(t)) return false;
+  // An IPv6 address leading the line ("2607:5500::2 (since 2024-08-28)") is a row.
+  if (IPV6_LEADING_RE.test(t)) return false;
   const refanged = refangTextForExtraction(t);
   if (OBSERVABLE_RE.test(refanged) && t.length < 48) return false;
   // Observable-led annotation lines ("host - role", "ip | note") stay content.
@@ -175,6 +184,39 @@ function lookAheadInventory(blocks, i, chromeIds, depth = 4) {
     if (isInventoryish(b)) return true;
   }
   return false;
+}
+
+/** Like lookAheadInventory, but a prose sentence that mentions a value does not count. */
+function lookAheadRowInventory(blocks, i, chromeIds, depth = 6) {
+  let seen = 0;
+  for (let j = i + 1; j < blocks.length && seen < depth; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') return false;
+    seen += 1;
+    const text = textOf(b);
+    // A labelled row ("SHA256 <digest> first stage.") can end like a sentence and is still a row.
+    const row = isIndicatorValueLine(text) || isObservableListLine(text) || isAnnotatedIndicatorRowLine(text) || LABELLED_DIGEST_ROW_RE.test(text);
+    const sentence = !row && b.type === 'paragraph' && b.layout !== 'observable_row' && /\s/.test(text) && /[.!?。]$/.test(text);
+    if (sentence) continue;
+    if (isInventoryish(b)) return true;
+    // A long run of values is still rows, whatever its length.
+    const values = refangTextForExtraction(text).match(OBSERVABLE_GLOBAL_RE) || [];
+    if (values.length >= 3) return true;
+  }
+  return false;
+}
+
+/** A heading under an open appendix that names an indicator group or holds rows of its own. */
+function isInventoryGroupHeading(t, groupLabel, blocks, i, chromeIds) {
+  if (NON_INVENTORY_TOPIC_RE.test(t)) return false;
+  if (lookAheadRowInventory(blocks, i, chromeIds)) return true;
+  // A family heading whose groups are deeper headings: "Family A" › "C2" › rows.
+  const level = blocks[i]?.level;
+  if (Number.isInteger(level) && lookAheadGroupedInventory(blocks, i, chromeIds, level)) return true;
+  // A group word on a real heading whose rows sit past the look-ahead still names a
+  // group. On a label line, a group word alone ("Malware Analysis") names nothing.
+  return groupLabel && blocks[i]?.type === 'heading';
 }
 
 /** A label whose whole text is a formal IOC-section title. */
@@ -368,6 +410,26 @@ function nearestAuthoritative(stack) {
   return null;
 }
 
+/**
+ * The authority that applies to content here: a nested heading or label that is
+ * not an inventory group ends it for its own content, without closing the appendix
+ * for a later sibling group.
+ */
+function effectiveAuthority(stack) {
+  for (let i = stack.length - 1; i >= 0; i -= 1) {
+    if (stack[i].blocksAuthority) return null;
+    if (stack[i].authoritative && STRONG_IOC_ZONES.has(stack[i].zone)) return stack[i];
+  }
+  return null;
+}
+
+/**
+ * Headings that name page furniture or advice rather than a group of indicators.
+ * They never inherit an open appendix, whatever follows them.
+ */
+const NON_INVENTORY_TOPIC_RE =
+  /^(?:about\s+(?:the\s+)?(?:authors?|us|[A-Z][\w-]*)|authors?(?:\s+bio)?|acknowledge?ments?|conclusions?|summary|recommendations?|mitigations?|remediation|next\s+steps|disclaimer|contact(?:\s+us)?|related\s+(?:posts?|articles?|reading|content)|further\s+reading|share\s+this|subscribe|get\s+in\s+touch|how\s+to\s+protect|protect(?:ing)?\s+yourself|legitimate\b|benign\b|non-?malicious\b)/i;
+
 function nearestNegative(stack) {
   for (let i = stack.length - 1; i >= 0; i -= 1) {
     if (stack[i].zone && NEGATIVE_ZONES.has(stack[i].zone) && !stack[i].authoritative) {
@@ -378,7 +440,7 @@ function nearestNegative(stack) {
 }
 
 function annotateContentFields(b, stack) {
-  const auth = nearestAuthoritative(stack);
+  const auth = effectiveAuthority(stack);
   const neg = auth ? null : nearestNegative(stack);
   // Stable structural provenance: path texts for display + heading block ids
   // for identity (heading wording changes must not orphan ancestry joins).
@@ -525,7 +587,10 @@ export function annotateSectionTree(doc, opts = {}) {
           !Number.isInteger(parentAuth.level) ||
           sameLevelInferred;
         if (deeper || levelUnknown || !isRealHeading) {
-          treatAsSubgroup = groupLabel || inventoryNext || (zone && STRONG_IOC_ZONES.has(zone));
+          // A subgroup names an indicator group or holds rows of its own. A sentence
+          // that happens to carry a value is not an inventory, and advice or page
+          // furniture never inherits the appendix.
+          treatAsSubgroup = Boolean(zone && STRONG_IOC_ZONES.has(zone)) || isInventoryGroupHeading(t, groupLabel, blocks, i, chromeIds);
         }
       }
     }
@@ -623,16 +688,12 @@ export function annotateSectionTree(doc, opts = {}) {
       } else if (parentAuth && treatAsSubgroup) {
         // nest under appendix — do not clear
       } else if (parentAuth && zone && !STRONG_IOC_ZONES.has(zone) && !treatAsSubgroup) {
-        annotateContentFields(b, stack);
-        b.tree_is_heading = true;
-        b.tree_heading_zone = zone;
         pushTrace({
           block_id: b.id,
           decision: 'synthetic_narrative_under_appendix',
           zone,
           opened_by: parentAuth.id
         });
-        continue;
       }
     }
 
@@ -676,8 +737,19 @@ export function annotateSectionTree(doc, opts = {}) {
         ? true
         : opensAuthoritativeZone && isRealHeading && !inferredLevels && zone === 'explicit_ioc_section' &&
           leadInWithSiblingGroups(blocks, i, chromeIds, level),
-      opened: opensAuthoritativeZone
+      opened: opensAuthoritativeZone,
+      // A nested heading or label that is no inventory group: its content is not
+      // asserted by the appendix above it (tl-section-tree-v16).
+      // Judged against what is still open now that siblings have been popped: "Files"
+      // after "Hosts" is a child of the appendix, whatever was on top before.
+      blocksAuthority: !authoritative && !isNegativeHeading && Boolean(nearestAuthoritative(stack)) &&
+        // A short line holding a field or a value is a row of the group, not a label.
+        !(!isRealHeading && (KEY_VALUE_RECORD_LINE_RE.test(t) || OBSERVABLE_RE.test(refangTextForExtraction(t)))) &&
+        !isInventoryGroupHeading(t, groupLabel, blocks, i, chromeIds)
     };
+    if (node.blocksAuthority) {
+      pushTrace({ block_id: b.id, decision: 'end_authority_for_non_group_section', opened_by: nearestAuthoritative(stack)?.id || null, synthetic: node.synthetic });
+    }
     // A deeper indicator-class subgroup of the appendix root marks the root as
     // grouped by indicator class (see classSibling).
     const groupRoot = appendixRoot(stack);

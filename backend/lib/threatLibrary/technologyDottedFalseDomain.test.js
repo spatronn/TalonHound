@@ -21,8 +21,8 @@ import {
 } from './observableTypeResolver.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
-assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
 
 function extract(html) {
   const { document } = extractCanonicalDocumentFromHtml(html, {
@@ -158,13 +158,13 @@ test('5. defanged publisher domains continue to work', () => {
   const { candidates } = extract(`<!doctype html><html><body><article>
 <h2>Indicators of compromise</h2>
 <ul>
-<li>example[.]com</li>
+<li>stage-relay[.]com</li>
 <li>cdn-stage[.]example[.]net</li>
 </ul>
 </article></body></html>`);
-  assert.ok(candidates.find((c) => keyOf(c) === 'domain:example.com'));
+  assert.ok(candidates.find((c) => keyOf(c) === 'domain:stage-relay.com'));
   assert.ok(candidates.find((c) => keyOf(c) === 'domain:cdn-stage.example.net'));
-  assert.equal(candidates.find((c) => keyOf(c) === 'domain:example.com').source_assertion, 'explicit_ioc');
+  assert.equal(candidates.find((c) => keyOf(c) === 'domain:stage-relay.com').source_assertion, 'explicit_ioc');
 });
 
 test('7. Securelist-shaped Mirage Kitten fixture: Node.js tag after Domains and IPs is not an Indicator', () => {
