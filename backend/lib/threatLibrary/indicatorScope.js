@@ -86,6 +86,19 @@ const ROW_KINDS = new Set([
 /**
  * @param {string|null|undefined} kind
  */
+/**
+ * A line that is a row of an inventory: one value, a list of values, or a value with
+ * its annotation. Every structural reader uses this one test.
+ * @param {string} line
+ */
+export function isInventoryRowLine(line) {
+  return isIndicatorValueLine(line) || isObservableListLine(line) || isAnnotatedIndicatorRowLine(line);
+}
+
+/** Text holding something shaped like an observable (a cheap structural signal, not an extraction). */
+export const OBSERVABLE_IN_TEXT_RE =
+  /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
+
 export function isRowOccurrenceKind(kind) {
   return ROW_KINDS.has(String(kind || ''));
 }

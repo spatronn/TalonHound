@@ -26,7 +26,9 @@ import {
   isIndicatorValueLine,
   isObservableListLine,
   isAnnotatedIndicatorRowLine,
-  isAnnotatedHashList
+  isAnnotatedHashList,
+  isInventoryRowLine,
+  OBSERVABLE_IN_TEXT_RE
 } from '../indicatorScope.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
 import { refangTextForExtraction } from '../defang.js';
@@ -42,8 +44,7 @@ import { SECTION_TREE_VERSION } from './version.js';
 const GROUP_LABEL_RE =
   /\b(?:domains?|ips?|ip\s+addresses?|addresses?|urls?|hash(?:es)?|hosts?|hostnames?|servers?|c2|indicators?|iocs?|samples?|files?|infrastructure|payloads?|droppers?|loaders?|malware|phishing|md5|sha-?\d*)\b/i;
 
-const OBSERVABLE_RE =
-  /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
+const OBSERVABLE_RE = OBSERVABLE_IN_TEXT_RE;
 
 const IPV6_LEADING_RE = /^\[?[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,}\b/i;
 
@@ -77,7 +78,7 @@ function looksHeadingLike(b) {
   if ((t.match(/\)/g) || []).length > (t.match(/\(/g) || []).length) return false;
   // Observable inventory / annotated IOC rows are content, never synthetic headings
   // (e.g. "8.218.50[.]207 - Staging server …" must not open a C2 scope from "C2").
-  if (isIndicatorValueLine(t) || isObservableListLine(t) || isAnnotatedIndicatorRowLine(t)) return false;
+  if (isInventoryRowLine(t)) return false;
   // An IPv6 address leading the line ("2607:5500::2 (since 2024-08-28)") is a row.
   if (IPV6_LEADING_RE.test(t)) return false;
   const refanged = refangTextForExtraction(t);
@@ -99,7 +100,7 @@ function isInventoryish(b) {
   const t = textOf(b);
   if (!t) return false;
   if (b.layout === 'observable_row') return true;
-  if (isIndicatorValueLine(t) || isObservableListLine(t) || isAnnotatedIndicatorRowLine(t)) return true;
+  if (isInventoryRowLine(t)) return true;
   if (
     (b.type === 'list' || b.type === 'list_item' || b.type === 'paragraph') &&
     OBSERVABLE_RE.test(refangTextForExtraction(t)) &&
@@ -196,7 +197,7 @@ function lookAheadRowInventory(blocks, i, chromeIds, depth = 6) {
     seen += 1;
     const text = textOf(b);
     // A labelled row ("SHA256 <digest> first stage.") can end like a sentence and is still a row.
-    const row = isIndicatorValueLine(text) || isObservableListLine(text) || isAnnotatedIndicatorRowLine(text) || LABELLED_DIGEST_ROW_RE.test(text);
+    const row = isInventoryRowLine(text) || LABELLED_DIGEST_ROW_RE.test(text);
     const sentence = !row && b.type === 'paragraph' && b.layout !== 'observable_row' && /\s/.test(text) && /[.!?。]$/.test(text);
     if (sentence) continue;
     if (isInventoryish(b)) return true;
@@ -245,7 +246,7 @@ function lookAheadStrongInventory(blocks, i, chromeIds, depth = 6) {
     // HTTP/API examples are technical prose, not publisher IOC inventory.
     if (/^(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS|curl)\b/i.test(t.trim())) continue;
     if (/^(?:\d+\s+){2,}\|\s*(?:GET|POST|\{)/i.test(t.trim())) continue;
-    if (isIndicatorValueLine(t) || isAnnotatedIndicatorRowLine(t) || isObservableListLine(t) || isAnnotatedHashList(t)) return true;
+    if (isInventoryRowLine(t) || isAnnotatedHashList(t)) return true;
     if (
       (b.type === 'list' || b.type === 'list_item') &&
       OBSERVABLE_RE.test(refangTextForExtraction(t)) &&
