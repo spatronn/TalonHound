@@ -112,6 +112,8 @@ export default function IocSourcesPanel({
   const [addUrl, setAddUrl] = useState('');
   const [selected, setSelected] = useState(null);
   const [selectedPaths, setSelectedPaths] = useState(() => new Set());
+  const [dismissReason, setDismissReason] = useState('');
+  const [examined, setExamined] = useState(null);
 
   const load = useCallback(async () => {
     if (!reportId) return;
@@ -129,6 +131,16 @@ export default function IocSourcesPanel({
   }, [reportId]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadExamined = useCallback(async () => {
+    if (!reportId) return;
+    try {
+      const res = await api.get(`/threat-library/reports/${reportId}/source-discovery`);
+      setExamined(res?.data || res || null);
+    } catch {
+      setExamined(null);
+    }
+  }, [reportId]);
 
   useEffect(() => {
     if (!selected) return;
@@ -392,20 +404,47 @@ export default function IocSourcesPanel({
                   </button>
                 ) : null}
                 {['discovered', 'inspected', 'failed', 'blocked', 'unsupported', 'stale'].includes(selected.lifecycle_status) ? (
-                  <button
-                    type="button"
-                    style={ui.btnDanger}
-                    disabled={Boolean(busy)}
-                    onClick={() => runAction('dismiss', () => api.post(`/threat-library/ioc-sources/${selected.id}/dismiss`))}
-                  >
-                    Dismiss
-                  </button>
+                  <>
+                    <input
+                      type="text"
+                      style={ui.input}
+                      value={dismissReason}
+                      onChange={(e) => setDismissReason(e.target.value)}
+                      placeholder="Why this is not the report's package"
+                      aria-label="Reason for dismissing this source"
+                    />
+                    <button
+                      type="button"
+                      style={ui.btnDanger}
+                      disabled={Boolean(busy) || dismissReason.trim().length < 12}
+                      title={dismissReason.trim().length < 12 ? 'Enter a reason of at least 12 characters' : undefined}
+                      onClick={() => runAction('dismiss', () => api.post(`/threat-library/ioc-sources/${selected.id}/dismiss`, { reason: dismissReason.trim() })).then(() => setDismissReason(''))}
+                    >
+                      Dismiss
+                    </button>
+                  </>
                 ) : null}
               </div>
             ) : null}
           </aside>
         ) : null}
       </div>
+      <details onToggle={(e) => { if (e.currentTarget.open && !examined) loadExamined(); }}>
+        <summary>Links examined</summary>
+        {examined?.references?.length ? (
+          <ul>
+            {examined.references.map((r) => (
+              <li key={r.canonical_url || r.url}>
+                <span style={{ overflowWrap: 'anywhere' }}>{r.url}</span>
+                {' '}
+                {r.decision === 'accepted' ? 'Listed as a source' : `Not a package: ${r.rejection_reason}`}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>{examined?.runs?.length ? 'No external references in this report.' : 'Not recorded for this report.'}</p>
+        )}
+      </details>
     </section>
   );
 }

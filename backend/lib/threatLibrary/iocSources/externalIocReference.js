@@ -261,7 +261,7 @@ export function blockIsExternalIocReference(block, opts = {}) {
  * Prefers structured `links` (href-only anchors) then absolute URLs in text.
  *
  * @param {object[]} blocks
- * @param {{ reportUrl?: string|null }} [opts]
+ * @param {{ reportUrl?: string|null, onRejected?: Function }} [opts]
  * @returns {Array<{ href: string, linkText: string, surrounding: string, headingText: string, blockId: string|null, score: number, matchedCues: string[] }>}
  */
 export function findExternalIocReferencesInBlocks(blocks, opts = {}) {
@@ -319,7 +319,10 @@ export function findExternalIocReferencesInBlocks(blocks, opts = {}) {
         reportHost,
         leadIn
       });
-      if (!isAcceptedIocSourceScore(scored)) continue;
+      if (!isAcceptedIocSourceScore(scored)) {
+        opts.onRejected?.({ href: c.href, linkText: c.linkText, surrounding: c.surrounding, headingText: lastHeading, ...scored });
+        continue;
+      }
       const prev = byHref.get(c.href);
       if (prev && prev.score >= scored.score) continue;
       byHref.set(c.href, {

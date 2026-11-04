@@ -25,7 +25,7 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v4';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v5';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
@@ -432,6 +432,100 @@ export function reportSlugForeignFiles(paths, reportUrl) {
   if (!own.length || own.length === files.length) return null;
   return new Set(files.filter((p) => !own.includes(p)));
 }
+
+/** Folder names under which publishers keep per-campaign inventories. */
+const INVENTORY_DIR_RE = /^(?:iocs?|indicators?|intel|intelligence|threat[-_]?intel|data|feeds?|csv|json|stix2?|misp|txt|network|hosts|domains|campaigns?|reports?|research|\d{4}|0?[1-9]|1[0-2]|\d{4}[-_]\d{2})$/i;
+
+/** Date spellings a file name could carry for a publication date. */
+function publicationDateTokens(publishedAt) {
+  const d = publishedAt ? new Date(publishedAt) : null;
+  if (!d || Number.isNaN(d.getTime())) return [];
+  const y = String(d.getUTCFullYear());
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return [`${y}${m}${day}`, `${m}${day}${y}`];
+}
+
+/**
+ * Evidence that a file name refers to this report (pure). The content of the file
+ * is never consulted, so indicator overlap cannot associate a file with a report.
+ *
+ *   report_slug      the stem starts with the report URL slug
+ *   designator       the stem holds a designator of the report ("UAT-8837")
+ *   title_names      the stem holds two or more of the report's distinctive names
+ *   date_and_name    the stem holds the publication date and one distinctive name
+ *
+ * A date alone or one ordinary word alone is not evidence.
+ * @param {string} path
+ * @param {{ reportUrl?: string|null, reportTitle?: string|null, headings?: string[], publishedAt?: string|Date|null }} report
+ * @returns {{ matched: boolean, evidence: string|null, names: string[], date: boolean }}
+ */
+export function fileNameReportEvidence(path, report = {}) {
+  const stem = fileStem(path);
+  const parts = stem.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const joined = normToken(stem);
+  const names = distinctiveReportTokens({ title: report.reportTitle, headings: report.headings })
+    .filter((t) => parts.includes(t) || (/\d/.test(t) && joined.includes(t)));
+  const date = publicationDateTokens(report.publishedAt).some((t) => joined.includes(t));
+  let slug = '';
+  try {
+    slug = normToken(pathSlug(new URL(String(report.reportUrl || '')).pathname));
+  } catch {
+    slug = '';
+  }
+  let evidence = null;
+  if (slug.length >= 6 && joined.startsWith(slug)) evidence = 'report_slug';
+  else if (names.some((t) => /\d/.test(t) && /[a-z]/.test(t) && t.length >= 5)) evidence = 'designator';
+  else if (names.length >= 2) evidence = 'title_names';
+  else if (date && names.length >= 1) evidence = 'date_and_name';
+  return { matched: Boolean(evidence), evidence, names, date };
+}
+
+/**
+ * Find inventory files of a report in a shared repository from safe metadata: the
+ * directory listing only, through a bounded walk of inventory-shaped folders.
+ * Nothing is read and nothing is approved here; a matched file is still inspected,
+ * its own back-link can still reject it, and an analyst decides.
+ *
+ * @param {{ path?: string }} gh
+ * @param {{ reportUrl?: string|null, reportTitle?: string|null, headings?: string[], publishedAt?: string|Date|null }} report
+ * @param {{ listDir: (path: string) => Promise<Array<{ name: string, type: string, path: string, size?: number|null }>> }} io
+ * @param {{ maxDirs?: number, maxDepth?: number, maxMatches?: number }} [limits]
+ */
+export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
+  const maxDirs = limits.maxDirs ?? 16;
+  const maxDepth = limits.maxDepth ?? 3;
+  const maxMatches = limits.maxMatches ?? 12;
+  const start = String(gh.path || '').replace(/^\/+|\/+$/g, '');
+  const queue = [{ path: start, depth: 0 }];
+  const matches = [];
+  const checked = [];
+  let requests = 0;
+  let filesSeen = 0;
+  while (queue.length && requests < maxDirs) {
+    const { path, depth } = queue.shift();
+    requests += 1;
+    checked.push(path || '/');
+    const entries = (await io.listDir(path)) || [];
+    for (const e of entries) {
+      if (e.type === 'dir') {
+        if (depth + 1 < maxDepth && INVENTORY_DIR_RE.test(e.name)) queue.push({ path: e.path, depth: depth + 1 });
+      } else if (e.type === 'file' && DATA_FILE_RE.test(e.name)) {
+        filesSeen += 1;
+        const ev = fileNameReportEvidence(e.path, report);
+        if (ev.matched) matches.push({ path: e.path, size: e.size ?? null, evidence: ev.evidence, names: ev.names, date: ev.date });
+      }
+    }
+  }
+  const truncated = queue.length > 0;
+  if (!matches.length) {
+    return { ok: false, reason: 'no_file_named_for_report', files: [], candidates_checked: checked, files_seen: filesSeen, requests, truncated };
+  }
+  return { ok: true, reason: 'file_names_match_report', files: matches.slice(0, maxMatches), not_listed: Math.max(0, matches.length - maxMatches), candidates_checked: checked, files_seen: filesSeen, requests, truncated };
+}
+
+/** Machine-readable inventories a root walk may match by name. */
+const DATA_FILE_RE = /\.(?:csv|tsv|txt|json|ndjson|jsonl|stix|xml|sha256|sha1|md5|ioc)$/i;
 
 /**
  * Resolve the campaign folder of a repository-root pointer. Candidate folders

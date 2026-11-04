@@ -40,12 +40,12 @@ export const IOC_SOURCE_JOB_MODES = Object.freeze({
 });
 
 export const IOC_SOURCE_FETCH = Object.freeze({
-  MAX_BYTES: Math.max(Number(process.env.THREAT_LIBRARY_IOC_SOURCE_MAX_BYTES || 4_194_304), 1024),
+  MAX_BYTES: Math.max(Number(process.env.THREAT_LIBRARY_IOC_SOURCE_MAX_BYTES || 16_777_216), 1024),
   TIMEOUT_MS: Math.max(Number(process.env.THREAT_LIBRARY_IOC_SOURCE_TIMEOUT_MS || 30_000), 1000),
   MAX_REDIRECTS: 5,
   GITHUB_MAX_FILES: Math.max(Number(process.env.THREAT_LIBRARY_IOC_SOURCE_GITHUB_MAX_FILES || 40), 1),
   GITHUB_MAX_DEPTH: 1,
-  GITHUB_MAX_FILE_BYTES: Math.max(Number(process.env.THREAT_LIBRARY_IOC_SOURCE_GITHUB_FILE_BYTES || 1_048_576), 1024)
+  GITHUB_MAX_FILE_BYTES: Math.max(Number(process.env.THREAT_LIBRARY_IOC_SOURCE_GITHUB_FILE_BYTES || 16_777_216), 1024)
 });
 
 export const IOC_SOURCE_ELIGIBLE_EXTENSIONS = Object.freeze([

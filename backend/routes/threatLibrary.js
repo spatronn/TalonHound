@@ -3,6 +3,7 @@
  */
 
 import { loadLinkedIocSourceSummary, withLinkedSourceQuality } from '../lib/threatLibrary/iocSources/linkedSourceStatus.js';
+import { loadSourceDiscoveryLedger } from '../lib/threatLibrary/iocSources/discoveryLedger.js';
 import multer from 'multer';
 import { isAdminRole, requireRole, ROLES } from '../lib/rbac.js';
 import { compareReferenceRunToCurrent, listExtractionRuns } from '../lib/threatLibrary/extractionRuns.js';
@@ -601,6 +602,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
         const linkedSources = await loadLinkedIocSourceSummary(pool, report.id);
         reportBody.linked_ioc_sources = linkedSources;
         reportBody.extraction_quality = withLinkedSourceQuality(reportBody.extraction_quality, linkedSources);
+        reportBody.package_coverage = linkedSources.package_coverage || null;
       } catch {
         /* non-fatal: detail still renders without the overlay */
       }
@@ -1625,6 +1627,17 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   });
 
   // --- Additional IOC Sources ---
+  // Source-discovery ledger: everything discovery examined and how each source resolved.
+  app.get('/api/threat-library/reports/:publicId/source-discovery', async (req, res) => {
+    try {
+      const report = await getReportByPublicId(pool, req.params.publicId);
+      if (!report) return res.status(404).json({ message: 'Report not found' });
+      return res.json(await loadSourceDiscoveryLedger(pool, report.id));
+    } catch (err) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get('/api/threat-library/reports/:publicId/ioc-sources', async (req, res) => {
     try {
       const report = await getReportByPublicId(pool, req.params.publicId);
@@ -1824,6 +1837,7 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
           sourcePublicId: req.params.sourceId,
           report,
           actor: await actorOf(req),
+          reason: req.body?.reason,
           audit,
           req
         });

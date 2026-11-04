@@ -64,7 +64,7 @@ test('versions: tl-candidates-v54, tl-table-v17, tl-type-resolver-v22, tl-ioc-so
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v56');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v23');
-  assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v4');
+  assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v5');
 });
 
 test('A. "Legitimate File Hashes" table: every row is a benign file, the malicious table stays Indicators', () => {

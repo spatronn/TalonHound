@@ -121,7 +121,7 @@ function toDiscoveryRow({ absolute, canonical, score, matchedCues, linkText, sur
 /**
  * Discover IOC-pack hyperlinks from retained HTML (preserves href + anchor text).
  * @param {string} html
- * @param {{ reportUrl?: string|null }} [opts]
+ * @param {{ reportUrl?: string|null, onRejected?: Function }} [opts]
  */
 export function discoverIocSourcesFromHtml(html, opts = {}) {
   const raw = String(html || '');
@@ -163,7 +163,10 @@ export function discoverIocSourcesFromHtml(html, opts = {}) {
       reportHost,
       leadIn
     });
-    if (!isAcceptedIocSourceScore(scored)) continue;
+    if (!isAcceptedIocSourceScore(scored)) {
+      opts.onRejected?.({ href: absolute, linkText, surrounding: parentText, headingText, ...scored });
+      continue;
+    }
 
     const prev = byCanon.get(canonical);
     if (prev && prev.score >= scored.score) continue;
@@ -212,6 +215,7 @@ export function discoverIocSourcesFromBlocks(blocks, opts = {}) {
         reportUrl: opts.reportUrl
       })
     );
+    byCanon.get(canonical).reference_method = item.linkText ? 'document_link' : 'text_url';
   }
   return [...byCanon.values()].sort((a, b) => b.score - a.score);
 }

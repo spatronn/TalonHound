@@ -185,6 +185,14 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'IOC-table rows kept as Context Only by their own wording',
     why: 'URLs or domains listed in a publisher IOC table were kept as Context Only because their row calls them legitimate or a provider service. Confirm the wording is about the value itself, not the service hosting it.'
   },
+  ioc_source_discovery_incomplete: {
+    title: 'IOC Source discovery did not finish',
+    why: 'A publisher package may be missing from this report. The document extraction is not affected.'
+  },
+  linked_ioc_source_partially_read: {
+    title: 'Linked IOC Source partly read',
+    why: 'Some files of an extracted IOC Source were over the size or file limit, so Linked Indicators may be incomplete.'
+  },
   linked_ioc_source_scope_mismatch: {
     title: 'Linked IOC Source leads to other reports',
     why: 'The files behind a linked IOC Source name other articles, or no campaign folder for this report could be confirmed. Verify the publisher link before extracting or dismissing the source.'

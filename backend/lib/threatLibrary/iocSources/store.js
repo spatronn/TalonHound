@@ -38,6 +38,7 @@ export function publicIocSource(row, files = null) {
     approved_at: row.approved_at || null,
     dismissed_by: row.dismissed_by || null,
     dismissed_at: row.dismissed_at || null,
+    dismissal_reason: row.dismissal_reason || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
     files: Array.isArray(files)
@@ -219,7 +220,15 @@ export async function transitionSource(pool, source, action, extra = {}) {
     if (report && isFinalizedReport(report) && !patch?.idempotent && RESOLVED_LIFECYCLE.has(from) && !RESOLVED_LIFECYCLE.has(to)) {
       throw new ReportFinalizedError();
     }
-    return applySourcePatch(client, current.id, patch);
+    const updated = await applySourcePatch(client, current.id, patch);
+    if (action === 'dismiss' && !patch?.idempotent && extra.dismissal_reason) {
+      const { rows: withReason } = await client.query(
+        `UPDATE threat_report_ioc_sources SET dismissal_reason = $2 WHERE id = $1 RETURNING *`,
+        [current.id, extra.dismissal_reason]
+      );
+      return withReason[0] || updated;
+    }
+    return updated;
   });
 }
 

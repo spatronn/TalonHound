@@ -236,46 +236,11 @@ export async function enumerateGitHubIocSource(url, deps = {}) {
     return { ok: false, code: 'unsupported_github', message: 'GitHub path is not an enumerable IOC directory' };
   }
 
-  const files = [];
-  let skipped = 0;
-  for (const item of items) {
-    if (files.length >= IOC_SOURCE_FETCH.GITHUB_MAX_FILES) {
-      skipped += 1;
-      continue;
-    }
-    if (item.type === 'dir') {
-      skipped += 1; // depth > 1 not traversed in v1
-      continue;
-    }
-    if (item.type !== 'file') {
-      skipped += 1;
-      continue;
-    }
-    const path = item.path || item.name || '';
-    if (!isEligibleIocFilePath(path)) {
-      skipped += 1;
-      continue;
-    }
-    if (item.size != null && Number(item.size) > IOC_SOURCE_FETCH.GITHUB_MAX_FILE_BYTES) {
-      skipped += 1;
-      continue;
-    }
-    const download = rawUrl(parsed.owner, parsed.repo, pinRef, path);
-    if (!validateIocSourceUrl(download).ok) {
-      skipped += 1;
-      continue;
-    }
-    files.push({
-      path,
-      download_url: download,
-      size_bytes: item.size ?? null,
-      content_sha: item.sha || null,
-      selected: true
-    });
-  }
+  const { files, skippedFiles } = selectListedFiles(items, parsed, pinRef);
+  const skipped = skippedFiles.length;
 
   if (!files.length) {
-    return { ok: false, code: 'no_eligible_files', message: 'No eligible IOC files found in the GitHub directory' };
+    return { ok: false, code: 'no_eligible_files', message: 'No eligible IOC files found in the GitHub directory', skipped_files: skippedFiles };
   }
 
   return {
@@ -285,7 +250,59 @@ export async function enumerateGitHubIocSource(url, deps = {}) {
     repo_ref: repoRef,
     content_hash: listing.contentHash,
     files,
-    skipped_entries: skipped
+    skipped_entries: skipped,
+    skipped_files: skippedFiles
+  };
+}
+
+/**
+ * Listing entries to read, and why each of the others is not read.
+ * @param {Array<{ type?: string, path?: string, name?: string, size?: number, sha?: string }>} items
+ * @param {{ owner: string, repo: string }} gh
+ * @param {string} pinRef
+ */
+export function selectListedFiles(items, gh, pinRef) {
+  const files = [];
+  const skippedFiles = [];
+  for (const item of items) {
+    const path = item.path || item.name || '';
+    const skip = (reason) => skippedFiles.push({ path, reason, size_bytes: item.size ?? null });
+    if (item.type === 'dir') skip('nested_directory');
+    else if (item.type !== 'file') skip('not_a_file');
+    else if (!isEligibleIocFilePath(path)) skip('ineligible_type');
+    else if (item.size != null && Number(item.size) > IOC_SOURCE_FETCH.GITHUB_MAX_FILE_BYTES) skip('too_large');
+    else if (files.length >= IOC_SOURCE_FETCH.GITHUB_MAX_FILES) skip('file_limit');
+    else {
+      const download = rawUrl(gh.owner, gh.repo, pinRef, path);
+      if (!validateIocSourceUrl(download).ok) skip('blocked_url');
+      else files.push({ path, download_url: download, size_bytes: item.size ?? null, content_sha: item.sha || null, selected: true });
+    }
+  }
+  return { files, skippedFiles };
+}
+
+/**
+ * The files a repository-root resolution matched to the report, pinned to one
+ * commit. A size the listing reported is enforced before anything is fetched.
+ * @param {{ owner: string, repo: string, ref: string }} gh
+ * @param {Array<{ path: string, size?: number|null }>} entries
+ * @param {{ fetchImpl?: Function, destinationGuard?: Function }} [deps]
+ */
+export async function enumerateGitHubFiles(gh, entries, deps = {}) {
+  const resolved = await resolveGitHubCommitSha({ ...gh, path: '' }, deps);
+  const pinRef = resolved.repo_revision || gh.ref;
+  const { files, skippedFiles } = selectListedFiles(entries.map((e) => ({ ...e, type: 'file' })), gh, pinRef);
+  if (!files.length) {
+    return { ok: false, code: 'no_eligible_files', message: 'The matched files are not readable IOC files', skipped_files: skippedFiles };
+  }
+  return {
+    ok: true,
+    source_type: 'github_dir',
+    repo_revision: pinRef,
+    repo_ref: resolved.repo_ref || gh.ref,
+    files,
+    skipped_entries: skippedFiles.length,
+    skipped_files: skippedFiles
   };
 }
 
@@ -310,7 +327,7 @@ export function gitHubScopeIo(gh, deps = {}) {
         });
         const items = JSON.parse(fetched.body);
         return Array.isArray(items)
-          ? items.map((i) => ({ name: String(i.name || ''), type: String(i.type || ''), path: String(i.path || i.name || '') }))
+          ? items.map((i) => ({ name: String(i.name || ''), type: String(i.type || ''), path: String(i.path || i.name || ''), size: i.size ?? null }))
           : [];
       } catch {
         return [];

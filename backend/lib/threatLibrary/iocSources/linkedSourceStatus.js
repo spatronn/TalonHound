@@ -8,6 +8,7 @@
  */
 
 import { LINKED_SOURCE_PENDING_STATUSES, LINKED_SOURCE_UNRESOLVED_STATUSES } from '../finalizeGuard.js';
+import { packageCoverage } from './discoveryLedger.js';
 
 // One definition of pending / unresolved, shared with the finalize guard.
 const PENDING = new Set(LINKED_SOURCE_PENDING_STATUSES);
@@ -27,7 +28,13 @@ export const EXTRACTION_QUALITY_MISSING_CODE = 'extraction_quality_missing';
  * (tl-ioc-source-scope-v3).
  */
 export const LINKED_SOURCE_SCOPE_MISMATCH_CODE = 'linked_ioc_source_scope_mismatch';
+/** Discovery itself failed or read only part of the report: not an extraction failure. */
+export const IOC_SOURCE_DISCOVERY_INCOMPLETE_CODE = 'ioc_source_discovery_incomplete';
+/** A linked pack was extracted but some of its files were not read (size or file limit). */
+export const LINKED_SOURCE_PARTIALLY_READ_CODE = 'linked_ioc_source_partially_read';
 const READ_TIME_CODES = new Set([
+  IOC_SOURCE_DISCOVERY_INCOMPLETE_CODE,
+  LINKED_SOURCE_PARTIALLY_READ_CODE,
   LINKED_SOURCE_NOT_INGESTED_CODE,
   LINKED_SOURCE_SCOPE_MISMATCH_CODE,
   IOC_PACKAGE_NOT_DISCOVERED_CODE,
@@ -93,6 +100,21 @@ export function withLinkedSourceQuality(quality, summary) {
       explanation: `${summary.scope_mismatch} linked IOC Source(s) lead to inventories of other reports (or no campaign folder for this report could be corroborated): verify the publisher link before extracting or dismissing.`
     });
   }
+  if (summary.discovery_status === 'failed' || summary.discovery_status === 'partial') {
+    add.push({
+      code: IOC_SOURCE_DISCOVERY_INCOMPLETE_CODE,
+      severity: 'warning',
+      explanation: 'IOC Source discovery did not finish for this report, so a publisher package may be missing. ' +
+        'The document extraction is not affected.'
+    });
+  }
+  if (summary.files_not_read > 0) {
+    add.push({
+      code: LINKED_SOURCE_PARTIALLY_READ_CODE,
+      severity: 'warning',
+      explanation: `${summary.files_not_read} file(s) of an extracted IOC Source were not read (size or file limit): Linked Indicators may be incomplete.`
+    });
+  }
   const announced = (quality.warnings || []).some((w) => w?.code === 'ioc_package_announced');
   if (announced && summary.declared === 0 && summary.dismissed === 0) {
     add.push({
@@ -130,13 +152,24 @@ export function withLinkedSourceQuality(quality, summary) {
  */
 export async function loadLinkedIocSourceSummary(pool, reportId) {
   const { rows } = await pool.query(
-    `SELECT lifecycle_status, error_code,
+    `SELECT lifecycle_status, error_code, preview->'scope'->'skipped_files' AS skipped_files,
             COALESCE(jsonb_array_length(CASE WHEN jsonb_typeof(preview->'scope'->'other_report_files') = 'array'
                                              THEN preview->'scope'->'other_report_files' END), 0)::int AS other_report_files
        FROM threat_report_ioc_sources WHERE report_id = $1`,
     [reportId]
   );
   const summary = summarizeLinkedIocSources(rows);
+  const latest = await pool.query(
+    `SELECT status FROM threat_report_source_discovery_runs WHERE report_id = $1 ORDER BY id DESC LIMIT 1`,
+    [reportId]
+  );
+  const coverage = packageCoverage({
+    latestRun: latest?.rows?.[0] || null,
+    sources: rows.map((r) => ({ ...r, skipped_files: Array.isArray(r.skipped_files) ? r.skipped_files : [] }))
+  });
+  summary.discovery_status = coverage.discovery_status;
+  summary.files_not_read = coverage.files_not_read;
+  summary.package_coverage = coverage;
   try {
     const r = await pool.query(
       `SELECT count(*)::int AS rows,
