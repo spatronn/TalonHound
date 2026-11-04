@@ -162,6 +162,12 @@ test('plain PDF: a body-font IOC title opens the section; narrative prose stays 
   assert.notEqual(x.outcome('storage.cloudvendor.net'), O.MEMBER);
 });
 
+test('plain PDF: an IOC title after a line with no closing punctuation still opens the section', () => {
+  const doc = plainPdfDocument(['The full list is available at https://github.com/publisher/iocs/blob/main/full.csv', 'Indicators of Compromise', 'evil-c2-one.net', 'evil-c2-two.net']);
+  const x = readDocument(doc);
+  assert.equal(x.rule('evil-c2-one.net'), 'R10_publisher_assertion');
+});
+
 test('plain PDF: a title-like phrase inside a sentence does not become a heading', () => {
   const doc = plainPdfDocument(['Our analysis of the campaign covers its', 'references', 'and how the loader was delivered.']);
   assert.ok(!doc.blocks.some((b) => b.type === 'heading'), JSON.stringify(doc.blocks.map((b) => [b.type, b.text])));

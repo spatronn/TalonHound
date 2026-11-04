@@ -15,7 +15,8 @@ import {
   sourceCardMeta,
   sourceErrorLabel,
   sourceProvenanceLabel,
-  sourceTypeLabel
+  sourceTypeLabel,
+  describeExaminedLink
 } from './iocSourcesUi.js';
 
 function PreviewBlock({ preview }) {
@@ -192,7 +193,7 @@ export default function IocSourcesPanel({
         <div className="tl-ioc-sources__intro">
           <h2 className="tl-ioc-sources__title">IOC Sources</h2>
           <p className="tl-ioc-sources__lede">
-            External IOC datasets an analyst added to this report. Approving a source authorizes extraction;
+            External IOC datasets found in or added to this report. Approving a source authorizes extraction;
             it does not approve IOCs into inventory.
           </p>
         </div>
@@ -314,7 +315,7 @@ export default function IocSourcesPanel({
 
             {selected.discovery_evidence?.link_text || selected.discovery_evidence?.surrounding_text ? (
               <div className="tl-ioc-source-drawer__block">
-                <h4 className="tl-ioc-source-drawer__h">Legacy discovery evidence</h4>
+                <h4 className="tl-ioc-source-drawer__h">Discovery evidence</h4>
                 {selected.discovery_evidence.link_text ? (
                   <p className="tl-ioc-source-drawer__body">Link text: {selected.discovery_evidence.link_text}</p>
                 ) : null}
@@ -437,7 +438,7 @@ export default function IocSourcesPanel({
               <li key={r.canonical_url || r.url}>
                 <span style={{ overflowWrap: 'anywhere' }}>{r.url}</span>
                 {' '}
-                {r.decision === 'accepted' ? 'Listed as a source' : `Not a package: ${r.rejection_reason}`}
+                {describeExaminedLink(r)}
               </li>
             ))}
           </ul>

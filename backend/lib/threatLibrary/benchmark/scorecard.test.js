@@ -90,6 +90,17 @@ test('linked package discovery is scored from labelled URLs, and never claimed w
   assert.equal(card.linked_package_coverage.status, 'not_yet_validated');
 });
 
+test('a skipped private evaluation is reported as not evaluated, never as a pass', () => {
+  if (process.env.TL_BENCHMARK_SOURCE_DIR) return;
+  assert.equal(card.private_source_scoring.status, 'not_evaluated');
+  assert.match(formatScorecard(card), /Private source scoring: not_evaluated/);
+});
+
+test('sealed reports that fail the protocol cannot validate first-pass accuracy', () => {
+  assert.equal(card.sealed_readiness.ready, card.first_pass_accuracy.validated);
+  assert.ok(card.sealed_readiness.blockers.length > 0, 'no independent labels exist yet');
+});
+
 test('real-report labels are present even when their private sources are not', () => {
   const withStore = loadBenchmarkCases({ privateDir: null, sourceDir: null });
   assert.ok(withStore.length > 0);

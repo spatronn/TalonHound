@@ -164,6 +164,16 @@ async function runInspection(pool, source, deps) {
           // No campaign folder: a shared repository can still name a file for
           // this report. Only names are read; the file is inspected next.
           const byName = await resolveGitHubCampaignFiles(gh, reportScope, io);
+          if (!byName.ok && io.listingFailures.length) {
+            // The repository could not be read, so nothing is known about it: a retry
+            // can succeed, and "no match" would be a false statement.
+            await transitionSource(pool, source, 'fail_inspect', {
+              error_code: 'repository_listing_failed',
+              error_detail: `GitHub listing failed for ${io.listingFailures.length} folder(s) (${io.listingFailures[0].code}); retry the inspection`,
+              preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, listing_failures: io.listingFailures.slice(0, 10) } }
+            });
+            return { ok: false, code: 'repository_listing_failed' };
+          }
           if (!byName.ok) {
             await transitionSource(pool, source, 'unsupported', {
               error_code: 'campaign_scope_unresolved',
@@ -177,6 +187,7 @@ async function runInspection(pool, source, deps) {
             repository_root: true,
             reason: byName.reason,
             matched_files: byName.files,
+            ...(byName.set_aside?.length ? { set_aside_files: byName.set_aside } : {}),
             ...(byName.not_listed ? { matched_files_not_listed: byName.not_listed } : {}),
             candidates_checked: byName.candidates_checked,
             files_seen: byName.files_seen,

@@ -26,6 +26,7 @@ import {
   shouldShowProcessingPanel
 } from './reportRetryUi.js';
 import RefreshPreviewModal from './RefreshPreviewModal.jsx';
+import FinalizeExceptionModal from './FinalizeExceptionModal.jsx';
 import ExtractionQualitySection from './ExtractionQualitySection.jsx';
 import { describeQualityChip } from './extractionQualityUi.js';
 import {
@@ -533,6 +534,7 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestConfirm = useAppConfirm();
+  const [finalizeException, setFinalizeException] = useState({ open: false, obligations: [], submitting: false, error: '' });
   const { isAdmin, canWrite } = useSession();
   const urlState = useMemo(() => parseReviewTableUrlState(searchParams), [searchParams]);
 
@@ -1383,16 +1385,8 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           setError(err.response.data.message);
           return;
         }
-        const reason = window.prompt(`${err.response.data.message}\n\nFinalize anyway? State the reason for the record:`);
-        if (reason && reason.trim()) {
-          try {
-            const { data } = await api.post(`/threat-library/reports/${reportId}/finalize`, { obligation_exception: { reason: reason.trim() } });
-            if (data?.report) setReport((prev) => ({ ...prev, ...data.report }));
-            setFeedback('Finalized with a recorded exception.');
-          } catch (retryErr) {
-            setError(retryErr?.response?.data?.message || 'Finalize failed');
-          }
-        }
+        const blocker = (err.response.data.blockers || []).find((b) => b.code === 'finalize_obligations_unmet');
+        setFinalizeException({ open: true, obligations: blocker?.obligations || [], submitting: false, error: '' });
         return;
       }
       if (err?.response?.data?.code === 'linked_ioc_sources_unresolved') {
@@ -1410,6 +1404,18 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
       if (!applyNotReadyRejection(err)) setError(err?.response?.data?.message || 'Finalize failed');
     } finally {
       setBusy('');
+    }
+  }
+
+  async function submitFinalizeException(reason) {
+    setFinalizeException((prev) => ({ ...prev, submitting: true, error: '' }));
+    try {
+      const { data } = await api.post(`/threat-library/reports/${reportId}/finalize`, { obligation_exception: { reason } });
+      if (data?.report) setReport((prev) => ({ ...prev, ...data.report }));
+      setFinalizeException({ open: false, obligations: [], submitting: false, error: '' });
+      setFeedback('Finalized with a recorded exception.');
+    } catch (err) {
+      setFinalizeException((prev) => ({ ...prev, submitting: false, error: err?.response?.data?.message || 'Finalize failed' }));
     }
   }
 
@@ -2412,6 +2418,17 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
         position={drawerPosition}
         onNavigate={navigateDrawer}
       />
+
+      {report && isAdmin ? (
+        <FinalizeExceptionModal
+          open={finalizeException.open}
+          obligations={finalizeException.obligations}
+          submitting={finalizeException.submitting}
+          error={finalizeException.error}
+          onClose={() => setFinalizeException({ open: false, obligations: [], submitting: false, error: '' })}
+          onSubmit={submitFinalizeException}
+        />
+      ) : null}
 
       {report && canWrite ? (
         <RefreshPreviewModal

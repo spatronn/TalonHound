@@ -270,6 +270,10 @@ export function createInferenceScheduler(pool, options = {}) {
       }
       if (renewing) return; // never stack renewals behind a slow query
       renewing = true;
+      // The database sets the new expiry when it runs the statement, so a renewal
+      // confirms the lease only from when it was sent: counting from the reply would
+      // eat into the safety margin whenever the reply is slow.
+      const sentAt = Date.now();
       try {
         const res = await pool.query(
           `UPDATE threat_library_ai_capacity_leases
@@ -279,7 +283,7 @@ export function createInferenceScheduler(pool, options = {}) {
         );
         if (released || lost) return;
         if (!res.rowCount) markLost('lease_row_missing');
-        else lastConfirmedAt = Date.now();
+        else lastConfirmedAt = sentAt;
       } catch (err) {
         log.warn('AI capacity heartbeat failed; retrying', { error: err?.message });
       } finally {

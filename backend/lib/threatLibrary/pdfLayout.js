@@ -1006,7 +1006,9 @@ export function linesToBlocks(lines, ctx) {
     }
     // A body-font line that is a formal section title, standing between sentences,
     // is the section's heading: plain PDFs set headings in the body font.
-    if (isFormalSectionTitleLine(line.text) && (!para.length || /[.!?:;。]$/.test(para[para.length - 1].trim()))) {
+    const nextLine = src[li + 1]?.text || '';
+    const rowFollows = isObservableOnlyLine(nextLine) || isFilenameHashRowLine(nextLine);
+    if (isFormalSectionTitleLine(line.text) && (!para.length || rowFollows || /[.!?:;。]$/.test(para[para.length - 1].trim()))) {
       flushPara();
       mk('heading', line.text, {
         section: line.text.slice(0, 200),

@@ -171,3 +171,45 @@ test('dismissing a source stores the reason on the row and in the ledger', opts,
   assert.equal(ledger.events[0].event_type, 'dismissal');
   assert.match(ledger.events[0].detail, /different campaign/);
 });
+
+test('a repository that cannot be listed fails the inspection and says so; it is not "no match"', opts, async () => {
+  const report = await newReport({ title: 'Vane Viper adtech infrastructure' });
+  const { rows: [source] } = await pool.query(
+    `INSERT INTO threat_report_ioc_sources (report_id, original_url, canonical_url, source_type, discovery_method)
+     VALUES ($1, 'https://github.com/publisher/limited', 'https://github.com/publisher/limited', 'github_dir', 'auto') RETURNING *`,
+    [report.id]
+  );
+  const res = await inspectIocSource(pool, source, { fetchImpl: async () => { throw Object.assign(new Error('rate limited'), { code: 'http_error' }); } });
+  assert.equal(res.code, 'repository_listing_failed');
+  const { rows: [after] } = await pool.query(`SELECT lifecycle_status, error_code FROM threat_report_ioc_sources WHERE id = $1`, [source.id]);
+  assert.equal(after.lifecycle_status, 'failed');
+  assert.equal(after.error_code, 'repository_listing_failed');
+});
+
+test('inspecting twice is idempotent: same files, same identities, one more ledger event, nothing approved', opts, async () => {
+  const report = await newReport({ title: 'Vane Viper adtech infrastructure' });
+  const { rows: [source] } = await pool.query(
+    `INSERT INTO threat_report_ioc_sources (report_id, original_url, canonical_url, source_type, discovery_method)
+     VALUES ($1, 'https://github.com/publisher/twice', 'https://github.com/publisher/twice', 'github_dir', 'auto') RETURNING *`,
+    [report.id]
+  );
+  const sha = 'c'.repeat(40);
+  const fetchImpl = githubFetch({
+    '/commits/HEAD': { sha },
+    '/contents/': [{ name: '2026-vane-viper.csv', type: 'file', path: '2026-vane-viper.csv', size: 60, sha: 'b1' }],
+    [`${sha}/2026-vane-viper.csv`]: 'indicator,type\nviper-cdn.example,domain\n'
+  });
+  await inspectIocSource(pool, source, { fetchImpl });
+  const { rows: [first] } = await pool.query(`SELECT * FROM threat_report_ioc_sources WHERE id = $1`, [source.id]);
+  await inspectIocSource(pool, first, { fetchImpl });
+  const { rows: files } = await pool.query(`SELECT path, content_sha FROM threat_report_ioc_source_files WHERE source_id = $1`, [source.id]);
+  assert.equal(files.length, 1);
+  const { rows: [after] } = await pool.query(`SELECT lifecycle_status, approved_at, content_hash, repo_revision FROM threat_report_ioc_sources WHERE id = $1`, [source.id]);
+  assert.equal(after.lifecycle_status, 'inspected');
+  assert.equal(after.approved_at, null);
+  assert.equal(after.repo_revision, sha);
+  const ledger = await loadSourceDiscoveryLedger(pool, report.id);
+  assert.equal(ledger.events.filter((e) => e.event_type === 'inspection').length, 2);
+  const { rows: candidates } = await pool.query(`SELECT 1 FROM threat_report_candidates WHERE report_id = $1`, [report.id]);
+  assert.equal(candidates.length, 0);
+});

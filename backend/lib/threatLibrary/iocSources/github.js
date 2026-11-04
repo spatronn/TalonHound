@@ -315,6 +315,8 @@ export async function enumerateGitHubFiles(gh, entries, deps = {}) {
 export function gitHubScopeIo(gh, deps = {}) {
   const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'TalonHound-ThreatLibrary' };
   return {
+    /** Listings that failed: a rate limit or outage, which is not an empty folder. */
+    listingFailures: [],
     async listDir(path) {
       const apiUrl = contentsApiUrl(gh.owner, gh.repo, String(path || ''), gh.ref);
       if (!validateIocSourceUrl(apiUrl).ok) return [];
@@ -329,7 +331,8 @@ export function gitHubScopeIo(gh, deps = {}) {
         return Array.isArray(items)
           ? items.map((i) => ({ name: String(i.name || ''), type: String(i.type || ''), path: String(i.path || i.name || ''), size: i.size ?? null }))
           : [];
-      } catch {
+      } catch (err) {
+        this.listingFailures.push({ path: String(path || ''), code: publicFetchError(err).code });
         return [];
       }
     },

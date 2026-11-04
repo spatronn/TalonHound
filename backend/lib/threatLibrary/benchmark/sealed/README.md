@@ -23,3 +23,5 @@ Same schema as `../cases/`, plus:
 | `ground_truth.linked_packages` | Publisher packages the report points to, each with its URL and expected identities |
 
 `npm run benchmark:threat-library -- --scorecard` prints every tier.
+
+The full procedure, with commands, is in `docs/threat-library-first-pass-evaluation.md`. `node scripts/threat-library-eval.js validate` enforces these rules: a case that fails them cannot validate first-pass accuracy.

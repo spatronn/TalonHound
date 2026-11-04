@@ -25,7 +25,7 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v5';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v6';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
@@ -440,10 +440,28 @@ const INVENTORY_DIR_RE = /^(?:iocs?|indicators?|intel|intelligence|threat[-_]?in
 function publicationDateTokens(publishedAt) {
   const d = publishedAt ? new Date(publishedAt) : null;
   if (!d || Number.isNaN(d.getTime())) return [];
-  const y = String(d.getUTCFullYear());
-  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return [`${y}${m}${day}`, `${m}${day}${y}`];
+  // A file can be stamped the day before or after the post goes out.
+  const out = [];
+  for (const offset of [0, -1, 1]) {
+    const x = new Date(d.getTime() + offset * 86_400_000);
+    const y = String(x.getUTCFullYear());
+    const m = String(x.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(x.getUTCDate()).padStart(2, '0');
+    out.push(`${y}${m}${day}`, `${m}${day}${y}`);
+  }
+  return out;
+}
+
+/** File name words that say nothing about which campaign a file belongs to. */
+const GENERIC_FILE_WORD_RE = /^(?:iocs?|indicators?|cta|csv|json|txt|stix|misp|all|data|list|final|v?\d+|[ivx]{1,4})$/i;
+
+/** Name words of a file stem found in the report's URL slug: "drop_catch" in "dropcatch-scavengers-…". */
+function slugWords(parts, slug) {
+  const words = parts.filter((p) => !GENERIC_FILE_WORD_RE.test(p) && !/^\d+$/.test(p));
+  if (!words.length || !slug) return [];
+  const joined = words.join('');
+  if (joined.length >= 6 && slug.includes(joined)) return words;
+  return words.filter((w) => w.length >= 5 && slug.includes(w));
 }
 
 /**
@@ -454,6 +472,7 @@ function publicationDateTokens(publishedAt) {
  *   designator       the stem holds a designator of the report ("UAT-8837")
  *   title_names      the stem holds two or more of the report's distinctive names
  *   date_and_name    the stem holds the publication date and one distinctive name
+ *   date_and_slug_word  the publication date and a name word of the report's URL slug
  *
  * A date alone or one ordinary word alone is not evidence.
  * @param {string} path
@@ -478,6 +497,7 @@ export function fileNameReportEvidence(path, report = {}) {
   else if (names.some((t) => /\d/.test(t) && /[a-z]/.test(t) && t.length >= 5)) evidence = 'designator';
   else if (names.length >= 2) evidence = 'title_names';
   else if (date && names.length >= 1) evidence = 'date_and_name';
+  else if (date && slugWords(parts, slug).length >= 1) evidence = 'date_and_slug_word';
   return { matched: Boolean(evidence), evidence, names, date };
 }
 
@@ -497,6 +517,13 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
   const maxDepth = limits.maxDepth ?? 3;
   const maxMatches = limits.maxMatches ?? 12;
   const start = String(gh.path || '').replace(/^\/+|\/+$/g, '');
+  // Year and month folders of the publication date go first, so a repository with
+  // many years stays inside the walk limit.
+  const published = report.publishedAt ? new Date(report.publishedAt) : null;
+  const year = published && !Number.isNaN(published.getTime()) ? String(published.getUTCFullYear()) : null;
+  const month = year ? String(published.getUTCMonth() + 1).padStart(2, '0') : null;
+  const priority = (name) => (name === year || name === month || name === `${year}-${month}` || name === `${year}_${month}` ? 0 : /^\d+$/.test(name) ? 2 : 1);
+  const titleNames = new Set(distinctiveReportTokens({ title: report.reportTitle }));
   const queue = [{ path: start, depth: 0 }];
   const matches = [];
   const checked = [];
@@ -507,9 +534,27 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
     requests += 1;
     checked.push(path || '/');
     const entries = (await io.listDir(path)) || [];
+    // A folder named exactly for the report ("webworm", "indicators/shellter"): its
+    // files are the candidates. Only a title word counts, and the name must be distinctive.
+    for (const e of entries.filter((x) => x.type === 'dir' && titleNames.has(normToken(x.name)) && normToken(x.name).length >= 5)) {
+      if (requests >= maxDirs) break;
+      requests += 1;
+      checked.push(e.path);
+      for (const inner of (await io.listDir(e.path)) || []) {
+        if (inner.type === 'file' && (DATA_FILE_RE.test(inner.name) || isReadmePath(inner.name))) {
+          filesSeen += 1;
+          matches.push({ path: inner.path, size: inner.size ?? null, evidence: 'folder_named_for_report', names: [normToken(e.name)], date: false });
+        }
+      }
+    }
+    const dirs = entries
+      .filter((e) => e.type === 'dir' && depth + 1 < maxDepth && INVENTORY_DIR_RE.test(e.name))
+      .sort((a, b) => priority(a.name) - priority(b.name));
+    queue.unshift(...dirs.filter((d) => priority(d.name) === 0).map((d) => ({ path: d.path, depth: depth + 1 })));
+    queue.push(...dirs.filter((d) => priority(d.name) !== 0).map((d) => ({ path: d.path, depth: depth + 1 })));
     for (const e of entries) {
       if (e.type === 'dir') {
-        if (depth + 1 < maxDepth && INVENTORY_DIR_RE.test(e.name)) queue.push({ path: e.path, depth: depth + 1 });
+        continue;
       } else if (e.type === 'file' && DATA_FILE_RE.test(e.name)) {
         filesSeen += 1;
         const ev = fileNameReportEvidence(e.path, report);
@@ -518,11 +563,21 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
     }
   }
   const truncated = queue.length > 0;
+  // Several posts on one actor share a designator: keep the stems with the most
+  // evidence, and name the others so an analyst can see what was set aside.
+  const scored = matches.map((m) => ({ ...m, score: FILE_EVIDENCE_RANK[m.evidence] + m.names.length + (m.date ? 1 : 0) }));
+  const best = scored.reduce((n, m) => Math.max(n, m.score), 0);
+  const kept = scored.filter((m) => m.score === best);
+  const setAside = scored.filter((m) => m.score < best).map((m) => ({ path: m.path, evidence: m.evidence, reason: 'weaker_match_than_another_file' }));
+  matches.length = 0;
+  matches.push(...kept);
   if (!matches.length) {
     return { ok: false, reason: 'no_file_named_for_report', files: [], candidates_checked: checked, files_seen: filesSeen, requests, truncated };
   }
-  return { ok: true, reason: 'file_names_match_report', files: matches.slice(0, maxMatches), not_listed: Math.max(0, matches.length - maxMatches), candidates_checked: checked, files_seen: filesSeen, requests, truncated };
+  return { ok: true, reason: 'file_names_match_report', files: matches.slice(0, maxMatches), set_aside: setAside.slice(0, 20), not_listed: Math.max(0, matches.length - maxMatches), candidates_checked: checked, files_seen: filesSeen, requests, truncated };
 }
+
+const FILE_EVIDENCE_RANK = Object.freeze({ report_slug: 6, folder_named_for_report: 5, title_names: 4, designator: 3, date_and_name: 2, date_and_slug_word: 2 });
 
 /** Machine-readable inventories a root walk may match by name. */
 const DATA_FILE_RE = /\.(?:csv|tsv|txt|json|ndjson|jsonl|stix|xml|sha256|sha1|md5|ioc)$/i;

@@ -287,8 +287,11 @@ for (const fault of ['throw', 'hang']) {
   test(`lease renewal ${fault === 'throw' ? 'failing' : 'hanging'}: the holder gives the slot up before its lease can expire for others`, opts, async () => {
     const resourceKey = key();
     const mode = { value: null };
-    const holderScheduler = createInferenceScheduler(faultyRenewalPool(mode), FAST);
-    const other = createInferenceScheduler(pool, FAST);
+    // The holder gives up two heartbeats early. A margin of 1s rather than FAST's 400ms
+    // keeps a stalled shared runner from deciding the order of the two events.
+    const MARGIN = { ...FAST, holdLeaseMs: 3000, heartbeatMs: 500 };
+    const holderScheduler = createInferenceScheduler(faultyRenewalPool(mode), MARGIN);
+    const other = createInferenceScheduler(pool, MARGIN);
     try {
       const holder = await holderScheduler.acquire({ resourceKey, capacity: 1, maxWaitMs: 2000 });
       const acquiredAt = Date.now();
@@ -301,7 +304,7 @@ for (const fault of ['throw', 'hang']) {
       const otherAt = Date.now();
       assert.ok(lostAt, 'holder learned it lost the lease');
       assert.ok(lostAt < otherAt, `loss (${lostAt - acquiredAt}ms) precedes the competitor's grant (${otherAt - acquiredAt}ms)`);
-      assert.ok(otherAt - lostAt >= FAST.heartbeatMs, 'at least one heartbeat of margin');
+      assert.ok(otherAt - lostAt >= MARGIN.heartbeatMs, 'at least one heartbeat of margin');
       await lease.release();
       mode.value = null;
       await holder.release();
