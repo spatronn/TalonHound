@@ -25,7 +25,7 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v6';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v7';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
@@ -452,6 +452,61 @@ function publicationDateTokens(publishedAt) {
   return out;
 }
 
+const DAY_MS = 86_400_000;
+/** How far a file's date stamp may sit from the post and still be the same publication. */
+const SAME_PUBLICATION_DAYS = 30;
+
+/** The date a file name is stamped with: "x_iocs_20260921", "2017-05-09_x", "x-02-20-2026". */
+function fileNameStamp(path) {
+  const stem = fileStem(path);
+  const iso = /(?<!\d)(20\d{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])(?!\d)/.exec(stem);
+  if (iso) return Date.UTC(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+  const us = /(?<!\d)(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12]\d|3[01])[-_.]?(20\d{2})(?!\d)/.exec(stem);
+  return us ? Date.UTC(Number(us[3]), Number(us[1]) - 1, Number(us[2])) : null;
+}
+
+/**
+ * A folder named for an actor or family keeps that name across its publications, so
+ * its name does not say which of them a file belongs to; the date stamp does.
+ *   - A file stamped for this publication makes other stamped files foreign.
+ *   - A stamp far from the post is another publication, whatever the name says.
+ *   - A folder whose stamps are all foreign is a long-lived actor folder, so its
+ *     unstamped files cannot be tied to this report either.
+ * A file named by the report's own URL slug is exempt. No publication date, no decision.
+ */
+function separatePublications(matches, publishedAt) {
+  const published = publishedAt ? new Date(publishedAt).getTime() : NaN;
+  if (Number.isNaN(published)) return { kept: matches, foreign: [] };
+  const daysOff = (m) => Math.abs(m.stamp - published) / DAY_MS;
+  const stamped = matches.map((m) => ({ ...m, stamp: fileNameStamp(m.path) }));
+  const dated = stamped.filter((m) => m.stamp != null && m.evidence !== 'report_slug');
+  const exact = dated.some((m) => daysOff(m) < 2);
+  const isForeign = (m) => m.stamp != null && m.evidence !== 'report_slug' && (exact ? daysOff(m) >= 2 : daysOff(m) > SAME_PUBLICATION_DAYS);
+  const ownFolders = new Set(stamped.filter((m) => m.folder && m.stamp != null && !isForeign(m)).map((m) => m.folder));
+  const foreignFolders = new Set(stamped.filter((m) => m.folder && isForeign(m)).map((m) => m.folder));
+  const kept = [];
+  const foreign = [];
+  for (const { stamp, ...m } of stamped) {
+    if (isForeign({ ...m, stamp })) foreign.push({ path: m.path, evidence: m.evidence, reason: 'file_dated_for_another_publication' });
+    else if (m.folder && stamp == null && foreignFolders.has(m.folder) && !ownFolders.has(m.folder)) foreign.push({ path: m.path, evidence: m.evidence, reason: 'folder_holds_other_publications' });
+    else kept.push(m);
+  }
+  return { kept, foreign };
+}
+
+/** Consecutive title words, joined: "EDR killers" gives "edrkillers" for a folder `edr_killers`. */
+function titlePhrases(title) {
+  const words = String(title || '').split(/[\s:;,.!?()'"“”‘’|/]+/).map(normToken).filter(Boolean);
+  const out = new Set();
+  for (let i = 0; i < words.length; i += 1) {
+    for (const n of [2, 3]) {
+      const phrase = words.slice(i, i + n);
+      if (phrase.length === n && phrase.join('').length >= 8) out.add(phrase.join(''));
+    }
+  }
+  return out;
+}
+
 /** File name words that say nothing about which campaign a file belongs to. */
 const GENERIC_FILE_WORD_RE = /^(?:iocs?|indicators?|cta|csv|json|txt|stix|misp|all|data|list|final|v?\d+|[ivx]{1,4})$/i;
 
@@ -524,6 +579,7 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
   const month = year ? String(published.getUTCMonth() + 1).padStart(2, '0') : null;
   const priority = (name) => (name === year || name === month || name === `${year}-${month}` || name === `${year}_${month}` ? 0 : /^\d+$/.test(name) ? 2 : 1);
   const titleNames = new Set(distinctiveReportTokens({ title: report.reportTitle }));
+  const titleWordRuns = titlePhrases(report.reportTitle);
   const queue = [{ path: start, depth: 0 }];
   const matches = [];
   const checked = [];
@@ -534,21 +590,29 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
     requests += 1;
     checked.push(path || '/');
     const entries = (await io.listDir(path)) || [];
-    // A folder named exactly for the report ("webworm", "indicators/shellter"): its
-    // files are the candidates. Only a title word counts, and the name must be distinctive.
-    for (const e of entries.filter((x) => x.type === 'dir' && titleNames.has(normToken(x.name)) && normToken(x.name).length >= 5)) {
+    // A folder named exactly for the report ("webworm", "indicators/shellter", "edr_killers"):
+    // its files are the candidates. Only title words count, and the name must be distinctive.
+    const namedForReport = (x) => {
+      const n = normToken(x.name);
+      return x.type === 'dir' && !INVENTORY_DIR_RE.test(x.name) && ((titleNames.has(n) && n.length >= 5) || titleWordRuns.has(n));
+    };
+    for (const e of entries.filter(namedForReport)) {
       if (requests >= maxDirs) break;
       requests += 1;
       checked.push(e.path);
       for (const inner of (await io.listDir(e.path)) || []) {
         if (inner.type === 'file' && (DATA_FILE_RE.test(inner.name) || isReadmePath(inner.name))) {
           filesSeen += 1;
-          matches.push({ path: inner.path, size: inner.size ?? null, evidence: 'folder_named_for_report', names: [normToken(e.name)], date: false });
+          matches.push({ path: inner.path, size: inner.size ?? null, evidence: 'folder_named_for_report', names: [normToken(e.name)], date: false, folder: e.path });
         }
       }
     }
+    // A post is not filed under another year, so when its own year has a folder the others
+    // are not listed: each listing spends the shared hourly GitHub allowance.
+    const hasOwnYear = entries.some((e) => e.type === 'dir' && e.name === year);
     const dirs = entries
       .filter((e) => e.type === 'dir' && depth + 1 < maxDepth && INVENTORY_DIR_RE.test(e.name))
+      .filter((e) => !hasOwnYear || !/^\d{4}$/.test(e.name) || e.name === year)
       .sort((a, b) => priority(a.name) - priority(b.name));
     queue.unshift(...dirs.filter((d) => priority(d.name) === 0).map((d) => ({ path: d.path, depth: depth + 1 })));
     queue.push(...dirs.filter((d) => priority(d.name) !== 0).map((d) => ({ path: d.path, depth: depth + 1 })));
@@ -565,14 +629,15 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
   const truncated = queue.length > 0;
   // Several posts on one actor share a designator: keep the stems with the most
   // evidence, and name the others so an analyst can see what was set aside.
-  const scored = matches.map((m) => ({ ...m, score: FILE_EVIDENCE_RANK[m.evidence] + m.names.length + (m.date ? 1 : 0) }));
+  const { kept: samePublication, foreign } = separatePublications(matches, report.publishedAt);
+  const scored = samePublication.map((m) => ({ ...m, score: FILE_EVIDENCE_RANK[m.evidence] + m.names.length + (m.date ? 1 : 0) }));
   const best = scored.reduce((n, m) => Math.max(n, m.score), 0);
   const kept = scored.filter((m) => m.score === best);
-  const setAside = scored.filter((m) => m.score < best).map((m) => ({ path: m.path, evidence: m.evidence, reason: 'weaker_match_than_another_file' }));
+  const setAside = [...foreign, ...scored.filter((m) => m.score < best).map((m) => ({ path: m.path, evidence: m.evidence, reason: 'weaker_match_than_another_file' }))];
   matches.length = 0;
   matches.push(...kept);
   if (!matches.length) {
-    return { ok: false, reason: 'no_file_named_for_report', files: [], candidates_checked: checked, files_seen: filesSeen, requests, truncated };
+    return { ok: false, reason: foreign.length ? 'named_files_belong_to_other_publications' : 'no_file_named_for_report', files: [], set_aside: setAside.slice(0, 20), candidates_checked: checked, files_seen: filesSeen, requests, truncated };
   }
   return { ok: true, reason: 'file_names_match_report', files: matches.slice(0, maxMatches), set_aside: setAside.slice(0, 20), not_listed: Math.max(0, matches.length - maxMatches), candidates_checked: checked, files_seen: filesSeen, requests, truncated };
 }
