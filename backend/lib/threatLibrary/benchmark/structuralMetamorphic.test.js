@@ -182,6 +182,19 @@ test('a spelling no rule reads is recorded, not silently lost', () => {
 
 // Negative controls: layout must not turn these into members.
 const VICTIM = '<p>The operators emailed the victim organization, whose mail server is victim-corp-mail.example.org, and asked staff to log in.</p>';
+for (const [name, levels] of Object.entries({ h2_h3: [2, 3], h2_h4: [2, 4], h1_h2: [1, 2], h3_h5: [3, 5] })) {
+  test(`nested section ${name}: a typed sub-heading under the IOC heading keeps its values`, () => {
+    const html = `<html><body><article><h1>Report title</h1><p>The operators reused known infrastructure.</p>
+      <h${levels[0]}>Indicators of Compromise</h${levels[0]}><h${levels[1]}>Network indicators</h${levels[1]}>
+      <ul><li>nested-c2.example</li><li>nested-relay.example</li></ul></article></body></html>`;
+    const doc = read(html);
+    for (const v of ['nested-c2.example', 'nested-relay.example']) {
+      const c = doc.byId.get(`domain:${v}`);
+      assert.ok(c && isReportIndicatorMember(c), v);
+    }
+  });
+}
+
 test('a victim named in prose beside a curated section is never a member', () => {
   const doc = read(render(`<h2>Impact</h2>${VICTIM}${ANCHOR}`));
   const c = doc.byId.get('domain:victim-corp-mail.example.org');

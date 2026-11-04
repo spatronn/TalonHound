@@ -4,7 +4,7 @@
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildScorecard, formatScorecard, SEALED_MIN_REPORTS } from './scorecard.js';
+import { buildScorecard, formatScorecard, scoreLinkedPackages, SEALED_MIN_REPORTS } from './scorecard.js';
 import { extractorVersions, loadBenchmarkCases, readBaseline } from './benchmarkRunner.js';
 import { contractFingerprint, extractionContractBundle } from '../contractBundle.js';
 
@@ -59,6 +59,35 @@ test('the contract fingerprint moves when any contract constant moves', () => {
   const bundle = extractionContractBundle();
   assert.notEqual(contractFingerprint(bundle), contractFingerprint({ ...bundle, candidates: 'changed' }));
   assert.equal(contractFingerprint(bundle), contractFingerprint(Object.fromEntries(Object.entries(bundle).reverse())));
+});
+
+test('every required measure is reported for every scored tier', () => {
+  for (const tier of ['development', 'regression', 'held_out']) {
+    const t = card.tiers[tier];
+    for (const k of ['precision', 'recall', 'f1', 'report_exact_match', 'document_only_ioc_coverage', 'candidate_type_accuracy']) {
+      assert.equal(typeof t[k], 'number', `${tier}.${k}`);
+    }
+    // Null, never a number, while no case labels a value's classification.
+    assert.equal(t.classification_accuracy === null, t.context_only_checked === 0);
+    assert.equal(typeof t.unresolved_review_volume.p90_per_report, 'number');
+    assert.equal(t.silent_evidence_loss, 0);
+    assert.deepEqual(Object.keys(t.per_stage_failure_rates).sort(), ['candidate_discovery', 'membership_decision', 'reached_review_only', 'type_resolution']);
+  }
+});
+
+test('the scorecard compares this contract to the baseline, and it holds no regression', () => {
+  assert.deepEqual(card.contract_comparison.regressions, []);
+  assert.ok(card.contract_comparison.baseline_versions);
+});
+
+test('linked package discovery is scored from labelled URLs, and never claimed without sealed labels', () => {
+  const doc = { blocks: [{ id: 'b', type: 'paragraph', text: 'The full IOC list is available at https://github.com/pub/iocs/blob/main/full.csv' }] };
+  const hit = scoreLinkedPackages({ ground_truth: { linked_packages: [{ url: 'https://github.com/pub/iocs/blob/main/full.csv', expected_identities: ['a', 'b'] }] } }, doc);
+  assert.deepEqual([hit.labelled, hit.discovered, hit.identities_labelled], [1, 1, 2]);
+  const miss = scoreLinkedPackages({ ground_truth: { linked_packages: [{ url: 'https://github.com/pub/other.csv' }] } }, doc);
+  assert.deepEqual(miss.missed, ['https://github.com/pub/other.csv']);
+  assert.equal(scoreLinkedPackages({ ground_truth: {} }, doc).labelled, 0);
+  assert.equal(card.linked_package_coverage.status, 'not_yet_validated');
 });
 
 test('real-report labels are present even when their private sources are not', () => {
