@@ -464,7 +464,8 @@ export async function mcpThreatLibraryGetReview(pool, args = {}) {
         context_only: buckets.context_only,
         ...decisions,
         linked_ioc_sources: snapshot.linkedSources || null,
-        ioc_source_summary: snapshot.iocSourceSummary || null
+        ioc_source_summary: snapshot.iocSourceSummary || null,
+        status_axes: snapshot.statusAxes || null
       },
       gates: {
         create_iocs_permitted: gates.create_iocs_permitted,
@@ -507,12 +508,14 @@ export async function mcpThreatLibraryGetWorkflowStatus(pool, args = {}) {
   let linkedSources = null;
   let iocSourceSummary = null;
   let obligations = null;
+  let statusAxes = null;
   if (THREAT_REPORT_READABLE_IMPORT_STATUSES.includes(String(report.import_status || ''))) {
     const snapshot = await loadReviewSnapshot(pool, report);
     candidates = snapshot.candidates;
     linkedSources = snapshot.linkedSources;
     iocSourceSummary = snapshot.iocSourceSummary;
     obligations = snapshot.obligations;
+    statusAxes = snapshot.statusAxes || null;
   }
   const decisions = countReviewDecisions(candidates);
   const gates = candidates.length || phase === REPORT_PHASES.REVIEW_READY || phase === REPORT_PHASES.FINALIZED
@@ -636,7 +639,8 @@ export async function mcpThreatLibraryGetWorkflowStatus(pool, args = {}) {
         creatable: gates.create_iocs_eligible_count,
         approved: decisions.approved,
         linked_ioc_sources: linkedSources,
-        ioc_source_summary: iocSourceSummary
+        ioc_source_summary: iocSourceSummary,
+        status_axes: statusAxes
       },
       gates: {
         create_iocs_permitted: gates.create_iocs_permitted,
@@ -907,7 +911,18 @@ export async function mcpThreatLibraryFinalizeReport(pool, args = {}, ctx = {}) 
     const withProv = withLinkedSourceProvenance(candidates, linked);
     const pendingCount = withProv.filter((c) => isPendingActionableCandidate(c)).length;
     // MCP never overrides the linked-source rule (administrator UI/API only).
-    const blockers = finalizeBlockers({ pendingCount, sources: await loadReportSources(pool, report.id) });
+    const sources = await loadReportSources(pool, report.id);
+    const blockers = finalizeBlockers({ pendingCount, sources });
+    // Same obligations the finalize write enforces: a preview must not promise more.
+    const obligationSnapshot = await loadObligationSnapshot(pool, report, { candidates: withProv, sources });
+    const unmetObligations = uncoveredObligations(evaluateFinalizeObligations(obligationSnapshot).unmet, obligationSnapshot.exceptions);
+    if (unmetObligations.length) {
+      blockers.push({
+        code: 'finalize_obligations_unmet',
+        message: unmetObligations.map((o) => o.message).join(' '),
+        obligations: unmetObligations
+      });
+    }
     if (blockers.length) {
       return {
         status: 200,
