@@ -1,18 +1,29 @@
 import React, { useState } from 'react';
 import { ToneBadge } from './reportPageParts.jsx';
-import { describeExtractionQuality } from './extractionQualityUi.js';
+import { describeExtractionQuality, describeStatusAxes } from './extractionQualityUi.js';
 
 /**
  * Overview "Extraction quality": read-only automatic checks (tl-quality-v1).
  * Signals for review, never confirmed errors; no parser internals.
  */
-export default function ExtractionQualitySection({ quality }) {
+export default function ExtractionQualitySection({ quality, axes = null }) {
   const model = describeExtractionQuality(quality);
+  const axisRows = describeStatusAxes(axes);
   const [expanded, setExpanded] = useState(model.attention > 0);
 
   return (
     <section className="tl-intel tl-quality" data-testid="extraction-quality" aria-labelledby="tl-quality-heading">
       <h2 className="tl-heading" id="tl-quality-heading">Extraction quality</h2>
+      {axisRows.length ? (
+        <dl className="tl-quality__axes" data-testid="report-status-axes">
+          {axisRows.map((a) => (
+            <div key={a.key} className="tl-quality__axis">
+              <dt>{a.label}</dt>
+              <dd>{a.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
       <div className="tl-quality__summary">
         <ToneBadge tone={model.tone}>{model.statusLabel}</ToneBadge>
         <span className="tl-quality__headline" data-testid="extraction-quality-headline">{model.headline}</span>

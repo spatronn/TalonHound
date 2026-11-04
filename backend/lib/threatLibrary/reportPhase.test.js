@@ -78,6 +78,7 @@ function fakePool(report, candidates = []) {
   return {
     writes,
     async query(sql, params) {
+      if (/^\s*SELECT/i.test(sql) && /FROM threat_report_(?:extraction_runs|source_discovery_runs|finalize_exceptions|dropped_regions)/.test(sql)) return { rows: [] };
       if (/FROM threat_reports WHERE id = \$1/.test(sql) && /^\s*SELECT/i.test(sql)) {
         return { rows: report ? [report] : [] };
       }

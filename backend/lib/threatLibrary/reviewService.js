@@ -14,6 +14,7 @@
  * Finalize closes the report lifecycle and never creates IOCs.
  */
 
+import { evaluateFinalizeObligations, loadObligationSnapshot, uncoveredObligations } from './reportQualityStatus.js';
 import crypto from 'node:crypto';
 import { createManualIoc } from '../manualIocCreate.js';
 import { getThreatLibraryIocSourceId, getReportById } from './store.js';
@@ -781,8 +782,9 @@ function finalizeRejection(blockers) {
  * concurrent candidate / source change cannot bypass it.
  *
  * `opts.sourceOverride = { reason }` lets an administrator finalize over
- * unresolved linked sources; it is audited. Callers that cannot authorize it
- * (MCP) never pass it.
+ * unresolved linked sources; `opts.obligationException = { reason }` covers the
+ * unmet obligations of a new report (reportQualityStatus.js). Both are audited.
+ * Callers that cannot authorize them (MCP) never pass them.
  */
 export async function finalizeReport(pool, reportId, opts = {}) {
   const report = await getReportById(pool, reportId);
@@ -791,10 +793,12 @@ export async function finalizeReport(pool, reportId, opts = {}) {
 
   const override = validateSourceOverride(opts.sourceOverride, opts.user);
   if (override && !override.ok) return override;
+  const exception = validateSourceOverride(opts.obligationException, opts.user);
+  if (exception && !exception.ok) return exception;
 
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return await finalizeLocked(pool, reportId, opts, override);
+      return await finalizeLocked(pool, reportId, opts, override, exception);
     } catch (err) {
       // A deadlock / serialization victim retries the whole short transaction.
       if (RETRYABLE_TX_CODES.includes(err?.code) && attempt < 2) continue;
@@ -854,7 +858,7 @@ export async function reopenReport(pool, reportId, opts = {}) {
  * a mandatory override audit row in the same transaction. Nothing is written
  * unless every step succeeds.
  */
-async function finalizeLocked(pool, reportId, opts, override) {
+async function finalizeLocked(pool, reportId, opts, override, exception = null) {
   let afterCommit = null;
   const result = await inReportTransaction(pool, async (client) => {
     const locked = await lockReportForFinalize(client, reportId);
@@ -868,9 +872,24 @@ async function finalizeLocked(pool, reportId, opts, override) {
     const sources = await loadReportSources(client, reportId);
     const pendingCount = candidates.filter((c) => isPendingActionableCandidate(c)).length;
     const blockers = finalizeBlockers({ pendingCount, sources, sourceOverride: Boolean(override) });
-    if (blockers.length) return finalizeRejection(blockers);
     // Already finalized (a duplicate or concurrent request): nothing to write, nothing to audit again.
-    if (isFinalizedReport(locked)) return { ok: true, already_finalized: true };
+    if (!blockers.length && isFinalizedReport(locked)) return { ok: true, already_finalized: true };
+
+    // Obligations of a newly imported report. Historical reports have no first-pass run and skip them.
+    const snapshot = await loadObligationSnapshot(client, locked, { candidates, sources });
+    const obligations = evaluateFinalizeObligations(snapshot);
+    const uncovered = uncoveredObligations(obligations.unmet, snapshot.exceptions);
+    if (uncovered.length && !exception) {
+      blockers.push({
+        code: FINALIZE_BLOCKER_CODES.OBLIGATIONS,
+        message: uncovered.map((o) => o.message).join(' '),
+        obligations: uncovered
+      });
+    }
+    if (blockers.length) return finalizeRejection(blockers);
+    if (exception && uncovered.length && typeof opts.audit?.auditLogInTransaction !== 'function') {
+      return { ok: false, status: 503, code: 'finalize_exception_audit_unavailable', error: 'A finalize exception requires the audit log.' };
+    }
 
     const overridden = override ? openLinkedSources(sources) : [];
     if (overridden.length && typeof opts.audit?.auditLogInTransaction !== 'function') {
@@ -889,13 +908,22 @@ async function finalizeLocked(pool, reportId, opts, override) {
         error: 'The report changed while finalizing; reload and try again.'
       };
     }
+    const excepted = exception ? uncovered : [];
+    for (const o of excepted) {
+      await client.query(
+        `INSERT INTO threat_report_finalize_exceptions (report_id, obligation_code, reason, detail, actor_public_id)
+         VALUES ($1, $2, $3, $4::jsonb, $5)`,
+        [reportId, o.code, exception.reason, JSON.stringify(o.detail || {}), opts.user?.publicId || opts.user?.public_id || null]
+      );
+    }
     const event = buildFinalizeAuditEvent({
       report: locked,
       candidates,
       user: opts.user,
-      sourceOverride: overridden.length ? { reason: override.reason, sources: overridden } : null
+      sourceOverride: overridden.length ? { reason: override.reason, sources: overridden } : null,
+      obligationException: excepted.length ? { reason: exception.reason, obligations: excepted.map((o) => o.code) } : null
     });
-    if (overridden.length) {
+    if (overridden.length || excepted.length) {
       // Durable: throws (and rolls the finalize back) if the row cannot be written.
       await opts.audit.auditLogInTransaction(client, { req: opts.req, actor: opts.user, ...event });
     } else {

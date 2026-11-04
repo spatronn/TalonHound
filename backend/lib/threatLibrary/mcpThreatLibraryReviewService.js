@@ -9,6 +9,7 @@
  * Never invents parallel approval, Create IOCs or finalization rules.
  */
 
+import { evaluateFinalizeObligations, loadObligationSnapshot, reportStatusAxes, uncoveredObligations } from './reportQualityStatus.js';
 import { mcpActorAuditFields } from '../mcpIocService.js';
 import { applyCandidateReviewActions, finalizeReport } from './reviewService.js';
 import { finalizeBlockers, linkedSourceBlocker, loadReportSources } from './finalizeGuard.js';
@@ -147,6 +148,9 @@ async function loadReviewSnapshot(pool, report) {
   snapshot.candidates = withLinkedSourceProvenance(snapshot.candidates, linked);
   try {
     snapshot.linkedSources = await loadLinkedIocSourceSummary(pool, report.id);
+    const obligationSnapshot = await loadObligationSnapshot(pool, report, { candidates: snapshot.candidates });
+    snapshot.statusAxes = reportStatusAxes(obligationSnapshot);
+    snapshot.obligations = { ...evaluateFinalizeObligations(obligationSnapshot), exceptions: obligationSnapshot.exceptions };
   } catch {
     snapshot.linkedSources = null;
   }
@@ -251,7 +255,7 @@ function filterCandidates(candidates, { review_status, membership } = {}) {
   return rows;
 }
 
-function gatesFromSnapshot(report, candidates, linkedSources) {
+function gatesFromSnapshot(report, candidates, linkedSources, obligations = null) {
   const phase = resolveReportPhase(report);
   const decisions = countReviewDecisions(candidates);
   const reviewReady = isReviewMutationAllowed(report);
@@ -278,6 +282,14 @@ function gatesFromSnapshot(report, candidates, linkedSources) {
   // Same linked-source rule the finalize write enforces (finalizeGuard.js).
   const sourceBlocker = linkedSourceBlocker(linkedSources);
   if (sourceBlocker) finalizeBlocked.push(sourceBlocker);
+  const unmetObligations = uncoveredObligations(obligations?.unmet || [], obligations?.exceptions || []);
+  if (unmetObligations.length) {
+    finalizeBlocked.push({
+      code: 'finalize_obligations_unmet',
+      message: unmetObligations.map((o) => o.message).join(' '),
+      obligations: unmetObligations
+    });
+  }
   return {
     review_phase: phase,
     review_mutations_permitted: reviewReady,
@@ -408,7 +420,7 @@ export async function mcpThreatLibraryGetReview(pool, args = {}) {
   const snapshot = await loadReviewSnapshot(pool, report);
   const buckets = countCandidateBuckets(snapshot.candidates);
   const decisions = countReviewDecisions(snapshot.candidates);
-  const gates = gatesFromSnapshot(report, snapshot.candidates, snapshot.linkedSources);
+  const gates = gatesFromSnapshot(report, snapshot.candidates, snapshot.linkedSources, snapshot.obligations);
   const filtered = filterCandidates(snapshot.candidates, {
     review_status: args.review_status,
     membership: args.membership
@@ -494,15 +506,17 @@ export async function mcpThreatLibraryGetWorkflowStatus(pool, args = {}) {
   let candidates = [];
   let linkedSources = null;
   let iocSourceSummary = null;
+  let obligations = null;
   if (THREAT_REPORT_READABLE_IMPORT_STATUSES.includes(String(report.import_status || ''))) {
     const snapshot = await loadReviewSnapshot(pool, report);
     candidates = snapshot.candidates;
     linkedSources = snapshot.linkedSources;
     iocSourceSummary = snapshot.iocSourceSummary;
+    obligations = snapshot.obligations;
   }
   const decisions = countReviewDecisions(candidates);
   const gates = candidates.length || phase === REPORT_PHASES.REVIEW_READY || phase === REPORT_PHASES.FINALIZED
-    ? gatesFromSnapshot(report, candidates, linkedSources)
+    ? gatesFromSnapshot(report, candidates, linkedSources, obligations)
     : {
         review_mutations_permitted: false,
         create_iocs_permitted: false,

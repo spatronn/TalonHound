@@ -33,6 +33,7 @@ function pool({ candidates = [approved], sourcesSeq = [[]], reportRow = report }
   return {
     state,
     async query(sql, params) {
+      if (/^\s*SELECT/i.test(sql) && /FROM threat_report_(?:extraction_runs|source_discovery_runs|finalize_exceptions|dropped_regions)/.test(sql)) return { rows: [] };
       if (/FROM threat_reports WHERE id = \$1/.test(sql) && /^\s*SELECT/i.test(sql)) return { rows: [state.report] };
       if (/FROM threat_report_candidates/.test(sql) && /^\s*SELECT/i.test(sql)) return { rows: candidates };
       if (/FROM threat_report_ioc_sources/.test(sql) && /^\s*SELECT/i.test(sql)) {

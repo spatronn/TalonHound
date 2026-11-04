@@ -28,11 +28,12 @@
 import { ROLES } from '../rbac.js';
 import { reviewActionableIndicatorSql } from './indicatorMembership.js';
 
-export const FINALIZE_GUARD_VERSION = 'tl-finalize-guard-v1';
+export const FINALIZE_GUARD_VERSION = 'tl-finalize-guard-v2';
 
 export const FINALIZE_BLOCKER_CODES = Object.freeze({
   PENDING_REVIEW: 'pending_review_remaining',
   LINKED_SOURCES: 'linked_ioc_sources_unresolved',
+  OBLIGATIONS: 'finalize_obligations_unmet',
   STATE_CHANGED: 'finalize_state_changed'
 });
 
@@ -165,7 +166,7 @@ export const GUARDED_FINALIZE_SQL = `UPDATE threat_reports r
  */
 export async function loadReportSources(pool, reportId) {
   const { rows } = await pool.query(
-    `SELECT public_id, lifecycle_status, original_url, canonical_url, error_code
+    `SELECT public_id, lifecycle_status, original_url, canonical_url, error_code, dismissal_reason
        FROM threat_report_ioc_sources WHERE report_id = $1 ORDER BY id`,
     [reportId]
   );
