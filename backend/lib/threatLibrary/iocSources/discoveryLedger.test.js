@@ -150,7 +150,7 @@ test('a root with nothing named for the report stays unresolved, whatever its fi
 });
 
 test('the root walk is bounded and says when it stopped early', async () => {
-  const tree = { '': Array.from({ length: 40 }, (_, i) => dir(`${2000 + i}`)) };
+  const tree = { '': Array.from({ length: 40 }, (_, i) => dir(`${1950 + i}`)) };
   const io = fakeRepo(tree);
   const r = await resolveGitHubCampaignFiles({ path: '' }, REPORT, io, { maxDirs: 5 });
   assert.equal(io.calls.length, 5);
@@ -215,4 +215,73 @@ test('publication-year folders are walked first, so a long history stays inside 
   tree['2026/03'] = [file('2026/03/uat-8837.txt')];
   const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'UAT-8837 targets infrastructure', publishedAt: '2026-03-10' }, fakeRepo(tree), { maxDirs: 4 });
   assert.deepEqual(r.files.map((f) => f.path), ['2026/03/uat-8837.txt']);
+});
+
+// Listings below are the real ones of eset/malware-ioc and SEKOIA-IO/Community.
+const publisherRepo = () => fakeRepo({
+  '': [dir('sednit'), dir('edr_killers'), dir('IOCs'), dir('indicators')],
+  sednit: ['2017-05-09_Trump_Attack_on_Syria_IoCs.json', '2018-11-20_Zebrocy.json', '2019-05-23_Zebrocy.json', 'README.adoc', 'samples.md5', 'samples.sha256'].map((n) => file(`sednit/${n}`)),
+  edr_killers: [file('edr_killers/README.adoc'), file('edr_killers/samples.sha256')],
+  IOCs: [dir('IOCs/clearfake'), dir('IOCs/errtraffic'), dir('IOCs/exvicy'), dir('IOCs/sneaky2fa')],
+  'IOCs/clearfake': [file('IOCs/clearfake/clearfake_iocs_20231016.csv'), file('IOCs/clearfake/clearfake_iocs_20250318.csv')],
+  'IOCs/errtraffic': [file('IOCs/errtraffic/errtraffic_iocs_20260615.csv')],
+  'IOCs/exvicy': [file('IOCs/exvicy/exvicy_iocs_20260921.csv')],
+  'IOCs/sneaky2fa': [file('IOCs/sneaky2fa/sneaky2fa_iocs_20250116.csv')],
+  indicators: [dir('indicators/shelby-strategy')],
+  'indicators/shelby-strategy': [file('indicators/shelby-strategy/iocs.ndjson')]
+});
+const resolvePublisher = (reportTitle, publishedAt) => resolveGitHubCampaignFiles({ path: '' }, { reportTitle, publishedAt }, publisherRepo(), { maxDirs: 30 });
+
+test('an actor folder from years before the report ties nothing to it', async () => {
+  const r = await resolvePublisher('Sednit reloaded: Back in the trenches', '2026-03-10');
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'named_files_belong_to_other_publications');
+  assert.ok(r.set_aside.some((f) => f.path === 'sednit/2018-11-20_Zebrocy.json' && f.reason === 'file_dated_for_another_publication'));
+  assert.ok(r.set_aside.some((f) => f.path === 'sednit/samples.sha256' && f.reason === 'folder_holds_other_publications'));
+});
+
+test('the same actor folder resolves for the post its stamp names', async () => {
+  const r = await resolvePublisher('Sednit: Zebrocy returns', '2019-05-23');
+  assert.deepEqual(r.files.map((f) => f.path).sort(), ['sednit/2019-05-23_Zebrocy.json', 'sednit/README.adoc', 'sednit/samples.md5', 'sednit/samples.sha256']);
+  assert.ok(r.set_aside.every((f) => f.reason === 'file_dated_for_another_publication'));
+});
+
+test('a family named in passing brings no file of its own publication', async () => {
+  const r = await resolvePublisher('Exvicy: A Copycat of the ErrTraffic Malware Distribution Framework', '2026-09-21T12:35:00Z');
+  assert.deepEqual(r.files.map((f) => f.path), ['IOCs/exvicy/exvicy_iocs_20260921.csv']);
+  assert.deepEqual(r.set_aside.map((f) => f.path), ['IOCs/errtraffic/errtraffic_iocs_20260615.csv']);
+});
+
+test('of two stamped files in a family folder, the one for this post is chosen', async () => {
+  const named = await resolvePublisher('ClearFake: Web3 Exploitation', '2025-03-18');
+  assert.deepEqual(named.files.map((f) => f.path), ['IOCs/clearfake/clearfake_iocs_20250318.csv']);
+  assert.deepEqual(named.set_aside.map((f) => f.path), ['IOCs/clearfake/clearfake_iocs_20231016.csv']);
+});
+
+test('a stamp a few days from the post is still that post; no publication date decides nothing', async () => {
+  const near = await resolvePublisher('ErrTraffic: A Growing ClickFix Framework', '2026-06-20');
+  assert.deepEqual(near.files.map((f) => f.path), ['IOCs/errtraffic/errtraffic_iocs_20260615.csv']);
+  const undated = await resolvePublisher('ClearFake: Web3 Exploitation', null);
+  assert.equal(undated.files.length, 2);
+});
+
+test('a folder named by consecutive title words resolves; the same words apart do not', async () => {
+  assert.deepEqual((await resolvePublisher('EDR killers explained: Beyond the drivers', '2026-03-19')).files.map((f) => f.path).sort(), ['edr_killers/README.adoc', 'edr_killers/samples.sha256']);
+  assert.deepEqual((await resolvePublisher('The Shelby Strategy', '2025-03-26')).files.map((f) => f.path), ['indicators/shelby-strategy/iocs.ndjson']);
+  assert.deepEqual((await resolvePublisher('Sneaky 2FA: exposing a new AiTM kit', '2025-01-16')).files.map((f) => f.path), ['IOCs/sneaky2fa/sneaky2fa_iocs_20250116.csv']);
+  assert.equal((await resolvePublisher('Killers of the EDR market', '2026-03-19')).ok, false);
+});
+
+test('a dated repository lists only the publication year', async () => {
+  const tree = { '': ['2024', '2025', '2026'].map((y) => dir(y)) };
+  for (const y of ['2024', '2025', '2026']) {
+    tree[y] = ['2026/01', '2026/02', '2026/03'].map((m) => dir(m.replace('2026', y)));
+    for (const m of ['01', '02', '03']) tree[`${y}/${m}`] = [];
+  }
+  tree['2026/03'] = [file('2026/03/uat-8837.txt')];
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportUrl: 'https://blog.example/uat-8837/', reportTitle: 'UAT-8837 targets infrastructure', publishedAt: '2026-03-10' }, fakeRepo(tree));
+  assert.deepEqual(r.files.map((f) => f.path), ['2026/03/uat-8837.txt']);
+  assert.equal(r.truncated, false);
+  assert.ok(r.candidates_checked.every((p) => !/^202[45]/.test(p)), r.candidates_checked.join());
+  assert.ok(r.requests <= 5, `${r.requests} listings`);
 });

@@ -178,7 +178,7 @@ async function runInspection(pool, source, deps) {
             await transitionSource(pool, source, 'unsupported', {
               error_code: 'campaign_scope_unresolved',
               error_detail: `Repository root: nothing in it could be tied to this report (${resolution.reason}; ${byName.reason})`,
-              preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, ...resolution, file_search: { reason: byName.reason, candidates_checked: byName.candidates_checked, files_seen: byName.files_seen, truncated: byName.truncated } } }
+              preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, ...resolution, file_search: { reason: byName.reason, candidates_checked: byName.candidates_checked, files_seen: byName.files_seen, truncated: byName.truncated }, ...(byName.set_aside?.length ? { set_aside_files: byName.set_aside } : {}) } }
             });
             return { ok: false, code: 'campaign_scope_unresolved' };
           }
