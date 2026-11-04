@@ -177,7 +177,9 @@ async function runInspection(pool, source, deps) {
           if (!byName.ok) {
             await transitionSource(pool, source, 'unsupported', {
               error_code: 'campaign_scope_unresolved',
-              error_detail: `Repository root: nothing in it could be tied to this report (${resolution.reason}; ${byName.reason})`,
+              error_detail: byName.reason === 'named_files_belong_to_other_publications'
+                ? 'Repository root: the files named for this subject are dated for other publications. Attach the right file if one belongs to this report.'
+                : `Repository root: nothing in it could be tied to this report (${resolution.reason}; ${byName.reason})`,
               preview: { scope: { version: IOC_SOURCE_SCOPE_VERSION, repository_root: true, ...resolution, file_search: { reason: byName.reason, candidates_checked: byName.candidates_checked, files_seen: byName.files_seen, truncated: byName.truncated }, ...(byName.set_aside?.length ? { set_aside_files: byName.set_aside } : {}) } }
             });
             return { ok: false, code: 'campaign_scope_unresolved' };

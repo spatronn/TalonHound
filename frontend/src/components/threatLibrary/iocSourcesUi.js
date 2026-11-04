@@ -167,3 +167,16 @@ export function describeExaminedLink(reference) {
   if (reference?.decision === 'accepted') return 'Listed as a source';
   return REJECTION_LABELS[reference?.rejection_reason] || 'Not a package';
 }
+
+const SET_ASIDE_LABELS = Object.freeze({
+  file_dated_for_another_publication: 'dated for another publication',
+  folder_holds_other_publications: 'in a folder that holds other publications',
+  weaker_match_than_another_file: 'another file matches this report better'
+});
+
+/** Files a repository search left out, with why, so an analyst can still attach one. */
+export function setAsideFiles(preview) {
+  const files = preview?.scope?.set_aside_files;
+  if (!Array.isArray(files)) return [];
+  return files.map((f) => ({ path: f.path, reason: SET_ASIDE_LABELS[f.reason] || 'not tied to this report' }));
+}

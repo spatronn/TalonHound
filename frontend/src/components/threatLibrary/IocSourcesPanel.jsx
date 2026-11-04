@@ -16,7 +16,8 @@ import {
   sourceErrorLabel,
   sourceProvenanceLabel,
   sourceTypeLabel,
-  describeExaminedLink
+  describeExaminedLink,
+  setAsideFiles
 } from './iocSourcesUi.js';
 
 function PreviewBlock({ preview }) {
@@ -334,6 +335,19 @@ export default function IocSourcesPanel({
                 {selected.error_code ? `${sourceErrorLabel(selected.error_code) || selected.error_code}: ` : ''}
                 {selected.error_detail}
               </p>
+            ) : null}
+
+            {setAsideFiles(selected.preview).length ? (
+              <section aria-label="Files set aside">
+                <h4>Files set aside</h4>
+                <ul>
+                  {setAsideFiles(selected.preview).map((f) => (
+                    <li key={f.path}>
+                      <code>{f.path}</code>: {f.reason}
+                    </li>
+                  ))}
+                </ul>
+              </section>
             ) : null}
 
             {Array.isArray(selected.files) && selected.files.length ? (

@@ -25,7 +25,7 @@
 import { createCanonicalDocument, createTableBlock } from '../canonicalDocument.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
-export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v7';
+export const IOC_SOURCE_SCOPE_VERSION = 'tl-ioc-source-scope-v8';
 
 /**
  * Section headings that never hold indicators. Antivirus detection-name lists
@@ -453,8 +453,20 @@ function publicationDateTokens(publishedAt) {
 }
 
 const DAY_MS = 86_400_000;
-/** How far a file's date stamp may sit from the post and still be the same publication. */
-const SAME_PUBLICATION_DAYS = 30;
+/**
+ * How far a file's date stamp may sit from the post and still be the same publication.
+ * Indicators are often packaged weeks before the post goes out; later stamps are rarer.
+ */
+const STAMP_BEFORE_POST_DAYS = 90;
+const STAMP_AFTER_POST_DAYS = 30;
+
+/** Months between the post and the year/month folder a file sits in ("2026/09/x", "2026-06/x"). */
+function monthFolderDistance(path, published) {
+  const m = /(?:^|\/)(20\d{2})[/_-](0[1-9]|1[0-2])\//.exec(String(path || ''));
+  if (!m) return null;
+  const post = new Date(published);
+  return Math.abs((Number(m[1]) - post.getUTCFullYear()) * 12 + (Number(m[2]) - 1 - post.getUTCMonth()));
+}
 
 /** The date a file name is stamped with: "x_iocs_20260921", "2017-05-09_x", "x-02-20-2026". */
 function fileNameStamp(path) {
@@ -470,6 +482,7 @@ function fileNameStamp(path) {
  * its name does not say which of them a file belongs to; the date stamp does.
  *   - A file stamped for this publication makes other stamped files foreign.
  *   - A stamp far from the post is another publication, whatever the name says.
+ *   - So is a file in a year/month folder more than a month from the post.
  *   - A folder whose stamps are all foreign is a long-lived actor folder, so its
  *     unstamped files cannot be tied to this report either.
  * A file named by the report's own URL slug is exempt. No publication date, no decision.
@@ -478,10 +491,15 @@ function separatePublications(matches, publishedAt) {
   const published = publishedAt ? new Date(publishedAt).getTime() : NaN;
   if (Number.isNaN(published)) return { kept: matches, foreign: [] };
   const daysOff = (m) => Math.abs(m.stamp - published) / DAY_MS;
+  const outsideWindow = (m) => (m.stamp <= published ? (published - m.stamp) / DAY_MS > STAMP_BEFORE_POST_DAYS : (m.stamp - published) / DAY_MS > STAMP_AFTER_POST_DAYS);
   const stamped = matches.map((m) => ({ ...m, stamp: fileNameStamp(m.path) }));
   const dated = stamped.filter((m) => m.stamp != null && m.evidence !== 'report_slug');
   const exact = dated.some((m) => daysOff(m) < 2);
-  const isForeign = (m) => m.stamp != null && m.evidence !== 'report_slug' && (exact ? daysOff(m) >= 2 : daysOff(m) > SAME_PUBLICATION_DAYS);
+  const isForeign = (m) => {
+    if (m.evidence === 'report_slug') return false;
+    if (m.stamp != null) return exact ? daysOff(m) >= 2 : outsideWindow(m);
+    return (monthFolderDistance(m.path, published) ?? 0) > 1;
+  };
   const ownFolders = new Set(stamped.filter((m) => m.folder && m.stamp != null && !isForeign(m)).map((m) => m.folder));
   const foreignFolders = new Set(stamped.filter((m) => m.folder && isForeign(m)).map((m) => m.folder));
   const kept = [];
@@ -492,6 +510,13 @@ function separatePublications(matches, publishedAt) {
     else kept.push(m);
   }
   return { kept, foreign };
+}
+
+/** A folder like "2026-10-13 Ivanti": the publication date and a title word. Never the date alone. */
+function datedFolderForReport(name, titleNames, publishedAt) {
+  const joined = normToken(name);
+  if (!publicationDateTokens(publishedAt).some((t) => joined.includes(t))) return false;
+  return String(name).toLowerCase().split(/[^a-z0-9]+/).some((w) => titleNames.has(w));
 }
 
 /** Consecutive title words, joined: "EDR killers" gives "edrkillers" for a folder `edr_killers`. */
@@ -594,14 +619,14 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
     // its files are the candidates. Only title words count, and the name must be distinctive.
     const namedForReport = (x) => {
       const n = normToken(x.name);
-      return x.type === 'dir' && !INVENTORY_DIR_RE.test(x.name) && ((titleNames.has(n) && n.length >= 5) || titleWordRuns.has(n));
+      return x.type === 'dir' && !INVENTORY_DIR_RE.test(x.name) && ((titleNames.has(n) && n.length >= 5) || titleWordRuns.has(n) || datedFolderForReport(x.name, titleNames, report.publishedAt));
     };
     for (const e of entries.filter(namedForReport)) {
       if (requests >= maxDirs) break;
       requests += 1;
       checked.push(e.path);
       for (const inner of (await io.listDir(e.path)) || []) {
-        if (inner.type === 'file' && (DATA_FILE_RE.test(inner.name) || isReadmePath(inner.name))) {
+        if (inner.type === 'file' && (DATA_FILE_RE.test(inner.name) || isReadmePath(inner.name) || IOC_NOTE_FILE_RE.test(inner.name))) {
           filesSeen += 1;
           matches.push({ path: inner.path, size: inner.size ?? null, evidence: 'folder_named_for_report', names: [normToken(e.name)], date: false, folder: e.path });
         }
@@ -643,6 +668,9 @@ export async function resolveGitHubCampaignFiles(gh, report, io, limits = {}) {
 }
 
 const FILE_EVIDENCE_RANK = Object.freeze({ report_slug: 6, folder_named_for_report: 5, title_names: 4, designator: 3, date_and_name: 2, date_and_slug_word: 2 });
+
+/** Inside a folder named for the report, a Markdown file named as its indicators: "x-campaign-iocs.md". */
+const IOC_NOTE_FILE_RE = /(?:^|[-_ .])(?:iocs?|indicators?)(?:[-_ .].*)?\.md$/i;
 
 /** Machine-readable inventories a root walk may match by name. */
 const DATA_FILE_RE = /\.(?:csv|tsv|txt|json|ndjson|jsonl|stix|xml|sha256|sha1|md5|ioc)$/i;

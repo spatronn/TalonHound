@@ -119,12 +119,16 @@ export async function resolveGitHubCommitSha(parsed, deps = {}) {
       fetchImpl: deps.fetchImpl,
       destinationGuard: deps.destinationGuard,
       headers: {
-        Accept: 'application/vnd.github+json',
+        // A single commit's JSON carries its whole diff and can pass any sensible size
+        // limit, which would leave the source pinned to a moving branch. Ask for the SHA.
+        Accept: path ? 'application/vnd.github+json' : 'application/vnd.github.sha',
         'User-Agent': 'TalonHound-ThreatLibrary'
       },
       maxBytes: Math.min(IOC_SOURCE_FETCH.MAX_BYTES, 256_000)
     });
-    const data = JSON.parse(fetched.body);
+    const text = String(fetched.body || '').trim();
+    if (GIT_SHA_RE.test(text)) return { ok: true, repo_ref: ref, repo_revision: text.toLowerCase() };
+    const data = JSON.parse(text);
     const sha = Array.isArray(data) ? data[0]?.sha : data?.sha;
     if (typeof sha === 'string' && GIT_SHA_RE.test(sha)) {
       return { ok: true, repo_ref: ref, repo_revision: sha.toLowerCase() };
