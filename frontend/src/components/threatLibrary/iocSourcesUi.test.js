@@ -135,3 +135,18 @@ test('an examined link reads as a sentence, never as a code', async () => {
   assert.match(describeExaminedLink({ decision: 'rejected', rejection_reason: 'destination_not_a_pack' }), /^Not a package: /);
   assert.equal(describeExaminedLink({ decision: 'rejected', rejection_reason: 'a_future_code' }), 'Not a package');
 });
+
+test('files set aside read as sentences; a preview without them lists none', async () => {
+  const { setAsideFiles } = await import('./iocSourcesUi.js');
+  assert.deepEqual(setAsideFiles({ scope: { set_aside_files: [
+    { path: 'sednit/2018-11-20_Zebrocy.json', reason: 'file_dated_for_another_publication' },
+    { path: 'sednit/samples.sha256', reason: 'folder_holds_other_publications' },
+    { path: 'x.csv', reason: 'a_future_code' }
+  ] } }), [
+    { path: 'sednit/2018-11-20_Zebrocy.json', reason: 'dated for another publication' },
+    { path: 'sednit/samples.sha256', reason: 'in a folder that holds other publications' },
+    { path: 'x.csv', reason: 'not tied to this report' }
+  ]);
+  assert.deepEqual(setAsideFiles({}), []);
+  assert.deepEqual(setAsideFiles(null), []);
+});

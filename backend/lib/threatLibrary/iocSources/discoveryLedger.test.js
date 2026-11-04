@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { resolveGitHubCommitSha } from './github.js';
 import assert from 'node:assert/strict';
 import { buildReferenceRows, isRelevantRejection, MAX_RECORDED_REFERENCES, packageCoverage } from './discoveryLedger.js';
 import { examineReportReferences } from './runDiscovery.js';
@@ -284,4 +285,51 @@ test('a dated repository lists only the publication year', async () => {
   assert.equal(r.truncated, false);
   assert.ok(r.candidates_checked.every((p) => !/^202[45]/.test(p)), r.candidates_checked.join());
   assert.ok(r.requests <= 5, `${r.requests} listings`);
+});
+
+// Real listings of Cisco-Talos/IOCs, eSentire/iocs, volexity/threat-intel, rapid7/Rapid7-Labs.
+test('a file in a month folder far from the post is not tied to it by ordinary title words', async () => {
+  const io = fakeRepo({ '': [dir('2026')], 2026: [dir('2026/04'), dir('2026/09')], '2026/04': [], '2026/09': [file('2026/09/clearfake-webdav-infection-chain.txt')] });
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Qilin EDR killer infection chain', reportUrl: 'https://blog.talosintelligence.com/qilin-edr-killer/', publishedAt: '2026-04-02' }, io);
+  assert.equal(r.ok, false);
+  assert.equal(r.set_aside[0].reason, 'file_dated_for_another_publication');
+  const same = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'ClearFake WebDAV infection chain', publishedAt: '2026-08-31' }, io);
+  assert.deepEqual(same.files.map((f) => f.path), ['2026/09/clearfake-webdav-infection-chain.txt'], 'the next month can still hold the file');
+});
+
+test('a stamp weeks before the post is the same publication; earlier years are not', async () => {
+  const io = fakeRepo({ '': [dir('Tycoon2FA')], Tycoon2FA: [file('Tycoon2FA/Tycoon2FA-iocs-03-27-2025.txt'), file('Tycoon2FA/Tycoon2FA-iocs-04-10-2025.txt'), file('Tycoon2FA/Tycoon2fa-iocs-03-23-2026.txt')] });
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Tycoon 2FA Operators Adopt OAuth Device Code Phishing', publishedAt: '2026-05-12' }, io);
+  assert.deepEqual(r.files.map((f) => f.path), ['Tycoon2FA/Tycoon2fa-iocs-03-23-2026.txt']);
+  assert.equal(r.set_aside.length, 2);
+  const later = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Tycoon 2FA Operators Adopt OAuth Device Code Phishing', publishedAt: '2026-02-01' }, io);
+  assert.equal(later.ok, false, 'a stamp seven weeks after the post is not this post');
+});
+
+test('a folder holding the publication date and a title word resolves; the date alone does not', async () => {
+  const tree = () => fakeRepo({ '': [dir('2025'), dir('2026')], 2026: [dir('2026/2026-10-13 Ivanti'), dir('2026/2026-09-09 Chrome')], '2026/2026-10-13 Ivanti': [file('2026/2026-10-13 Ivanti/indicators.csv')], '2026/2026-09-09 Chrome': [file('2026/2026-09-09 Chrome/indicators.csv')] });
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Chained Exploitation of Ivanti Connect Secure Zero-Days', publishedAt: '2026-10-13' }, tree());
+  assert.deepEqual(r.files.map((f) => f.path), ['2026/2026-10-13 Ivanti/indicators.csv']);
+  const dateOnly = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'An unrelated report on phishing', publishedAt: '2026-10-13' }, tree());
+  assert.equal(dateOnly.ok, false);
+  const wordOnly = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Another look at Ivanti appliances', publishedAt: '2026-05-01' }, tree());
+  assert.equal(wordOnly.ok, false);
+});
+
+test('a Markdown file named as indicators counts inside a folder named for the report, and only there', async () => {
+  const io = fakeRepo({ '': [dir('IOCs')], IOCs: [dir('IOCs/ModeloRat'), dir('IOCs/LodaRat'), file('IOCs/modelorat-notes-iocs.md')], 'IOCs/ModeloRat': [file('IOCs/ModeloRat/modeloRAT-campaign-iocs.md'), file('IOCs/ModeloRat/notes.md')], 'IOCs/LodaRat': [] });
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Pluribus and the Path to Domain Compromise: A ModeloRAT Case Study', publishedAt: '2026-05-13' }, io);
+  assert.deepEqual(r.files.map((f) => f.path), ['IOCs/ModeloRat/modeloRAT-campaign-iocs.md']);
+});
+
+test('a repository root pins to the commit SHA without reading the commit, however large it is', async () => {
+  const sha = 'a'.repeat(40);
+  const seen = [];
+  const fetchImpl = async (url, init) => {
+    seen.push(init?.headers?.Accept || init?.headers?.accept);
+    return new Response(sha, { status: 200, headers: { 'content-type': 'application/vnd.github.sha' } });
+  };
+  const r = await resolveGitHubCommitSha({ owner: 'rapid7', repo: 'Rapid7-Labs', ref: 'HEAD', path: '' }, { fetchImpl, destinationGuard: async () => {} });
+  assert.deepEqual([r.ok, r.repo_revision], [true, sha]);
+  assert.equal(seen[0], 'application/vnd.github.sha');
 });

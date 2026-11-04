@@ -506,16 +506,19 @@ other blog posts). Discovery is insert-only: an existing row (discovered,
 inspected, extracted or dismissed) is never rewritten by analysis, retry or
 refresh.
 
-**Repository-root publications (tl-ioc-source-scope-v7).** A folder named for an
+**Repository-root publications (tl-ioc-source-scope-v8).** A folder named for an
 actor or family keeps that name across its publications, so the name alone does not
 tie a file to a report. Date stamps in file names decide: a file stamped within a day
-of the post makes other stamped files foreign; otherwise a stamp more than 30 days
-from the post is foreign; a folder whose stamps are all foreign is a long-lived actor
-folder, and its unstamped files are set aside too. A file named by the report's URL
+of the post makes other stamped files foreign; otherwise a stamp more than 90 days
+before or 30 days after the post is foreign, and so is a file in a year/month folder
+more than a month from the post; a folder whose stamps are all foreign is a long-lived
+actor folder, and its unstamped files are set aside too. A file named by the report's URL
 slug is exempt, and without a publication date nothing is decided. Set-aside files
 are listed with a reason in the source preview, and the source stays unresolved for
 an analyst when nothing remains. A folder also matches consecutive title words
-(`edr_killers` for "EDR killers explained"). Dated repositories list only the
+(`edr_killers` for "EDR killers explained") or the publication date with a title
+word (`2026-10-13 Ivanti`), never the date alone. Inside such a folder a Markdown
+file named as indicators counts (`x-campaign-iocs.md`). Dated repositories list only the
 publication year when it has a folder.
 
 **Campaign scope (tl-ioc-source-scope-v1).** A linked pack contributes only what

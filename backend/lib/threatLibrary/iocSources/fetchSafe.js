@@ -88,7 +88,7 @@ export function isAllowedIocSourceContentType(contentTypeHeader) {
     return true;
   }
   if (ct.startsWith('text/')) return true;
-  if (ct === 'application/vnd.github+json' || ct === 'application/json') return true;
+  if (ct === 'application/vnd.github+json' || ct === 'application/vnd.github.sha' || ct === 'application/json') return true;
   return false;
 }
 
