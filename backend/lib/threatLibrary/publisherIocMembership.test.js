@@ -192,7 +192,7 @@ test('P8: no IOC section — malicious narrative hash may become a report Indica
   assert.equal(classifyCreateEligibility({ ...mal, review_status: 'approved' }).eligible, true);
 });
 
-test('P9: no IOC section — narrative C2 domain/IP remain report Indicators after AI', () => {
+test('P9: no IOC section — a model verdict on narrative C2 domain/IP sends them to an analyst', () => {
   const { candidates, diagnostics, document } = extract(`
 <p>The malware communicates with c2-relay-node.com as its C2 and connected to 45.61.10.30.</p>`);
   assert.equal(diagnostics.document_scope.has_authoritative_indicator_scope, false);
@@ -200,8 +200,13 @@ test('P9: no IOC section — narrative C2 domain/IP remain report Indicators aft
     { candidate_type: 'domain', normalized_value: 'c2-relay-node.com', assessment: 'malicious', role: 'command_and_control', confidence: 0.9 },
     { candidate_type: 'ip', normalized_value: '45.61.10.30', assessment: 'malicious', role: 'command_and_control', confidence: 0.88 }
   ]);
-  assert.equal(isMember(find(after, 'domain', 'c2-relay-node.com')), true);
-  assert.equal(isMember(find(after, 'ip', '45.61.10.30')), true);
+  for (const [type, value] of [['domain', 'c2-relay-node.com'], ['ip', '45.61.10.30']]) {
+    const row = find(after, type, value);
+    assert.equal(isMember(row), false, value);
+    assert.equal(row.membership_decision.outcome, 'needs_review', value);
+    assert.equal(row.assessment, 'malicious', 'the model opinion stays visible');
+    assert.equal(classifyCreateEligibility({ ...row, review_status: 'approved' }).eligible, true, 'an analyst approval still reaches Create IOCs');
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -223,7 +228,7 @@ test('P10: unconfirmed IOC heading with no publisher assertions does not become 
   const after = applyAi(candidates, document, [
     { candidate_type: 'domain', normalized_value: 'c2-relay-node.com', assessment: 'malicious', role: 'command_and_control', confidence: 0.9 }
   ]);
-  assert.equal(isMember(find(after, 'domain', 'c2-relay-node.com')), true);
+  assert.equal(find(after, 'domain', 'c2-relay-node.com').membership_decision.outcome, 'needs_review');
 });
 
 // ---------------------------------------------------------------------------

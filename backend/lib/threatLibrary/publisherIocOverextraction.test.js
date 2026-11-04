@@ -156,8 +156,11 @@ test('no curated IOC section (MODE B): narrative values the model calls maliciou
     },
     { document }
   );
-  // A model verdict grounded in the publisher's wording carries membership (R32).
-  assert.ok(isMember(find(after, 'domain', 'relay-node-17.net')));
+  // A model verdict grounded in the publisher's wording goes to an analyst, with its opinion (R32).
+  const grounded = find(after, 'domain', 'relay-node-17.net');
+  assert.equal(grounded.membership_decision.outcome, 'needs_review');
+  assert.equal(grounded.membership_decision.rule_id, 'R32_grounded_model_assessment');
+  assert.equal(grounded.assessment, 'malicious');
   // Its verdict on this URL has no support in the prose, so the statement goes to review.
   assert.equal(find(after, 'url', 'https://update-flash.com/download/setup_x.exe').membership_decision.outcome, 'needs_review');
 });

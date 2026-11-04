@@ -159,7 +159,9 @@ export function requestPinned(parsed, addresses, headers, signal) {
 }
 
 /**
- * Fetch a URL as untrusted bytes/text. Never forwards Authorization. Never executes content.
+ * Fetch a URL as untrusted bytes/text. Never forwards a caller's Authorization. Never executes content.
+ * THREAT_LIBRARY_GITHUB_TOKEN, when configured, is sent to api.github.com over HTTPS only, decided
+ * on each hop, so a redirect to any other host never carries it.
  * `fetchImpl` replaces the transport only (tests): URL policy and the
  * destination guard still run before it.
  * @param {string} url
@@ -223,6 +225,10 @@ export async function fetchIocSourceUrl(url, options = {}) {
       delete headers.authorization;
       delete headers.Cookie;
       delete headers.cookie;
+      const githubToken = String(process.env.THREAT_LIBRARY_GITHUB_TOKEN || '').trim();
+      if (githubToken && currentUrl.protocol === 'https:' && currentUrl.hostname === 'api.github.com') {
+        headers.Authorization = `Bearer ${githubToken}`;
+      }
 
       let res;
       try {
