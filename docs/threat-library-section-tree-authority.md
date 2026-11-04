@@ -51,11 +51,14 @@ follows them. A short line holding a field or a value ("Description: …", an IP
 Plain PDFs set headings in the body font: a whole line that is a formal section title, standing between
 sentences, becomes a heading (`isFormalSectionTitleLine`, threat_library_pdf_v7).
 
-## Membership without a curated section (tl-membership-decision-v2)
+## Membership without a curated section (tl-membership-decision-v3)
 
-Structured rows remain the publisher's inventory (R30). A prose statement goes to review (R31) unless a
-model verdict grounded in publisher text carries it (R32). Both reach the analyst, who approves through
-the audited path; the difference is that nothing is presented as asserted on prose alone.
+Structured rows remain the publisher's inventory (R30). A prose statement goes to review (R31), and so
+does one a model calls malicious (R32): the analyst sees the model's opinion and approves through the
+audited path. "Grounded" means the publisher's text names the value near threat wording, which is equally
+true of a legitimate service the operators abused. On stored verdicts, 36 rows on 17 of 690 reports would
+have reached R32, and analysts rejected 7 of them, including `file.io`, `paste.sh` and `api.ipbase.com`.
+A prose sample hash stays a member (R34), with or without a model verdict.
 
 ## Known limitations
 

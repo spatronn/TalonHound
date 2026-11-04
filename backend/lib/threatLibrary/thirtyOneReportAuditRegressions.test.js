@@ -77,12 +77,12 @@ const members = (x) => x.candidates.filter((c) => isReportIndicatorMember(persis
 const modeA = (x) => x.candidates.some((c) => hasAuthoritativePublisherIocScope(persisted(c)));
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v58');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v10');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v10');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v25');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v16');
-  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v15');
+  assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v16');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v8');
 });

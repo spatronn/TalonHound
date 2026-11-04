@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { extractCanonicalDocumentFromHtml } from './extract/extractHtml.js';
 import { extractReportCandidates } from './extractionStages.js';
 import { linesToBlocks, isFormalSectionTitleLine } from './pdfLayout.js';
+import { trimUrlBoundary } from './observableTypeResolver.js';
 import { createCanonicalDocument } from './canonicalDocument.js';
 import { decideMembership, MEMBERSHIP_OUTCOME as O } from './membershipDecision.js';
 
@@ -130,13 +131,13 @@ test('every decision names its rule, reason, evidence and contract', () => {
   }
 });
 
-test('R31 and R32: a prose statement goes to review; a grounded model verdict can carry it', () => {
+test('R31 and R32: a prose statement goes to review; a grounded model verdict does not change that', () => {
   const operational = { operational_clause: true };
   assert.equal(decideMembership(operational, {}, {}, {}, { sections: ['uncertain'] }, {}).outcome, O.NEEDS_REVIEW);
   const unsupported = decideMembership(operational, {}, {}, {}, { sections: ['uncertain'] }, { assessment: 'malicious', supported: false, applied: false });
   assert.equal(unsupported.rule_id, 'R31_operational_statement');
   const grounded = decideMembership(operational, {}, {}, {}, { sections: ['uncertain'] }, { assessment: 'malicious', supported: true, applied: true });
-  assert.equal(grounded.outcome, O.MEMBER);
+  assert.equal(grounded.outcome, O.NEEDS_REVIEW);
   assert.equal(grounded.rule_id, 'R32_grounded_model_assessment');
   const curated = decideMembership(operational, {}, {}, {}, { sections: ['uncertain'], document_has_asserting_section: true }, { assessment: 'malicious', supported: true, applied: true });
   assert.equal(curated.outcome, O.NEEDS_REVIEW);
@@ -214,4 +215,31 @@ test('a host named inside a behaviour sentence in an indicator table is not asse
   assert.equal(x.outcome('evil-c2-one.net'), O.MEMBER);
   assert.notEqual(x.outcome('speedtest-host.net'), O.MEMBER);
   assert.ok(x.outcome('speedtest-host.net'), 'still visible');
+});
+
+// --- What was measured on stored model verdicts: abused legitimate services reach R32. ---
+
+test('a model verdict on an abused legitimate service does not make it an Indicator', () => {
+  const statement = { operational_clause: true };
+  const verdict = { assessment: 'malicious', supported: true, applied: true };
+  const d = decideMembership(statement, {}, {}, {}, { sections: ['uncertain'] }, verdict);
+  assert.equal(d.outcome, O.NEEDS_REVIEW);
+  assert.equal(d.inputs.model_assessment, 'malicious', 'the analyst can see what the model said');
+  assert.equal(decideMembership({}, {}, {}, {}, { sections: ['uncertain'] }, { assessment: 'malicious', supported: null, applied: true }).outcome, O.NEEDS_REVIEW, 'nor can an unchecked one');
+  assert.equal(decideMembership({ structured_row: true }, {}, {}, {}, { sections: ['uncertain'] }, {}).outcome, O.MEMBER, 'the structured inventory of a document without a curated section still counts');
+  assert.equal(decideMembership({}, { explicit: true }, {}, {}, { sections: ['asserting'] }, {}).outcome, O.MEMBER, 'publisher assertions still count');
+});
+
+test('the contract fingerprint changes when the membership rules do', async () => {
+  const { extractionContractBundle, contractFingerprint } = await import('./contractBundle.js');
+  const bundle = extractionContractBundle();
+  assert.match(bundle.membership, /^tl-membership-decision-v\d+$/);
+  assert.notEqual(contractFingerprint(bundle), contractFingerprint({ ...bundle, membership: 'tl-membership-decision-v0' }));
+});
+
+test('a publisher truncation mark ends a URL, like a redaction mark, and leaves no bracket in its identity', () => {
+  assert.equal(trimUrlBoundary('https://files.evil-host.net/v1/content.zip[...]'), 'https://files.evil-host.net/v1/content.zip');
+  assert.equal(trimUrlBoundary('https://files.evil-host.net/v1/content.zip[\u2026]'), 'https://files.evil-host.net/v1/content.zip');
+  assert.equal(trimUrlBoundary('https://h.example/a?b=[REDACTED]'), 'https://h.example/a?b=');
+  assert.equal(trimUrlBoundary('https://h.example/a[1]/b'), 'https://h.example/a[1]/b', 'an ordinary bracketed segment stays');
 });

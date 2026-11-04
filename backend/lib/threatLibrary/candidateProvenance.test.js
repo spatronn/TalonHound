@@ -39,7 +39,7 @@ function keyOf(c) {
 }
 
 test('extraction contract version bumped for evidence model', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v58');
 });
 
 test('URL with IP host only → URL candidate, no parser-derived IP candidate', () => {

@@ -91,7 +91,7 @@ import { isValidIpAddress } from '../publicIp.js';
  * is never a host under the .xxx TLD; a search-query field before a grouped
  * condition ("host.services: (port=22 AND …)") is a field name.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v24';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v25';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -619,7 +619,7 @@ export function trimUrlBoundary(urlish) {
   if (note > 0) v = v.slice(0, note);
   // "…/expire?client=[redacted]": the publisher's redaction marker ends the
   // URL the same way an "<id>" placeholder does (tl-type-resolver-v22).
-  const redaction = v.search(/\[\s*(?:redacted|removed|omitted|x{3,}|\*{3,})\s*(?:\]|$)/i);
+  const redaction = v.search(/\[\s*(?:redacted|removed|omitted|x{3,}|\*{3,}|\.{3,}|…)\s*(?:\]|$)/i);
   if (redaction > 0) v = v.slice(0, redaction);
   for (;;) {
     const before = v;

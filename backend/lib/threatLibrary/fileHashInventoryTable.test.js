@@ -23,9 +23,9 @@ import {
 import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v57');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v58');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
-assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v24');
+assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v25');
 
 const LEGIT_EXE = 'd98f568496512e4f98670c61c97cb07a';
 const MAL_DLL = 'aa3086be652c8b20b0b29b2730d57119';

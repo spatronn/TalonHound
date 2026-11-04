@@ -1,12 +1,12 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v57",
+    "candidates": "tl-candidates-v58",
     "zones": "tl-zones-v17",
     "tables": "tl-table-v18",
-    "type_resolver": "tl-type-resolver-v24",
+    "type_resolver": "tl-type-resolver-v25",
     "html": "threat_library_html_v10",
     "pdf": "threat_library_pdf_v7",
-    "quality": "tl-quality-v15",
+    "quality": "tl-quality-v16",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {

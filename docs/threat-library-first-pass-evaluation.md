@@ -70,6 +70,14 @@ At least 20% of reports get a second labeler who has not seen the first set of l
 
 `validate` must pass and `first_pass_accuracy` flips to validated only with at least 30 valid reports, the second-labeler share met, and labels against the fingerprint of the code being scored. If the contract changes before scoring, the sealed labels stay valid as labels but the score is for the new code, so record both.
 
+## Scoring rules fixed in advance
+
+- **Document and packages are scored apart.** `indicators` is scored against values read from the document; `linked_packages` against what discovery reached. A value only in a package is not a document miss.
+- **`needs_review` is not a member.** A labelled Indicator that lands in review counts as a miss for first-pass recall, reported on its own line (`fn_review`), because it costs an analyst a decision but is not lost. Report recall both ways: members only, and members plus review.
+- **R32 rows count as `needs_review`.** A model verdict does not make a member.
+- **A rate-limited inspection is not a discovery miss.** `repository_listing_failed` means GitHub could not be read. Retry it, and if it still fails, report that package as not evaluated. Configure `THREAT_LIBRARY_GITHUB_TOKEN` before the batch so this does not arise.
+- **Do not change a label after seeing a score.** A correction needs the source evidence and leaves a note in `provenance`.
+
 ## What the scorecard reports
 
 Per tier: precision, recall, F1, report exact match, document-only coverage, linked package discovery recall, type accuracy, classification accuracy, review queue volume, silent evidence loss, provenance completeness and per-stage failure rates, plus comparison with the baseline.

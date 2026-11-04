@@ -335,3 +335,38 @@ test('a repository root pins to the commit SHA without reading the commit, howev
   assert.equal(seen[0], 'application/vnd.github.sha');
   assert.equal(isAllowedIocSourceContentType('application/vnd.github.sha; charset=utf-8'), true, 'the real transport accepts the reply');
 });
+
+test('the configured GitHub token reaches api.github.com over HTTPS and nothing else', async () => {
+  const { fetchIocSourceUrl } = await import('./fetchSafe.js');
+  const secret = 'ghp_test_only_not_a_real_token';
+  const saved = process.env.THREAT_LIBRARY_GITHUB_TOKEN;
+  const lookup = async () => [{ address: '140.82.112.5', family: 4 }];
+  const seen = [];
+  const requestImpl = (redirects) => async (parsed, _addresses, headers) => {
+    seen.push({ host: parsed.hostname, auth: headers.Authorization });
+    const location = redirects[parsed.hostname];
+    const { Readable } = await import('node:stream');
+    const res = Readable.from([Buffer.from('ok')]);
+    res.statusCode = location ? 302 : 200;
+    res.headers = location ? { location } : { 'content-type': 'text/plain' };
+    return res;
+  };
+  try {
+    process.env.THREAT_LIBRARY_GITHUB_TOKEN = secret;
+    await fetchIocSourceUrl('https://api.github.com/repos/a/b', { lookup, requestImpl: requestImpl({}) });
+    assert.equal(seen.pop().auth, `Bearer ${secret}`);
+    await fetchIocSourceUrl('https://raw.githubusercontent.com/a/b/HEAD/x.txt', { lookup, requestImpl: requestImpl({}) });
+    assert.equal(seen.pop().auth, undefined, 'not the raw host');
+    await fetchIocSourceUrl('https://evil.example.net/x', { lookup, requestImpl: requestImpl({}), headers: { Authorization: 'Bearer caller' } });
+    assert.equal(seen.pop().auth, undefined, 'a caller header is still dropped');
+    seen.length = 0;
+    await fetchIocSourceUrl('https://api.github.com/repos/a/b', { lookup, requestImpl: requestImpl({ 'api.github.com': 'https://evil.example.net/steal' }) });
+    assert.deepEqual(seen.map((s) => [s.host, s.auth]), [['api.github.com', `Bearer ${secret}`], ['evil.example.net', undefined]], 'a redirect away carries nothing');
+    delete process.env.THREAT_LIBRARY_GITHUB_TOKEN;
+    await fetchIocSourceUrl('https://api.github.com/repos/a/b', { lookup, requestImpl: requestImpl({}) });
+    assert.equal(seen.pop().auth, undefined, 'no token configured, no header');
+  } finally {
+    if (saved === undefined) delete process.env.THREAT_LIBRARY_GITHUB_TOKEN;
+    else process.env.THREAT_LIBRARY_GITHUB_TOKEN = saved;
+  }
+});

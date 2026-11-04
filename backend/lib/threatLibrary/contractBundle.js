@@ -19,6 +19,7 @@ import { EVIDENCE_INTEGRITY_VERSION } from './evidenceIntegrity.js';
 import { IOC_SOURCE_SCOPE_VERSION } from './iocSources/campaignScope.js';
 import { STRUCTURED_SOURCE_PARSER_VERSION } from './iocSources/structuredSources.js';
 import { OBSERVABLE_DISPOSITION_VERSION } from './observableDispositions.js';
+import { MEMBERSHIP_DECISION_VERSION } from './membershipDecision.js';
 
 /** @returns {Record<string, string>} */
 export function extractionContractBundle() {
@@ -35,7 +36,8 @@ export function extractionContractBundle() {
     evidence_integrity: EVIDENCE_INTEGRITY_VERSION,
     ioc_source_scope: IOC_SOURCE_SCOPE_VERSION,
     structured_sources: STRUCTURED_SOURCE_PARSER_VERSION,
-    dispositions: OBSERVABLE_DISPOSITION_VERSION
+    dispositions: OBSERVABLE_DISPOSITION_VERSION,
+    membership: MEMBERSHIP_DECISION_VERSION
   };
 }
 

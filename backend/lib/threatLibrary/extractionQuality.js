@@ -85,7 +85,7 @@ import { annotateSectionTree } from './sectionTree/annotate.js';
  * v15 (evidence-first): check 28 reports observable-shaped text in page regions
  * normalization discarded (document.meta.source_accounting).
  */
-export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v15';
+export const EXTRACTION_QUALITY_VERSION = 'tl-quality-v16';
 
 export const QUALITY_SEVERITIES = Object.freeze(['info', 'warning', 'high']);
 const SEVERITY_RANK = Object.freeze({ info: 1, warning: 2, high: 3 });

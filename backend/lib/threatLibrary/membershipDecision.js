@@ -20,7 +20,7 @@
  * an analyst still approves it through the audited review path.
  */
 
-export const MEMBERSHIP_DECISION_VERSION = 'tl-membership-decision-v2';
+export const MEMBERSHIP_DECISION_VERSION = 'tl-membership-decision-v3';
 
 export const MEMBERSHIP_OUTCOME = Object.freeze({
   MEMBER: 'member',
@@ -103,13 +103,16 @@ export function decideMembership(evidence = {}, assertion = {}, role = {}, stanc
 
   if (!curated) {
     // No section of this document asserts indicators: its structured rows are the
-    // publisher's only inventory. A prose statement is evidence, not an assertion:
-    // on its own it goes to review, and a model verdict grounded in publisher text
-    // is what can carry it further.
+    // publisher's only inventory. A prose statement is evidence, not an assertion, and
+    // a model verdict does not change that: "grounded" means the publisher's text names
+    // the value near threat wording, which is equally true of a legitimate service the
+    // operators abused. Both go to an analyst, who sees the model's opinion.
     if (structural) return decide(MEMBERSHIP_OUTCOME.MEMBER, 'structured_inventory_without_curated_section', 'R30_structured_inventory');
-    if (modelEscalates) return decide(MEMBERSHIP_OUTCOME.MEMBER, 'grounded_model_assessment_without_curated_section', 'R32_grounded_model_assessment');
+    // A digest names a file: with no curated list, a prose hash is the sample the report
+    // discusses, whatever the model adds.
+    if (evidence.undecided_sample_hash === true && !operational) return decide(MEMBERSHIP_OUTCOME.MEMBER, 'sample_hash_without_curated_section', 'R34_sample_hash');
+    if (modelEscalates) return decide(MEMBERSHIP_OUTCOME.NEEDS_REVIEW, 'grounded_model_assessment_without_curated_section', 'R32_grounded_model_assessment');
     if (operational) return decide(MEMBERSHIP_OUTCOME.NEEDS_REVIEW, 'operational_statement_without_curated_section', 'R31_operational_statement');
-    // A digest names a file: with no curated list, a prose hash is the sample the report discusses.
     if (evidence.undecided_sample_hash === true) return decide(MEMBERSHIP_OUTCOME.MEMBER, 'sample_hash_without_curated_section', 'R34_sample_hash');
     return decide(MEMBERSHIP_OUTCOME.NEEDS_REVIEW, 'mention_without_curated_section', 'R33_mention_needs_review');
   }
