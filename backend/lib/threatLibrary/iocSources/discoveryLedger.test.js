@@ -177,3 +177,42 @@ test('resource limits are explicit and allow a large pack', () => {
   assert.ok(IOC_SOURCE_FETCH.MAX_BYTES >= 16 * 1024 * 1024);
   assert.ok(IOC_SOURCE_FETCH.GITHUB_MAX_FILE_BYTES >= 16 * 1024 * 1024);
 });
+
+test('a file named by date and a word of the report slug resolves; the date alone does not', () => {
+  const report = { reportUrl: 'https://www.infoblox.com/blog/threat-intelligence/dropcatch-scavengers-expired-malicious-domains-become-cash-cows/', reportTitle: 'Expired Malicious Domains Bring New Threats to Life', publishedAt: '2026-08-13T12:58:48Z' };
+  assert.equal(fileNameReportEvidence('indicators/csv/drop_catch_iii_20260813.csv', report).evidence, 'date_and_slug_word');
+  assert.equal(fileNameReportEvidence('indicators/csv/hazy_hawk_20260813.csv', report).matched, false);
+  assert.equal(fileNameReportEvidence('indicators/csv/20260813_iocs.csv', report).matched, false);
+  assert.equal(fileNameReportEvidence('indicators/csv/drop_catch_iii_20250101.csv', report).matched, false, 'a slug word without the date is not enough');
+});
+
+test('a folder named for the report resolves to its files; a heading word or short name does not', async () => {
+  const io = fakeRepo({
+    '': [dir('webworm'), dir('other'), dir('indicators')],
+    webworm: [file('webworm/README.adoc'), file('webworm/samples.sha256'), file('webworm/tool.exe')],
+    indicators: [dir('indicators/shellter')],
+    'indicators/shellter': [file('indicators/shellter/iocs.txt')]
+  });
+  const web = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Webworm: New burrowing techniques', publishedAt: '2026-01-01' }, io);
+  assert.deepEqual(web.files.map((f) => f.path).sort(), ['webworm/README.adoc', 'webworm/samples.sha256']);
+  assert.equal(web.files[0].evidence, 'folder_named_for_report');
+  const nested = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'Taking SHELLTER: a commercial evasion framework', publishedAt: '2026-01-01' }, io);
+  assert.deepEqual(nested.files.map((f) => f.path), ['indicators/shellter/iocs.txt']);
+  const none = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'An unrelated campaign report', publishedAt: '2026-01-01' }, io);
+  assert.equal(none.ok, false);
+});
+
+test('two posts on one actor: the better-supported file is chosen and the other is named', async () => {
+  const io = fakeRepo({ '': [dir('2026')], 2026: [dir('2026/08')], '2026/08': [file('2026/08/UAT-10147 deploys SPECTRE.txt'), file('2026/08/UAT-10147 integrates agentic AI.txt')] });
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'UAT-10147 deploys SPECTRE backdoor', publishedAt: '2026-08-01' }, io);
+  assert.deepEqual(r.files.map((f) => f.path), ['2026/08/UAT-10147 deploys SPECTRE.txt']);
+  assert.deepEqual(r.set_aside.map((f) => f.path), ['2026/08/UAT-10147 integrates agentic AI.txt']);
+});
+
+test('publication-year folders are walked first, so a long history stays inside the limit', async () => {
+  const tree = { '': Array.from({ length: 30 }, (_, i) => dir(String(1996 + i))).concat(dir('2026')) };
+  tree['2026'] = [dir('2026/03')];
+  tree['2026/03'] = [file('2026/03/uat-8837.txt')];
+  const r = await resolveGitHubCampaignFiles({ path: '' }, { reportTitle: 'UAT-8837 targets infrastructure', publishedAt: '2026-03-10' }, fakeRepo(tree), { maxDirs: 4 });
+  assert.deepEqual(r.files.map((f) => f.path), ['2026/03/uat-8837.txt']);
+});

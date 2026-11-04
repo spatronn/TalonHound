@@ -185,6 +185,22 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'IOC-table rows kept as Context Only by their own wording',
     why: 'URLs or domains listed in a publisher IOC table were kept as Context Only because their row calls them legitimate or a provider service. Confirm the wording is about the value itself, not the service hosting it.'
   },
+  linked_ioc_source_not_ingested: {
+    title: 'Linked IOC Source not extracted',
+    why: 'The publisher points to an IOC package that has not been extracted or dismissed, so Linked Indicators may be incomplete.'
+  },
+  ioc_package_not_discovered: {
+    title: 'Announced IOC package not found',
+    why: 'The publisher announces a downloadable IOC package, but no IOC Source is attached to this report.'
+  },
+  extraction_provenance_incomplete: {
+    title: 'Older extraction provenance',
+    why: 'Some candidates were stored without full provenance. Refreshing the extraction would add it.'
+  },
+  extraction_quality_missing: {
+    title: 'Automatic checks did not run',
+    why: 'Candidates exist, but no extraction quality record was stored for this report.'
+  },
   ai_analysis_degraded: {
     title: 'Model analysis incomplete',
     why: 'Extraction finished, but the model did not analyze all of the document. Re-run AI analysis to add it.'
@@ -344,4 +360,25 @@ export function describeStatusAxes(axes) {
     { key: 'contract', label: 'Extraction contract', value: value(axes.contract_freshness?.status) },
     ...(axes.exceptions?.length ? [{ key: 'exceptions', label: 'Finalize exceptions', value: String(axes.exceptions.length) }] : [])
   ];
+}
+
+export const FINALIZE_EXCEPTION_REASON_MIN_CHARS = 12;
+
+/** @param {string} reason */
+export function canSubmitFinalizeException(reason) {
+  return String(reason || '').trim().length >= FINALIZE_EXCEPTION_REASON_MIN_CHARS;
+}
+
+const OBLIGATION_LABELS = Object.freeze({
+  extraction_run_not_recorded: 'Extraction run',
+  source_regions_unaccounted: 'Document coverage',
+  ioc_source_discovery_incomplete: 'IOC Source discovery',
+  ioc_source_dismissed_without_evidence: 'Dismissal reason',
+  approved_indicators_not_linked: 'IOC linking',
+  critical_extraction_failure: 'Extraction failure'
+});
+
+/** @param {string} code */
+export function obligationLabel(code) {
+  return OBLIGATION_LABELS[code] || 'Obligation';
 }

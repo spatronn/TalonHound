@@ -132,3 +132,24 @@ test('status axes read independently and historical gaps stay unrecorded', async
   assert.equal(rows.contract, 'Older contract');
   assert.equal(rows.exceptions, undefined);
 });
+
+test('a finalize exception needs a written reason, and every obligation has a label', async () => {
+  const { canSubmitFinalizeException, obligationLabel } = await import('./extractionQualityUi.js');
+  assert.equal(canSubmitFinalizeException('too short'), false);
+  assert.equal(canSubmitFinalizeException('            '), false);
+  assert.equal(canSubmitFinalizeException('The publisher has no package here.'), true);
+  for (const code of ['extraction_run_not_recorded', 'source_regions_unaccounted', 'ioc_source_discovery_incomplete', 'ioc_source_dismissed_without_evidence', 'approved_indicators_not_linked', 'critical_extraction_failure']) {
+    assert.notEqual(obligationLabel(code), 'Obligation', code);
+  }
+});
+
+test('no browser prompt remains in the report page', () => {
+  const page = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'ThreatLibraryReportPage.jsx'), 'utf8');
+  assert.doesNotMatch(page, /window\.prompt/);
+});
+
+test('every check the server adds at read time has its own copy', () => {
+  for (const code of ['linked_ioc_source_not_ingested', 'linked_ioc_source_scope_mismatch', 'linked_ioc_source_partially_read', 'ioc_package_not_discovered', 'ioc_source_discovery_incomplete', 'extraction_provenance_incomplete', 'extraction_quality_missing', 'ai_analysis_degraded', 'ai_candidates_unanswered']) {
+    assert.ok(QUALITY_CODE_COPY[code]?.title, code);
+  }
+});

@@ -140,7 +140,7 @@ export function sourceCardMeta(source) {
 export function sourceProvenanceLabel(source) {
   const discovery = String(source?.discovery_method || '').toLowerCase();
   if (discovery === 'manual') return 'Added manually';
-  if (discovery === 'auto') return 'Auto-discovered (legacy)';
+  if (discovery === 'auto') return 'Auto-discovered';
   return '—';
 }
 
@@ -152,4 +152,18 @@ export function isPendingLifecycle(status) {
   return ['discovered', 'inspected', 'failed', 'blocked', 'unsupported', 'inspecting'].includes(
     String(status || '').toLowerCase()
   );
+}
+
+const REJECTION_LABELS = Object.freeze({
+  destination_not_a_pack: 'Not a package: the destination is not a data file or IOC path',
+  no_anchor_local_evidence: 'Not a package: nothing around the link says it holds indicators',
+  below_score_threshold: 'Not a package: too little evidence around the link',
+  same_site_navigation: 'Not a package: a link within the publisher site',
+  non_pack_file: 'Not a package: not a data file'
+});
+
+/** What discovery decided about a link it examined. */
+export function describeExaminedLink(reference) {
+  if (reference?.decision === 'accepted') return 'Listed as a source';
+  return REJECTION_LABELS[reference?.rejection_reason] || 'Not a package';
 }

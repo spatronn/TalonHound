@@ -57,6 +57,7 @@ export function readReviewProgress(report) {
     total,
     reviewed: safeReviewed,
     pending: total - safeReviewed,
+    uncertainPending: num(p.uncertain_pending),
     original: num(p.original?.total),
     linkedOnly: num(p.linked_only?.total)
   };
@@ -88,7 +89,9 @@ export function buildOverviewMetrics(candidates, report) {
     linkedOnly,
     new: counts.new || 0,
     existing: counts.existing || 0,
-    needsReview: progress ? progress.pending : null,
+    // Same set as the Needs Review tab and the finalize blocker: pending Indicators
+    // and pending values that only an analyst can settle.
+    needsReview: progress ? progress.pending + progress.uncertainPending : null,
     contextOnly: counts.context_only || 0,
     all: counts.all || 0,
     totalUnique: progress ? progress.total : (counts.total_unique || 0),

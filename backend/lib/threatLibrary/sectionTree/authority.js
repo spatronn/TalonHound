@@ -17,7 +17,8 @@ import {
   lineContainingObservable,
   textDescribesValueAsBenign,
   isAnnotatedHashList,
-  HTTP_REQUEST_LINE_RE
+  HTTP_REQUEST_LINE_RE,
+  isInventoryRowLine
 } from '../indicatorScope.js';
 import { refangTextForExtraction } from '../defang.js';
 import { annotateSectionTree } from './annotate.js';
@@ -32,7 +33,7 @@ const HASH_TYPES = new Set(['md5', 'sha1', 'sha256', 'sha512']);
 function rowShaped(text) {
   const t = String(text || '').trim();
   if (!t) return false;
-  if (isIndicatorValueLine(t) || isAnnotatedIndicatorRowLine(t) || isObservableListLine(t)) return true;
+  if (isInventoryRowLine(t)) return true;
   return t.length <= 96 && !/[.!?。]/.test(t);
 }
 

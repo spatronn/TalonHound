@@ -23,9 +23,9 @@ function integrationTests(dir, out = []) {
   return out;
 }
 
-test('every Threat Library integration test is run by a script or a CI step', () => {
+test('every integration test is run by a script or a CI step', () => {
   const runners = `${Object.values(pkg.scripts).join(' ')} ${ci}`;
-  const orphaned = integrationTests(path.join(backendRoot, 'lib/threatLibrary')).filter((f) => !runners.includes(f));
+  const orphaned = [...integrationTests(path.join(backendRoot, 'lib')), ...integrationTests(path.join(backendRoot, 'routes'))].filter((f) => !runners.includes(f));
   assert.deepEqual(orphaned, [], 'add these to test:threat-library-integration or to a CI step');
 });
 
@@ -34,6 +34,14 @@ test('the Threat Library integration step fails when any test is skipped', () =>
   const body = step.slice(0, step.indexOf('- name:', 10));
   assert.match(body, /pipefail/);
   assert.match(body, /test:threat-library-integration/);
+  assert.match(body, /skipped 0/);
+});
+
+test('the platform integration step fails when any test is skipped', () => {
+  const step = ci.slice(ci.indexOf('Platform integration tests (real Postgres)'));
+  const body = step.slice(0, step.indexOf('- name:', 10));
+  assert.match(body, /pipefail/);
+  assert.match(body, /test:platform-integration/);
   assert.match(body, /skipped 0/);
 });
 

@@ -401,3 +401,12 @@ test('Overview never renders the report-level Confidence row; indicator/entity c
     assert.doesNotMatch(code, /report\.confidence/, `${f} must not read report.confidence`);
   }
 });
+
+test('Needs review counts values an analyst must settle that are not Indicators yet', () => {
+  const m = buildOverviewMetrics([], {
+    analysis_status: 'review_required',
+    review_progress: { total: 2, reviewed: 0, pending: 2, uncertain_pending: 1, original: { total: 2 }, linked_only: { total: 0 } }
+  });
+  assert.equal(m.needsReview, 3);
+  assert.equal(m.total, 2, 'the Indicator denominator is unchanged');
+});

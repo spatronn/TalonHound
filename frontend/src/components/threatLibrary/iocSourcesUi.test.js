@@ -118,13 +118,20 @@ test('IOC Sources panel uses Threat Library dark surface classes, not light fall
   assert.doesNotMatch(pageCss, /var\(--th-surface/);
 });
 
-test('IOC Sources are manual-only: provenance stays accurate, panel never promises discovery', () => {
+test('source provenance stays accurate; the panel never promises discovery', () => {
   assert.equal(sourceProvenanceLabel({ discovery_method: 'manual' }), 'Added manually');
-  // Rows from the retired automatic discovery keep their provenance; never relabelled manual.
-  assert.equal(sourceProvenanceLabel({ discovery_method: 'auto' }), 'Auto-discovered (legacy)');
+  // Discovered rows keep their provenance; never relabelled manual.
+  assert.equal(sourceProvenanceLabel({ discovery_method: 'auto' }), 'Auto-discovered');
   assert.equal(sourceProvenanceLabel({}), '—');
-  assert.match(sourceCardMeta({ source_type: 'unknown', discovery_method: 'auto' }), /Auto-discovered \(legacy\)/);
+  assert.match(sourceCardMeta({ source_type: 'unknown', discovery_method: 'auto' }), /Auto-discovered/);
   assert.doesNotMatch(panelSrc, /discovered or added/i);
   assert.doesNotMatch(panelSrc, /Discovered \/ pending/);
   assert.match(panelSrc, /Add source URL/);
+});
+
+test('an examined link reads as a sentence, never as a code', async () => {
+  const { describeExaminedLink } = await import('./iocSourcesUi.js');
+  assert.equal(describeExaminedLink({ decision: 'accepted' }), 'Listed as a source');
+  assert.match(describeExaminedLink({ decision: 'rejected', rejection_reason: 'destination_not_a_pack' }), /^Not a package: /);
+  assert.equal(describeExaminedLink({ decision: 'rejected', rejection_reason: 'a_future_code' }), 'Not a package');
 });

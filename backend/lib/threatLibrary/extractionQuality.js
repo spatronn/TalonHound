@@ -1408,7 +1408,7 @@ export function withAiRunQuality(quality, run = {}) {
       code: QUALITY_CODES.AI_CANDIDATES_UNANSWERED,
       severity: 'info',
       explanation: `The model did not answer for ${open} candidate${open === 1 ? '' : 's'}; their deterministic reading stands.`,
-      candidates: (run.coverage.unanswered_keys || []).slice(0, T.maxListedCandidates),
+      candidates: (run.coverage.unanswered_keys || []).slice(0, T.maxListedCandidates).map((c) => `${c.candidate_type}:${c.normalized_value}`),
       candidate_count: open
     });
   }

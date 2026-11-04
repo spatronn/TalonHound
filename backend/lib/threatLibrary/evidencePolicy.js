@@ -17,12 +17,10 @@ import { decideMembership, MEMBERSHIP_OUTCOME, SECTION_AUTHORITY } from './membe
 import {
   SOURCE_RELATIONS,
   attachOccurrenceRelations,
-  isIndicatorValueLine,
-  isAnnotatedIndicatorRowLine,
-  isObservableListLine,
   isStructuredCodeRow,
   lineContainingObservable,
-  strongestSourceRelation
+  strongestSourceRelation,
+  isInventoryRowLine
 } from './indicatorScope.js';
 import { NON_NETWORK_RESOLVED_TYPES, NETWORK_IOC_TYPES, validateCanonicalIocValue } from './observableTypeResolver.js';
 import {
@@ -317,7 +315,7 @@ function isStructuredRowOccurrence(candidate, o) {
   const text = String(o.surrounding_text || '');
   const line = lineContainingObservable(text, candidate.normalized_value) || text;
   if (String(o.block_type || '') === 'code') return isStructuredCodeRow(line, candidate.normalized_value);
-  return isIndicatorValueLine(line) || isObservableListLine(line) || isAnnotatedIndicatorRowLine(line);
+  return isInventoryRowLine(line);
 }
 
 /** Policies that record a publisher stance or a non-actionable identity. */

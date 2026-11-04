@@ -26,6 +26,7 @@ import { extractReportCandidates } from '../extractionStages.js';
 import { buildCandidateEvidenceRecord } from '../evidencePolicy.js';
 import { buildObservableDispositions } from '../observableDispositions.js';
 import { HELD_OUT_CASES_DIR } from './heldOut/evaluateHeldOut.js';
+import { sealedSetReadiness } from './sealedProtocol.js';
 import { discoverIocSourcesFromBlocks } from '../iocSources/discover.js';
 import { canonicalizeReportUrl } from '../importIdentity.js';
 
@@ -208,6 +209,17 @@ function scoreTier(cases, tier) {
   return out;
 }
 
+/**
+ * Scoring real reports needs their private source store, which CI does not have. That
+ * is "not evaluated", stated as such, and never a pass.
+ */
+function privateSourceScoring() {
+  const dir = process.env.TL_BENCHMARK_SOURCE_DIR || null;
+  return dir
+    ? { status: 'evaluated_with_private_store', source_dir_configured: true }
+    : { status: 'not_evaluated', source_dir_configured: false, note: 'Set TL_BENCHMARK_SOURCE_DIR to score the real-report labels. This run says nothing about them.' };
+}
+
 /** What the current contract changes against the committed baseline. */
 function contractComparison() {
   const baseline = readBaseline();
@@ -231,7 +243,7 @@ export function buildScorecard() {
     .map((c) => ({ ...c, __dir: c.__dir || HELD_OUT_CASES_DIR }));
   const sealed = loadCaseDirectory(SEALED_CASES_DIR).map((c) => ({ ...c, __dir: c.__dir || SEALED_CASES_DIR }));
   const sealedTier = scoreTier(sealed, 'sealed');
-  const validated = sealed.length >= SEALED_MIN_REPORTS;
+  const validated = sealedSetReadiness(sealed, { min_reports: SEALED_MIN_REPORTS, contract_fingerprint: contractFingerprint() }).ready;
   return {
     version: SCORECARD_VERSION,
     contract_bundle: extractionContractBundle(),
@@ -252,6 +264,8 @@ export function buildScorecard() {
       discovery_recall: sealedTier.linked_package_discovery_recall,
       note: 'Counts sealed labels that list a report\'s publisher package. Measures discovery; extraction from a pack needs its fetched files.'
     },
+    private_source_scoring: privateSourceScoring(),
+    sealed_readiness: sealedSetReadiness(sealed, { min_reports: SEALED_MIN_REPORTS, contract_fingerprint: contractFingerprint() }),
     contract_comparison: contractComparison(),
     tiers: {
       development: scoreTier(development, 'development'),
@@ -267,6 +281,8 @@ export function formatScorecard(card) {
   const lines = [`Scorecard ${card.version}  contract ${card.contract_fingerprint}`];
   lines.push(`First-pass accuracy: ${card.first_pass_accuracy.status} (${card.first_pass_accuracy.sealed_reports}/${card.first_pass_accuracy.required_reports} sealed reports)`);
   lines.push(`Linked package coverage: ${card.linked_package_coverage.status} (${card.linked_package_coverage.labelled_packages} labelled)`);
+  lines.push(`Private source scoring: ${card.private_source_scoring.status}`);
+  if (card.sealed_readiness.blockers.length) lines.push(`Sealed set blockers: ${card.sealed_readiness.blockers.join('; ')}`);
   lines.push(`Against baseline: ${card.contract_comparison.regressions.length} regressions, ${card.contract_comparison.improvements.length} improvements`);
   for (const t of Object.values(card.tiers)) {
     lines.push(`\n[${t.tier}] ${t.limitation}`);

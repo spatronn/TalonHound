@@ -10,6 +10,8 @@
  * All values are synthetic. Nothing here measures accuracy on real reports.
  */
 import test from 'node:test';
+import { createCanonicalDocument } from '../canonicalDocument.js';
+import { linesToBlocks } from '../pdfLayout.js';
 import assert from 'node:assert/strict';
 import { extractCanonicalDocumentFromHtml } from '../extract/extractHtml.js';
 import { extractReportCandidates } from '../extractionStages.js';
@@ -264,4 +266,34 @@ test('member decisions name their rule, reason, evidence and contract', () => {
   assert.equal(d.contract_version, 'tl-membership-decision-v2');
   assert.ok(d.evidence_refs.length >= 1);
   assert.deepEqual(d.inputs.section_authority, ['asserting']);
+});
+
+// --- plain PDFs: headings in the body font, whatever ends the line before them ---
+
+const plainPdf = (lines) => {
+  const items = lines.map((text, i) => ({ text, y: 780 - i * 14, x: 50, height: 11, fontName: 'F1', itemCount: 1, cells: [{ text, x: 50 }] }));
+  const { blocks } = linesToBlocks(items, { pageNum: 1, startIdx: 1, bodyFonts: new Set(['F1']), bodyHeight: 11, tables: false });
+  return createCanonicalDocument({ title: 'Plain PDF', language: 'en', blocks, meta: { adapter: 'pdf' } });
+};
+
+const pdfOutcome = (doc, value) => extractReportCandidates({ id: 1, source_type: 'pdf' }, doc).candidates.find((c) => c.normalized_value === value)?.membership_decision;
+
+for (const [name, before] of Object.entries({
+  'a sentence': 'The operators relied on a small set of servers.',
+  'a colon': 'The servers we observed are listed here:',
+  'a bare URL': 'The full list is available at https://github.com/publisher/iocs/blob/main/full.csv',
+  'an unfinished clause': 'We tracked this activity across several regions and'
+})) {
+  for (const title of ['Indicators of Compromise', 'IOCs', '8. Indicators of Compromise (IoCs)']) {
+    test(`plain PDF: "${title}" after ${name} opens the section`, () => {
+      const decision = pdfOutcome(plainPdf([before, title, 'evil-c2-one.net', 'evil-c2-two.net']), 'evil-c2-one.net');
+      assert.equal(decision?.rule_id, 'R10_publisher_assertion');
+    });
+  }
+}
+
+test('plain PDF: a title word inside running text opens nothing', () => {
+  const doc = plainPdf(['Our analysis of the campaign covers its', 'references', 'and how the loader was delivered from evil-c2-one.net to victims.']);
+  assert.ok(!doc.blocks.some((b) => b.type === 'heading'));
+  assert.notEqual(pdfOutcome(doc, 'evil-c2-one.net')?.rule_id, 'R10_publisher_assertion');
 });

@@ -27,7 +27,9 @@
 
 import {
   isLinkedSourceIndicatorMember,
+  isNeedsReviewCandidate,
   isReportIndicatorMember,
+  needsReviewCandidateSql,
   linkedSourceIndicatorMembershipSql,
   reportIndicatorMembershipSql
 } from './indicatorMembership.js';
@@ -86,13 +88,19 @@ export function summarizeReviewProgress(candidates) {
     };
     byIdentity.set(key, next);
   }
-  return finalizeProgress([...byIdentity.values()].map((i) => ({
-    is_original: i.original,
-    is_linked: i.linked,
-    decided: i.decided,
-    reviewed: i.reviewed,
-    n: 1
-  })));
+  const uncertain = new Set((Array.isArray(candidates) ? candidates : [])
+    .filter((c) => !byIdentity.has(identityKey(c)) && isNeedsReviewCandidate(c) && !isCompletedReviewDecision(c))
+    .map(identityKey));
+  return {
+    ...finalizeProgress([...byIdentity.values()].map((i) => ({
+      is_original: i.original,
+      is_linked: i.linked,
+      decided: i.decided,
+      reviewed: i.reviewed,
+      n: 1
+    }))),
+    uncertain_pending: uncertain.size
+  };
 }
 
 /** @param {{ is_original: boolean, is_linked: boolean, decided: boolean, reviewed: boolean, n?: number }[]} identities */
@@ -169,5 +177,17 @@ export function reviewProgressSql() {
  */
 export async function loadReportReviewProgress(pool, reportId) {
   const { rows } = await pool.query(reviewProgressSql(), [reportId]);
-  return finalizeProgress(Array.isArray(rows) ? rows : []);
+  // Values an analyst must settle that are not Indicators yet: they block finalize and
+  // sit in the Needs Review tab, outside the Indicator denominator above.
+  const uncertain = await pool.query(
+    `SELECT COUNT(DISTINCT (c.candidate_type, c.normalized_value))::int AS n
+       FROM threat_report_candidates c
+      WHERE c.report_id = $1
+        AND COALESCE(c.review_status, 'pending') = 'pending'
+        AND (${needsReviewCandidateSql('c')})
+        AND NOT (${reportIndicatorMembershipSql('c')})
+        AND NOT (${linkedSourceIndicatorMembershipSql('c')})`,
+    [reportId]
+  );
+  return { ...finalizeProgress(Array.isArray(rows) ? rows : []), uncertain_pending: Number(uncertain?.rows?.[0]?.n) || 0 };
 }

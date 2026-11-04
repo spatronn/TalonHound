@@ -152,6 +152,22 @@ jobs:
           npm run test:threat-library-integration | tee integration-output.txt
           grep -q 'skipped 0' integration-output.txt
 
+      - name: Platform integration tests (real Postgres)
+        working-directory: backend
+        env:
+          ENRICHMENT_JOB_ITEST: '1'
+          MCP_TAGS_ITEST: '1'
+          ALLOW_FILE_ARTIFACT_DB_TESTS: '1'
+          DB_NAME: talonhound_platform_test
+        # These need a database whose name marks it disposable. A skip is a test that did not run.
+        run: |
+          set -o pipefail
+          PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d postgres -c "CREATE DATABASE talonhound_platform_test"
+          for f in ../db/init/*.sql; do PGPASSWORD="$DB_PASSWORD" psql -q -h "$DB_HOST" -U "$DB_USER" -d talonhound_platform_test -v ON_ERROR_STOP=1 -f "$f"; done
+          npm run migrate
+          npm run test:platform-integration | tee platform-output.txt
+          grep -q 'skipped 0' platform-output.txt
+
       - name: Historical IOC type repair (real Postgres)
         working-directory: backend
         env:

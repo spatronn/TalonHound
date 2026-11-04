@@ -10,8 +10,6 @@ import { isPrivateOrReservedAddress } from './candidateValue.js';
 import { classifyTypeLabel } from './observableTypeResolver.js';
 import { interpretIocTable, looksLikeIocTableHeader, parseDeclaredType, tableVersionColumns } from './tableSemantics.js';
 import {
-  INDICATOR_HEADING_FORMS,
-  classifyIndicatorHeading,
   classifySectionRole,
   isAnnotatedIndicatorRowLine,
   isFilenameShapedToken,
@@ -21,7 +19,8 @@ import {
   isQualifiedIocInventoryHeading,
   RECORD_FIELD_LINE_RE,
   SECTION_ROLES,
-  zoneForSectionRole
+  zoneForSectionRole,
+  OBSERVABLE_IN_TEXT_RE
 } from './indicatorScope.js';
 
 /**
@@ -411,8 +410,6 @@ function isIndicatorRowBlock(b) {
   return false;
 }
 
-const OBSERVABLE_IN_TEXT_RE =
-  /https?:\/\/|(?:\d{1,3}\.){3}\d{1,3}|\b[a-f0-9]{32,64}\b|\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\b/i;
 
 /**
  * Words that make a short heading read as a group label for indicators rather
