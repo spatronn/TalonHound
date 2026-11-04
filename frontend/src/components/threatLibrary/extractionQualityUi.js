@@ -185,6 +185,14 @@ export const QUALITY_CODE_COPY = Object.freeze({
     title: 'IOC-table rows kept as Context Only by their own wording',
     why: 'URLs or domains listed in a publisher IOC table were kept as Context Only because their row calls them legitimate or a provider service. Confirm the wording is about the value itself, not the service hosting it.'
   },
+  ai_analysis_degraded: {
+    title: 'Model analysis incomplete',
+    why: 'Extraction finished, but the model did not analyze all of the document. Re-run AI analysis to add it.'
+  },
+  ai_candidates_unanswered: {
+    title: 'Model left candidates unanswered',
+    why: 'The model was asked about these values and did not answer. Their deterministic reading stands.'
+  },
   ioc_source_discovery_incomplete: {
     title: 'IOC Source discovery did not finish',
     why: 'A publisher package may be missing from this report. The document extraction is not affected.'

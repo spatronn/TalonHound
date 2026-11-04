@@ -146,7 +146,11 @@ jobs:
         working-directory: backend
         env:
           ALLOW_THREAT_LIBRARY_DB_TESTS: '1'
-        run: npm run test:threat-library-integration
+        # A skipped real-Postgres test is a test that did not run: fail on it.
+        run: |
+          set -o pipefail
+          npm run test:threat-library-integration | tee integration-output.txt
+          grep -q 'skipped 0' integration-output.txt
 
       - name: Historical IOC type repair (real Postgres)
         working-directory: backend

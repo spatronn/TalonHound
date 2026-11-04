@@ -47,6 +47,9 @@ import { buildReportTagSupport, mergeReportTags, namedEntityTagKeys } from '../r
 
 export const SYNTHESIS_CHUNK_KEY = 'synthesis';
 
+/** Extra model calls a run may spend on candidates a completed chunk left unanswered. */
+export const MAX_TARGETED_RETRIES = 3;
+
 /** Zones that never reach the model as body text (pure layout / provenance noise). */
 const NON_SEMANTIC_ZONES = new Set(['header_footer', 'navigation', 'source_metadata', 'vendor_about']);
 
@@ -151,6 +154,34 @@ export function partitionCandidatesForAi(candidates) {
     }
   }
   return { toClassify, explicit, resolvedOther };
+}
+
+const updateKey = (u) => `${u.candidate_type}\0${u.normalized_value}`;
+
+/**
+ * Candidates the model was asked about and has not answered yet.
+ * @param {object[]} requested
+ * @param {object[]} partials validated chunk results
+ */
+export function unansweredCandidates(requested, partials) {
+  const answered = new Set(partials.flatMap((p) => (p?.candidate_updates || []).map(updateKey)));
+  return (requested || []).filter((c) => !answered.has(updateKey(c)));
+}
+
+/**
+ * Per-candidate AI coverage of a finished run.
+ * @param {object[]} requested candidates sent for classification
+ * @param {object[]} updates the updates the run ended with
+ */
+export function computeAiCoverage(requested, updates) {
+  const answered = new Set((updates || []).map(updateKey));
+  const open = (requested || []).filter((c) => !answered.has(updateKey(c)));
+  return {
+    requested: (requested || []).length,
+    answered: (requested || []).length - open.length,
+    unanswered: open.length,
+    unanswered_keys: open.slice(0, 200).map((c) => ({ candidate_type: c.candidate_type, normalized_value: c.normalized_value }))
+  };
 }
 
 /**
@@ -520,6 +551,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
   let aiCalls = 0;
   let completedFromCache = 0;
   let completedNow = 0;
+  let structuredChunksSkipped = 0;
 
   const progressBase = () => ({
     stage: 'analyzing',
@@ -551,14 +583,19 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       }
     });
 
-  for (let i = 0; i < chunks.length; i += 1) {
+  /**
+   * One chunk. `run.noCache` ignores a stored result (a retry), and a targeted run
+   * asks only about `run.partition` and keeps its answer out of the checkpoint, which
+   * must keep holding the full chunk.
+   */
+  const runChunk = async (i, run = {}) => {
     if (Date.now() > deadlineAt) throw deadlineError();
     if (hooks.shouldCancel && (await hooks.shouldCancel())) {
       throw failChunk(AI_FAILURE_CODES.JOB_CANCELLED);
     }
 
     const chunk = chunks[i];
-    const cached = hooks.loadCompletedChunk ? await hooks.loadCompletedChunk(chunk.chunk_key) : null;
+    const cached = hooks.loadCompletedChunk && !run.noCache ? await hooks.loadCompletedChunk(chunk.chunk_key) : null;
     const cachedBlockIds = Array.isArray(cached?.block_ids) ? cached.block_ids : null;
     const sameBlocks =
       !cachedBlockIds || (cachedBlockIds.length === chunk.block_ids.length && cachedBlockIds.every((id, idx) => id === chunk.block_ids[idx]));
@@ -570,7 +607,15 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
         current_chunk: chunk.chunk_key,
         resumed: true
       });
-      continue;
+      return;
+    }
+
+    // A later chunk of plain tables with nothing to classify gives the model no
+    // question to answer: the tables were read deterministically.
+    if (hooks.partial && !run.targeted && !run.noCache && i > 0 && chunk.blocks?.length && chunk.blocks.every((b) => b.type === 'table')
+        && !candidatesForChunk(partition.toClassify, chunk, false).length) {
+      structuredChunksSkipped += 1;
+      return;
     }
 
     await hooks.onProgress?.({
@@ -585,7 +630,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       chunk,
       chunkIndex: i,
       chunkTotal: chunks.length,
-      partition,
+      partition: run.partition || partition,
       sourceHost,
       budget
     });
@@ -785,7 +830,7 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
           chunk,
           chunkIndex: i,
           chunkTotal: chunks.length,
-          partition,
+          partition: run.partition || partition,
           sourceHost,
           budget: recoveryBudget,
           compactRecovery: true
@@ -858,8 +903,8 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     }
 
     partials.push(processed.value);
-    completedNow += 1;
-    await hooks.saveChunkResult?.(chunk, processed.value, {
+    if (!run.targeted) completedNow += 1;
+    await (run.targeted ? null : hooks.saveChunkResult)?.(chunk, processed.value, {
       schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
       rejected_items: processed.rejected || [],
       normalization_notes: processed.normalization_notes || [],
@@ -872,7 +917,56 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
       repair_attempted: repairAttempted,
       recovery_attempted: recoveryAttempted
     });
+  };
+
+  const tolerate = hooks.partial?.tolerate || null;
+  const chunkFailures = new Map();
+  let lastChunkError = null;
+  let deadlineHit = false;
+  const attemptChunk = async (i, run) => {
+    try {
+      await runChunk(i, run);
+      return true;
+    } catch (err) {
+      if (!tolerate || err?.code === AI_FAILURE_CODES.JOB_CANCELLED || hooks.signal?.aborted || !tolerate(err)) throw err;
+      lastChunkError = err;
+      if (err?.code === AI_FAILURE_CODES.TOTAL_ANALYSIS_DEADLINE) deadlineHit = true;
+      return false;
+    }
+  };
+  const noteFailure = (i, err) => chunkFailures.set(i, { chunk_key: chunks[i].chunk_key, code: err?.code || 'ai_failed' });
+
+  for (let i = 0; i < chunks.length; i += 1) {
+    if (deadlineHit) {
+      chunkFailures.set(i, { chunk_key: chunks[i].chunk_key, code: 'not_attempted' });
+      continue;
+    }
+    if (!(await attemptChunk(i))) noteFailure(i, lastChunkError);
   }
+
+  // Retry what failed, once, while there is budget left.
+  const budgetFor = () => !deadlineHit && deadlineAt - Date.now() >= reserveMs + minPrimaryMs;
+  if (tolerate) {
+    for (const i of [...chunkFailures.keys()]) {
+      if (!budgetFor()) break;
+      if (await attemptChunk(i, { noCache: true })) chunkFailures.delete(i);
+      else noteFailure(i, lastChunkError);
+    }
+  }
+
+  // Ask again only about the candidates a completed chunk left unanswered.
+  let targetedRetries = 0;
+  if (tolerate && partials.length) {
+    for (let i = 0; i < chunks.length && targetedRetries < MAX_TARGETED_RETRIES; i += 1) {
+      if (chunkFailures.has(i) || !budgetFor()) continue;
+      const open = unansweredCandidates(partition.toClassify, partials);
+      const here = candidatesForChunk(open, chunks[i], i === 0);
+      if (!here.length) continue;
+      targetedRetries += 1;
+      await attemptChunk(i, { noCache: true, targeted: true, partition: { toClassify: here, explicit: [], resolvedOther: [] } });
+    }
+  }
+  if (!partials.length && lastChunkError) throw lastChunkError;
 
   let merged = mergeAnalyses(partials, ctx);
   if (!merged.ok) {
@@ -881,12 +975,20 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     });
   }
   const chunkIntel = {
-    report_tags: merged.value.report_tags || []
+    report_tags: merged.value.report_tags || [],
+    candidate_updates: merged.value.candidate_updates || []
   };
 
   function overlayChunkIntelligence(processed) {
     if (!processed?.ok || !processed.value) return processed;
     processed.value.report_tags = chunkIntel.report_tags;
+    // Synthesis rewrites the narrative. A candidate a chunk answered and the synthesis
+    // left out keeps its answer: dropping it would lose a decision without a trace.
+    const said = new Set((processed.value.candidate_updates || []).map(updateKey));
+    processed.value.candidate_updates = [
+      ...(processed.value.candidate_updates || []),
+      ...chunkIntel.candidate_updates.filter((u) => !said.has(updateKey(u)))
+    ];
     return processed;
   }
 
@@ -972,7 +1074,11 @@ export async function analyzeThreatDocument(settings, input, hooks = {}) {
     ...merged,
     meta: {
       chunks_total: chunks.length,
-      chunks_completed: chunks.length,
+      chunks_completed: chunks.length - chunkFailures.size,
+      chunk_failures: [...chunkFailures.values()],
+      chunks_skipped_structured: structuredChunksSkipped,
+      targeted_retries: targetedRetries,
+      coverage: computeAiCoverage(partition.toClassify, merged.value?.candidate_updates || []),
       chunks_from_cache: completedFromCache,
       chunks_analyzed_now: completedNow,
       ai_calls: aiCalls,

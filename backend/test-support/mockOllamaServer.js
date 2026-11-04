@@ -52,6 +52,12 @@ export async function startMockOllama(options = {}) {
   };
 
   const server = http.createServer((req, res) => {
+    // Metadata endpoints take no inference capacity and are not modelled.
+    if (!String(req.url || '').startsWith('/api/chat')) {
+      req.resume();
+      res.writeHead(404).end();
+      return;
+    }
     const chunks = [];
     req.on('data', (c) => chunks.push(c));
     req.on('end', () => {

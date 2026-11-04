@@ -1267,6 +1267,7 @@ export async function loadReportCandidatesForAnalysis(pool, reportId) {
       digest_shape: ev.digest_shape || undefined,
       publisher_evidence: ev.publisher_evidence || undefined,
       ai_classification: ev.ai_classification || undefined,
+      ai_decision_status: ev.ai_decision_status || undefined,
       ai_evidence_rejected: ev.ai_evidence_rejected || undefined,
       ai_role_suggestion: ev.ai_role_suggestion || null,
       canonical_rejection: ev.canonical_rejection || null,

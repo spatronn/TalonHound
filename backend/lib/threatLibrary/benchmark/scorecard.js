@@ -21,15 +21,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { contractFingerprint, extractionContractBundle } from '../contractBundle.js';
-import { loadBenchmarkCases, loadCaseDirectory, materializeCase, runBenchmarkCase } from './benchmarkRunner.js';
+import { compareWithBaseline, loadBenchmarkCases, loadCaseDirectory, materializeCase, readBaseline, runBenchmark, runBenchmarkCase } from './benchmarkRunner.js';
 import { extractReportCandidates } from '../extractionStages.js';
 import { buildCandidateEvidenceRecord } from '../evidencePolicy.js';
 import { buildObservableDispositions } from '../observableDispositions.js';
 import { HELD_OUT_CASES_DIR } from './heldOut/evaluateHeldOut.js';
+import { discoverIocSourcesFromBlocks } from '../iocSources/discover.js';
+import { canonicalizeReportUrl } from '../importIdentity.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const SEALED_CASES_DIR = path.join(here, 'sealed', 'cases');
-export const SCORECARD_VERSION = 'tl-scorecard-v1';
+export const SCORECARD_VERSION = 'tl-scorecard-v2';
 
 /** A sealed score below this many reports is reported, never treated as validated. */
 export const SEALED_MIN_REPORTS = 30;
@@ -82,6 +84,31 @@ export function caseEvidenceAccounting(c) {
   };
 }
 
+/**
+ * Whether discovery reaches the packages a label says the report points to. Reads the
+ * labelled URLs only; a case without `ground_truth.linked_packages` scores nothing.
+ * @param {{ ground_truth?: { linked_packages?: Array<{ url: string, expected_identities?: string[] }> } }} c
+ * @param {{ blocks?: object[] }} document
+ * @param {string|null} [reportUrl]
+ */
+export function scoreLinkedPackages(c, document, reportUrl = null) {
+  const labelled = c?.ground_truth?.linked_packages || [];
+  if (!labelled.length) return { labelled: 0, discovered: 0, identities_labelled: 0, missed: [] };
+  const found = new Set(discoverIocSourcesFromBlocks(document?.blocks || [], { reportUrl }).map((d) => d.canonical_url));
+  const missed = labelled.filter((p) => !found.has(canonicalizeReportUrl(p.url)));
+  return {
+    labelled: labelled.length,
+    discovered: labelled.length - missed.length,
+    identities_labelled: labelled.reduce((n, p) => n + (p.expected_identities || []).length, 0),
+    missed: missed.map((p) => p.url)
+  };
+}
+
+function percentile(sorted, p) {
+  if (!sorted.length) return 0;
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * p) - 1)];
+}
+
 function scoreTier(cases, tier) {
   const out = {
     tier,
@@ -106,8 +133,13 @@ function scoreTier(cases, tier) {
     with_char_offsets: 0,
     publishers: {},
     review_path_cases: [],
-    failures: []
+    failures: [],
+    linked_packages_labelled: 0,
+    linked_packages_discovered: 0,
+    linked_identities_labelled: 0,
+    linked_packages_missed: []
   };
+  const reviewPerCase = [];
   for (const c of cases) {
     const r = runBenchmarkCase(c);
     const m = r.metrics.indicators;
@@ -118,7 +150,7 @@ function scoreTier(cases, tier) {
     out.fn_mistyped += m.fn_mistyped || 0;
     out.fn_not_member += m.fn_not_member || 0;
     out.fn_with_review_path += m.fn_needs_review || 0;
-    out.context_only_checked += r.metrics.context_only?.checked ?? 0;
+    out.context_only_checked += r.metrics.context_only?.expected ?? 0;
     out.context_only_correct += r.metrics.context_only?.correct ?? 0;
     out.candidate_recall_checked += m.expected;
     out.candidate_recall_found += m.expected - (m.fn_not_extracted || 0);
@@ -131,6 +163,15 @@ function scoreTier(cases, tier) {
     const a = caseEvidenceAccounting(c);
     out.undispositioned_tokens += a.undispositioned_tokens;
     out.needs_review += a.needs_review;
+    reviewPerCase.push(a.needs_review);
+    if (c.ground_truth?.linked_packages?.length) {
+      const { report, document } = materializeCase(c);
+      const lp = scoreLinkedPackages(c, document, report?.source_url || null);
+      out.linked_packages_labelled += lp.labelled;
+      out.linked_packages_discovered += lp.discovered;
+      out.linked_identities_labelled += lp.identities_labelled;
+      out.linked_packages_missed.push(...lp.missed);
+    }
     out.occurrences += a.occurrences;
     out.with_section_path += a.with_section_path;
     out.with_char_offsets += a.with_char_offsets;
@@ -141,12 +182,44 @@ function scoreTier(cases, tier) {
     ? Number(((2 * out.precision * out.recall) / (out.precision + out.recall)).toFixed(4))
     : null;
   out.report_exact_match = ratio(out.exact, out.cases);
+  // Case labels list what the document itself asserts, so recall is document-only coverage.
+  out.document_only_ioc_coverage = out.recall;
+  out.linked_package_discovery_recall = ratio(out.linked_packages_discovered, out.linked_packages_labelled);
+  const reviewSorted = [...reviewPerCase].sort((x, y) => x - y);
+  out.unresolved_review_volume = {
+    total: out.needs_review,
+    median_per_report: percentile(reviewSorted, 0.5),
+    p90_per_report: percentile(reviewSorted, 0.9),
+    max_per_report: reviewSorted.length ? reviewSorted[reviewSorted.length - 1] : 0
+  };
+  out.silent_evidence_loss = out.undispositioned_tokens;
+  const expected = out.tp + out.fn;
+  out.per_stage_failure_rates = {
+    candidate_discovery: ratio(out.fn_not_extracted, expected),
+    type_resolution: ratio(out.fn_mistyped, expected),
+    membership_decision: ratio(out.fn_not_member, expected),
+    reached_review_only: ratio(out.fn_with_review_path, expected)
+  };
   out.candidate_type_accuracy = ratio(out.tp + out.fn_not_member, out.tp + out.fn_not_member + out.fn_mistyped);
   out.classification_accuracy = ratio(out.context_only_correct, out.context_only_checked);
   out.candidate_discovery_recall = ratio(out.candidate_recall_found, out.candidate_recall_checked);
   out.provenance_section_path = ratio(out.with_section_path, out.occurrences);
   out.provenance_char_offsets = ratio(out.with_char_offsets, out.occurrences);
   return out;
+}
+
+/** What the current contract changes against the committed baseline. */
+function contractComparison() {
+  const baseline = readBaseline();
+  const diff = compareWithBaseline(runBenchmark({ privateDir: null, sourceDir: null }), baseline);
+  return {
+    baseline_versions: baseline.versions,
+    regressions: diff.changes.flatMap((c) => c.regressions.map((r) => ({ case: c.case, ...r }))),
+    improvements: diff.changes.flatMap((c) => c.improvements.map((r) => ({ case: c.case, ...r }))),
+    cases_changed: diff.changes.length,
+    new_cases: diff.new_cases.length,
+    missing_cases: diff.missing_cases.length
+  };
 }
 
 /** @returns {object} the full scorecard (no database, network or model) */
@@ -173,10 +246,13 @@ export function buildScorecard() {
         : 'No first-pass accuracy claim is possible yet. Regression and held-out figures below do not measure unseen reports.'
     },
     linked_package_coverage: {
-      validated: false,
-      status: 'not_yet_validated',
-      note: 'Requires labels that list each report\'s publisher package. No labelled set exists yet.'
+      validated: validated && sealedTier.linked_packages_labelled > 0,
+      status: validated && sealedTier.linked_packages_labelled > 0 ? 'validated_by_sealed_labels' : 'not_yet_validated',
+      labelled_packages: sealedTier.linked_packages_labelled,
+      discovery_recall: sealedTier.linked_package_discovery_recall,
+      note: 'Counts sealed labels that list a report\'s publisher package. Measures discovery; extraction from a pack needs its fetched files.'
     },
+    contract_comparison: contractComparison(),
     tiers: {
       development: scoreTier(development, 'development'),
       regression: scoreTier(regression, 'regression'),
@@ -190,7 +266,8 @@ export function buildScorecard() {
 export function formatScorecard(card) {
   const lines = [`Scorecard ${card.version}  contract ${card.contract_fingerprint}`];
   lines.push(`First-pass accuracy: ${card.first_pass_accuracy.status} (${card.first_pass_accuracy.sealed_reports}/${card.first_pass_accuracy.required_reports} sealed reports)`);
-  lines.push(`Linked package coverage: ${card.linked_package_coverage.status}`);
+  lines.push(`Linked package coverage: ${card.linked_package_coverage.status} (${card.linked_package_coverage.labelled_packages} labelled)`);
+  lines.push(`Against baseline: ${card.contract_comparison.regressions.length} regressions, ${card.contract_comparison.improvements.length} improvements`);
   for (const t of Object.values(card.tiers)) {
     lines.push(`\n[${t.tier}] ${t.limitation}`);
     if (!t.cases) {
@@ -200,7 +277,9 @@ export function formatScorecard(card) {
     lines.push(`  cases ${t.cases}  exact ${t.exact}  P ${t.precision}  R ${t.recall}  F1 ${t.f1}`);
     lines.push(`  fn not_extracted ${t.fn_not_extracted}  mistyped ${t.fn_mistyped}  not_member ${t.fn_not_member}  with_review_path ${t.fn_with_review_path}`);
     lines.push(`  type_accuracy ${t.candidate_type_accuracy}  classification_accuracy ${t.classification_accuracy}  discovery_recall ${t.candidate_discovery_recall}`);
-    lines.push(`  needs_review ${t.needs_review}  undispositioned_tokens ${t.undispositioned_tokens}`);
+    lines.push(`  needs_review ${t.needs_review}  median ${t.unresolved_review_volume.median_per_report}  p90 ${t.unresolved_review_volume.p90_per_report}  max ${t.unresolved_review_volume.max_per_report}  silent_evidence_loss ${t.silent_evidence_loss}`);
+    lines.push(`  document_only_coverage ${t.document_only_ioc_coverage}  linked_discovery ${t.linked_package_discovery_recall ?? 'no labels'}`);
+    lines.push(`  stage failure rates: ${JSON.stringify(t.per_stage_failure_rates)}`);
     lines.push(`  provenance: section_path ${t.provenance_section_path}  char_offsets ${t.provenance_char_offsets}`);
   }
   return lines.join('\n');
