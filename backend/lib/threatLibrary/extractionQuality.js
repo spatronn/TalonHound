@@ -97,6 +97,8 @@ export const QUALITY_CODES = Object.freeze({
   INDICATOR_ROWS_OUTSIDE_SCOPE: 'indicator_rows_outside_authoritative_scope',
   /** IOC appendix present, row-shaped / appendix hashes extracted, zero hash Indicators. */
   APPENDIX_WITHOUT_HASH_INDICATORS: 'appendix_without_hash_indicators',
+  AI_ANALYSIS_DEGRADED: 'ai_analysis_degraded',
+  AI_CANDIDATES_UNANSWERED: 'ai_candidates_unanswered',
   /** IOC appendix present, fewer hash Indicators than non-member row hashes near it. */
   APPENDIX_HASH_INDICATORS_LOW: 'appendix_hash_indicators_low',
   /** Authoritative section holds IOC-shaped text but yields no Indicator. */
@@ -1373,6 +1375,50 @@ export function withPostMergeQuality(quality, candidates) {
     counts,
     warnings: warnings.slice(0, T.maxWarnings),
     warnings_total: Math.max(0, (quality.warnings_total ?? (quality.warnings || []).length) - removed) + added.length
+  };
+}
+
+/**
+ * Add what the AI stage left undone to a quality record (copy).
+ * @param {object|null} quality
+ * @param {{ degraded?: { code?: string }|null, chunk_failures?: object[], coverage?: { unanswered?: number, unanswered_keys?: object[] }|null }} run
+ */
+export function withAiRunQuality(quality, run = {}) {
+  if (!quality || typeof quality !== 'object') return quality;
+  const add = [];
+  const failed = (run.chunk_failures || []).length;
+  if (run.degraded || failed) {
+    add.push({
+      code: QUALITY_CODES.AI_ANALYSIS_DEGRADED,
+      severity: 'warning',
+      explanation: run.degraded
+        ? `The model did not complete (${run.degraded.code || 'error'}). Extraction finished without its analysis; re-run AI analysis to add it.`
+        : `${failed} part${failed === 1 ? '' : 's'} of the document had no model analysis. Extraction finished without them.`,
+      candidates: [],
+      candidate_count: 0
+    });
+  }
+  const open = run.coverage?.unanswered || 0;
+  if (open) {
+    add.push({
+      code: QUALITY_CODES.AI_CANDIDATES_UNANSWERED,
+      severity: 'info',
+      explanation: `The model did not answer for ${open} candidate${open === 1 ? '' : 's'}; their deterministic reading stands.`,
+      candidates: (run.coverage.unanswered_keys || []).slice(0, T.maxListedCandidates),
+      candidate_count: open
+    });
+  }
+  if (!add.length) return quality;
+  const warnings = [...(quality.warnings || []), ...add.map((w) => ({ block_ids: [], section: null, evidence: [], extractor_version: quality.extractor_versions || null, ...w }))]
+    .sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity] || a.code.localeCompare(b.code));
+  const counts = { high: 0, warning: 0, info: 0 };
+  for (const w of warnings) counts[w.severity] = (counts[w.severity] || 0) + 1;
+  return {
+    ...quality,
+    status: counts.high ? 'high' : counts.warning ? 'warning' : counts.info ? 'info' : 'clean',
+    counts,
+    warnings: warnings.slice(0, T.maxWarnings),
+    warnings_total: (quality.warnings_total ?? (quality.warnings || []).length) + add.length
   };
 }
 

@@ -48,16 +48,20 @@ import {
   loadStoredPdfArtifact,
   matchCandidateSet,
   mergeAiCandidateUpdates,
+  stampAiDecisionStatus,
   rebuildDocumentFromRetainedSource
 } from './extractionStages.js';
 import { THREAT_LIBRARY_JOB_MODES } from './jobModes.js';
 import { preserveAnalystCandidates } from './candidateAnalystState.js';
 import { preserveStoredIocLinks } from './iocMatch.js';
-import { withPostMergeQuality, withReplayMembershipDivergence } from './extractionQuality.js';
+import { withAiRunQuality, withPostMergeQuality, withReplayMembershipDivergence } from './extractionQuality.js';
 import { createServiceLogger } from '../appLogger.js';
 import { groundAiVulnerabilities } from './vulnerabilityGrounding.js';
 import { groundAiPublisherEntities } from './publisherEntityGrounding.js';
 import { recordExtractionRun } from './extractionRuns.js';
+import { decideAutoRetry } from './autoRetry.js';
+import { buildAiProvenance, fetchModelIdentity } from './ai/modelIdentity.js';
+import { computeAiCoverage } from './ai/analyze.js';
 
 // Deterministic stages live in extractionStages.js (shared with the
 // AI-free extraction refresh); re-exported for existing callers.
@@ -515,12 +519,32 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         }
       }
     });
+    // A new import can complete without the model. A re-run, or a report an analyst
+    // has already worked on, keeps what it has and fails instead. A transient failure
+    // with automatic retries left goes to the retry, which reuses the checkpoints.
+    const previousAutoRetryAttempt = Number(ctx.jobPayload?.auto_retry?.attempt) || 0;
+    const mayDegrade = ctx.jobType !== THREAT_LIBRARY_JOB_MODES.RERUN_AI
+      && !previousRows.some((r) => r.review_status && r.review_status !== 'pending');
+    const canCompleteWithout = (err) => {
+      const code = err?.code || 'ai_failed';
+      if (!mayDegrade || isInterruptionCode(code) || code === AI_FAILURE_CODES.JOB_CANCELLED || code === AI_FAILURE_CODES.AI_NOT_CONFIGURED) return false;
+      return !decideAutoRetry({
+        jobType: ctx.jobType || THREAT_LIBRARY_JOB_MODES.ANALYZE,
+        code,
+        httpStatus: err?.http_status ?? null,
+        previousAttempt: previousAutoRetryAttempt,
+        maxAttempts: timeoutPolicy.auto_retry_max_attempts
+      }).retry;
+    };
+    const modelIdentity = deps.analyzeThreatDocument ? null : await fetchModelIdentity(aiSettings || {}, { fetchImpl: deps.modelFetch });
+    let aiDegraded = null;
     try {
       const ai = await analyze(
         aiSettings,
         { document, candidates },
         {
           analysisStartedAt,
+          ...(mayDegrade ? { partial: { tolerate: canCompleteWithout } } : {}),
           signal: abort.signal,
           scheduler: inferenceScheduler,
           transport: deps.transport,
@@ -588,6 +612,13 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           ? aiErr.message
           : aiErr.message || AI_FAILURE_MESSAGES[code] || 'AI analysis failed';
 
+      if (canCompleteWithout(aiErr)) {
+        // Deterministic extraction stands: the report reaches review with a recorded
+        // degraded state, and re-running AI analysis can add the rest later.
+        log.warn('AI analysis failed; completing without it', { reportId: report.id, code });
+        aiDegraded = { code, message: String(message).slice(0, 300) };
+        aiValue = { summary: null, report_type: null, language: null, tlp: null, confidence: null, entities: [], candidate_updates: [], relationships: [], report_tags: [] };
+      } else {
       if (code === AI_FAILURE_CODES.JOB_CANCELLED) {
         await updateReportStatus(pool, report.id, {
           analysis_status: 'failed',
@@ -653,13 +684,18 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         }
       });
       return { ok: false, code, error: message, http_status: aiErr.http_status ?? null };
+      }
     }
 
     // Merge AI candidate updates onto the deterministic set (never the reverse).
     // AI identities are untrusted: IPv4 carved from a hostname prefix is dropped.
     // Last point before candidate / entity / status writes.
     await ensureOwned();
-    candidates = mergeAiCandidateUpdates(candidates, aiValue, { document });
+    const requestedKeys = new Set(candidates.filter((c) => c.ai_needed).map((c) => `${c.candidate_type}\0${c.normalized_value}`));
+    const answeredKeys = new Set((aiValue.candidate_updates || []).map((u) => `${u.candidate_type}\0${u.normalized_value}`));
+    const aiCoverage = aiMeta?.coverage || computeAiCoverage(candidates.filter((c) => c.ai_needed), aiValue.candidate_updates || []);
+    candidates = stampAiDecisionStatus(mergeAiCandidateUpdates(candidates, aiValue, { document }), { requestedKeys, answeredKeys, degraded: Boolean(aiDegraded) });
+    const aiRun = { degraded: aiDegraded, chunk_failures: aiMeta?.chunk_failures || [], coverage: aiCoverage };
 
     // --- Match local IOCs ---
     await setStage('matching');
@@ -677,6 +713,9 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         previousRows
       }), resolved);
       if (quality !== extractionDiagnostics.quality) extractionDiagnostics = { ...extractionDiagnostics, quality };
+    }
+    if (extractionDiagnostics?.quality) {
+      extractionDiagnostics = { ...extractionDiagnostics, quality: withAiRunQuality(extractionDiagnostics.quality, aiRun) };
     }
     // Report tags are fenced statement by statement (their unique-violation
     // recovery needs autocommit); they do not depend on the rows below.
@@ -746,12 +785,10 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
         tokenLog: runEvidence.tokenLog,
         blocks: runEvidence.blocks,
         diagnostics: extractionDiagnostics,
+        operationalStatus: aiDegraded || aiRun.chunk_failures.length ? 'degraded' : 'completed',
         aiProvenance: {
-          provider: aiSettings?.provider || null,
-          model: aiSettings?.model || null,
-          schema_version: THREAT_LIBRARY_SEMANTIC_SCHEMA_VERSION,
-          ai_calls: aiMeta?.ai_calls ?? null,
-          chunks_total: aiMeta?.chunks_total ?? null
+          ...buildAiProvenance({ settings: aiSettings, identity: modelIdentity, meta: aiMeta, degraded: aiDegraded }),
+          coverage: aiCoverage
         },
         startedAt: analysisStartedAt
       });
@@ -790,6 +827,9 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
           prompt_chars_total: aiMeta?.prompt_chars_total ?? null,
           elapsed_ms: aiMeta?.elapsed_ms ?? null,
           synthesis: aiMeta?.synthesis ?? null,
+          degraded: aiDegraded,
+          chunk_failures: aiRun.chunk_failures,
+          coverage: { requested: aiCoverage.requested, answered: aiCoverage.answered, unanswered: aiCoverage.unanswered },
           vulnerability_grounding: vulnerabilityGrounding,
           publisher_entity_grounding: publisherEntityGrounding
         },

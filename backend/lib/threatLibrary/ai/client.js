@@ -144,6 +144,9 @@ function withDoneReason(acc, reason) {
   acc.provider_metrics = { ...(acc.provider_metrics || {}), done_reason: String(reason).slice(0, 32) };
 }
 
+/** Sampling temperature of every analysis call; recorded with each run. */
+export const AI_TEMPERATURE = 0.1;
+
 /**
  * @param {object} settings
  */
@@ -466,7 +469,7 @@ function buildProviderRequest(settings, endpoint, messages, hooks, numPredict) {
         think: false,
         keep_alive: hooks.keepAlive || '15m',
         options: {
-          temperature: 0.1,
+          temperature: AI_TEMPERATURE,
           // Last-resort token ceiling; schema maxItems should stop generation first.
           num_predict: numPredict
         },
@@ -499,7 +502,7 @@ function buildProviderRequest(settings, endpoint, messages, hooks, numPredict) {
     headers,
     body: JSON.stringify({
       model: settings.model,
-      temperature: 0.1,
+      temperature: AI_TEMPERATURE,
       stream: true,
       response_format: { type: 'json_object' },
       messages: [

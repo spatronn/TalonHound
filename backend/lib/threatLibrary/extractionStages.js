@@ -346,6 +346,24 @@ function assertedByOwnTableCell(c) {
   });
 }
 
+/**
+ * Mark what the model did with each candidate: answered, was asked and did not
+ * answer, or was not asked. Status only: nothing here changes a membership reading.
+ * @param {object[]} candidates
+ * @param {{ requestedKeys?: Set<string>, answeredKeys?: Set<string>, degraded?: boolean }} run
+ */
+export function stampAiDecisionStatus(candidates, run = {}) {
+  const requested = run.requestedKeys || new Set();
+  const answered = run.answeredKeys || new Set();
+  return (candidates || []).map((c) => {
+    const key = `${c.candidate_type}\0${c.normalized_value}`;
+    let status = 'not_requested';
+    if (answered.has(key)) status = 'answered';
+    else if (requested.has(key) || (run.degraded && c.ai_needed)) status = 'unanswered';
+    return { ...c, ai_decision_status: status };
+  });
+}
+
 export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
   const sourceText = opts.sourceText || (opts.document ? sourceTextFromDocument(opts.document) : '');
   const keep = (c) => {

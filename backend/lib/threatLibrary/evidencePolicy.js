@@ -967,6 +967,7 @@ export function buildCandidateEvidenceRecord(c) {
         }
       : {}),
     ...(c.ai_classification && typeof c.ai_classification === 'object' ? { ai_classification: c.ai_classification } : {}),
+    ...(c.ai_decision_status ? { ai_decision_status: c.ai_decision_status } : {}),
     ...(c.ai_evidence_rejected && typeof c.ai_evidence_rejected === 'object' ? { ai_evidence_rejected: c.ai_evidence_rejected } : {}),
     canonical_rejection: c.canonical_rejection || null,
     type_resolution: c.type_resolution && typeof c.type_resolution === 'object' ? c.type_resolution : null,

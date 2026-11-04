@@ -343,6 +343,67 @@ const IDENTITY_COLS = 'id, candidate_type, normalized_value, review_status, asse
 const candidateSnapshot = async (reportId) =>
   (await pool.query(`SELECT ${IDENTITY_COLS} FROM threat_report_candidates WHERE report_id = $1 ORDER BY id`, [reportId])).rows;
 
+const failingAnalyze = (code, extra = {}) => async () => { throw Object.assign(new Error(code), { code, ...extra }); };
+const latestRun = async (reportId) => (await pool.query(
+  `SELECT operational_status, ai_provenance FROM threat_report_extraction_runs WHERE report_id = $1 ORDER BY id DESC LIMIT 1`, [reportId]
+)).rows[0];
+
+test('a new import whose model fails for good reaches review, degraded and recorded, without writing IOCs', opts, async () => {
+  const { report } = await newReport('pending');
+  const iocsBefore = (await pool.query('SELECT COUNT(*)::int AS n FROM ioc_items')).rows[0].n;
+  const candidatesBefore = (await candidateSnapshot(report.id)).map((r) => [r.candidate_type, r.normalized_value]);
+  const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+  const res = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze' }, { analyzeThreatDocument: failingAnalyze('ai_output_schema_error') });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  const rep = (await pool.query(`SELECT analysis_status, finalized_at, analysis_progress, ai_result FROM threat_reports WHERE id = $1`, [report.id])).rows[0];
+  assert.equal(rep.analysis_status, 'review_required');
+  assert.equal(rep.finalized_at, null);
+  const run = await latestRun(report.id);
+  assert.equal(run.operational_status, 'degraded');
+  assert.equal(run.ai_provenance.degraded.code, 'ai_output_schema_error');
+  assert.match(run.ai_provenance.prompt_hash, /^[0-9a-f]{64}$/);
+  const after = await candidateSnapshot(report.id);
+  assert.deepEqual(after.map((r) => [r.candidate_type, r.normalized_value]).sort(), [...candidatesBefore].sort(), 'identities come from deterministic extraction');
+  assert.equal(after.filter((r) => r.review_status !== 'pending').length, 0, 'nothing is decided for the analyst');
+  assert.equal((await pool.query('SELECT COUNT(*)::int AS n FROM ioc_items')).rows[0].n, iocsBefore);
+});
+
+test('a transient failure with retries left still fails over to the automatic retry', opts, async () => {
+  await pool.query(`UPDATE threat_library_ai_settings SET auto_retry_max_attempts = 2 WHERE id = 1`);
+  const { report } = await newReport('pending');
+  const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+  const res = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze' }, { analyzeThreatDocument: failingAnalyze('provider_unreachable') });
+  assert.equal(res.ok, false);
+  assert.equal(res.code, 'provider_unreachable');
+  assert.equal((await pool.query(`SELECT analysis_status FROM threat_reports WHERE id = $1`, [report.id])).rows[0].analysis_status, 'failed');
+});
+
+test('a transient failure with retries spent completes degraded', opts, async () => {
+  await pool.query(`UPDATE threat_library_ai_settings SET auto_retry_max_attempts = 2 WHERE id = 1`);
+  const { report } = await newReport('pending');
+  const job = await createJob(pool, { reportId: report.id, jobType: 'retry' });
+  const res = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'retry', jobPayload: { auto_retry: { attempt: 2 } } }, { analyzeThreatDocument: failingAnalyze('provider_unreachable') });
+  assert.equal(res.ok, true, JSON.stringify(res));
+  assert.equal((await latestRun(report.id)).operational_status, 'degraded');
+});
+
+test('a report an analyst has worked on keeps failing closed', opts, async () => {
+  const { report } = await newReport('pending');
+  const ids = (await candidateSnapshot(report.id)).map((r) => r.id);
+  await pool.query(`UPDATE threat_report_candidates SET review_status = 'approved' WHERE id = $1`, [ids[0]]);
+  const job = await createJob(pool, { reportId: report.id, jobType: 'analyze' });
+  const res = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'analyze' }, { analyzeThreatDocument: failingAnalyze('ai_output_schema_error') });
+  assert.equal(res.ok, false);
+  assert.equal((await pool.query(`SELECT analysis_status FROM threat_reports WHERE id = $1`, [report.id])).rows[0].analysis_status, 'failed');
+});
+
+test('re-running AI never wipes what the report has when the model fails', opts, async () => {
+  const { report } = await newReport('pending');
+  const job = await createJob(pool, { reportId: report.id, jobType: 'rerun_ai' });
+  const res = await runAnalysisPipeline(pool, { reportId: report.id, jobId: job.id, jobType: 'rerun_ai' }, { analyzeThreatDocument: failingAnalyze('ai_output_schema_error') });
+  assert.equal(res.ok, false);
+});
+
 test('AI failure mid-analysis then Retry: candidates and analyst decisions untouched, checkpoint reused, no IOC writes, never finalized', opts, async () => {
   const { report, extracted } = await newReport('pending');
   // Analyst decisions recorded before (re)analysis.
