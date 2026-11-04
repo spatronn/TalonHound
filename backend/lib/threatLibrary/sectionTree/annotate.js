@@ -53,13 +53,6 @@ const KEY_VALUE_RECORD_LINE_RE = /^[A-Za-z][\w /-]{0,30}:\s+\S/;
 
 const LABELLED_DIGEST_ROW_RE = /^(?:sha-?(?:1|256|512)|md-?5)\b[\s:|-]+[a-f0-9]{32,128}\b/i;
 
-const IPV6_LEADING_RE = /^\[?[0-9a-f]{1,4}(?::[0-9a-f]{0,4}){2,}\b/i;
-
-/** "Description: Per-victim rule delivery": a field of a record, not a section label. */
-const KEY_VALUE_RECORD_LINE_RE = /^[A-Za-z][\w /-]{0,30}:\s+\S/;
-
-const LABELLED_DIGEST_ROW_RE = /^(?:sha-?(?:1|256|512)|md-?5)\b[\s:|-]+[a-f0-9]{32,128}\b/i;
-
 const MAX_TRACE = 80;
 
 function textOf(b) {
