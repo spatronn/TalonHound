@@ -1,0 +1,33 @@
+{
+  "id": "control-idn-lookalike-domains",
+  "title": "Control: internationalised lookalike domains in an IOC list are A-label Indicators, never ASCII tails",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "idn", "lookalike_domains", "mode_a", "defanged_list"],
+  "source": { "kind": "html_file", "path": "control-idn-lookalike-domains.html", "url": "https://research.example/blog/fake-shops-lookalike-domains/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35777 review-queue finding (Unicode lookalike domain list): the IOC list holds two ASCII and three internationalised domains; the internationalised names are stored as IDNA A-labels; the ASCII tails after the non-ASCII letter are not hosts",
+      "verified_by": "construction",
+      "verified_at": "2026-11-08"
+    },
+    "indicators": [
+      { "type": "domain", "value": "shop-portal-outlet.com", "assertion": "explicit" },
+      { "type": "domain", "value": "parcel-notice-center.net", "assertion": "explicit" },
+      { "type": "domain", "value": "xn--exampe-shop-x5b.com", "assertion": "explicit" },
+      { "type": "domain", "value": "xn--brad-outlet-k6b.com", "assertion": "explicit" },
+      { "type": "domain", "value": "xn--stre-deals-8w3e.net", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "e-shop.com" },
+      { "type": "domain", "value": "d-outlet.com" },
+      { "type": "domain", "value": "re-deals.net" }
+    ],
+    "sections": [
+      { "heading": "Storefront infrastructure", "expected": "authoritative" },
+      { "heading": "Unicode lookalike domains", "expected": "authoritative" }
+    ]
+  }
+}

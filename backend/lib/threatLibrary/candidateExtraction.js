@@ -294,7 +294,7 @@ export {
  * becoming non-members; CSV / JSON lines in code blocks are rows; [dot], (dot),
  * {dot}, escaped and full-width dots refang.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v58';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v59';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

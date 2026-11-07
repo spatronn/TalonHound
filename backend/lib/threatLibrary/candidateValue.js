@@ -6,6 +6,7 @@
  */
 
 import { isIPv6 } from 'node:net';
+import { domainToASCII } from 'node:url';
 import { normalizeObservable } from '../observable-normalization.js';
 import { normalizeIpAddress, isValidIpAddress, validatePublicIp } from '../publicIp.js';
 import { inferExactHashType, normalizeHashValue } from '../fileArtifacts/hashNormalize.js';
@@ -21,6 +22,7 @@ import {
 
 /** Any letter or digit, in any script. */
 const HAS_ALPHANUMERIC_RE = /[\p{L}\p{N}]/u;
+const NON_ASCII_RE = /[^\x00-\x7f]/;
 
 /** RFC documentation / loopback only — not vendor safety allowlists. */
 const RFC_EXAMPLE_DOMAINS = new Set(['example.com', 'example.org', 'example.net', 'localhost', 'invalid', 'test']);
@@ -287,7 +289,14 @@ export function normalizeCandidateValue(raw, hintType = null) {
     };
   }
 
-  const domain = normalizeObservable('domain', refanged.replace(/\.$/, ''));
+  // An internationalised hostname ("adidaš[.]com", a homoglyph of a brand) is
+  // stored in its IDNA A-label form ("xn--adida-zdb.com"), the spelling DNS,
+  // feeds and the IOC tables use; the publisher's Unicode spelling stays the
+  // original value (tl-candidates-v59).
+  const hostInput = refanged.replace(/\.$/, '');
+  const asciiHost = NON_ASCII_RE.test(hostInput) ? domainToASCII(hostInput) : hostInput;
+  if (!asciiHost) return { ok: false, error: 'invalid_domain' };
+  const domain = normalizeObservable('domain', asciiHost);
   if (!domain || !domain.includes('.')) return { ok: false, error: 'invalid_domain' };
   // Hostname-compatible syntax is necessary (not sufficient) for a domain candidate.
   if (!isHostnameSyntax(domain)) return { ok: false, error: 'not_hostname_compatible' };

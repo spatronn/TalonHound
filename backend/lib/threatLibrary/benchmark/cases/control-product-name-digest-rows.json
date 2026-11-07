@@ -1,0 +1,29 @@
+{
+  "id": "control-product-name-digest-rows",
+  "title": "Control: a product name in a hash row's description (AppSalt) is not key material; a real session key is",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "digest_semantics", "file_hash_inventory", "mode_a", "crypto_key"],
+  "source": { "kind": "html_file", "path": "control-product-name-digest-rows.html", "url": "https://research.example/blog/set-top-box-proxyware/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35791 review-queue finding (Core Malware Samples / Affiliate Malware tables): row descriptions name the AppSalt SDK, whose 'Salt' hump is not a crypto salt; a configuration sessionKeyHex value is key material",
+      "verified_by": "construction",
+      "verified_at": "2026-11-08"
+    },
+    "indicators": [
+      { "type": "sha256", "value": "4b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c", "assertion": "explicit" },
+      { "type": "sha256", "value": "5c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d", "assertion": "explicit" },
+      { "type": "md5", "value": "6d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "sha256", "value": "9f0e1d2c3b4a59687766554433221100ffeeddccbbaa99887766554433221100" }
+    ],
+    "sections": [
+      { "heading": "Core Malware Samples", "expected": "authoritative" },
+      { "heading": "Affiliate Malware", "expected": "authoritative" }
+    ]
+  }
+}

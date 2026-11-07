@@ -351,6 +351,15 @@ export function trimShellContinuation(url) {
 export const NETWORK_ENDPOINT_RE =
   /\b(tcp|udp|tls|ssl|socks[45]h?|fqdn):\/\/((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}|(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d))(?::(\d{1,5}))?(?![\w.-])/gi;
 export const DOMAIN_RE = /\b(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63})\b/gi;
+/** A letter / mark / digit outside ASCII: part of an internationalised hostname label. */
+export const NON_ASCII_LABEL_CHAR_RE = /[^\x00-\x7f](?<=[\p{L}\p{M}\p{N}])/u;
+/**
+ * Internationalised hostname (U-label spelling, ASCII TLD): "adidaš.com",
+ * "rołex.com", "pаypal.com" (Cyrillic а). DOMAIN_RE only reads ASCII labels;
+ * callers keep matches that contain a non-ASCII character (tl-candidates-v59).
+ */
+export const IDN_DOMAIN_RE =
+  /(?<![\p{L}\p{M}\p{N}_.@-])(?:[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]{0,61}[\p{L}\p{M}\p{N}])?\.)+[a-z]{2,63}(?![\p{L}\p{M}\p{N}_-])/giu;
 
 /**
  * A URL written outside any table that is a truncation of a URL the publisher
@@ -447,6 +456,11 @@ export function isTruncatedHostTail(text, start) {
   if (start <= 0) return false;
   const prev = text[start - 1];
   if (prev === '-') return true;
+  // "niḳe.com" / "rołex.com": the ASCII matcher reads only the tail after the
+  // non-ASCII letter ("e.com", "ex.com"). That tail is a different, unrelated
+  // host; the whole internationalised name is read by IDN_DOMAIN_RE
+  // (tl-candidates-v59).
+  if (NON_ASCII_LABEL_CHAR_RE.test(prev)) return true;
   // "<REDACTED>.example.com" hides labels behind the dot. "[redacted]post-app.com"
   // and "<REDACTED>benefitsportal.com" glue the placeholder directly onto the
   // visible tail: that tail is not the publisher's hostname (tl-candidates-v46).
