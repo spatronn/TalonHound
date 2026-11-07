@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><title>Set-top box botnet bootstrap infrastructure</title></head>
+<body>
+<article>
+<h1>Set-top box botnet bootstrap infrastructure</h1>
+<p>Infected devices register with bootstrap subdomains under an operator-owned domain before they receive their MQTT broker assignment.</p>
+<h2>Indicators of Compromise</h2>
+<table>
+<thead><tr><th>Indicator</th><th>Type</th><th>Family</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>203[.]0[.]113[.]10</td><td>IP Address</td><td>Botnet</td><td>Hosts MQTT C2 Broker</td></tr>
+<tr><td>*[.]stb-bootstrap-node[.]com</td><td>Subdomains</td><td>Botnet</td><td>Registration C2 subdomains</td></tr>
+<tr><td>*.fallback-relay-host.net</td><td>Subdomains</td><td>Botnet</td><td>Fallback C2</td></tr>
+<tr><td>ota-config-sync[.]tv</td><td>Domain</td><td>Botnet</td><td>Fallback C2 for older builds</td></tr>
+</tbody>
+</table>
+</article>
+</body>
+</html>

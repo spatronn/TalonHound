@@ -431,7 +431,9 @@ export function createCandidateAccumulator(ctx) {
       if (extra.port != null) token = token.replace(new RegExp(`[:：]${extra.port}[.,;]*$`), '');
       // A publisher wildcard cell asserts its base domain: type that name,
       // not the glob (tl-candidates-v54).
-      if (extra.wildcardApex === true) token = token.replace(/^\*\./, '');
+      // The defanged spelling ("*[.]operator[.]com") is the same wildcard
+      // (tl-candidates-v60).
+      if (extra.wildcardApex === true) token = token.replace(/^\*(?:\.|\[\.\]|\(\.\)|\{\.\})/, '');
       const form = extra.form || OCCURRENCE_FORMS.STANDALONE;
       const lineText = extra.rowText || block?.text || '';
       // An internationalised hostname is typed in its A-label form (the
