@@ -12,7 +12,7 @@ import { lineContainingObservable } from './indicatorScope.js';
 import { RESOLVED_TYPES, trimUrlBoundary, validateUrlCandidate } from './observableTypeResolver.js';
 import { hexRunIsHostnameLabelFragment, hexRunIsIdentifierSuffix, ipv4MatchIsStandalone } from './sourceOccurrence.js';
 import { findIpv6Tokens } from './ipv6Tokens.js';
-import { recoverDefangedLinkDomain, versionColumnTokens, IPV4_RE, IPV4_PORT_RE, IPV6_LOOPBACK_RE, URL_RE, HOST_PATH_RE, IPV4_HOST_PATH_HEAD_RE, IP_HOST_PATH_RE, trimShellContinuation, NETWORK_ENDPOINT_RE, DOMAIN_RE, DEFANGED_AT_BEFORE_RE, SPOOFED_SENDER_RE, isTruncatedHostTail, CVE_RE, ATTACK_RE, OCCURRENCE_FORMS, sourceSpelling, standaloneLineSpelling, portFromUrl, insideAnySpan, hitOffsets, HASH_PATTERNS, candidateKey } from './candidateHelpers.js';
+import { recoverDefangedLinkDomain, versionColumnTokens, IPV4_RE, IPV4_PORT_RE, IPV6_LOOPBACK_RE, URL_RE, HOST_PATH_RE, IPV4_HOST_PATH_HEAD_RE, IP_HOST_PATH_RE, trimShellContinuation, NETWORK_ENDPOINT_RE, DOMAIN_RE, IDN_DOMAIN_RE, DEFANGED_AT_BEFORE_RE, SPOOFED_SENDER_RE, isTruncatedHostTail, CVE_RE, ATTACK_RE, OCCURRENCE_FORMS, sourceSpelling, standaloneLineSpelling, portFromUrl, insideAnySpan, hitOffsets, HASH_PATTERNS, candidateKey } from './candidateHelpers.js';
 
 /**
  * @param {object[]} blocks zone-annotated blocks
@@ -318,6 +318,22 @@ export function readDocumentText(blocks, acc, ctx) {
         // prose or code the refanged reading decides, as before.
         typingSpelling: standaloneLineSpelling(block.text, spelling),
         ...(port != null ? { port } : {})
+      });
+    }
+    // Internationalised hostnames ("adidaš[.]com" in a lookalike-domain list):
+    // one candidate in IDNA A-label form, the Unicode spelling kept as the
+    // original value (tl-candidates-v59). ASCII-only matches belong to DOMAIN_RE.
+    for (const m of text.matchAll(IDN_DOMAIN_RE)) {
+      if (!/[^\x00-\x7f]/.test(m[0])) continue;
+      const start = m.index;
+      const end = start + m[0].length;
+      if (insideAnySpan(urlSpans, start, end) || insideAnySpan(consumed, start, end)) continue;
+      if (/^@[\p{L}\p{N}]/u.test(text.slice(end, end + 2))) continue;
+      const emailDomain = start > 0 && text[start - 1] === '@';
+      add(m[0], 'domain', block, {
+        form: emailDomain ? OCCURRENCE_FORMS.EMAIL_DOMAIN : standaloneForm,
+        originalValue: m[0],
+        typingSpelling: standaloneLineSpelling(block.text, m[0])
       });
     }
   }

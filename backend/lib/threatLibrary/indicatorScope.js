@@ -843,8 +843,10 @@ const TRANSPORT_ENDPOINT_LINE_RE =
 // Absolute URL tokens include wss — matching only http(s) left WebSocket C2
 // rows looking like prose inside IOC lists (tl-candidates-v53). FTP stays
 // host-only (NON_HTTP_NETWORK_SCHEME_RE).
+// Host labels may be internationalised ("adidaš.com", a lookalike-domain row);
+// the TLD stays ASCII (tl-candidates-v59).
 const OBSERVABLE_TOKEN_RE =
-  /^(?:(?:https?|wss?):\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/i;
+  /^(?:(?:https?|wss?):\/\/\S+|(?:\d{1,3}\.){3}\d{1,3}(?:\/(?:3[0-2]|[12]?\d)|:\d{1,5})?|[a-f0-9]{32}|[a-f0-9]{40}|[a-f0-9]{64}|(?:[\p{L}\p{N}](?:[\p{L}\p{M}\p{N}-]{0,61}[\p{L}\p{M}\p{N}])?\.)+[a-z]{2,63}(?::\d{1,5})?)$/iu;
 
 /**
  * One scheme-less host/path URL value ("host.example/path/file.bin"), exactly

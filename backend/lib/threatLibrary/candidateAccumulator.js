@@ -4,9 +4,11 @@
  * add() and read only the entries it returns.
  */
 
+import { domainToASCII } from 'node:url';
 import { NEGATIVE_ZONES, STRONG_IOC_ZONES } from './documentZones.js';
 import { resolveDottedTokenType, hostnameFromUrl } from './candidateTyping.js';
 import { normalizeCandidateValue } from './candidateValue.js';
+import { refangObservable } from './defang.js';
 import { isCredentialLabeledHex, isIndicatorRowShape, lineContainingObservable, tableRowProviderOwnedByOperation } from './indicatorScope.js';
 import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, hasDelegatedDnsSuffix, isMutexLabeledValue, parseArtifactTypeLabel } from './observableTypeResolver.js';
 import { isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
@@ -432,8 +434,13 @@ export function createCandidateAccumulator(ctx) {
       if (extra.wildcardApex === true) token = token.replace(/^\*\./, '');
       const form = extra.form || OCCURRENCE_FORMS.STANDALONE;
       const lineText = extra.rowText || block?.text || '';
+      // An internationalised hostname is typed in its A-label form (the
+      // normalized value); its context window is read around the publisher's
+      // Unicode spelling (tl-candidates-v59).
+      const spelledToken = token;
+      if (/[^\x00-\x7f]/.test(token)) token = domainToASCII(refangObservable(token)) || token;
       const typed = resolveDottedTokenType(token, {
-        surroundingText: surroundingWindow(lineText, token, 160),
+        surroundingText: surroundingWindow(lineText, spelledToken, 160),
         typeLabel: extra.typeLabel || block?.type_label || null,
         declaredType: extra.declaredType || block?.declared_type_label || null,
         zone,
@@ -443,7 +450,7 @@ export function createCandidateAccumulator(ctx) {
         // <br>-split HTML line ("evil-host[.]com") is an indicator row for this
         // token even though its block is a paragraph, while a file name in a
         // hash row's description ("<sha256> - loader.node") is not.
-        indicatorRow: strongZone && form !== OCCURRENCE_FORMS.EMAIL_DOMAIN && isIndicatorRowShape(lineText, token),
+        indicatorRow: strongZone && form !== OCCURRENCE_FORMS.EMAIL_DOMAIN && isIndicatorRowShape(lineText, spelledToken),
         strongZone,
         urlPathBasenames,
         knownUrlHosts

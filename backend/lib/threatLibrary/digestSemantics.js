@@ -229,6 +229,25 @@ export function labelWords(label) {
     .replace(/(?<=[a-z])\.(?=[a-z])/gi, ' ');
 }
 
+/** Crypto nouns that are also ordinary name parts ("AppSalt", "OmniIV"). */
+const WEAK_CRYPTO_NOUN_RE = /^(?:salt|iv|nonce)$/i;
+
+/**
+ * True when the split-word match is only a bare weak crypto noun that was the
+ * trailing hump of a capitalised compound in the label as written ("AppSalt
+ * SDK" → "App Salt"): a product / brand name, not key material. Field names
+ * ("saltHex", "ivBytes") and multi-word key phrases from a structure name
+ * ("SubjectPublicKeyInfo" → "Public Key") keep their reading (tl-digest-v5).
+ * @param {string} label as written
+ * @param {{ text: string }} best match in the split label
+ */
+function isNameHumpOnly(label, best) {
+  const noun = String(best?.text || '').replace(/^[^a-z0-9]+|[^a-z0-9]+$/gi, '');
+  if (!WEAK_CRYPTO_NOUN_RE.test(noun)) return false;
+  const compound = new RegExp(`(?:^|[^A-Za-z0-9])[A-Z][A-Za-z0-9]*?[a-z0-9]${noun}(?![a-z])`);
+  return compound.test(label) && !new RegExp(`(?:^|[^A-Za-z0-9])${noun}(?:[^A-Za-z0-9]|$)`, 'i').test(label);
+}
+
 /** "based on TLSH pivot", "via imphash": how a sample was found, not what the digest is. */
 const SIMILARITY_METHOD_PHRASE_RE =
   /\b(?:based\s+on|via|using|through|found\s+(?:by|with)|pivot(?:ing|ed)?\s+(?:on|from))\s+(?:an?\s+|the\s+)?(?:vhash|imphash|ssdeep|tlsh|authentihash|telfhash)(?:\s+(?:pivot|similarity|match|cluster|overlap))?/gi;
@@ -239,8 +258,9 @@ function bestKindIn(rawText) {
   for (const [kind, re] of KIND_PATTERNS) {
     const all = [...text.matchAll(new RegExp(re.source, 'gi'))];
     if (!all.length) continue;
-    const at = all[all.length - 1].index;
-    if (!best || at > best.at) best = { kind, at };
+    const last = all[all.length - 1];
+    const at = last.index;
+    if (!best || at > best.at) best = { kind, at, text: last[0] };
   }
   return best;
 }
@@ -256,6 +276,7 @@ function classifyLabel(label, opts = {}) {
     const split = labelWords(label);
     if (split !== label) {
       best = bestKindIn(split);
+      if (best && best.kind === DIGEST_KINDS.CRYPTO_KEY && isNameHumpOnly(label, best)) best = null;
       if (best) words = split;
     }
   }
