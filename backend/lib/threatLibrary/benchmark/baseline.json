@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 90,
-    "cases_exact": 88,
+    "cases": 92,
+    "cases_exact": 90,
     "indicators": {
-      "expected": 1468,
-      "tp": 1466,
+      "expected": 1476,
+      "tp": 1474,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9993,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9647,
+    "assertion_accuracy": 0.965,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 23,
+      "info": 24,
       "cases_flagged": 3,
-      "exact_cases": 88,
+      "exact_cases": 90,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -61,6 +61,26 @@
       "sections_checked": 2,
       "assertions_correct": 3,
       "assertions_checked": 3,
+      "warning_codes": []
+    },
+    "control-idn-lookalike-domains": {
+      "members": [
+        "domain:parcel-notice-center.net",
+        "domain:shop-portal-outlet.com",
+        "domain:xn--brad-outlet-k6b.com",
+        "domain:xn--exampe-shop-x5b.com",
+        "domain:xn--stre-deals-8w3e.net"
+      ],
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 5,
+      "assertions_checked": 5,
       "warning_codes": []
     },
     "control-legitimate-binaries": {
@@ -113,6 +133,26 @@
       "assertions_correct": 0,
       "assertions_checked": 0,
       "warning_codes": []
+    },
+    "control-product-name-digest-rows": {
+      "members": [
+        "md5:6d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a",
+        "sha256:4b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c",
+        "sha256:5c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d"
+      ],
+      "tp": 3,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 3,
+      "assertions_checked": 3,
+      "warning_codes": [
+        "non_file_digest_reclassified"
+      ]
     },
     "golden-checkpoint-jsceal-appendix-b": {
       "members": [

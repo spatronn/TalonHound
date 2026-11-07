@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><title>Set-top box botnet bundles proxyware SDKs</title></head>
+<body>
+<article>
+<h1>Set-top box botnet bundles proxyware SDKs</h1>
+<p>The firmware implant downloads modules and bundles commercial proxyware SDKs to monetise infected devices. The configuration protects its traffic with a session key and a PBKDF2 salt that are not file digests.</p>
+<pre>{"sessionKeyHex": "9f0e1d2c3b4a59687766554433221100ffeeddccbbaa99887766554433221100"}</pre>
+<h2>Indicators of Compromise</h2>
+<h3>Core Malware Samples</h3>
+<table>
+<thead><tr><th>Tool(s)</th><th>Representative SHA256</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>libexploit.so</td><td>4b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c</td><td>Privilege escalator bundled with the handler</td></tr>
+<tr><td>libnative_keys.so</td><td>5c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d</td><td>Key storage for AppSalt SDK bundled with the dropper</td></tr>
+</tbody>
+</table>
+<h3>Affiliate Malware</h3>
+<table>
+<thead><tr><th>Affiliate</th><th>File Type</th><th>Representative hash</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>AppSalt / Proxyware</td><td>DEX</td><td>6d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a</td><td>AppSalt class</td></tr>
+</tbody>
+</table>
+</article>
+</body>
+</html>
