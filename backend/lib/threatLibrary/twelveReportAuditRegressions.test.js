@@ -73,7 +73,7 @@ const POINTER_IOC_SECTION = `<h2>Indicators of Compromise</h2>
 <ul><li>https://learn.vendor.example/docs/device-code</li></ul>`;
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v59');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v60');
   assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v25');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v17');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v16');

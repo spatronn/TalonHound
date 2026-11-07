@@ -1,0 +1,27 @@
+{
+  "id": "control-defanged-wildcard-rows",
+  "title": "Control: a defanged wildcard IOC-table row asserts its base domain like the plain spelling",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "wildcard_apex", "defanged_table", "mode_a"],
+  "source": { "kind": "html_file", "path": "control-defanged-wildcard-rows.html", "url": "https://research.example/blog/set-top-box-bootstrap/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35791 review-queue finding (Google XCPE IOC table rows '*[.]anyevonline[.]com | Subdomains'): the defanged wildcard row was dropped as not_hostname_syntax while the plain '*.' spelling was read",
+      "verified_by": "construction",
+      "verified_at": "2026-11-08"
+    },
+    "indicators": [
+      { "type": "ip", "value": "203.0.113.10", "assertion": "explicit" },
+      { "type": "domain", "value": "stb-bootstrap-node.com", "assertion": "explicit" },
+      { "type": "domain", "value": "fallback-relay-host.net", "assertion": "explicit" },
+      { "type": "domain", "value": "ota-config-sync.tv", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [],
+    "sections": [
+      { "heading": "Indicators of Compromise", "expected": "authoritative" }
+    ]
+  }
+}

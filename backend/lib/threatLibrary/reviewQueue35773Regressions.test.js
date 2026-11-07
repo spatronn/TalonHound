@@ -1,5 +1,5 @@
 /**
- * Review-queue audit (35773–35797) regressions (tl-candidates-v59).
+ * Review-queue audit (35773–35797) regressions (tl-candidates-v59 / v60).
  *
  * Generic shapes of the confirmed extraction defects, with synthetic values —
  * no publisher, report or value condition:
@@ -13,6 +13,8 @@
  *      "KeyVault class") is not split into nouns: "Salt" is not a crypto salt,
  *      so the row's digest stays a file hash. Field-name spelling
  *      ("sessionKeyHex") is still read word by word.
+ * FN-3 A defanged wildcard IOC-table row ("*[.]operator[.]com") asserts its
+ *      base domain like the plain "*.operator.com" spelling (v60).
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,7 +57,7 @@ const H64B = 'b2'.repeat(32);
 const H32 = 'c3'.repeat(16);
 
 test('contract version', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v59');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v60');
 });
 
 // --- FN-1 / FP-1: internationalised hostnames ----------------------------------
@@ -125,4 +127,17 @@ test('FN-2. a malware-sample table keeps every row hash a file Indicator', () =>
 </table>`);
   const m = members(x);
   for (const v of [`sha256:${H64A}`, `sha256:${H64B}`, `md5:${H32}`]) assert.ok(m.includes(v), `${v} missing from ${m.join(', ')}`);
+});
+
+// --- FN-3: defanged wildcard rows -----------------------------------------------
+
+test('FN-3. a defanged wildcard row ("*[.]operator[.]com") asserts its base domain', () => {
+  const x = run(`<h2>Indicators of Compromise</h2>
+<table><tr><th>Indicator</th><th>Type</th><th>Family</th><th>Notes</th></tr>
+<tr><td>203[.]0[.]113[.]10</td><td>IP Address</td><td>Botnet</td><td>Hosts MQTT C2 Broker</td></tr>
+<tr><td>*[.]stb-bootstrap-node[.]com</td><td>Subdomains</td><td>Botnet</td><td>Registration C2 subdomains</td></tr>
+<tr><td>*.fallback-relay-host.net</td><td>Subdomains</td><td>Botnet</td><td>Fallback C2</td></tr>
+</table>`);
+  const m = members(x);
+  for (const v of ['domain:stb-bootstrap-node.com', 'domain:fallback-relay-host.net']) assert.ok(m.includes(v), `${v} missing from ${m.join(', ')}`);
 });
