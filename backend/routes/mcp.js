@@ -106,6 +106,25 @@ export function registerMcpRoutes(app, pool, audit, deps = {}) {
         return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP bulk lookup rate limit exceeded', req);
       }
     }
+    if (method === 'tools/call' && (
+      toolName === 'create_published_feed'
+      || toolName === 'update_published_feed'
+      || toolName === 'regenerate_published_feed'
+    )) {
+      if (!limiter.check(`mcp:pf-write:${key}`, cfg.rateLimitPublishedFeedsWritePerMin)) {
+        return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP Published Feed write rate limit exceeded', req);
+      }
+    }
+    if (method === 'tools/call' && (
+      toolName === 'list_published_feeds'
+      || toolName === 'get_published_feed'
+      || toolName === 'preview_published_feed'
+      || toolName === 'get_published_feed_membership'
+    )) {
+      if (!limiter.check(`mcp:pf-read:${key}`, cfg.rateLimitPublishedFeedsReadPerMin)) {
+        return sendApiError(res, 429, API_ERROR_CODE.RATE_LIMIT_EXCEEDED, 'MCP Published Feed read rate limit exceeded', req);
+      }
+    }
     return next();
   }
 
@@ -165,6 +184,8 @@ export function registerMcpRoutes(app, pool, audit, deps = {}) {
         report_import_rate_limit_per_min: config.rateLimitReportImportPerMin,
         threat_library_write_rate_limit_per_min: config.rateLimitThreatLibraryWritePerMin,
         threat_library_catalog_rate_limit_per_min: config.rateLimitThreatLibraryCatalogPerMin,
+        published_feeds_write_rate_limit_per_min: config.rateLimitPublishedFeedsWritePerMin,
+        published_feeds_read_rate_limit_per_min: config.rateLimitPublishedFeedsReadPerMin,
         rate_limit_per_min: config.rateLimitPerMin
       },
       request_id: req.requestId || randomUUID()

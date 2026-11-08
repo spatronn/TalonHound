@@ -11,6 +11,10 @@ import {
   fetchQueryModeFingerprint,
   generatePublishedFeedSnapshot,
   FEED_FILTER_MODES,
+  CURATED_FEED_SNAPSHOT_KEY,
+  isCuratedModeFeed,
+  isFixedAllWindowFeed,
+  publishedFeedSnapshotIocTypeKey,
   QUERY_FEED_SNAPSHOT_KEY
 } from './feedPublisherService.js';
 import { parseSearchQuery, buildWhereClause } from './iocSearchDsl/index.js';
@@ -37,6 +41,16 @@ describe('resolveFeedFilterMode', () => {
     assert.equal(resolveFeedFilterMode({ filter_mode: 'query', advanced_query: 'ioc contains "x"' }), FEED_FILTER_MODES.QUERY);
     // filter_mode=query but empty query is not a usable query feed.
     assert.equal(resolveFeedFilterMode({ filter_mode: 'query', advanced_query: '' }), FEED_FILTER_MODES.BASIC);
+  });
+
+  it('is curated when filter_mode=curated (advanced_query inert)', () => {
+    assert.equal(
+      resolveFeedFilterMode({ filter_mode: 'curated', advanced_query: 'ioc contains "x"' }),
+      FEED_FILTER_MODES.CURATED
+    );
+    assert.equal(isCuratedModeFeed({ filter_mode: 'curated' }), true);
+    assert.equal(isFixedAllWindowFeed({ filter_mode: 'curated' }), true);
+    assert.equal(publishedFeedSnapshotIocTypeKey({ filter_mode: 'curated' }), CURATED_FEED_SNAPSHOT_KEY);
   });
 
   it('a basic feed ignores any stored advanced_query', () => {

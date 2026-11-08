@@ -13,7 +13,9 @@ import {
   resolveFeedIocTypes,
   resolveFeedFilterMode,
   FEED_FILTER_MODES,
-  QUERY_FEED_SNAPSHOT_KEY
+  QUERY_FEED_SNAPSHOT_KEY,
+  publishedFeedSnapshotIocTypeKey,
+  isFixedAllWindowFeed
 } from './feedPublisherService.js';
 import { feedIocTypesKey } from './feedFormatter.js';
 import { feedHasStixFormat } from './publishedFeedFormats.js';
@@ -204,10 +206,9 @@ export async function getStixEnabledFeedBySlug(pool, slug) {
 }
 
 function snapshotKeysForFeed(feed) {
-  const queryMode = resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY;
   return {
-    iocTypeKey: queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(resolveFeedIocTypes(feed)),
-    window: queryMode ? 'all' : (feed.time_window || 'all')
+    iocTypeKey: publishedFeedSnapshotIocTypeKey(feed),
+    window: isFixedAllWindowFeed(feed) ? 'all' : (feed.time_window || 'all')
   };
 }
 

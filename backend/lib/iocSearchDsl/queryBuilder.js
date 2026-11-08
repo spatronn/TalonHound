@@ -30,6 +30,16 @@ function normalizeTagValue(value) {
   return String(value).trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
+/** Match ioc_source_attributions.source_label_normalized (trim + collapse + lower). */
+function normalizeSourceLabelKey(value) {
+  return String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/** Match threat_entities.normalized_name / threat_entity_aliases.normalized_alias. */
+function normalizeEntityMatchValue(value) {
+  return String(value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 class Builder {
   constructor(tz, { fileArtifactsReadEnabled = false, now = Date.now() } = {}) {
     this.params = [];
@@ -100,6 +110,18 @@ class Builder {
         return this.buildSource(node);
       case 'threat_actor':
         return this.buildThreatActor(node);
+      case 'malware_family':
+        return this.buildMalwareFamily(node);
+      case 'source_threat_actor':
+        return this.buildSourceAttribution(node, 'threat_actor');
+      case 'source_malware_family':
+        return this.buildSourceAttribution(node, 'malware_family');
+      case 'report_id':
+        return this.buildReportId(node);
+      case 'related_entity':
+        return this.buildRelatedEntity(node);
+      case 'entity_type':
+        return this.buildEntityType(node);
       case 'classification':
         return this.buildClassification(node);
       case 'type':
@@ -302,32 +324,250 @@ class Builder {
   }
 
   // ---- text: threat_actor (EXISTS over ioc_threat_actors junction) -------
+  // Analyst-confirmed only. Source-reported labels are source_threat_actor.
   buildThreatActor(node) {
     const base = (cond) =>
       `EXISTS (SELECT 1 FROM ioc_threat_actors ita ` +
       `JOIN threat_actors ta ON ta.id = ita.threat_actor_id ` +
       `WHERE ita.ioc_id = ${IOC_ALIAS}.id AND ita.ioc_observable_type = ${IOC_ALIAS}.observable_type ` +
       `AND ${cond})`;
+    return this.buildCatalogNameOps(node, base, 'ta.name', 'threat_actor');
+  }
+
+  // ---- text: malware_family (EXISTS over ioc_malware_families junction) ---
+  // Analyst-confirmed only — mirrors threat_actor. Source-reported labels are
+  // source_malware_family and are never folded into this field.
+  buildMalwareFamily(node) {
+    const base = (cond) =>
+      `EXISTS (SELECT 1 FROM ioc_malware_families imf ` +
+      `JOIN malware_families mf ON mf.id = imf.malware_family_id ` +
+      `WHERE imf.ioc_id = ${IOC_ALIAS}.id AND imf.ioc_observable_type = ${IOC_ALIAS}.observable_type ` +
+      `AND ${cond})`;
+    return this.buildCatalogNameOps(node, base, 'mf.name', 'malware_family');
+  }
+
+  // Shared text ops for analyst catalog name columns (threat_actors / malware_families).
+  buildCatalogNameOps(node, base, nameCol, fieldLabel) {
     const v = node.values[0];
     switch (node.operator) {
       case 'contains':
-        return base(`ta.name ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`);
+        return base(`${nameCol} ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`);
       case 'not_contains':
-        return `NOT ${base(`ta.name ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`)}`;
+        return `NOT ${base(`${nameCol} ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`)}`;
       case 'starts_with':
-        return base(`ta.name ILIKE ${this.bind(`${likeEscape(v)}%`)} ESCAPE '\\'`);
+        return base(`${nameCol} ILIKE ${this.bind(`${likeEscape(v)}%`)} ESCAPE '\\'`);
       case 'ends_with':
-        return base(`ta.name ILIKE ${this.bind(`%${likeEscape(v)}`)} ESCAPE '\\'`);
+        return base(`${nameCol} ILIKE ${this.bind(`%${likeEscape(v)}`)} ESCAPE '\\'`);
       case 'equals':
-        return base(`LOWER(ta.name) = ${this.bind(v.toLowerCase())}`);
+        return base(`LOWER(${nameCol}) = ${this.bind(v.toLowerCase())}`);
       case 'not_equals':
-        return `NOT ${base(`LOWER(ta.name) = ${this.bind(v.toLowerCase())}`)}`;
+        return `NOT ${base(`LOWER(${nameCol}) = ${this.bind(v.toLowerCase())}`)}`;
       case 'in':
-        return base(`LOWER(ta.name) = ANY(${this.bind(node.values.map((x) => x.toLowerCase()))}::text[])`);
+        return base(`LOWER(${nameCol}) = ANY(${this.bind(node.values.map((x) => x.toLowerCase()))}::text[])`);
       case 'not_in':
-        return `NOT ${base(`LOWER(ta.name) = ANY(${this.bind(node.values.map((x) => x.toLowerCase()))}::text[])`)}`;
+        return `NOT ${base(`LOWER(${nameCol}) = ANY(${this.bind(node.values.map((x) => x.toLowerCase()))}::text[])`)}`;
       default:
-        throw new Error(`Unsupported operator for threat_actor: ${node.operator}`);
+        throw new Error(`Unsupported operator for ${fieldLabel}: ${node.operator}`);
+    }
+  }
+
+  // ---- text: source_threat_actor / source_malware_family ------------------
+  // Source-reported attributions in ioc_source_attributions (source_label).
+  // Current assertions only; distinct from analyst threat_actor / malware_family.
+  // entity_kind is a whitelisted literal (never user text).
+  buildSourceAttribution(node, entityKind) {
+    const kindLiteral = entityKind === 'threat_actor' ? 'threat_actor' : 'malware_family';
+    const fieldLabel = entityKind === 'threat_actor' ? 'source_threat_actor' : 'source_malware_family';
+    const base = (cond) =>
+      `EXISTS (SELECT 1 FROM ioc_source_attributions a ` +
+      `WHERE a.ioc_id = ${IOC_ALIAS}.id AND a.ioc_observable_type = ${IOC_ALIAS}.observable_type ` +
+      `AND a.entity_kind = '${kindLiteral}' AND a.assertion_status = 'current' ` +
+      `AND ${cond})`;
+    const v = node.values[0];
+    switch (node.operator) {
+      case 'contains':
+        return base(`a.source_label ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`);
+      case 'not_contains':
+        return `NOT ${base(`a.source_label ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`)}`;
+      case 'starts_with':
+        return base(`a.source_label ILIKE ${this.bind(`${likeEscape(v)}%`)} ESCAPE '\\'`);
+      case 'ends_with':
+        return base(`a.source_label ILIKE ${this.bind(`%${likeEscape(v)}`)} ESCAPE '\\'`);
+      case 'equals':
+        return base(`a.source_label_normalized = ${this.bind(normalizeSourceLabelKey(v))}`);
+      case 'not_equals':
+        return `NOT ${base(`a.source_label_normalized = ${this.bind(normalizeSourceLabelKey(v))}`)}`;
+      case 'in':
+        return base(
+          `a.source_label_normalized = ANY(${this.bind(node.values.map(normalizeSourceLabelKey))}::text[])`
+        );
+      case 'not_in':
+        return `NOT ${base(
+          `a.source_label_normalized = ANY(${this.bind(node.values.map(normalizeSourceLabelKey))}::text[])`
+        )}`;
+      default:
+        throw new Error(`Unsupported operator for ${fieldLabel}: ${node.operator}`);
+    }
+  }
+
+  // ---- text: report_id (candidate→IOC linkage to a Threat Library report) -
+  // Matches IOCs with proven association via threat_report_candidates.matched_ioc_id
+  // for a report whose public_id (UUID) or numeric id equals the value. Prefer equals/in.
+  buildReportId(node) {
+    const membership = (reportPred) =>
+      `(${IOC_ALIAS}.observable_type, ${IOC_ALIAS}.id) IN (
+      SELECT c.matched_ioc_observable_type, c.matched_ioc_id
+        FROM threat_report_candidates c
+        JOIN threat_reports r ON r.id = c.report_id
+       WHERE c.matched_ioc_id IS NOT NULL
+         AND c.matched_ioc_observable_type IS NOT NULL
+         AND (${reportPred})
+    )`;
+    const reportPredForValues = (values) => this.buildReportIdValuePred(values);
+    switch (node.operator) {
+      case 'equals':
+        return membership(reportPredForValues(node.values));
+      case 'not_equals':
+        return `NOT ${membership(reportPredForValues(node.values))}`;
+      case 'in':
+        return membership(reportPredForValues(node.values));
+      case 'not_in':
+        return `NOT ${membership(reportPredForValues(node.values))}`;
+      default:
+        throw new Error(`Unsupported operator for report_id: ${node.operator}`);
+    }
+  }
+
+  // UUID public_id (primary) and integer id. Values are always bound; invalid
+  // UUID-shaped input is compared as text so the cast never throws.
+  buildReportIdValuePred(values) {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    const uuids = [];
+    const ids = [];
+    const texts = [];
+    for (const raw of values) {
+      const v = String(raw).trim();
+      if (UUID_RE.test(v)) uuids.push(v.toLowerCase());
+      else if (/^\d+$/.test(v)) ids.push(v);
+      else texts.push(v);
+    }
+    const parts = [];
+    if (uuids.length === 1) {
+      parts.push(`r.public_id = ${this.bind(uuids[0])}::uuid`);
+    } else if (uuids.length > 1) {
+      parts.push(`r.public_id = ANY(${this.bind(uuids)}::uuid[])`);
+    }
+    if (ids.length === 1) {
+      parts.push(`r.id = ${this.bind(ids[0])}::bigint`);
+    } else if (ids.length > 1) {
+      parts.push(`r.id = ANY(${this.bind(ids)}::bigint[])`);
+    }
+    if (texts.length === 1) {
+      parts.push(`r.public_id::text = ${this.bind(texts[0])}`);
+    } else if (texts.length > 1) {
+      parts.push(`r.public_id::text = ANY(${this.bind(texts)}::text[])`);
+    }
+    return parts.length ? parts.join(' OR ') : 'FALSE';
+  }
+
+  // IOC endpoint of a threat_relationships row: direct subject/object_ioc_id, or a
+  // subject/object_candidate whose matched_ioc points at this IOC. Shared by
+  // related_entity and entity_type. Never uses threat_report_entities (co-mention).
+  threatRelationshipIocEndpointSql() {
+    return `(
+      tr.subject_ioc_id = ${IOC_ALIAS}.id
+      OR tr.object_ioc_id = ${IOC_ALIAS}.id
+      OR EXISTS (
+        SELECT 1 FROM threat_report_candidates sc
+         WHERE sc.id = tr.subject_candidate_id
+           AND sc.matched_ioc_id = ${IOC_ALIAS}.id
+           AND sc.matched_ioc_observable_type = ${IOC_ALIAS}.observable_type
+      )
+      OR EXISTS (
+        SELECT 1 FROM threat_report_candidates oc
+         WHERE oc.id = tr.object_candidate_id
+           AND oc.matched_ioc_id = ${IOC_ALIAS}.id
+           AND oc.matched_ioc_observable_type = ${IOC_ALIAS}.observable_type
+      )
+    )`;
+  }
+
+  // ---- text: related_entity (evidence-backed threat_relationships only) --
+  // Fuzzy ops match threat_entities.name; equals/in also match threat_entity_aliases
+  // via normalized_name / normalized_alias (case-insensitive, whitespace-collapsed).
+  buildRelatedEntity(node) {
+    const iocEnd = this.threatRelationshipIocEndpointSql();
+    const base = (entityCond) =>
+      `EXISTS (SELECT 1 FROM threat_relationships tr ` +
+      `WHERE ${iocEnd} AND EXISTS (` +
+      `SELECT 1 FROM threat_entities e ` +
+      `WHERE (e.id = tr.subject_entity_id OR e.id = tr.object_entity_id) AND ${entityCond}` +
+      `))`;
+    const v = node.values[0];
+    const equalsName = (bound) =>
+      `(e.normalized_name = ${bound} OR EXISTS (` +
+      `SELECT 1 FROM threat_entity_aliases ea ` +
+      `WHERE ea.entity_id = e.id AND ea.normalized_alias = ${bound}))`;
+    switch (node.operator) {
+      case 'contains':
+        return base(`e.name ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`);
+      case 'not_contains':
+        return `NOT ${base(`e.name ILIKE ${this.bind(`%${likeEscape(v)}%`)} ESCAPE '\\'`)}`;
+      case 'starts_with':
+        return base(`e.name ILIKE ${this.bind(`${likeEscape(v)}%`)} ESCAPE '\\'`);
+      case 'ends_with':
+        return base(`e.name ILIKE ${this.bind(`%${likeEscape(v)}`)} ESCAPE '\\'`);
+      case 'equals':
+        return base(equalsName(this.bind(normalizeEntityMatchValue(v))));
+      case 'not_equals':
+        return `NOT ${base(equalsName(this.bind(normalizeEntityMatchValue(v))))}`;
+      case 'in': {
+        const ph = this.bind(node.values.map(normalizeEntityMatchValue));
+        return base(
+          `(e.normalized_name = ANY(${ph}::text[]) OR EXISTS (` +
+            `SELECT 1 FROM threat_entity_aliases ea ` +
+            `WHERE ea.entity_id = e.id AND ea.normalized_alias = ANY(${ph}::text[])))`
+        );
+      }
+      case 'not_in': {
+        const ph = this.bind(node.values.map(normalizeEntityMatchValue));
+        return `NOT ${base(
+          `(e.normalized_name = ANY(${ph}::text[]) OR EXISTS (` +
+            `SELECT 1 FROM threat_entity_aliases ea ` +
+            `WHERE ea.entity_id = e.id AND ea.normalized_alias = ANY(${ph}::text[])))`
+        )}`;
+      }
+      default:
+        throw new Error(`Unsupported operator for related_entity: ${node.operator}`);
+    }
+  }
+
+  // ---- enum: entity_type (evidence-backed relationship to that entity type)
+  // entity_type alone means related via threat_relationships to some entity of
+  // that type — not report co-mention via threat_report_entities.
+  buildEntityType(node) {
+    const iocEnd = this.threatRelationshipIocEndpointSql();
+    const one = (typeValue) => {
+      const ph = this.bind(String(typeValue).toLowerCase());
+      return (
+        `EXISTS (SELECT 1 FROM threat_relationships tr ` +
+        `WHERE ${iocEnd} AND EXISTS (` +
+        `SELECT 1 FROM threat_entities e ` +
+        `WHERE (e.id = tr.subject_entity_id OR e.id = tr.object_entity_id) ` +
+        `AND e.entity_type = ${ph}))`
+      );
+    };
+    switch (node.operator) {
+      case 'equals':
+        return one(node.values[0]);
+      case 'not_equals':
+        return `(NOT ${one(node.values[0])})`;
+      case 'in':
+        return `(${node.values.map((v) => one(v)).join(' OR ')})`;
+      case 'not_in':
+        return `(${node.values.map((v) => `(NOT ${one(v)})`).join(' AND ')})`;
+      default:
+        throw new Error(`Unsupported operator for entity_type: ${node.operator}`);
     }
   }
 

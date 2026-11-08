@@ -52,7 +52,40 @@ export const FIELD_REGISTRY = Object.freeze({
   tag: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
   // Matches list Source badge: canonical ioc_items.source_name and/or feed/manual display names.
   source: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // Analyst-confirmed Threat Actor only (ioc_threat_actors). Source-reported labels use
+  // source_threat_actor — never folded into this field.
   threat_actor: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // Analyst-confirmed Malware Family only (ioc_malware_families). Source-reported labels
+  // use source_malware_family — never folded into this field.
+  malware_family: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // Source-reported Threat Actor attribution (ioc_source_attributions.entity_kind =
+  // 'threat_actor', matched on source_label). Distinct from analyst threat_actor.
+  source_threat_actor: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // Source-reported Malware Family attribution (ioc_source_attributions.entity_kind =
+  // 'malware_family', matched on source_label). Distinct from analyst malware_family.
+  source_malware_family: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // Proven Threat Library report association via threat_report_candidates.matched_ioc_id
+  // for a report whose public_id (UUID) or numeric id equals the value. Not co-mention.
+  report_id: { kind: 'text', operators: ['equals', 'not_equals', ...LIST_OPERATORS] },
+  // Evidence-backed Threat Library entity name via threat_relationships (+ optional
+  // threat_entity_aliases on equals/in). Never threat_report_entities co-mention alone.
+  related_entity: { kind: 'text', operators: [...TEXT_OPERATORS, ...LIST_OPERATORS] },
+  // IOC related via threat_relationships to some threat_entities row of this type
+  // (same endpoint rules as related_entity). Not report co-mention.
+  entity_type: {
+    kind: 'enum',
+    operators: ENUM_OPERATORS,
+    allowedValues: [
+      'threat_actor',
+      'malware',
+      'campaign',
+      'tool',
+      'vulnerability',
+      'infrastructure',
+      'organization',
+      'attack_pattern'
+    ]
+  },
   classification: { kind: 'enum', operators: ENUM_OPERATORS },
   // True IOC identity types only. imphash/tlsh/ssdeep are intentionally NOT here: they are
   // non-identity file-artifact attributes (see the imphash/tlsh/ssdeep fields below), never
@@ -114,6 +147,7 @@ const FIELD_ALIASES = Object.freeze({
   observed_type: 'known_hash_type',
   threat_classification: 'classification',
   actor: 'threat_actor',
+  malware: 'malware_family',
   // Platform first-import time. Same column the API/export/feed JSON already expose as
   // `imported_at` (ioc_items.created_at) — see iocListTimestamps.js. Canonical DSL name
   // stays `created_at`; the normalized query renders the canonical name.

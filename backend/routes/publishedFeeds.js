@@ -1,65 +1,23 @@
 import { requireRole, ROLES } from '../lib/rbac.js';
 import { generateFeedAccessToken, hashFeedAccessToken, buildPublicFeedUrl } from '../lib/feedAccessToken.js';
 import {
-  generatePublishedFeedSnapshot,
-  normalizeFeedConfig,
-  getLatestSnapshotMeta,
-  resolveFeedIocTypes,
-  resolveFeedFilterMode,
-  FEED_FILTER_MODES,
-  QUERY_FEED_SNAPSHOT_KEY,
-  resolveFormatsInput,
-  resolvePublishedFeedFormats,
-  resolvePublishedFeedFormat
-} from '../lib/feedPublisherService.js';
-import { normalizeFeedIocTypes, feedIocTypesKey } from '../lib/feedFormatter.js';
-import { parseSearchQuery, isDslError } from '../lib/iocSearchDsl/index.js';
-import {
-  fetchPublishedFeedSourceOptions,
-  normalizeIncludeFeedKeys
+  fetchPublishedFeedSourceOptions
 } from '../lib/publishedFeedSources.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY } from '../lib/auditConstants.js';
 import { pickSafeFields } from '../lib/auditRedaction.js';
 import { getPublishedFeedArtifactConfig, removeFeedArtifacts } from '../lib/publishedFeedArtifact/store.js';
-
-function toPublicFeed(row, extra = {}) {
-  if (!row) return null;
-  const ioc_types = resolveFeedIocTypes(row);
-  const formats = resolvePublishedFeedFormats(row);
-  return {
-    id: Number(row.id),
-    name: row.name,
-    slug: row.slug,
-    description: row.description,
-    enabled: Boolean(row.enabled),
-    filter_mode: resolveFeedFilterMode(row),
-    advanced_query: row.advanced_query != null ? String(row.advanced_query) : null,
-    ioc_types,
-    formats,
-    format: resolvePublishedFeedFormat({ formats }),
-    include_source_metadata: row.include_source_metadata !== false,
-    include_classification: row.include_classification !== false,
-    include_enrichment: row.include_enrichment === true,
-    min_confidence: row.min_confidence,
-    include_feed_keys: row.include_feed_keys,
-    include_tags: row.include_tags,
-    exclude_tags: row.exclude_tags,
-    exclude_false_positive: Boolean(row.exclude_false_positive),
-    exclude_expired: Boolean(row.exclude_expired),
-    time_window: row.time_window,
-    max_items: row.max_items,
-    refresh_interval_minutes: Number(row.refresh_interval_minutes || 15),
-    last_generated_at: row.last_generated_at,
-    last_status: row.last_status,
-    last_error: row.last_error,
-    consecutive_failures: Number(row.consecutive_failures || 0),
-    failing_since: row.failing_since || null,
-    first_failure_error: row.first_failure_error || null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-    ...extra
-  };
-}
+import {
+  toPublicFeed,
+  feedAuditSnapshot,
+  listFeeds,
+  getFeed,
+  createFeed,
+  updateFeed,
+  previewFeedMembership,
+  listFeedMembership,
+  regenerateFeed,
+  parseBodyArrays
+} from '../lib/publishedFeedManagementService.js';
 
 function toPublicAccessKey(row) {
   if (!row) return null;
@@ -75,152 +33,8 @@ function toPublicAccessKey(row) {
   };
 }
 
-function parseBodyArrays(body) {
-  const out = { ...body };
-  for (const key of ['include_feed_keys', 'include_tags', 'exclude_tags', 'ioc_types']) {
-    if (out[key] != null && !Array.isArray(out[key])) {
-      if (typeof out[key] === 'string') {
-        try {
-          out[key] = JSON.parse(out[key]);
-        } catch {
-          out[key] = out[key].split(',').map((s) => s.trim()).filter(Boolean);
-        }
-      }
-    }
-  }
-  return out;
-}
-
-/** Accept ioc_types[] (preferred) or legacy scalar ioc_type during transition. */
-function resolveIocTypesInput(body) {
-  if (body.ioc_types !== undefined) return body.ioc_types;
-  if (body.ioc_type !== undefined) return body.ioc_type;
-  return undefined;
-}
-
-/**
- * Effective filter mode for a create/update. Prefers the request body; on PATCH falls back
- * to the persisted mode. Anything other than 'query' resolves to 'basic'.
- */
-function resolveFilterModeInput(body, existingRow = null) {
-  const raw = body.filter_mode !== undefined
-    ? body.filter_mode
-    : (existingRow ? existingRow.filter_mode : undefined);
-  const mode = String(raw ?? FEED_FILTER_MODES.BASIC).trim().toLowerCase();
-  return mode === FEED_FILTER_MODES.QUERY ? FEED_FILTER_MODES.QUERY : FEED_FILTER_MODES.BASIC;
-}
-
-/**
- * Validate + normalize an Advanced Query using the SAME IOC List parser. Non-empty and
- * syntactically valid (fields/operators from the shared allowlist) or an error is returned.
- * @returns {{ normalized: string } | { error: string, dsl?: object }}
- */
-function validateAdvancedQuery(text) {
-  const raw = String(text ?? '');
-  if (!raw.trim()) return { error: 'advanced_query is required in query mode' };
-  try {
-    const { normalizedQuery } = parseSearchQuery(raw);
-    return { normalized: normalizedQuery };
-  } catch (err) {
-    if (isDslError(err)) return { error: err.message, dsl: err.toJSON() };
-    return { error: `Invalid advanced_query: ${err.message}` };
-  }
-}
-
-async function resolveIncludeFeedKeys(pool, raw, existingRow = null) {
-  const existingKeys = existingRow?.include_feed_keys
-    ? (Array.isArray(existingRow.include_feed_keys)
-      ? existingRow.include_feed_keys
-      : (typeof existingRow.include_feed_keys === 'string'
-        ? JSON.parse(existingRow.include_feed_keys)
-        : []))
-    : [];
-  return normalizeIncludeFeedKeys(pool, raw, { existingKeys });
-}
-
-function validateFeedPayload(body, partial = false, mode = FEED_FILTER_MODES.BASIC) {
-  const errors = [];
-  if (!partial || body.name !== undefined) {
-    if (!String(body.name || '').trim()) errors.push('name is required');
-  }
-  if (body.filter_mode !== undefined) {
-    const fm = String(body.filter_mode).trim().toLowerCase();
-    if (fm !== FEED_FILTER_MODES.BASIC && fm !== FEED_FILTER_MODES.QUERY) {
-      errors.push("filter_mode must be 'basic' or 'query'");
-    }
-  }
-  // IOC Types / Window / Threat Feeds are Basic-Filters selectors; do not require
-  // (or reject) them when the feed is in Advanced Query mode.
-  const iocInput = resolveIocTypesInput(body);
-  if (mode !== FEED_FILTER_MODES.QUERY && (!partial || iocInput !== undefined)) {
-    const norm = normalizeFeedIocTypes(iocInput);
-    if (!norm.ok) errors.push(norm.error);
-  }
-  if (body.time_window !== undefined) {
-    const tw = String(body.time_window || '').toLowerCase();
-    const mapped = ['1d', '3d', '7d', 'all', 'last_1_day', 'last_3_days', 'last_7_days'].includes(tw);
-    if (!mapped) errors.push('time_window invalid');
-  }
-  if (body.refresh_interval_minutes !== undefined) {
-    const n = Number(body.refresh_interval_minutes);
-    if (!Number.isFinite(n) || n < 5) errors.push('refresh_interval_minutes must be >= 5');
-  }
-  // Output formats: `formats[]` (canonical) or legacy `output_format` / `format`.
-  if (body.formats !== undefined || body.output_format !== undefined || body.format !== undefined) {
-    const resolved = resolveFormatsInput(body);
-    if (!resolved.ok) errors.push(resolved.error);
-  }
-  for (const key of ['include_source_metadata', 'include_classification', 'include_enrichment']) {
-    if (body[key] !== undefined && typeof body[key] !== 'boolean') {
-      errors.push(`${key} must be a boolean`);
-    }
-  }
-  return errors;
-}
-
-async function latestItemCount(pool, feedRow) {
-  const feed = normalizeFeedConfig(feedRow);
-  if (!feed?.id) return null;
-  const queryMode = resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY;
-  const key = queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(resolveFeedIocTypes(feed));
-  const window = queryMode ? 'all' : feed.time_window;
-  const snapshot = await getLatestSnapshotMeta(pool, feed.id, key, window, resolvePublishedFeedFormat(feed));
-  return snapshot?.item_count != null ? Number(snapshot.item_count) : null;
-}
-
-function feedAuditSnapshot(row) {
-  const pub = toPublicFeed(normalizeFeedConfig(row));
-  return pickSafeFields(pub, [
-    'id', 'name', 'enabled', 'filter_mode', 'advanced_query', 'ioc_types', 'min_confidence',
-    'time_window', 'max_items', 'refresh_interval_minutes', 'exclude_false_positive', 'exclude_expired',
-    'formats', 'format', 'include_source_metadata', 'include_classification', 'include_enrichment'
-  ]);
-}
-
 function accessKeyAuditSnapshot(row) {
   return pickSafeFields(toPublicAccessKey(row), ['id', 'feed_id', 'name', 'enabled']);
-}
-
-// Kebab-case slug used in the public pull URL. Mirrors migration 133's backfill.
-function slugifyFeedName(name) {
-  const base = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-  return base || 'feed';
-}
-
-/** First free slug of the form base, base-2, base-3, … (unique index is the backstop). */
-async function generateUniqueFeedSlug(pool, name) {
-  const base = slugifyFeedName(name);
-  const { rows } = await pool.query(
-    'SELECT slug FROM published_feeds WHERE slug = $1 OR slug LIKE $2',
-    [base, `${base}-%`]
-  );
-  const taken = new Set(rows.map((r) => r.slug));
-  if (!taken.has(base)) return base;
-  for (let i = 2; i < 10000; i += 1) {
-    const candidate = `${base}-${i}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-  return `${base}-${Date.now()}`;
 }
 
 /**
@@ -244,232 +58,114 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
 
   app.get('/api/published-feeds', async (_req, res) => {
     try {
-      const { rows } = await pool.query(
-        `SELECT * FROM published_feeds ORDER BY created_at DESC`
-      );
-      const feeds = [];
-      for (const row of rows) {
-        const norm = normalizeFeedConfig(row);
-        const last_item_count = await latestItemCount(pool, norm);
-        feeds.push(toPublicFeed(norm, { last_item_count }));
-      }
+      const { feeds } = await listFeeds(pool);
       return res.json({ feeds });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to list published feeds', detail: err.message });
     }
   });
 
-  app.post('/api/published-feeds', requireRole(ROLES.ADMIN), async (req, res) => {
-    const body = parseBodyArrays(req.body || {});
-    const mode = resolveFilterModeInput(body);
-    const errors = validateFeedPayload(body, false, mode);
-    if (errors.length) return res.status(400).json({ message: errors.join('; ') });
-
-    // Advanced Query mode: query is the base set; validate it with the IOC List parser.
-    let advancedQuery = null;
-    if (mode === FEED_FILTER_MODES.QUERY) {
-      const q = validateAdvancedQuery(body.advanced_query);
-      if (q.error) return res.status(400).json({ message: q.error, ...(q.dsl ? { error: q.dsl } : {}) });
-      advancedQuery = q.normalized;
-    }
-
-    const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys);
-    if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
-
-    // Query-mode feeds are always published as the `all` window (no sliding scope).
-    const tw = String(body.time_window || 'all').toLowerCase();
-    const timeWindow = mode === FEED_FILTER_MODES.QUERY
-      ? 'all'
-      : (tw === 'last_1_day' ? '1d' : tw === 'last_3_days' ? '3d' : tw === 'last_7_days' ? '7d' : tw);
-
+  // Preview proposed (admin) or existing feed_id (any authenticated) membership.
+  // Registered before /:id so Express does not treat "preview" as an id.
+  app.post('/api/published-feeds/preview', async (req, res) => {
     try {
-      const slug = await generateUniqueFeedSlug(pool, body.name);
-      // ioc_types stays a valid non-empty array even in query mode (DB constraint + Basic
-      // fields are preserved). It never filters a query-mode feed's base set.
-      const iocNorm = normalizeFeedIocTypes(resolveIocTypesInput(body));
-      const iocTypes = iocNorm.ok ? iocNorm.value : ['ip'];
-      const formatsIn = resolveFormatsInput(body);
-      if (!formatsIn.ok) return res.status(400).json({ message: formatsIn.error });
-      const { rows } = await pool.query(
-        `INSERT INTO published_feeds (
-           name, slug, description, enabled, ioc_types, formats, min_confidence,
-           include_feed_keys, include_tags, exclude_tags,
-           exclude_false_positive, exclude_expired,
-           time_window, max_items, refresh_interval_minutes,
-           filter_mode, advanced_query,
-           include_source_metadata, include_classification, include_enrichment
-         ) VALUES (
-           $1, $2, $3, COALESCE($4, TRUE), $5::jsonb, $6::jsonb, $7,
-           $8::jsonb, $9::jsonb, $10::jsonb,
-           COALESCE($11, TRUE), COALESCE($12, TRUE),
-           $13, $14, COALESCE($15, 15),
-           $16, $17,
-           COALESCE($18, TRUE), COALESCE($19, TRUE), COALESCE($20, FALSE)
-         )
-         RETURNING *`,
-        [
-          String(body.name).trim(),
-          slug,
-          body.description || null,
-          body.enabled,
-          JSON.stringify(iocTypes),
-          JSON.stringify(formatsIn.value),
-          body.min_confidence ?? null,
-          feedKeys.value.length ? JSON.stringify(feedKeys.value) : null,
-          body.include_tags ? JSON.stringify(body.include_tags) : null,
-          body.exclude_tags ? JSON.stringify(body.exclude_tags) : null,
-          body.exclude_false_positive,
-          body.exclude_expired,
-          timeWindow,
-          body.max_items ?? null,
-          body.refresh_interval_minutes ?? 15,
-          mode,
-          advancedQuery,
-          body.include_source_metadata ?? null,
-          body.include_classification ?? null,
-          body.include_enrichment ?? null
-        ]
+      const body = parseBodyArrays(req.body || {});
+      const isExistingOnly = body.feed_id != null && Object.keys(body).every(
+        (k) => ['feed_id', 'limit', 'offset', 'cursor', 'compare_to_feed_id'].includes(k)
       );
-      const feed = toPublicFeed(normalizeFeedConfig(rows[0]));
+      if (!isExistingOnly) {
+        // Proposed definition preview = create-capable users (admin).
+        const role = String(req.user?.role || '').toLowerCase();
+        if (role !== ROLES.ADMIN) {
+          return res.status(403).json({ message: 'Admin role required to preview a proposed feed definition' });
+        }
+      }
+      const result = await previewFeedMembership(pool, body);
+      if (result.error) {
+        return res.status(result.error.status || 400).json({ message: result.error.message });
+      }
+      return res.json(result.preview);
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to preview feed membership', detail: err.message });
+    }
+  });
+
+  app.post('/api/published-feeds', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const result = await createFeed(pool, req.body || {}, {
+        createdBy: req.user?.publicId || req.user?.public_id || null
+      });
+      if (result.error) {
+        return res.status(result.error.status || 400).json({
+          message: result.error.message,
+          ...(result.error.dsl ? { error: result.error.dsl } : {})
+        });
+      }
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.FEED_CREATED,
         entityType: AUDIT_ENTITY.FEED,
-        entityId: String(feed.id),
-        entityDisplay: feed.name,
+        entityId: String(result.feed.id),
+        entityDisplay: result.feed.name,
         severity: AUDIT_SEVERITY.INFO,
-        after: feedAuditSnapshot(rows[0])
+        after: feedAuditSnapshot(result.row)
       });
-      return res.status(201).json({ feed });
+      return res.status(201).json({ feed: result.feed });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to create published feed', detail: err.message });
     }
   });
 
   app.get('/api/published-feeds/:id', async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
     try {
-      const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
-      if (!rows.length) return res.status(404).json({ message: 'Feed not found' });
-      const feed = normalizeFeedConfig(rows[0]);
-      const last_item_count = await latestItemCount(pool, rows[0]);
-      return res.json({ feed: toPublicFeed(feed, { last_item_count }) });
+      const result = await getFeed(pool, req.params.id, { includeCuratedIds: true });
+      if (result.error) {
+        return res.status(result.error.status || 400).json({ message: result.error.message });
+      }
+      return res.json({ feed: result.feed });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to fetch feed', detail: err.message });
     }
   });
 
-  app.patch('/api/published-feeds/:id', requireRole(ROLES.ADMIN), async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
-    const body = parseBodyArrays(req.body || {});
-
-    // Load the existing feed up front: the effective filter mode (and thus which fields are
-    // required/validated) can depend on the persisted mode when the body omits filter_mode.
-    const existingQ = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
-    if (!existingQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
-    const existingRow = existingQ.rows[0];
-    const existingMode = resolveFeedFilterMode(existingRow);
-    const mode = resolveFilterModeInput(body, { filter_mode: existingMode });
-
-    const errors = validateFeedPayload(body, true, mode);
-    if (errors.length) return res.status(400).json({ message: errors.join('; ') });
-
-    // Resolve + validate the Advanced Query when the effective mode is 'query'. The query
-    // text may come from the body or, if unchanged, from the persisted row.
-    let advancedQueryUpdate; // undefined = leave column untouched
-    if (body.filter_mode !== undefined || body.advanced_query !== undefined) {
-      if (mode === FEED_FILTER_MODES.QUERY) {
-        const sourceText = body.advanced_query !== undefined
-          ? body.advanced_query
-          : existingRow.advanced_query;
-        const q = validateAdvancedQuery(sourceText);
-        if (q.error) return res.status(400).json({ message: q.error, ...(q.dsl ? { error: q.dsl } : {}) });
-        advancedQueryUpdate = q.normalized;
-      } else {
-        // Basic mode: the Advanced Query is inert; clear it so the row stays unambiguous.
-        advancedQueryUpdate = null;
-      }
-    }
-
-    if (body.include_feed_keys !== undefined) {
-      const feedKeys = await resolveIncludeFeedKeys(pool, body.include_feed_keys, existingRow);
-      if (feedKeys.error) return res.status(400).json({ message: feedKeys.error });
-      body.include_feed_keys = feedKeys.value;
-    }
-
-    const fields = [];
-    const params = [id];
-    const setField = (col, val, cast = '') => {
-      params.push(val);
-      fields.push(`${col} = $${params.length}${cast}`);
-    };
-
-    if (body.filter_mode !== undefined) setField('filter_mode', mode);
-    if (advancedQueryUpdate !== undefined) setField('advanced_query', advancedQueryUpdate);
-    if (body.name !== undefined) setField('name', String(body.name).trim());
-    if (body.description !== undefined) setField('description', body.description || null);
-    if (body.enabled !== undefined) setField('enabled', Boolean(body.enabled));
-    const iocInput = resolveIocTypesInput(body);
-    if (iocInput !== undefined) {
-      const iocNorm = normalizeFeedIocTypes(iocInput);
-      // In query mode ioc_types is preserved-but-inert; keep a valid array for the DB.
-      const iocTypes = iocNorm.ok ? iocNorm.value : (mode === FEED_FILTER_MODES.QUERY ? ['ip'] : iocNorm.value);
-      setField('ioc_types', JSON.stringify(iocTypes), '::jsonb');
-    }
-    if (body.formats !== undefined || body.format !== undefined || body.output_format !== undefined) {
-      const formatsIn = resolveFormatsInput(body, resolvePublishedFeedFormats(existingRow));
-      if (!formatsIn.ok) return res.status(400).json({ message: formatsIn.error });
-      setField('formats', JSON.stringify(formatsIn.value), '::jsonb');
-    }
-    if (body.include_source_metadata !== undefined) setField('include_source_metadata', Boolean(body.include_source_metadata));
-    if (body.include_classification !== undefined) setField('include_classification', Boolean(body.include_classification));
-    if (body.include_enrichment !== undefined) setField('include_enrichment', Boolean(body.include_enrichment));
-    if (body.min_confidence !== undefined) setField('min_confidence', body.min_confidence);
-    if (body.include_feed_keys !== undefined) {
-      setField('include_feed_keys', JSON.stringify(body.include_feed_keys || []), '::jsonb');
-    }
-    if (body.include_tags !== undefined) setField('include_tags', JSON.stringify(body.include_tags || []), '::jsonb');
-    if (body.exclude_tags !== undefined) setField('exclude_tags', JSON.stringify(body.exclude_tags || []), '::jsonb');
-    if (body.exclude_false_positive !== undefined) setField('exclude_false_positive', Boolean(body.exclude_false_positive));
-    if (body.exclude_expired !== undefined) setField('exclude_expired', Boolean(body.exclude_expired));
-    if (mode === FEED_FILTER_MODES.QUERY) {
-      // Query-mode has no sliding Window; persist `all` so list/status match generation.
-      setField('time_window', 'all');
-    } else if (body.time_window !== undefined) {
-      const tw = String(body.time_window).toLowerCase();
-      const mapped = tw === 'last_1_day' ? '1d' : tw === 'last_3_days' ? '3d' : tw === 'last_7_days' ? '7d' : tw;
-      setField('time_window', mapped);
-    }
-    if (body.max_items !== undefined) setField('max_items', body.max_items);
-    if (body.refresh_interval_minutes !== undefined) setField('refresh_interval_minutes', Number(body.refresh_interval_minutes));
-
-    if (!fields.length) return res.status(400).json({ message: 'No fields to update' });
-
+  app.get('/api/published-feeds/:id/membership', async (req, res) => {
     try {
-      const beforeQ = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
-      if (!beforeQ.rows.length) return res.status(404).json({ message: 'Feed not found' });
-      const before = feedAuditSnapshot(beforeQ.rows[0]);
+      const result = await listFeedMembership(pool, req.params.id, {
+        limit: req.query.limit,
+        offset: req.query.offset
+      });
+      if (result.error) {
+        return res.status(result.error.status || 400).json({ message: result.error.message });
+      }
+      return res.json(result);
+    } catch (err) {
+      return res.status(500).json({ message: 'Failed to list feed membership', detail: err.message });
+    }
+  });
 
-      const { rows } = await pool.query(
-        `UPDATE published_feeds SET ${fields.join(', ')}, updated_at = NOW() WHERE id = $1 RETURNING *`,
-        params
-      );
-      if (!rows.length) return res.status(404).json({ message: 'Feed not found' });
-      const feed = toPublicFeed(normalizeFeedConfig(rows[0]));
+  app.patch('/api/published-feeds/:id', requireRole(ROLES.ADMIN), async (req, res) => {
+    try {
+      const result = await updateFeed(pool, req.params.id, req.body || {}, {
+        createdBy: req.user?.publicId || req.user?.public_id || null
+      });
+      if (result.error) {
+        return res.status(result.error.status || 400).json({
+          message: result.error.message,
+          ...(result.error.dsl ? { error: result.error.dsl } : {})
+        });
+      }
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.FEED_UPDATED,
         entityType: AUDIT_ENTITY.FEED,
-        entityId: String(feed.id),
-        entityDisplay: feed.name,
+        entityId: String(result.feed.id),
+        entityDisplay: result.feed.name,
         severity: AUDIT_SEVERITY.INFO,
-        before,
-        after: feedAuditSnapshot(rows[0]),
-        metadata: { changed_fields: Object.keys(body) }
+        before: result.before,
+        after: feedAuditSnapshot(result.row),
+        metadata: { changed_fields: Object.keys(req.body || {}) }
       });
-      return res.json({ feed });
+      return res.json({ feed: result.feed });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to update feed', detail: err.message });
     }
@@ -486,7 +182,6 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
       const { rowCount } = await pool.query('DELETE FROM published_feeds WHERE id = $1', [id]);
       if (!rowCount) return res.status(404).json({ message: 'Feed not found' });
 
-      // Best-effort removal of any file-backed artifacts for this feed (snapshots cascade in DB).
       removeFeedArtifacts(getPublishedFeedArtifactConfig(), id).catch(() => {});
 
       audit?.auditSuccess({
@@ -505,31 +200,31 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
   });
 
   app.post('/api/published-feeds/:id/regenerate', requireRole(ROLES.ADMIN), async (req, res) => {
-    const id = Number(req.params.id);
-    if (!Number.isFinite(id)) return res.status(400).json({ message: 'Invalid id' });
     try {
-      const result = await generatePublishedFeedSnapshot(pool, id, { force: true });
-      if (result?.reason === 'generation_in_progress') {
-        return res.status(409).json({
-          message: 'Generation already in progress',
-          code: 'generation_in_progress',
-          regeneration: result
+      const result = await regenerateFeed(pool, req.params.id, { force: true });
+      if (result.error) {
+        return res.status(result.error.status || 500).json({
+          message: result.error.message,
+          code: result.error.code,
+          regeneration: result.error.regeneration
         });
       }
-      const { rows } = await pool.query('SELECT * FROM published_feeds WHERE id = $1', [id]);
-      const last_item_count = await latestItemCount(pool, rows[0]);
       audit?.auditSuccess({
         req,
         action: AUDIT_ACTION.FEED_RUN_TRIGGERED,
         entityType: AUDIT_ENTITY.FEED,
-        entityId: String(id),
-        entityDisplay: rows[0]?.name,
+        entityId: String(result.feed.id),
+        entityDisplay: result.feed.name,
         severity: AUDIT_SEVERITY.INFO,
-        metadata: { regeneration: pickSafeFields(result, ['status', 'item_count', 'generated_at', 'last_status', 'reason']) }
+        metadata: {
+          regeneration: pickSafeFields(result.regeneration, [
+            'status', 'item_count', 'generated_at', 'last_status', 'reason'
+          ])
+        }
       });
       return res.json({
-        feed: toPublicFeed(normalizeFeedConfig(rows[0]), { last_item_count }),
-        regeneration: result
+        feed: result.feed,
+        regeneration: result.regeneration
       });
     } catch (err) {
       return res.status(500).json({ message: 'Failed to regenerate feed', detail: err.message });
@@ -728,3 +423,13 @@ export function registerPublishedFeedRoutes(app, pool, audit) {
     }
   });
 }
+
+// Re-export helpers tests may still import from the route module.
+export {
+  toPublicFeed,
+  parseBodyArrays,
+  validateFeedPayload,
+  validateAdvancedQuery,
+  resolveFilterModeInput,
+  FEED_FILTER_MODES
+} from '../lib/publishedFeedManagementService.js';

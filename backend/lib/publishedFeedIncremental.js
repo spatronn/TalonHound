@@ -61,7 +61,7 @@ import { createServiceLogger } from './appLogger.js';
 /** Local single-window resolution (avoids tighter coupling for tick prep). */
 function configuredArtifactWindow(feed) {
   const mode = String(feed?.filter_mode || 'basic').trim().toLowerCase();
-  if (mode === 'query') return 'all';
+  if (mode === 'query' || mode === 'curated') return 'all';
   const v = String(feed?.time_window || 'all').trim().toLowerCase();
   if (v === '1d' || v === '3d' || v === '7d' || v === 'all') return v;
   return 'all';

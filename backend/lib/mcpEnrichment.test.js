@@ -44,14 +44,23 @@ test('MCP Analyst profile bundles import + enrichment + tags + report URL import
     API_SCOPE.MCP_ENRICHMENT_WRITE,
     API_SCOPE.MCP_IOC_CREATE,
     API_SCOPE.MCP_IOC_READ,
+    API_SCOPE.MCP_PUBLISHED_FEEDS_READ,
+    API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE,
     API_SCOPE.MCP_SOURCES_READ,
     API_SCOPE.MCP_TAGS_WRITE,
     API_SCOPE.MCP_THREAT_LIBRARY_IMPORT,
     API_SCOPE.MCP_THREAT_LIBRARY_WRITE
   ].sort());
   // Every MCP tool is available to an analyst-owned MCP Analyst key — through
-  // each tool's own scope check, not a profile-name check.
+  // each tool's own scope check, not a profile-name check — except Published Feed
+  // write tools, which additionally require an ADMIN owner (GUI parity).
+  const { MCP_PUBLISHED_FEED_WRITE_ACTION_TOOLS } = await import('./mcpPermissions.js');
   for (const tool of Object.keys(MCP_TOOL_SCOPES)) {
+    if (MCP_PUBLISHED_FEED_WRITE_ACTION_TOOLS.includes(tool)) {
+      assert.equal(authorizeMcpTool(tool, { scopes, ownerRole: 'analyst' }).code, 'RBAC_DENIED', tool);
+      assert.equal(authorizeMcpTool(tool, { scopes, ownerRole: 'admin' }).ok, true, tool);
+      continue;
+    }
     assert.equal(authorizeMcpTool(tool, { scopes, ownerRole: 'analyst' }).ok, true, tool);
   }
 });
