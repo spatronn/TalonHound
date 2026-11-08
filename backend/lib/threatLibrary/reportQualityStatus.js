@@ -32,11 +32,49 @@ export const CRITICAL_QUALITY_CODES = Object.freeze(['explicit_table_rows_droppe
 
 const CRITICAL = new Set(CRITICAL_QUALITY_CODES);
 
+/** Most observable tokens a dropped-region row keeps as samples (htmlBlocks MAX_REGION_SAMPLES). */
+const REGION_SAMPLE_LIMIT = 20;
+
+function selfReferenceKey(url) {
+  return String(url || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z][a-z0-9+.-]*:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/[#?].*$/, '')
+    .replace(/\/+$/, '');
+}
+
+/**
+ * A dropped region whose only observable-shaped values are the report's own
+ * source URL ("Copy citation" buttons, share links) is a self-reference, not
+ * publisher content the document lost. Every value must have been sampled, so
+ * a region with more values than samples still counts.
+ * @param {{ observable_count: number, sample_observables?: string[] }} region
+ * @param {string|null|undefined} sourceUrl
+ */
+export function isSelfReferenceRegion(region, sourceUrl) {
+  const self = selfReferenceKey(sourceUrl);
+  const samples = Array.isArray(region?.sample_observables) ? region.sample_observables : [];
+  if (!self || !samples.length || Number(region?.observable_count) > REGION_SAMPLE_LIMIT) return false;
+  return samples.every((v) => selfReferenceKey(v) === self);
+}
+
+/**
+ * Significant dropped regions that still need an analyst: observable-bearing and
+ * not a self-reference to the report's own page.
+ * @param {{ significantRegions?: object[], report?: { source_url?: string|null } }} s
+ */
+export function unaccountedRegions(s) {
+  const sourceUrl = s.report?.source_url || null;
+  return (s.significantRegions || []).filter((r) => r.observable_count > 0 && !isSelfReferenceRegion(r, sourceUrl));
+}
+
 /**
  * @typedef {{
  *   firstPassRun: object|null,
  *   latestRun: { operational_status: string, contract_fingerprint?: string }|null,
- *   significantRegions: Array<{ region_kind: string, locator?: string|null, observable_count: number }>,
+ *   significantRegions: Array<{ region_kind: string, locator?: string|null, observable_count: number, sample_observables?: string[] }>,
  *   latestDiscovery: { status: string }|null,
  *   sources: Array<{ lifecycle_status: string, public_id?: string, dismissal_reason?: string|null, canonical_url?: string }>,
  *   candidates: object[],
@@ -56,7 +94,7 @@ export function evaluateFinalizeObligations(s) {
   if (!s.latestRun) {
     unmet.push({ code: FINALIZE_OBLIGATION_CODES.EXTRACTION_NOT_RECORDED, message: 'No completed extraction run is recorded for this report.' });
   }
-  const regions = (s.significantRegions || []).filter((r) => r.observable_count > 0);
+  const regions = unaccountedRegions(s);
   if (regions.length) {
     const n = regions.reduce((sum, r) => sum + r.observable_count, 0);
     unmet.push({
@@ -109,7 +147,7 @@ export function reportStatusAxes(s) {
   const pending = candidates.filter((c) => isPendingActionableCandidate(c)).length;
   const uncertain = candidates.filter((c) => isNeedsReviewCandidate(c) && (c.review_status || 'pending') === 'pending').length;
   const linkable = previewCreateIocPromotion(candidates).summary.eligible;
-  const regions = (s.significantRegions || []).filter((r) => r.observable_count > 0);
+  const regions = unaccountedRegions(s);
   const critical = (s.quality?.warnings || []).filter((w) => CRITICAL.has(w?.code)).map((w) => w.code);
   const fingerprint = s.currentFingerprint ?? contractFingerprint(extractionContractBundle());
   let freshness = 'not_recorded';
@@ -151,7 +189,7 @@ export async function loadObligationSnapshot(db, report, known = {}) {
   const realRun = runRows.find((r) => r.run_type !== 'legacy_baseline') || null;
   const regions = realRun
     ? await db.query(
-      `SELECT region_kind, locator, observable_count FROM threat_report_dropped_regions
+      `SELECT region_kind, locator, observable_count, sample_observables FROM threat_report_dropped_regions
         WHERE run_id = $1 AND significant ORDER BY observable_count DESC LIMIT 50`,
       [realRun.id]
     )

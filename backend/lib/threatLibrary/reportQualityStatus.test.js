@@ -86,3 +86,22 @@ test('a historical report reads as not recorded, never as covered', () => {
   assert.equal(axes.package_discovery.status, 'not_recorded');
   assert.equal(axes.contract_freshness.status, 'older_contract');
 });
+
+test('a dropped region holding only the report\'s own URL is a self-reference, not an unaccounted region', () => {
+  const report = { source_url: 'https://www.vendor.example/blog/campaign-analysis/' };
+  const citation = { region_kind: 'button', locator: 'button.copy_btn', observable_count: 1, sample_observables: ['https://www.vendor.example/blog/campaign-analysis/'] };
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [citation] }), []);
+  assert.equal(reportStatusAxes({ ...clean, report, significantRegions: [citation] }).document_coverage.status, 'accounted');
+  // Same page written without scheme / www / trailing slash / fragment is still the page itself.
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...citation, sample_observables: ['vendor.example/blog/campaign-analysis#cite'] }] }), []);
+  // Any other value in the region keeps the obligation.
+  const mixed = { ...citation, observable_count: 2, sample_observables: [citation.sample_observables[0], 'evil-host.example.net'] };
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [mixed] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  // Another page of the same site is not the report itself.
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...citation, sample_observables: ['https://www.vendor.example/blog/other-post/'] }] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  // More values than samples: unsampled values may be anything.
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...citation, observable_count: 25 }] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  // Without samples or a known source URL nothing is excused.
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...citation, sample_observables: [] }] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  assert.deepEqual(codes({ ...clean, report: { source_url: null }, significantRegions: [citation] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+});
