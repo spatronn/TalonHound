@@ -293,8 +293,13 @@ export {
  * model verdicts outside a curated section reach needs_review instead of silently
  * becoming non-members; CSV / JSON lines in code blocks are rows; [dot], (dot),
  * {dot}, escaped and full-width dots refang.
+ * v61 (review queue 35800–35819): tl-section-tree-v17 (qualified "<Family>
+ * hashes for <period>:" / "URI Locations:" sibling groups of an open IOC
+ * inventory keep its authority); a .onion host needs a service label of at least 16
+ * characters ("Tor and [.]onion domains" is not "and.onion"); a Rust source
+ * file name ("build.rs") reads like a .md file name, not a .rs domain.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v60';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v61';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

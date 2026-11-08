@@ -72,8 +72,9 @@ function createPool(state) {
       state.reports.push(row);
       return { rows: [row], rowCount: 1 };
     }
-    if (/^SELECT \* FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = \$1/.test(flat)) {
-      const rows = state.reports.filter((r) => r.source_type === 'url' && !r.deleted_at && r.source_url_canonical === params[0]);
+    if (/^SELECT \* FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\)/.test(flat)) {
+      const keys = new Set(params[0]);
+      const rows = state.reports.filter((r) => r.source_type === 'url' && !r.deleted_at && keys.has(r.source_url_canonical));
       // Read, then yield like a real round trip: callers that are not
       // serialized by the advisory lock would all see "no report" and insert.
       await new Promise((r) => setImmediate(r));

@@ -93,6 +93,28 @@ test('concurrent imports of the same URL (different spellings) create exactly on
   }
 });
 
+test('concurrent imports of www.<host> and <host> spellings of one page create exactly one report', opts, async () => {
+  const tag = marker();
+  const bare = `https://vendor.example/${tag}`;
+  const www = `https://www.vendor.example/${tag}`;
+  try {
+    const spellings = [www, bare, `${www}/`, bare, www, `${bare}#iocs`];
+    const results = await Promise.all(spellings.map((u) => claimReportImport(
+      pool,
+      { kind: 'url', key: canonicalizeReportUrl(u) },
+      slowCreate({ title: tag, source_type: 'url', source_url: u, source_url_canonical: canonicalizeReportUrl(u) })
+    )));
+    assert.equal(results.filter((r) => !r.duplicate).length, 1);
+    const { rows } = await pool.query(`SELECT COUNT(*)::int AS n FROM threat_reports WHERE title = $1`, [tag]);
+    assert.equal(rows[0].n, 1);
+    // A later import of the other spelling finds the stored one.
+    const later = await findExistingReportImport(pool, { kind: 'url', key: canonicalizeReportUrl(spellings[0].includes('www.') ? bare : www) });
+    assert.ok(later, 'the www twin of a stored report is a duplicate');
+  } finally {
+    await cleanup(tag);
+  }
+});
+
 test('concurrent uploads of the same PDF bytes create exactly one report', opts, async () => {
   const tag = marker();
   const sha = crypto.createHash('sha256').update(`%PDF-1.7 ${tag}`).digest('hex');

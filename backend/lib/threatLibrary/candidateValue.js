@@ -110,6 +110,21 @@ export function isRfcExampleDomain(domain) {
 }
 
 /**
+ * A Tor onion service is named by a 16-character (v2) or 56-character (v3)
+ * service label right before ".onion". "and.onion" (prose "Tor and [.]onion
+ * domains" refanged across the space) names no service (tl-candidates-v61).
+ * Only a label too short for any service is rejected: publishers misspell
+ * real addresses (a 57-character ransom portal label), and a misspelled one
+ * still identifies the service they meant.
+ * @param {string} host
+ */
+export function isMalformedOnionHost(host) {
+  const labels = String(host || '').toLowerCase().replace(/\.$/, '').split('.');
+  if (labels.length < 2 || labels[labels.length - 1] !== 'onion') return false;
+  return !/^[a-z0-9]{16,}$/.test(labels[labels.length - 2]);
+}
+
+/**
  * Private / reserved address space (RFC 1918, loopback, link-local, multicast…)
  * is documentation of a victim network or an example, never external threat
  * infrastructure on its own.
@@ -257,6 +272,7 @@ export function normalizeCandidateValue(raw, hintType = null) {
     // Canonical URL gate: scheme + hostname-compatible host, no embedded prose.
     const v = validateUrlCandidate(refanged);
     if (!v.ok) return { ok: false, error: v.reason || 'invalid_url', resolvedType: v.resolved_type, trailingText: v.trailing_text || null };
+    if (isMalformedOnionHost(v.host)) return { ok: false, error: 'invalid_onion_address' };
     return {
       ok: true,
       candidateType: RESOLVED_TYPES.URL,
@@ -300,6 +316,7 @@ export function normalizeCandidateValue(raw, hintType = null) {
   if (!domain || !domain.includes('.')) return { ok: false, error: 'invalid_domain' };
   // Hostname-compatible syntax is necessary (not sufficient) for a domain candidate.
   if (!isHostnameSyntax(domain)) return { ok: false, error: 'not_hostname_compatible' };
+  if (isMalformedOnionHost(domain)) return { ok: false, error: 'invalid_onion_address' };
   const rfcExample = isRfcExampleDomain(domain);
   const localHost = isLoopbackOrLocalhostAddress(domain);
   return {

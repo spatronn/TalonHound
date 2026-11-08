@@ -303,12 +303,15 @@ test('batch check: one query, input order kept, matches / misses / invalid / dup
   });
   assert.equal(error, null);
   assert.equal(pool.queries.length, 2, 'two batched statements per request (no N+1)');
-  assert.deepEqual(pool.queries[1].params, [['example.com']], 'stored-URL lookup prefiltered on the queried hosts');
+  // Each queried host and its www twin (one import identity, importIdentity.reportUrlIdentityVariants).
+  assert.deepEqual(pool.queries[1].params, [['example.com', 'www.example.com']], 'stored-URL lookup prefiltered on the queried hosts');
   assert.match(pool.queries[0].sql, /^SELECT /);
   assert.match(pool.queries[0].sql, /source_type = 'url' AND r\.deleted_at IS NULL/);
   assert.deepEqual(
     [...pool.queries[0].params[0]].sort(),
     ['http://example.com/a', 'https://example.com/a', 'https://example.com/dup', 'https://example.com/failed', 'https://example.com/missing', 'https://example.com/review']
+      .flatMap((u) => [u, u.replace('://example.com', '://www.example.com')])
+      .sort()
   );
 
   const r = data.results;

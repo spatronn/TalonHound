@@ -343,10 +343,12 @@ const INDICATOR_CLASS_LABEL_RE =
 /**
  * Short heading that ends with an indicator class ("Hirudo infrastructure",
  * "Campaign domains", "Loader C2 servers"): one more group of an inventory
- * when written as a sibling of the open IOC heading.
+ * when written as a sibling of the open IOC heading. The class may carry a
+ * short scope qualifier and a trailing colon ("Loader hashes for one 24-hour
+ * period:"), and a URL list may be titled "URI Locations:" (tl-section-tree-v17).
  */
 const INVENTORY_TAIL_LABEL_RE =
-  /^[A-Za-z0-9][\w.'’-]*(?:\s+[\w.'’-]+){0,3}\s+(?:infrastructure|indicators|iocs|domains|ip\s+addresses|ips|urls|hashes|c2\s+servers)$/i;
+  /^(?:[A-Za-z0-9][\w.'’-]*(?:\s+[\w.'’-]+){0,3}\s+(?:infrastructure|indicators|iocs|domains|ip\s+addresses|ips|urls|uris|hashes|c2\s+servers)|(?:[A-Za-z0-9][\w.'’-]*\s+){0,2}ur[il]\s+locations)(?:\s+(?:for|from|during|over|in)\s+[\w'’-]+(?:\s+[\w'’-]+){0,4})?\s*[:：]?$/i;
 
 function isIndicatorClassLabel(t) {
   const s = String(t || '').trim();
@@ -547,11 +549,12 @@ export function annotateSectionTree(doc, opts = {}) {
     // A same-level sibling of an open IOC heading that names one more class of
     // the same inventory ("Indicators of Compromise" then "<Family>
     // infrastructure" over an Indicator | Description table) continues it
-    // (tl-section-tree-v15).
+    // (tl-section-tree-v15). Its rows may sit under deeper sub-headings
+    // ("<Family> hashes …:" › "Installers" › rows, tl-section-tree-v17).
     const inventoryTailSibling =
       !siblingGroup && !classSibling && Boolean(parentAuth) && !isNegativeHeading && isRealHeading && !inferredLevels &&
       !(zone && STRONG_IOC_ZONES.has(zone)) && Number.isInteger(b.level) && b.level === parentAuth.level &&
-      INVENTORY_TAIL_LABEL_RE.test(t) && inventoryNext;
+      INVENTORY_TAIL_LABEL_RE.test(t) && (inventoryNext || lookAheadGroupedInventory(blocks, i, chromeIds, b.level));
     if (classSibling) {
       while (stack.length && stack[stack.length - 1] !== root) stack.pop();
       treatAsSubgroup = true;

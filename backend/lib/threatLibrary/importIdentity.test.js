@@ -7,7 +7,9 @@ import {
   canonicalizeReportUrl,
   claimReportImport,
   findExistingReportImport,
-  normalizeSha256
+  normalizeSha256,
+  reportUrlIdentityKey,
+  reportUrlIdentityVariants
 } from './importIdentity.js';
 
 // --- URL canonicalisation ----------------------------------------------------
@@ -103,8 +105,9 @@ test('findExistingReportImport scopes by source type, excludes soft-deleted rows
   await findExistingReportImport(pool.client, { kind: 'url', key: 'https://vendor.example/r' });
   await findExistingReportImport(pool.client, { kind: 'sha256', key: SHA });
   const [url, pdf] = pool.log;
-  assert.match(url.sql, /WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = \$1 ORDER BY created_at ASC, id ASC LIMIT 1/);
-  assert.deepEqual(url.params, ['https://vendor.example/r']);
+  assert.match(url.sql, /WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\) ORDER BY created_at ASC, id ASC LIMIT 1/);
+  // The www twin of the host is the same source (35808/35810/35811 duplicated hunt.io reports).
+  assert.deepEqual(url.params, [['https://vendor.example/r', 'https://www.vendor.example/r']]);
   // PDF identity is the existing source_sha256 column, never source_url / file name.
   assert.match(pdf.sql, /WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = \$1 ORDER BY created_at ASC, id ASC LIMIT 1/);
   assert.doesNotMatch(pdf.sql, /source_file_name|title|md5/);
@@ -189,4 +192,18 @@ test('backfillReportImportIdentity fills only the NULL identity column of URL ro
     assert.equal(u.sql, 'UPDATE threat_reports SET source_url_canonical = $2 WHERE id = $1 AND source_url_canonical IS NULL');
   }
   assert.ok(!log.some((q) => /DELETE|deleted_at =/.test(q.sql)), 'historical duplicates are never merged or deleted');
+});
+
+test('www.<host> and <host> are one URL import identity; nothing else is folded', () => {
+  assert.deepEqual(reportUrlIdentityVariants('https://www.vendor.example/blog/x'), ['https://www.vendor.example/blog/x', 'https://vendor.example/blog/x']);
+  assert.deepEqual(reportUrlIdentityVariants('https://vendor.example/blog/x?id=2'), ['https://vendor.example/blog/x?id=2', 'https://www.vendor.example/blog/x?id=2']);
+  assert.equal(reportUrlIdentityKey('https://www.vendor.example/blog/x'), 'https://vendor.example/blog/x');
+  assert.equal(reportUrlIdentityKey('https://vendor.example/blog/x'), 'https://vendor.example/blog/x');
+  // Scheme, path case, query and other subdomains stay distinct identities.
+  assert.ok(!reportUrlIdentityVariants('https://www.vendor.example/a').includes('http://vendor.example/a'));
+  assert.ok(!reportUrlIdentityVariants('https://blog.vendor.example/a').includes('https://vendor.example/a'));
+  // No twin for an IP address or a single-label host.
+  assert.deepEqual(reportUrlIdentityVariants('https://198.51.100.7/r'), ['https://198.51.100.7/r']);
+  assert.deepEqual(reportUrlIdentityVariants('http://intranet/r'), ['http://intranet/r']);
+  assert.deepEqual(reportUrlIdentityVariants(null), []);
 });

@@ -266,6 +266,16 @@ test('batch URL check: matches, misses, equivalent spellings, non-equivalent URL
   });
 });
 
+test('batch URL check: the www twin of a stored report URL is the same import identity', opts, async () => {
+  await withSeededTx(async (db, ids) => {
+    const { results } = await checkReportUrls(db, ['https://www.crowdstrike.example/a', 'https://www.talos.example/next']);
+    assert.equal(results[0].matched_report_id, ids.get('tie_a'));
+    assert.equal(results[0].import_would_deduplicate, true);
+    assert.equal(results[0].match_count, 1);
+    assert.equal(results[1].matched_report_id, ids.get('next_day'));
+  });
+});
+
 test('stored source_url of a PDF upload is matched with the import canonical form, never loosely', opts, async () => {
   await withSeededTx(async (db, ids) => {
     const { results } = await checkReportUrls(db, ['https://talos.example/end', 'https://talos.example/other', 'https://talos.example/End']);

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head><title>Clipboard hijacker payload rotation</title></head>
+<body>
+<article>
+<h1>Clipboard hijacker payload rotation</h1>
+<p>The operators rebuild the loader every hour and rotate payload hosts. The loader connects to its C2 through TOR and [.]onion domains, and only does so on a schedule.</p>
+<h2>Conclusion</h2>
+<p>Verify wallet addresses before sending funds and block the infrastructure below.</p>
+<h2>IOCs</h2>
+<h3>Loader IOCs</h3>
+<h3>Payload locations</h3>
+<p>hxxps://payload-host[.]clip-rotate[.]com/default.dat<br>hxxp://payload-host[.]clip-rotate[.]com/default.dat</p>
+<h2>File names</h2>
+<p>default.dat.exe<br>composer.dat</p>
+<h2>C2 URLs</h2>
+<p>hxxp[://]abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx[.]onion/route.php</p>
+<h2>Loader hashes for one 24-hour period:</h2>
+<p>Due to hourly build generation, there are hundreds of samples. These were examples from a 24 hour period.</p>
+<h3>Installers</h3>
+<p>1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a<br>2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b</p>
+<h3>Support libraries</h3>
+<p>3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c</p>
+<h2>Second family IOCs</h2>
+<h3>Sha256 Hashes</h3>
+<p>4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d</p>
+<h2>C2 Hostnames</h2>
+<p>relay[.]wallet-swap-node[.]cc</p>
+<h2>URI Locations:</h2>
+<p>hxxps://drop-site[.]clip-rotate[.]net/js/stage.exe<br>hxxp://198.51.100[.]23/stage.exe</p>
+<h2>Payload hashes (SHA-256)</h2>
+<table>
+<thead><tr><th>Platform</th><th>SHA-256</th></tr></thead>
+<tbody>
+<tr><td>Linux x86_64</td><td>5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e (crate_0.1.0)</td></tr>
+<tr><td>Loader (build.rs)</td><td>6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f (shared by two crates)</td></tr>
+</tbody>
+</table>
+</article>
+</body>
+</html>

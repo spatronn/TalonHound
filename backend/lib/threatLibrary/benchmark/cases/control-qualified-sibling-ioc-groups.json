@@ -1,0 +1,40 @@
+{
+  "id": "control-qualified-sibling-ioc-groups",
+  "title": "Control: qualified sibling IOC group headings keep inventory authority; prose '.onion' and a Rust file name are not domains",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "sibling_groups", "mode_a", "defang", "file_name"],
+  "source": { "kind": "html_file", "path": "control-qualified-sibling-ioc-groups.html", "url": "https://research.example/blog/clipboard-hijacker-rotation/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35802 and 35805 review-queue findings: sibling h2 groups '<Family> hashes for one 24-hour period:' (rows under h3 sub-headings) and 'URI Locations:' after an open IOC heading went to needs_review; 'TOR and [.]onion domains' became the domain and.onion; 'Loader (build.rs)' in a hash table became a .rs domain Indicator",
+      "verified_by": "construction",
+      "verified_at": "2026-11-08"
+    },
+    "indicators": [
+      { "type": "url", "value": "https://payload-host.clip-rotate.com/default.dat", "assertion": "explicit" },
+      { "type": "url", "value": "http://payload-host.clip-rotate.com/default.dat", "assertion": "explicit" },
+      { "type": "url", "value": "http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion/route.php", "assertion": "explicit" },
+      { "type": "sha256", "value": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a", "assertion": "explicit" },
+      { "type": "sha256", "value": "2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", "assertion": "explicit" },
+      { "type": "sha256", "value": "3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c", "assertion": "explicit" },
+      { "type": "sha256", "value": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d", "assertion": "explicit" },
+      { "type": "domain", "value": "relay.wallet-swap-node.cc", "assertion": "explicit" },
+      { "type": "url", "value": "https://drop-site.clip-rotate.net/js/stage.exe", "assertion": "explicit" },
+      { "type": "url", "value": "http://198.51.100.23/stage.exe", "assertion": "explicit" },
+      { "type": "sha256", "value": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e", "assertion": "explicit" },
+      { "type": "sha256", "value": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "and.onion" },
+      { "type": "domain", "value": "build.rs" }
+    ],
+    "sections": [
+      { "heading": "Payload locations", "expected": "authoritative" },
+      { "heading": "Loader hashes for one 24-hour period:", "expected": "authoritative" },
+      { "heading": "URI Locations:", "expected": "authoritative" }
+    ]
+  }
+}

@@ -55,8 +55,9 @@ function createPool(state) {
       state.reports.push(row);
       return { rows: [row], rowCount: 1 };
     }
-    if (/^SELECT \* FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = \$1/.test(flat)) {
-      const rows = state.reports.filter((r) => r.source_type === 'url' && !r.deleted_at && r.source_url_canonical === params[0]);
+    if (/^SELECT \* FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\)/.test(flat)) {
+      const keys = new Set(params[0]);
+      const rows = state.reports.filter((r) => r.source_type === 'url' && !r.deleted_at && keys.has(r.source_url_canonical));
       return { rows: rows.slice(0, 1) };
     }
     if (/^SELECT \* FROM threat_reports WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = \$1/.test(flat)) {
@@ -248,7 +249,7 @@ test('URL: the duplicate check runs under the identity advisory lock before INSE
     await importUrl(base, 'https://vendor.example/r#x');
     const sqls = state.queries.map((q) => q.sql);
     const lockAt = sqls.findIndex((s) => s.startsWith('SELECT pg_advisory_xact_lock'));
-    const lookupAt = sqls.findIndex((s) => s.includes('source_url_canonical = $1'));
+    const lookupAt = sqls.findIndex((s) => s.includes('source_url_canonical = ANY($1::text[])'));
     assert.ok(lockAt >= 0 && lookupAt > lockAt);
     assert.deepEqual(state.queries[lockAt].params, ['threat_library.import_identity:url:https://vendor.example/r']);
     assert.ok(!sqls.some((s) => /^INSERT INTO (threat_reports|threat_library_jobs|threat_report_artifacts)/.test(s)));
