@@ -56,6 +56,39 @@ export function canonicalizeReportUrl(raw) {
 }
 
 /**
+ * The same page published under "www.<host>" and "<host>" is one source: a
+ * report imported as https://www.vendor.example/blog/x is a duplicate of
+ * https://vendor.example/blog/x. Stored canonical values keep the spelling
+ * that was submitted; the identity check compares both spellings.
+ * @param {string|null} canonical output of canonicalizeReportUrl
+ * @returns {string[]} the canonical value and its www-toggled twin (one entry when the host has a single label)
+ */
+export function reportUrlIdentityVariants(canonical) {
+  if (!canonical) return [];
+  let url;
+  try {
+    url = new URL(canonical);
+  } catch {
+    return [canonical];
+  }
+  const host = url.hostname;
+  const twinHost = host.startsWith('www.') ? host.slice(4) : `www.${host}`;
+  const bareHost = host.startsWith('www.') ? twinHost : host;
+  if (!bareHost.includes('.') || /^\d+(?:\.\d+){3}$/.test(host) || host.startsWith('[')) return [canonical];
+  url.hostname = twinHost;
+  return [canonical, url.href];
+}
+
+/**
+ * www-insensitive key of a canonical URL (the bare-host spelling).
+ * @param {string} canonical
+ */
+export function reportUrlIdentityKey(canonical) {
+  const variants = reportUrlIdentityVariants(canonical);
+  return variants.find((v) => !new URL(v).hostname.startsWith('www.')) || canonical;
+}
+
+/**
  * @param {unknown} value
  * @returns {string|null} lowercase 64-char hex, or null when not a SHA-256
  */
@@ -83,12 +116,12 @@ export async function findExistingReportImport(db, identity) {
   assertIdentity(identity);
   const sql = identity.kind === 'url'
     ? `SELECT * FROM threat_reports
-       WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = $1
+       WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY($1::text[])
        ORDER BY created_at ASC, id ASC LIMIT 1`
     : `SELECT * FROM threat_reports
        WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = $1
        ORDER BY created_at ASC, id ASC LIMIT 1`;
-  const { rows } = await db.query(sql, [identity.key]);
+  const { rows } = await db.query(sql, [identity.kind === 'url' ? reportUrlIdentityVariants(identity.key) : identity.key]);
   return rows[0] || null;
 }
 
@@ -106,8 +139,10 @@ export async function claimReportImport(pool, identity, create) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+    // Lock on the www-insensitive key: "www.host" and "host" submissions serialise.
+    const lockKey = identity.kind === 'url' ? reportUrlIdentityKey(identity.key) : identity.key;
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [
-      `${LOCK_NAMESPACE}:${identity.kind}:${identity.key}`
+      `${LOCK_NAMESPACE}:${identity.kind}:${lockKey}`
     ]);
     const existing = await findExistingReportImport(client, identity);
     if (existing) {

@@ -22,7 +22,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { canonicalizeReportUrl } from './importIdentity.js';
+import { canonicalizeReportUrl, reportUrlIdentityKey, reportUrlIdentityVariants } from './importIdentity.js';
 import { resolveReportPhase, REPORT_PHASES } from './reportPhase.js';
 import { REPORT_LIST_PHASE_SQL } from './reportListQuery.js';
 import { serializePublicationDate } from './publicationDate.js';
@@ -337,6 +337,9 @@ export async function listReportCatalog(pool, input = {}) {
 // Batch URL check
 // ---------------------------------------------------------------------------
 
+/** SQL for importIdentity.reportUrlIdentityKey: the stored canonical URL with a leading "www." host label dropped. */
+const WWW_INSENSITIVE_IDENTITY_SQL = `regexp_replace(r.source_url_canonical, '^(https?://)www\\.', '\\1')`;
+
 /**
  * @param {{ query: Function }} pool
  * @param {unknown[]} urls report source URLs, answered in input order
@@ -354,11 +357,15 @@ export async function checkReportUrls(pool, urls) {
     return { raw: text, identity: text === null ? null : canonicalizeReportUrl(text) };
   });
   const identities = [...new Set(queried.map((x) => x.identity).filter(Boolean))];
+  // "www.host" and "host" spell one import identity (importIdentity.reportUrlIdentityVariants):
+  // query both spellings, file every match under the www-insensitive key.
+  const lookup = [...new Set(identities.flatMap((u) => reportUrlIdentityVariants(u)))];
 
   const byIdentity = new Map();
   const entryFor = (identity) => {
-    if (!byIdentity.has(identity)) byIdentity.set(identity, { count: 0, importIdentity: 0, reports: [] });
-    return byIdentity.get(identity);
+    const key = reportUrlIdentityKey(identity);
+    if (!byIdentity.has(key)) byIdentity.set(key, { count: 0, importIdentity: 0, reports: [] });
+    return byIdentity.get(key);
   };
   if (identities.length) {
     // Same predicate as the import duplicate check (findExistingReportImport),
@@ -366,15 +373,15 @@ export async function checkReportUrls(pool, urls) {
     const { rows } = await pool.query(
       `SELECT * FROM (
          SELECT ${CATALOG_COLUMNS},
-                COUNT(*) OVER (PARTITION BY r.source_url_canonical)::int AS identity_match_count,
-                ROW_NUMBER() OVER (PARTITION BY r.source_url_canonical ORDER BY r.created_at ASC, r.id ASC) AS identity_rank
+                COUNT(*) OVER (PARTITION BY ${WWW_INSENSITIVE_IDENTITY_SQL})::int AS identity_match_count,
+                ROW_NUMBER() OVER (PARTITION BY ${WWW_INSENSITIVE_IDENTITY_SQL} ORDER BY r.created_at ASC, r.id ASC) AS identity_rank
          FROM threat_reports r
          WHERE r.source_type = 'url' AND r.deleted_at IS NULL
            AND r.source_url_canonical = ANY($1::text[])
        ) m
        WHERE m.identity_rank <= $2
        ORDER BY m.source_url_canonical, m.identity_rank`,
-      [identities, CATALOG_URL_MATCHES_MAX]
+      [lookup, CATALOG_URL_MATCHES_MAX]
     );
     for (const row of rows) {
       const entry = entryFor(row.source_url_canonical);
@@ -386,7 +393,7 @@ export async function checkReportUrls(pool, urls) {
     // Non-URL reports (PDF / THIB) carry no import identity, only the stored
     // source_url. Prefilter on the URL's host in SQL, then require the exact
     // same canonical form as the import identity — no looser matching.
-    const hosts = [...new Set(identities.map((u) => new URL(u).hostname))];
+    const hosts = [...new Set(lookup.map((u) => new URL(u).hostname))];
     const { rows: byStoredUrl } = await pool.query(
       `SELECT ${CATALOG_COLUMNS}
        FROM threat_reports r
@@ -399,7 +406,7 @@ export async function checkReportUrls(pool, urls) {
     );
     for (const row of byStoredUrl) {
       const identity = canonicalizeReportUrl(row.source_url);
-      if (!identity || !identities.includes(identity)) continue;
+      if (!identity || !lookup.includes(identity)) continue;
       const entry = entryFor(identity);
       entry.count += 1;
       entry.reports.push({ ...serializeCatalogReport(row), match_basis: 'source_url', created_at_key: row.created_at_key, id: row.id });
@@ -430,7 +437,7 @@ export async function checkReportUrls(pool, urls) {
         matches: []
       };
     }
-    const entry = byIdentity.get(identity);
+    const entry = byIdentity.get(reportUrlIdentityKey(identity));
     const matches = entry?.reports || [];
     const matchCount = entry?.count || 0;
     const single = matchCount === 1 ? matches[0] : null;
