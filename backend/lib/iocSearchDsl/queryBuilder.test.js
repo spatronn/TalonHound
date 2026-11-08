@@ -324,7 +324,138 @@ test('threat_actor equals via EXISTS on ioc_threat_actors junction', () => {
   const { sql, params } = build('threat_actor equals "APT29"');
   assert.match(sql, /EXISTS \(SELECT 1 FROM ioc_threat_actors ita/);
   assert.match(sql, /JOIN threat_actors ta ON ta\.id = ita\.threat_actor_id/);
+  assert.doesNotMatch(sql, /ioc_source_attributions/);
+  assert.doesNotMatch(sql, /ioc_malware_families/);
   assert.equal(params[0], 'apt29');
+});
+
+test('malware_family equals mirrors threat_actor via ioc_malware_families only', () => {
+  const { sql, params } = build('malware_family equals "Emotet"');
+  assert.match(sql, /EXISTS \(SELECT 1 FROM ioc_malware_families imf/);
+  assert.match(sql, /JOIN malware_families mf ON mf\.id = imf\.malware_family_id/);
+  assert.match(sql, /imf\.ioc_id = i\.id AND imf\.ioc_observable_type = i\.observable_type/);
+  assert.doesNotMatch(sql, /ioc_source_attributions/);
+  assert.doesNotMatch(sql, /ioc_threat_actors/);
+  assert.equal(params[0], 'emotet');
+});
+
+test('malware alias canonicalizes to malware_family', () => {
+  const { sql } = build('malware equals "Emotet"');
+  assert.match(sql, /FROM ioc_malware_families imf/);
+});
+
+test('source_threat_actor matches ioc_source_attributions source_label, not analyst junction', () => {
+  const { sql, params } = build('source_threat_actor equals "APT29"');
+  assert.match(sql, /EXISTS \(SELECT 1 FROM ioc_source_attributions a/);
+  assert.match(sql, /a\.entity_kind = 'threat_actor'/);
+  assert.match(sql, /a\.assertion_status = 'current'/);
+  assert.match(sql, /a\.source_label_normalized = \$1/);
+  assert.doesNotMatch(sql, /ioc_threat_actors/);
+  assert.equal(params[0], 'apt29');
+});
+
+test('source_malware_family matches source attributions with malware_family kind', () => {
+  const { sql, params } = build('source_malware_family contains "emot"');
+  assert.match(sql, /FROM ioc_source_attributions a/);
+  assert.match(sql, /a\.entity_kind = 'malware_family'/);
+  assert.match(sql, /a\.source_label ILIKE \$1/);
+  assert.doesNotMatch(sql, /ioc_malware_families/);
+  assert.equal(params[0], '%emot%');
+});
+
+test('report_id equals UUID uses candidate matched_ioc membership on public_id', () => {
+  const id = '4f6c8a2e-1234-4abc-8def-0123456789ab';
+  const { sql, params } = build(`report_id equals "${id}"`);
+  assert.match(sql, /\(i\.observable_type, i\.id\) IN \(/);
+  assert.match(sql, /FROM threat_report_candidates c/);
+  assert.match(sql, /JOIN threat_reports r ON r\.id = c\.report_id/);
+  assert.match(sql, /c\.matched_ioc_id IS NOT NULL/);
+  assert.match(sql, /r\.public_id = \$1::uuid/);
+  assert.doesNotMatch(sql, /threat_report_entities/);
+  assert.equal(params[0], id);
+});
+
+test('report_id equals integer id binds bigint', () => {
+  const { sql, params } = build('report_id equals "42"');
+  assert.match(sql, /r\.id = \$1::bigint/);
+  assert.equal(params[0], '42');
+});
+
+test('report_id in accepts mixed UUID and integer', () => {
+  const id = '4f6c8a2e-1234-4abc-8def-0123456789ab';
+  const { sql, params } = build(`report_id in ("${id}", "7")`);
+  assert.match(sql, /r\.public_id = \$1::uuid/);
+  assert.match(sql, /r\.id = \$2::bigint/);
+  assert.deepEqual(params, [id, '7']);
+});
+
+test('related_entity equals uses threat_relationships + entity name/aliases, not co-mention', () => {
+  const { sql, params } = build('related_entity equals "Sable Squirrel"');
+  assert.match(sql, /FROM threat_relationships tr/);
+  assert.match(sql, /tr\.subject_ioc_id = i\.id/);
+  assert.match(sql, /tr\.object_ioc_id = i\.id/);
+  assert.match(sql, /threat_report_candidates sc/);
+  assert.match(sql, /sc\.matched_ioc_id = i\.id/);
+  assert.match(sql, /FROM threat_entities e/);
+  assert.match(sql, /e\.normalized_name = \$1/);
+  assert.match(sql, /threat_entity_aliases ea/);
+  assert.match(sql, /ea\.normalized_alias = \$1/);
+  assert.doesNotMatch(sql, /threat_report_entities/);
+  assert.equal(params[0], 'sable squirrel');
+});
+
+test('entity_type equals uses threat_relationships endpoint rules', () => {
+  const { sql, params } = build('entity_type equals "malware"');
+  assert.match(sql, /FROM threat_relationships tr/);
+  assert.match(sql, /e\.entity_type = \$1/);
+  assert.doesNotMatch(sql, /threat_report_entities/);
+  assert.equal(params[0], 'malware');
+});
+
+test('related_entity AND entity_type compile to separate EXISTS predicates', () => {
+  const { sql } = build('related_entity equals "Emotet" AND entity_type equals "malware"');
+  const existsCount = (sql.match(/EXISTS \(SELECT 1 FROM threat_relationships tr/g) || []).length;
+  assert.equal(existsCount, 2);
+});
+
+test('threat_actor remains analyst-only when source_threat_actor is also available', () => {
+  const analyst = build('threat_actor equals "Storm-0940"');
+  const source = build('source_threat_actor equals "Storm-0940"');
+  assert.match(analyst.sql, /ioc_threat_actors/);
+  assert.doesNotMatch(analyst.sql, /ioc_source_attributions/);
+  assert.match(source.sql, /ioc_source_attributions/);
+  assert.doesNotMatch(source.sql, /ioc_threat_actors/);
+});
+
+test('related_entity injection payload is bound, never inlined, and never uses co-mention table', () => {
+  // Same escape style as the existing ioc-injection test: \" keeps the quote inside the DSL string.
+  const { sql, params } = build('related_entity equals "ARTEX\\"; DROP TABLE threat_entities; --"');
+  assert.equal(params[0], 'artex"; drop table threat_entities; --');
+  assert.doesNotMatch(sql, /DROP TABLE/);
+  assert.doesNotMatch(sql, /threat_report_entities/);
+  assertPlaceholdersMatchParams(sql, params);
+});
+
+test('report_id does not expand to all IOCs from reports that merely mention an entity', () => {
+  const { sql } = build('report_id equals "903abf88-d777-4980-ac9f-3f5afb8c429b"');
+  assert.match(sql, /matched_ioc_id/);
+  assert.doesNotMatch(sql, /threat_report_entities/);
+  assert.doesNotMatch(sql, /threat_relationships/);
+});
+
+test('entity_type in expands to OR of relationship EXISTS clauses', () => {
+  const { sql, params } = build('entity_type in ("malware", "tool")');
+  assert.equal((sql.match(/EXISTS \(SELECT 1 FROM threat_relationships tr/g) || []).length, 2);
+  assert.deepEqual(params, ['malware', 'tool']);
+});
+
+test('OR of report_id and tag keeps both membership predicates parameterized', () => {
+  const { sql, params } = build(
+    'tag equals "artex" OR report_id equals "903abf88-d777-4980-ac9f-3f5afb8c429b"'
+  );
+  assert.match(sql, /ioc_tags/);
+  assert.match(sql, /threat_report_candidates/);
+  assertPlaceholdersMatchParams(sql, params);
 });
 
 test('item date after uses AT TIME ZONE with bound tz (created_at)', () => {

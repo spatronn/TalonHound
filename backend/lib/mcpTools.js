@@ -8,7 +8,8 @@ import {
   MCP_ENRICHMENT_ACTION_TOOLS,
   MCP_TAG_ACTION_TOOLS,
   MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS,
-  MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS
+  MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS,
+  MCP_PUBLISHED_FEED_WRITE_ACTION_TOOLS
 } from './mcpPermissions.js';
 import {
   mcpLookupIoc,
@@ -47,13 +48,23 @@ import {
   REVIEW_STATUS_FILTERS
 } from './threatLibrary/mcpThreatLibraryReviewService.js';
 import { AUDIT_ACTION, AUDIT_ENTITY, AUDIT_SEVERITY, AUDIT_STATUS } from './auditConstants.js';
+import {
+  mcpListPublishedFeeds,
+  mcpGetPublishedFeed,
+  mcpPreviewPublishedFeed,
+  mcpGetPublishedFeedMembership,
+  mcpCreatePublishedFeed,
+  mcpUpdatePublishedFeed,
+  mcpRegeneratePublishedFeed
+} from './mcpPublishedFeedService.js';
 
 const MCP_DEDICATED_AUDIT_TOOLS = new Set([
   'import_iocs',
   ...MCP_ENRICHMENT_ACTION_TOOLS,
   ...MCP_TAG_ACTION_TOOLS,
   ...MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS,
-  ...MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS
+  ...MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS,
+  ...MCP_PUBLISHED_FEED_WRITE_ACTION_TOOLS
 ]);
 
 function toolText(obj) {
@@ -859,6 +870,191 @@ export function registerMcpTools(server, deps) {
       return withAuth('threat_library_review_ioc_source', ctx, () => mcpThreatLibraryReviewIocSource(deps.pool, args, ctx, {
         threatLibraryQueue: deps.threatLibraryQueue || null
       }));
+    }
+  );
+
+  server.registerTool(
+    'list_published_feeds',
+    {
+      title: 'List Published Feeds',
+      description:
+        'List Published Feed definitions (id, name, filter_mode, status, item counts). '
+        + 'Requires mcp:published_feeds:read. Never returns access keys or secrets. Read-only.',
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async () => withAuth('list_published_feeds', ctxFrom(), () => mcpListPublishedFeeds(deps.pool))
+  );
+
+  server.registerTool(
+    'get_published_feed',
+    {
+      title: 'Get Published Feed',
+      description:
+        'Get one Published Feed definition by numeric id, including curated_ioc_public_ids when filter_mode=curated. '
+        + 'Requires mcp:published_feeds:read. Never returns access keys or secrets.',
+      inputSchema: {
+        id: z.union([z.number().int().positive(), z.string().min(1)]).describe('Published Feed numeric id')
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('get_published_feed', ctxFrom(), () => mcpGetPublishedFeed(deps.pool, args))
+  );
+
+  server.registerTool(
+    'preview_published_feed',
+    {
+      title: 'Preview Published Feed Membership',
+      description:
+        'Read-only membership preview for a proposed feed definition OR an existing feed_id. '
+        + 'Same WHERE builders as generation (basic / query / curated). Never writes and never regenerates. '
+        + 'Optional compare_to_feed_id returns added/removed/unchanged_count. Requires mcp:published_feeds:read.',
+      inputSchema: {
+        feed_id: z.union([z.number().int().positive(), z.string().min(1)]).optional()
+          .describe('Preview an existing feed by id'),
+        filter_mode: z.enum(['basic', 'query', 'curated']).optional(),
+        advanced_query: z.string().max(20000).optional(),
+        curated_ioc_public_ids: z.array(z.string().uuid()).max(5000).optional(),
+        curated_iocs: z.array(z.object({
+          public_id: z.string().uuid(),
+          reason: z.string().max(2000).optional()
+        })).max(5000).optional(),
+        ioc_types: z.array(z.string()).max(4).optional(),
+        time_window: z.string().optional(),
+        include_feed_keys: z.array(z.string()).max(500).optional(),
+        include_tags: z.array(z.string()).max(100).optional(),
+        exclude_tags: z.array(z.string()).max(100).optional(),
+        exclude_false_positive: z.boolean().optional(),
+        exclude_expired: z.boolean().optional(),
+        min_confidence: z.number().optional(),
+        limit: z.number().int().min(1).max(200).optional(),
+        offset: z.number().int().min(0).optional(),
+        compare_to_feed_id: z.union([z.number().int().positive(), z.string().min(1)]).optional()
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('preview_published_feed', ctxFrom(), () => mcpPreviewPublishedFeed(deps.pool, args))
+  );
+
+  server.registerTool(
+    'get_published_feed_membership',
+    {
+      title: 'Get Published Feed Membership',
+      description:
+        'Paginated live membership evaluation for one Published Feed (same path as preview). '
+        + 'Includes refresh/status fields from the feed row. Requires mcp:published_feeds:read.',
+      inputSchema: {
+        id: z.union([z.number().int().positive(), z.string().min(1)]).describe('Published Feed numeric id'),
+        limit: z.number().int().min(1).max(200).optional(),
+        offset: z.number().int().min(0).optional()
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false }
+    },
+    async (args) => withAuth('get_published_feed_membership', ctxFrom(), () => mcpGetPublishedFeedMembership(deps.pool, args))
+  );
+
+  server.registerTool(
+    'create_published_feed',
+    {
+      title: 'Create Published Feed',
+      description:
+        'Create a Published Feed (basic / query / curated). Requires mcp:published_feeds:write and an ADMIN owner. '
+        + 'Set dry_run=true to validate without writing. Audited as FEED_CREATED with MCP provenance. '
+        + 'Does not create access keys.',
+      inputSchema: {
+        name: z.string().min(1).max(200),
+        description: z.string().max(4000).optional().nullable(),
+        enabled: z.boolean().optional(),
+        filter_mode: z.enum(['basic', 'query', 'curated']).optional(),
+        advanced_query: z.string().max(20000).optional().nullable(),
+        curated_ioc_public_ids: z.array(z.string().uuid()).max(5000).optional(),
+        curated_iocs: z.array(z.object({
+          public_id: z.string().uuid(),
+          reason: z.string().max(2000).optional()
+        })).max(5000).optional(),
+        ioc_types: z.array(z.string()).max(4).optional(),
+        formats: z.array(z.enum(['txt', 'json', 'stix'])).min(1).max(3).optional(),
+        time_window: z.string().optional(),
+        include_feed_keys: z.array(z.string()).max(500).optional(),
+        include_tags: z.array(z.string()).max(100).optional(),
+        exclude_tags: z.array(z.string()).max(100).optional(),
+        exclude_false_positive: z.boolean().optional(),
+        exclude_expired: z.boolean().optional(),
+        min_confidence: z.number().optional().nullable(),
+        max_items: z.number().int().positive().optional().nullable(),
+        refresh_interval_minutes: z.number().int().min(5).optional(),
+        include_source_metadata: z.boolean().optional(),
+        include_classification: z.boolean().optional(),
+        include_enrichment: z.boolean().optional(),
+        dry_run: z.boolean().optional().describe('When true, validate without writing')
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('create_published_feed', ctx, () => mcpCreatePublishedFeed(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'update_published_feed',
+    {
+      title: 'Update Published Feed',
+      description:
+        'Update a Published Feed definition. Requires mcp:published_feeds:write and an ADMIN owner. '
+        + 'For curated mode, providing curated_iocs / curated_ioc_public_ids replaces the membership set. '
+        + 'dry_run=true validates without writing. Audited as FEED_UPDATED with MCP provenance.',
+      inputSchema: {
+        id: z.union([z.number().int().positive(), z.string().min(1)]),
+        name: z.string().min(1).max(200).optional(),
+        description: z.string().max(4000).optional().nullable(),
+        enabled: z.boolean().optional(),
+        filter_mode: z.enum(['basic', 'query', 'curated']).optional(),
+        advanced_query: z.string().max(20000).optional().nullable(),
+        curated_ioc_public_ids: z.array(z.string().uuid()).max(5000).optional(),
+        curated_iocs: z.array(z.object({
+          public_id: z.string().uuid(),
+          reason: z.string().max(2000).optional()
+        })).max(5000).optional(),
+        ioc_types: z.array(z.string()).max(4).optional(),
+        formats: z.array(z.enum(['txt', 'json', 'stix'])).min(1).max(3).optional(),
+        time_window: z.string().optional(),
+        include_feed_keys: z.array(z.string()).max(500).optional(),
+        include_tags: z.array(z.string()).max(100).optional(),
+        exclude_tags: z.array(z.string()).max(100).optional(),
+        exclude_false_positive: z.boolean().optional(),
+        exclude_expired: z.boolean().optional(),
+        min_confidence: z.number().optional().nullable(),
+        max_items: z.number().int().positive().optional().nullable(),
+        refresh_interval_minutes: z.number().int().min(5).optional(),
+        include_source_metadata: z.boolean().optional(),
+        include_classification: z.boolean().optional(),
+        include_enrichment: z.boolean().optional(),
+        dry_run: z.boolean().optional()
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('update_published_feed', ctx, () => mcpUpdatePublishedFeed(deps.pool, args, ctx));
+    }
+  );
+
+  server.registerTool(
+    'regenerate_published_feed',
+    {
+      title: 'Regenerate Published Feed',
+      description:
+        'Force-regenerate a Published Feed snapshot. Requires mcp:published_feeds:write and an ADMIN owner. '
+        + 'Audited as FEED_RUN_TRIGGERED with MCP provenance. Does not expose access keys.',
+      inputSchema: {
+        id: z.union([z.number().int().positive(), z.string().min(1)])
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    async (args) => {
+      const ctx = ctxFrom();
+      return withAuth('regenerate_published_feed', ctx, () => mcpRegeneratePublishedFeed(deps.pool, args, ctx));
     }
   );
 }

@@ -60,6 +60,10 @@ export function createTalonHoundMcpServer(deps) {
         + 'threat_library_review_iocs (explicit approve|context_only|ignore — never auto-approve all extracted), '
         + 'threat_library_create_iocs (same Create IOCs as the UI; confirm=true to commit), '
         + 'threat_library_finalize_report, threat_library_review_ioc_source (approve/dismiss linked packs). '
+        + 'Published Feeds (requires mcp:published_feeds:read): list_published_feeds / get_published_feed / '
+        + 'preview_published_feed / get_published_feed_membership — definitions and live membership preview; never access keys. '
+        + 'Published Feed mutations (requires mcp:published_feeds:write + ADMIN owner): create_published_feed / '
+        + 'update_published_feed / regenerate_published_feed support dry_run on create/update; filter_mode may be basic, query, or curated. '
         + 'All mutations reuse the UI application services and audit events.'
     }
   );

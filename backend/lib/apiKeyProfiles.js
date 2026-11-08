@@ -23,7 +23,15 @@ export const API_SCOPE = Object.freeze({
    * Create IOCs, finalize, and linked IOC Source approve/dismiss. Never implied
    * by read, IOC import, enrichment, tags or Threat Library URL-import scopes.
    */
-  MCP_THREAT_LIBRARY_WRITE: 'mcp:threat_library:write'
+  MCP_THREAT_LIBRARY_WRITE: 'mcp:threat_library:write',
+  /** Read Published Feed definitions + membership preview through MCP. */
+  MCP_PUBLISHED_FEEDS_READ: 'mcp:published_feeds:read',
+  /**
+   * Create / update / regenerate Published Feeds through MCP. Bundled into
+   * mcp_analyst; authorizeMcpTool still requires ADMIN owner (non-admin owners
+   * are RBAC-denied). Never implied by read scopes.
+   */
+  MCP_PUBLISHED_FEEDS_WRITE: 'mcp:published_feeds:write'
 });
 
 export const ALL_API_SCOPES = Object.freeze([
@@ -39,7 +47,9 @@ export const ALL_API_SCOPES = Object.freeze([
   API_SCOPE.MCP_SOURCES_READ,
   API_SCOPE.MCP_TAGS_WRITE,
   API_SCOPE.MCP_THREAT_LIBRARY_IMPORT,
-  API_SCOPE.MCP_THREAT_LIBRARY_WRITE
+  API_SCOPE.MCP_THREAT_LIBRARY_WRITE,
+  API_SCOPE.MCP_PUBLISHED_FEEDS_READ,
+  API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE
 ]);
 
 export const ACCESS_PROFILE = Object.freeze({
@@ -88,13 +98,14 @@ const PROFILE_DEFS = Object.freeze({
   [ACCESS_PROFILE.MCP_READ]: Object.freeze({
     id: ACCESS_PROFILE.MCP_READ,
     label: 'MCP Read',
-    description: 'Read-only MCP access for AI clients: lookup, search, context, bulk lookup, threat reports, IOC Sources and stored enrichment. Bound to an owner user; cannot import IOCs, trigger enrichment or change tags.',
-    permission_summary: 'MCP read + sources + stored enrichment',
+    description: 'Read-only MCP access for AI clients: lookup, search, context, bulk lookup, threat reports, IOC Sources, stored enrichment, and Published Feed definitions/membership preview. Bound to an owner user; cannot import IOCs, trigger enrichment, change tags, or mutate feeds.',
+    permission_summary: 'MCP read + sources + stored enrichment + published feeds read',
     key_prefix: 'th_mcp_',
     scopes: Object.freeze([
       API_SCOPE.MCP_IOC_READ,
       API_SCOPE.MCP_SOURCES_READ,
-      API_SCOPE.MCP_ENRICHMENT_READ
+      API_SCOPE.MCP_ENRICHMENT_READ,
+      API_SCOPE.MCP_PUBLISHED_FEEDS_READ
     ]),
     creatable: true,
     requiresOwner: true
@@ -102,21 +113,24 @@ const PROFILE_DEFS = Object.freeze({
   [ACCESS_PROFILE.MCP_ANALYST]: Object.freeze({
     id: ACCESS_PROFILE.MCP_ANALYST,
     label: 'MCP Analyst',
-    description: 'MCP (/mcp) access for trusted AI analyst agents: read IOC context, import IOCs into existing IOC Sources, trigger the enabled TalonHound enrichment providers (may consume provider API quota), add/remove analyst tags from the tag catalog, import Threat Library reports by URL, and perform the post-import Threat Library review workflow (candidate review, Create IOCs, finalize, linked IOC Source approve/dismiss) with the same rules as the UI. Bound to an owner user; effective rights are the intersection of token scopes and the owner role — never more than that user can do in the GUI. Never auto-approves extracted candidates.',
-    permission_summary: 'MCP read + import + enrichment + tags + TL import + TL review',
+    description: 'MCP (/mcp) access for trusted AI analyst agents: read IOC context, import IOCs into existing IOC Sources, trigger the enabled TalonHound enrichment providers (may consume provider API quota), add/remove analyst tags from the tag catalog, import Threat Library reports by URL, perform the post-import Threat Library review workflow (candidate review, Create IOCs, finalize, linked IOC Source approve/dismiss), and manage Published Feeds (create/update/regenerate require an ADMIN owner even though write scope is on the profile). Bound to an owner user; effective rights are the intersection of token scopes and the owner role — never more than that user can do in the GUI. Never auto-approves extracted candidates.',
+    permission_summary: 'MCP read + import + enrichment + tags + TL import + TL review + published feeds',
     key_prefix: 'th_mcp_',
     scopes: Object.freeze([
       API_SCOPE.MCP_IOC_READ,
       API_SCOPE.MCP_IOC_CREATE,
       API_SCOPE.MCP_SOURCES_READ,
       API_SCOPE.MCP_ENRICHMENT_READ,
-      // Stored per key at creation; keys created before 039/040/046/048 were backfilled
+      // Stored per key at creation; keys created before 039/040/046/048/055 were backfilled
       // by migrations 039_mcp_analyst_enrichment_scope.sql / 040_mcp_tags_write_scope.sql /
-      // 046_mcp_threat_library_import_scope.sql / 048_mcp_threat_library_write_scope.sql.
+      // 046_mcp_threat_library_import_scope.sql / 048_mcp_threat_library_write_scope.sql /
+      // 055_published_feed_curated_and_mcp_scopes.sql.
       API_SCOPE.MCP_ENRICHMENT_WRITE,
       API_SCOPE.MCP_TAGS_WRITE,
       API_SCOPE.MCP_THREAT_LIBRARY_IMPORT,
-      API_SCOPE.MCP_THREAT_LIBRARY_WRITE
+      API_SCOPE.MCP_THREAT_LIBRARY_WRITE,
+      API_SCOPE.MCP_PUBLISHED_FEEDS_READ,
+      API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE
     ]),
     creatable: true,
     requiresOwner: true

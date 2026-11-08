@@ -46,7 +46,11 @@ export const MCP_DEFAULTS = Object.freeze({
   // threat_library_review_iocs / create_iocs / finalize / review_ioc_source.
   RATE_LIMIT_THREAT_LIBRARY_WRITE_PER_MIN: 30,
   // threat_library_list_reports / threat_library_check_report_urls (read-only catalog).
-  RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN: 60
+  RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN: 60,
+  // Published Feed create/update/regenerate (admin write tools).
+  RATE_LIMIT_PUBLISHED_FEEDS_WRITE_PER_MIN: 30,
+  // Published Feed list/get/preview/membership (read tools).
+  RATE_LIMIT_PUBLISHED_FEEDS_READ_PER_MIN: 60
 });
 
 export function isMcpEnabled(env = process.env) {
@@ -111,6 +115,18 @@ export function getMcpConfig(env = process.env) {
       env,
       'MCP_RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN',
       MCP_DEFAULTS.RATE_LIMIT_THREAT_LIBRARY_CATALOG_PER_MIN,
+      { min: 1, max: 1000 }
+    ),
+    rateLimitPublishedFeedsWritePerMin: intEnv(
+      env,
+      'MCP_RATE_LIMIT_PUBLISHED_FEEDS_WRITE_PER_MIN',
+      MCP_DEFAULTS.RATE_LIMIT_PUBLISHED_FEEDS_WRITE_PER_MIN,
+      { min: 1, max: 300 }
+    ),
+    rateLimitPublishedFeedsReadPerMin: intEnv(
+      env,
+      'MCP_RATE_LIMIT_PUBLISHED_FEEDS_READ_PER_MIN',
+      MCP_DEFAULTS.RATE_LIMIT_PUBLISHED_FEEDS_READ_PER_MIN,
       { min: 1, max: 1000 }
     )
   });

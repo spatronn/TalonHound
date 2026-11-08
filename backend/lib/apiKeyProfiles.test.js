@@ -55,9 +55,11 @@ test('mcp_read scopes are read-only MCP', () => {
   assert.deepEqual(scopes, [
     API_SCOPE.MCP_IOC_READ,
     API_SCOPE.MCP_SOURCES_READ,
-    API_SCOPE.MCP_ENRICHMENT_READ
+    API_SCOPE.MCP_ENRICHMENT_READ,
+    API_SCOPE.MCP_PUBLISHED_FEEDS_READ
   ]);
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), false);
+  assert.equal(hasApiScope(scopes, API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE), false);
 });
 
 test('mcp_analyst scopes include create, enrichment, tags, Threat Library URL import and review write', () => {
@@ -70,10 +72,13 @@ test('mcp_analyst scopes include create, enrichment, tags, Threat Library URL im
     API_SCOPE.MCP_ENRICHMENT_WRITE,
     API_SCOPE.MCP_TAGS_WRITE,
     API_SCOPE.MCP_THREAT_LIBRARY_IMPORT,
-    API_SCOPE.MCP_THREAT_LIBRARY_WRITE
+    API_SCOPE.MCP_THREAT_LIBRARY_WRITE,
+    API_SCOPE.MCP_PUBLISHED_FEEDS_READ,
+    API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE
   ]);
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_IOC_CREATE), true);
   assert.equal(hasApiScope(scopes, API_SCOPE.MCP_THREAT_LIBRARY_WRITE), true);
+  assert.equal(hasApiScope(scopes, API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE), true);
 });
 
 test('profileRequiresOwner and isMcpAccessProfile', () => {
@@ -162,11 +167,31 @@ test('migration 046 admits mcp:threat_library:import and backfills it onto live 
     'mcp:enrichment:write',
     'mcp:tags:write',
     'mcp:threat_library:import',
-    'mcp:threat_library:write'
+    'mcp:threat_library:write',
+    'mcp:published_feeds:read',
+    'mcp:published_feeds:write'
   ]);
   assert.ok(sql.includes(`'["mcp:threat_library:import"]'`), 'migration must backfill mcp:threat_library:import');
   // MCP Read never carries it.
   assert.ok(!scopesForAccessProfile('mcp_read').includes('mcp:threat_library:import'));
+});
+
+test('migration 055 admits published feed MCP scopes and backfills read+write appropriately', async () => {
+  const { readFileSync } = await import('node:fs');
+  const path = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const sql = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'migrations', '055_published_feed_curated_and_mcp_scopes.sql'), 'utf8');
+  assert.ok(sql.includes('"mcp:published_feeds:read"'));
+  assert.ok(sql.includes('"mcp:published_feeds:write"'));
+  assert.ok(sql.includes('published_feed_curated_iocs'));
+  assert.ok(sql.includes("'curated'"));
+  assert.match(sql, /key_type IN \('mcp_read', 'mcp_analyst'\)/);
+  assert.match(sql, /key_type = 'mcp_analyst'/);
+  assert.ok(sql.includes(`'["mcp:published_feeds:read"]'`));
+  assert.ok(sql.includes(`'["mcp:published_feeds:write"]'`));
+  assert.ok(scopesForAccessProfile('mcp_read').includes('mcp:published_feeds:read'));
+  assert.ok(!scopesForAccessProfile('mcp_read').includes('mcp:published_feeds:write'));
+  assert.ok(scopesForAccessProfile('mcp_analyst').includes('mcp:published_feeds:write'));
 });
 
 test('migration 048 admits mcp:threat_library:write and backfills it onto live MCP Analyst keys only', async () => {

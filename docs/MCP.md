@@ -103,15 +103,17 @@ Create keys in the TalonHound UI under API key management (same place as publish
 | `mcp:tags:write` | `add_ioc_tags`, `remove_ioc_tags` — analyst (`manual`) tags only (also needs `mcp:ioc:read` and an analyst/admin owner) |
 | `mcp:threat_library:import` | `threat_library_import_url` — Threat Library Import Intelligence → URL (also needs `mcp:ioc:read` and an analyst/admin owner, the same roles as the UI import) |
 | `mcp:threat_library:write` | Post-import review mutations: `threat_library_review_iocs`, `threat_library_create_iocs`, `threat_library_finalize_report`, `threat_library_review_ioc_source` (also needs `mcp:ioc:read` and analyst/admin owner) |
+| `mcp:published_feeds:read` | `list_published_feeds`, `get_published_feed`, `preview_published_feed`, `get_published_feed_membership` |
+| `mcp:published_feeds:write` | `create_published_feed`, `update_published_feed`, `regenerate_published_feed` (also needs an **ADMIN** owner; never returns access keys) |
 
 `get_threat_library_import_status` needs only `mcp:ioc:read`.
 
 Profile presets:
 
-- **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`
-- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`, `mcp:threat_library:import`, `mcp:threat_library:write`
+- **mcp_read:** `mcp:ioc:read`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:published_feeds:read`
+- **mcp_analyst:** `mcp:ioc:read`, `mcp:ioc:create`, `mcp:sources:read`, `mcp:enrichment:read`, `mcp:enrichment:write`, `mcp:tags:write`, `mcp:threat_library:import`, `mcp:threat_library:write`, `mcp:published_feeds:read`, `mcp:published_feeds:write`
 
-**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`, `046_mcp_threat_library_import_scope.sql` added `mcp:threat_library:import`, and `048_mcp_threat_library_write_scope.sql` added `mcp:threat_library:write`. `mcp_read` and non-MCP keys are untouched. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
+**Existing keys:** scopes are stored on each key at creation. Migration `039_mcp_analyst_enrichment_scope.sql` added `mcp:enrichment:write` (and `mcp:enrichment:read` where missing) to every non-deleted `mcp_analyst` key, so existing MCP Analyst keys gain enrichment without being recreated. Migration `040_mcp_tags_write_scope.sql` likewise added `mcp:tags:write`, `046_mcp_threat_library_import_scope.sql` added `mcp:threat_library:import`, `048_mcp_threat_library_write_scope.sql` added `mcp:threat_library:write`, and `055_published_feed_curated_and_mcp_scopes.sql` added `mcp:published_feeds:read` (mcp_read + mcp_analyst) and `mcp:published_feeds:write` (mcp_analyst only). Published Feed write tools still require an **ADMIN** owner. The short-lived **MCP Enrichment** (`mcp_enrichment`) profile is gone; the database still admits that historical `key_type` only because revoked/deleted rows of it exist.
 
 ## Tools
 
@@ -143,8 +145,15 @@ Profile presets:
 | `threat_library_create_iocs` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Create IOCs from approved Indicators (`confirm: true` to commit). |
 | `threat_library_finalize_report` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Finalize report after review. |
 | `threat_library_review_ioc_source` | `mcp:ioc:read` + `mcp:threat_library:write` | **No — action** | Inspect / approve / dismiss a linked IOC Source pack. Discovered packs must be inspected before approve. |
+| `list_published_feeds` | `mcp:published_feeds:read` | Yes | List Published Feed definitions (no access keys). |
+| `get_published_feed` | `mcp:published_feeds:read` | Yes | One feed definition (incl. curated membership ids when curated). |
+| `preview_published_feed` | `mcp:published_feeds:read` | Yes | Read-only membership preview for a proposed definition or `feed_id`. |
+| `get_published_feed_membership` | `mcp:published_feeds:read` | Yes | Paginated live membership + feed status fields. |
+| `create_published_feed` | `mcp:published_feeds:write` + **ADMIN** owner | **No — action** | Create feed (`dry_run` supported). Modes: basic / query / curated. |
+| `update_published_feed` | `mcp:published_feeds:write` + **ADMIN** owner | **No — action** | Update feed (`dry_run` supported). |
+| `regenerate_published_feed` | `mcp:published_feeds:write` + **ADMIN** owner | **No — action** | Force regenerate snapshot. |
 
-There are no IOC/source delete, update-admin, feed, or user-management tools.
+There are no IOC/source delete, Published Feed delete/access-key, or user-management tools.
 
 ### Threat Context semantics
 

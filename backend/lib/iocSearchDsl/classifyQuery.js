@@ -38,7 +38,7 @@ export const TIMEOUT_FALLBACK_REASON = 'interactive_statement_timeout';
 
 // Fields whose values are constrained enums / small dimension tables. Equality and
 // membership on these are index-backed and (for identity/junction fields) selective.
-const ENUM_FIELDS = new Set(['type', 'known_hash_type', 'status', 'confidence', 'classification']);
+const ENUM_FIELDS = new Set(['type', 'known_hash_type', 'status', 'confidence', 'classification', 'entity_type']);
 const DATE_FIELDS = new Set(['first_seen', 'last_seen', 'last_changed', 'created_at']);
 const HASH_FIELDS = new Set(['md5', 'sha1', 'sha256']);
 const ATTR_FIELDS = new Set(['imphash', 'tlsh', 'ssdeep']);

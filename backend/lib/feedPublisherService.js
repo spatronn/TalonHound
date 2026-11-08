@@ -60,19 +60,27 @@ export {
 };
 
 /**
- * Published Feed content is defined by exactly one of two mutually-exclusive modes:
+ * Published Feed content is defined by exactly one of three mutually-exclusive modes:
  *   'basic' — IOC Types + Window + Threat Feeds (legacy Basic Filters)
  *   'query' — an Advanced Query using the IOC List DSL
- * Safety Filters and Delivery apply in BOTH modes.
+ *   'curated' — explicit curated IOC public_ids (published_feed_curated_iocs)
+ * Safety Filters and Delivery apply in ALL modes.
  */
-export const FEED_FILTER_MODES = { BASIC: 'basic', QUERY: 'query' };
+export const FEED_FILTER_MODES = { BASIC: 'basic', QUERY: 'query', CURATED: 'curated' };
 
 /** Snapshot ioc_type identity key used for query-mode feeds (no ioc_types partitioning). */
 export const QUERY_FEED_SNAPSHOT_KEY = 'query';
 
+/** Snapshot ioc_type identity key used for curated-mode feeds. */
+export const CURATED_FEED_SNAPSHOT_KEY = 'curated';
+
+export const CURATED_FEED_MAX_IOCS = 5000;
+
 /**
- * Resolve the effective filter mode. Only 'query' with a non-empty advanced_query is a
- * query feed; everything else (including legacy rows without filter_mode) is 'basic'.
+ * Resolve the effective filter mode:
+ *   - 'query' when filter_mode=query AND advanced_query is non-empty
+ *   - 'curated' when filter_mode=curated
+ *   - otherwise 'basic' (including legacy rows without filter_mode)
  * The inactive mode's fields never influence the active mode's base IOC set.
  */
 export function resolveFeedFilterMode(feed) {
@@ -80,11 +88,32 @@ export function resolveFeedFilterMode(feed) {
   if (mode === FEED_FILTER_MODES.QUERY && String(feed?.advanced_query || '').trim()) {
     return FEED_FILTER_MODES.QUERY;
   }
+  if (mode === FEED_FILTER_MODES.CURATED) {
+    return FEED_FILTER_MODES.CURATED;
+  }
   return FEED_FILTER_MODES.BASIC;
 }
 
 export function isQueryModeFeed(feed) {
   return resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY;
+}
+
+export function isCuratedModeFeed(feed) {
+  return resolveFeedFilterMode(feed) === FEED_FILTER_MODES.CURATED;
+}
+
+/** Query and curated modes force window=`all` and ignore Basic selectors. */
+export function isFixedAllWindowFeed(feed) {
+  const mode = resolveFeedFilterMode(feed);
+  return mode === FEED_FILTER_MODES.QUERY || mode === FEED_FILTER_MODES.CURATED;
+}
+
+/** Snapshot partition key for the feed's active membership mode. */
+export function publishedFeedSnapshotIocTypeKey(feed) {
+  const mode = resolveFeedFilterMode(feed);
+  if (mode === FEED_FILTER_MODES.QUERY) return QUERY_FEED_SNAPSHOT_KEY;
+  if (mode === FEED_FILTER_MODES.CURATED) return CURATED_FEED_SNAPSHOT_KEY;
+  return feedIocTypesKey(resolveFeedIocTypes(feed));
 }
 
 const FEED_IOC_EXPIRY_DAYS = Math.max(Number(process.env.FEED_IOC_EXPIRY_DAYS || 90), 1);
@@ -137,10 +166,10 @@ const ARTIFACT_HASH_TYPES_SQL = `'md5','sha1','sha256'`;
  */
 export function shouldCanonicalizePublishedHashFeed(feed) {
   if (!isFileArtifactsReadEnabled()) return false;
-  // Query-mode feeds select an arbitrary IOC population by DSL predicate and format
-  // each row by its own observable type; hash-artifact canonicalization is a
-  // Basic-Filters hash-feed concern only.
-  if (isQueryModeFeed(feed)) return false;
+  // Query/curated feeds select an arbitrary IOC population and format each row by
+  // its own observable type; hash-artifact canonicalization is a Basic-Filters
+  // hash-feed concern only.
+  if (isFixedAllWindowFeed(feed)) return false;
   const types = resolveFeedIocTypes(feed);
   return types.includes('hash');
 }
@@ -271,7 +300,7 @@ export { normalizeTimeWindow };
  * `options.window` is accepted only when it matches the configured window (tests/tools).
  */
 export function generationWindowsForFeed(feed, options = {}) {
-  if (isQueryModeFeed(feed)) return ['all'];
+  if (isFixedAllWindowFeed(feed)) return ['all'];
   const configured = normalizeTimeWindow(feed?.time_window) || 'all';
   if (options.window != null && options.window !== '') {
     const requested = normalizeTimeWindow(options.window);
@@ -284,7 +313,7 @@ export function generationWindowsForFeed(feed, options = {}) {
 }
 
 export function resolveConfiguredFeedWindow(feed) {
-  if (isQueryModeFeed(feed)) return 'all';
+  if (isFixedAllWindowFeed(feed)) return 'all';
   return normalizeTimeWindow(feed?.time_window) || 'all';
 }
 
@@ -318,7 +347,9 @@ export function normalizeFeedConfig(row) {
 }
 
 export function filtersHash(feed, window) {
-  const queryMode = isQueryModeFeed(feed);
+  const mode = resolveFeedFilterMode(feed);
+  const queryMode = mode === FEED_FILTER_MODES.QUERY;
+  const curatedMode = mode === FEED_FILTER_MODES.CURATED;
   const formats = resolvePublishedFeedFormats(feed);
   const jsonFeed = formats.includes(FEED_OUTPUT_FORMATS.JSON);
   const stixFeed = formats.includes(FEED_OUTPUT_FORMATS.STIX);
@@ -335,19 +366,24 @@ export function filtersHash(feed, window) {
       ...((jsonFeed || stixFeed) ? { json_include: resolveJsonIncludeFlags(feed) } : {})
     };
   })();
+  const curatedIds = Array.isArray(feed?.curated_ioc_public_ids)
+    ? [...feed.curated_ioc_public_ids].map((id) => String(id).toLowerCase()).sort()
+    : [];
   const payload = {
-    filter_mode: resolveFeedFilterMode(feed),
+    filter_mode: mode,
     ...formatKeys,
     // Base-set inputs depend on the active mode only.
     ...(queryMode
       ? { advanced_query: String(feed.advanced_query || '').trim() }
-      : {
-        ioc_types: resolveFeedIocTypes(feed),
-        window,
-        min_confidence: feed.min_confidence,
-        include_feed_keys: feed.include_feed_keys
-      }),
-    // Safety + delivery apply in both modes.
+      : curatedMode
+        ? { curated_ioc_public_ids: curatedIds }
+        : {
+          ioc_types: resolveFeedIocTypes(feed),
+          window,
+          min_confidence: feed.min_confidence,
+          include_feed_keys: feed.include_feed_keys
+        }),
+    // Safety + delivery apply in all modes.
     include_tags: feed.include_tags,
     exclude_tags: feed.exclude_tags,
     exclude_false_positive: feed.exclude_false_positive,
@@ -539,6 +575,10 @@ export async function fetchQueryModeIocRows(pool, feed) {
   return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
 }
 
+/** SQL confidence-rank expression shared by streaming / preview ORDER BYs. */
+const CONF_RANK_SQL = (col) =>
+  `CASE LOWER(COALESCE(${col}, '')) WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END`;
+
 /** Cheap fingerprint for a query-mode feed (distinct observable count + max recency). */
 export async function fetchQueryModeFingerprint(pool, feed) {
   const { sql: whereSql, params } = buildQueryModeWhereSql(feed);
@@ -554,6 +594,335 @@ export async function fetchQueryModeFingerprint(pool, feed) {
     itemCount: Number(rows[0]?.item_count || 0),
     maxRecency: maxRecency instanceof Date ? maxRecency.toISOString() : (maxRecency ? String(maxRecency) : null),
     filtersHash: filtersHash(feed, 'all')
+  };
+}
+
+/**
+ * Curated-mode base predicate: explicit public_id membership AND safety filters,
+ * always excluding suppressed. Basic selectors (ioc_types/window/include_feed_keys)
+ * and advanced_query do not constrain membership.
+ *
+ * @param {object} feed
+ * @param {{ publicIds?: string[] }} [opts] — when set (unsaved preview), use these
+ *   public_ids instead of JOINing published_feed_curated_iocs.
+ */
+export function buildCuratedModeWhereSql(feed, opts = {}) {
+  const params = [];
+  let membershipSql;
+  const previewIds = Array.isArray(opts.publicIds) ? opts.publicIds : null;
+  if (previewIds) {
+    if (!previewIds.length) {
+      membershipSql = 'FALSE';
+    } else {
+      params.push(previewIds);
+      membershipSql = `i.public_id = ANY($${params.length}::uuid[])`;
+    }
+  } else if (feed?.id != null && Number.isFinite(Number(feed.id))) {
+    params.push(Number(feed.id));
+    membershipSql = `EXISTS (
+      SELECT 1 FROM published_feed_curated_iocs c
+      WHERE c.feed_id = $${params.length}
+        AND c.ioc_public_id = i.public_id
+    )`;
+  } else {
+    membershipSql = 'FALSE';
+  }
+  const safetySql = buildSafetyFilterSql(feed, params);
+  const sql = `${membershipSql}
+      AND COALESCE(i.status, 'active') <> 'suppressed'
+      ${safetySql}`;
+  return { sql, params };
+}
+
+/** Load curated IOC public_ids for a persisted feed (ordered). */
+export async function loadCuratedFeedPublicIds(pool, feedId) {
+  const id = Number(feedId);
+  if (!Number.isFinite(id) || id <= 0) return [];
+  const { rows } = await pool.query(
+    `SELECT ioc_public_id::text AS public_id
+     FROM published_feed_curated_iocs
+     WHERE feed_id = $1
+     ORDER BY ioc_public_id`,
+    [id]
+  );
+  return rows.map((r) => String(r.public_id));
+}
+
+/** Rows for a curated-mode feed. Same projection + dedup as query mode. */
+export async function fetchCuratedModeIocRows(pool, feed, opts = {}) {
+  const { sql: whereSql, params } = buildCuratedModeWhereSql(feed, opts);
+  const sql = `
+    SELECT DISTINCT ON (lower(i.observable))
+      i.observable,
+      i.observable_type,
+      i.confidence,
+      i.category,
+      i.source_name,
+      i.public_id,
+      i.status,
+      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
+    FROM ioc_items i
+    WHERE ${whereSql}
+    ORDER BY lower(i.observable),
+      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
+      CASE LOWER(COALESCE(i.confidence, '')) WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END DESC,
+      i.observable ASC
+  `;
+  const { rows } = await pool.query(sql, params);
+  return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
+}
+
+/** Cheap fingerprint for a curated-mode feed. */
+export async function fetchCuratedModeFingerprint(pool, feed, opts = {}) {
+  const { sql: whereSql, params } = buildCuratedModeWhereSql(feed, opts);
+  const sql = `
+    SELECT COUNT(DISTINCT lower(i.observable))::bigint AS item_count,
+           MAX(COALESCE(i.last_seen_log, i.last_seen_at, i.created_at)) AS max_recency
+    FROM ioc_items i
+    WHERE ${whereSql}
+  `;
+  const { rows } = await pool.query(sql, params);
+  const maxRecency = rows[0]?.max_recency;
+  return {
+    itemCount: Number(rows[0]?.item_count || 0),
+    maxRecency: maxRecency instanceof Date ? maxRecency.toISOString() : (maxRecency ? String(maxRecency) : null),
+    filtersHash: filtersHash(feed, 'all')
+  };
+}
+
+/**
+ * Read-only membership preview for a proposed or existing Published Feed definition.
+ * Never writes DB rows and never triggers regenerate.
+ *
+ * @param {import('pg').Pool} pool
+ * @param {object} feed — normalized feed-like config (filter_mode, safety filters, …)
+ * @param {{ limit?: number, offset?: number, publicIds?: string[], compareToFeedId?: number|null }} [opts]
+ */
+function membershipWhereForFeed(feed, opts = {}) {
+  const mode = resolveFeedFilterMode(feed);
+  if (mode === FEED_FILTER_MODES.QUERY) {
+    const q = buildQueryModeWhereSql(feed);
+    return {
+      mode,
+      whereSql: q.sql,
+      params: q.params,
+      normalized_query: String(feed.advanced_query || '').trim() || null,
+      warnings: []
+    };
+  }
+  if (mode === FEED_FILTER_MODES.CURATED) {
+    const publicIds = Array.isArray(opts.publicIds)
+      ? opts.publicIds
+      : (Array.isArray(feed.curated_ioc_public_ids) ? feed.curated_ioc_public_ids : null);
+    const q = buildCuratedModeWhereSql(feed, publicIds ? { publicIds } : {});
+    const warnings = [];
+    if (publicIds && !publicIds.length && !(feed?.id)) {
+      warnings.push('curated membership is empty');
+    }
+    return { mode, whereSql: q.sql, params: q.params, normalized_query: null, warnings };
+  }
+  const types = observableTypesForFeedIocTypes(resolveFeedIocTypes(feed));
+  if (!types.length) {
+    return {
+      mode,
+      whereSql: 'FALSE',
+      params: [],
+      normalized_query: null,
+      warnings: ['no ioc_types selected']
+    };
+  }
+  const params = [];
+  const typePlaceholders = types.map((t) => {
+    params.push(t);
+    return `$${params.length}`;
+  });
+  const window = resolveConfiguredFeedWindow(feed);
+  const filterSql = buildFeedFilterSql(feed, window, params);
+  return {
+    mode,
+    whereSql: `i.observable_type IN (${typePlaceholders.join(', ')})
+      AND COALESCE(i.status, 'active') <> 'suppressed'
+      ${filterSql}`,
+    params,
+    normalized_query: null,
+    warnings: []
+  };
+}
+
+async function fetchMembershipIdentities(pool, whereSql, params, limit = 5000) {
+  const sql = `
+    SELECT DISTINCT ON (lower(i.observable))
+      i.public_id::text AS public_id,
+      i.observable_type AS type,
+      i.observable AS value
+    FROM ioc_items i
+    WHERE ${whereSql}
+    ORDER BY lower(i.observable),
+      COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
+      i.observable ASC
+    LIMIT ${Math.max(1, Math.min(Number(limit) || 5000, 5000))}
+  `;
+  const { rows } = await pool.query(sql, params);
+  return rows;
+}
+
+export async function previewPublishedFeedMembership(pool, feed, opts = {}) {
+  const limit = Math.min(Math.max(Number(opts.limit ?? 50) || 50, 1), 200);
+  const offset = Math.max(Number(opts.offset ?? 0) || 0, 0);
+  const validation_errors = [];
+  let resolved;
+  try {
+    resolved = membershipWhereForFeed(feed, opts);
+  } catch (err) {
+    return {
+      filter_mode: resolveFeedFilterMode(feed),
+      normalized_query: null,
+      total: 0,
+      counts_by_type: {},
+      items: [],
+      truncated: false,
+      warnings: [],
+      diff: null,
+      validation_errors: [String(err?.message || err)]
+    };
+  }
+
+  const { mode, whereSql, params, normalized_query, warnings } = resolved;
+  const aggSql = `
+    WITH dedup AS (
+      SELECT DISTINCT ON (lower(i.observable))
+        i.public_id,
+        i.observable_type AS type,
+        i.observable AS value,
+        COALESCE(i.status, 'active') AS status,
+        i.confidence
+      FROM ioc_items i
+      WHERE ${whereSql}
+      ORDER BY lower(i.observable),
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
+        ${CONF_RANK_SQL('i.confidence')} DESC,
+        i.observable ASC
+    )
+    SELECT
+      (SELECT COUNT(*)::bigint FROM dedup) AS total,
+      (SELECT COALESCE(jsonb_object_agg(type, cnt), '{}'::jsonb)
+         FROM (SELECT type, COUNT(*)::int AS cnt FROM dedup GROUP BY type) t) AS counts_by_type
+  `;
+  const pageSql = `
+    WITH dedup AS (
+      SELECT DISTINCT ON (lower(i.observable))
+        i.public_id,
+        i.observable_type AS type,
+        i.observable AS value,
+        COALESCE(i.status, 'active') AS status,
+        i.confidence,
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) AS recency_ts
+      FROM ioc_items i
+      WHERE ${whereSql}
+      ORDER BY lower(i.observable),
+        COALESCE(i.last_seen_log, i.last_seen_at, i.created_at) DESC,
+        ${CONF_RANK_SQL('i.confidence')} DESC,
+        i.observable ASC
+    )
+    SELECT public_id, type, value, status, confidence
+    FROM dedup
+    ORDER BY recency_ts DESC NULLS LAST, ${CONF_RANK_SQL('confidence')} DESC, value ASC
+    OFFSET $${params.length + 1}
+    LIMIT $${params.length + 2}
+  `;
+
+  const [aggRes, pageRes] = await Promise.all([
+    pool.query(aggSql, params),
+    pool.query(pageSql, [...params, offset, limit])
+  ]);
+
+  const total = Number(aggRes.rows[0]?.total || 0);
+  let counts_by_type = aggRes.rows[0]?.counts_by_type || {};
+  if (typeof counts_by_type === 'string') {
+    try { counts_by_type = JSON.parse(counts_by_type); } catch { counts_by_type = {}; }
+  }
+  let items = (pageRes.rows || []).map((r) => ({
+    public_id: r.public_id,
+    type: r.type,
+    value: r.value,
+    status: r.status,
+    confidence: r.confidence
+  }));
+
+  if (feed.min_confidence != null && Number.isFinite(Number(feed.min_confidence))
+    && (mode === FEED_FILTER_MODES.QUERY || mode === FEED_FILTER_MODES.CURATED)) {
+    const before = items.length;
+    items = items.filter((r) => confidenceToScore(r.confidence) >= Number(feed.min_confidence));
+    if (items.length < before) {
+      warnings.push('min_confidence post-filter applied to page items; total is pre-filter distinct count');
+    }
+  }
+
+  let diff = null;
+  if (opts.compareToFeedId != null && Number.isFinite(Number(opts.compareToFeedId))) {
+    try {
+      const compareFeedRow = await pool.query(
+        'SELECT * FROM published_feeds WHERE id = $1',
+        [Number(opts.compareToFeedId)]
+      );
+      if (!compareFeedRow.rows.length) {
+        warnings.push('compare_to_feed_id not found');
+      } else {
+        const compareFeed = normalizeFeedConfig(compareFeedRow.rows[0]);
+        if (isCuratedModeFeed(compareFeed)) {
+          compareFeed.curated_ioc_public_ids = await loadCuratedFeedPublicIds(pool, compareFeed.id);
+        }
+        const compareResolved = membershipWhereForFeed(compareFeed, {
+          publicIds: isCuratedModeFeed(compareFeed) ? compareFeed.curated_ioc_public_ids : undefined
+        });
+        const keyOf = (it) => (
+          it.public_id
+            ? String(it.public_id).toLowerCase()
+            : `${it.type}:${String(it.value || '').toLowerCase()}`
+        );
+        const [proposedIds, compareIdRows] = await Promise.all([
+          fetchMembershipIdentities(pool, whereSql, params),
+          fetchMembershipIdentities(pool, compareResolved.whereSql, compareResolved.params)
+        ]);
+        const proposedKeys = new Set(proposedIds.map((r) => keyOf(r)));
+        const compareKeySet = new Set(compareIdRows.map((r) => keyOf(r)));
+        const added = [];
+        const removed = [];
+        let unchanged_count = 0;
+        for (const row of proposedIds) {
+          const k = keyOf(row);
+          if (compareKeySet.has(k)) unchanged_count += 1;
+          else added.push({ public_id: row.public_id, type: row.type, value: row.value });
+        }
+        for (const row of compareIdRows) {
+          if (!proposedKeys.has(keyOf(row))) {
+            removed.push({ public_id: row.public_id, type: row.type, value: row.value });
+          }
+        }
+        if (proposedIds.length >= 5000 || compareIdRows.length >= 5000) {
+          warnings.push('diff truncated at 5000 identities per side');
+        }
+        diff = {
+          added: added.slice(0, 200),
+          removed: removed.slice(0, 200),
+          unchanged_count
+        };
+      }
+    } catch (err) {
+      warnings.push(`diff failed: ${String(err?.message || err)}`);
+    }
+  }
+
+  return {
+    filter_mode: mode,
+    normalized_query,
+    total,
+    counts_by_type,
+    items,
+    truncated: offset + items.length < total,
+    warnings,
+    diff,
+    validation_errors
   };
 }
 
@@ -682,10 +1051,6 @@ export async function fetchIocRows(pool, feed, window) {
   return rows.filter((r) => confidenceToScore(r.confidence) >= (feed.min_confidence ?? 0) || feed.min_confidence == null);
 }
 
-/** SQL confidence-rank expression shared by the streaming base query's ORDER BYs. */
-const CONF_RANK_SQL = (col) =>
-  `CASE LOWER(COALESCE(${col}, '')) WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END`;
-
 /**
  * Streaming cursor SQL for Basic hash feeds when File Artifact read/canonicalization is
  * on. Mirrors fetchIocRows' matched→picked CTE (identity_key collapse onto primary hash)
@@ -797,11 +1162,17 @@ export function buildStreamingBaseSql(feed, window, restrict = null) {
     return buildStreamingHashBaseSql(feed, window, restrict);
   }
 
-  const queryMode = isQueryModeFeed(feed);
+  const mode = resolveFeedFilterMode(feed);
   let innerWhere;
   let params;
-  if (queryMode) {
+  if (mode === FEED_FILTER_MODES.QUERY) {
     const q = buildQueryModeWhereSql(feed);
+    innerWhere = q.sql;
+    params = q.params;
+  } else if (mode === FEED_FILTER_MODES.CURATED) {
+    const q = buildCuratedModeWhereSql(feed, {
+      publicIds: Array.isArray(feed.curated_ioc_public_ids) ? feed.curated_ioc_public_ids : undefined
+    });
     innerWhere = q.sql;
     params = q.params;
   } else {
@@ -906,9 +1277,9 @@ const FEED_IOC_PARTITION_TABLE = {
 };
 
 function feedHasSourceFilters(feed) {
-  // Query-mode feeds can select from arbitrary joined tables, so the cheap partition
+  // Query/curated feeds select from arbitrary membership, so the cheap partition
   // watermark is not a sufficient change signal — force the full fingerprint path.
-  if (isQueryModeFeed(feed)) return true;
+  if (isFixedAllWindowFeed(feed)) return true;
   return Boolean(
     feed.include_feed_keys?.length
     || feed.include_tags?.length
@@ -1510,18 +1881,23 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
   }
   const feedBase = normalizeFeedConfig(feedRows[0]);
   const feedName = feedBase.name || null;
-  const queryMode = isQueryModeFeed(feedBase);
+  const filterMode = resolveFeedFilterMode(feedBase);
+  const queryMode = filterMode === FEED_FILTER_MODES.QUERY;
+  const curatedMode = filterMode === FEED_FILTER_MODES.CURATED;
+  const selectorless = queryMode || curatedMode;
   const configuredKeys = feedBase.include_feed_keys || [];
   // Threat Feeds (include_feed_keys) is a Basic-Filters selector — it must not influence
-  // a query-mode feed, so only resolve it (and gate on staleness) in Basic mode.
-  const resolvedFeedKeys = queryMode ? [] : await resolveKnownFeedKeysForSnapshot(db, configuredKeys);
-  const allKeysStale = !queryMode && configuredKeys.length > 0 && resolvedFeedKeys.length === 0;
+  // query/curated feeds, so only resolve it (and gate on staleness) in Basic mode.
+  const resolvedFeedKeys = selectorless ? [] : await resolveKnownFeedKeysForSnapshot(db, configuredKeys);
+  const allKeysStale = !selectorless && configuredKeys.length > 0 && resolvedFeedKeys.length === 0;
+  const curatedIds = curatedMode ? await loadCuratedFeedPublicIds(db, feedBase.id) : [];
   const feed = {
     ...feedBase,
-    include_feed_keys: resolvedFeedKeys.length ? resolvedFeedKeys : (configuredKeys.length ? [] : null)
+    include_feed_keys: resolvedFeedKeys.length ? resolvedFeedKeys : (configuredKeys.length ? [] : null),
+    ...(curatedMode ? { curated_ioc_public_ids: curatedIds } : {})
   };
 
-  // Query-mode feeds produce a single window-agnostic snapshot keyed by QUERY_FEED_SNAPSHOT_KEY.
+  // Query/curated feeds produce a single window-agnostic snapshot keyed by their mode key.
   // Basic feeds publish exactly one configured window (feed.time_window).
   const windows = generationWindowsForFeed(feed, options);
   const results = [];
@@ -1546,10 +1922,10 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
     ? feed.updated_at.toISOString()
     : (feed.updated_at ? String(feed.updated_at) : null);
   const iocTypes = resolveFeedIocTypes(feed);
-  // Formatting hint: Basic uses the configured feed types; Query formats each row by its
-  // own observable type (pass all categories so buildPlainTextFeed normalizes per-row).
-  const formatTypes = queryMode ? FEED_IOC_TYPES : iocTypes;
-  const iocTypeKey = queryMode ? QUERY_FEED_SNAPSHOT_KEY : feedIocTypesKey(iocTypes);
+  // Formatting hint: Basic uses the configured feed types; Query/curated format each row
+  // by its own observable type (pass all categories so buildPlainTextFeed normalizes per-row).
+  const formatTypes = selectorless ? FEED_IOC_TYPES : iocTypes;
+  const iocTypeKey = publishedFeedSnapshotIocTypeKey(feed);
 
   // Phase 2: when projection incremental applies, skip the legacy export-fingerprint
   // pre-check (it scans the full matching IOC set and defeats cheap no-op).
@@ -1717,7 +2093,9 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
         const t0 = Date.now();
         fingerprint = queryMode
           ? await fetchQueryModeFingerprint(db, feed)
-          : await fetchIocExportFingerprint(db, feed, window);
+          : curatedMode
+            ? await fetchCuratedModeFingerprint(db, feed)
+            : await fetchIocExportFingerprint(db, feed, window);
         queryMs += Date.now() - t0;
         fingerprintKey = exportFingerprintKey(fingerprint);
       }
@@ -2168,7 +2546,9 @@ async function runPublishedFeedGeneration(db, id, options = {}) {
           const t0 = Date.now();
           iocRows = queryMode
             ? await fetchQueryModeIocRows(db, feed)
-            : await fetchIocRows(db, feed, window);
+            : curatedMode
+              ? await fetchCuratedModeIocRows(db, feed)
+              : await fetchIocRows(db, feed, window);
           queryMs += Date.now() - t0;
         }
         // Non-streaming path: build each enabled format independently (same IOC rows).

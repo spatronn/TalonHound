@@ -47,7 +47,16 @@ export const MCP_TOOL_SCOPES = Object.freeze({
   threat_library_review_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
   threat_library_create_iocs: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
   threat_library_finalize_report: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
-  threat_library_review_ioc_source: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE]
+  threat_library_review_ioc_source: [API_SCOPE.MCP_IOC_READ, API_SCOPE.MCP_THREAT_LIBRARY_WRITE],
+  // Published Feed management (definitions + membership). Never returns access keys/secrets.
+  list_published_feeds: [API_SCOPE.MCP_PUBLISHED_FEEDS_READ],
+  get_published_feed: [API_SCOPE.MCP_PUBLISHED_FEEDS_READ],
+  preview_published_feed: [API_SCOPE.MCP_PUBLISHED_FEEDS_READ],
+  get_published_feed_membership: [API_SCOPE.MCP_PUBLISHED_FEEDS_READ],
+  // Write tools: scope on token + ADMIN owner RBAC (see authorizeMcpTool).
+  create_published_feed: [API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE],
+  update_published_feed: [API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE],
+  regenerate_published_feed: [API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE]
 });
 
 /** Tools that trigger external enrichment (side effects + provider quota). */
@@ -68,6 +77,20 @@ export const MCP_THREAT_LIBRARY_WRITE_ACTION_TOOLS = Object.freeze([
   'threat_library_create_iocs',
   'threat_library_finalize_report',
   'threat_library_review_ioc_source'
+]);
+
+/** Published Feed write tools (create/update/regenerate) — ADMIN owner required. */
+export const MCP_PUBLISHED_FEED_WRITE_ACTION_TOOLS = Object.freeze([
+  'create_published_feed',
+  'update_published_feed',
+  'regenerate_published_feed'
+]);
+
+export const MCP_PUBLISHED_FEED_READ_TOOLS = Object.freeze([
+  'list_published_feeds',
+  'get_published_feed',
+  'preview_published_feed',
+  'get_published_feed_membership'
 ]);
 
 /** @deprecated Use MCP_THREAT_LIBRARY_IMPORT_ACTION_TOOLS — kept for older imports. */
@@ -132,6 +155,19 @@ export function ownerCanMcpThreatLibraryWrite(role) {
   return r === ROLES.ADMIN || r === ROLES.ANALYST;
 }
 
+/**
+ * Published Feed mutations match the GUI: POST/PATCH/regenerate require ADMIN.
+ * Write scope on mcp_analyst is necessary but not sufficient without admin owner.
+ */
+export function ownerCanMcpPublishedFeedWrite(role) {
+  return normalizeAppRole(role) === ROLES.ADMIN;
+}
+
+/** Any authenticated app role may read Published Feed definitions (same as GET /api/published-feeds). */
+export function ownerCanMcpPublishedFeedRead(role) {
+  return Boolean(normalizeAppRole(role));
+}
+
 export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
   const scopeList = Array.isArray(scopes) ? scopes : [];
   const canReadOwner = ownerCanMcpRead(ownerRole);
@@ -148,6 +184,10 @@ export function effectiveMcpCapabilities({ scopes, ownerRole } = {}) {
     malware_families_read: ownerCanMcpTag(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_IOC_READ),
     threat_library_import: ownerCanMcpImportReport(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_THREAT_LIBRARY_IMPORT),
     threat_library_write: ownerCanMcpThreatLibraryWrite(ownerRole) && mcpHasScope(scopeList, API_SCOPE.MCP_THREAT_LIBRARY_WRITE),
+    published_feeds_read: ownerCanMcpPublishedFeedRead(ownerRole)
+      && mcpHasScope(scopeList, API_SCOPE.MCP_PUBLISHED_FEEDS_READ),
+    published_feeds_write: ownerCanMcpPublishedFeedWrite(ownerRole)
+      && mcpHasScope(scopeList, API_SCOPE.MCP_PUBLISHED_FEEDS_WRITE),
     owner_role: normalizeAppRole(ownerRole),
     owner_readonly: isReadOnlyRole(ownerRole)
   });
@@ -244,6 +284,22 @@ export function authorizeMcpTool(toolName, auth = {}) {
         ok: false,
         code: 'RBAC_DENIED',
         message: 'Owner user is not permitted to list IOC Sources'
+      };
+    }
+  } else if (MCP_PUBLISHED_FEED_WRITE_ACTION_TOOLS.includes(name)) {
+    if (!caps.published_feeds_write) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to mutate Published Feeds (admin required)'
+      };
+    }
+  } else if (MCP_PUBLISHED_FEED_READ_TOOLS.includes(name)) {
+    if (!caps.published_feeds_read) {
+      return {
+        ok: false,
+        code: 'RBAC_DENIED',
+        message: 'Owner user is not permitted to read Published Feeds'
       };
     }
   } else if (!caps.ioc_read && name !== 'list_ioc_sources') {

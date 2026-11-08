@@ -13,6 +13,9 @@ import {
   resolveFeedFilterMode,
   FEED_FILTER_MODES,
   QUERY_FEED_SNAPSHOT_KEY,
+  CURATED_FEED_SNAPSHOT_KEY,
+  publishedFeedSnapshotIocTypeKey,
+  isFixedAllWindowFeed,
   resolveRequestedFeedFormat
 } from '../lib/feedPublisherService.js';
 import {
@@ -283,9 +286,7 @@ async function resolvePublicRequestFormat(pool, feed, rawFormat, rawWindow) {
     isPublishedFeedChunkedEnabledForFeed(feed.id || feed.feed_id)
     && requestedWindow === 'all'
   ) {
-    const iocTypeKey = resolveFeedFilterMode(feed) === FEED_FILTER_MODES.QUERY
-      ? QUERY_FEED_SNAPSHOT_KEY
-      : feedIocTypesKey(resolveFeedIocTypes(feed));
+    const iocTypeKey = publishedFeedSnapshotIocTypeKey(feed);
     const active = await getActiveChunkGeneration(
       pool,
       feed.id || feed.feed_id,
@@ -318,17 +319,20 @@ async function resolvePublicRequestFormat(pool, feed, rawFormat, rawWindow) {
  */
 async function serveSnapshot(pool, res, req, { feedId, slug, iocTypes, window, maxItems, filterMode, format }) {
   const startedAt = Date.now();
-  const queryMode = filterMode === FEED_FILTER_MODES.QUERY;
+  const selectorless = filterMode === FEED_FILTER_MODES.QUERY
+    || filterMode === FEED_FILTER_MODES.CURATED;
   const isStructured = String(format || '').toLowerCase() === 'json'
     || String(format || '').toLowerCase() === 'stix';
 
-  // Query-mode feeds have a single window-agnostic snapshot keyed by QUERY_FEED_SNAPSHOT_KEY.
+  // Query/curated feeds have a single window-agnostic snapshot keyed by their mode key.
   // The IOC-type and window request overrides are Basic-Filters concepts and do not apply,
   // so they are ignored here; only ?limit= still trims the served content.
   let iocTypeResult;
   let windowResult;
-  if (queryMode) {
-    iocTypeResult = QUERY_FEED_SNAPSHOT_KEY;
+  if (selectorless) {
+    iocTypeResult = filterMode === FEED_FILTER_MODES.CURATED
+      ? CURATED_FEED_SNAPSHOT_KEY
+      : QUERY_FEED_SNAPSHOT_KEY;
     windowResult = 'all';
   } else {
     iocTypeResult = parseIocTypeParam(req.query.ioc_type, iocTypes);

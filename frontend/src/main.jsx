@@ -202,7 +202,8 @@ import { feedFieldDomIds, mergeAriaDescribedBy } from './lib/feedFormField.js';
 import {
   emptyFeedForm,
   feedToForm,
-  toggleFilterMode as toggleFeedFilterMode,
+  setFilterMode as setFeedFilterMode,
+  filterModeLabel,
   toggleFeedFormat,
   feedHasJsonFormat,
   feedHasStixFormat,
@@ -6223,7 +6224,7 @@ function FeedFormSection({ title, children, headerRight = null }) {
 function SearchDslSyntaxHelpBody() {
   return (
     <>
-      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_seen, created_at (alias: imported_at)</p>
+      <p><b>Fields:</b> ioc, type, tag, source, classification, threat_actor, malware_family (alias: malware), source_threat_actor, source_malware_family, report_id, related_entity, entity_type, status, confidence, md5, sha1, sha256, imphash, tlsh, ssdeep, first_seen, last_seen, created_at (alias: imported_at)</p>
       <p><b>Text operators:</b> contains, equals, not_equals, starts_with, ends_with, not_contains</p>
       <p><b>List operators:</b> in, not_in</p>
       <p><b>Date operators:</b> before, after, between. Values are <code>&quot;YYYY-MM-DD&quot;</code>, <code>&quot;YYYY-MM-DD HH:MM:SS&quot;</code>, ISO-8601 with offset, or relative <code>&quot;now-N&quot;</code> + unit <code>m</code>/<code>h</code>/<code>d</code>/<code>w</code> (e.g. <code>&quot;now-5d&quot;</code>). Relative values are re-evaluated every time the query runs — in a Published Feed the window rolls forward on each regeneration.</p>
@@ -6266,6 +6267,8 @@ function PublishedFeedsPage() {
   const [feedSyntaxHelpOpen, setFeedSyntaxHelpOpen] = useState(false);
   const [form, setForm] = useState(emptyFeedForm);
   const [saving, setSaving] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewResult, setPreviewResult] = useState(null);
   const loadFeedsGuardRef = useRef(null);
   if (loadFeedsGuardRef.current === null) loadFeedsGuardRef.current = createLatestOnly();
 
@@ -6309,19 +6312,46 @@ function PublishedFeedsPage() {
     setEditing(null);
     setFormError('');
     setFeedSyntaxHelpOpen(false);
+    setPreviewResult(null);
     setForm(emptyFeedForm());
     loadSourceFeeds([]).catch(() => {});
     setShowFormModal(true);
   }
 
-  function openEditForm(feed) {
+  async function openEditForm(feed) {
     // Open in the feed's persisted mode; never silently convert one mode into the other.
+    // Fetch the full definition so curated_ioc_public_ids are available when editing.
     setEditing(feed);
     setFormError('');
     setFeedSyntaxHelpOpen(false);
-    setForm(feedToForm(feed));
-    loadSourceFeeds(Array.isArray(feed.include_feed_keys) ? feed.include_feed_keys : []).catch(() => {});
+    setPreviewResult(null);
+    let full = feed;
+    try {
+      const { data } = await api.get(`/published-feeds/${feed.id}`);
+      if (data?.feed) full = data.feed;
+    } catch {
+      // Fall back to the list row.
+    }
+    setEditing(full);
+    setForm(feedToForm(full));
+    loadSourceFeeds(Array.isArray(full.include_feed_keys) ? full.include_feed_keys : []).catch(() => {});
     setShowFormModal(true);
+  }
+
+  async function previewFeedDefinition() {
+    if (!canWrite || previewBusy) return;
+    setPreviewBusy(true);
+    setPreviewResult(null);
+    setFormError('');
+    try {
+      const payload = buildFeedPayload(form);
+      const { data } = await api.post('/published-feeds/preview', payload);
+      setPreviewResult(data);
+    } catch (err) {
+      setFormError(err.response?.data?.message || 'Failed to preview membership');
+    } finally {
+      setPreviewBusy(false);
+    }
   }
 
   async function saveFeed(e) {
@@ -6444,7 +6474,11 @@ function PublishedFeedsPage() {
                       {f.last_error ? <div style={{ color: '#fca5a5', fontSize: 11, marginTop: 4 }}>Last error: {f.last_error}</div> : null}
                     </td>
                     <td style={ui.td} title={(Array.isArray(f.ioc_types) ? f.ioc_types : [f.ioc_type]).filter(Boolean).join(', ')}>
-                      {formatIocTypesSummary(f.ioc_types || f.ioc_type)}
+                      {f.filter_mode === 'query'
+                        ? 'Dynamic query'
+                        : f.filter_mode === 'curated'
+                          ? `Curated${f.curated_ioc_count != null ? ` (${f.curated_ioc_count})` : ''}`
+                          : formatIocTypesSummary(f.ioc_types || f.ioc_type)}
                     </td>
                     <td style={ui.td}>{windowLabel(f.time_window)}</td>
                     <td style={ui.td}>{f.max_items ?? '—'}</td>
@@ -6537,20 +6571,35 @@ function PublishedFeedsPage() {
             <FeedFormSection
               title="Feed content"
               headerRight={(
-                <button
-                  type="button"
-                  style={ui.btn}
-                  onClick={() => setForm((x) => toggleFeedFilterMode(x))}
-                >
-                  {form.filter_mode === 'query' ? 'Basic Filters' : 'Advanced Query'}
-                </button>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ color: '#94a3b8', fontSize: 12 }}>Mode: {filterModeLabel(form.filter_mode)}</span>
+                  {[
+                    { v: 'basic', label: 'Basic' },
+                    { v: 'query', label: 'Dynamic query' },
+                    { v: 'curated', label: 'Curated' }
+                  ].map((opt) => (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      style={{
+                        ...ui.btn,
+                        ...(form.filter_mode === opt.v
+                          ? { borderColor: '#38bdf8', color: '#e0f2fe' }
+                          : {})
+                      }}
+                      onClick={() => setForm((x) => setFeedFilterMode(x, opt.v))}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
               )}
             >
               {form.filter_mode === 'query' ? (
                 <FeedFormField
                   ui={ui}
                   label="Query"
-                  helper="Define the feed contents using the same query syntax as the IOC List search. Only this query determines the feed's base IOCs; the Basic Filters above do not apply."
+                  helper="Define the feed contents using the same query syntax as the IOC List search. Only this query determines the feed's base IOCs; Basic Filters do not apply."
                   fullWidth
                 >
                   <textarea
@@ -6571,6 +6620,22 @@ function PublishedFeedsPage() {
                       <SearchDslSyntaxHelpBody />
                     </div>
                   ) : null}
+                </FeedFormField>
+              ) : form.filter_mode === 'curated' ? (
+                <FeedFormField
+                  ui={ui}
+                  label="Curated IOC public IDs"
+                  helper="One UUID per line (or comma-separated). Safety filters still apply; Basic Filters and Advanced Query do not constrain membership."
+                  fullWidth
+                >
+                  <textarea
+                    value={form.curated_ioc_public_ids_text}
+                    onChange={(e) => setForm((x) => ({ ...x, curated_ioc_public_ids_text: e.target.value }))}
+                    style={{ ...ui.textarea, fontFamily: 'monospace' }}
+                    rows={8}
+                    placeholder={'00000000-0000-4000-8000-000000000001\n00000000-0000-4000-8000-000000000002'}
+                    spellCheck={false}
+                  />
                 </FeedFormField>
               ) : (
                 <>
@@ -6612,6 +6677,35 @@ function PublishedFeedsPage() {
                   </FeedFormField>
                 </>
               )}
+              {canWrite ? (
+                <div style={{ gridColumn: '1 / -1', marginTop: 8 }}>
+                  <button type="button" style={ui.btn} disabled={previewBusy} onClick={() => previewFeedDefinition().catch(() => {})}>
+                    {previewBusy ? 'Previewing…' : 'Preview membership'}
+                  </button>
+                  {previewResult ? (
+                    <div style={{ marginTop: 10, padding: 12, border: '1px solid #334155', borderRadius: 10, background: '#0b1120', color: '#cbd5e1', fontSize: 13 }}>
+                      <div>Mode: <b>{previewResult.filter_mode}</b> · Total: <b>{previewResult.total}</b>
+                        {previewResult.truncated ? ' (truncated)' : ''}
+                      </div>
+                      {previewResult.validation_errors?.length ? (
+                        <div style={{ color: '#fca5a5', marginTop: 6 }}>{previewResult.validation_errors.join('; ')}</div>
+                      ) : null}
+                      {previewResult.warnings?.length ? (
+                        <div style={{ color: '#fcd34d', marginTop: 6 }}>{previewResult.warnings.join('; ')}</div>
+                      ) : null}
+                      {Array.isArray(previewResult.items) && previewResult.items.length ? (
+                        <ul style={{ margin: '8px 0 0', paddingLeft: 18, maxHeight: 160, overflow: 'auto' }}>
+                          {previewResult.items.slice(0, 20).map((it) => (
+                            <li key={`${it.public_id || it.value}`}>
+                              <code>{it.type}</code> {it.value}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </FeedFormSection>
 
             <FeedFormSection title="Safety filters">

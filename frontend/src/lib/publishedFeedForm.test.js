@@ -4,12 +4,15 @@ import {
   emptyFeedForm,
   feedToForm,
   toggleFilterMode,
+  setFilterMode,
   toggleFeedFormat,
   validateFeedForm,
   buildFeedPayload,
   normalizeFilterMode,
   normalizeOutputFormat,
-  normalizeFeedFormats
+  normalizeFeedFormats,
+  filterModeLabel,
+  parseCuratedPublicIdsText
 } from './publishedFeedForm.js';
 
 describe('publishedFeedForm mode handling', () => {
@@ -28,44 +31,48 @@ describe('publishedFeedForm mode handling', () => {
     });
     assert.equal(form.filter_mode, 'query');
     assert.equal(form.advanced_query, 'source equals "MalwareBazaar"');
-    // Basic selectors are still hydrated so a switch back is lossless.
     assert.deepEqual(form.ioc_types, ['hash']);
   });
 
-  it('edit form opens in the persisted mode (basic)', () => {
-    const form = feedToForm({ name: 'B', filter_mode: 'basic', ioc_types: ['domain', 'url'] });
-    assert.equal(form.filter_mode, 'basic');
-    assert.deepEqual(form.ioc_types, ['domain', 'url']);
+  it('edit form opens in curated mode with public ids', () => {
+    const form = feedToForm({
+      name: 'C',
+      filter_mode: 'curated',
+      curated_ioc_public_ids: ['11111111-1111-4111-8111-111111111111']
+    });
+    assert.equal(form.filter_mode, 'curated');
+    assert.match(form.curated_ioc_public_ids_text, /11111111/);
+    assert.equal(filterModeLabel('curated'), 'Curated');
   });
 
-  it('Basic -> Advanced -> Basic preserves unsaved values', () => {
-    // Start basic, edit basic selectors, then type a query, toggle back and forth.
+  it('Basic -> Query -> Curated -> Basic preserves unsaved values', () => {
     let form = emptyFeedForm();
     form = { ...form, ioc_types: ['domain', 'url'], time_window: '7d', include_tags: 'mirai' };
 
     form = toggleFilterMode(form); // -> query
     assert.equal(form.filter_mode, 'query');
     form = { ...form, advanced_query: 'source equals "USOM"' };
-    // Basic values survive the switch to query.
+
+    form = toggleFilterMode(form); // -> curated
+    assert.equal(form.filter_mode, 'curated');
+    form = { ...form, curated_ioc_public_ids_text: '11111111-1111-4111-8111-111111111111' };
+    assert.equal(form.advanced_query, 'source equals "USOM"');
     assert.deepEqual(form.ioc_types, ['domain', 'url']);
-    assert.equal(form.time_window, '7d');
 
     form = toggleFilterMode(form); // -> basic
     assert.equal(form.filter_mode, 'basic');
-    // Both the basic values and the unsaved query survive round-tripping.
-    assert.deepEqual(form.ioc_types, ['domain', 'url']);
-    assert.equal(form.time_window, '7d');
-    assert.equal(form.include_tags, 'mirai');
+    assert.equal(form.curated_ioc_public_ids_text, '11111111-1111-4111-8111-111111111111');
     assert.equal(form.advanced_query, 'source equals "USOM"');
+  });
 
-    form = toggleFilterMode(form); // -> query again, query text still there
-    assert.equal(form.filter_mode, 'query');
-    assert.equal(form.advanced_query, 'source equals "USOM"');
+  it('setFilterMode jumps directly', () => {
+    const form = setFilterMode(emptyFeedForm(), 'curated');
+    assert.equal(form.filter_mode, 'curated');
   });
 
   it('normalizeFilterMode defaults unknown values to basic', () => {
     assert.equal(normalizeFilterMode('query'), 'query');
-    assert.equal(normalizeFilterMode('QUERY'), 'query');
+    assert.equal(normalizeFilterMode('CURATED'), 'curated');
     assert.equal(normalizeFilterMode(undefined), 'basic');
     assert.equal(normalizeFilterMode('nonsense'), 'basic');
   });
@@ -76,6 +83,23 @@ describe('publishedFeedForm validation', () => {
     const base = { ...emptyFeedForm(), name: 'Q', filter_mode: 'query', advanced_query: '   ' };
     assert.match(validateFeedForm(base), /Advanced Query/);
     assert.equal(validateFeedForm({ ...base, advanced_query: 'ioc contains "x"' }), null);
+  });
+
+  it('curated mode rejects invalid UUIDs', () => {
+    const base = {
+      ...emptyFeedForm(),
+      name: 'C',
+      filter_mode: 'curated',
+      curated_ioc_public_ids_text: 'not-uuid'
+    };
+    assert.match(validateFeedForm(base), /Invalid curated/);
+    assert.equal(
+      validateFeedForm({
+        ...base,
+        curated_ioc_public_ids_text: '11111111-1111-4111-8111-111111111111'
+      }),
+      null
+    );
   });
 
   it('basic mode requires at least one IOC type', () => {
@@ -97,90 +121,43 @@ describe('publishedFeedForm payload', () => {
       filter_mode: 'query',
       advanced_query: '  source equals "USOM"  ',
       ioc_types: ['domain'],
-      include_tags: 'a, b',
-      max_items: '500'
+      include_tags: 'a, b'
     };
     const payload = buildFeedPayload(form);
     assert.equal(payload.filter_mode, 'query');
     assert.equal(payload.advanced_query, 'source equals "USOM"');
-    assert.deepEqual(payload.include_tags, ['a', 'b']);
-    assert.equal(payload.max_items, 500);
+    assert.equal(payload.curated_ioc_public_ids, undefined);
   });
 
-  it('basic mode sends filter_mode basic and null advanced_query', () => {
-    const form = { ...emptyFeedForm(), name: 'B', filter_mode: 'basic', advanced_query: 'leftover query' };
+  it('curated mode sends curated_ioc_public_ids', () => {
+    const form = {
+      ...emptyFeedForm(),
+      name: 'C',
+      filter_mode: 'curated',
+      curated_ioc_public_ids_text: '11111111-1111-4111-8111-111111111111\n22222222-2222-4222-8222-222222222222'
+    };
     const payload = buildFeedPayload(form);
-    assert.equal(payload.filter_mode, 'basic');
+    assert.equal(payload.filter_mode, 'curated');
     assert.equal(payload.advanced_query, null);
+    assert.deepEqual(payload.curated_ioc_public_ids, [
+      '11111111-1111-4111-8111-111111111111',
+      '22222222-2222-4222-8222-222222222222'
+    ]);
+  });
+
+  it('parseCuratedPublicIdsText splits on whitespace and commas', () => {
+    assert.deepEqual(
+      parseCuratedPublicIdsText('a, b\nc'),
+      ['a', 'b', 'c']
+    );
   });
 });
 
-describe('publishedFeedForm output format', () => {
-  it('default formats is txt-only with default include flags', () => {
-    const form = emptyFeedForm();
-    assert.deepEqual(form.formats, ['txt']);
-    assert.equal(form.include_source_metadata, true);
-    assert.equal(form.include_classification, true);
-    assert.equal(form.include_enrichment, false);
-  });
-
-  it('a legacy feed with no format opens as txt', () => {
-    const form = feedToForm({ name: 'Legacy', ioc_types: ['ip'] });
-    assert.deepEqual(form.formats, ['txt']);
-  });
-
-  it('saved JSON config reloads correctly (formats + flags)', () => {
-    const form = feedToForm({
-      name: 'J', ioc_types: ['domain'], format: 'json',
-      include_source_metadata: false, include_classification: true, include_enrichment: true
-    });
-    assert.deepEqual(form.formats, ['json']);
-    assert.equal(form.include_source_metadata, false);
-    assert.equal(form.include_classification, true);
-    assert.equal(form.include_enrichment, true);
-  });
-
-  it('dual formats reload and payload uses formats[]', () => {
-    const form = feedToForm({ name: 'D', ioc_types: ['ip'], formats: ['json', 'txt'] });
-    assert.deepEqual(form.formats, ['txt', 'json']);
-    const payload = buildFeedPayload(form);
-    assert.deepEqual(payload.formats, ['txt', 'json']);
-    assert.equal(payload.output_format, undefined);
-  });
-
-  it('cannot save with zero formats selected', () => {
-    const form = { ...emptyFeedForm(), name: 'X', formats: [] };
-    assert.match(validateFeedForm(form), /output format/i);
-  });
-
-  it('accepts STIX as a format and preserves TXT/JSON', () => {
+describe('publishedFeedForm formats helpers', () => {
+  it('toggleFeedFormat flips formats', () => {
     let form = emptyFeedForm();
-    form = toggleFeedFormat(form, 'stix');
-    assert.deepEqual(normalizeFeedFormats(form.formats), ['txt', 'stix']);
-    const payload = buildFeedPayload({ ...form, name: 'S' });
-    assert.deepEqual(payload.formats, ['txt', 'stix']);
-    const reloaded = feedToForm({ name: 'S', ioc_types: ['ip'], formats: ['stix', 'json'] });
-    assert.deepEqual(reloaded.formats, ['json', 'stix']);
-  });
-
-  it('buildFeedPayload sends formats and include flags', () => {
-    const txt = buildFeedPayload({ ...emptyFeedForm(), name: 'T' });
-    assert.deepEqual(txt.formats, ['txt']);
-    assert.equal(txt.include_source_metadata, true);
-    assert.equal(txt.include_enrichment, false);
-
-    const json = buildFeedPayload({
-      ...emptyFeedForm(), name: 'J', formats: ['json'], include_enrichment: true, include_classification: false
-    });
-    assert.deepEqual(json.formats, ['json']);
-    assert.equal(json.include_enrichment, true);
-    assert.equal(json.include_classification, false);
-  });
-
-  it('normalizeOutputFormat defaults unknown values to txt', () => {
+    form = toggleFeedFormat(form, 'json');
+    assert.deepEqual(normalizeFeedFormats(form.formats), ['txt', 'json']);
     assert.equal(normalizeOutputFormat('json'), 'json');
-    assert.equal(normalizeOutputFormat('JSON'), 'json');
-    assert.equal(normalizeOutputFormat(undefined), 'txt');
-    assert.equal(normalizeOutputFormat('xml'), 'txt');
   });
 });

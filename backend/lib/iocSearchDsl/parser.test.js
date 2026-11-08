@@ -356,6 +356,22 @@ test('imported_at is an alias of created_at (platform first-import time)', () =>
   assert.equal(parse('IMPORTED_AT before "2026-09-15"').dates[0].display, '2026-09-15');
 });
 
+test('malware is an alias of malware_family', () => {
+  const { ast, normalizedQuery } = parseSearchQuery('malware equals "Emotet"');
+  assert.equal(ast.field, 'malware_family');
+  assert.equal(normalizedQuery, 'malware_family equals "Emotet"');
+});
+
+test('intelligence fields parse; entity_type rejects unknown enum values', () => {
+  assert.equal(parse('source_threat_actor contains "apt"').field, 'source_threat_actor');
+  assert.equal(parse('source_malware_family in ("a","b")').field, 'source_malware_family');
+  assert.equal(parse('report_id equals "42"').field, 'report_id');
+  assert.equal(parse('related_entity equals "Emotet"').field, 'related_entity');
+  assert.equal(parse('entity_type equals "campaign"').field, 'entity_type');
+  expectError('entity_type equals "sector"', 'invalid_enum_value');
+  expectError('report_id contains "42"', 'unsupported_operator');
+});
+
 test('malformed relative literals are rejected with invalid_date', () => {
   for (const bad of [
     'now+5d',        // future offsets are not a thing
