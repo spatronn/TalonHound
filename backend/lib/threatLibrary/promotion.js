@@ -23,7 +23,7 @@ import {
   NON_IOC_CANDIDATE_TYPES
 } from './indicatorMembership.js';
 import { parseNetworkObservable } from '../networkObservable.js';
-import { refangTextForExtraction } from './defang.js';
+import { refangObservable, refangTextForExtraction } from './defang.js';
 
 export {
   hasAuthoritativePublisherIocScope,
@@ -232,9 +232,50 @@ function clauseTexts(candidate) {
 const OPERATOR_DEPLOYMENT_RE =
   /\b(?:threat\s+actors?|attackers?|operators?|adversar(?:y|ies)|the\s+actor)\s+(?:deployed|hosted|staged|uploaded|placed)\b[^.]{0,80}?\b(?:to|on)\s+the\s+domain\s+[a-z0-9-]+(?:\.[a-z0-9-]+)+/i;
 
+/**
+ * Download-and-execute command shapes; group 1 is the fetched URL:
+ * `iex((New-Object Net.WebClient).DownloadString('<url>'))`,
+ * `irm <url> | iex`, `curl … <url> | sh`.
+ */
+const EXECUTION_CRADLE_RES = [
+  /\b(?:iex|invoke-expression)\b[^\n]{0,80}?\.\s*download(?:string|data)\s*\(\s*['"]([^'"\s)]+)/gi,
+  /\b(?:irm|iwr|invoke-restmethod|invoke-webrequest)\s+(?:-uri\s+)?['"]?([^\s'"|]+)['"]?[^\n|]{0,80}\|\s*(?:iex|invoke-expression)\b/gi,
+  /\b(?:curl|wget)\b[^\n|]{0,120}?\s['"]?((?:h(?:tt|xx)ps?|ftps?)[^\s'"|;&]+)['"]?(?:\s[^\n|]{0,60})?\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b/gi
+];
+const DEFANGED_TOKEN_RE = /\[\.\]|\(\.\)|\{\.\}|\[:\]|\bhxxps?\b/i;
+
+function urlKey(value) {
+  return String(refangObservable(String(value || '')) || value || '').trim().toLowerCase().replace(/\/+$/, '');
+}
+
+/**
+ * The publisher quotes a command that downloads AND executes this exact URL
+ * (an actor's scheduled task, a dropper one-liner), and wrote the URL
+ * defanged: the payload was delivered from it. A fanged URL in the same shape
+ * (an installer one-liner) and a download without execution do not qualify
+ * (review-queue 35800 follow-up).
+ * @param {object} candidate
+ */
+function isDefangedExecutionCradleArgument(candidate) {
+  if (String(candidate?.candidate_type || '').toLowerCase() !== 'url') return false;
+  const target = urlKey(candidate?.normalized_value || candidate?.original_value);
+  if (!target) return false;
+  const raws = [String(candidate?.evidence_text || '')];
+  for (const occ of occurrencesOf(candidate)) {
+    if (occ?.surrounding_text) raws.push(String(occ.surrounding_text));
+  }
+  return raws.some((raw) => EXECUTION_CRADLE_RES.some((re) => {
+    for (const m of raw.matchAll(re)) {
+      if (DEFANGED_TOKEN_RE.test(m[1]) && urlKey(m[1]) === target) return true;
+    }
+    return false;
+  }));
+}
+
 function hasOperationalEvidence(candidate) {
   if (relationOf(candidate) === 'operational_malicious') return true;
   if (occurrencesOf(candidate).some((occ) => String(occ?.relation_marker || '') === 'operational')) return true;
+  if (isDefangedExecutionCradleArgument(candidate)) return true;
   return clauseTexts(candidate).some((text) => POSITIVE_USE_RE.test(text) || OPERATOR_DEPLOYMENT_RE.test(text));
 }
 
