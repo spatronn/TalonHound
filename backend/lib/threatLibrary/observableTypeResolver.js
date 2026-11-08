@@ -941,11 +941,12 @@ export function resolveDottedToken(raw, ctx = {}) {
   // 3b. A Rust source file ("Loader (build.rs)" beside a digest, "main.rs"):
   //     one bare name over the .rs ccTLD, written fanged, with no network
   //     wording around it, names a file. A defanged or declared .rs host
-  //     ("ftp.exfil-mail[.]rs") never reaches here or keeps its host reading
-  //     (tl-type-resolver-v26).
+  //     ("ftp.exfil-mail[.]rs", "user@mail-host[.]rs") never reaches here or
+  //     keeps its host reading (tl-type-resolver-v26).
   if (
     last === 'rs' && labels.length === 2 && labels[0].length <= 32 &&
-    !DEFANG_MARKER_RE.test(original) && !inlineNetwork && !clauseNetwork && !hosts.has(lower)
+    !DEFANG_MARKER_RE.test(original) && !surrounding.toLowerCase().includes(`${labels[0]}[.]rs`) &&
+    !inlineNetwork && !clauseNetwork && !hosts.has(lower)
   ) {
     return out('technical_artifact', 'file_extension');
   }

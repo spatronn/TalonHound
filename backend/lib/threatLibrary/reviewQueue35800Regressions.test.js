@@ -11,8 +11,8 @@
  *      period:"), including when its rows sit under deeper sub-headings, and over
  *      a "URI Locations:" sibling holding a URL list.
  * FP-1 "Tor and [.]onion domains" (a spaced defang naming the TLD in prose) is
- *      not the domain "and.onion": a .onion host needs a 16- or 56-character
- *      service label.
+ *      not the domain "and.onion": a .onion host needs a service label of at
+ *      least 16 characters.
  * FP-2 A Rust source file named beside a digest in a hash table ("Loader
  *      (build.rs)") is a file name, not a domain under the .rs ccTLD; a
  *      defanged or declared .rs domain stays a domain.
@@ -130,6 +130,9 @@ test('FP-1. ".onion" named in prose after a word is not a domain; real onion ser
   assert.equal(normalizeCandidateValue(`${v3}.onion`).ok, true);
   assert.equal(normalizeCandidateValue('abcdefghij234567.onion').ok, true, 'v2 (16-character) label');
   assert.equal(normalizeCandidateValue(`http://${v3}.onion/route.php`).ok, true);
+  // A publisher misspelling of a real service (one extra character) still names it.
+  assert.equal(normalizeCandidateValue(`${v3}x.onion`).ok, true);
+  assert.equal(normalizeCandidateValue('short-label.onion').ok, false);
   const x = run(`
 <h2>Analysis</h2>
 <p>The loader connects to its C2 through TOR and [.]onion domains, and only does so on a specific schedule.</p>
@@ -155,4 +158,13 @@ test('FP-2. a Rust source file beside a digest is not a .rs domain', () => {
   assert.ok(!m.includes('domain:build.rs'), 'build.rs is the hashed file, not a host');
   assert.ok(m.includes(`sha256:${H1}`) && m.includes(`sha256:${H2}`));
   assert.ok(m.includes('domain:update-mirror.rs'), 'a declared, defanged .rs domain stays a domain');
+});
+
+test('FP-2 control. the defanged mail domain of an exfil account keeps its domain reading', () => {
+  const x = run(`
+<h2>Indicators of Compromise</h2>
+<ul><li>FTP Server: ftp[:]//ftp.exfil-mail[.]rs</li><li>FTP username: kel-bin@exfil-mail[.]rs</li></ul>`);
+  const typed = x.candidates.filter((c) => c.normalized_value === 'exfil-mail.rs').map((c) => c.candidate_type);
+  assert.ok(!typed.includes('technical_artifact'), 'a defanged .rs name is never a Rust file');
+  assert.ok(members(x).includes('domain:ftp.exfil-mail.rs'));
 });

@@ -113,14 +113,15 @@ export function isRfcExampleDomain(domain) {
  * A Tor onion service is named by a 16-character (v2) or 56-character (v3)
  * service label right before ".onion". "and.onion" (prose "Tor and [.]onion
  * domains" refanged across the space) names no service (tl-candidates-v61).
- * Only the label length is checked: publishers misspell real addresses, and a
- * misspelled one still identifies the service they meant.
+ * Only a label too short for any service is rejected: publishers misspell
+ * real addresses (a 57-character ransom portal label), and a misspelled one
+ * still identifies the service they meant.
  * @param {string} host
  */
 export function isMalformedOnionHost(host) {
   const labels = String(host || '').toLowerCase().replace(/\.$/, '').split('.');
   if (labels.length < 2 || labels[labels.length - 1] !== 'onion') return false;
-  return !/^[a-z0-9]{16}$|^[a-z0-9]{56}$/.test(labels[labels.length - 2]);
+  return !/^[a-z0-9]{16,}$/.test(labels[labels.length - 2]);
 }
 
 /**
