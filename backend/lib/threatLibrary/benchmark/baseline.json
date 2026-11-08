@@ -1,20 +1,20 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v60",
+    "candidates": "tl-candidates-v61",
     "zones": "tl-zones-v17",
     "tables": "tl-table-v18",
-    "type_resolver": "tl-type-resolver-v25",
+    "type_resolver": "tl-type-resolver-v26",
     "html": "threat_library_html_v10",
     "pdf": "threat_library_pdf_v7",
     "quality": "tl-quality-v16",
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 93,
-    "cases_exact": 91,
+    "cases": 94,
+    "cases_exact": 92,
     "indicators": {
-      "expected": 1480,
-      "tp": 1478,
+      "expected": 1492,
+      "tp": 1490,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -22,13 +22,13 @@
       "fn_not_member": 2,
       "fn_needs_review": 2,
       "precision": 1,
-      "recall": 0.9986,
+      "recall": 0.9987,
       "f1": 0.9993
     },
-    "candidate_extraction_recall": 0.9993,
+    "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9652,
+    "assertion_accuracy": 0.9657,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -38,7 +38,7 @@
       "warning": 3,
       "info": 24,
       "cases_flagged": 3,
-      "exact_cases": 91,
+      "exact_cases": 92,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -172,6 +172,33 @@
       "warning_codes": [
         "non_file_digest_reclassified"
       ]
+    },
+    "control-qualified-sibling-ioc-groups": {
+      "members": [
+        "domain:relay.wallet-swap-node.cc",
+        "sha256:1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+        "sha256:2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b",
+        "sha256:3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c",
+        "sha256:4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
+        "sha256:5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "sha256:6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+        "url:http://198.51.100.23/stage.exe",
+        "url:http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuvwx.onion/route.php",
+        "url:http://payload-host.clip-rotate.com/default.dat",
+        "url:https://drop-site.clip-rotate.net/js/stage.exe",
+        "url:https://payload-host.clip-rotate.com/default.dat"
+      ],
+      "tp": 12,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 3,
+      "sections_checked": 3,
+      "assertions_correct": 12,
+      "assertions_checked": 12,
+      "warning_codes": []
     },
     "golden-checkpoint-jsceal-appendix-b": {
       "members": [

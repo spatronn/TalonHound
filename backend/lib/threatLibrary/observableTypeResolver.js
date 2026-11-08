@@ -90,8 +90,10 @@ import { isValidIpAddress } from '../publicIp.js';
  * v23 (70-report audit 35700–35769): a masked IPv4 address ("1.226.82.xxx")
  * is never a host under the .xxx TLD; a search-query field before a grouped
  * condition ("host.services: (port=22 AND …)") is a field name.
+ * v26 (review queue 35800–35819): one bare fanged name over .rs with no network
+ * wording ("Loader (build.rs)" beside a digest) is a Rust source file.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v25';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v26';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -935,6 +937,18 @@ export function resolveDottedToken(raw, ctx = {}) {
   //    directory or file inside a path, not a host. A URL authority (`//host`)
   //    is not a path segment, and a DNS-shaped suffix keeps the other rules.
   if (pathSegment && strength !== 'strong') return out('technical_artifact', 'path_segment');
+
+  // 3b. A Rust source file ("Loader (build.rs)" beside a digest, "main.rs"):
+  //     one bare name over the .rs ccTLD, written fanged, with no network
+  //     wording around it, names a file. A defanged or declared .rs host
+  //     ("ftp.exfil-mail[.]rs") never reaches here or keeps its host reading
+  //     (tl-type-resolver-v26).
+  if (
+    last === 'rs' && labels.length === 2 && labels[0].length <= 32 &&
+    !DEFANG_MARKER_RE.test(original) && !inlineNetwork && !clauseNetwork && !hosts.has(lower)
+  ) {
+    return out('technical_artifact', 'file_extension');
+  }
 
   // 4. Filename shapes (extension in TLD position).
   if (FILE_EXT_HINT.has(last)) {
