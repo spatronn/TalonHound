@@ -428,8 +428,8 @@ test('threat_actor remains analyst-only when source_threat_actor is also availab
 });
 
 test('related_entity injection payload is bound, never inlined, and never uses co-mention table', () => {
-  const payload = 'ARTEX"; DROP TABLE threat_entities; --';
-  const { sql, params } = build(`related_entity equals "${payload}"`);
+  // Same escape style as the existing ioc-injection test: \" keeps the quote inside the DSL string.
+  const { sql, params } = build('related_entity equals "ARTEX\\"; DROP TABLE threat_entities; --"');
   assert.equal(params[0], 'artex"; drop table threat_entities; --');
   assert.doesNotMatch(sql, /DROP TABLE/);
   assert.doesNotMatch(sql, /threat_report_entities/);
