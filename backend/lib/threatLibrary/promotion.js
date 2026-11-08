@@ -222,10 +222,20 @@ function clauseTexts(candidate) {
   return texts;
 }
 
+/**
+ * The actor put its own content on this exact named host: "the threat actor
+ * deployed the same artifact set to the domain evil.example". The host must
+ * follow "domain" directly as a dotted name, so "deployed … to the domain
+ * controller" (a victim machine) never reads as operator infrastructure
+ * (review-queue 35773 audit).
+ */
+const OPERATOR_DEPLOYMENT_RE =
+  /\b(?:threat\s+actors?|attackers?|operators?|adversar(?:y|ies)|the\s+actor)\s+(?:deployed|hosted|staged|uploaded|placed)\b[^.]{0,80}?\b(?:to|on)\s+the\s+domain\s+[a-z0-9-]+(?:\.[a-z0-9-]+)+/i;
+
 function hasOperationalEvidence(candidate) {
   if (relationOf(candidate) === 'operational_malicious') return true;
   if (occurrencesOf(candidate).some((occ) => String(occ?.relation_marker || '') === 'operational')) return true;
-  return clauseTexts(candidate).some((text) => POSITIVE_USE_RE.test(text));
+  return clauseTexts(candidate).some((text) => POSITIVE_USE_RE.test(text) || OPERATOR_DEPLOYMENT_RE.test(text));
 }
 
 /** A column header / list name that labels its values as attacker infrastructure. */
@@ -248,8 +258,30 @@ function hasPublisherRoleLabel(candidate) {
   if (rows.some((r) => ROLE_COLUMN_HEADER_RE.test(String(r?.column_header || '')))) return true;
   return occurrencesOf(candidate).some((occ) => {
     const name = String(occ?.code_list_name || '');
-    return ROLE_LIST_NAME_RE.test(name) || IOC_LIST_NAME_RE.test(name);
+    if (ROLE_LIST_NAME_RE.test(name) || IOC_LIST_NAME_RE.test(name)) return true;
+    return isRoleCaptionedCode(occ);
   });
+}
+
+/**
+ * The caption a publisher gives a hunting query names what its inline values
+ * are ("Outbound connections to observed campaign infrastructure" over
+ * `RemoteUrl has_any ("a.example", …)`), the way a list variable name does
+ * (`let c2ip = dynamic([…])`). Read only for a code block, from the innermost
+ * entry of its section path, and only when the caption names an infrastructure
+ * role without calling the values legitimate. Evidence for an analyst
+ * promotion only — never membership (review-queue 35773 audit).
+ */
+const CAPTION_ROLE_RE =
+  /\b(?:campaign|attacker|threat[- ]actor|actor|operator|adversary|malicious|c2|c&c|command\s*(?:and|&)\s*control|phishing|payload|delivery|callback|exfiltration)[- ](?:infrastructure|domains?|hostnames?|hosts?|servers?|ips?|ip\s+addresses|urls?|endpoints?)\b/i;
+const CAPTION_NEGATIVE_RE = /\b(?:legitimate|benign|allow-?list(?:ed)?|whitelist(?:ed)?|exclu(?:de|ded|sion)|false\s+positives?|known[- ]good)\b/i;
+
+function isRoleCaptionedCode(occ) {
+  if (String(occ?.block_type || '') !== 'code') return false;
+  const path = Array.isArray(occ?.section_path) ? occ.section_path : [];
+  const caption = String(path[path.length - 1] || '').trim();
+  if (!caption || caption.length > 160) return false;
+  return CAPTION_ROLE_RE.test(caption) && !CAPTION_NEGATIVE_RE.test(caption);
 }
 
 function isConnectivityCheck(candidate) {
