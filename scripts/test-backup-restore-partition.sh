@@ -41,6 +41,24 @@ fi
 
 export PGPASSWORD="$DB_PASSWORD"
 
+# Version-matched client tools for a non-compose target: a host client of a
+# newer major emits settings the server rejects on restore ("SET
+# transaction_timeout" from a 17+ pg_dump / pg_restore against a 16 server).
+# PG_CLIENT_IMAGE (e.g. the server's own image) runs psql / pg_dump /
+# pg_restore at the server's major, sharing the host network, the checkout
+# (dump files) and /tmp.
+if [ "$USE_COMPOSE" -eq 0 ] && [ -n "${PG_CLIENT_IMAGE:-}" ]; then
+  pg_client() {
+    _bin="$1"
+    shift
+    docker run --rm -i --network host -e PGPASSWORD -v "$ROOT:$ROOT" -v /tmp:/tmp -w "$ROOT" "$PG_CLIENT_IMAGE" "$_bin" "$@"
+  }
+  psql() { pg_client psql "$@"; }
+  pg_dump() { pg_client pg_dump "$@"; }
+  pg_restore() { pg_client pg_restore "$@"; }
+  echo "[partition-restore] client tools from ${PG_CLIENT_IMAGE}"
+fi
+
 psql_cmd() {
   _db="$1"
   shift
