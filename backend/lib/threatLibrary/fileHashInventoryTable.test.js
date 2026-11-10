@@ -23,7 +23,7 @@ import {
 import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v18');
-assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v62');
+assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v63');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
 assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
 

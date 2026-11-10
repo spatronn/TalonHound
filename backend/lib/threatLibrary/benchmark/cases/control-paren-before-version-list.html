@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><title>Weekly digest: firewall zero-day and a proxyware campaign</title></head>
+<body>
+<article>
+<h1>Weekly digest: firewall zero-day and a proxyware campaign</h1>
+<p>A firewall flaw was exploited before patches shipped, and a proxyware operator abused it to reach edge devices. The operator's relay was reachable at its C2 server (before 203.0.113.5 was sinkholed, it used 198.51.100.77).</p>
+<h2>Vulnerability Details</h2>
+<table>
+<thead><tr><th>CVE ID</th><th>Name</th><th>Affected product</th></tr></thead>
+<tbody>
+<tr><td>CVE-2026-100003</td><td>Firewall NULL Pointer Dereference</td><td>Cisco Secure Firewall ASA Software (Before 9.16.4.104, 9.18.4.96, 9.24.1.27 / 9.24.10.1); Python Brotli (before 1.2.1), brotlicffi (before 1.2.1.0)</td></tr>
+</tbody>
+</table>
+<h2>Indicators of Compromise (IoCs)</h2>
+<table>
+<thead><tr><th>Attack</th><th>Type</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Proxyware</td><td>IP</td><td>198.51.100[.]77</td></tr>
+<tr><td>Proxyware</td><td>SHA256</td><td>f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7</td></tr>
+</tbody>
+</table>
+</article>
+</body>
+</html>
