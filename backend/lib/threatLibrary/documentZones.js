@@ -99,8 +99,11 @@ import {
  * v15 (twelve-report audit): "Contact" is a reference heading only as a
  * whole contact block ("Contact", "Contact us", "Contact information"); a
  * topic that starts with the word ("Contact Form Engagement") is narrative.
+ * v18 (35831 cleanup): a vendor patch / advisory link list heading ("Patch
+ * links", "Vendor advisories", "Security bulletins") is a reference section,
+ * so its one-link list rows are context, not structured rows for review.
  */
-export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v17';
+export const THREAT_LIBRARY_DOCUMENT_ZONES_VERSION = 'tl-zones-v18';
 
 /**
  * Pure filename/hash inventory whose row boundaries were lost before zoning
@@ -227,6 +230,12 @@ const HEADING_HINTS = Object.freeze({
     /^additional\s+resources?\b/i,
     /^see\s+also\b/i,
     /further\s+(?:reading|information)/i,
+    // A vendor patch / advisory link list ("Patch links", "Vendor advisories",
+    // "Security bulletins"): where to get the fix, never indicators
+    // (tl-zones-v18). Whole heading only — "Fake patch links" (a lure) and
+    // "Malicious patch download URLs" stay narrative.
+    /^(?:vendor\s+|security\s+)?(?:patch(?:es)?|fix(?:es)?|remediation)\s+(?:links?|references?|advisor(?:y|ies)|bulletins?|resources?)\s*:?\s*$/i,
+    /^(?:vendor|security)\s+(?:advisor(?:y|ies)|bulletins?)(?:\s+links?)?\s*:?\s*$/i,
     /参考链接|参考文献|相关链接|引用|联系方式/i,
     /kaynaklar|referanslar/i
   ],

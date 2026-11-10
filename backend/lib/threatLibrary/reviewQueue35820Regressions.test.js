@@ -146,3 +146,42 @@ test('FP-1 negative: an anchor that is the whole match is unchanged', () => {
 <ul><li>See <a href="https://www.vendor.example/kb/123">www.vendor.example/kb/123</a> for details.</li></ul>`);
   assert.ok(identities(x).includes('url:www.vendor.example/kb/123'), identities(x).join(', '));
 });
+
+// --- FP-2 (35831 cleanup, tl-zones-v18) -------------------------------------
+// With the CVE id no longer glued on (FP-1), each "Patch links" item is a
+// one-link list row; under an unrecognised heading such rows went to
+// needs_review. A vendor patch / advisory link list is a reference section.
+
+const outcome = (c) => buildCandidateEvidenceRecord(c).membership_outcome;
+
+test('FP-2: a "Patch links" list of vendor advisory links is reference context, never review or Indicators', async () => {
+  const { THREAT_LIBRARY_DOCUMENT_ZONES_VERSION } = await import('./documentZones.js');
+  assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v18');
+  const x = run(`
+<h2>Indicators of Compromise (IoCs)</h2>
+<table><tr><th>Attack</th><th>Type</th><th>Value</th></tr>
+<tr><td>Loader</td><td>SHA256</td><td>${hex('ab', 64)}</td></tr></table>
+<h2>Vulnerability Details</h2>
+<h3>Patch links</h3>
+<ul>
+<li><span class="lbl">CVE-2026-100001</span><a href="https://www.vendor-one.example/archive/2026.php#notes">www.vendor-one.example/archive/2026.php#notes</a></li>
+<li><span class="lbl">CVE-2026-100002</span><a href="https://nodejs-like.example/en/blog/release/v22.1.4/">nodejs-like.example/en/blog/release/v22.1.4/</a></li>
+</ul>`);
+  const urls = x.candidates.filter((c) => c.candidate_type === 'url');
+  assert.equal(urls.length, 2, urls.map((c) => c.normalized_value).join(', '));
+  for (const c of urls) {
+    assert.notEqual(outcome(c), 'needs_review', `${c.normalized_value}: ${outcome(c)}`);
+    assert.equal(isReportIndicatorMember(persisted(c)), false);
+  }
+  assert.deepEqual(members(x), [`sha256:${hex('ab', 64)}`]);
+});
+
+test('FP-2 negative: a lure heading that mentions patch links stays narrative', async () => {
+  const { classifyHeadingText } = await import('./documentZones.js');
+  assert.equal(classifyHeadingText('Patch links'), 'reference_section');
+  assert.equal(classifyHeadingText('Vendor advisories'), 'reference_section');
+  assert.equal(classifyHeadingText('Security bulletins:'), 'reference_section');
+  assert.notEqual(classifyHeadingText('Fake patch links'), 'reference_section');
+  assert.notEqual(classifyHeadingText('Malicious patch download URLs'), 'reference_section');
+  assert.notEqual(classifyHeadingText('Patch Tuesday exploitation'), 'reference_section');
+});
