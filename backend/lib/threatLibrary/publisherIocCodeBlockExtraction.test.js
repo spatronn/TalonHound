@@ -56,7 +56,7 @@ const membersOf = (cands) => cands.filter((c) => isMember(c));
 
 test('contract: html v4 + candidates v15', () => {
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v10');
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v61');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v62');
 });
 
 test('13. publisher IOC list keeps wss:// C2 URLs as URL Indicators (not host-only domains)', () => {

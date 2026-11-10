@@ -105,3 +105,32 @@ test('a dropped region holding only the report\'s own URL is a self-reference, n
   assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...citation, sample_observables: [] }] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
   assert.deepEqual(codes({ ...clean, report: { source_url: null }, significantRegions: [citation] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
 });
+
+test('a dropped region whose values all reached the document (a highlighter plain-text copy) is accounted', () => {
+  const report = {
+    source_url: 'https://vendor.example/blog/stealer/',
+    canonical_document: {
+      blocks: [
+        { id: 'b1', type: 'paragraph', text: 'The stealer first requests the tunnel endpoint:' },
+        { id: 'b2', type: 'table', text: '1 | https://c2-host[.]example/tunnel/create/?username=[redacted]' },
+        { id: 'b3', type: 'table', text: '1 2 | {"socks_host":"198.51.100[.]222","bind":"0.0.0.0"}' }
+      ]
+    }
+  };
+  const textarea = {
+    region_kind: 'textarea',
+    locator: 'textarea.urvanov-syntax-highlighter-plain print-no',
+    observable_count: 3,
+    sample_observables: ['https://c2-host[.]example/tunnel/create/?username=[redacted]', '198.51.100[.]222', '0.0.0.0']
+  };
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [textarea] }), []);
+  assert.equal(reportStatusAxes({ ...clean, report, significantRegions: [textarea] }).document_coverage.status, 'accounted');
+  // A value the document does not hold keeps the obligation.
+  const lost = { ...textarea, observable_count: 4, sample_observables: [...textarea.sample_observables, 'lost-c2.example.net'] };
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [lost] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  // More values than samples: the unsampled ones may be missing.
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...textarea, observable_count: 25 }] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  // No stored document or no samples: nothing is excused.
+  assert.deepEqual(codes({ ...clean, report: { source_url: report.source_url }, significantRegions: [textarea] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+  assert.deepEqual(codes({ ...clean, report, significantRegions: [{ ...textarea, sample_observables: [] }] }), [C.SOURCE_REGIONS_UNACCOUNTED]);
+});

