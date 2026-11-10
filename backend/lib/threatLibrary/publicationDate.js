@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v3';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v4';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -423,6 +423,12 @@ const META_PUBLISHED_KEYS = Object.freeze([
   'citation_date',
   'dc.date',
   'dcterms.date',
+  // Exact names only (not a prefix): Adobe Franklin / AEM and other blogs
+  // emit `published-date`. Placed after the historical specific keys and
+  // before the generic `date` fallback so an existing pubdate / citation
+  // key still wins, and a modified/updated name cannot match.
+  'published-date',
+  'published_date',
   'date'
 ]);
 
