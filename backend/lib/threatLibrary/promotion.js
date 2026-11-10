@@ -235,12 +235,16 @@ const OPERATOR_DEPLOYMENT_RE =
 /**
  * Download-and-execute command shapes; group 1 is the fetched URL:
  * `iex((New-Object Net.WebClient).DownloadString('<url>'))`,
- * `irm <url> | iex`, `curl … <url> | sh`.
+ * `irm <url> | iex`, `curl … <url> | sh`, `bash -c "$(curl … <url>)"` (the
+ * shell runs the fetched text), and `curl -O <url> && chmod +x f && ./f`
+ * (the fetched file is made executable and run; 30-report review queue).
  */
 const EXECUTION_CRADLE_RES = [
   /\b(?:iex|invoke-expression)\b[^\n]{0,80}?\.\s*download(?:string|data)\s*\(\s*['"]([^'"\s)]+)/gi,
   /\b(?:irm|iwr|invoke-restmethod|invoke-webrequest)\s+(?:-uri\s+)?['"]?([^\s'"|]+)['"]?[^\n|]{0,80}\|\s*(?:iex|invoke-expression)\b/gi,
-  /\b(?:curl|wget)\b[^\n|]{0,120}?\s['"]?((?:h(?:tt|xx)ps?|ftps?)[^\s'"|;&]+)['"]?(?:\s[^\n|]{0,60})?\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b/gi
+  /\b(?:curl|wget)\b[^\n|]{0,120}?\s['"]?((?:h(?:tt|xx)ps?|ftps?)[^\s'"|;&]+)['"]?(?:\s[^\n|]{0,60})?\|\s*(?:sudo\s+)?(?:ba|z|da)?sh\b/gi,
+  /\b(?:ba|z|da)?sh\s+-c\s+["']?\$\(\s*(?:curl|wget)\b[^\n)]{0,120}?\s['"]?((?:h(?:tt|xx)ps?|ftps?)[^\s'"|;&)]+)/gi,
+  /\b(?:curl|wget)\b[^\n|;&]{0,60}?\s['"]?((?:h(?:tt|xx)ps?|ftps?)[^\s'"|;&]+)['"]?[^\n]{0,160}?\bchmod\s+(?:\+x|[0-7]?7[0-7]{2})\b[^\n]{0,120}?(?:&&|;)\s*\.\//gi
 ];
 const DEFANGED_TOKEN_RE = /\[\.\]|\(\.\)|\{\.\}|\[:\]|\bhxxps?\b/i;
 
