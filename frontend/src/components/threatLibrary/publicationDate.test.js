@@ -72,6 +72,26 @@ test('UI 25: date-only precision never shows a fake midnight, and no timezone sh
   assert.equal(publicationDay({ published_at: 'garbage' }), null);
 });
 
+test('UI: date-only meta published-date displays 10/11/2026 with no timezone shift', () => {
+  const report = {
+    published_at: '2026-11-10T03:00:00+03:00',
+    published_date: '2026-11-10',
+    published_at_precision: 'date',
+    published_at_source: 'meta',
+    created_at: '2026-11-10T23:32:37+03:00'
+  };
+  assert.equal(publicationDay(report), '2026-11-10');
+  assert.equal(formatPublicationDate(report), '10/11/2026');
+  assert.equal(publicationDateTitle(report), 'Publication date of the original source, from the page metadata');
+  const items = buildReportDetails({
+    ...report,
+    source_name: 'www.recordedfuture.com',
+    analysis_status: 'ready'
+  }, { formatDateTime: fmt });
+  assert.equal(items.find((i) => i.label === 'Published').value, '10/11/2026');
+  assert.equal(items.find((i) => i.label === 'Imported').value, 'fmt(2026-11-10T23:32:37+03:00)');
+});
+
 test('formatCalendarDate formats a plain day and rejects instants / junk', () => {
   assert.equal(formatCalendarDate('2026-09-15'), '15/09/2026');
   assert.equal(formatCalendarDate('2026-09-15T00:00:00Z'), '');

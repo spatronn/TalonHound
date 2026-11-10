@@ -123,6 +123,72 @@ test('URL 4: metadata fallback variants (datePublished / pubdate / sailthru.date
   assert.equal(extractMetaPublicationDate('<meta name="last-modified" content="2026-09-19"><meta property="og:updated_time" content="2026-09-19">', opts).published_at, null);
 });
 
+test('URL 4b: meta name published-date is a publication date (ISO, human day, precedence, negatives)', () => {
+  const now = new Date('2026-11-10T20:40:00Z');
+  const page = `<html><head>
+    <meta name="author" content="Analyst">
+    <meta name="published-date" content="2026-11-10">
+    <meta property="article:modified_time" content="2026-11-11T08:00:00Z">
+    </head><body><main><article>
+    <h1>Example implant report</h1>
+    <p>observed a cluster of servers between late August and October 2026.</p>
+    <p>Four organizations were subsequently published on the leak site.</p>
+    </article></main></body></html>`;
+  const d = extractHtmlPublicationDate(page, { now });
+  assert.equal(d.source, 'meta');
+  assert.equal(d.published_date, '2026-11-10');
+  assert.equal(d.precision, 'date');
+  assert.equal(d.published_at, '2026-11-10T00:00:00.000Z');
+  assert.equal(d.raw_value, '2026-11-10');
+  assert.equal(d.evidence.selector, 'meta[name="published-date"]');
+  assert.equal(d.modified_at, '2026-11-11T08:00:00Z');
+  assert.equal(d.extractor, 'tl-published-at-v4');
+
+  const human = extractMetaPublicationDate('<meta name="published_date" content="10 Nov 2026">', { now });
+  assert.equal(human.source, 'meta');
+  assert.equal(human.published_date, '2026-11-10');
+  assert.equal(human.precision, 'date');
+  assert.equal(human.published_at, '2026-11-10T00:00:00.000Z');
+  assert.equal(human.evidence.selector, 'meta[name="published_date"]');
+
+  const visible = extractVisiblePublicationDate('<main><p>PUBLISHED ON 10 NOV 2026</p><p>Activity continued through October 2026.</p></main>', { now });
+  assert.equal(visible.source, 'visible_date');
+  assert.equal(visible.published_date, '2026-11-10');
+  assert.equal(visible.raw_value, '10 NOV 2026');
+
+  // Metadata outranks a conflicting visible header. JSON-LD datePublished outranks this meta key.
+  const metaWins = extractHtmlPublicationDate('<head><meta name="published-date" content="2026-11-10"></head><body><p>PUBLISHED ON 15 Oct 2026</p></body>', { now });
+  assert.equal(metaWins.source, 'meta');
+  assert.equal(metaWins.published_date, '2026-11-10');
+  const jsonWins = extractHtmlPublicationDate('<script type="application/ld+json">{"@type":"BlogPosting","datePublished":"2026-11-09","dateModified":"2026-11-11"}</script><meta name="published-date" content="2026-11-10">', { now });
+  assert.equal(jsonWins.source, 'json_ld');
+  assert.equal(jsonWins.published_date, '2026-11-09');
+  assert.equal(jsonWins.modified_at, '2026-11-11');
+
+  // An already stored stronger date is kept when this weaker meta key is found later.
+  const kept = resolvePublicationDateUpdate(
+    { published_at: '2026-11-09T00:00:00.000Z', published_at_source: 'json_ld', published_at_precision: 'date' },
+    metaWins
+  );
+  assert.equal(kept.action, 'keep');
+  assert.equal(kept.reason, 'existing_not_weaker');
+
+  // Ambiguous numeric days, modified-only names, and body chronology are not a publication date.
+  assert.equal(parsePublicationDateValue('10/11/2026', { now }), null);
+  assert.equal(extractHtmlPublicationDate('<meta name="published-date" content="10/11/2026"><p>October 2026</p>', { now }).published_at, null);
+  assert.equal(extractMetaPublicationDate('<meta name="dateModified" content="2026-11-10">', { now }).published_at, null);
+  assert.equal(extractMetaPublicationDate('<meta name="published-date-modified" content="2026-11-10">', { now }).published_at, null);
+  assert.equal(extractHtmlPublicationDate('<article><p>between late August and October 2026</p></article>', { now }).published_at, null);
+
+  // A date-only value stays on the stated calendar day at both timezone edges.
+  const east = extractMetaPublicationDate('<meta name="published-date" content="2026-11-10T00:30:00+14:00">', { now });
+  assert.equal(east.published_date, '2026-11-10');
+  assert.equal(east.precision, 'datetime');
+  const west = extractMetaPublicationDate('<meta name="published-date" content="2026-11-10T23:30:00-12:00">', { now });
+  assert.equal(west.published_date, '2026-11-10');
+  assert.notEqual(west.published_at.slice(0, 10), '2026-11-10');
+});
+
 test('URL 5: <time datetime> only in publication context; footer / related / updated times are skipped', () => {
   const labelled = `<main><div><h4>Published</h4> <time datetime="2026-09-15T12:00:00Z">15 September 2026</time></div>
     <div class="related"><time datetime="2026-06-04T12:00:00Z">4 Jun 2026</time></div></main>
