@@ -15,6 +15,32 @@ import { findIpv6Tokens } from './ipv6Tokens.js';
 import { recoverDefangedLinkDomain, versionColumnTokens, IPV4_RE, IPV4_PORT_RE, IPV6_LOOPBACK_RE, URL_RE, HOST_PATH_RE, IPV4_HOST_PATH_HEAD_RE, IP_HOST_PATH_RE, trimShellContinuation, NETWORK_ENDPOINT_RE, DOMAIN_RE, IDN_DOMAIN_RE, DEFANGED_AT_BEFORE_RE, SPOOFED_SENDER_RE, isTruncatedHostTail, CVE_RE, ATTACK_RE, OCCURRENCE_FORMS, sourceSpelling, standaloneLineSpelling, portFromUrl, insideAnySpan, hitOffsets, HASH_PATTERNS, candidateKey } from './candidateHelpers.js';
 
 /**
+ * "0x" + exactly an MD5 run (tl-candidates-v62). "0x" + 40 / 64 hex is an EVM
+ * address / transaction hash, never a SHA-1 / SHA-256.
+ */
+const HEX_LITERAL_DIGEST_SCAN_RE = /(?<![0-9a-z_])0x([0-9a-f]{32})(?![0-9a-z_])/gi;
+
+/**
+ * The block's own hyperlink text when it is a strict tail of a scheme-less
+ * host/path match that markup glued onto a preceding word: the anchor is the
+ * publisher's resource, the glued head is a different element's text.
+ * @param {object} block
+ * @param {string} raw
+ * @returns {string|null}
+ */
+function anchorBoundedResource(block, raw) {
+  const links = Array.isArray(block?.links) ? block.links : [];
+  for (const link of links) {
+    const lt = String(link?.text || '').trim();
+    if (!lt || lt.length >= raw.length || !lt.includes('/') || !raw.endsWith(lt)) continue;
+    // Glued: the head ends in a word character directly against the anchor.
+    if (!/[A-Za-z0-9]$/.test(raw.slice(0, raw.length - lt.length))) continue;
+    return lt;
+  }
+  return null;
+}
+
+/**
  * @param {object[]} blocks zone-annotated blocks
  * @param {ReturnType<import('./candidateAccumulator.js').createCandidateAccumulator>} acc
  * @param {{ typeDiag: object, tableHandled: Set, networkEndpoints: Array, scanText: Function, isObservableRow: Function, noteRejectedToken: Function }} ctx
@@ -64,9 +90,19 @@ export function readDocumentText(blocks, acc, ctx) {
     // becomes a domain / artifact of its own.
     const hostPathMatches = [...text.matchAll(HOST_PATH_RE), ...text.matchAll(IP_HOST_PATH_RE)].sort((a, b) => a.index - b.index);
     for (const m of hostPathMatches) {
-      const start = m.index;
-      const raw = trimShellContinuation(trimUrlBoundary(m[0]));
+      let start = m.index;
+      let raw = trimShellContinuation(trimUrlBoundary(m[0]));
+      // Adjacent inline markup glued a label onto the anchor
+      // ("<span>CVE-2026-1234</span><a>www.vendor.example/advisory</a>"):
+      // the structured link text bounds the resource (tl-candidates-v62).
+      const anchored = anchorBoundedResource(block, raw);
+      if (anchored) {
+        start += raw.length - anchored.length;
+        raw = anchored;
+      }
       if (!raw || insideAnySpan(spans, start, start + raw.length)) continue;
+      // The glued head belongs to the span too: it is not a host of its own.
+      const spanStart = anchored ? m.index : start;
       const v = validateUrlCandidate(raw);
       const ipHost = v.host_kind === 'ip';
       if (!v.ok || v.reason !== 'scheme_less_url_with_dns_host' || (ipHost && !IPV4_HOST_PATH_HEAD_RE.test(raw))) {
@@ -75,7 +111,7 @@ export function readDocumentText(blocks, acc, ctx) {
       }
       const path = raw.slice(raw.indexOf('/'));
       if (path.length < 2) continue;
-      spans.push([start, start + raw.length]);
+      spans.push([spanStart, start + raw.length]);
       const base = pathBasenameFromUrl(`http://${raw}`);
       if (v.host) knownUrlHosts.add(v.host);
       if (base && base.includes('.')) urlPathBasenames.add(base.toLowerCase());
@@ -260,6 +296,17 @@ export function readDocumentText(blocks, acc, ctx) {
         }
         const focusOrdinal = hitOffsets(text.slice(0, m.index), m[0]).length;
         add(m[0], type, block, { form: standaloneForm, focusOrdinal });
+      }
+    }
+    // An MD5 written as a hex literal ("0xFD91…") is that digest when the
+    // literal opens its own line or list row (an inventory entry, optionally
+    // followed by its description). Inside prose or code a 0x run is a
+    // constant / key, never read as a digest (tl-candidates-v62).
+    if (block.type !== 'code') {
+      for (const m of text.matchAll(HEX_LITERAL_DIGEST_SCAN_RE)) {
+        const lineStart = text.lastIndexOf('\n', m.index) + 1;
+        if (!/^\s*(?:[-*•·▪]\s*)?$/.test(text.slice(lineStart, m.index))) continue;
+        add(m[1], 'md5', block, { form: standaloneForm, originalValue: m[0] });
       }
     }
     for (const m of text.matchAll(CVE_RE)) add(m[0], 'cve', block, { form: standaloneForm });

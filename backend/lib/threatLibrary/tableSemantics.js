@@ -109,8 +109,15 @@ function embeddedAbsoluteUrl(token) {
  * v18 (70-report audit): a spaced label tail glued to the value ("MD5 :<hex>")
  * is not value text; a hex run exactly as long as another supported digest
  * (64 hex under an "MD5" header) is that digest, never glued MD5s.
+ * v19 (30-report review queue): an MD5 written as a hex literal
+ * ("0xFD91…", exactly 32 hex after "0x") is that digest. "0x" + 40 hex is an
+ * EVM address and "0x" + 64 hex an EVM transaction hash / storage word, never
+ * read as SHA-1 / SHA-256.
  */
-export const TABLE_SEMANTICS_VERSION = 'tl-table-v18';
+export const TABLE_SEMANTICS_VERSION = 'tl-table-v19';
+
+/** "0x" + exactly an MD5 run, as one whole token (v19). 40 / 64 hex are EVM values. */
+export const HEX_LITERAL_DIGEST_RE = /^0x([0-9a-f]{32})$/i;
 
 /** Type cell naming the content of a request rather than an observable type (v13). */
 const REQUEST_CONTENT_TYPE_CELL_RE =
@@ -531,6 +538,12 @@ function parseToken(token, declared, ctx = {}) {
   // `2001:db8::` ends in colons that are part of the address, not punctuation.
   if (!isIPv6(t)) t = t.replace(TRAILING_PUNCT_RE, '');
   if (!t) return null;
+  // An MD5 the publisher wrote as a hex literal ("0xFD91…" in an IOC table):
+  // the "0x" radix prefix is notation, the identity is the bare digest. Only
+  // a whole token of exactly 32 hex qualifies — "0x" + 40 / 64 hex is an EVM
+  // address / transaction hash (tl-table-v19); `raw` keeps the spelling.
+  const hexLiteral = HEX_LITERAL_DIGEST_RE.exec(t);
+  if (hexLiteral) t = hexLiteral[1];
   let port = null;
   // Publisher IOC cells prefix a hostname with a non-HTTP scheme
   // ("fqdn://ipfs[.]io", "fqdn://relay.example:443"). The scheme names the

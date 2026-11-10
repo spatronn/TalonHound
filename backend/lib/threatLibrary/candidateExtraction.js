@@ -298,8 +298,14 @@ export {
  * inventory keep its authority); a .onion host needs a service label of at least 16
  * characters ("Tor and [.]onion domains" is not "and.onion"); a Rust source
  * file name ("build.rs") reads like a .md file name, not a .rs domain.
+ * v62 (review queue 35820–35850): tl-table-v19. An MD5 the publisher wrote
+ * as a hex literal ("0xFD91…", exactly 32 hex) is that digest in an IOC table
+ * cell or when it opens a list row / line (never inside prose or code; "0x" +
+ * 40 / 64 hex stays an EVM address / transaction hash); a scheme-less resource whose hyperlink text is a strict tail of the
+ * matched run is bounded by that anchor ("CVE-…" glued on by adjacent inline
+ * markup is not part of the host).
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v61';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v62';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

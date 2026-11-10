@@ -53,9 +53,9 @@ function find(cands, type, value) {
 const BODY = '<h2>Analysis</h2><p>The operators ran a multi-stage campaign against hospitality targets.</p>';
 
 test('versions: tl-candidates-v48, tl-section-tree-v11, tl-table-v14', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v61');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v62');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v17');
-  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v18');
+  assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
 });
 
 test('A. a qualified sibling heading with deeper domain groups stays in the IOC inventory', () => {
