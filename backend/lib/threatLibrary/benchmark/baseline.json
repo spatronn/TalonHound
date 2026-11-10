@@ -1,7 +1,7 @@
 {
   "versions": {
     "candidates": "tl-candidates-v62",
-    "zones": "tl-zones-v17",
+    "zones": "tl-zones-v18",
     "tables": "tl-table-v19",
     "type_resolver": "tl-type-resolver-v26",
     "html": "threat_library_html_v10",
@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 95,
-    "cases_exact": 93,
+    "cases": 96,
+    "cases_exact": 94,
     "indicators": {
-      "expected": 1497,
-      "tp": 1495,
+      "expected": 1499,
+      "tp": 1497,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -38,7 +38,7 @@
       "warning": 3,
       "info": 24,
       "cases_flagged": 3,
-      "exact_cases": 93,
+      "exact_cases": 94,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -171,6 +171,23 @@
       "sections_checked": 0,
       "assertions_correct": 0,
       "assertions_checked": 0,
+      "warning_codes": []
+    },
+    "control-patch-links-reference-section": {
+      "members": [
+        "domain:relay-node.bad-cdn.net",
+        "sha256:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5"
+      ],
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 2,
+      "assertions_checked": 2,
       "warning_codes": []
     },
     "control-product-name-digest-rows": {

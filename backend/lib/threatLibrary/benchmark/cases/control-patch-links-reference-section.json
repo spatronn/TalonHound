@@ -1,0 +1,31 @@
+{
+  "id": "control-patch-links-reference-section",
+  "title": "Control: a 'Patch links' list of vendor advisory links is reference context; a 'Fake patch links' lure list is not",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "reference_section", "mode_a", "link_text"],
+  "source": { "kind": "html_file", "path": "control-patch-links-reference-section.html", "url": "https://research.example/blog/weekly-digest-patch-links/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35831 cleanup: once the glued CVE ids were split off (tl-candidates-v62), each 'Patch links' item was a one-link list row and went to needs_review under an unrecognised heading",
+      "verified_by": "construction",
+      "verified_at": "2026-11-10"
+    },
+    "indicators": [
+      { "type": "sha256", "value": "e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5", "assertion": "explicit" },
+      { "type": "domain", "value": "relay-node.bad-cdn.net", "assertion": "explicit" }
+    ],
+    "context_only": [
+      { "type": "url", "value": "www.collab-vendor.example/archive/2026.php#notes" },
+      { "type": "url", "value": "runtime-vendor.example/en/blog/release/v22.1.4/" }
+    ],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "url", "value": "CVE-2026-100001www.collab-vendor.example/archive/2026.php#notes" }
+    ],
+    "sections": [
+      { "heading": "Patch links", "expected": "excluded" },
+      { "heading": "Indicators of Compromise (IoCs)", "expected": "authoritative" }
+    ]
+  }
+}

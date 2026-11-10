@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><title>Weekly digest: exploited vulnerabilities and active campaigns</title></head>
+<body>
+<article>
+<h1>Weekly digest: exploited vulnerabilities and active campaigns</h1>
+<p>This week a loader campaign abused a collaboration server flaw. The operators staged their payload on a rotating bucket and beaconed to a relay.</p>
+<h2>Vulnerability Details</h2>
+<p>CVE-2026-100001 and CVE-2026-100002 were exploited in the wild; patches are available from the vendors below.</p>
+<h3>Patch links</h3>
+<ul>
+<li><span class="lbl">CVE-2026-100001</span><a href="https://www.collab-vendor.example/archive/2026.php#notes">www.collab-vendor.example/archive/2026.php#notes</a></li>
+<li><span class="lbl">CVE-2026-100002</span><a href="https://runtime-vendor.example/en/blog/release/v22.1.4/">runtime-vendor.example/en/blog/release/v22.1.4/</a></li>
+</ul>
+<h3>Fake patch links</h3>
+<p>The lure pages pretended to host the vendor fix:</p>
+<ul>
+<li>hxxps://collab-vendor-update[.]com/patch/2026-100001.msi</li>
+</ul>
+<h2>Indicators of Compromise (IoCs)</h2>
+<table>
+<thead><tr><th>Attack</th><th>Type</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Loader</td><td>SHA256</td><td>e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5</td></tr>
+<tr><td>Loader</td><td>Domain</td><td>relay-node[.]bad-cdn[.]net</td></tr>
+</tbody>
+</table>
+</article>
+</body>
+</html>
