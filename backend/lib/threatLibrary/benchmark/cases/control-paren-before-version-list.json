@@ -1,0 +1,31 @@
+{
+  "id": "control-paren-before-version-list",
+  "title": "Control: a parenthesised 'before' version list in an affected-product cell is not IPv4; IOC-table and C2-cued addresses stay",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "version_string", "mode_a", "ip"],
+  "source": { "kind": "html_file", "path": "control-paren-before-version-list.html", "url": "https://research.example/blog/weekly-digest-firewall-zero-day/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35831 affected-product cell 'Cisco Secure Firewall ASA Software (Before 9.16.4.104, 9.18.4.96, … 9.24.1.27 / 9.24.10.1)' and 'brotlicffi (before 1.2.1.0)', whose release numbers were stored as ip candidates",
+      "verified_by": "construction",
+      "verified_at": "2026-11-10"
+    },
+    "indicators": [
+      { "type": "ip", "value": "198.51.100.77", "assertion": "explicit" },
+      { "type": "sha256", "value": "f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "ip", "value": "9.16.4.104" },
+      { "type": "ip", "value": "9.18.4.96" },
+      { "type": "ip", "value": "9.24.1.27" },
+      { "type": "ip", "value": "9.24.10.1" },
+      { "type": "ip", "value": "1.2.1.0" }
+    ],
+    "sections": [
+      { "heading": "Indicators of Compromise (IoCs)", "expected": "authoritative" }
+    ]
+  }
+}

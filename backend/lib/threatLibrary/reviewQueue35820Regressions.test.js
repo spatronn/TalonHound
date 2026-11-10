@@ -58,7 +58,7 @@ const H1 = hex('d4', 64);
 const K1 = hex('e5', 32);
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v62');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v63');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
 });
 
@@ -184,4 +184,33 @@ test('FP-2 negative: a lure heading that mentions patch links stays narrative', 
   assert.notEqual(classifyHeadingText('Fake patch links'), 'reference_section');
   assert.notEqual(classifyHeadingText('Malicious patch download URLs'), 'reference_section');
   assert.notEqual(classifyHeadingText('Patch Tuesday exploitation'), 'reference_section');
+});
+
+// --- FP-3 (35831 cleanup, tl-candidates-v63) --------------------------------
+// "Cisco … ASA Software (Before 9.16.4.104, 9.18.4.96, … 9.24.1.27 / 9.24.10.1)"
+// and "brotlicffi (before 1.2.1.0)" in an affected-product cell are release
+// numbers: a parenthesised comparator ("(before", "(prior to", "(<") opens a
+// version list, and "/" joins its members.
+
+const AFFECTED = `
+<h2>Vulnerability Details</h2>
+<table>
+<tr><th>CVE ID</th><th>Name</th><th>Affected product</th></tr>
+<tr><td>CVE-2026-100003</td><td>Firewall NULL Pointer Dereference</td><td>Cisco Secure Firewall ASA Software (Before 9.16.4.104, 9.18.4.96, 9.24.1.27 / 9.24.10.1); Python Brotli (before 1.2.1), brotlicffi (before 1.2.1.0)</td></tr>
+</table>`;
+
+test('FP-3: versions after a parenthesised "before" in an affected-product cell are not IPv4 candidates', () => {
+  const x = run(AFFECTED);
+  const ips = x.candidates.filter((c) => c.candidate_type === 'ip').map((c) => c.normalized_value);
+  assert.deepEqual(ips, [], ips.join(', '));
+});
+
+test('FP-3 negative: a network cue or a bare parenthesised address keeps the IPv4 reading', () => {
+  const x = run(`
+<h2>Infrastructure</h2>
+<p>The loader beaconed to its C2 server (before 203.0.113.5 was sinkholed, it used 198.51.100.77).</p>
+<p>The relay (198.51.100.9) forwarded the traffic.</p>`);
+  const ips = x.candidates.filter((c) => c.candidate_type === 'ip').map((c) => c.normalized_value).sort();
+  assert.ok(ips.includes('198.51.100.9'), ips.join(', '));
+  assert.ok(ips.includes('198.51.100.77'), ips.join(', '));
 });

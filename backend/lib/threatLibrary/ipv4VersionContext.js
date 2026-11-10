@@ -16,7 +16,7 @@
 /** Dotted numeric release token (2.3.19, 9.9.7-P2, 8.2R12.1, 4.x) — any shape. */
 const VERSIONISH = String.raw`\d+(?:\.[0-9x*]+)+[a-z0-9-]*`;
 const RANGE_CONNECTOR = String.raw`(?:to|through|thru|until|-|–|—)`;
-const LIST_CONNECTOR = String.raw`(?:,|;|and|or|${RANGE_CONNECTOR})`;
+const LIST_CONNECTOR = String.raw`(?:,|;|\/|and|or|${RANGE_CONNECTOR})`;
 /** Trailing run of earlier list members ("2.3.19 to ", "2.3.20.2, 2.3.21 and ") before the token. */
 const LIST_TAIL_RE = new RegExp(`(?:\\(?\\s*${VERSIONISH}\\s*\\)?\\s*${LIST_CONNECTOR}\\s*)+$`, 'i');
 const IPV4_SHAPE_RE = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)$/;
@@ -31,6 +31,14 @@ const VERSION_CUE_BEFORE_RE = new RegExp(
     String.raw`(?:\s*(?:[:=#]|number|no\.?|is|was|are|were|of|include[sd]?|including|prior\s+to|before|after|up\s+to|through|from|between|earlier\s+than|later\s+than|older\s+than|newer\s+than|<=?|>=?))*\s*\(?\s*)$`,
   'i'
 );
+
+/**
+ * A parenthesised comparator opening a version list right before the token:
+ * "ASA Software (Before 9.16.4.104, …)", "brotlicffi (before 1.2.1.0)",
+ * "(prior to 2.3.4.5)", "(< 7.0.0.1)" — an affected-product range
+ * (tl-candidates-v63). A network cue earlier in the clause still wins.
+ */
+const PAREN_COMPARATOR_BEFORE_RE = /\(\s*(?:before|prior\s+to|earlier\s+than|older\s+than|up\s+to|<=?)\s*$/i;
 
 /** Version phrase right after the token ("is vulnerable", "and earlier"). */
 const VERSION_CUE_AFTER_RE =
@@ -91,6 +99,7 @@ export function ipv4VersionContext(text, start, end, opts = {}) {
   if (NETWORK_CUE_BEFORE_RE.test(before) || NETWORK_CUE_BEFORE_RE.test(head)) return null;
   if (UA_PRODUCT_BEFORE_RE.test(before)) return { kind: 'version', cue: 'user_agent_product' };
   if (VERSION_CUE_BEFORE_RE.test(before) || (listTail && VERSION_CUE_BEFORE_RE.test(head))) return { kind: 'version', cue: 'version_keyword' };
+  if (PAREN_COMPARATOR_BEFORE_RE.test(before) || (listTail && PAREN_COMPARATOR_BEFORE_RE.test(head))) return { kind: 'version', cue: 'version_comparator' };
   // A range whose other end is a release number, never an address ("2.3.19 to 2.3.20.2").
   const prevSibling = before.match(new RegExp(`(${VERSIONISH})\\s*${RANGE_CONNECTOR}\\s*$`, 'i'));
   const nextSibling = after.match(new RegExp(`^\\s*${RANGE_CONNECTOR}\\s*(${VERSIONISH})`, 'i'));

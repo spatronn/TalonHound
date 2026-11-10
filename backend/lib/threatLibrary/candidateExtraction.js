@@ -304,8 +304,11 @@ export {
  * 40 / 64 hex stays an EVM address / transaction hash); a scheme-less resource whose hyperlink text is a strict tail of the
  * matched run is bounded by that anchor ("CVE-…" glued on by adjacent inline
  * markup is not part of the host).
+ * v63 (35831 cleanup): a parenthesised comparator ("Software (Before
+ * 9.16.4.104, …)", "brotlicffi (before 1.2.1.0)") opens an affected-product
+ * version list, and "/" joins its members: release numbers, not IPv4.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v62';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v63';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
