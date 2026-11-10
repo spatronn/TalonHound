@@ -61,13 +61,46 @@ export function isSelfReferenceRegion(region, sourceUrl) {
 }
 
 /**
- * Significant dropped regions that still need an analyst: observable-bearing and
- * not a self-reference to the report's own page.
- * @param {{ significantRegions?: object[], report?: { source_url?: string|null } }} s
+ * Lower-cased text of every canonical-document block (tables flattened into their
+ * block text), or null when the report row carries no document.
+ * @param {{ canonical_document?: { blocks?: Array<{ text?: string }> }|null }|undefined} report
+ */
+export function documentTextForCoverage(report) {
+  const blocks = report?.canonical_document?.blocks;
+  if (!Array.isArray(blocks) || !blocks.length) return null;
+  return blocks.map((b) => String(b?.text || '')).join('\n').toLowerCase();
+}
+
+/**
+ * A dropped region whose observable-shaped values all reached the document by
+ * another route is a duplicate representation, not lost content: a syntax
+ * highlighter's hidden plain-text <textarea> copy of a code block the document
+ * keeps as its rendered (line-numbered) form. Every value must have been sampled,
+ * and every sample must occur verbatim in the document text (30-report review queue).
+ * @param {{ observable_count: number, sample_observables?: string[] }} region
+ * @param {string|null} documentText lower-cased, from documentTextForCoverage
+ */
+export function isDuplicatedInDocumentRegion(region, documentText) {
+  const samples = Array.isArray(region?.sample_observables) ? region.sample_observables : [];
+  if (!documentText || !samples.length || Number(region?.observable_count) > REGION_SAMPLE_LIMIT) return false;
+  return samples.every((v) => {
+    const needle = String(v || '').trim().toLowerCase();
+    return needle.length > 0 && documentText.includes(needle);
+  });
+}
+
+/**
+ * Significant dropped regions that still need an analyst: observable-bearing, not
+ * a self-reference to the report's own page, and not a duplicate of values the
+ * document already holds.
+ * @param {{ significantRegions?: object[], report?: { source_url?: string|null, canonical_document?: object|null } }} s
  */
 export function unaccountedRegions(s) {
   const sourceUrl = s.report?.source_url || null;
-  return (s.significantRegions || []).filter((r) => r.observable_count > 0 && !isSelfReferenceRegion(r, sourceUrl));
+  const documentText = documentTextForCoverage(s.report);
+  return (s.significantRegions || []).filter(
+    (r) => r.observable_count > 0 && !isSelfReferenceRegion(r, sourceUrl) && !isDuplicatedInDocumentRegion(r, documentText)
+  );
 }
 
 /**
