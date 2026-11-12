@@ -4,7 +4,7 @@
     "zones": "tl-zones-v18",
     "tables": "tl-table-v19",
     "type_resolver": "tl-type-resolver-v26",
-    "html": "threat_library_html_v10",
+    "html": "threat_library_html_v11",
     "pdf": "threat_library_pdf_v7",
     "quality": "tl-quality-v16",
     "metrics": "tl-benchmark-metrics-v2"

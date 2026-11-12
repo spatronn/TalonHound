@@ -37,10 +37,13 @@ import { createTableBlock } from '../canonicalDocument.js';
  * v10 (70-report audit): a `<noscript>` holding a `<pre>` / `<table>` is the
  * static fallback of a script-rendered code viewer (Jamf `<jamf-script-editor>`
  * IOC listings) and is content, not noise.
- * Document extractor contract is threat_library_html_v10 so Refresh rebuilds
- * retained HTML under the nested-table contract.
+ * v11 (review queue 35858–35869): script / style nested in a dropped text
+ * region (a footer's inline form-widget script with an "apiKey" hex) is counted
+ * but never makes the region significant; blocks are unchanged.
+ * Document extractor contract is threat_library_html_v11 so Refresh rebuilds
+ * retained HTML under the current source-accounting contract.
  */
-export const HTML_BLOCKS_VERSION = 'threat_library_html_v10';
+export const HTML_BLOCKS_VERSION = 'threat_library_html_v11';
 
 export function stripTags(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ');
@@ -419,15 +422,28 @@ const OBSERVABLE_SHAPES = Object.freeze([
 /** Observable-shaped tokens kept from a dropped region, per region. */
 const MAX_REGION_SAMPLES = 20;
 
-function rawTextOf(node, out = []) {
+/**
+ * Text of a dropped region. With `embedded`, the text of descendant
+ * script / style / svg … elements goes there instead of `out`: a footer's
+ * inline form-widget script ("apiKey: '<32 hex>'") is code, not prose a
+ * reader of the page could see (threat_library_html_v11).
+ * @param {object} node
+ * @param {string[]} [out]
+ * @param {string[]|null} [embedded]
+ */
+function rawTextOf(node, out = [], embedded = null) {
   if (!node) return out;
+  if (embedded && node.name && NON_TEXT_REGION_TAGS.has(String(node.name).toLowerCase())) {
+    rawTextOf(node, embedded, null);
+    return out;
+  }
   if (node.type === 'text') out.push(String(node.data || ''));
   if (node.attribs) {
     for (const name of TEXT_BEARING_ATTRIBUTES) {
       if (node.attribs[name]) out.push(String(node.attribs[name]));
     }
   }
-  for (const c of node.children || []) rawTextOf(c, out);
+  for (const c of node.children || []) rawTextOf(c, out, embedded);
   return out;
 }
 
@@ -451,17 +467,25 @@ export function summarizeObservableShapes(text) {
 }
 
 function describeDroppedRegion(node, tag, reason) {
-  const text = rawTextOf(node).join(' ');
-  const shapes = summarizeObservableShapes(text);
   const nonText = NON_TEXT_REGION_TAGS.has(tag);
+  // Script / style nested in a text region (a footer's inline widget script)
+  // is counted with the region but, like a top-level script, never makes it
+  // significant and never contributes samples.
+  const embeddedParts = [];
+  const readable = rawTextOf(node, [], nonText ? null : embeddedParts).join(' ');
+  const embedded = embeddedParts.join(' ');
+  const shapes = summarizeObservableShapes(readable);
+  const embeddedShapes = summarizeObservableShapes(embedded);
+  const types = { ...shapes.types };
+  for (const [k, n] of Object.entries(embeddedShapes.types)) types[k] = (types[k] || 0) + n;
   const cls = String(node.attribs?.class || node.attribs?.id || '').trim().slice(0, 60);
   return {
     region_kind: tag,
     reason,
     locator: cls ? `${tag}.${cls}` : tag,
-    text_chars: text.length,
-    observable_count: shapes.count,
-    observable_types: shapes.types,
+    text_chars: readable.length + (embedded ? embedded.length + 1 : 0),
+    observable_count: shapes.count + embeddedShapes.count,
+    observable_types: types,
     // Script / style content is counted, its tokens are not kept.
     sample_observables: nonText ? [] : shapes.samples,
     significant: !nonText && shapes.count > 0

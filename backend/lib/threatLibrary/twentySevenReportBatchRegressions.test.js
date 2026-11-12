@@ -55,7 +55,7 @@ const member = (out, value) => {
 
 test('versions: tl-candidates-v44, threat_library_html_v9, tl-section-tree-v10, tl-table-v13', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v64');
-  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v10');
+  assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v11');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v18');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
 });
