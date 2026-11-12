@@ -519,3 +519,38 @@ export async function reconcileDuplicateReports(pool, input) {
     client.release();
   }
 }
+
+/**
+ * Order the reports of one logical article for the duplicate audit: the
+ * report that already is the group's primary (not superseded) first, then
+ * finalized before unfinalized, then the oldest import, then the lowest id.
+ * A superseded report is never recommended as primary.
+ * @param {object[]} members threat_reports rows of one identity group
+ * @returns {object[]} new array, recommended primary first
+ */
+export function rankLogicalReportMembers(members) {
+  return [...(members || [])].sort((a, b) =>
+    (Number(a.superseded_by_report_id != null) - Number(b.superseded_by_report_id != null))
+    || (Boolean(b.finalized_at) - Boolean(a.finalized_at))
+    || (new Date(a.created_at) - new Date(b.created_at))
+    || (Number(a.id) - Number(b.id)));
+}
+
+/**
+ * True when `report` resolves (directly or through a supersession chain inside
+ * `members`) to `primaryId`.
+ * @param {object} report
+ * @param {number|string} primaryId
+ * @param {object[]} members
+ */
+export function isSupersededInto(report, primaryId, members) {
+  const byId = new Map((members || []).map((m) => [Number(m.id), m]));
+  const seen = new Set();
+  let current = report;
+  while (current?.superseded_by_report_id != null && !seen.has(Number(current.id))) {
+    seen.add(Number(current.id));
+    if (Number(current.superseded_by_report_id) === Number(primaryId)) return true;
+    current = byId.get(Number(current.superseded_by_report_id));
+  }
+  return false;
+}

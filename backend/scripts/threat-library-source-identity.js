@@ -41,7 +41,9 @@ import pg from 'pg';
 import { createAuditLogService } from '../lib/auditLogService.js';
 import { lockIdentityKeys, recordIdentityKeys } from '../lib/threatLibrary/importIdentity.js';
 import {
+  isSupersededInto,
   planReportReconciliation,
+  rankLogicalReportMembers,
   reconcileDuplicateReports,
   resolveStoredReportIdentity
 } from '../lib/threatLibrary/reportSupersession.js';
@@ -172,15 +174,13 @@ async function audit(pool, args) {
       .map(([key, list]) => ({ key, reports: list.filter((o) => ids.has(o.id)).map((o) => ({ report_id: byId.get(o.id).public_id, evidence: o.evidence })) }));
     const titles = new Set(members.map((m) => normTitle(m.title)));
     const dates = new Set(members.map((m) => day(m.published_at)));
-    // Recommended primary: finalized first, then oldest import (never "newest").
-    const ordered = [...members].sort((a, b) =>
-      (Boolean(b.finalized_at) - Boolean(a.finalized_at))
-      || (new Date(a.created_at) - new Date(b.created_at))
-      || (Number(a.id) - Number(b.id)));
+    // Recommended primary: the group's existing primary (not superseded), then
+    // finalized, then oldest import (never "newest").
+    const ordered = rankLogicalReportMembers(members);
     const primary = ordered[0];
     const plans = [];
     for (const secondary of ordered.slice(1)) {
-      if (Number(secondary.superseded_by_report_id) === Number(primary.id)) {
+      if (isSupersededInto(secondary, primary.id, members)) {
         plans.push({ secondary: secondary.public_id, status: 'already_reconciled' });
         continue;
       }
