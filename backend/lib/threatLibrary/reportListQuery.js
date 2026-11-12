@@ -246,7 +246,7 @@ export function parseReportListQuery(query = {}) {
  * @returns {{ sql: string, params: unknown[], nextParamIndex: number }}
  */
 export function buildReportListWhere({ search = '', tlp = null, source = null, imported = null } = {}, startParamIndex = 1) {
-  const parts = ['r.deleted_at IS NULL'];
+  const parts = ['r.deleted_at IS NULL', 'r.superseded_by_report_id IS NULL'];
   const params = [];
   let i = startParamIndex;
   const term = normalizeReportListSearch(search);

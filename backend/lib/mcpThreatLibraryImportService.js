@@ -14,7 +14,7 @@
 
 import { importThreatLibraryUrl, URL_IMPORT_OUTCOMES } from './threatLibrary/urlImportService.js';
 import { getReportByPublicId } from './threatLibrary/store.js';
-import { IMPORT_DUPLICATE_MESSAGES } from './threatLibrary/importIdentity.js';
+import { IMPORT_DUPLICATE_MESSAGES, resolvePrimaryReport } from './threatLibrary/importIdentity.js';
 import { resolveReportPhase, REPORT_PHASES } from './threatLibrary/reportPhase.js';
 import { TLP_DISPLAY } from './threatLibrary/constants.js';
 import { safeErrorCategory } from './threatLibrary/audit.js';
@@ -216,6 +216,31 @@ export async function mcpGetThreatLibraryImportStatus(pool, args) {
   }
   const row = await getReportByPublicId(pool, id);
   if (!row) return { status: 404, error: { code: 'NOT_FOUND', message: 'Threat report not found' } };
+  if (row.superseded_by_report_id) {
+    // The fetched page proved to be an article already in the library
+    // (redirect / canonical / post-id identity): the import is complete and
+    // resolves to that existing report; nothing was extracted for this row.
+    const primary = await resolvePrimaryReport(pool, row.id);
+    if (primary && primary.deleted_at == null) {
+      const existing = serializeImportReportState(primary);
+      return {
+        status: 200,
+        body: {
+          report_id: existing.id,
+          outcome: 'already_exists',
+          already_imported: true,
+          duplicate_reason: 'source_identity',
+          message: IMPORT_DUPLICATE_MESSAGES.url,
+          resolved_from_report_id: row.public_id,
+          report: existing,
+          latest_job: serializeImportJobState(await loadLatestJob(pool, primary.id)),
+          ...processingFlags(existing),
+          ingestion_complete: true,
+          ingestion_failed: false
+        }
+      };
+    }
+  }
   const report = serializeImportReportState(row);
   return {
     status: 200,

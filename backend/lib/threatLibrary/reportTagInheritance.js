@@ -41,6 +41,7 @@ export const REPORT_TAG_CONTEXT_IMPORT_STATUSES = Object.freeze(['ready', 'impor
  */
 export function reportTagInheritanceEligibleSql(c = 'c', r = 'r') {
   return `${r}.deleted_at IS NULL
+       AND ${r}.superseded_by_report_id IS NULL
        AND ${r}.import_status IN (${REPORT_TAG_CONTEXT_IMPORT_STATUSES.map((s) => `'${s}'`).join(', ')})
        AND ${c}.matched_ioc_id IS NOT NULL
        AND ${c}.is_ioc IS NOT FALSE

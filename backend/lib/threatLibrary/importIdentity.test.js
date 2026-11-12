@@ -86,8 +86,16 @@ function fakePool({ existing = null, failCreate = false } = {}) {
   const client = {
     released: false,
     async query(sql, params = []) {
-      log.push({ sql: sql.replace(/\s+/g, ' ').trim(), params });
-      if (/FROM threat_reports/.test(sql)) return { rows: existing ? [existing] : [] };
+      const flat = sql.replace(/\s+/g, ' ').trim();
+      log.push({ sql: flat, params });
+      // Proven identity keys (migration 056): none in these fixtures.
+      if (/FROM threat_report_identity_keys/.test(flat)) return { rows: [] };
+      if (/^INSERT INTO threat_report_identity_keys/.test(flat)) return { rows: [{ id: 1 }], rowCount: 1 };
+      // Primary resolution (superseded_by chain): an unsuperseded report is its own primary.
+      if (/^WITH RECURSIVE chain/.test(flat)) {
+        return { rows: existing ? [{ chain_origin_id: existing.id, superseded_by_report_id: null, deleted_at: null, ...existing }] : [] };
+      }
+      if (/FROM threat_reports/.test(flat)) return { rows: existing ? [{ id: existing.id }] : [] };
       return { rows: [], rowCount: 0 };
     },
     release() { this.released = true; }
@@ -104,12 +112,15 @@ test('findExistingReportImport scopes by source type, excludes soft-deleted rows
   const pool = fakePool();
   await findExistingReportImport(pool.client, { kind: 'url', key: 'https://vendor.example/r' });
   await findExistingReportImport(pool.client, { kind: 'sha256', key: SHA });
-  const [url, pdf] = pool.log;
-  assert.match(url.sql, /WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\) ORDER BY created_at ASC, id ASC LIMIT 1/);
+  const [keys, url, pdf] = pool.log;
+  // Proven identity keys first (redirect / canonical / submitted aliases), www-insensitive.
+  assert.match(keys.sql, /FROM threat_report_identity_keys WHERE identity_key = ANY\(\$1::text\[\]\)/);
+  assert.deepEqual(keys.params, [['url:https://vendor.example/r']]);
+  assert.match(url.sql, /WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\) ORDER BY created_at ASC, id ASC/);
   // The www twin of the host is the same source (35808/35810/35811 duplicated hunt.io reports).
   assert.deepEqual(url.params, [['https://vendor.example/r', 'https://www.vendor.example/r']]);
   // PDF identity is the existing source_sha256 column, never source_url / file name.
-  assert.match(pdf.sql, /WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = \$1 ORDER BY created_at ASC, id ASC LIMIT 1/);
+  assert.match(pdf.sql, /WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = \$1 ORDER BY created_at ASC, id ASC/);
   assert.doesNotMatch(pdf.sql, /source_file_name|title|md5/);
   assert.deepEqual(pdf.params, [SHA]);
 });
@@ -128,9 +139,10 @@ test('claimReportImport on a duplicate: lock -> lookup -> COMMIT, and never runs
   const pool = fakePool({ existing });
   let created = 0;
   const result = await claimReportImport(pool, { kind: 'sha256', key: SHA }, async () => { created += 1; return {}; });
-  assert.deepEqual(result, { duplicate: true, report: existing });
+  assert.deepEqual(result, { duplicate: true, report: { superseded_by_report_id: null, deleted_at: null, ...existing } });
   assert.equal(created, 0);
-  assert.deepEqual(pool.log.map((q) => q.sql.split(' ').slice(0, 2).join(' ')), ['BEGIN', 'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', 'SELECT *', 'COMMIT']);
+  // lock -> identity lookup (resolved to its primary report) -> COMMIT
+  assert.deepEqual(pool.log.map((q) => q.sql.split(' ').slice(0, 2).join(' ')), ['BEGIN', 'SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', 'SELECT id', 'WITH RECURSIVE', 'COMMIT']);
   assert.deepEqual(pool.log[1].params, [`threat_library.import_identity:sha256:${SHA}`]);
   assert.equal(pool.client.released, true);
 });
@@ -146,7 +158,11 @@ test('claimReportImport on a new identity creates the row inside the same locked
   assert.deepEqual(result, { duplicate: false, report: { id: 1, public_id: 'new-uuid' } });
   assert.equal(seenClient, pool.client, 'create must use the transaction client that holds the lock');
   const order = pool.log.map((q) => q.sql.split(' ')[0]);
-  assert.deepEqual(order, ['BEGIN', 'SELECT', 'SELECT', 'INSERT', 'COMMIT']);
+  // lock, identity-key lookup, legacy lookup, report INSERT, submitted identity key INSERT
+  assert.deepEqual(order, ['BEGIN', 'SELECT', 'SELECT', 'SELECT', 'INSERT', 'INSERT', 'COMMIT']);
+  const keyInsert = pool.log.find((q) => q.sql.startsWith('INSERT INTO threat_report_identity_keys'));
+  assert.deepEqual(keyInsert.params.slice(0, 2), [1, 'url:https://vendor.example/r']);
+  assert.equal(pool.log[1].params[0], 'threat_library.import_identity:url:https://vendor.example/r');
   assert.equal(pool.client.released, true);
 });
 

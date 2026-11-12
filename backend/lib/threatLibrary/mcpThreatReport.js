@@ -16,6 +16,7 @@
 
 import { loadLinkedIocSourceSummary, withLinkedSourceQuality } from './iocSources/linkedSourceStatus.js';
 import { getReportByPublicId, loadReportLinkedSourceCandidateIds, loadReportSnapshot } from './store.js';
+import { resolvePrimaryReport } from './importIdentity.js';
 import { loadReportTags } from './reportTags.js';
 import { serializePublicationDate } from './publicationDate.js';
 import { TLP_DISPLAY } from './constants.js';
@@ -196,9 +197,19 @@ export async function loadThreatReportForMcp(pool, { id, indicator_limit, indica
   if (!isThreatReportId(publicId)) {
     return { status: 400, error: { code: codes.VALIDATION_ERROR || 'VALIDATION_ERROR', message: 'id must be a Threat Library report id (uuid) — see get_ioc_context.threat_context.claims[].report.id' } };
   }
-  const report = await getReportByPublicId(pool, publicId);
+  let report = await getReportByPublicId(pool, publicId);
   if (!report) {
     return { status: 404, error: { code: codes.REPORT_NOT_FOUND || 'REPORT_NOT_FOUND', message: 'Threat report not found' } };
+  }
+  // A superseded duplicate resolves to the primary report of the same article
+  // (existing references keep working; the body names where it came from).
+  let resolvedFrom = null;
+  if (report.superseded_by_report_id) {
+    const primary = await resolvePrimaryReport(pool, report.id);
+    if (primary && primary.deleted_at == null) {
+      resolvedFrom = report.public_id;
+      report = primary;
+    }
   }
   if (!THREAT_REPORT_READABLE_IMPORT_STATUSES.includes(String(report.import_status || ''))) {
     return { status: 409, error: { code: codes.REPORT_NOT_READY || 'REPORT_NOT_READY', message: `Threat report is not readable yet (import_status=${report.import_status})` } };
@@ -215,5 +226,7 @@ export async function loadThreatReportForMcp(pool, { id, indicator_limit, indica
   } catch {
     snapshot.linkedSources = null;
   }
-  return { status: 200, body: serializeThreatReport(snapshot, { limit: indicator_limit, offset: indicator_offset }) };
+  const body = serializeThreatReport(snapshot, { limit: indicator_limit, offset: indicator_offset });
+  if (resolvedFrom) body.resolved_from_report_id = resolvedFrom;
+  return { status: 200, body };
 }

@@ -69,6 +69,8 @@ function recordingPool(rows = []) {
           }))
         };
       }
+      // Proven source identity keys (migration 056): none in these fixtures.
+      if (/FROM threat_report_identity_keys/.test(sql)) return { rows: [] };
       if (/source_type <> 'url'/.test(sql)) {
         // Host prefilter of the stored source_url (the SQL extracts the authority host).
         const hosts = new Set(params[0]);
@@ -302,9 +304,11 @@ test('batch check: one query, input order kept, matches / misses / invalid / dup
     ]
   });
   assert.equal(error, null);
-  assert.equal(pool.queries.length, 2, 'two batched statements per request (no N+1)');
+  assert.equal(pool.queries.length, 3, 'three batched statements per request (no N+1)');
+  // Proven source identity keys (redirect / canonical aliases), one batched lookup.
+  assert.match(pool.queries[1].sql, /FROM threat_report_identity_keys WHERE identity_key = ANY/);
   // Each queried host and its www twin (one import identity, importIdentity.reportUrlIdentityVariants).
-  assert.deepEqual(pool.queries[1].params, [['example.com', 'www.example.com']], 'stored-URL lookup prefiltered on the queried hosts');
+  assert.deepEqual(pool.queries[2].params, [['example.com', 'www.example.com']], 'stored-URL lookup prefiltered on the queried hosts');
   assert.match(pool.queries[0].sql, /^SELECT /);
   assert.match(pool.queries[0].sql, /source_type = 'url' AND r\.deleted_at IS NULL/);
   assert.deepEqual(

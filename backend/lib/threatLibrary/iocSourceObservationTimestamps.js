@@ -31,6 +31,7 @@ const CLAIMS_SQL = `
   JOIN threat_reports r ON r.id = c.report_id
   WHERE c.matched_ioc_id = ANY($1::bigint[])
     AND r.deleted_at IS NULL
+    AND r.superseded_by_report_id IS NULL
     AND r.import_status IN ('ready', 'imported', 'review_required')
     AND c.review_status IN ('approved', 'created_ioc')
     AND c.assessment IN ('malicious', 'suspicious')

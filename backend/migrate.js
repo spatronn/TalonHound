@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { listRunnableMigrationFiles } from './lib/migrationFiles.js';
 import { backfillThreatActorCatalogSources } from './lib/threatActors/catalogBackfill.js';
-import { backfillReportImportIdentity } from './lib/threatLibrary/importIdentity.js';
+import { backfillReportIdentityKeys, backfillReportImportIdentity } from './lib/threatLibrary/importIdentity.js';
 import {
   printMalwareFamilySeedSummary,
   reconcileBundledMalwareFamilies
@@ -128,6 +128,9 @@ async function runMigrations() {
     console.log('[migrate] backfilling Threat Library URL import identity');
     const identityResult = await backfillReportImportIdentity(client);
     console.log(`[migrate] threat library import identity: scanned=${identityResult.scanned}, updated=${identityResult.updated}, duplicate_groups=${identityResult.duplicateGroups.length}`);
+    console.log('[migrate] backfilling Threat Library source identity keys (submitted URLs)');
+    const keyResult = await backfillReportIdentityKeys(client);
+    console.log(`[migrate] threat library source identity keys: scanned=${keyResult.scanned}, inserted=${keyResult.inserted}, conflicts=${keyResult.conflicts.length}`);
     for (const group of identityResult.duplicateGroups) {
       // Reported only — historical duplicates are never merged or deleted.
       console.log(`[migrate] threat library historical duplicate (${group.kind}) x${group.count}: reports ${group.report_ids.join(', ')}`);

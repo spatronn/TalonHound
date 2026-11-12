@@ -1540,6 +1540,8 @@ export async function deleteThreatReport(pool, reportId) {
     await db.query(`DELETE FROM threat_report_candidates WHERE report_id = $1`, [reportId]);
     await db.query(`DELETE FROM threat_report_artifacts WHERE report_id = $1`, [reportId]);
     await db.query(`DELETE FROM threat_library_jobs WHERE report_id = $1`, [reportId]);
+    // A deleted report gives up its source identity: the same article can be imported again.
+    await db.query(`DELETE FROM threat_report_identity_keys WHERE report_id = $1`, [reportId]);
     if (client) await client.query('COMMIT');
     await deleteReportArtifacts(reportId);
   } catch (err) {
@@ -1600,6 +1602,7 @@ export async function getIocThreatContext(pool, iocIds) {
      FROM threat_report_candidates c
      JOIN threat_reports r ON r.id = c.report_id
      WHERE c.matched_ioc_id = ANY($1::bigint[]) AND r.deleted_at IS NULL
+       AND r.superseded_by_report_id IS NULL
        AND r.import_status IN ('ready','imported','review_required')
      ORDER BY c.report_id,
               CASE WHEN c.matched_ioc_id = $2::bigint THEN 0 ELSE 1 END,
@@ -1639,7 +1642,7 @@ export async function getIocThreatContext(pool, iocIds) {
      JOIN threat_reports r ON r.id = tr.report_id
      LEFT JOIN threat_entities se ON se.id = tr.subject_entity_id
      LEFT JOIN threat_entities oe ON oe.id = tr.object_entity_id
-     WHERE r.deleted_at IS NULL
+     WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL
        AND (tr.subject_ioc_id = ANY($1::bigint[]) OR tr.object_ioc_id = ANY($1::bigint[])
             OR tr.subject_candidate_id IN (SELECT id FROM threat_report_candidates WHERE matched_ioc_id = ANY($1::bigint[]))
             OR tr.object_candidate_id IN (SELECT id FROM threat_report_candidates WHERE matched_ioc_id = ANY($1::bigint[])))

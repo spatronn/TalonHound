@@ -100,10 +100,10 @@ test('parseReportListQuery never lets a non-finite or unsafe offset reach the dr
 
 // --- WHERE clause -------------------------------------------------------------
 
-test('no search -> the WHERE clause is exactly the pre-existing soft-delete filter', () => {
+test('no search -> the WHERE clause is exactly the soft-delete + logical-report (not superseded) filter', () => {
   for (const search of [undefined, '', '   ', null]) {
     const w = buildReportListWhere({ search }, 1);
-    assert.equal(w.sql, 'WHERE r.deleted_at IS NULL');
+    assert.equal(w.sql, 'WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL');
     assert.deepEqual(w.params, []);
     assert.equal(w.nextParamIndex, 1);
   }
@@ -113,7 +113,7 @@ test('search is a single bound parameter matched case-insensitively across the m
   const w = buildReportListWhere({ search: 'Iranian' }, 1);
   assert.deepEqual(w.params, ['%Iranian%']);
   assert.equal(w.nextParamIndex, 2);
-  assert.match(w.sql, /^WHERE r\.deleted_at IS NULL AND \(/);
+  assert.match(w.sql, /^WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL AND \(/);
   for (const col of ['r.title', 'r.source_name', 'r.source_url', 'r.source_file_name']) {
     assert.ok(w.sql.includes(`${col} ILIKE $1 ESCAPE '\\'`), `${col} searched`);
   }
@@ -170,11 +170,11 @@ test('TLP / source filters are bound parameters after the search parameter; impo
   assert.match(w.sql, /AND r\.tlp = \$2 AND r\.source_type = \$3 AND r\.created_at >= NOW\(\) - INTERVAL '30 days'$/);
   assert.equal(w.nextParamIndex, 4);
   const noSearch = buildReportListWhere({ tlp: 'red' }, 1);
-  assert.equal(noSearch.sql, 'WHERE r.deleted_at IS NULL AND r.tlp = $1');
+  assert.equal(noSearch.sql, 'WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL AND r.tlp = $1');
   assert.deepEqual(noSearch.params, ['red']);
   // Injection-shaped filter values are simply "no filter".
   const evil = buildReportListWhere({ tlp: "red' OR '1'='1", source: 'url; DROP', imported: "1 day'; --" }, 1);
-  assert.equal(evil.sql, 'WHERE r.deleted_at IS NULL');
+  assert.equal(evil.sql, 'WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL');
   assert.deepEqual(evil.params, []);
 });
 
@@ -264,9 +264,9 @@ test('listThreatReports without search issues the unchanged baseline page query 
   const result = await listThreatReports(pool, { limit: 100, offset: 0 });
   assert.equal(pool.queries.length, 2);
   const [page, count] = pool.queries;
-  assert.match(page.sql, /FROM threat_reports r\s+WHERE r\.deleted_at IS NULL\s+ORDER BY r\.created_at DESC\s+LIMIT \$1 OFFSET \$2/);
+  assert.match(page.sql, /FROM threat_reports r\s+WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL\s+ORDER BY r\.created_at DESC\s+LIMIT \$1 OFFSET \$2/);
   assert.deepEqual(page.params, [100, 0]);
-  assert.match(count.sql, /^SELECT COUNT\(\*\)::int AS total, COUNT\(\*\)::int AS phase_all, [\s\S]* FROM threat_reports r WHERE r\.deleted_at IS NULL$/);
+  assert.match(count.sql, /^SELECT COUNT\(\*\)::int AS total, COUNT\(\*\)::int AS phase_all, [\s\S]* FROM threat_reports r WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL$/);
   assert.doesNotMatch(count.sql, /threat_report_candidates|threat_report_entities/, 'counts never touch per-report subselects');
   assert.deepEqual(count.params, []);
   assert.deepEqual(result, {
@@ -284,7 +284,7 @@ test('listThreatReports applies the status phase to the page only; counts keep t
   const pool = capturePool([], 3);
   const result = await listThreatReports(pool, { limit: 25, offset: 0, search: 'apt', status: 'failed', tlp: 'amber', source: 'pdf', imported: '7d' });
   const [page, count] = pool.queries;
-  assert.match(page.sql, /WHERE r\.deleted_at IS NULL AND \([\s\S]*\) AND r\.tlp = \$2 AND r\.source_type = \$3 AND r\.created_at >= NOW\(\) - INTERVAL '7 days' AND r\.analysis_status IN \('failed', 'cancelled'\)\s+ORDER BY r\.created_at DESC\s+LIMIT \$4 OFFSET \$5/);
+  assert.match(page.sql, /WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL AND \([\s\S]*\) AND r\.tlp = \$2 AND r\.source_type = \$3 AND r\.created_at >= NOW\(\) - INTERVAL '7 days' AND r\.analysis_status IN \('failed', 'cancelled'\)\s+ORDER BY r\.created_at DESC\s+LIMIT \$4 OFFSET \$5/);
   assert.deepEqual(page.params, ['%apt%', 'amber', 'pdf', 25, 0]);
   assert.match(count.sql, /^SELECT COUNT\(\*\) FILTER \(WHERE r\.analysis_status IN \('failed', 'cancelled'\)\)::int AS total/);
   assert.ok(count.sql.endsWith("r.created_at >= NOW() - INTERVAL '7 days'"), 'count WHERE has no status predicate');
@@ -296,9 +296,9 @@ test('listThreatReports applies the same search filter to the page and the count
   const pool = capturePool([{ id: 2 }], 12);
   const result = await listThreatReports(pool, { limit: 100, offset: 100, search: '  iran ' });
   const [page, count] = pool.queries;
-  assert.match(page.sql, /WHERE r\.deleted_at IS NULL AND \([\s\S]*ILIKE \$1 ESCAPE[\s\S]*\)\s+ORDER BY r\.created_at DESC\s+LIMIT \$2 OFFSET \$3/);
+  assert.match(page.sql, /WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL AND \([\s\S]*ILIKE \$1 ESCAPE[\s\S]*\)\s+ORDER BY r\.created_at DESC\s+LIMIT \$2 OFFSET \$3/);
   assert.deepEqual(page.params, ['%iran%', 100, 100]);
-  assert.match(count.sql, /WHERE r\.deleted_at IS NULL AND \([\s\S]*ILIKE \$1 ESCAPE/);
+  assert.match(count.sql, /WHERE r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL AND \([\s\S]*ILIKE \$1 ESCAPE/);
   assert.deepEqual(count.params, ['%iran%']);
   // The count is the filtered total, not the library size.
   assert.equal(result.total, 12);

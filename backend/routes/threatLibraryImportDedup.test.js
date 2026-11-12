@@ -55,14 +55,32 @@ function createPool(state) {
       state.reports.push(row);
       return { rows: [row], rowCount: 1 };
     }
-    if (/^SELECT \* FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\)/.test(flat)) {
+    if (/^SELECT id FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\)/.test(flat)) {
       const keys = new Set(params[0]);
       const rows = state.reports.filter((r) => r.source_type === 'url' && !r.deleted_at && keys.has(r.source_url_canonical));
-      return { rows: rows.slice(0, 1) };
+      return { rows: rows.map((r) => ({ id: r.id })) };
     }
-    if (/^SELECT \* FROM threat_reports WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = \$1/.test(flat)) {
+    if (/^SELECT id FROM threat_reports WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = \$1/.test(flat)) {
       const rows = state.reports.filter((r) => r.source_type === 'pdf' && !r.deleted_at && r.source_sha256 === params[0]);
-      return { rows: rows.slice(0, 1) };
+      return { rows: rows.map((r) => ({ id: r.id })) };
+    }
+    // Source identity keys (migration 056) + primary resolution (no supersession in this fake).
+    state.identityKeys = state.identityKeys || [];
+    if (/^SELECT identity_key, report_id FROM threat_report_identity_keys WHERE identity_key = ANY/.test(flat)) {
+      const keys = new Set(params[0]);
+      return { rows: state.identityKeys.filter((k) => keys.has(k.identity_key)) };
+    }
+    if (/^INSERT INTO threat_report_identity_keys/.test(flat)) {
+      if (state.identityKeys.some((k) => k.identity_key === params[1])) return { rows: [], rowCount: 0 };
+      state.identityKeys.push({ report_id: params[0], identity_key: params[1] });
+      return { rows: [{ id: state.identityKeys.length }], rowCount: 1 };
+    }
+    if (/^SELECT report_id FROM threat_report_identity_keys WHERE identity_key = \$1/.test(flat)) {
+      return { rows: state.identityKeys.filter((k) => k.identity_key === params[0]) };
+    }
+    if (/^WITH RECURSIVE chain/.test(flat)) {
+      const ids = new Set(params[0].map(Number));
+      return { rows: state.reports.filter((r) => ids.has(Number(r.id))).map((r) => ({ chain_origin_id: r.id, superseded_by_report_id: null, ...r })) };
     }
     if (/^INSERT INTO threat_library_jobs/.test(flat)) {
       const job = {
@@ -249,7 +267,7 @@ test('URL: the duplicate check runs under the identity advisory lock before INSE
     await importUrl(base, 'https://vendor.example/r#x');
     const sqls = state.queries.map((q) => q.sql);
     const lockAt = sqls.findIndex((s) => s.startsWith('SELECT pg_advisory_xact_lock'));
-    const lookupAt = sqls.findIndex((s) => s.includes('source_url_canonical = ANY($1::text[])'));
+    const lookupAt = sqls.findIndex((s) => s.includes('FROM threat_report_identity_keys WHERE identity_key = ANY') || s.includes('source_url_canonical = ANY($1::text[])'));
     assert.ok(lockAt >= 0 && lookupAt > lockAt);
     assert.deepEqual(state.queries[lockAt].params, ['threat_library.import_identity:url:https://vendor.example/r']);
     assert.ok(!sqls.some((s) => /^INSERT INTO (threat_reports|threat_library_jobs|threat_report_artifacts)/.test(s)));

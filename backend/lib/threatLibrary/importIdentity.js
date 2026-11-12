@@ -107,22 +107,192 @@ function assertIdentity(identity) {
 }
 
 /**
- * Oldest active report carrying this identity (index-backed partial lookups,
- * see migration 031).
+ * Query parameters that only carry campaign / click attribution and never
+ * select a document. Deliberately short and explicit: any other parameter
+ * (id, p, page, lang, ref, …) may select a different resource and is kept.
+ */
+const TRACKING_PARAM_NAMES = new Set([
+  'gclid', 'dclid', 'gbraid', 'wbraid', 'fbclid', 'msclkid', 'yclid', 'igshid', 'twclid',
+  'mc_cid', 'mc_eid', '_hsenc', '_hsmi', 'mkt_tok'
+]);
+
+function isTrackingParam(rawName) {
+  let name;
+  try {
+    name = decodeURIComponent(String(rawName).replace(/\+/g, ' ')).toLowerCase();
+  } catch {
+    return false;
+  }
+  return name.startsWith('utm_') || TRACKING_PARAM_NAMES.has(name);
+}
+
+/**
+ * Canonical URL with known tracking parameters removed (other parameters keep
+ * their order and spelling). Identity only — stored URLs are never rewritten.
+ * @param {string} canonical output of canonicalizeReportUrl
+ */
+export function stripTrackingParams(canonical) {
+  const q = canonical.indexOf('?');
+  if (q < 0) return canonical;
+  const kept = canonical.slice(q + 1).split('&').filter((pair) => pair && !isTrackingParam(pair.split('=')[0]));
+  return kept.length ? `${canonical.slice(0, q)}?${kept.join('&')}` : canonical.slice(0, q);
+}
+
+/**
+ * `url:` identity key (threat_report_identity_keys) of a canonical URL:
+ * www-insensitive host, known tracking parameters dropped.
+ * @param {string} canonical output of canonicalizeReportUrl
+ */
+export function urlKeyOfCanonical(canonical) {
+  return `url:${stripTrackingParams(reportUrlIdentityKey(canonical))}`;
+}
+
+const PRIMARY_CHAIN_SQL = `
+  WITH RECURSIVE chain AS (
+    SELECT r.id AS origin_id, r.id, r.superseded_by_report_id, 0 AS depth
+      FROM threat_reports r WHERE r.id = ANY($1::bigint[])
+    UNION ALL
+    SELECT c.origin_id, p.id, p.superseded_by_report_id, c.depth + 1
+      FROM chain c JOIN threat_reports p ON p.id = c.superseded_by_report_id
+     WHERE c.depth < 16
+  )
+  SELECT c.origin_id AS chain_origin_id, r.*
+    FROM chain c JOIN threat_reports r ON r.id = c.id
+   WHERE c.superseded_by_report_id IS NULL`;
+
+/**
+ * Primary (non-superseded) report of each given report id, following
+ * superseded_by_report_id. A report that is not superseded is its own primary.
+ * @param {{ query: Function }} db
+ * @param {Array<number|string>} reportIds
+ * @returns {Promise<Map<number, object>>} origin id -> primary report row
+ */
+export async function resolvePrimaryReports(db, reportIds) {
+  const ids = [...new Set((reportIds || []).map(Number).filter((n) => Number.isSafeInteger(n) && n > 0))];
+  const out = new Map();
+  if (!ids.length) return out;
+  const { rows } = await db.query(PRIMARY_CHAIN_SQL, [ids]);
+  for (const row of rows) {
+    const { chain_origin_id: origin, ...report } = row;
+    out.set(Number(origin), report);
+  }
+  return out;
+}
+
+/**
+ * @param {{ query: Function }} db
+ * @param {number|string} reportId
+ * @returns {Promise<object|null>}
+ */
+export async function resolvePrimaryReport(db, reportId) {
+  const map = await resolvePrimaryReports(db, [reportId]);
+  return map.get(Number(reportId)) || null;
+}
+
+/**
+ * Owners of identity keys, each resolved to its primary report.
+ * @param {{ query: Function }} db
+ * @param {string[]} keys
+ * @returns {Promise<{ identity_key: string, key_report_id: number, primary: object }[]>}
+ */
+export async function findIdentityKeyOwners(db, keys) {
+  const list = [...new Set((keys || []).filter(Boolean))];
+  if (!list.length) return [];
+  const { rows } = await db.query(
+    `SELECT identity_key, report_id FROM threat_report_identity_keys WHERE identity_key = ANY($1::text[])`,
+    [list]
+  );
+  if (!rows.length) return [];
+  const primaries = await resolvePrimaryReports(db, rows.map((r) => r.report_id));
+  return rows
+    .map((r) => ({
+      identity_key: r.identity_key,
+      key_report_id: Number(r.report_id),
+      primary: primaries.get(Number(r.report_id)) || null
+    }))
+    .filter((r) => r.primary);
+}
+
+/**
+ * Insert identity keys for a report. A key another report already owns is
+ * left untouched (UNIQUE identity_key) and returned in `conflicts`.
+ * @param {{ query: Function }} db
+ * @param {number|string} reportId
+ * @param {{ key: string, evidence?: string[], values?: string[] }[]} keys
+ * @param {'import'|'fetch'|'backfill'|'reconciliation'} origin
+ */
+export async function recordIdentityKeys(db, reportId, keys, origin) {
+  const inserted = [];
+  const conflicts = [];
+  for (const k of keys || []) {
+    if (!k?.key) continue;
+    const res = await db.query(
+      `INSERT INTO threat_report_identity_keys (report_id, identity_key, evidence, source_values, origin)
+       VALUES ($1, $2, $3::text[], $4::text[], $5)
+       ON CONFLICT (identity_key) DO NOTHING
+       RETURNING id`,
+      [reportId, k.key, k.evidence || [], (k.values || []).slice(0, 8), origin]
+    );
+    if (res.rowCount) {
+      inserted.push(k.key);
+      continue;
+    }
+    const { rows } = await db.query(
+      `SELECT report_id FROM threat_report_identity_keys WHERE identity_key = $1`,
+      [k.key]
+    );
+    if (rows[0] && Number(rows[0].report_id) !== Number(reportId)) {
+      conflicts.push({ key: k.key, report_id: Number(rows[0].report_id) });
+    }
+  }
+  return { inserted, conflicts };
+}
+
+/**
+ * Transaction-scoped advisory locks on identity keys, taken in sorted order so
+ * two workers never deadlock on lock order. The lock string of a `url:` key is
+ * the one the import route takes for that URL, so the pre-fetch claim and the
+ * post-fetch claim of equivalent URLs serialise against each other.
+ * @param {{ query: Function }} client inside a transaction
+ * @param {string[]} keys
+ */
+export async function lockIdentityKeys(client, keys) {
+  for (const key of [...new Set((keys || []).filter(Boolean))].sort()) {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [`${LOCK_NAMESPACE}:${key}`]);
+  }
+}
+
+/**
+ * Report that already owns this import identity, resolved to its primary
+ * logical report (a superseded report resolves to the report that superseded
+ * it). URL identity = proven identity keys (submitted, redirect, corroborated
+ * canonical — threat_report_identity_keys), then the submitted-URL column of
+ * reports imported before those keys existed (031).
  * @param {{ query: Function }} db
  * @param {{ kind: 'url'|'sha256', key: string }} identity
  */
 export async function findExistingReportImport(db, identity) {
   assertIdentity(identity);
+  if (identity.kind === 'url') {
+    const owners = await findIdentityKeyOwners(db, [urlKeyOfCanonical(identity.key)]);
+    const owner = owners.find((o) => o.primary.deleted_at == null);
+    if (owner) return owner.primary;
+  }
   const sql = identity.kind === 'url'
-    ? `SELECT * FROM threat_reports
+    ? `SELECT id FROM threat_reports
        WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY($1::text[])
-       ORDER BY created_at ASC, id ASC LIMIT 1`
-    : `SELECT * FROM threat_reports
+       ORDER BY created_at ASC, id ASC`
+    : `SELECT id FROM threat_reports
        WHERE source_type = 'pdf' AND deleted_at IS NULL AND source_sha256 = $1
-       ORDER BY created_at ASC, id ASC LIMIT 1`;
+       ORDER BY created_at ASC, id ASC`;
   const { rows } = await db.query(sql, [identity.kind === 'url' ? reportUrlIdentityVariants(identity.key) : identity.key]);
-  return rows[0] || null;
+  if (!rows.length) return null;
+  const primaries = await resolvePrimaryReports(db, rows.map((r) => r.id));
+  for (const r of rows) {
+    const primary = primaries.get(Number(r.id));
+    if (primary && primary.deleted_at == null) return primary;
+  }
+  return null;
 }
 
 /**
@@ -139,17 +309,20 @@ export async function claimReportImport(pool, identity, create) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    // Lock on the www-insensitive key: "www.host" and "host" submissions serialise.
-    const lockKey = identity.kind === 'url' ? reportUrlIdentityKey(identity.key) : identity.key;
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1)::bigint)', [
-      `${LOCK_NAMESPACE}:${identity.kind}:${lockKey}`
-    ]);
+    // Lock on the www-insensitive key: "www.host" and "host" submissions
+    // serialise, and so does the worker's post-fetch claim of the same URL
+    // (same lock string: `threat_library.import_identity:url:<key>`).
+    const lockKey = identity.kind === 'url' ? urlKeyOfCanonical(identity.key) : `sha256:${identity.key}`;
+    await lockIdentityKeys(client, [lockKey]);
     const existing = await findExistingReportImport(client, identity);
     if (existing) {
       await client.query('COMMIT');
       return { duplicate: true, report: existing };
     }
     const report = await create(client);
+    if (identity.kind === 'url' && report?.id) {
+      await recordIdentityKeys(client, report.id, [{ key: lockKey, evidence: ['submitted'], values: [identity.key] }], 'import');
+    }
     await client.query('COMMIT');
     return { duplicate: false, report };
   } catch (err) {
@@ -198,4 +371,32 @@ export async function backfillReportImportIdentity(db) {
      GROUP BY source_sha256 HAVING COUNT(*) > 1`
   );
   return { scanned: rows.length, updated, duplicateGroups: dupes };
+}
+
+/**
+ * Idempotent fill of `submitted` identity keys (threat_report_identity_keys)
+ * for URL reports imported before migration 056, from source_url_canonical.
+ * Oldest report first, so where historical duplicates share a submitted URL
+ * the oldest keeps the key; the others are reported, never merged. Writes only
+ * threat_report_identity_keys. Fetch-derived keys (redirect / canonical /
+ * post id) need stored source HTML: scripts/threat-library-source-identity.js.
+ * @param {{ query: Function }} db
+ * @returns {Promise<{ scanned: number, inserted: number, conflicts: { key: string, report_id: number, owner_report_id: number }[] }>}
+ */
+export async function backfillReportIdentityKeys(db) {
+  const { rows } = await db.query(
+    `SELECT id, source_url_canonical FROM threat_reports
+      WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM threat_report_identity_keys k WHERE k.report_id = threat_reports.id)
+      ORDER BY created_at ASC, id ASC`
+  );
+  let inserted = 0;
+  const conflicts = [];
+  for (const row of rows) {
+    const key = urlKeyOfCanonical(row.source_url_canonical);
+    const res = await recordIdentityKeys(db, row.id, [{ key, evidence: ['submitted'], values: [row.source_url_canonical] }], 'backfill');
+    inserted += res.inserted.length;
+    for (const c of res.conflicts) conflicts.push({ key: c.key, report_id: Number(row.id), owner_report_id: c.report_id });
+  }
+  return { scanned: rows.length, inserted, conflicts };
 }

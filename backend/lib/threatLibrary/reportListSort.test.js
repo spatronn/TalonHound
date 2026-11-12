@@ -159,7 +159,7 @@ test('TEST M — ORDER BY applies to the full filtered set before LIMIT/OFFSET',
 
 test('listThreatReports default path is unchanged when sort is absent or rejected', async () => {
   const sql = await listSql({ limit: 25, offset: 0 });
-  assert.match(sql, /FROM threat_reports r\s+WHERE r\.deleted_at IS NULL\s+ORDER BY r\.created_at DESC\s+LIMIT \$1 OFFSET \$2/);
+  assert.match(sql, /FROM threat_reports r\s+WHERE r\.deleted_at IS NULL AND r\.superseded_by_report_id IS NULL\s+ORDER BY r\.created_at DESC\s+LIMIT \$1 OFFSET \$2/);
   const rejected = await listSql({ sort: 'title; DROP', order: 'desc', limit: 25, offset: 0 });
   assert.match(rejected, /ORDER BY r\.created_at DESC\s+LIMIT/);
   assert.equal(rejected.includes('DROP'), false);

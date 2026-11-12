@@ -66,7 +66,7 @@ test('retry recovers an orphaned active status instead of answering already_runn
 });
 
 test('report detail loads tags only; MITRE is neither read, exposed nor editable', () => {
-  assert.match(routeSrc, /return \{ \.\.\.counted, tags: await loadReportTags\(pool, row\.id\), ioc_source_summary \};/);
+  assert.match(routeSrc, /return \{ \.\.\.counted, tags: await loadReportTags\(pool, row\.id\), ioc_source_summary, identity_summary \};/);
   assert.doesNotMatch(routeSrc, /mitre|technique/i);
   assert.match(routeSrc, /'\/api\/threat-library\/reports\/:publicId\/tags'/);
 });
