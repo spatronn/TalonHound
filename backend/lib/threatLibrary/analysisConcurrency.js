@@ -222,6 +222,7 @@ export async function dispatchQueuedThreatLibraryAnalyses(pool, opts = {}) {
          AND j.bullmq_job_id IS NULL
          AND j.job_type = ANY($1::text[])
          AND r.deleted_at IS NULL
+         AND r.superseded_by_report_id IS NULL
          -- Delayed automatic retries wait for their backoff.
          AND (j.not_before IS NULL OR j.not_before <= NOW())
          -- Never a second live pipeline run for the same report.

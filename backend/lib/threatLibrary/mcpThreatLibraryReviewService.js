@@ -61,6 +61,7 @@ import {
   clampIndicatorPage
 } from './mcpThreatReport.js';
 import { serializeImportJobState, serializeImportReportState } from '../mcpThreatLibraryImportService.js';
+import { supersededReportConflict } from './reportSupersession.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const LINKED_PROVENANCE_SQL = linkedSourceProvenanceColumnSql('');
@@ -139,6 +140,9 @@ async function resolveReport(pool, reportIdArg) {
   if (!isThreatReportId(id)) return { error: invalidReportId() };
   const report = await getReportByPublicId(pool, id);
   if (!report) return { error: notFound() };
+  // A superseded duplicate is read-only; its primary carries the review.
+  const superseded = await supersededReportConflict(pool, report);
+  if (superseded) return { error: { status: 409, error: superseded } };
   return { report };
 }
 

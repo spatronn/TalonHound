@@ -62,6 +62,8 @@ import { recordExtractionRun } from './extractionRuns.js';
 import { decideAutoRetry } from './autoRetry.js';
 import { buildAiProvenance, fetchModelIdentity } from './ai/modelIdentity.js';
 import { computeAiCoverage } from './ai/analyze.js';
+import { resolveSourceIdentity } from './sourceIdentity.js';
+import { claimFetchedReportIdentity } from './sourceIdentityClaim.js';
 
 // Deterministic stages live in extractionStages.js (shared with the
 // AI-free extraction refresh); re-exported for existing callers.
@@ -235,6 +237,40 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
             text_excerpt: (document.blocks || []).slice(0, 3).map((b) => b.text).join('\n').slice(0, 1000),
             fetched_at: new Date().toISOString()
           });
+          // --- Source identity (before any extraction / AI / candidate write) ---
+          const identityGate = await claimReportSourceIdentity(pool, report, fetched);
+          if (identityGate?.outcome === 'duplicate') {
+            const primary = identityGate.primary;
+            await updateReportStatus(pool, report.id, {
+              title: document.title || report.title,
+              language: document.language || report.language,
+              import_status: 'already_imported',
+              analysis_status: 'skipped',
+              analysis_progress: mergeAnalysisProgress(progressCarry, {
+                stage: 'duplicate',
+                duplicate_of: primary.public_id
+              }),
+              clear_failure: true
+            });
+            await updateJob(pool, ctx.jobId, {
+              status: 'completed',
+              stage: 'duplicate',
+              progress: { stage: 'duplicate', duplicate_of: primary.public_id }
+            });
+            log.info('import resolved to an existing report; not extracted', {
+              reportId: report.id,
+              primaryReportId: primary.id,
+              evidence: identityGate.evidence
+            });
+            return {
+              ok: true,
+              duplicate: true,
+              summary: {
+                duplicate_of: primary.public_id,
+                identity_evidence: identityGate.evidence
+              }
+            };
+          }
           await setStage('extracting', { blocks: document.blocks?.length || 0 });
           log.info('fetch completed', { reportId: report.id, blocks: document.blocks?.length || 0 });
         }
@@ -939,6 +975,45 @@ export async function runAnalysisPipeline(pool, ctx, deps = {}) {
  * semantic analysis starts a new run (older chunk checkpoints are incompatible).
  * @param {{ priorExtractionVersion: string|null, documentRebuilt: boolean, existingCount: number, resumePreferred: boolean, refreshCandidates: boolean }} input
  */
+/**
+ * Resolve and claim the source identity of a freshly fetched URL report
+ * (sourceIdentity.js + sourceIdentityClaim.js). Only a report with no
+ * candidates that was never finalized may be superseded into an existing
+ * report; otherwise a match is only recorded. Identity resolution never fails
+ * the import: an error here is logged and the report is analysed as before.
+ * @param {object} pool fenced pool
+ * @param {object} report
+ * @param {{ url: string, finalUrl?: string, bodyText?: string|null }} fetched
+ */
+export async function claimReportSourceIdentity(pool, report, fetched) {
+  if (report.source_type !== 'url') return null;
+  let identity;
+  try {
+    identity = resolveSourceIdentity({
+      submittedUrl: fetched.url || report.source_url,
+      finalUrl: fetched.finalUrl || null,
+      html: fetched.bodyText || null
+    });
+  } catch (err) {
+    log.warn('source identity resolution failed (non-fatal)', { reportId: report.id, error: err.message });
+    return null;
+  }
+  const { rows } = await pool.query(
+    'SELECT EXISTS (SELECT 1 FROM threat_report_candidates WHERE report_id = $1) AS has_candidates',
+    [report.id]
+  );
+  const allowSupersede = !report.finalized_at && rows[0]?.has_candidates !== true;
+  const result = await claimFetchedReportIdentity(pool, { reportId: report.id, identity, allowSupersede });
+  if (result.outcome === 'conflict' || result.outcome === 'ambiguous') {
+    log.warn('source identity matches another report; not merged automatically', {
+      reportId: report.id,
+      outcome: result.outcome,
+      matches: (result.matches || []).map((m) => m.report_id)
+    });
+  }
+  return result;
+}
+
 /**
  * Keep extraction provenance on analysis_progress across stage writes.
  * setStage('analyzing') used to replace the object and drop the version,

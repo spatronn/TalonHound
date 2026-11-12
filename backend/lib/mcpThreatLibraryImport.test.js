@@ -72,13 +72,33 @@ function createPool(state) {
       state.reports.push(row);
       return { rows: [row], rowCount: 1 };
     }
-    if (/^SELECT \* FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\)/.test(flat)) {
+    if (/^SELECT id FROM threat_reports WHERE source_type = 'url' AND deleted_at IS NULL AND source_url_canonical = ANY\(\$1::text\[\]\)/.test(flat)) {
       const keys = new Set(params[0]);
       const rows = state.reports.filter((r) => r.source_type === 'url' && !r.deleted_at && keys.has(r.source_url_canonical));
       // Read, then yield like a real round trip: callers that are not
       // serialized by the advisory lock would all see "no report" and insert.
       await new Promise((r) => setImmediate(r));
-      return { rows: rows.slice(0, 1) };
+      return { rows: rows.map((r) => ({ id: r.id })) };
+    }
+    // Source identity keys (migration 056) + primary resolution (no supersession here).
+    state.identityKeys = state.identityKeys || [];
+    if (/^SELECT identity_key, report_id FROM threat_report_identity_keys WHERE identity_key = ANY/.test(flat)) {
+      const keys = new Set(params[0]);
+      const rows = state.identityKeys.filter((k) => keys.has(k.identity_key));
+      await new Promise((r) => setImmediate(r));
+      return { rows };
+    }
+    if (/^INSERT INTO threat_report_identity_keys/.test(flat)) {
+      if (state.identityKeys.some((k) => k.identity_key === params[1])) return { rows: [], rowCount: 0 };
+      state.identityKeys.push({ report_id: params[0], identity_key: params[1] });
+      return { rows: [{ id: state.identityKeys.length }], rowCount: 1 };
+    }
+    if (/^SELECT report_id FROM threat_report_identity_keys WHERE identity_key = \$1/.test(flat)) {
+      return { rows: state.identityKeys.filter((k) => k.identity_key === params[0]) };
+    }
+    if (/^WITH RECURSIVE chain/.test(flat)) {
+      const ids = new Set(params[0].map(Number));
+      return { rows: state.reports.filter((r) => ids.has(Number(r.id))).map((r) => ({ chain_origin_id: r.id, superseded_by_report_id: null, ...r })) };
     }
     if (/^SELECT \* FROM threat_reports WHERE public_id = \$1::uuid AND deleted_at IS NULL/.test(flat)) {
       return { rows: state.reports.filter((r) => r.public_id === params[0] && !r.deleted_at).slice(0, 1) };
@@ -493,7 +513,7 @@ test('import never approves candidates, runs Create IOCs, writes IOCs or touches
   await callTool(h, 'threat_library_import_url', { url: REPORT_URL });
   const writes = h.state.queries.filter((q) => /^(INSERT|UPDATE|DELETE)/.test(q.sql));
   for (const w of writes) {
-    assert.match(w.sql, /^(INSERT INTO threat_reports |INSERT INTO threat_library_jobs|UPDATE threat_library_jobs)/, w.sql);
+    assert.match(w.sql, /^(INSERT INTO threat_reports |INSERT INTO threat_report_identity_keys |INSERT INTO threat_library_jobs|UPDATE threat_library_jobs)/, w.sql);
   }
   assert.equal(h.state.queries.some((q) => /threat_report_candidates|ioc_items|ioc_sources|ioc_tags|review_status|promot/i.test(q.sql)), false);
   assert.ok(h.state.queued.every((j) => j.name === 'analyze'), 'only the analysis job is queued (no create_iocs / promotion job)');

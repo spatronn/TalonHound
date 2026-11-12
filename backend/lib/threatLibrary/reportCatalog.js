@@ -22,7 +22,13 @@
  */
 
 import { createHash } from 'node:crypto';
-import { canonicalizeReportUrl, reportUrlIdentityKey, reportUrlIdentityVariants } from './importIdentity.js';
+import {
+  canonicalizeReportUrl,
+  findIdentityKeyOwners,
+  reportUrlIdentityKey,
+  reportUrlIdentityVariants,
+  urlKeyOfCanonical
+} from './importIdentity.js';
 import { resolveReportPhase, REPORT_PHASES } from './reportPhase.js';
 import { REPORT_LIST_PHASE_SQL } from './reportListQuery.js';
 import { serializePublicationDate } from './publicationDate.js';
@@ -245,7 +251,7 @@ function decodeCursor(q) {
 
 function buildCatalogWhere(q, params) {
   const add = (v) => { params.push(v); return `$${params.length}`; };
-  const where = ['r.deleted_at IS NULL'];
+  const where = ['r.deleted_at IS NULL', 'r.superseded_by_report_id IS NULL'];
   for (const [col, b] of [['r.created_at', q.imported.from], ['r.created_at', q.imported.to],
     ['r.published_at', q.published.from], ['r.published_at', q.published.to]]) {
     if (b) where.push(`${col} ${b.op} ${add(b.at)}::timestamptz`);
@@ -377,6 +383,7 @@ export async function checkReportUrls(pool, urls) {
                 ROW_NUMBER() OVER (PARTITION BY ${WWW_INSENSITIVE_IDENTITY_SQL} ORDER BY r.created_at ASC, r.id ASC) AS identity_rank
          FROM threat_reports r
          WHERE r.source_type = 'url' AND r.deleted_at IS NULL
+           AND r.superseded_by_report_id IS NULL
            AND r.source_url_canonical = ANY($1::text[])
        ) m
        WHERE m.identity_rank <= $2
@@ -390,6 +397,38 @@ export async function checkReportUrls(pool, urls) {
       entry.reports.push({ ...serializeCatalogReport(row), match_basis: 'import_identity', created_at_key: row.created_at_key, id: row.id });
     }
 
+    // Proven source identity (redirect target, corroborated canonical URL,
+    // and the submitted URL of reports superseded into another one) — the
+    // same keys the import duplicate check reads — resolved to the primary
+    // logical report.
+    const identitiesByKey = new Map();
+    for (const u of identities) {
+      const k = urlKeyOfCanonical(u);
+      if (!identitiesByKey.has(k)) identitiesByKey.set(k, []);
+      identitiesByKey.get(k).push(u);
+    }
+    const identityKeys = [...identitiesByKey.keys()];
+    const owners = (await findIdentityKeyOwners(pool, identityKeys))
+      .filter((o) => o.primary.deleted_at == null);
+    if (owners.length) {
+      const { rows: primaryRows } = await pool.query(
+        `SELECT ${CATALOG_COLUMNS} FROM threat_reports r WHERE r.id = ANY($1::bigint[])`,
+        [[...new Set(owners.map((o) => Number(o.primary.id)))]]
+      );
+      const primaryById = new Map(primaryRows.map((r) => [Number(r.id), r]));
+      for (const owner of owners) {
+        const row = primaryById.get(Number(owner.primary.id));
+        if (!row) continue;
+        for (const queriedIdentity of identitiesByKey.get(owner.identity_key) || []) {
+          const entry = entryFor(queriedIdentity);
+          if (entry.reports.some((r) => Number(r.id) === Number(row.id))) continue;
+          entry.count += 1;
+          entry.importIdentity += 1;
+          entry.reports.push({ ...serializeCatalogReport(row), match_basis: 'source_identity', created_at_key: row.created_at_key, id: row.id });
+        }
+      }
+    }
+
     // Non-URL reports (PDF / THIB) carry no import identity, only the stored
     // source_url. Prefilter on the URL's host in SQL, then require the exact
     // same canonical form as the import identity — no looser matching.
@@ -397,7 +436,7 @@ export async function checkReportUrls(pool, urls) {
     const { rows: byStoredUrl } = await pool.query(
       `SELECT ${CATALOG_COLUMNS}
        FROM threat_reports r
-       WHERE r.source_type <> 'url' AND r.deleted_at IS NULL AND r.source_url IS NOT NULL
+       WHERE r.source_type <> 'url' AND r.deleted_at IS NULL AND r.superseded_by_report_id IS NULL AND r.source_url IS NOT NULL
          AND lower(regexp_replace(regexp_replace(
                substring(btrim(r.source_url) from '^[A-Za-z][A-Za-z0-9+.-]*://([^/?#]*)'),
                '^.*@', ''), ':[0-9]*$', '')) = ANY($1::text[])

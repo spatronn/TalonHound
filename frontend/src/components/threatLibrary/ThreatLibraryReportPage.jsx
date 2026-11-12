@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { primaryReportHref, supersededVariants } from './reportIdentity.js';
 import { api } from '../../lib/api.js';
 import { formatUserDateTime } from '../../lib/formatDate.js';
 import { useAppConfirm } from '../../lib/appChromeContext.jsx';
@@ -535,13 +536,16 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const requestConfirm = useAppConfirm();
   const [finalizeException, setFinalizeException] = useState({ open: false, obligations: [], submitting: false, error: '' });
-  const { isAdmin, canWrite } = useSession();
+  const { isAdmin, canWrite: sessionCanWrite } = useSession();
   const urlState = useMemo(() => parseReviewTableUrlState(searchParams), [searchParams]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [report, setReport] = useState(null);
+  // A superseded duplicate (another URL of an article already in the library)
+  // is read-only; analyst work happens on its primary report.
+  const canWrite = sessionCanWrite && !report?.superseded_by;
   const [candidates, setCandidates] = useState([]);
   const [entities, setEntities] = useState([]);
   const [artifacts, setArtifacts] = useState([]);
@@ -1864,6 +1868,25 @@ export default function ThreatLibraryReportPage({ AppShell, useSession }) {
           </div>
         ) : null}
 
+        {report?.superseded_by ? (
+          <div style={{ ...ui.infoBanner, marginBottom: 10 }} role="status" data-testid="report-superseded-banner">
+            Duplicate of an article already in the library — read-only.{' '}
+            <Link to={primaryReportHref(report)} data-testid="report-superseded-primary-link">
+              Open primary report
+            </Link>
+          </div>
+        ) : null}
+        {!report?.superseded_by && supersededVariants(report).length ? (
+          <div style={{ ...ui.infoBanner, marginBottom: 10 }} data-testid="report-source-variants">
+            Also imported as:{' '}
+            {supersededVariants(report).map((v, i) => (
+              <span key={v.report_id}>
+                {i ? ', ' : ''}
+                <Link to={`/threat-intelligence/threat-library/${v.report_id}`}>{v.source_url || v.report_id}</Link>
+              </span>
+            ))}
+          </div>
+        ) : null}
         {error ? <div style={{ ...ui.error, marginBottom: 10 }} role="alert">{error}</div> : null}
         {feedback ? <div style={{ ...ui.infoBanner }}>{feedback}</div> : null}
 

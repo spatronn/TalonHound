@@ -104,6 +104,7 @@ import {
   claimReportForMaintenance,
   restoreReportStatus
 } from '../lib/threatLibrary/store.js';
+import { loadReportIdentitySummary, supersededReportConflict } from '../lib/threatLibrary/reportSupersession.js';
 import {
   THREAT_LIBRARY_JOB_MODES,
   MAINTENANCE_ALLOWED_STATUSES,
@@ -299,7 +300,11 @@ function publicReport(row) {
     updated_at: row.updated_at,
     finalized_at: row.finalized_at,
     // Analyst-managed report tags (campaign/threat context), present when loaded.
-    ...(Array.isArray(row.tags) ? { tags: row.tags } : {})
+    ...(Array.isArray(row.tags) ? { tags: row.tags } : {}),
+    // Logical article identity: a superseded duplicate names its primary; a
+    // primary lists the URL variants (superseded reports) it groups.
+    superseded_by: row.identity_summary?.superseded_by ?? null,
+    source_variants: row.identity_summary?.source_variants ?? []
   };
 }
 
@@ -313,6 +318,22 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
   registerRouteModule('threat_library');
 
   const queue = deps.threatLibraryQueue || null;
+
+  // A superseded report (duplicate of another report of the same article) is
+  // read-only: every analyst write targets its primary. Reads stay available
+  // so existing links and provenance keep resolving.
+  app.use('/api/threat-library/reports/:publicId', async (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') return next();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(req.params.publicId || ''))) return next();
+    try {
+      const report = await getReportByPublicId(pool, req.params.publicId);
+      const conflict = report ? await supersededReportConflict(pool, report) : null;
+      if (!conflict) return next();
+      return res.status(409).json({ message: conflict.message, code: conflict.code, primary_report_id: conflict.primary_report_id });
+    } catch (err) {
+      return next(err);
+    }
+  });
 
   /**
    * Session principal with its persisted public id. Interactive sessions only
@@ -352,7 +373,13 @@ export function registerThreatLibraryRoutes(app, pool, audit, deps = {}) {
     } catch {
       ioc_source_summary = { total: 0, discovered_pending: 0, attached: 0, extracted: 0, failed: 0 };
     }
-    return { ...counted, tags: await loadReportTags(pool, row.id), ioc_source_summary };
+    let identity_summary = null;
+    try {
+      identity_summary = await loadReportIdentitySummary(pool, row);
+    } catch {
+      identity_summary = null; // informational
+    }
+    return { ...counted, tags: await loadReportTags(pool, row.id), ioc_source_summary, identity_summary };
   }
 
   async function queueIocSourceJob(report, source, jobType, actor, dispatchExtra = {}) {
