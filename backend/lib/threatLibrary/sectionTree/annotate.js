@@ -28,7 +28,10 @@ import {
   isAnnotatedIndicatorRowLine,
   isAnnotatedHashList,
   isInventoryRowLine,
-  OBSERVABLE_IN_TEXT_RE
+  OBSERVABLE_IN_TEXT_RE,
+  observableAnnexHeading,
+  textAssertsAnnexIndicators,
+  SECTION_ROLES
 } from '../indicatorScope.js';
 import { collapseLetterSpacing } from '../pdfLayout.js';
 import { refangTextForExtraction } from '../defang.js';
@@ -266,13 +269,87 @@ function headingLevel(b, stack) {
   return 2;
 }
 
+/**
+ * A header-less table whose cells are observables ("us01web-zoom[.]us
+ * us03web-zoom[.]us …"): at least two values, and values make up most of its
+ * tokens. A descriptive table that mentions a value does not qualify.
+ */
+function isValueOnlyTable(text) {
+  const tokens = refangTextForExtraction(String(text || '')).split(/[\s|¶]+/).filter(Boolean);
+  if (tokens.length < 2) return false;
+  const values = tokens.filter((tok) => OBSERVABLE_IN_TEXT_RE.test(tok) && !/[a-z]{4,}\.(?:exe|dll|js|ps1|sh|bat|txt)$/i.test(tok));
+  return values.length >= 2 && values.length >= tokens.length * 0.8;
+}
+
+/** A block that reads as one inventory row (value line, annotated row, short value list item, IOC table). */
+function isInventoryRowBlock(b) {
+  const t = textOf(b);
+  if (!t) return false;
+  if (b.type === 'table') return isInventoryTable(b) || isValueOnlyTable(t);
+  if (isInventoryRowLine(t) || isIndicatorValueLine(t) || isObservableListLine(t) || isAnnotatedIndicatorRowLine(t) || isAnnotatedHashList(t)) return true;
+  return (b.type === 'list' || b.type === 'list_item' || b.type === 'code') && t.length <= 160 &&
+    OBSERVABLE_IN_TEXT_RE.test(refangTextForExtraction(t)) && !/[.!?。]\s*$/.test(t);
+}
+
+/**
+ * The section opened by the heading at `i` (up to the next heading) is an
+ * inventory: at least `minRows` row blocks, and prose sentences never
+ * outnumber them. A narrative section that quotes a few values is not.
+ */
+function sectionIsInventoryDominant(blocks, i, chromeIds, minRows = 3) {
+  let rows = 0;
+  let prose = 0;
+  for (let j = i + 1; j < blocks.length; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') break;
+    if (isInventoryRowBlock(b)) rows += 1;
+    else if (/[.!?。]\s*$/.test(textOf(b)) && textOf(b).length > 60) prose += 1;
+  }
+  return rows >= minRows && prose <= rows;
+}
+
+/**
+ * "Annex 2 - RMM tool filename IPv4 address" opens an IOC scope only when its
+ * body is value rows (no prose majority) and a publisher sentence outside it
+ * calls that appendix indicators / C2 ("… additional C2 were uncovered, with a
+ * complete list … provided in Annex 2. These indicators should be used for
+ * hunting …") (tl-section-tree-v19).
+ */
+function confirmedObservableAnnex(text, blocks, i, chromeIds) {
+  const annex = observableAnnexHeading(text);
+  if (!annex) return null;
+  let rows = 0;
+  let content = 0;
+  let end = blocks.length;
+  for (let j = i + 1; j < blocks.length; j += 1) {
+    const b = blocks[j];
+    if (isChrome(b, chromeIds)) continue;
+    if (b.type === 'heading') { end = j; break; }
+    content += 1;
+    if (isInventoryRowBlock(b)) rows += 1;
+  }
+  if (rows < OBSERVABLE_ANNEX_MIN_ROWS || rows < content * 0.8) return null;
+  for (let j = 0; j < blocks.length; j += 1) {
+    if (j >= i && j < end) continue;
+    const b = blocks[j];
+    if (!b || b.type === 'heading' || isChrome(b, chromeIds)) continue;
+    if (textAssertsAnnexIndicators(textOf(b), annex.label)) {
+      return { zone: 'explicit_ioc_section', role: SECTION_ROLES.IOC_APPENDIX, confirmed_by: b.id };
+    }
+  }
+  return null;
+}
+
+const OBSERVABLE_ANNEX_MIN_ROWS = 3;
+
 function zoneForHeading(text, isRealHeading, blocks, i, chromeIds) {
   // "Indicators: <a descriptive title>" is an appendix only when the section it
   // opens holds indicator structure; otherwise it is a narrative title.
   if (classifyIndicatorHeading(text)?.form === INDICATOR_HEADING_FORMS.DESCRIPTIVE_SUFFIX && !sectionHasIndicatorStructure(blocks, i, chromeIds)) {
     return { zone: null, role: null };
   }
-  const role = classifySectionRole(text);
+  const role = classifySectionRole(text, { allowPrefixedIoc: isRealHeading });
   const fromRole = zoneForSectionRole(role);
   if (fromRole) return { zone: fromRole, role };
   const z = classifyHeadingText(text, { isHeading: isRealHeading });
@@ -280,6 +357,8 @@ function zoneForHeading(text, isRealHeading, blocks, i, chromeIds) {
     // "Observations" opens an IOC scope only when a declared-type IOC table follows.
     const qualified = confirmedQualifiedIocHeading(text, blocks, i, chromeIds);
     if (qualified) return qualified;
+    const annex = confirmedObservableAnnex(text, blocks, i, chromeIds);
+    if (annex) return annex;
   }
   return { zone: z, role: role || null };
 }
@@ -362,15 +441,43 @@ function isIndicatorClassLabel(t) {
  * groups were written as sibling headings of the IOC heading, not children
  * (tl-section-tree-v9).
  */
+/**
+ * A same-level sibling of a lead-in-only IOC heading that is not an
+ * indicator-class label ("Fake Google Meet pages and associated infection
+ * chain") still carries that inventory when its own section is inventory
+ * dominant. A conclusion / reference / legitimate topic, or a narrative
+ * section, never does (tl-section-tree-v19).
+ */
+function inventorySiblingSection(t, blocks, i, chromeIds) {
+  return !NON_INVENTORY_TOPIC_RE.test(t) && !classifyHeadingText(t, { isHeading: true }) &&
+    sectionIsInventoryDominant(blocks, i, chromeIds);
+}
+
+/**
+ * One short sentence that points at the publisher's IOC list elsewhere. A
+ * dotted vendor name ("Sekoia.io") is not a sentence end (tl-section-tree-v19).
+ */
+function isIocPointerSentence(b) {
+  const t = textOf(b);
+  if (!t || t.length > 200 || b.type === 'table') return false;
+  const undotted = t.replace(/(\w)\.(?=\w)/g, '$1');
+  return /\b(?:iocs?|indicators?)\b/i.test(t) && EXTERNAL_POINTER_RE.test(undotted) &&
+    (undotted.match(/[.!?](?:\s|$)/g) || []).length <= 1;
+}
+
 function leadInWithSiblingGroups(blocks, i, chromeIds, level) {
   let prose = 0;
   for (let j = i + 1; j < blocks.length; j += 1) {
     const b = blocks[j];
     if (isChrome(b, chromeIds)) continue;
     if (b.type === 'heading') {
-      return prose <= 3 && Number.isInteger(b.level) && b.level === level && isIndicatorClassLabel(textOf(b)) &&
-        lookAheadInventory(blocks, j, chromeIds);
+      return prose <= 3 && Number.isInteger(b.level) && b.level === level &&
+        ((isIndicatorClassLabel(textOf(b)) && lookAheadInventory(blocks, j, chromeIds)) ||
+          inventorySiblingSection(textOf(b), blocks, j, chromeIds));
     }
+    // "The list of IoCs is available on Sekoia.io GitHub repository.": a
+    // pointer at the publisher's external list is lead-in, not inventory.
+    if (isIocPointerSentence(b)) { prose += 1; continue; }
     if (hasObservableInventory(b) || b.type === 'table' || b.type === 'list' || b.type === 'list_item') return false;
     prose += 1;
   }
@@ -521,7 +628,7 @@ export function annotateSectionTree(doc, opts = {}) {
       pushTrace({ block_id: b.id, decision: 'open_declared_indicator_section', zone, reason: 'lead_in_declares_indicators' });
     }
     const level = headingLevel(b, stack);
-    const parentAuth = nearestAuthoritative(stack);
+    let parentAuth = nearestAuthoritative(stack);
     const groupLabel = GROUP_LABEL_RE.test(t);
     const inventoryNext = lookAheadInventory(blocks, i, chromeIds);
 
@@ -534,9 +641,20 @@ export function annotateSectionTree(doc, opts = {}) {
     const isNegativeHeading = Boolean(zone && NEGATIVE_ZONES.has(zone));
     // Same-level indicator-class siblings of a lead-in-only IOC heading
     // continue its inventory; the first other heading closes it.
+    // The lead-in IOC heading (or its last sibling group) at this heading's own
+    // level, past any deeper labels opened inside the previous group
+    // ("AMOS Stealer distribution infrastructure:" under "Fake Google Meet …")
+    // (tl-section-tree-v19).
+    const siblingAuth = isRealHeading && Number.isInteger(b.level)
+      ? [...stack].reverse().find((e) => e.authoritative && !e.synthetic && e.level === b.level) || null
+      : null;
     const siblingGroup =
-      Boolean(parentAuth?.siblingGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
-      Number.isInteger(b.level) && b.level === parentAuth.level && isIndicatorClassLabel(t) && inventoryNext;
+      Boolean(siblingAuth?.siblingGroups) && !isNegativeHeading && isRealHeading && !inferredLevels &&
+      ((isIndicatorClassLabel(t) && inventoryNext) || inventorySiblingSection(t, blocks, i, chromeIds));
+    if (siblingGroup) {
+      while (stack.length && stack[stack.length - 1] !== siblingAuth) stack.pop();
+      parentAuth = siblingAuth;
+    }
     // An IOC heading already grouped into indicator-class children ("## IoCs" ›
     // "### Files") whose next group was written at the IOC heading's own level
     // ("## Network" over its inventory table) keeps the inventory open

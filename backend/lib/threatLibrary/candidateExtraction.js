@@ -314,8 +314,12 @@ export {
  * v65 (35862 follow-up): a bare re-mention of a value the same block already
  * read as a release number ("… and we verified that 10.3.4.45 blocks …")
  * keeps that reading unless a network cue sits at the token.
+ * v66 (Qwen-evaluation follow-up, 35637): tl-section-tree-v19, and a
+ * two-column IOC-table row whose label names the service a value belongs to
+ * ("Registrars | … (www[.]net[.]cn)", hosting provider, ASN, CA) is a
+ * provider row, not operator infrastructure.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v65';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v66';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

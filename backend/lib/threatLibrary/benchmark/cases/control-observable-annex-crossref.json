@@ -1,0 +1,33 @@
+{
+  "id": "control-observable-annex-crossref",
+  "title": "Control: an observable-type annex the publisher calls C2 indicators is an IOC inventory; an example-list annex is not",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "appendix", "mode_a", "ip"],
+  "source": { "kind": "html_file", "path": "control-observable-annex-crossref.html", "url": "https://research.example/blog/tax-lures-rmm/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of 35446 'Annex 2 - RMM tool filename IPv4 address', whose 35 publisher-declared hunting C2 addresses stayed body mentions",
+      "verified_by": "construction",
+      "verified_at": "2026-11-13"
+    },
+    "indicators": [
+      { "type": "ip", "value": "198.51.100.21", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.22", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.23", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.24", "assertion": "explicit" },
+      { "type": "domain", "value": "tax-audit-notice.example", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "ip", "value": "203.0.113.1" },
+      { "type": "ip", "value": "203.0.113.2" },
+      { "type": "ip", "value": "203.0.113.3" }
+    ],
+    "sections": [
+      { "heading": "Annex 3 - RMM tool filename IPv4 address", "expected": "authoritative" },
+      { "heading": "Annex 1 - Example IPv4 address list used in the test harness", "expected": "narrative" }
+    ]
+  }
+}

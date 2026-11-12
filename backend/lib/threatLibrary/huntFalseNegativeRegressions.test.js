@@ -65,9 +65,9 @@ const isMember = (x, value) => {
 };
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v65');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v18');
+  assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
 });
 
 // --- FN-1: wildcard apex ------------------------------------------------------

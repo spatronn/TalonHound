@@ -268,6 +268,11 @@ export function classifySectionRole(text, opts = {}) {
   // "Indicators & Artifacts"): both halves are inventory vocabulary, so the
   // heading is an IOC inventory declaration, not narrative (tl-section-tree-v14).
   if (IOC_PAIR_HEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
+  // "Cluster ClickFix IoCs & Technical details": a name prefix before the IOC
+  // title (tl-section-tree-v19); narrative prefixes are rejected in the helper.
+  // Real headings only: a bold label ("ARECHCLIENT2 IOC:") under a C2 heading
+  // keeps the C2 reading it inherits.
+  if (opts.allowPrefixedIoc !== false && isPrefixedIocHeading(t)) return SECTION_ROLES.IOC_APPENDIX;
   if (IOC_INTENT_RE.test(t)) {
     if (/\biocs?-/i.test(t)) {
       // Hyphenated compound (IOC-shaped): only accept if a non-bare synonym
@@ -304,6 +309,104 @@ export function classifySectionRole(text, opts = {}) {
   if (opts.allowDescriptiveSuffix !== false && INDICATOR_HEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
   return null;
 }
+
+/**
+ * An appendix / annex title that names an observable type ("Annex 2 - RMM tool
+ * filename IPv4 address", "Appendix C: Domains"). The title alone never opens an
+ * IOC scope: the section tree confirms it with a dense value-row body and a
+ * publisher sentence elsewhere in the document that refers to this appendix as
+ * indicators / C2 (tl-section-tree-v19). Returns the appendix label used for
+ * that cross-reference ("Annex 2"), or null.
+ * @param {string} text heading text
+ * @returns {{ label: string }|null}
+ */
+export function observableAnnexHeading(text) {
+  const t = collapseLetterSpacing(String(text || '').trim());
+  if (!t || t.length > 120 || !APPENDIX_LEAD_RE.test(t)) return null;
+  if (!ANNEX_OBSERVABLE_TYPE_RE.test(t) || APPENDIX_NOT_OPERATOR_OWNED_RE.test(t) || ANNEX_NON_INDICATOR_RE.test(t)) return null;
+  const m = ANNEX_LABEL_RE.exec(t);
+  return m ? { label: `${m[1]} ${m[2]}` } : null;
+}
+
+const ANNEX_LABEL_RE = /^(appendix|annexe?|anexo|anhang|anlage)\s*([A-Z]|\d{1,2}|[IVX]{1,4})\b/i;
+const ANNEX_OBSERVABLE_TYPE_RE =
+  /\b(?:ipv[46](?:\s+address(?:es)?)?|ip\s+address(?:es)?|ips|domains?|domain\s+names?|hostnames?|urls?|uris?|hash(?:es)?|sha-?(?:1|256)|md5)\b/i;
+/** Appendix kinds whose values are not indicators whatever type they name. */
+const ANNEX_NON_INDICATOR_RE = /\b(?:examples?|sample\s+config\w*|translation|sinkhol\w*|allow-?list\w*|whitelist\w*|test(?:ing)?|scanners?|researchers?|honeypots?)\b/i;
+
+/**
+ * A publisher sentence that refers to an appendix as indicators / C2:
+ * "… additional C2 were uncovered, with a complete list … provided in Annex 2."
+ * Looked up by the appendix label; the sentence that names the label (or the
+ * one right after it) must carry indicator vocabulary and no benign stance.
+ * @param {string} text block text
+ * @param {string} label "Annex 2"
+ */
+export function textAssertsAnnexIndicators(text, label) {
+  const s = String(text || '');
+  const [word, num] = String(label || '').split(/\s+/);
+  if (!word || !num) return false;
+  const re = new RegExp(String.raw`\b${word.replace(/e$/i, 'e?')}\s*${num}\b`, 'i');
+  const sentences = s.split(/(?<=[.!?。])\s+/);
+  for (let k = 0; k < sentences.length; k += 1) {
+    if (!re.test(sentences[k])) continue;
+    const window = `${sentences[k]} ${sentences[k + 1] || ''}`;
+    if (ANNEX_ASSERTION_RE.test(window) && !APPENDIX_NOT_OPERATOR_OWNED_RE.test(window)) return true;
+  }
+  return false;
+}
+
+const ANNEX_ASSERTION_RE =
+  /\b(?:c2s?|c&c|command\s+and\s+control|indicators?|iocs?|malicious|hunting|retro-?hunt\w*|block(?:ing|list)?|attacker[- ]controlled|operator[- ]controlled|threat\s+actors?['’]?\s+infrastructure)\b/i;
+
+/**
+ * Head-anchored IOC title behind a short name prefix: "Cluster ClickFix IoCs
+ * & Technical details", "Lazarus IOCs" (tl-section-tree-v19). Every prefix
+ * word is a name (capitalised / alphanumeric), never a function or question
+ * word, so narrative titles ("How We Found the IOCs and Pivoted", "Why These
+ * IOCs Matter", "near IOC inventory") stay narrative.
+ */
+const PREFIXED_IOC_HEAD_RE =
+  /^((?:[A-Za-z0-9][\w.'’-]*\s+){1,3})(?:iocs?|ioc's|indicators\s+of\s+compromise)\s*(?:(?:&|and|\+)\s+(?:[A-Za-z][\w-]*\s*){1,3})?[:：]?$/i;
+const PREFIX_FUNCTION_WORD_RE =
+  /^(?:how|why|what|when|where|which|who|we|our|us|these|those|this|that|the|a|an|near|without|with|using|from|for|about|on|in|of|to|finding|hunting|extracting|collecting|sharing|new|no|more|other|some|all|top|key)$/i;
+
+export function isPrefixedIocHeading(text) {
+  const t = collapseLetterSpacing(String(text || '').trim());
+  if (!t || t.length > 80) return false;
+  const m = PREFIXED_IOC_HEAD_RE.exec(t);
+  if (!m) return false;
+  // Name words only: capitalised or alphanumeric, never a function word.
+  return m[1].trim().split(/\s+/).every((w) => /^[A-Z0-9]/.test(w) && !PREFIX_FUNCTION_WORD_RE.test(w));
+}
+
+/**
+ * The label cell of a two-column IOC-table row names the service the value
+ * belongs to, not attacker infrastructure: "Registrars | … Alibaba Cloud /
+ * HiChina (www[.]net[.]cn); GoDaddy", "Suspected origin hosting | AS… ;
+ * [.]16clouds[.]com", "Certificate authority | …" (tl-candidates-v66). The
+ * label must end with the service-role noun and carry no malicious role
+ * (a "Payload hosting" or "C2 hosting" row stays an assertion), and the
+ * value cell must not state the operator owns it.
+ * @param {string} row masked row text ("<label> | <cells…>")
+ */
+export function rowLabelNamesServiceRole(row) {
+  const t = String(row || '');
+  const cut = t.indexOf(' | ');
+  if (cut <= 0) return false;
+  const label = t.slice(0, cut).trim();
+  const rest = t.slice(cut + 3);
+  if (!label || label.length > 48 || /OBSERVABLE/.test(label) || OBSERVABLE_IN_TEXT_RE.test(label)) return false;
+  if (!SERVICE_ROLE_LABEL_RE.test(label) || MALICIOUS_VALUE_ROLE_RE.test(label) || OPERATOR_ROLE_LABEL_RE.test(label)) return false;
+  return !STANCE_OVERRIDE_RE.test(rest);
+}
+
+/** A label naming what the operation runs there ("C2 hosting", "Payload hosting", "Attacker registrar"). */
+const OPERATOR_ROLE_LABEL_RE =
+  /\b(?:c2|c&c|cnc|command|payloads?|malware|phishing|staging|exfil\w*|attackers?|operators?|actors?|panels?|implants?|droppers?|loaders?)\b/i;
+const SERVICE_ROLE_LABEL_RE =
+  /^(?:[\w-]+\s+){0,3}(?:(?:domain\s+)?registrars?|registrar\s+(?:names?|info(?:rmation)?)|hosting(?:\s+(?:providers?|compan(?:y|ies)|services?))?|hosters?|asns?|autonomous\s+systems?|isps?|cdns?|certificate\s+authorit(?:y|ies)|(?:certificate\s+)?issuers?|(?:dns|e-?mail|mail)\s+providers?)\s*[:：]?$/i;
+
 
 export function zoneForSectionRole(role) {
   switch (role) {
@@ -1472,6 +1575,12 @@ export function classifySourceRelationDetail(surroundingText, opts = {}) {
     // lists infrastructure the malware relies on, not infrastructure it owns.
     if (structuralRow && form === 'table_row' && opts.operatorOwnedRow !== true &&
         namesProviderService(full.replace(/\bOBSERVABLE\b/g, ' '))) {
+      return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
+    }
+    // A two-column row whose label names the service the value belongs to
+    // ("Registrars | … (www[.]net[.]cn)") lists a registrar / host / CA, not
+    // operator infrastructure (tl-candidates-v66).
+    if (structuralRow && form === 'table_row' && rowLabelNamesServiceRole(full)) {
       return { relation: SOURCE_RELATIONS.PROVIDER_SERVICE, marker: 'provider', authoritative, structural_row: true };
     }
     // "162.220.232.0 (Railway.com) | IP Range | …": the parenthesised host is

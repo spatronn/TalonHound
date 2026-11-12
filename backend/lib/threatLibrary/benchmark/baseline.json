@@ -1,6 +1,6 @@
 {
   "versions": {
-    "candidates": "tl-candidates-v65",
+    "candidates": "tl-candidates-v66",
     "zones": "tl-zones-v18",
     "tables": "tl-table-v19",
     "type_resolver": "tl-type-resolver-v26",
@@ -10,11 +10,11 @@
     "metrics": "tl-benchmark-metrics-v2"
   },
   "aggregate": {
-    "cases": 99,
-    "cases_exact": 97,
+    "cases": 102,
+    "cases_exact": 100,
     "indicators": {
-      "expected": 1509,
-      "tp": 1507,
+      "expected": 1530,
+      "tp": 1528,
       "fp": 0,
       "fn": 2,
       "fn_not_extracted": 0,
@@ -28,7 +28,7 @@
     "candidate_extraction_recall": 0.9994,
     "context_only_accuracy": 1,
     "legitimate_exclusion_accuracy": 1,
-    "assertion_accuracy": 0.9663,
+    "assertion_accuracy": 0.9671,
     "section_accuracy": 1,
     "non_indicators_promoted": 0,
     "ai_dependent_entries": 15,
@@ -36,9 +36,9 @@
     "quality": {
       "high": 0,
       "warning": 3,
-      "info": 24,
+      "info": 26,
       "cases_flagged": 3,
-      "exact_cases": 97,
+      "exact_cases": 100,
       "exact_cases_flagged": 3,
       "failing_cases": 2,
       "failing_cases_flagged": 0
@@ -173,6 +173,28 @@
       "assertions_checked": 0,
       "warning_codes": []
     },
+    "control-observable-annex-crossref": {
+      "members": [
+        "domain:tax-audit-notice.example",
+        "ip:198.51.100.21",
+        "ip:198.51.100.22",
+        "ip:198.51.100.23",
+        "ip:198.51.100.24"
+      ],
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 2,
+      "sections_checked": 2,
+      "assertions_correct": 5,
+      "assertions_checked": 5,
+      "warning_codes": [
+        "indicator_rows_outside_authoritative_scope"
+      ]
+    },
     "control-operator-repository-appendix": {
       "members": [
         "ip:198.51.100.121",
@@ -228,6 +250,32 @@
       "assertions_checked": 2,
       "warning_codes": []
     },
+    "control-prefixed-ioc-sibling-inventory": {
+      "members": [
+        "domain:battle-one.example",
+        "domain:battle-two.example",
+        "domain:dist-one.example",
+        "domain:dist-two.example",
+        "domain:doc-reader-one.example",
+        "domain:doc-reader-two.example",
+        "domain:meet.join-alpha.example",
+        "domain:meet.join-beta.example",
+        "domain:meet.join-gamma.example",
+        "domain:us01web-meet.example",
+        "domain:us03web-meet.example"
+      ],
+      "tp": 11,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 3,
+      "sections_checked": 3,
+      "assertions_correct": 11,
+      "assertions_checked": 11,
+      "warning_codes": []
+    },
     "control-product-name-digest-rows": {
       "members": [
         "md5:6d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a",
@@ -274,6 +322,28 @@
       "assertions_correct": 12,
       "assertions_checked": 12,
       "warning_codes": []
+    },
+    "control-registrar-row-ioc-table": {
+      "members": [
+        "domain:files.evil-host.example",
+        "domain:ticket-clone-two.example",
+        "domain:ticket-clone.example",
+        "ip:203.0.113.38",
+        "ip:203.0.113.49"
+      ],
+      "tp": 5,
+      "fp": 0,
+      "fn": 0,
+      "fn_not_extracted": 0,
+      "fn_mistyped": 0,
+      "fn_not_member": 0,
+      "sections_correct": 1,
+      "sections_checked": 1,
+      "assertions_correct": 5,
+      "assertions_checked": 5,
+      "warning_codes": [
+        "authoritative_table_rows_demoted"
+      ]
     },
     "control-version-coreference": {
       "members": [
