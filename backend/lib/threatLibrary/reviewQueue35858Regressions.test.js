@@ -54,7 +54,7 @@ const members = (x) =>
     .sort();
 
 test('contract versions', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v64');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v65');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v18');
 });
 
@@ -187,4 +187,41 @@ test('OBL-1 negative: a digest in visible footer text keeps the region significa
   assert.ok(footer, 'footer region recorded');
   assert.equal(footer.significant, true);
   assert.deepEqual(footer.sample_observables, [FOOTER_KEY]);
+});
+
+// --- FP-2 (tl-candidates-v65) -------------------------------------------------
+// "hotfixes (10.3.4.45 for v10 …), and we verified that 10.3.4.45 blocks the
+// entry point": the second, cue-less mention refers back to the release the
+// same paragraph just named. A network cue at the re-mention, or a value never
+// read as a release in that block, keeps the IPv4 reading.
+
+test('FP-2: a bare re-mention of a release number in the same block is not an IPv4 candidate', () => {
+  const x = run(`
+<h2>Background</h2>
+<p>The vendor has since released hotfixes (10.3.4.45 for v10, and 9.15.2.70 for v7 through v9), and we verified that 10.3.4.45 blocks the entry point we saw.</p>`);
+  const ips = x.candidates.filter((c) => c.candidate_type === 'ip').map((c) => c.normalized_value);
+  assert.deepEqual(ips, [], ips.join(', '));
+});
+
+test('FP-2 unit: coreference applies only to known versions without a network cue', () => {
+  const at = (s, tok, from = 0) => [s.indexOf(tok, from), s.indexOf(tok, from) + tok.length];
+  const known = new Set(['10.3.4.45']);
+  const a = 'and we verified that 10.3.4.45 blocks the entry point.';
+  assert.equal(ipv4VersionContext(a, ...at(a, '10.3.4.45'), { knownVersions: known })?.cue, 'version_coreference');
+  assert.equal(ipv4VersionContext(a, ...at(a, '10.3.4.45')), null);
+  const b = 'and later 10.3.4.45 is the C2 address.';
+  assert.equal(ipv4VersionContext(b, ...at(b, '10.3.4.45'), { knownVersions: known }), null);
+  const c = 'the implant connected to 10.3.4.45 afterwards.';
+  assert.equal(ipv4VersionContext(c, ...at(c, '10.3.4.45'), { knownVersions: known }), null);
+  const d = 'and we verified that 203.0.113.9 blocks the entry point.';
+  assert.equal(ipv4VersionContext(d, ...at(d, '203.0.113.9'), { knownVersions: known }), null);
+});
+
+test('FP-2 negative: a release number in one paragraph does not retype the same value in another', () => {
+  const x = run(`
+<h2>Background</h2>
+<p>The vendor released hotfix 198.51.100.45 for v10 last week.</p>
+<p>We later observed traffic from 198.51.100.45 during the intrusion.</p>`);
+  const ips = x.candidates.filter((c) => c.candidate_type === 'ip').map((c) => c.normalized_value);
+  assert.ok(ips.includes('198.51.100.45'), ips.join(', '));
 });

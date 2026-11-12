@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><title>Backup console intrusion: webshells and a miner</title></head>
+<body>
+<article>
+<h1>Backup console intrusion: webshells and a miner</h1>
+<h2>Background</h2>
+<p>Threat actors exploited two flaws in the backup console. The vendor has since released hotfixes (10.3.4.45 for v10, and 9.15.2.70 for v7 through v9), and we verified that 10.3.4.45 blocks the entry point we saw.</p>
+<p>After exploitation the implant connected to 198.51.100.61 over TLS.</p>
+<h2>Indicators of Compromise</h2>
+<table>
+<tr><th>Indicator</th><th>Description</th></tr>
+<tr><td>198.51.100[.]61:443</td><td>Command-and-control for the implant</td></tr>
+<tr><td>e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1</td><td>Implant SHA256</td></tr>
+</table>
+</article>
+</body>
+</html>

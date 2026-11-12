@@ -162,6 +162,10 @@ export function readDocumentText(blocks, acc, ctx) {
     // Prose version reading applies outside publisher IOC sections and rows,
     // where a bare value is the publisher's assertion and stays authoritative.
     const proseVersions = !isRow && !STRONG_IOC_ZONES.has(block.zone || '');
+    // Values this block already stated as release numbers ("hotfixes (10.3.4.45
+    // for v10 …)"): a later bare mention of the same value in the block
+    // ("we verified that 10.3.4.45 blocks …") refers back to that release.
+    const blockVersions = new Set();
 
     // Non-HTTP transport endpoints ("tcp://host:443"): the host, read as a
     // declared network host with its port; the endpoint spelling is provenance.
@@ -227,8 +231,9 @@ export function readDocumentText(blocks, acc, ctx) {
           typing: { typing_reason: 'version_column', artifact_kind: 'metadata' }
         });
       } else {
-        const version = proseVersions ? ipv4VersionContext(text, start, end, { code: block.type === 'code' }) : null;
+        const version = proseVersions ? ipv4VersionContext(text, start, end, { code: block.type === 'code', knownVersions: blockVersions }) : null;
         if (version) {
+          blockVersions.add(raw);
           // A release number in prose ("Apache Struts 2.3.24.1 is vulnerable") is
           // version metadata; the same value under a network cue elsewhere keeps
           // its own IPv4 occurrence and identity.

@@ -1,0 +1,28 @@
+{
+  "id": "control-version-coreference",
+  "title": "Control: hotfix release numbers ('10.3.4.45 for v10') and a later bare re-mention of the same release in the paragraph are not IPv4; the C2 address stays",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "version_string", "mode_a", "ip"],
+  "source": { "kind": "html_file", "path": "control-version-coreference.html", "url": "https://research.example/blog/backup-console-intrusion/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35862 paragraph 'hotfixes (10.3.4.45 for v10, and 9.15.2.70 for v7 through v9), and we verified that 10.3.4.45 blocks the entry point we saw', whose release numbers were stored as ip candidates",
+      "verified_by": "construction",
+      "verified_at": "2026-11-12"
+    },
+    "indicators": [
+      { "type": "ip", "value": "198.51.100.61", "assertion": "explicit" },
+      { "type": "sha256", "value": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "ip", "value": "10.3.4.45" },
+      { "type": "ip", "value": "9.15.2.70" }
+    ],
+    "sections": [
+      { "heading": "Indicators of Compromise", "expected": "authoritative" }
+    ]
+  }
+}
