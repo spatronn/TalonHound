@@ -164,6 +164,19 @@ const OPERATIONAL_INFRA_RE =
 
 const SAMPLE_INTENT_RE = /\b(?:malicious\s+samples?|sample\s+hash|file\s+hash)\b|恶意样本|样本哈希|örnek\s+hash/i;
 
+/**
+ * Operator-owned resource named by an appendix title: an owner role
+ * ("attacker", "adversary", "operator", "threat actor", optionally
+ * "-controlled" / "-owned" / "-operated" / "-managed") that governs, within two
+ * words, a resource noun that holds observables (repositories, accounts,
+ * domains, URLs, hosts, servers, sites).
+ */
+const APPENDIX_OPERATOR_RESOURCE_RE =
+  /\b(?:attackers?|adversar(?:y|ies)|operators?|threat[\s-]actors?)(?:['’]s?)?(?:[\s-](?:controlled|owned|operated|managed|registered))?\s+(?:[\w-]+\s+){0,2}?(?:repositor(?:y|ies)|repos?|accounts?|domains?|urls?|uris?|hosts?|hostnames?|servers?|sites?|websites?|pages?)\b/i;
+
+/** Stance or subject that makes an appendix list not operator-owned. */
+const APPENDIX_NOT_OPERATOR_OWNED_RE = /\b(?:legitimate|benign|trusted|victim(?:s|ized|ised)?|targeted|compromised|affected|impacted)\b/i;
+
 const REFERENCE_INTENT_RE =
   /^(?:references?(?!\s+(?:iocs?|indicators?)\b)|acknowledge?ments?|bibliography|reporting|how\s+to\s+report|further\s+(?:reading|information)|quellen|kaynaklar|referanslar|références|referencias)\b|^contact(?:s|ing)?(?:\s+(?:us|information|info|details|the\s+(?:authors?|team|researchers?)|our\s+team))?\s*[:.!]?\s*$|参考链接|参考文献|相关链接|联系方式/i;
 
@@ -265,6 +278,20 @@ export function classifySectionRole(text, opts = {}) {
       if (INDICATOR_HEAD_RE.test(t) || APPENDIX_LEAD_RE.test(t)) return SECTION_ROLES.IOC_APPENDIX;
       // mid-title bare IOC — not an appendix declaration
     }
+  }
+  // An appendix titled by what the operator owns ("Appendix E: Attacker
+  // Management Repository", "Annex: Operator-controlled accounts") lists the
+  // operator's resources: an IOC appendix (tl-section-tree-v18). The owner
+  // role and the resource noun are both required, and a heading that calls
+  // the services legitimate / benign ("URLs of Legitimate Services Used by
+  // the Attacker") or names victims stays narrative.
+  if (
+    APPENDIX_LEAD_RE.test(t) &&
+    t.length <= 120 &&
+    APPENDIX_OPERATOR_RESOURCE_RE.test(t) &&
+    !APPENDIX_NOT_OPERATOR_OWNED_RE.test(t)
+  ) {
+    return SECTION_ROLES.IOC_APPENDIX;
   }
   if (APPENDIX_LEAD_RE.test(t) && /(?:server|node|range|indicator|ioc|infrastructure|vpn|c2|hash|sample)/i.test(t)) {
     if (C2_INTENT_RE.test(t)) return SECTION_ROLES.C2_INFRASTRUCTURE;

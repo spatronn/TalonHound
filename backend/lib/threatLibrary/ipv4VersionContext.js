@@ -27,7 +27,7 @@ const NETWORK_CUE_BEFORE_RE =
 
 /** Version keyword right before the token, optionally followed by a list verb. */
 const VERSION_CUE_BEFORE_RE = new RegExp(
-  String.raw`(?:\b(?:versions?|ver\.?|release[sd]?|build(?:s)?|firmware|revision|rev\.?|patch(?:ed)?|fixed\s+in|introduced\s+in|upgrade[ds]?\s+(?:from|to)|downgrade[ds]?\s+(?:from|to))` +
+  String.raw`(?:\b(?:versions?|ver\.?|release[sd]?|build(?:s)?|firmware|revision|rev\.?|patch(?:ed)?|hot-?fix(?:es)?|fixed\s+in|introduced\s+in|upgrade[ds]?\s+(?:from|to)|downgrade[ds]?\s+(?:from|to))` +
     String.raw`(?:\s*(?:[:=#]|number|no\.?|is|was|are|were|of|include[sd]?|including|prior\s+to|before|after|up\s+to|through|from|between|earlier\s+than|later\s+than|older\s+than|newer\s+than|<=?|>=?))*\s*\(?\s*)$`,
   'i'
 );
@@ -42,7 +42,7 @@ const PAREN_COMPARATOR_BEFORE_RE = /\(\s*(?:before|prior\s+to|earlier\s+than|old
 
 /** Version phrase right after the token ("is vulnerable", "and earlier"). */
 const VERSION_CUE_AFTER_RE =
-  /^\s*\)?\s*(?:(?:and|or)\s+(?:earlier|later|prior|older|newer|above|below|lower|higher)\b|(?:is|are|was|were)\s+(?:vulnerable|affected|impacted|patched|fixed|unsupported|end[-\s]of[-\s]life|deprecated)\b|(?:release|build|version)\b)/i;
+  /^\s*\)?\s*(?:(?:and|or)\s+(?:earlier|later|prior|older|newer|above|below|lower|higher)\b|(?:is|are|was|were)\s+(?:vulnerable|affected|impacted|patched|fixed|unsupported|end[-\s]of[-\s]life|deprecated)\b|(?:release|build|version)\b|for\s+v(?:ersion\s*)?\d+(?:\.\d+)?\b)/i;
 
 /**
  * A User-Agent product token glued to the token ("… Gecko) Chrome/149.0.0.1

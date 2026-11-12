@@ -63,8 +63,11 @@
  * v17 (review queue 35800–35819): that sibling may carry a scope qualifier
  * and a trailing colon ("<Family> hashes for one 24-hour period:"), may be a
  * "URI Locations:" list, and may hold its rows under deeper sub-headings.
+ * v18 (review queue 35858–35869): an appendix titled by an operator-owned
+ * resource ("Appendix E: Attacker Management Repository") is an IOC appendix;
+ * one that calls the services legitimate or names victims stays narrative.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v17';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v18';
 
 /**
  * Authoritative scope-engine stamp when section-tree owns membership zones.

@@ -307,8 +307,12 @@ export {
  * v63 (35831 cleanup): a parenthesised comparator ("Software (Before
  * 9.16.4.104, …)", "brotlicffi (before 1.2.1.0)") opens an affected-product
  * version list, and "/" joins its members: release numbers, not IPv4.
+ * v64 (review queue 35858–35869): tl-section-tree-v18 (operator-owned
+ * resource appendix headings), and a hotfix / "<ver> for v10" cue reads an
+ * IPv4-shaped token as a release number ("hotfixes (10.3.4.45 for v10, and
+ * 9.15.2.70 for v7 …)"); a network cue at the token still wins.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v63';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v64';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

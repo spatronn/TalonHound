@@ -42,7 +42,9 @@ import { selectHtmlTitle } from './titleSelection.js';
 // v9: tables nested behind inline wrappers inside a heading stay table blocks (htmlBlocks v9).
 // v10: a <noscript> holding a <pre> / <table> (static fallback of a script-rendered
 // code viewer) is content, not noise (htmlBlocks v10).
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v10';
+// v11: script / style nested in a dropped text region never makes it a significant
+// unaccounted source region (htmlBlocks v11); blocks are unchanged.
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v11';
 export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */

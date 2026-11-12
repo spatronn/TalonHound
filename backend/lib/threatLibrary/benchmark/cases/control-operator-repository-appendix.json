@@ -1,0 +1,33 @@
+{
+  "id": "control-operator-repository-appendix",
+  "title": "Control: an appendix titled by an operator-owned resource ('Attacker Management Repository') asserts its repository URLs; a 'Legitimate Services Used by the Attacker' appendix does not",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "appendix", "mode_a", "url"],
+  "source": { "kind": "html_file", "path": "control-operator-repository-appendix.html", "url": "https://research.example/blog/espionage-group-code-hosting/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35858 appendices 'Appendix E: Attacker Management Repository' (29 attacker repositories on GitHub / GitLab / Codeberg, stored as body mentions) and 'Appendix B: URLs of Legitimate Services Used by the Attacker'",
+      "verified_by": "construction",
+      "verified_at": "2026-11-12"
+    },
+    "indicators": [
+      { "type": "ip", "value": "198.51.100.121", "assertion": "explicit" },
+      { "type": "ip", "value": "198.51.100.122", "assertion": "explicit" },
+      { "type": "url", "value": "https://github.com/opalpha123/aaabbbccc", "assertion": "explicit" },
+      { "type": "url", "value": "https://github.com/opbeta456/dddeeefff/", "assertion": "explicit" },
+      { "type": "url", "value": "https://gitlab.com/opalpha123/ggghhhiii", "assertion": "explicit" },
+      { "type": "url", "value": "https://codeberg.org/opgamma789/jjjkkklll", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "url", "value": "https://counter.example-stats.net/1234567/0/abcdef12/1/" },
+      { "type": "url", "value": "https://cdn.example-cdn.net/gh/opalpha123/aaabbbccc/" }
+    ],
+    "sections": [
+      { "heading": "Appendix E: Attacker Management Repository", "expected": "authoritative" },
+      { "heading": "Appendix B: URLs of Legitimate Services Used by the Attacker", "expected": "narrative" }
+    ]
+  }
+}
