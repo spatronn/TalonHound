@@ -25,6 +25,10 @@ const IPV4_SHAPE_RE = /^(?:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}(?:25[0-5]|2
 const NETWORK_CUE_BEFORE_RE =
   /\b(?:ip|ips|ipv4|ip\s+address(?:es)?|address(?:es)?|addr|c2|c&c|cnc|command\s+and\s+control|server|servers|host|hosts|hostname|node|nodes|relay|proxy|gateway|endpoint|endpoints|infrastructure|sinkhole[ds]?|panel|controller|beacon(?:s|ed|ing)?(?:\s+to)?|callback(?:s)?(?:\s+to)?|connect(?:s|ed|ing|ion|ions)?(?:\s+(?:to|from|with))?|contact(?:s|ed|ing)?|communicat(?:e|es|ed|ing)\s+with|traffic\s+(?:to|from)|resolv(?:e|es|ed|ing)\s+to|egress|ingress|exfiltrat\w*\s+to|download(?:s|ed|ing)?\s+from|upload(?:s|ed|ing)?\s+to|hosted\s+(?:on|at)|listen(?:s|ed|ing)?\s+on|destination|source|src|dst|attacker|actor)\W*$/i;
 
+/** Network relation right after the token ("X is the C2", "X:443", "X resolved …"). */
+const NETWORK_CUE_AFTER_RE =
+  /^\s*(?::\d{1,5}\b|\(?\s*(?:c2|c&c|server|host|ip|address)\b|(?:is|was|are|were)\s+(?:the\s+|a\s+|an\s+)?(?:c2|c&c|command|server|host|ip|address|relay|proxy|gateway|panel|controller)\b|(?:resolv\w*|respond\w*|listen\w*|hosts?|hosted|serv(?:es|ed|ing))\b)/i;
+
 /** Version keyword right before the token, optionally followed by a list verb. */
 const VERSION_CUE_BEFORE_RE = new RegExp(
   String.raw`(?:\b(?:versions?|ver\.?|release[sd]?|build(?:s)?|firmware|revision|rev\.?|patch(?:ed)?|hot-?fix(?:es)?|fixed\s+in|introduced\s+in|upgrade[ds]?\s+(?:from|to)|downgrade[ds]?\s+(?:from|to))` +
@@ -86,7 +90,8 @@ function clauseAfter(text, end, max = 50) {
  * @param {string} text   refanged block text
  * @param {number} start  token start
  * @param {number} end    token end
- * @param {{ code?: boolean }} [opts] code: the block is a code / command sample
+ * @param {{ code?: boolean, knownVersions?: Set<string> }} [opts] code: the block is a code / command sample;
+ *   knownVersions: values the same block already read as release numbers
  * @returns {{ kind: 'version', cue: string }|null} null = keep the IPv4 reading
  */
 export function ipv4VersionContext(text, start, end, opts = {}) {
@@ -97,6 +102,11 @@ export function ipv4VersionContext(text, start, end, opts = {}) {
   const head = listTail ? before.slice(0, listTail.index) : before;
   // A network relation at the token always wins (also when it introduces a list).
   if (NETWORK_CUE_BEFORE_RE.test(before) || NETWORK_CUE_BEFORE_RE.test(head)) return null;
+  // The same block already stated this value as a release number; a bare
+  // re-mention with no network cue refers back to it (tl-candidates-v65).
+  if (opts.knownVersions?.has(s.slice(start, end)) && !NETWORK_CUE_AFTER_RE.test(after)) {
+    return { kind: 'version', cue: 'version_coreference' };
+  }
   if (UA_PRODUCT_BEFORE_RE.test(before)) return { kind: 'version', cue: 'user_agent_product' };
   if (VERSION_CUE_BEFORE_RE.test(before) || (listTail && VERSION_CUE_BEFORE_RE.test(head))) return { kind: 'version', cue: 'version_keyword' };
   if (PAREN_COMPARATOR_BEFORE_RE.test(before) || (listTail && PAREN_COMPARATOR_BEFORE_RE.test(head))) return { kind: 'version', cue: 'version_comparator' };

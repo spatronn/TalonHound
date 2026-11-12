@@ -311,8 +311,11 @@ export {
  * resource appendix headings), and a hotfix / "<ver> for v10" cue reads an
  * IPv4-shaped token as a release number ("hotfixes (10.3.4.45 for v10, and
  * 9.15.2.70 for v7 …)"); a network cue at the token still wins.
+ * v65 (35862 follow-up): a bare re-mention of a value the same block already
+ * read as a release number ("… and we verified that 10.3.4.45 blocks …")
+ * keeps that reading unless a network cue sits at the token.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v64';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v65';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';
