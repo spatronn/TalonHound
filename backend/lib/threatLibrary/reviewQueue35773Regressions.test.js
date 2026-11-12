@@ -57,7 +57,7 @@ const H64B = 'b2'.repeat(32);
 const H32 = 'c3'.repeat(16);
 
 test('contract version', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v63');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v64');
 });
 
 // --- FN-1 / FP-1: internationalised hostnames ----------------------------------
