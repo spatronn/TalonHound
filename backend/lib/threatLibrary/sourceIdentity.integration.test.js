@@ -678,3 +678,197 @@ test('claimFetchedReportIdentity never supersedes a failed or deleted primary', 
     await cleanup(tag);
   }
 });
+
+// --- Explicit acceptances (Flying Eagle / EtherRAT shapes) ---------------------------
+
+async function seedReport(tag, { url, finalUrl, finalized = true, rows = [], rels = [], sources = [] }) {
+  const canonical = canonicalizeReportUrl(url);
+  const { rows: [r] } = await pool.query(
+    `INSERT INTO threat_reports (title, source_type, source_url, source_url_canonical, source_name, import_status, analysis_status, finalized_at)
+     VALUES ($1, 'url', $2, $3, 'hunt.example', 'ready', 'ready', $4) RETURNING *`,
+    [tag, url, canonical, finalized ? new Date() : null]
+  );
+  await pool.query(
+    `INSERT INTO threat_report_artifacts (report_id, artifact_type, storage_key, source_metadata) VALUES ($1, 'url_fetch', $2, $3::jsonb)`,
+    [r.id, `itest/${r.id}/source.html`, JSON.stringify({ url, final_url: finalUrl })]
+  );
+  for (const row of rows) {
+    await pool.query(
+      `INSERT INTO threat_report_candidates (report_id, candidate_type, original_value, normalized_value, assessment, review_status, match_state, matched_ioc_id, matched_ioc_observable_type, is_ioc)
+       VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $2, $8)`,
+      [r.id, row.type, row.value, row.ioc ? 'malicious' : 'context_only', row.status, row.ioc ? 'existing' : 'context_only', row.ioc ?? null, Boolean(row.ioc)]
+    );
+  }
+  const ent = async (name) => {
+    const norm = `${tag}-${name}`.toLowerCase();
+    await pool.query(`INSERT INTO threat_entities (entity_type, name, normalized_name) VALUES ('tool', $1, $2) ON CONFLICT DO NOTHING`, [name, norm]);
+    return (await pool.query(`SELECT id FROM threat_entities WHERE normalized_name = $1`, [norm])).rows[0].id;
+  };
+  for (const [subject, object, objectCandidate] of rels) {
+    if (objectCandidate) {
+      const { rows: [c] } = await pool.query(
+        `SELECT id FROM threat_report_candidates WHERE report_id = $1 AND normalized_value = $2`,
+        [r.id, objectCandidate]
+      );
+      await pool.query(
+        `INSERT INTO threat_relationships (report_id, subject_kind, subject_entity_id, relationship_type, object_kind, object_candidate_id)
+         VALUES ($1, 'entity', $2, 'uses', 'candidate', $3)`,
+        [r.id, await ent(subject), c.id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO threat_relationships (report_id, subject_kind, subject_entity_id, relationship_type, object_kind, object_entity_id)
+         VALUES ($1, 'entity', $2, 'uses', 'entity', $3)`,
+        [r.id, await ent(subject), await ent(object)]
+      );
+    }
+  }
+  for (const src of sources) {
+    await pool.query(
+      `INSERT INTO threat_report_ioc_sources (report_id, original_url, canonical_url, lifecycle_status, extraction_status, content_hash)
+       VALUES ($1, $2, $2, $3, $4, $5)`,
+      [r.id, src.url, src.status || 'extracted', src.extraction || 'succeeded', src.hash ?? null]
+    );
+  }
+  return r;
+}
+
+function huntPair(tag) {
+  const host = hostFor(tag);
+  const bare = `https://${host}/blog/flying-eagle-rat`;
+  return { bare, www: bare.replace('://', '://www.'), html: page({ canonical: bare, ogUrl: bare }) };
+}
+
+async function reconcileWith(primary, secondary, html, accept = null, extra = {}) {
+  const audit = createAuditLogService(pool);
+  return reconcileDuplicateReports(pool, {
+    primaryPublicId: primary.public_id,
+    secondaryPublicId: secondary.public_id,
+    auditLogInTransaction: audit.auditLogInTransaction,
+    deps: { readArtifact: async () => Buffer.from(html) },
+    accept,
+    ...extra
+  });
+}
+
+test('Flying Eagle shape: the same extracted linked source on both reports is not a blocker; a different one is', opts, async () => {
+  const tag = marker();
+  const h = huntPair(tag);
+  const rows = [{ type: 'ip', value: '203.0.113.10', status: 'approved', ioc: 970000101 }];
+  const pack = `https://${hostFor(tag)}/files/iocs.txt`;
+  try {
+    const primary = await seedReport(tag, { url: h.bare, finalUrl: h.bare, rows, sources: [{ url: pack, hash: 'a'.repeat(64) }] });
+    const differentPack = await seedReport(tag, { url: h.www, finalUrl: h.www, rows, sources: [{ url: pack, hash: 'b'.repeat(64) }] });
+    const blocked = await reconcileWith(primary, differentPack, h.html, null, { dryRun: true });
+    assert.equal(blocked.status, 'blocked');
+    assert.deepEqual(blocked.plan.blockers, ['secondary_has_live_linked_ioc_sources']);
+
+    const samePack = await seedReport(tag, { url: h.www, finalUrl: h.www, rows, sources: [{ url: pack, hash: 'a'.repeat(64) }] });
+    const before = await snapshot(samePack.id);
+    const res = await reconcileWith(primary, samePack, h.html);
+    assert.equal(res.status, 'reconciled', JSON.stringify(res.plan?.blockers));
+    assert.deepEqual(res.plan.accepted.equivalent_linked_sources.map((x) => x.canonical_url), [pack]);
+    assert.deepEqual(await snapshot(samePack.id), before);
+  } finally {
+    await cleanupSeeded(tag);
+  }
+});
+
+test('EtherRAT shape: context rows, entity relationships and named decision conflicts need explicit, reasoned acceptance', opts, async () => {
+  const tag = marker();
+  const h = huntPair(tag);
+  const reason = 'Later analyst decision on the primary supersedes the older context_only call';
+  try {
+    const primary = await seedReport(tag, {
+      url: h.www,
+      finalUrl: h.www,
+      rows: [
+        { type: 'ip', value: '198.51.100.33', status: 'approved', ioc: 970000201 },
+        { type: 'url', value: 'https://c2.example/', status: 'approved', ioc: 970000202 }
+      ]
+    });
+    const secondary = await seedReport(tag, {
+      url: h.bare,
+      finalUrl: h.bare,
+      rows: [
+        { type: 'ip', value: '198.51.100.33', status: 'context_only', ioc: 970000201 },
+        { type: 'url', value: 'https://c2.example/', status: 'pending', ioc: null },
+        { type: 'technical_artifact', value: 'deploy.cmd', status: 'pending' },
+        { type: 'technical_artifact', value: 'cu.msi', status: 'pending' }
+      ],
+      rels: [['The Gentlemen', 'Sliver']]
+    });
+    const before = { p: await snapshot(primary.id), s: await snapshot(secondary.id) };
+
+    const none = await reconcileWith(primary, secondary, h.html, null, { dryRun: true });
+    assert.deepEqual(
+      [...none.plan.blockers].sort(),
+      ['conflicting_analyst_decisions', 'secondary_has_candidates_primary_lacks', 'secondary_has_relationships_primary_lacks']
+    );
+
+    const shortReason = await reconcileWith(
+      primary, secondary, h.html,
+      { secondaryOnlyContext: true, decisionConflicts: ['ip|198.51.100.33'], reason: 'ok' },
+      { dryRun: true }
+    );
+    assert.ok(shortReason.plan.blockers.includes('acceptance_reason_required'));
+
+    const contextOnly = await reconcileWith(primary, secondary, h.html, { secondaryOnlyContext: true, reason }, { dryRun: true });
+    assert.deepEqual(contextOnly.plan.blockers, ['conflicting_analyst_decisions'], 'a decision conflict must be named individually');
+
+    const res = await reconcileWith(primary, secondary, h.html, {
+      secondaryOnlyContext: true,
+      decisionConflicts: ['IP|198.51.100.33'],
+      reason
+    });
+    assert.equal(res.status, 'reconciled', JSON.stringify(res.plan?.blockers));
+    assert.deepEqual([...res.plan.accepted.context_candidates].sort(), ['technical_artifact|cu.msi', 'technical_artifact|deploy.cmd']);
+    assert.deepEqual(res.plan.accepted.context_relationships, [{ relationship_type: 'uses', subject: 'The Gentlemen', object: 'Sliver' }]);
+    assert.deepEqual(res.plan.accepted.decision_conflicts, [{ candidate: 'ip|198.51.100.33', secondary: 'context_only', primary: 'approved' }]);
+    assert.equal(res.plan.accepted.reason, reason);
+    // Nothing copied or changed on either report; the acceptances are recorded.
+    assert.deepEqual(await snapshot(primary.id), before.p);
+    assert.deepEqual(await snapshot(secondary.id), before.s);
+    const sec = await reportRow(secondary.id);
+    assert.equal(sec.supersession.accepted.reason, reason);
+    const { rows: audits } = await pool.query(
+      `SELECT metadata FROM audit_logs WHERE action = 'threat_library.report.superseded' AND entity_id = $1`,
+      [secondary.public_id]
+    );
+    assert.equal(audits[0].metadata.accepted.decision_conflicts.length, 1);
+  } finally {
+    await cleanupSeeded(tag);
+  }
+});
+
+test('acceptances never cover IOC links, IOC-naming relationships or conflicts where the primary has no decision', opts, async () => {
+  const tag = marker();
+  const h = huntPair(tag);
+  const accept = { secondaryOnlyContext: true, decisionConflicts: ['ip|198.51.100.44'], reason: 'operator acceptance for the test' };
+  try {
+    const primary = await seedReport(tag, {
+      url: h.www,
+      finalUrl: h.www,
+      rows: [{ type: 'ip', value: '198.51.100.44', status: 'pending', ioc: 970000301 }]
+    });
+    // The duplicate links an IOC the primary does not, decides a row the primary
+    // left pending, and relates an entity to a candidate.
+    const secondary = await seedReport(tag, {
+      url: h.bare,
+      finalUrl: h.bare,
+      rows: [
+        { type: 'ip', value: '198.51.100.44', status: 'approved', ioc: 970000301 },
+        { type: 'domain', value: 'only-here.example', status: 'pending', ioc: 970000302 }
+      ],
+      rels: [['EtherRAT', null, 'only-here.example']]
+    });
+    const res = await reconcileWith(primary, secondary, h.html, accept, { dryRun: true });
+    assert.equal(res.status, 'blocked');
+    for (const b of ['secondary_links_iocs_primary_does_not', 'secondary_has_candidates_primary_lacks', 'conflicting_analyst_decisions', 'secondary_has_relationships_primary_lacks']) {
+      assert.ok(res.plan.blockers.includes(b), `${b} in ${res.plan.blockers}`);
+    }
+    assert.equal((await reportRow(secondary.id)).superseded_by_report_id, null);
+  } finally {
+    await cleanupSeeded(tag);
+  }
+});

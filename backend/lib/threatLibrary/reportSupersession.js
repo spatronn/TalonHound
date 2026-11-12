@@ -20,12 +20,22 @@
  *   - every duplicate candidate exists on the primary (type + value), and any
  *     non-pending analyst decision on the duplicate equals the primary's;
  *   - every duplicate relationship exists on the primary;
- *   - the duplicate has no attached / extracted linked IOC Sources;
+ *   - every live linked IOC Source of the duplicate was extracted by the
+ *     primary too (same canonical URL and content hash);
  *   - the duplicate is not finalized while the primary is not;
  *   - neither report has a queued / running job.
  * AI-derived context that only the duplicate has (entities, report tags) is
  * NOT copied into the primary (no silent combination); it is listed in the
  * supersession record and stays readable on the duplicate.
+ *
+ * Explicit acceptances (operator, with a reason of at least 12 characters;
+ * recorded in the supersession record and the audit row):
+ *   - secondaryOnlyContext: pending, unlinked candidates and entity-to-entity
+ *     relationships that only the duplicate carries;
+ *   - decisionConflicts ["<type>|<value>"]: a named candidate whose decided
+ *     review status differs, when the primary holds a decision of its own.
+ * Nothing can accept a missing IOC link, an unnamed decision conflict, a
+ * pending-vs-decided conflict, or a relationship that names an IOC/candidate.
  */
 
 import { readArtifactBuffer } from './artifactStore.js';
@@ -176,38 +186,45 @@ function relationshipKey(r) {
 }
 
 async function loadReconciliationFacts(db, reportId) {
-  const [candidates, entities, relationships, tags, iocSources, references, activeJobs] = await Promise.all([
-    db.query(
-      `SELECT id, candidate_type, normalized_value, review_status, assessment, role,
-              matched_ioc_id, matched_ioc_observable_type
-         FROM threat_report_candidates WHERE report_id = $1`,
-      [reportId]
-    ),
-    db.query(
-      `SELECT re.entity_id, e.entity_type, e.name
-         FROM threat_report_entities re JOIN threat_entities e ON e.id = re.entity_id
-        WHERE re.report_id = $1`,
-      [reportId]
-    ),
-    db.query(
-      `SELECT tr.relationship_type, tr.subject_kind, tr.subject_entity_id, tr.subject_ioc_id,
-              tr.subject_portable_ref, sc.normalized_value AS subject_candidate_value,
-              tr.object_kind, tr.object_entity_id, tr.object_ioc_id, tr.object_portable_ref,
-              oc.normalized_value AS object_candidate_value
-         FROM threat_relationships tr
-         LEFT JOIN threat_report_candidates sc ON sc.id = tr.subject_candidate_id
-         LEFT JOIN threat_report_candidates oc ON oc.id = tr.object_candidate_id
-        WHERE tr.report_id = $1`,
-      [reportId]
-    ),
-    db.query(
-      `SELECT t.name FROM threat_report_tags rt JOIN tags t ON t.id = rt.tag_id WHERE rt.report_id = $1`,
-      [reportId]
-    ),
-    db.query(`SELECT lifecycle_status AS status FROM threat_report_ioc_sources WHERE report_id = $1`, [reportId]),
-    db.query(`SELECT COUNT(*)::int AS n FROM threat_report_source_references WHERE report_id = $1`, [reportId]),
-    db.query(`SELECT COUNT(*)::int AS n FROM threat_library_jobs WHERE report_id = $1 AND status IN ('queued', 'running')`, [reportId])
-  ]);
+  // Sequential on purpose: `db` may be one transaction client, and pg does not
+  // allow overlapping queries on a single client.
+  const candidates = await db.query(
+    `SELECT id, candidate_type, normalized_value, review_status, assessment, role,
+            matched_ioc_id, matched_ioc_observable_type
+       FROM threat_report_candidates WHERE report_id = $1`,
+    [reportId]
+  );
+  const entities = await db.query(
+    `SELECT re.entity_id, e.entity_type, e.name
+       FROM threat_report_entities re JOIN threat_entities e ON e.id = re.entity_id
+      WHERE re.report_id = $1`,
+    [reportId]
+  );
+  const relationships = await db.query(
+    `SELECT tr.relationship_type, tr.subject_kind, tr.subject_entity_id, tr.subject_ioc_id,
+            tr.subject_portable_ref, sc.normalized_value AS subject_candidate_value,
+            tr.object_kind, tr.object_entity_id, tr.object_ioc_id, tr.object_portable_ref,
+            oc.normalized_value AS object_candidate_value,
+            se.name AS subject_name, oe.name AS object_name
+       FROM threat_relationships tr
+       LEFT JOIN threat_report_candidates sc ON sc.id = tr.subject_candidate_id
+       LEFT JOIN threat_report_candidates oc ON oc.id = tr.object_candidate_id
+       LEFT JOIN threat_entities se ON se.id = tr.subject_entity_id
+       LEFT JOIN threat_entities oe ON oe.id = tr.object_entity_id
+      WHERE tr.report_id = $1`,
+    [reportId]
+  );
+  const tags = await db.query(
+    `SELECT t.name FROM threat_report_tags rt JOIN tags t ON t.id = rt.tag_id WHERE rt.report_id = $1`,
+    [reportId]
+  );
+  const iocSources = await db.query(
+    `SELECT lifecycle_status AS status, extraction_status, canonical_url, content_hash
+       FROM threat_report_ioc_sources WHERE report_id = $1`,
+    [reportId]
+  );
+  const references = await db.query(`SELECT COUNT(*)::int AS n FROM threat_report_source_references WHERE report_id = $1`, [reportId]);
+  const activeJobs = await db.query(`SELECT COUNT(*)::int AS n FROM threat_library_jobs WHERE report_id = $1 AND status IN ('queued', 'running')`, [reportId]);
   return {
     candidates: candidates.rows,
     entities: entities.rows,
@@ -219,14 +236,53 @@ async function loadReconciliationFacts(db, reportId) {
   };
 }
 
+export const RECONCILIATION_ACCEPTANCE_REASON_MIN = 12;
+
+/**
+ * Normalise the explicit acceptances an operator may pass to a reconciliation.
+ * `decisionConflicts` names candidates as "<type>|<value>".
+ * @param {{ reason?: string|null, secondaryOnlyContext?: boolean, decisionConflicts?: string[] }|null|undefined} accept
+ */
+export function normalizeReconciliationAcceptance(accept) {
+  const reason = String(accept?.reason ?? '').trim();
+  const decisionConflicts = [...new Set((accept?.decisionConflicts || []).map((k) => {
+    const [type, ...rest] = String(k).split('|');
+    return `${type.trim().toLowerCase()}|${rest.join('|').trim()}`;
+  }).filter((k) => /^[^|]+[|].+/.test(k)))];
+  const secondaryOnlyContext = accept?.secondaryOnlyContext === true;
+  return {
+    reason: reason || null,
+    secondaryOnlyContext,
+    decisionConflicts,
+    any: secondaryOnlyContext || decisionConflicts.length > 0
+  };
+}
+
+/** A pending, unlinked candidate is context the duplicate alone carries: never an IOC link or a decision. */
+function isAcceptableContextCandidate(c) {
+  return c.review_status === 'pending' && c.matched_ioc_id == null;
+}
+
+/** Entity-to-entity relationships only: nothing that names an IOC or a candidate. */
+function isAcceptableContextRelationship(r) {
+  return r.subject_kind === 'entity' && r.object_kind === 'entity'
+    && r.subject_ioc_id == null && r.object_ioc_id == null
+    && r.subject_candidate_value == null && r.object_candidate_value == null;
+}
+
+function isExtractedSource(x) {
+  return String(x.status) === 'extracted' && String(x.extraction_status) === 'succeeded' && Boolean(x.content_hash);
+}
+
 /**
  * Decide whether `secondary` can be superseded into `primary`. Pure over the
  * loaded facts; writes nothing.
  * @param {{ query: Function }} db
  * @param {{ primary: object, secondary: object, primaryIdentity: object|null, secondaryIdentity: object|null }} input
  */
-export async function planReportReconciliation(db, { primary, secondary, primaryIdentity, secondaryIdentity }) {
+export async function planReportReconciliation(db, { primary, secondary, primaryIdentity, secondaryIdentity, accept = null }) {
   const blockers = [];
+  const acceptance = normalizeReconciliationAcceptance(accept);
   if (!primary || !secondary) {
     return { ok: false, blockers: ['report_not_found'] };
   }
@@ -244,7 +300,12 @@ export async function planReportReconciliation(db, { primary, secondary, primary
     .map((k) => ({ key: k.key, primary_evidence: pKeys.get(k.key).evidence, secondary_evidence: k.evidence }));
   if (!sharedKeys.length) blockers.push('no_shared_source_identity');
 
-  const [p, s] = await Promise.all([loadReconciliationFacts(db, primary.id), loadReconciliationFacts(db, secondary.id)]);
+  if (acceptance.any && (acceptance.reason || '').length < RECONCILIATION_ACCEPTANCE_REASON_MIN) {
+    blockers.push('acceptance_reason_required');
+  }
+
+  const p = await loadReconciliationFacts(db, primary.id);
+  const s = await loadReconciliationFacts(db, secondary.id);
 
   const primaryIocs = new Set(p.candidates.filter((c) => c.matched_ioc_id != null)
     .map((c) => `${c.matched_ioc_observable_type || c.candidate_type}:${c.matched_ioc_id}`));
@@ -256,33 +317,60 @@ export async function planReportReconciliation(db, { primary, secondary, primary
 
   const primaryByKey = new Map(p.candidates.map((c) => [candidateKey(c), c]));
   const missingCandidates = [];
+  const acceptableMissing = [];
   const conflictingDecisions = [];
+  const acceptedConflicts = [];
   const pendingCoveredByPrimary = [];
   for (const c of s.candidates) {
     const twin = primaryByKey.get(candidateKey(c));
     if (!twin) {
-      missingCandidates.push(candidateKey(c));
+      (isAcceptableContextCandidate(c) ? acceptableMissing : missingCandidates).push(candidateKey(c));
       continue;
     }
     if (DECIDED_REVIEW_STATUSES.has(c.review_status) && c.review_status !== twin.review_status) {
-      conflictingDecisions.push({ candidate: candidateKey(c), secondary: c.review_status, primary: twin.review_status });
+      const conflict = { candidate: candidateKey(c), secondary: c.review_status, primary: twin.review_status };
+      // Accepted only when named explicitly AND the primary holds a decision of its own.
+      if (acceptance.decisionConflicts.includes(conflict.candidate) && DECIDED_REVIEW_STATUSES.has(twin.review_status)) {
+        acceptedConflicts.push(conflict);
+      } else {
+        conflictingDecisions.push(conflict);
+      }
     }
     if (c.review_status === 'pending') {
       pendingCoveredByPrimary.push({ candidate: candidateKey(c), primary_review_status: twin.review_status });
     }
   }
-  if (missingCandidates.length) blockers.push('secondary_has_candidates_primary_lacks');
+  if (missingCandidates.length || (acceptableMissing.length && !acceptance.secondaryOnlyContext)) {
+    blockers.push('secondary_has_candidates_primary_lacks');
+  }
   if (conflictingDecisions.length) blockers.push('conflicting_analyst_decisions');
 
   const primaryRels = new Set(p.relationships.map(relationshipKey));
-  const missingRelationships = s.relationships.map(relationshipKey).filter((k) => !primaryRels.has(k));
-  if (missingRelationships.length) blockers.push('secondary_has_relationships_primary_lacks');
+  const missingRelRows = s.relationships.filter((r) => !primaryRels.has(relationshipKey(r)));
+  const missingRelationships = missingRelRows.map(relationshipKey);
+  const acceptableRels = missingRelRows.filter(isAcceptableContextRelationship);
+  if (missingRelRows.length && (!acceptance.secondaryOnlyContext || acceptableRels.length !== missingRelRows.length)) {
+    blockers.push('secondary_has_relationships_primary_lacks');
+  }
 
   // A queued / running job would be stranded (dispatch skips superseded reports).
   if (s.activeJobs > 0 || p.activeJobs > 0) blockers.push('active_job');
 
-  const liveSources = s.iocSources.filter((x) => LIVE_IOC_SOURCE_STATUSES.has(String(x.status)));
-  if (liveSources.length) blockers.push('secondary_has_live_linked_ioc_sources');
+  // A live linked IOC Source is fine only when the primary extracted the very
+  // same source (same canonical URL and content hash): nothing is hidden.
+  const primaryExtracted = p.iocSources.filter(isExtractedSource);
+  const equivalentSources = [];
+  const unmatchedLiveSources = [];
+  for (const x of s.iocSources.filter((src) => LIVE_IOC_SOURCE_STATUSES.has(String(src.status)))) {
+    const twin = isExtractedSource(x)
+      && primaryExtracted.find((y) => y.canonical_url === x.canonical_url && y.content_hash === x.content_hash);
+    (twin ? equivalentSources : unmatchedLiveSources).push({
+      canonical_url: x.canonical_url,
+      content_hash: x.content_hash || null,
+      status: x.status
+    });
+  }
+  if (unmatchedLiveSources.length) blockers.push('secondary_has_live_linked_ioc_sources');
 
   const primaryEntityIds = new Set(p.entities.map((e) => Number(e.entity_id)));
   const primaryTags = new Set(p.tags);
@@ -301,10 +389,21 @@ export async function planReportReconciliation(db, { primary, secondary, primary
       primary: { candidates: p.candidates.length, entities: p.entities.length, relationships: p.relationships.length, tags: p.tags.length, ioc_links: primaryIocs.size },
       secondary: { candidates: s.candidates.length, entities: s.entities.length, relationships: s.relationships.length, tags: s.tags.length, ioc_links: new Set(s.candidates.filter((c) => c.matched_ioc_id != null).map((c) => c.matched_ioc_id)).size },
       missing_ioc_links: missingIocLinks,
-      missing_candidates: missingCandidates,
+      missing_candidates: acceptance.secondaryOnlyContext ? missingCandidates : [...missingCandidates, ...acceptableMissing],
       conflicting_decisions: conflictingDecisions,
       missing_relationships: missingRelationships,
+      unmatched_live_sources: unmatchedLiveSources,
       secondary_pending_covered_by_primary: pendingCoveredByPrimary.length
+    },
+    // What was explicitly accepted. It stays on the duplicate row; nothing is copied.
+    accepted: {
+      reason: acceptance.reason,
+      context_candidates: acceptance.secondaryOnlyContext ? acceptableMissing : [],
+      context_relationships: acceptance.secondaryOnlyContext
+        ? acceptableRels.map((r) => ({ relationship_type: r.relationship_type, subject: r.subject_name, object: r.object_name }))
+        : [],
+      decision_conflicts: acceptedConflicts,
+      equivalent_linked_sources: equivalentSources
     },
     secondary_only: secondaryOnly
   };
@@ -331,11 +430,12 @@ async function loadReportForUpdate(client, publicId) {
  *   actor?: { publicId?: string, email?: string, username?: string, role?: string }|null,
  *   auditLogInTransaction: (client: object, event: object) => Promise<void>,
  *   dryRun?: boolean,
- *   deps?: { readArtifact?: Function }
+ *   deps?: { readArtifact?: Function },
+ *   accept?: { reason?: string, secondaryOnlyContext?: boolean, decisionConflicts?: string[] }|null
  * }} input
  */
 export async function reconcileDuplicateReports(pool, input) {
-  const { primaryPublicId, secondaryPublicId, actor = null, auditLogInTransaction, dryRun = false, deps = {} } = input;
+  const { primaryPublicId, secondaryPublicId, actor = null, auditLogInTransaction, dryRun = false, deps = {}, accept = null } = input;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -353,7 +453,7 @@ export async function reconcileDuplicateReports(pool, input) {
     }
     const primaryIdentity = primary ? await resolveStoredReportIdentity(client, primary, deps) : null;
     const secondaryIdentity = secondary ? await resolveStoredReportIdentity(client, secondary, deps) : null;
-    const plan = await planReportReconciliation(client, { primary, secondary, primaryIdentity, secondaryIdentity });
+    const plan = await planReportReconciliation(client, { primary, secondary, primaryIdentity, secondaryIdentity, accept });
     if (!plan.ok || dryRun) {
       await client.query('ROLLBACK');
       return { status: plan.ok ? 'dry_run' : 'blocked', plan, primaryIdentity, secondaryIdentity };
@@ -368,6 +468,7 @@ export async function reconcileDuplicateReports(pool, input) {
       primary_public_id: primary.public_id,
       evidence: plan.shared_keys,
       checks: plan.checks,
+      accepted: plan.accepted,
       secondary_only: plan.secondary_only
     };
     const marked = await markReportSuperseded(client, {
@@ -399,6 +500,7 @@ export async function reconcileDuplicateReports(pool, input) {
         reason: 'reconciliation',
         shared_identity_keys: plan.shared_keys.map((k) => k.key),
         checks: plan.checks,
+        accepted: plan.accepted,
         secondary_only: plan.secondary_only
       }
     });

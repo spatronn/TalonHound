@@ -28,6 +28,11 @@
  *   node scripts/threat-library-source-identity.js audit [--out <file.json>]
  *   node scripts/threat-library-source-identity.js backfill [--apply]
  *   node scripts/threat-library-source-identity.js reconcile --primary <uuid> --secondary <uuid> [--apply]
+ *       [--accept-secondary-only] [--accept-decision '<type>|<value>' ...] --reason "<why, >= 12 chars>"
+ *
+ *               Acceptances (reportSupersession.js) cover only pending unlinked
+ *               context rows, entity-entity relationships and individually
+ *               named decision conflicts; they are recorded, never copied.
  */
 
 import '../lib/ensure-db-password.js';
@@ -47,7 +52,17 @@ function parseArgs(argv) {
     const i = rest.indexOf(`--${name}`);
     return i >= 0 ? rest[i + 1] : null;
   };
-  return { command, apply: rest.includes('--apply'), out: opt('out'), primary: opt('primary'), secondary: opt('secondary') };
+  const all = (name) => rest.flatMap((v, i) => (v === `--${name}` && rest[i + 1] ? [rest[i + 1]] : []));
+  return {
+    command,
+    apply: rest.includes('--apply'),
+    out: opt('out'),
+    primary: opt('primary'),
+    secondary: opt('secondary'),
+    acceptSecondaryOnly: rest.includes('--accept-secondary-only'),
+    acceptDecisions: all('accept-decision'),
+    reason: opt('reason')
+  };
 }
 
 function connectionConfig(readOnly) {
@@ -275,7 +290,12 @@ async function reconcile(pool, args) {
     secondaryPublicId: args.secondary,
     actor: null,
     auditLogInTransaction: auditService.auditLogInTransaction,
-    dryRun: !args.apply
+    dryRun: !args.apply,
+    accept: {
+      reason: args.reason,
+      secondaryOnlyContext: args.acceptSecondaryOnly,
+      decisionConflicts: args.acceptDecisions
+    }
   });
   console.log(JSON.stringify(result, null, 2));
   if (result.status === 'blocked') process.exitCode = 2;
