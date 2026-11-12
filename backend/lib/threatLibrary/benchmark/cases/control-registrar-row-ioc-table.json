@@ -1,0 +1,31 @@
+{
+  "id": "control-registrar-row-ioc-table",
+  "title": "Control: registrar / hosting-provider rows of an IOC table are provider context; origin and payload-hosting rows stay Indicators",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "provider_service", "mode_a", "domain"],
+  "source": { "kind": "html_file", "path": "control-registrar-row-ioc-table.html", "url": "https://research.example/blog/ticketing-clone/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of the 35637 'Clustering indicators' table row 'Registrars | ... Alibaba Cloud / HiChina (www[.]net[.]cn); GoDaddy', whose registrar domain was approved as an IOC",
+      "verified_by": "construction",
+      "verified_at": "2026-11-13"
+    },
+    "indicators": [
+      { "type": "ip", "value": "203.0.113.49", "assertion": "explicit" },
+      { "type": "ip", "value": "203.0.113.38", "assertion": "explicit" },
+      { "type": "domain", "value": "files.evil-host.example", "assertion": "explicit" },
+      { "type": "domain", "value": "ticket-clone.example", "assertion": "explicit" },
+      { "type": "domain", "value": "ticket-clone-two.example", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "www.registrar-example.cn" },
+      { "type": "domain", "value": "hosting-example.net" }
+    ],
+    "sections": [
+      { "heading": "Clustering indicators", "expected": "authoritative" }
+    ]
+  }
+}

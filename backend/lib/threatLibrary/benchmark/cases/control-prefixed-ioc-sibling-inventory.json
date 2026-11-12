@@ -1,0 +1,38 @@
+{
+  "id": "control-prefixed-ioc-sibling-inventory",
+  "title": "Control: a name-prefixed IOC heading whose body only points at an external list continues into same-level inventory siblings and stops at a related-articles sibling",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "appendix", "mode_a", "domain"],
+  "source": { "kind": "html_file", "path": "control-prefixed-ioc-sibling-inventory.html", "url": "https://research.example/blog/fake-meeting-pages/" },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the shape of 35458 'Cluster ClickFix IoCs & Technical details' (pointer to an external list) followed by the inventory siblings 'Fake Google Meet pages and associated infection chain' and 'Additional clusters'",
+      "verified_by": "construction",
+      "verified_at": "2026-11-13"
+    },
+    "indicators": [
+      { "type": "domain", "value": "meet.join-alpha.example", "assertion": "explicit" },
+      { "type": "domain", "value": "meet.join-beta.example", "assertion": "explicit" },
+      { "type": "domain", "value": "meet.join-gamma.example", "assertion": "explicit" },
+      { "type": "domain", "value": "dist-one.example", "assertion": "explicit" },
+      { "type": "domain", "value": "dist-two.example", "assertion": "explicit" },
+      { "type": "domain", "value": "us01web-meet.example", "assertion": "explicit" },
+      { "type": "domain", "value": "us03web-meet.example", "assertion": "explicit" },
+      { "type": "domain", "value": "battle-one.example", "assertion": "explicit" },
+      { "type": "domain", "value": "battle-two.example", "assertion": "explicit" },
+      { "type": "domain", "value": "doc-reader-one.example", "assertion": "explicit" },
+      { "type": "domain", "value": "doc-reader-two.example", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "other-research.example" }
+    ],
+    "sections": [
+      { "heading": "Cluster Phantom IoCs & Technical details", "expected": "authoritative" },
+      { "heading": "Fake meeting pages and associated infection chain", "expected": "authoritative" },
+      { "heading": "Additional clusters associated to the same teams", "expected": "authoritative" }
+    ]
+  }
+}

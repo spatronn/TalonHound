@@ -66,8 +66,15 @@
  * v18 (review queue 35858–35869): an appendix titled by an operator-owned
  * resource ("Appendix E: Attacker Management Repository") is an IOC appendix;
  * one that calls the services legitimate or names victims stays narrative.
+ * v19 (Qwen-evaluation follow-up, 35446 / 35458): an appendix titled by an
+ * observable type opens an IOC scope only with a value-row body and a
+ * publisher sentence elsewhere that calls it indicators / C2; a name-prefixed
+ * IOC title ("Cluster ClickFix IoCs & Technical details") is an IOC heading;
+ * a lead-in-only IOC heading (an external-list pointer included) continues
+ * into same-level inventory-dominant siblings, past labels nested in the
+ * previous sibling.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v18';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v19';
 
 /**
  * Authoritative scope-engine stamp when section-tree owns membership zones.

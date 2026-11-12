@@ -277,7 +277,7 @@ export function classifyHeadingText(text, opts = {}) {
   // A table header row that survived only as a heading ("Type Indicator
   // Description", "Tür Gösterge Açıklama") opens an explicit IOC table.
   if (looksLikeIocTableHeader(t)) return 'explicit_ioc_section';
-  const roleZone = zoneForSectionRole(classifySectionRole(t, { allowDescriptiveSuffix: opts.allowDescriptiveSuffix }));
+  const roleZone = zoneForSectionRole(classifySectionRole(t, { allowDescriptiveSuffix: opts.allowDescriptiveSuffix, allowPrefixedIoc: opts.isHeading !== false }));
   if (roleZone) return /** @type {DocumentZone} */ (roleZone);
   for (const [zone, patterns] of Object.entries(HEADING_HINTS)) {
     const max = LABEL_MAX_CHARS[zone];
