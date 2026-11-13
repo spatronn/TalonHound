@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head><title>MarkiRAT-shaped dual-use .zip filename vs .zip TLD</title></head>
+<body>
+<article>
+<h1>MarkiRAT-shaped dual-use .zip filename vs .zip TLD</h1>
+<p>Operators stage archives beside a live C2 host. The archive basenames use the .zip extension; the C2 host uses a different TLD.</p>
+<h2>Threat Analysis</h2>
+<div class="table striped">
+  <div><div><strong>SHA256 Hash</strong></div><div><strong>File Name</strong></div><div><strong>C2 Address</strong></div></div>
+  <div>
+    <div>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</div>
+    <div><code>YEMPlayer.zip</code></div>
+    <div>203[.]0[.]113[.]10</div>
+  </div>
+  <div>
+    <div>bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb</div>
+    <div><code>Pis2rayVPN.zip</code></div>
+    <div>203[.]0[.]113[.]10</div>
+  </div>
+</div>
+<h2>Indicators of Compromise</h2>
+<table>
+<thead><tr><th>Indicator</th><th>Type</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td>yemplayer[.]site</td><td>Domain</td><td>C2 hostname</td></tr>
+<tr><td>evil[.]zip</td><td>Domain</td><td>Publisher-defanged host on the .zip gTLD</td></tr>
+<tr><td>203[.]0[.]113[.]10</td><td>IP Address</td><td>Shared C2</td></tr>
+</tbody>
+</table>
+</article>
+</body>
+</html>

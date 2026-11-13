@@ -1,0 +1,35 @@
+{
+  "id": "control-filename-zip-gtld-collision",
+  "title": "Control: bare .zip archive basenames under a C2 column stay artifacts; typed/defanged .zip TLD hosts stay domains",
+  "publisher": "synthetic",
+  "format": "html",
+  "tags": ["control", "dual_use_suffix", "zip_gtld", "type_resolver", "mode_a"],
+  "source": {
+    "kind": "html_file",
+    "path": "control-filename-zip-gtld-collision.html",
+    "url": "https://research.example/blog/markirat-zip-filename-collision/"
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "constructed from the unseen-first-pass MarkiRAT false positives (YEMPlayer.zip / Pis2rayVPN.zip promoted to domains under an inherited C2 declaredType) while preserving .zip as a valid TLD for defanged Domain-table hosts",
+      "verified_by": "construction",
+      "verified_at": "2026-11-13"
+    },
+    "indicators": [
+      { "type": "sha256", "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "assertion": "explicit" },
+      { "type": "sha256", "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "assertion": "explicit" },
+      { "type": "ip", "value": "203.0.113.10", "assertion": "explicit" },
+      { "type": "domain", "value": "yemplayer.site", "assertion": "explicit" },
+      { "type": "domain", "value": "evil.zip", "assertion": "explicit" }
+    ],
+    "context_only": [],
+    "excluded_legitimate": [],
+    "not_indicators": [
+      { "type": "domain", "value": "yemplayer.zip" },
+      { "type": "domain", "value": "pis2rayvpn.zip" }
+    ],
+    "sections": [
+      { "heading": "Indicators of Compromise", "expected": "authoritative" }
+    ]
+  }
+}
