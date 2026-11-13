@@ -1,6 +1,7 @@
 # Targeted First-Pass Quality Improvements — Technical Report
 
-**Branch:** `fix/filename-zip-domain-and-eval-url-equiv`  
+**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`ce445ca`)  
+**PR:** https://github.com/spatronn/TalonHound/pull/111  
 **Date:** 2026-11-13  
 **Scope:** two low-risk corrections + MODE A recommendations. No architecture redesign, no new AI components, no narrative auto-promote, no pack auto-extract.
 
@@ -81,11 +82,12 @@ See `MODE-A-PENDING-PACK-AUDIT.md`.
 
 ## 5. Verification / CI
 
-- Host test run: **blocked** (SSH).  
+- Host test run: **blocked** (SSH Permission denied to `192.168.1.190`).  
+- Production `/api/system/version`: **401** — deployed SHA not claimed.  
 - Local reproduction of MarkiRAT extract: zip → artifact, `.site` → domain.  
 - Equivalence scorer: delta as above.  
-- Frozen captures: preserved.  
-- CI: expected to run `filenameZipDomainCollision.test.js` + existing type-resolver suites on PR.
+- Frozen captures: preserved (no refresh / re-import).  
+- PR #111 opened; GitHub CI runs Backend/Frontend/Compose/Release/Docker smoke (host SSH unavailable — CI is the verification path for this change set).
 
 ---
 

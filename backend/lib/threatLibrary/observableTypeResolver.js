@@ -5,17 +5,17 @@
  * Every syntactic guess ("has dots", "has a slash") passes through this module
  * before it can become a reviewable candidate:
  *
- *   raw occurrence ? syntactic guess ? context-aware type resolver
- *                  ? canonical value validator ? evidence / promotion gate
+ *   raw occurrence → syntactic guess → context-aware type resolver
+ *                  → canonical value validator → evidence / promotion gate
  *
  * The resolver separates NETWORK OBSERVABLES (hostname, absolute URL) from
  * TECHNICAL ARTIFACTS (mutex / single-instance names, class / namespace /
  * method identifiers, configuration keys, registry paths, relative paths and
  * routes, command syntax, filenames). Decisions come from three inputs only:
  *
- *   1. canonical syntax      ? hostname-compatible labels, absolute URL shape
- *   2. source semantics      ? the type label / heading / clause the value sits in
- *   3. provenance            ? table row, indicator list row, code block, zone
+ *   1. canonical syntax      — hostname-compatible labels, absolute URL shape
+ *   2. source semantics      — the type label / heading / clause the value sits in
+ *   3. provenance            — table row, indicator list row, code block, zone
  *
  * There is deliberately no allowlist of known-good domains, no vendor logic
  * and no per-report rule. Public-suffix knowledge is a *signal* about syntax
@@ -38,12 +38,12 @@ import { isValidIpAddress } from '../publicIp.js';
  * domain by shape alone. Suffix knowledge stays a signal, not a gate: an
  * internal name the source asserts (`update.corp.lan` "resolves through the
  * internal DNS", a curated indicator row) is still a domain.
- * v4: a publisher elision ("?", "[...]", "(?)") makes a URL invalid
+ * v4: a publisher elision ("…", "[...]", "(…)") makes a URL invalid
  * (`elided_value`); typographic quotes / guillemets are trailing punctuation.
  * v5: an explicit indicator row is also a focused row-shaped line in a curated
  * zone (`indicatorRow`), not only a list / table row form.
  * v6: common config file suffixes (`conf`, alongside existing `cfg` / `ini`)
- * are filename shapes, never DNS TLDs ? even on a curated indicator row.
+ * are filename shapes, never DNS TLDs — even on a curated indicator row.
  * v7: an RFC 8552 underscored label (`_msdcs`, `_dmarc`) under a delegated
  * suffix is a DNS service label, not a code-identifier underscore.
  * v8: a heading-inherited network type label ("Domains and IPs") must not
@@ -71,32 +71,32 @@ import { isValidIpAddress } from '../publicIp.js';
  * v14 (22-report audit): a scheme-less URL host may end in any delegated (PSL)
  * TLD that is not a file extension / code word (`files.host.moe/x.dll`);
  * unexpanded `$NAME$` / `%NAME%` / `<name>` / `[Name]` placeholders make a URL
- * a template; URL boundaries are parenthesis-balanced, a "(??)" / "(#?)"
+ * a template; URL boundaries are parenthesis-balanced, a "(?…)" / "(#…)"
  * optional-part annotation and an escaped closing quote are not URL text.
  * v15 (30-report audit): a dotted token that is a regular-expression
  * alternation branch (`|currentversion.run|`) is a regex fragment, not a
  * host, unless its suffix is DNS-strong.
- * v18 (20-report audit 33356?33375): a host:port endpoint followed by another
+ * v18 (20-report audit 33356–33375): a host:port endpoint followed by another
  * value of a multi-value cell (`h[.]onion:443 198.51.100.7:21668`) is still an
- * endpoint ? the port boundary no longer rejects whitespace before a digit.
+ * endpoint — the port boundary no longer rejects whitespace before a digit.
  * v20 (19-report audit): a file-extension path segment (`/letgovip.zip`) is
  * not the domain a "domains" lead-in announced. `.zip` is a gTLD, so that
  * lead-in used to promote the archive basename.
  * v21 (52-report audit): a redacted path segment (`/api/settings/XXXXX`)
  * makes a URL a template, not an observable.
- * v22 (29-report audit 35575?35605): a bracketed redaction marker in a URL
+ * v22 (29-report audit 35575–35605): a bracketed redaction marker in a URL
  * (`?client=[redacted]`) ends the URL like an `<id>` placeholder, so the
  * table value and its prose mention share one identity.
- * v23 (70-report audit 35700?35769): a masked IPv4 address ("1.226.82.xxx")
+ * v23 (70-report audit 35700–35769): a masked IPv4 address ("1.226.82.xxx")
  * is never a host under the .xxx TLD; a search-query field before a grouped
- * condition ("host.services: (port=22 AND ?)") is a field name.
+ * condition ("host.services: (port=22 AND …)") is a field name.
  * v26 (review queue 35800–35819): one bare fanged name over .rs with no network
  * wording ("Loader (build.rs)" beside a digest) is a Rust source file.
  * v27 (unseen first-pass MarkiRAT): a bare two-label file/gTLD collision
  * (`YEMPlayer.zip`, `Pis2rayVPN.zip`) stays a technical artifact when a C2 /
  * Domains lead-in only inherited `declaredType=domain`. Defanged hosts
  * (`evil[.]zip`), typed Domain *table* cells, and multi-label hosts
- * (`cdn.files.zip`) keep the domain reading ? `.zip` remains a valid TLD.
+ * (`cdn.files.zip`) keep the domain reading — `.zip` remains a valid TLD.
  */
 export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v27';
 
@@ -149,79 +149,79 @@ export function isNonNetworkResolvedType(type) {
 const ARTIFACT_LABEL_FAMILIES = Object.freeze([
   {
     kind: 'mutex',
-    re: /(?<![a-z0-9])(?:mutex(?:es)?|mutant|muteks|semaphore|single[\s-]?instance|singleinstance|instance\s*(?:name|marker|identifier|id)|??(?:?|?|?)?|???|???????|??????|???????)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:mutex(?:es)?|mutant|muteks|semaphore|single[\s-]?instance|singleinstance|instance\s*(?:name|marker|identifier|id)|互斥(?:体|量|锁)?|信号量|мьютекс|мутекс|семафор)(?![a-z0-9])/i
   },
   {
     kind: 'code',
-    re: /(?<![a-z0-9])(?:class(?:es)?|classname|namespace|method|function|assembly|module|package|symbol|export|import|type\s*name|entry\s*point|entrypoint|sinif|isim\s*alani|metot|fonksiyon|mod?l|paket|klasse|methode|funktion|modul|paket|clase|m?todo|metodo|funci?n|funcion|m?dulo|modulo|paquete|?????|?????|??????[??]|?????[??]|?????|???|????|??|??|??|??)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:class(?:es)?|classname|namespace|method|function|assembly|module|package|symbol|export|import|type\s*name|entry\s*point|entrypoint|sınıf|isim\s*alanı|metot|fonksiyon|modül|paket|klasse|methode|funktion|modul|paket|clase|método|metodo|función|funcion|módulo|modulo|paquete|класс|метод|функци[яи]|модул[ья]|пакет|类名?|命名空间|方法|函数|模块|包名)(?![a-z0-9])/i
   },
   {
     kind: 'config',
-    re: /(?<![a-z0-9])(?:config(?:uration)?(?:\s*(?:key|block|value|entry|field))?|setting(?:s)?|property|properties|parameter(?:s)?|option(?:s)?|flag(?:s)?|key\s*name|field(?:s)?|attribute(?:s)?|yapilandirma|ayar(?:lar|i)?|parametre|?zellik|konfiguration|einstellung(?:en)?|configuraci?n|configuracion|ajuste(?:s)?|par?metro|parametro|propiedad|??????????[?-?]*|????????[?-?]*|????????[?-?]*|???????[?-?]*|??(?:?|?|??)?|??|??|??)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:config(?:uration)?(?:\s*(?:key|block|value|entry|field))?|setting(?:s)?|property|properties|parameter(?:s)?|option(?:s)?|flag(?:s)?|key\s*name|field(?:s)?|attribute(?:s)?|yapılandırma|ayar(?:lar|ı)?|parametre|özellik|konfiguration|einstellung(?:en)?|configuración|configuracion|ajuste(?:s)?|parámetro|parametro|propiedad|конфигурац[а-я]*|настройк[а-я]*|параметр[а-я]*|свойств[а-я]*|配置(?:项|键|文件)?|参数|属性|设置)(?![a-z0-9])/i
   },
   {
     kind: 'registry',
-    re: /(?<![a-z0-9])(?:registry(?:\s*(?:key|value|path))?|reg\s*key|hkcu|hklm|hkey_[a-z_]+|kayit\s*defteri|registrierung(?:sschl?ssel)?|???(?:?|?)?|??????[?-?]*|registro)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:registry(?:\s*(?:key|value|path))?|reg\s*key|hkcu|hklm|hkey_[a-z_]+|kayıt\s*defteri|registrierung(?:sschlüssel)?|注册表(?:项|键)?|реестр[а-я]*|registro)(?![a-z0-9])/i
   },
   {
     kind: 'file',
-    re: /(?<![a-z0-9])(?:file\s*name(?:s)?|filename(?:s)?|file(?:s)?|dropped\s*file(?:s)?|resource(?:s)?|pe\s*resource|pdb(?:\s*path)?|artifact(?:s)?|artefact(?:s)?|dosya(?:\s*adi|\s*adi)?|kaynak|datei(?:name)?|ressource|archivo|fichero|recurso|????[?-?]*|??????[?-?]*|??(?:?)?|??)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:file\s*name(?:s)?|filename(?:s)?|file(?:s)?|dropped\s*file(?:s)?|resource(?:s)?|pe\s*resource|pdb(?:\s*path)?|artifact(?:s)?|artefact(?:s)?|dosya(?:\s*adı|\s*adi)?|kaynak|datei(?:name)?|ressource|archivo|fichero|recurso|файл[а-я]*|ресурс[а-я]*|文件(?:名)?|资源)(?![a-z0-9])/i
   },
   {
     kind: 'path',
-    re: /(?<![a-z0-9])(?:path(?:s)?|route(?:s)?|uri\s*path|url\s*path|request\s*path|directory|directories|folder(?:s)?|yol(?:u)?|dizin|pfad|verzeichnis|ruta|directorio|????|????|???????|??|??)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:path(?:s)?|route(?:s)?|uri\s*path|url\s*path|request\s*path|directory|directories|folder(?:s)?|yol(?:u)?|dizin|pfad|verzeichnis|ruta|directorio|путь|пути|каталог|路径|目录)(?![a-z0-9])/i
   },
   {
     kind: 'command',
-    re: /(?<![a-z0-9])(?:command(?:s)?|cmd|command\s*line|commandline|script(?:s)?|powershell|shell|one-?liner|komut(?:u|lar)?|befehl(?:e)?|comando(?:s)?|??????[??]|??(?:?)?|??)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:command(?:s)?|cmd|command\s*line|commandline|script(?:s)?|powershell|shell|one-?liner|komut(?:u|lar)?|befehl(?:e)?|comando(?:s)?|команд[аы]|命令(?:行)?|脚本)(?![a-z0-9])/i
   },
   {
     kind: 'process',
-    re: /(?<![a-z0-9])(?:process(?:es)?(?:\s*name)?|service(?:\s*name)?|scheduled\s*task|task(?:\s*name)?|named\s*pipe|pipe(?:\s*name)?|event(?:\s*name)?|window\s*title|user[\s-]?agent|s?re?|servis|g?rev|prozess|dienst|aufgabe|proceso|servicio|tarea|???????[?-?]*|?????[?-?]*|?????[?-?]*|?????|??|??|??|??)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:process(?:es)?(?:\s*name)?|service(?:\s*name)?|scheduled\s*task|task(?:\s*name)?|named\s*pipe|pipe(?:\s*name)?|event(?:\s*name)?|window\s*title|user[\s-]?agent|süreç|servis|görev|prozess|dienst|aufgabe|proceso|servicio|tarea|процесс[а-я]*|служб[а-я]*|задач[а-я]*|канал|进程|服务|任务|管道)(?![a-z0-9])/i
   },
   {
     kind: 'metadata',
-    re: /(?<![a-z0-9])(?:version(?:s)?|product(?:\s*name)?|company(?:\s*name)?|metadata|pe\s*metadata|compile(?:r|d)?(?:\s*time)?|signature|certificate|thumbprint|serial|port(?:s)?|protocol|mime|magic|string(?:s)?|marker|identifier|id|s?r?m|?r?n|sirket|imza|sertifika|protokol|ver(?:sion)?|firma|zertifikat|versi?n|version|empresa|firma|certificado|?????[??]|??????[??]|??????????|??|??|??|??|??|??|???)(?![a-z0-9])/i
+    re: /(?<![a-z0-9])(?:version(?:s)?|product(?:\s*name)?|company(?:\s*name)?|metadata|pe\s*metadata|compile(?:r|d)?(?:\s*time)?|signature|certificate|thumbprint|serial|port(?:s)?|protocol|mime|magic|string(?:s)?|marker|identifier|id|sürüm|ürün|şirket|imza|sertifika|protokol|ver(?:sion)?|firma|zertifikat|versión|version|empresa|firma|certificado|верси[яи]|подпис[ьи]|сертификат|版本|公司|签名|证书|端口|协议|字符串)(?![a-z0-9])/i
   }
 ]);
 
 /**
- * Network label nouns ? a type cell / heading / inline label that names a
+ * Network label nouns — a type cell / heading / inline label that names a
  * network observable is positive evidence, regardless of value shape.
  */
 const NETWORK_LABEL_RE =
-  /(?:^|\b)(?:domain(?:s)?|domain\s*name(?:s)?|hostname(?:s)?|host\s*name(?:s)?|fqdn(?:s)?|host(?:s)?|server(?:s)?|c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|dns|url(?:s)?|uri|ip(?:v4|v6)?(?:\s*address(?:es)?)?|address(?:es)?|endpoint(?:s)?|beacon(?:s)?|callback|panel|infrastructure|alan\s*ad[ii]|sunucu|ana\s*bilgisayar|adres|dom?ne|dominio|servidor|anfitri?n|direcci?n|?????(?:?)?|????|??????|?????|??|??(?:?)?|???|??(?:??)?|??|??|??)(?:\b|$)/i;
+  /(?:^|\b)(?:domain(?:s)?|domain\s*name(?:s)?|hostname(?:s)?|host\s*name(?:s)?|fqdn(?:s)?|host(?:s)?|server(?:s)?|c2|c&c|c\s*&\s*c|command\s*(?:and|&)\s*control|dns|url(?:s)?|uri|ip(?:v4|v6)?(?:\s*address(?:es)?)?|address(?:es)?|endpoint(?:s)?|beacon(?:s)?|callback|panel|infrastructure|alan\s*ad[ıi]|sunucu|ana\s*bilgisayar|adres|domäne|dominio|servidor|anfitrión|dirección|домен(?:ы)?|хост|сервер|адрес|域名|主机(?:名)?|服务器|回连(?:地址)?|地址|网址|链接)(?:\b|$)/i;
 
 /**
  * Network relation stated right at the token ("connects to X", "resolves to
  * X", "domain X", "C2 server X", "hosted on X"). Multilingual optimisation.
  */
 const NETWORK_RELATION_BEFORE_RE =
-  /(?:connect(?:s|ed|ing)?\s+(?:back\s+)?to|communicat(?:es|ed|ing)\s+with|beacon(?:s|ed|ing)?\s+to|resolv(?:es|ed|ing)?\s+to|resolving\s+to|reach(?:es|ed|ing)?\s+out\s+to|call(?:s|ed|ing)?\s+(?:back\s+)?(?:to|home\s+to)|check(?:s|ed|ing)?\s+in\s+(?:to|with)|download(?:s|ed|ing)?\s+from|served\s+from|fetch(?:es|ed|ing)?\s+from|retriev(?:es|ed|ing)\s+from|hosted\s+(?:on|at)|hosting\s+(?:on|at)|sent\s+to|exfiltrat(?:es|ed|ing)\s+to|post(?:s|ed|ing)?\s+to|queries|query|lookup\s+(?:of|for)|nslookup|ping(?:s|ed)?|the\s+(?:c2|c&c|command[\s-]and[\s-]control|malicious|attacker[\s-]controlled|phishing|payload|staging|distribution|callback|beacon|dns|hosting)\s+(?:domain|host|hostname|server|url|panel|site|address|endpoint|infrastructure)|(?:domain|hostname|host\s*name|fqdn|server|c2|c&c|dns\s*name|url|endpoint)(?:\s*name)?|baglan(?:ir|an|di|iyor)|iletisim\s+kurar|??z?mlen(?:ir|en)|indir(?:ir|ilen|di)|alan\s*ad[ii]|sunucu(?:su|ya)?|verbindet\s+sich\s+mit|kommuniziert\s+mit|se\s+conecta\s+a|resuelve\s+a|descarga(?:do)?\s+de(?:sde)?|dominio|servidor|????????[??]???\s+?|???????[??]???\s+?|??????????\s+?|???????[??]?(?:??)?\s+?|?????|??????|??(?:?|?)?|??|??|??(?:?|?)?|??|??|???|??)\s*[::,\-??]?\s*["'??`(\[]?\s*$/i;
+  /(?:connect(?:s|ed|ing)?\s+(?:back\s+)?to|communicat(?:es|ed|ing)\s+with|beacon(?:s|ed|ing)?\s+to|resolv(?:es|ed|ing)?\s+to|resolving\s+to|reach(?:es|ed|ing)?\s+out\s+to|call(?:s|ed|ing)?\s+(?:back\s+)?(?:to|home\s+to)|check(?:s|ed|ing)?\s+in\s+(?:to|with)|download(?:s|ed|ing)?\s+from|served\s+from|fetch(?:es|ed|ing)?\s+from|retriev(?:es|ed|ing)\s+from|hosted\s+(?:on|at)|hosting\s+(?:on|at)|sent\s+to|exfiltrat(?:es|ed|ing)\s+to|post(?:s|ed|ing)?\s+to|queries|query|lookup\s+(?:of|for)|nslookup|ping(?:s|ed)?|the\s+(?:c2|c&c|command[\s-]and[\s-]control|malicious|attacker[\s-]controlled|phishing|payload|staging|distribution|callback|beacon|dns|hosting)\s+(?:domain|host|hostname|server|url|panel|site|address|endpoint|infrastructure)|(?:domain|hostname|host\s*name|fqdn|server|c2|c&c|dns\s*name|url|endpoint)(?:\s*name)?|bağlan(?:ır|an|dı|ıyor)|iletişim\s+kurar|çözümlen(?:ir|en)|indir(?:ir|ilen|di)|alan\s*ad[ıi]|sunucu(?:su|ya)?|verbindet\s+sich\s+mit|kommuniziert\s+mit|se\s+conecta\s+a|resuelve\s+a|descarga(?:do)?\s+de(?:sde)?|dominio|servidor|подключа[её]тся\s+к|соединя[её]тся\s+с|обращается\s+к|загружа[её]т(?:ся)?\s+с|домен|сервер|连接(?:到|至)?|回连|通信|解析(?:到|为)?|下载|域名|服务器|主机)\s*[:：,\-–—]?\s*["'“‘`(\[]?\s*$/i;
 
 /** Network vocabulary anywhere in the clause (weaker than a direct relation). */
 const NETWORK_CLAUSE_RE =
-  /(?:\bconnect|\bcommunicat|\bbeacon|\bresolv|\bc2\b|\bc&c\b|command\s*(?:and|&)\s*control|\bcallback\b|\bdomain\b|\bhostname\b|\bfqdn\b|\bdns\b|\burl\b|\bhttps?\b|\bdownload|\bserved\s+from|\bhosted\b|\bnslookup\b|\bserver\b|\bc2\s*server|baglan|alan\s*ad[ii]|sunucu|??z?mle|indir|dom?ne|dominio|servidor|resuelve|descarga|???????|??????|?????|??????|??????|????|??|??|??|??|???|??|??)/i;
+  /(?:\bconnect|\bcommunicat|\bbeacon|\bresolv|\bc2\b|\bc&c\b|command\s*(?:and|&)\s*control|\bcallback\b|\bdomain\b|\bhostname\b|\bfqdn\b|\bdns\b|\burl\b|\bhttps?\b|\bdownload|\bserved\s+from|\bhosted\b|\bnslookup\b|\bserver\b|\bc2\s*server|bağlan|alan\s*ad[ıi]|sunucu|çözümle|indir|domäne|dominio|servidor|resuelve|descarga|подключ|соедин|домен|сервер|разреш|скач|域名|连接|回连|解析|服务器|下载|主机)/i;
 
 /**
  * Artifact vocabulary directly before the token ("named mutex X", "mutex: X",
  * "class X", "config key X", "the setting X").
  */
 const ARTIFACT_LABEL_BEFORE_RE =
-  /(?:mutex(?:es)?|mutant|muteks|semaphore|single[\s-]?instance(?:\s+(?:identifier|marker|name|check|lock))?|instance\s+(?:name|marker|identifier)|class(?:name)?|namespace|method|function|assembly|module|package|symbol|type\s*name|entry\s*point|config(?:uration)?(?:\s*(?:key|value|entry|block|option|property|setting))?|setting|property|parameter|option|flag|key|field|attribute|registry\s*(?:key|value|path)?|reg\s*key|file\s*name|filename|resource|pdb(?:\s*path)?|scheduled\s*task|task\s*name|service\s*name|named\s*pipe|pipe\s*name|event\s*name|window\s*title|user[\s-]?agent|mutex\s+name|string|marker|identifier|muteks\s+ad[ii]|sinif|metot|fonksiyon|mod?l|yapilandirma|ayar|parametre|anahtar|kayit\s*defteri|dosya\s*ad[ii]|klasse|methode|funktion|konfiguration|einstellung|registrierung|clase|m?todo|metodo|funci?n|funcion|configuraci?n|configuracion|ajuste|par?metro|parametro|registro|?????|?????|??????[??]|??????????[?-?]*|????????[?-?]*|????????|???????|??????|??????[?-?]*|??(?:?|?|?)?|???|???|????|??|??|??|??(?:?|?)?|??|??|???(?:?|?)?|???)(?:\s+(?:name[ds]?|named|called|value|of|is|was|as|olarak|adl[ii]|ad[ii]|ist|es|???|?|?|??|???|??))?\s*[::=,\-??]?\s*["'??`(\[]?\s*$/i;
+  /(?:mutex(?:es)?|mutant|muteks|semaphore|single[\s-]?instance(?:\s+(?:identifier|marker|name|check|lock))?|instance\s+(?:name|marker|identifier)|class(?:name)?|namespace|method|function|assembly|module|package|symbol|type\s*name|entry\s*point|config(?:uration)?(?:\s*(?:key|value|entry|block|option|property|setting))?|setting|property|parameter|option|flag|key|field|attribute|registry\s*(?:key|value|path)?|reg\s*key|file\s*name|filename|resource|pdb(?:\s*path)?|scheduled\s*task|task\s*name|service\s*name|named\s*pipe|pipe\s*name|event\s*name|window\s*title|user[\s-]?agent|mutex\s+name|string|marker|identifier|muteks\s+ad[ıi]|sınıf|metot|fonksiyon|modül|yapılandırma|ayar|parametre|anahtar|kayıt\s*defteri|dosya\s*ad[ıi]|klasse|methode|funktion|konfiguration|einstellung|registrierung|clase|método|metodo|función|funcion|configuración|configuracion|ajuste|parámetro|parametro|registro|класс|метод|функци[яи]|конфигурац[а-я]*|настройк[а-я]*|параметр|мьютекс|мутекс|реестр[а-я]*|互斥(?:体|量|锁)?|信号量|类名?|命名空间|方法|函数|模块|配置(?:项|键)?|参数|属性|注册表(?:项|键)?|文件名)(?:\s+(?:name[ds]?|named|called|value|of|is|was|as|olarak|adl[ıi]|ad[ıi]|ist|es|как|为|是|名为|名称为|名称))?\s*[:：=,\-–—]?\s*["'“‘`(\[]?\s*$/i;
 
 /** Artifact vocabulary anywhere in the clause (used when no network relation is stated). */
 const ARTIFACT_CLAUSE_RE =
-  /(?:\bmutex|\bmutant\b|muteks|\bsemaphore|single[\s-]?instance|singleinstance|\bnamespace|\bclass\b|\bmethod\b|\bfunction\b|\bassembly\b|\bmodule\b|\bpackage\b|\bsymbol\b|config(?:uration)?\s*(?:key|value|entry|block|option|property|setting|file)|\bsetting|\bproperty|\bparameter|\bregistry|\bhkcu\b|\bhklm\b|\bhkey_|\bpdb\b|scheduled\s*task|named\s*pipe|\bpipe\s*name|\bevent\s*name|\bwindow\s*title|user[\s-]?agent|sinif|metot|fonksiyon|mod?l|yapilandirma|ayar|parametre|kayit\s*defteri|klasse|methode|funktion|konfiguration|einstellung|registrierung|clase|m?todo|metodo|funci?n|funcion|configuraci?n|configuracion|ajuste|par?metro|parametro|?????|?????|??????|??????????|????????|????????|???????|??????|??????|??|???|??|????|??|??|??|??|??|??|???)/i;
+  /(?:\bmutex|\bmutant\b|muteks|\bsemaphore|single[\s-]?instance|singleinstance|\bnamespace|\bclass\b|\bmethod\b|\bfunction\b|\bassembly\b|\bmodule\b|\bpackage\b|\bsymbol\b|config(?:uration)?\s*(?:key|value|entry|block|option|property|setting|file)|\bsetting|\bproperty|\bparameter|\bregistry|\bhkcu\b|\bhklm\b|\bhkey_|\bpdb\b|scheduled\s*task|named\s*pipe|\bpipe\s*name|\bevent\s*name|\bwindow\s*title|user[\s-]?agent|sınıf|metot|fonksiyon|modül|yapılandırma|ayar|parametre|kayıt\s*defteri|klasse|methode|funktion|konfiguration|einstellung|registrierung|clase|método|metodo|función|funcion|configuración|configuracion|ajuste|parámetro|parametro|класс|метод|функци|конфигурац|настройк|параметр|мьютекс|мутекс|реестр|互斥|信号量|类名|命名空间|方法|函数|模块|配置|参数|属性|注册表)/i;
 
 /** Code-context vocabulary (decompilation, language names) around a token. */
-/** A regex alternation / group opening right before a token ("?|", "(?:", "\b"). */
+/** A regex alternation / group opening right before a token ("…|", "(?:", "\b"). */
 const REGEX_BRANCH_BEFORE_RE = /(?:\||\(\?:|\\b)\s*$/;
 /** A regex boundary / alternation / group close right after a token ("\b", "|", ")"). */
 const REGEX_BRANCH_AFTER_RE = /^\s*(?:\\b|\\s|\||\)(?:[*+?]|\s*\|))/;
 /** Regex syntax tokens: escapes (\b \s \S \d \w \/), non-capturing groups. */
 const REGEX_SYNTAX_TOKEN_RE = /\\[bBsSdDwW\/]|\(\?[:!=]/g;
-const CODE_CONTEXT_RE =/(?:\.NET\b|\bC#|\bC\+\+|\bJava\b|\bGo(?:lang)?['?]s\b|\bRust\b|\bPython\b|\bclass\s|\bnamespace\s|\bmethod\s|\bfunction\s|\bstruct\b|\bpackage\s|decompil|disassembl|???|????|??|?\s|derleme|sinif|Klasse|Methode|?????|?????)/i;
+const CODE_CONTEXT_RE =/(?:\.NET\b|\bC#|\bC\+\+|\bJava\b|\bGo(?:lang)?['’]s\b|\bRust\b|\bPython\b|\bclass\s|\bnamespace\s|\bmethod\s|\bfunction\s|\bstruct\b|\bpackage\s|decompil|disassembl|反编译|代码片段|函数|类\s|derleme|sınıf|Klasse|Methode|класс|метод)/i;
 
 /**
  * @param {string} label
@@ -238,7 +238,7 @@ export function parseArtifactTypeLabel(label) {
 
 /** Mutex vocabulary directly before a value ("creating a mutex X", "Mutex: X"). */
 const MUTEX_LABEL_BEFORE_RE =
-  /(?:mutex(?:es)?|mutant|semaphore)(?:\s+(?:names?|named|called|value|is|was))?\s*[::=]?\s*["'??`(\[]?\s*$/i;
+  /(?:mutex(?:es)?|mutant|semaphore)(?:\s+(?:names?|named|called|value|is|was))?\s*[:：=]?\s*["'“‘`(\[]?\s*$/i;
 
 /**
  * True when the publisher names this hex value a mutex inline, right before
@@ -265,8 +265,8 @@ export function isNetworkTypeLabel(label) {
 function normalizeLabel(s) {
   return String(s || '')
     .toLowerCase()
-    .replace(/[ -? ]/g, ' ')
-    .replace(/[()::,.;/|"'`*#]+/g, ' ')
+    .replace(/[ -⁯　]/g, ' ')
+    .replace(/[():：,.;/|"'`*#]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -312,7 +312,7 @@ const TLD_LABEL_RE = /^(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$/i;
 
 /**
  * Hostname-compatible syntax (labels, alphabetic or IDN TLD, length limits).
- * Says nothing about whether the value IS a hostname ? only that it could be.
+ * Says nothing about whether the value IS a hostname — only that it could be.
  * @param {string} value
  */
 export function isHostnameSyntax(value) {
@@ -374,7 +374,7 @@ export function isPublicOrSharedPlatformSuffix(value) {
 /**
  * Compact "looks like DNS" suffix knowledge: the ISO 3166 ccTLD set plus the
  * most common gTLDs. This is a SYNTAX signal (strong vs weak suffix), never a
- * safety allowlist ? unknown suffixes still resolve as domains when the
+ * safety allowlist — unknown suffixes still resolve as domains when the
  * source asserts network semantics or the value is otherwise plain.
  */
 const CC_TLDS = new Set(
@@ -383,7 +383,7 @@ const CC_TLDS = new Set(
   )
 );
 const COMMON_GTLDS = new Set(
-  'com net org info biz edu gov mil int arpa app dev cloud xyz top site online tech store shop club pro tv cc ai gg pw tk ml ga cf gq icu buzz live life world today news blog work zone space link click host website web page one run fun vip win bid loan men party trade stream download review date faith racing science accountant cricket gdn mom lol pics email digital agency group company solutions services network systems media center name mobi asia tel travel xxx wang cyou rest sbs bond quest hair skin makeup beauty cfd best monster fit yachts autos boats motorcycles homes cam ru su ?? moscow ??????'.split(
+  'com net org info biz edu gov mil int arpa app dev cloud xyz top site online tech store shop club pro tv cc ai gg pw tk ml ga cf gq icu buzz live life world today news blog work zone space link click host website web page one run fun vip win bid loan men party trade stream download review date faith racing science accountant cricket gdn mom lol pics email digital agency group company solutions services network systems media center name mobi asia tel travel xxx wang cyou rest sbs bond quest hair skin makeup beauty cfd best monster fit yachts autos boats motorcycles homes cam ru su рф moscow москва'.split(
     ' '
   )
 );
@@ -470,27 +470,27 @@ export function hasCodeIdentifierShape(raw, opts = {}) {
     // Title case throughout (Loader.Program.Main vs Evil.Example.Com): the suffix decides.
     return opts.suffixStrength !== 'strong';
   }
-  return false; // Exploit.in ? brand-style capital on the first label only
+  return false; // Exploit.in — brand-style capital on the first label only
 }
 
 /** `urn:<nid>:` (plus further NSS segments) right before the token. */
 const URN_PREFIX_BEFORE_RE = /\burn:[a-z0-9][a-z0-9-]{0,31}:(?:[^\s:]+:)*$/i;
 
-/** Row lead that only labels / enumerates the value ("C2:", "Domain -", "1.", "?"). */
-const ROW_LABEL_LEAD_RE = /(?:[::|=>?\-??]|^\s*(?:[-*???]|\(?\d{1,3}[.)]|\[\d{1,3}\]))\s*$/;
+/** Row lead that only labels / enumerates the value ("C2:", "Domain -", "1.", "•"). */
+const ROW_LABEL_LEAD_RE = /(?:[:：|=>→\-–—]|^\s*(?:[-*•·▪]|\(?\d{1,3}[.)]|\[\d{1,3}\]))\s*$/;
 
 /**
  * True when the text before a value on its own row is empty, a label ending in
- * a separator, an enumeration mark or a network type label ? not prose.
+ * a separator, an enumeration mark or a network type label — not prose.
  * @param {string} before text before the value (clauseAround)
  */
 export function rowLedByValueOrLabel(before) {
   const b = String(before || '');
-  const cut = Math.max(b.lastIndexOf('\n'), b.lastIndexOf(' ? '), b.lastIndexOf('. '), b.lastIndexOf('; '), b.lastIndexOf('|'));
-  const lead = (cut >= 0 ? b.slice(cut + 1) : b).replace(/^[\s?]+/, '').trimEnd();
+  const cut = Math.max(b.lastIndexOf('\n'), b.lastIndexOf(' ¶ '), b.lastIndexOf('. '), b.lastIndexOf('; '), b.lastIndexOf('|'));
+  const lead = (cut >= 0 ? b.slice(cut + 1) : b).replace(/^[\s¶]+/, '').trimEnd();
   if (!lead) return true;
   if (ROW_LABEL_LEAD_RE.test(lead)) return true;
-  return isNetworkTypeLabel(lead.replace(/[::\s]+$/, ''));
+  return isNetworkTypeLabel(lead.replace(/[:：\s]+$/, ''));
 }
 
 /**
@@ -516,10 +516,10 @@ export function clauseAround(text, value) {
   if (idx < 0) return { before: '', after: '', clause: hay.slice(0, 400) };
   const clauseStart = Math.max(
     0,
-    Math.max(hay.lastIndexOf('. ', idx), hay.lastIndexOf('; ', idx), hay.lastIndexOf('?', idx), hay.lastIndexOf('\n', idx), hay.lastIndexOf(' ? ', idx), idx - 220)
+    Math.max(hay.lastIndexOf('. ', idx), hay.lastIndexOf('; ', idx), hay.lastIndexOf('。', idx), hay.lastIndexOf('\n', idx), hay.lastIndexOf(' ¶ ', idx), idx - 220)
   );
   let clauseEnd = hay.length;
-  for (const stop of ['. ', '; ', '?', '\n', ' ? ']) {
+  for (const stop of ['. ', '; ', '。', '\n', ' ¶ ']) {
     const j = hay.indexOf(stop, idx + len);
     if (j >= 0 && j < clauseEnd) clauseEnd = j;
   }
@@ -543,10 +543,10 @@ const UNIX_ABS_PATH_RE = /^\/(?:etc|usr|var|tmp|home|opt|bin|sbin|dev|proc|root|
 
 /**
  * Port stated as prose right after a path / URL ("on port 8081", "port: 8081",
- * "8081 portu", "?? 8081", "???? 8081"). Contextual evidence only.
+ * "8081 portu", "端口 8081", "порт 8081"). Contextual evidence only.
  */
 const PORT_PROSE_RE =
-  /(?:\b(?:on|over|via|at|using|through)\s+(?:tcp\s+|udp\s+)?port\s+(\d{1,5})\b|\bport\s*[:=]?\s*(\d{1,5})\b|\b(\d{1,5})\s*(?:\.\s*)?(?:portu|port'u|numaral[ii]\s+port|nolu\s+port)\b|??\s*(\d{1,5})|(\d{1,5})\s*??|????[?-?]*\s*(\d{1,5}))/i;
+  /(?:\b(?:on|over|via|at|using|through)\s+(?:tcp\s+|udp\s+)?port\s+(\d{1,5})\b|\bport\s*[:=]?\s*(\d{1,5})\b|\b(\d{1,5})\s*(?:\.\s*)?(?:portu|port'u|numaral[ıi]\s+port|nolu\s+port)\b|端口\s*(\d{1,5})|(\d{1,5})\s*端口|порт[а-я]*\s*(\d{1,5}))/i;
 
 /**
  * @param {string} text
@@ -585,8 +585,8 @@ export function classifyPathLikeShape(refanged) {
   return 'other';
 }
 
-/** A publisher elision ("?", "[...]", "(?)") inside a value. */
-const ELIDED_VALUE_RE = /?|\[\s*(?:\.{2,}|?)\s*\]|\(\s*(?:\.{2,}|?)\s*\)/;
+/** A publisher elision ("…", "[...]", "(…)") inside a value. */
+const ELIDED_VALUE_RE = /…|\[\s*(?:\.{2,}|…)\s*\]|\(\s*(?:\.{2,}|…)\s*\)/;
 /** Unfilled template placeholder in a URL path / query ({campaignId}, %7Bid%7D, ${var}). */
 // The closing brace may already be stripped as trailing punctuation.
 const TEMPLATE_PLACEHOLDER_RE = /\$?\{[A-Za-z_][\w.-]{0,40}(?:\}|$)|%7B[A-Za-z_][\w.-]{0,40}(?:%7D|$)/i;
@@ -602,17 +602,17 @@ const URL_TEMPLATE_PLACEHOLDER_RE = new RegExp([
   /\$[A-Za-z_]\w{1,40}\$/.source,
   /%(?=\w*[G-Zg-z_])[A-Za-z_]\w{2,40}%/.source,
   // The closing ">" may already be cut by the URL boundary ("/curl/<token>"
-  // read as ".../curl/<token") ? tl-type-resolver-v17.
+  // read as ".../curl/<token") — tl-type-resolver-v17.
   /<[A-Za-z_][\w.-]{0,40}(?:>|$)/.source,
   /%3C[A-Za-z_][\w.-]{0,40}(?:%3E|$)/.source,
   /\/\[[A-Za-z_][\w.-]{2,40}(?:\]|$)/.source,
-  // A redacted path segment ("/api/settings/XXXXX") ? tl-type-resolver-v21.
+  // A redacted path segment ("/api/settings/XXXXX") — tl-type-resolver-v21.
   /\/X{3,}(?=[/?#]|$)/.source
 ].join('|'), 'i');
 
 /**
  * Parenthesis-balanced URL boundary (tl-type-resolver-v14). Publishers wrap
- * URLs in prose parentheses, annotate an optional query as "(??)", and quote
+ * URLs in prose parentheses, annotate an optional query as "(?…)", and quote
  * URLs inside code with escaped quotes; none of that is URL text. Balanced
  * path parentheses ("report_(final).pdf", "/admin/(login)") are kept.
  * @param {string} urlish candidate URL text (refanged, no surrounding spaces)
@@ -621,16 +621,16 @@ export function trimUrlBoundary(urlish) {
   let v = String(urlish || '');
   // Escaped closing quote inside code: `\"https://host/x\"`.
   v = v.replace(/\\+["'`].*$|\\+$/, '');
-  // "(??)" / "(#?)": an optional query / fragment annotation, never URL syntax.
+  // "(?…)" / "(#…)": an optional query / fragment annotation, never URL syntax.
   const note = v.search(/\([?#]/);
   if (note > 0) v = v.slice(0, note);
-  // "?/expire?client=[redacted]": the publisher's redaction marker ends the
+  // "…/expire?client=[redacted]": the publisher's redaction marker ends the
   // URL the same way an "<id>" placeholder does (tl-type-resolver-v22).
-  const redaction = v.search(/\[\s*(?:redacted|removed|omitted|x{3,}|\*{3,}|\.{3,}|?)\s*(?:\]|$)/i);
+  const redaction = v.search(/\[\s*(?:redacted|removed|omitted|x{3,}|\*{3,}|\.{3,}|…)\s*(?:\]|$)/i);
   if (redaction > 0) v = v.slice(0, redaction);
   for (;;) {
     const before = v;
-    v = v.replace(/[,.;:!?\]?,;??????'"]+$/, '');
+    v = v.replace(/[,.;:!?\]。，；‘’“”«»'"]+$/, '');
     const opens = (v.match(/\(/g) || []).length;
     const closes = (v.match(/\)/g) || []).length;
     if (v.endsWith(')') && closes > opens) v = v.slice(0, -1);
@@ -673,7 +673,7 @@ export function trimUrlBoundary(urlish) {
 export function validateUrlCandidate(raw) {
   const refanged = refangObservable(raw);
   if (!refanged) return { ok: false, resolved_type: 'invalid', reason: 'empty' };
-  // "host/abc[?].pdf": the publisher elided part of the value ? a placeholder,
+  // "host/abc[…].pdf": the publisher elided part of the value — a placeholder,
   // not an observable anyone can match.
   if (ELIDED_VALUE_RE.test(String(raw || '')) || ELIDED_VALUE_RE.test(refanged)) {
     return { ok: false, resolved_type: 'invalid', reason: 'elided_value' };
@@ -766,7 +766,7 @@ export function validateUrlCandidate(raw) {
 }
 
 function stripTrailingPunct(s) {
-  return String(s || '').replace(/[),.;:!?\]?,;??????]+$/g, '');
+  return String(s || '').replace(/[),.;:!?\]。，；‘’“”«»]+$/g, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -778,7 +778,7 @@ function stripTrailingPunct(s) {
  * @property {'domain'|'technical_artifact'|'skip'} kind
  * @property {string|null} artifact_kind  mutex | code | config | registry | file | path | command | process | metadata | identifier
  * @property {string} reason
- * @property {boolean} labelled  a source-typed label (row / heading / inline) proved the reading ? clause vocabulary alone does not
+ * @property {boolean} labelled  a source-typed label (row / heading / inline) proved the reading — clause vocabulary alone does not
  * @property {object} signals
  */
 
@@ -803,11 +803,11 @@ function stripTrailingPunct(s) {
  * }} [ctx]
  * @returns {DottedResolution}
  */
-/** Second labels of the Java standard library under `java.` (java.net, java.util ?). */
+/** Second labels of the Java standard library under `java.` (java.net, java.util …). */
 const JAVA_STD_PACKAGES = new Set([
   'lang', 'util', 'io', 'net', 'nio', 'security', 'awt', 'sql', 'time', 'text', 'beans', 'rmi', 'math', 'applet', 'crypto'
 ]);
-/** Second labels of the .NET base class library under `System.` (System.Net, System.IO ?). */
+/** Second labels of the .NET base class library under `System.` (System.Net, System.IO …). */
 const DOTNET_SYSTEM_NAMESPACES = new Set([
   'net', 'io', 'text', 'reflection', 'diagnostics', 'security', 'runtime', 'threading', 'collections', 'windows',
   'management', 'data', 'linq', 'web', 'xml', 'drawing', 'componentmodel', 'globalization', 'resources', 'servicemodel'
@@ -815,7 +815,7 @@ const DOTNET_SYSTEM_NAMESPACES = new Set([
 
 /**
  * A managed-runtime standard-library namespace path: `javax.*` / `jakarta.*`,
- * `java.<std package>?`, or `System.<BCL namespace>?`.
+ * `java.<std package>…`, or `System.<BCL namespace>…`.
  * @param {string[]} labels lower-cased labels
  */
 export function isRuntimeNamespace(labels) {
@@ -844,7 +844,7 @@ export function resolveDottedToken(raw, ctx = {}) {
   if (labels.length < 2) return out('skip', 'not_dotted');
   if (!isHostnameSyntax(lower)) return out('skip', 'not_hostname_syntax');
   // A masked IPv4 address ("1.226.82.xxx", "10.0.x.x"): numeric octets with
-  // the rest written as x placeholders ? never a host under the .xxx TLD
+  // the rest written as x placeholders — never a host under the .xxx TLD
   // (tl-type-resolver-v23).
   if (labels.length === 4 && labels.every((l) => /^(?:\d{1,3}|x{1,3})$/.test(l)) && /^\d/.test(labels[0]) && labels.some((l) => /^x+$/.test(l))) {
     return out('skip', 'redacted_ipv4');
@@ -871,7 +871,7 @@ export function resolveDottedToken(raw, ctx = {}) {
   // Endpoint position: `host.example:443` (port glued to a delegated DNS name,
   // then a boundary) is a network endpoint, never a `key: value` pair. Only a
   // `.` boundary must not be followed by a digit (`:443.5` is a number); the
-  // next value of a multi-value cell may start with one (`h:443 198.51.?`).
+  // next value of a multi-value cell may start with one (`h:443 198.51.…`).
   const portMatch = /^:(\d{1,5})(?=$|[\s,;)\]'"`\/|>]|\.(?!\d))/.exec(after);
   const hostPort = Boolean(portMatch) && Number(portMatch[1]) <= 65535 && hasDelegatedDnsSuffix(lower);
   // Key position: `token = value` / `"token": value` (never `token://`).
@@ -919,7 +919,7 @@ export function resolveDottedToken(raw, ctx = {}) {
     ) {
       return out('domain', 'declared_network_type', true);
     }
-    // else fall through ? FILE_EXT / other rules decide
+    // else fall through — FILE_EXT / other rules decide
   }
 
   // URN namespace-specific string (`urn:ms-drs:enterpriseregistration.windows.net`,
@@ -947,7 +947,7 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   // 2b. Standard-library namespaces of managed runtimes (`javax.tools`,
   //     `java.net.URLClassLoader`, `System.Net.Http`): a package / namespace
-  //     path, never a host ? even when the last label is a real TLD (.tools,
+  //     path, never a host — even when the last label is a real TLD (.tools,
   //     .net). Declared network types and exact URL hosts were decided above.
   if (isRuntimeNamespace(labels)) return out('technical_artifact', 'runtime_namespace');
 
@@ -971,7 +971,7 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   // 4. Filename shapes (extension in TLD position).
   if (FILE_EXT_HINT.has(last)) {
-    const fileLabel = /(file\s*name|filename|file\s*:|dosya|??|???|??|payload|download|??|lnk|resource|dropped|saved\s+as)/i.test(clause);
+    const fileLabel = /(file\s*name|filename|file\s*:|dosya|资源|文件名|样本|payload|download|保存|lnk|resource|dropped|saved\s+as)/i.test(clause);
     if (fileLabel) return out('technical_artifact', 'file_label');
     if (labels.length >= 3) return out('technical_artifact', 'multi_dot_ext');
     if (labels.length === 2 && labels[0].length <= 32) return out('technical_artifact', 'file_extension');
@@ -979,7 +979,7 @@ export function resolveDottedToken(raw, ctx = {}) {
   }
 
   // 4b. Call syntax right at the token (`window.location.replace()`,
-  //     `Foo.Bar.run(x)`) is code, not a hostname ? unless the suffix is a
+  //     `Foo.Bar.run(x)`) is code, not a hostname — unless the suffix is a
   //     DNS-shaped one ("evil.com(443)" stays a host with a port note).
   if (/^\s*\(/.test(after) && strength !== 'strong') return out('technical_artifact', 'code_call');
   // A call glued to the token with an empty / identifier / literal argument
@@ -992,10 +992,10 @@ export function resolveDottedToken(raw, ctx = {}) {
   if (inlineArtifact) return out('technical_artifact', artifactReasonFrom(before, 'inline_artifact_label'), true);
   if (inlineNetwork) return out('domain', 'network_relation', true);
 
-  // 6. Assignment / key position (`agent.server.host = ?`, `"a.b.c": ?`) is a
+  // 6. Assignment / key position (`agent.server.host = …`, `"a.b.c": …`) is a
   //    configuration key whatever the suffix looks like.
   if (assignmentKey) return out('technical_artifact', 'config_context');
-  // 6a. Search-query field (`host.services: (port=22 AND ?)` in a Censys /
+  // 6a. Search-query field (`host.services: (port=22 AND …)` in a Censys /
   //     Shodan / KQL hunting query): a field name before a grouped condition,
   //     in a clause joined by upper-case boolean operators (tl-type-resolver-v23).
   if (!hostPort && !declaredNetwork && !inlineNetwork && /^:\s*\(/.test(after) && /\b(?:AND|OR|NOT)\b/.test(surrounding)) {
@@ -1004,7 +1004,7 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   // 6b. Regular-expression fragment (`|currentversion.run\b|` in a hunting
   //     query): an alternation branch, inside a clause dense with regex
-  //     syntax, whose unescaped dot is a wildcard ? not a literal hostname
+  //     syntax, whose unescaped dot is a wildcard — not a literal hostname
   //     (a regex for a host escapes its dots). No stated network relation
   //     (tl-type-resolver-v15).
   if (
@@ -1018,7 +1018,7 @@ export function resolveDottedToken(raw, ctx = {}) {
 
   // 7. Clause vocabulary: an artifact reading with no network relation stated.
   //    A DNS-shaped suffix is not overturned by loose clause words ("the module
-  //    downloads from evil.com") ? only by a label at the token.
+  //    downloads from evil.com") — only by a label at the token.
   if (clauseArtifact && !clauseNetwork && strength !== 'strong') {
     return out('technical_artifact', artifactReasonFrom(clause, 'artifact_context'));
   }
@@ -1026,7 +1026,7 @@ export function resolveDottedToken(raw, ctx = {}) {
   // 8. Symbolic identifier shape (case segmentation, underscores) is a code signal
   //    unless the source states a network relation for this exact token.
   //    A publisher defang marker (`EmbersAndBites[.]com`) is a network
-  //    assertion ? nobody defangs a class name ? and so is an explicit IOC
+  //    assertion — nobody defangs a class name — and so is an explicit IOC
   //    row: with a delegated DNS suffix either one keeps the host reading
   //    whatever the casing (tl-type-resolver-v16).
   if (codeShape) {
@@ -1097,7 +1097,7 @@ function artifactReasonFrom(text, fallback) {
 }
 
 // ---------------------------------------------------------------------------
-// Canonical IOC validity (final gate ? AI cannot bypass)
+// Canonical IOC validity (final gate — AI cannot bypass)
 // ---------------------------------------------------------------------------
 
 const HASH_RE = { md5: /^[a-f0-9]{32}$/, sha1: /^[a-f0-9]{40}$/, sha256: /^[a-f0-9]{64}$/ };
