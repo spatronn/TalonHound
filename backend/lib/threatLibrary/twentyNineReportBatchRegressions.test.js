@@ -1,5 +1,5 @@
 /**
- * Twenty-nine-report batch audit regressions (35575–35605): tl-candidates-v54,
+ * Twenty-nine-report batch audit regressions (35575â€“35605): tl-candidates-v54,
  * tl-table-v17, tl-type-resolver-v22, tl-ioc-source-scope-v4. Shapes of the
  * confirmed production defects with the publishers' own row wording.
  *
@@ -11,7 +11,7 @@
  *    providers, even under a C&C heading (35597).
  * D. "Certificate CN only, placeholder name. Do not block as a domain" is not
  *    an Indicator; "check before blocking" still is (35602).
- * E. "AS207043 (dedik[.]io) | ASN | Hosting …" names the ASN operator (35603).
+ * E. "AS207043 (dedik[.]io) | ASN | Hosting â€¦" names the ASN operator (35603).
  * F. "abused legitimate infrastructure, not itself malicious" / "not
  *    operator-specific" rows are context; a "Handle | Repository | Role"
  *    attribution table under the IOC heading is provenance (35605).
@@ -204,6 +204,6 @@ test('H. month folder of slug-named inventories: only this article\'s files are 
   // Undecided: a campaign folder whose files carry no slug, or a single file.
   assert.equal(reportSlugForeignFiles(['f/README.md', 'f/samples.sha256', 'f/domains.txt'], report), null);
   assert.equal(reportSlugForeignFiles(['2026/04/powmix-botnet-targets-czech-workforce.txt'], 'https://blog.talosintelligence.com/powmix-botnet-targets-czech-workforce/'), null);
-  // Every file named after this article ? nothing deselected.
+  // Every file named after this article â†’ nothing deselected.
   assert.equal(reportSlugForeignFiles(['2026/01/uat-8837.json', '2026/01/uat-8837.txt'], report), null);
 });

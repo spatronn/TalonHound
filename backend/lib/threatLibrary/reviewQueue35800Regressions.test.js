@@ -1,8 +1,8 @@
 /**
- * Review-queue audit (35800–35819) regressions (tl-candidates-v61,
+ * Review-queue audit (35800â€“35819) regressions (tl-candidates-v61,
  * tl-section-tree-v17).
  *
- * Generic shapes of the confirmed extraction defects, with synthetic values —
+ * Generic shapes of the confirmed extraction defects, with synthetic values â€”
  * no publisher, report or value condition:
  *
  * FN-1 An IOC inventory whose groups the publisher wrote as same-level sibling

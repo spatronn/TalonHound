@@ -906,11 +906,21 @@ export function resolveDottedToken(raw, ctx = {}) {
     // host or put it in a typed Domain table cell (tl-type-resolver-v27).
     const tableDeclared = ctx.form === 'table_row';
     const filePath = pathSegment && FILE_EXT_HINT.has(last);
+    // Publisher defang of *this* host (`evil[.]zip` around raw `evil.zip`)
+    // keeps the domain reading — do not treat that as a bare filename.
+    const leaf = labels[0];
+    const defangedHostSpelling =
+      DEFANG_MARKER_RE.test(original) ||
+      surrounding.toLowerCase().includes(`${leaf}[.]${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}(.)${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}{.}${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}[dot]${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}(dot)${last}`);
     const dualUseBareFilename =
       FILE_EXT_HINT.has(last) &&
       hasDelegatedDnsSuffix(lower) &&
       labels.length === 2 &&
-      !DEFANG_MARKER_RE.test(original) &&
+      !defangedHostSpelling &&
       !tableDeclared;
     if (
       !filePath &&

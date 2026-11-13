@@ -1,19 +1,19 @@
 /**
  * Twenty-two-report audit regressions (tl-candidates-v35 / tl-type-resolver-v14).
- * Generic shapes of the confirmed production defects, with synthetic values —
+ * Generic shapes of the confirmed production defects, with synthetic values â€”
  * no publisher, report or value condition:
  *
  * D-1. A scheme-less host/path on a delegated but uncommon TLD (".moe") is a
  *      URL; file names, runtimes and documentation placeholders are not.
  * D-2. A URL glued into code inside a typed IOC-table cell
- *      (`DownloadString('…')`) is the cell's observable; the command is not.
+ *      (`DownloadString('â€¦')`) is the cell's observable; the command is not.
  * D-3. "FTP Server: ftp://host" in an IOC section asserts the host (domain);
  *      FTP URLs are not invented as URL Indicators.
  * D-4. 32-hex values under a "Mutex Names" sub-heading are mutex artifacts,
  *      never MD5 Indicators; a sibling "MD5 Hashes" list stays MD5.
  * D-5. Unexpanded template placeholders ($NAME$, %NAME%, <name>) make a URL a
  *      pattern, not an Indicator; ordinary queries / percent-encoding do not.
- * D-6. A parenthesised optional query "(?…)" or an unmatched "(" is publisher
+ * D-6. A parenthesised optional query "(?â€¦)" or an unmatched "(" is publisher
  *      notation, not URL text; balanced path parentheses are kept.
  *
  * The section-tree engine is the production engine; this file pins it.
@@ -66,7 +66,7 @@ test('D-1. scheme-less URLs on a delegated uncommon TLD are publisher URL rows',
 <h3>Payload URLs</h3>
 <ul><li>files.uploadhost[.]moe/tmcbms.dll</li><li>files.uploadhost[.]moe/5byj86</li></ul>
 <h3>Infection Chain</h3>
-<ul><li>${H1} – files.uploadhost[.]moe/rv94w8[.]ps1</li><li>${H2} – stage.dropzone[.]moe/gj7umd.ps1</li></ul>`);
+<ul><li>${H1} â€“ files.uploadhost[.]moe/rv94w8[.]ps1</li><li>${H2} â€“ stage.dropzone[.]moe/gj7umd.ps1</li></ul>`);
   const m = members(x);
   for (const v of ['url:files.uploadhost.moe/tmcbms.dll', 'url:files.uploadhost.moe/5byj86', 'url:files.uploadhost.moe/rv94w8.ps1', 'url:stage.dropzone.moe/gj7umd.ps1', `sha256:${H1}`, `sha256:${H2}`]) {
     assert.ok(m.includes(v), `${v} missing from ${m.join(', ')}`);
@@ -130,9 +130,9 @@ test('D-2. parseIndicatorCell recovers an embedded URL; a code-only cell has non
 test('D-3. "FTP Server: ftp://host" in an IOC section asserts the host as a domain', () => {
   const x = run(`${BODY}
 <h2>Indicators of Compromise</h2>
-<h3>AutoIt Infection Chain</h3><ul><li>${H1} – stage.dropzone[.]moe/a1.ps1</li></ul>
+<h3>AutoIt Infection Chain</h3><ul><li>${H1} â€“ stage.dropzone[.]moe/a1.ps1</li></ul>
 <h3>Agent Tesla (Variant) Configuration</h3>
-<ul><li>FTP Server: ??ftp[:]//ftp.exfil-mail[.]rs</li><li>FTP username: kel-bin@exfil-mail[.]rs</li><li>FTP password: Xyz)Abc12</li></ul>`);
+<ul><li>FTP Server: â€‹â€‹ftp[:]//ftp.exfil-mail[.]rs</li><li>FTP username: kel-bin@exfil-mail[.]rs</li><li>FTP password: Xyz)Abc12</li></ul>`);
   const m = members(x);
   assert.ok(m.includes('domain:ftp.exfil-mail.rs'), m.join(', '));
   // The registrable parent of the mailbox is not asserted; no FTP URL type is invented.

@@ -1,7 +1,7 @@
 /**
  * Ten-report audit regressions (tl-candidates-v31 / tl-type-resolver-v11 /
  * tl-zones-v14 / tl-section-tree-v4 / tl-quality-v8). Generic shapes of the
- * confirmed production defects, with synthetic values — no publisher, report
+ * confirmed production defects, with synthetic values â€” no publisher, report
  * or value condition:
  *
  * A. Markdown-escaped bracket defang (`host\[.\]tld`) refangs like `[.]`.

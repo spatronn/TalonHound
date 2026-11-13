@@ -1,7 +1,7 @@
 /**
  * Twelve-report audit regressions (tl-candidates-v32 / tl-type-resolver-v12 /
  * tl-zones-v16 / tl-section-tree-v5 / tl-scope-engine-section-tree-v3).
- * Generic shapes of the confirmed production defects, with synthetic values —
+ * Generic shapes of the confirmed production defects, with synthetic values â€”
  * no publisher, report or value condition:
  *
  * A. A descriptive table under a C2 heading never opens C2 authority, and
@@ -14,7 +14,7 @@
  *    namespaces are never hosts; "Internet Archive" is not a sample noun.
  * C. A role-labelled list inside an IOC section ("operator-side IPs observed:
  *    X and Y") asserts every listed value; a legitimate / victim list does not.
- * D. "Contact Form …" is not a reference heading ("Contact us" still is); a
+ * D. "Contact Form â€¦" is not a reference heading ("Contact us" still is); a
  *    lookalike / impersonation role asserts the value it governs, never the
  *    organisation being imitated.
  * E. camelCase / PascalCase digest keys read as words (`accessTokenHash`).
@@ -63,8 +63,8 @@ const has = (x, type, value) => x.candidates.some((c) => c.candidate_type === ty
 const delegated = (x) => x.diagnostics?.scope_engine?.delegated_scope === true;
 
 // An empty formal IOC section whose only sentence names NO concrete external
-// dataset: the body assertions are delegated. (A pointer to a concrete pack —
-// "can be found here" ? github …/campaign.txt — suppresses delegation since
+// dataset: the body assertions are delegated. (A pointer to a concrete pack â€”
+// "can be found here" â†’ github â€¦/campaign.txt â€” suppresses delegation since
 // tl-section-tree-v5 / PR #25; the linked IOC Source owns that pack, see the
 // pointer test below and iocSources/hrefAuthorityConsistency.test.js.)
 const POINTER_IOC_SECTION = `<h2>Indicators of Compromise</h2>

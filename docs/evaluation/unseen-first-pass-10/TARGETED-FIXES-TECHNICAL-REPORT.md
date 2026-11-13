@@ -1,6 +1,6 @@
 # Targeted First-Pass Quality Improvements — Technical Report
 
-**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`ce445ca`)  
+**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`89cdad6`)  
 **PR:** https://github.com/spatronn/TalonHound/pull/111  
 **Date:** 2026-11-13  
 **Scope:** two low-risk corrections + MODE A recommendations. No architecture redesign, no new AI components, no narrative auto-promote, no pack auto-extract.
@@ -87,7 +87,8 @@ See `MODE-A-PENDING-PACK-AUDIT.md`.
 - Local reproduction of MarkiRAT extract: zip → artifact, `.site` → domain.  
 - Equivalence scorer: delta as above.  
 - Frozen captures: preserved (no refresh / re-import).  
-- PR #111 opened; GitHub CI runs Backend/Frontend/Compose/Release/Docker smoke (host SSH unavailable — CI is the verification path for this change set).
+- PR #111 opened; GitHub CI is the verification path (host SSH unavailable).
+- First CI run failed: `ce445ca` mojibaked CJK/Cyrillic label regexes in `observableTypeResolver.js` → Node `SyntaxError: Nothing to repeat`. Fixed in `89cdad6` by restoring UTF-8 from `origin/main` and re-applying only the dual-use gate.
 
 ---
 

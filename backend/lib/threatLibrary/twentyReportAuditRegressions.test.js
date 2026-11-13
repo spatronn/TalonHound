@@ -76,7 +76,7 @@ test('A: IPv6 tokenizer accepts every valid spelling as one address', () => {
 
 test('A: IPv6 tokenizer never emits fragments, code, times or MAC addresses', () => {
   for (const text of [
-    'b479:2771:8df4:b5eb:d007:63b0:2838', // 7 groups, no :: — invalid as a whole
+    'b479:2771:8df4:b5eb:d007:63b0:2838', // 7 groups, no :: â€” invalid as a whole
     'at 12:34:56 UTC',
     'mac aa:bb:cc:dd:ee:ff',
     'C++ Bad::Face and std::vector and dead::beef',

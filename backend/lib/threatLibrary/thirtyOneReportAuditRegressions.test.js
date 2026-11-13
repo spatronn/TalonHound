@@ -2,7 +2,7 @@
  * 31-report audit regressions (tl-candidates-v34 / threat_library_html_v8 /
  * tl-type-resolver-v13 / tl-section-tree-v6 / tl-quality-v9 /
  * tl-evidence-integrity-v2 / tl-ioc-source-scope-v1). Generic shapes of the
- * confirmed production defects, with synthetic values — no publisher, report
+ * confirmed production defects, with synthetic values â€” no publisher, report
  * or value condition:
  *
  * RC-1  a table behind inline wrappers inside <p> stays a table.

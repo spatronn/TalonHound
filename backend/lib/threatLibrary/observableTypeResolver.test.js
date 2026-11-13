@@ -58,7 +58,7 @@ test('named mutex in prose (original case) is a technical artifact', () => {
   ]) {
     const r = resolveDottedToken('LocalFoo.Client.SingleInstance', { surroundingText: text });
     assert.equal(r.kind, 'technical_artifact', text);
-    assert.equal(r.artifact_kind === 'mutex' || r.artifact_kind === 'code', true, `${text} ? ${r.reason}`);
+    assert.equal(r.artifact_kind === 'mutex' || r.artifact_kind === 'code', true, `${text} → ${r.reason}`);
   }
 });
 
@@ -73,7 +73,7 @@ test('Loader.Program.Main and other symbolic identifiers are not domains', () =>
   ]) {
     const r = resolveDottedToken(token, ctx);
     assert.equal(r.kind, 'technical_artifact', token);
-    assert.equal(r.artifact_kind, 'code', `${token} ? ${r.reason}`);
+    assert.equal(r.artifact_kind, 'code', `${token} → ${r.reason}`);
   }
 });
 
@@ -87,7 +87,7 @@ test('agent.server.timeout in configuration context is not a domain', () => {
   assert.equal(resolveDottedToken('agent.server.timeout').kind, 'technical_artifact');
 });
 
-test('malware connects to c2.evil-example.com ? domain; typed row Domain | c2.evil-example.com ? domain', () => {
+test('malware connects to c2.evil-example.com → domain; typed row Domain | c2.evil-example.com → domain', () => {
   assert.equal(resolveDottedToken('c2.evil-example.com', { surroundingText: 'Malware connects to c2.evil-example.com' }).kind, 'domain');
   const typed = resolveDottedToken('c2.evil-example.com', { typeLabel: 'Domain', form: 'table_row' });
   assert.equal(typed.kind, 'domain');
@@ -166,7 +166,7 @@ test('suffix strength: ccTLD/gTLD strong, code words / long labels / undelegated
   assert.equal(suffixStrength(['a', 'singleinstance']), 'weak');
   assert.equal(suffixStrength(['a', 'exe']), 'weak');
   assert.equal(suffixStrength(['verify-cloud', 'digital']), 'strong');
-  // Not a delegated DNS suffix: weak (still a domain with network semantics / an explicit row � see above).
+  // Not a delegated DNS suffix: weak (still a domain with network semantics / an explicit row — see above).
   assert.equal(suffixStrength(['c2', 'staging', 'corpnet']), 'weak');
   assert.equal(suffixStrength(['minting', 'chm']), 'weak');
   // Delegated gTLDs outside the compact common set stay plausible.
@@ -187,25 +187,25 @@ test('hostname syntax: labels, alphabetic / IDN TLD, no whitespace or symbols', 
 // Multi-language semantics (not English-keyword-only)
 // ---------------------------------------------------------------------------
 
-test('Turkish: baglanir ? domain, yapilandirma anahtari ? artifact, muteks ? artifact', () => {
-  assert.equal(resolveDottedToken('zararli.ornek-alan.com', { surroundingText: 'Zararli yazilim zararli.ornek-alan.com adresine baglanir' }).kind, 'domain');
-  assert.equal(resolveDottedToken('ayar.sunucu.zamanasimi', { surroundingText: 'Yapilandirma anahtari ayar.sunucu.zamanasimi degeri saniye cinsindendir' }).kind, 'technical_artifact');
-  assert.equal(resolveDottedToken('tek.ornek.kilit', { surroundingText: 'Muteks adi tek.ornek.kilit sabittir' }).artifact_kind, 'mutex');
-  assert.equal(resolveDottedToken('kotu.ornek.xyz', { typeLabel: 'Alan Adi' }).kind, 'domain');
+test('Turkish: bağlanır → domain, yapılandırma anahtarı → artifact, muteks → artifact', () => {
+  assert.equal(resolveDottedToken('zararli.ornek-alan.com', { surroundingText: 'Zararlı yazılım zararli.ornek-alan.com adresine bağlanır' }).kind, 'domain');
+  assert.equal(resolveDottedToken('ayar.sunucu.zamanasimi', { surroundingText: 'Yapılandırma anahtarı ayar.sunucu.zamanasimi değeri saniye cinsindendir' }).kind, 'technical_artifact');
+  assert.equal(resolveDottedToken('tek.ornek.kilit', { surroundingText: 'Muteks adı tek.ornek.kilit sabittir' }).artifact_kind, 'mutex');
+  assert.equal(resolveDottedToken('kotu.ornek.xyz', { typeLabel: 'Alan Adı' }).kind, 'domain');
   assert.equal(resolveDottedToken('kotu.ornek.xyz', { typeLabel: 'Muteks' }).kind, 'technical_artifact');
 });
 
-test('Chinese: ?? / ?? ? domain, ??? / ?? ? artifact', () => {
-  assert.equal(resolveDottedToken('kotu.ornek.xyz', { surroundingText: '???? kotu.ornek.xyz ??' }).kind, 'domain');
-  assert.equal(resolveDottedToken('tek.ornek.kilit', { surroundingText: '??? tek.ornek.kilit ???????' }).artifact_kind, 'mutex');
-  assert.equal(resolveDottedToken('agent.server.timeout', { surroundingText: '??? agent.server.timeout ??????' }).kind, 'technical_artifact');
-  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: '??' }).kind, 'domain');
-  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: '???' }).kind, 'technical_artifact');
+test('Chinese: 连接 / 域名 → domain, 互斥体 / 配置 → artifact', () => {
+  assert.equal(resolveDottedToken('kotu.ornek.xyz', { surroundingText: '木马连接 kotu.ornek.xyz 域名' }).kind, 'domain');
+  assert.equal(resolveDottedToken('tek.ornek.kilit', { surroundingText: '互斥体 tek.ornek.kilit 用于单实例检查' }).artifact_kind, 'mutex');
+  assert.equal(resolveDottedToken('agent.server.timeout', { surroundingText: '配置项 agent.server.timeout 控制心跳间隔' }).kind, 'technical_artifact');
+  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: '域名' }).kind, 'domain');
+  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: '互斥体' }).kind, 'technical_artifact');
 });
 
 test('Russian / German / Spanish labels', () => {
-  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: '?????' }).kind, 'domain');
-  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: '???????' }).kind, 'technical_artifact');
+  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: 'Домен' }).kind, 'domain');
+  assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: 'Мьютекс' }).kind, 'technical_artifact');
   assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: 'Klasse' }).kind, 'technical_artifact');
   assert.equal(resolveDottedToken('c2.evil-example.net', { typeLabel: 'Dominio' }).kind, 'domain');
   assert.equal(resolveDottedToken('Foo.Bar.Baz', { surroundingText: 'El mutex Foo.Bar.Baz evita una segunda instancia' }).artifact_kind, 'mutex');
@@ -292,9 +292,9 @@ test('normalizeCandidateValue: path shapes become non-IOC path candidates, never
 test('prose port extraction is multilingual context, never a synthesised endpoint', () => {
   assert.equal(portFromProse('on port 8081'), 8081);
   assert.equal(portFromProse('over TCP port 443'), 443);
-  assert.equal(portFromProse('8080 portu �zerinden'), 8080);
-  assert.equal(portFromProse('?? 4444'), 4444);
-  assert.equal(portFromProse('???? 9001'), 9001);
+  assert.equal(portFromProse('8080 portu üzerinden'), 8080);
+  assert.equal(portFromProse('端口 4444'), 4444);
+  assert.equal(portFromProse('порт 9001'), 9001);
   assert.equal(portFromProse('no port here'), null);
   assert.equal(portFromProse('on port 99999'), null);
 });
@@ -316,7 +316,7 @@ test('canonical validity gate rejects syntactic guesses whatever the claimed typ
   assert.equal(validateCanonicalIocValue('technical_artifact', 'LocalFoo.Client.SingleInstance').ok, false);
 });
 
-test('type resolution record is explainable (raw ? syntax guess ? resolved type ? reason ? promotion)', () => {
+test('type resolution record is explainable (raw → syntax guess → resolved type → reason → promotion)', () => {
   const rec = buildTypeResolutionRecord({
     raw: 'localfoo.client.singleinstance',
     syntaxGuess: 'domain',

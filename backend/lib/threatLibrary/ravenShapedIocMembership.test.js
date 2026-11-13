@@ -5,7 +5,7 @@
  * hash metadata, narrative CVEs, and a narrative observable later repeated in
  * the IOC section.
  *
- * Synthetic values only — no production campaign hardcoding.
+ * Synthetic values only â€” no production campaign hardcoding.
  */
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +33,7 @@ const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const IP_A = '203.0.113.10';
 const IP_B = '203.0.113.20';
 const IP_C = '198.51.100.44';
-const IP_DUP = '203.0.113.10'; // same as IP_A — role-labelled again
+const IP_DUP = '203.0.113.10'; // same as IP_A â€” role-labelled again
 const DOMAIN = 'relay-panel.example';
 const SAMPLE_A = md5('raven-shaped-sample-a');
 const SAMPLE_B = md5('raven-shaped-sample-b');
