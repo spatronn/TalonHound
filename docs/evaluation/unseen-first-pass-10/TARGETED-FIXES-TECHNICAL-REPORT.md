@@ -1,7 +1,7 @@
 # Targeted First-Pass Quality Improvements — Technical Report
 
-**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`b2ab43b`)  
-**PR:** https://github.com/spatronn/TalonHound/pull/111  
+**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`670f8c1`)  
+**PR:** https://github.com/spatronn/TalonHound/pull/111 (CI green)  
 **Date:** 2026-11-13  
 **Scope:** two low-risk corrections + MODE A recommendations. No architecture redesign, no new AI components, no narrative auto-promote, no pack auto-extract.
 
@@ -17,27 +17,31 @@ MarkiRAT div-grid cells `YEMPlayer.zip` / `Pis2rayVPN.zip` inherit a C2 heading�
 
 ### Fix (`tl-type-resolver-v27`)
 
-In `observableTypeResolver.js`, when `declaredNetwork` is set, a **bare two-label** FILE_EXT ∩ gTLD collision that is **not** defanged and **not** a typed Domain *table* cell falls through to file-extension rules.
+In `observableTypeResolver.js`, when `declaredNetwork` is set, a **bare two-label** FILE_EXT ∩ gTLD collision that is **not** defanged (raw or surrounding) and **not** a typed Domain *table* cell falls through to file-extension rules.
 
 Kept as domain (negative cases):
 
-- Defanged hosts (`evil[.]zip`)
-- Typed Domain table cells (`archive-sync.war`)
+- Defanged hosts (`evil[.]zip`, including raw `evil.zip` with surrounding defang)
+- Typed Domain table cells (`archive-sync.war`, IOC Type=Domain rows)
 - Multi-label hosts (`cdn.files.zip`)
 
-### Tests
+### Tests / evidence
 
-`backend/lib/threatLibrary/filenameZipDomainCollision.test.js` — positive MarkiRAT-shaped cases + negative .zip TLD / table / defang cases. Version pins updated to `tl-type-resolver-v27`; benchmark baseline updated.
+- `filenameZipDomainCollision.test.js` — positive MarkiRAT-shaped cases + negative .zip TLD / table / defang cases
+- Benchmark control `control-filename-zip-gtld-collision` (+ baseline refresh)
+- Version pins → `tl-type-resolver-v27`
 
 ### Impact on frozen captures
 
-Frozen first-pass captures are **unchanged** (no refresh). Re-extraction of MarkiRAT HTML locally after the fix yields `technical_artifact` for both zips and keeps `yemplayer.site` as domain. Production reports will pick this up on **new** imports / authorized refresh only.
+Frozen first-pass captures are **unchanged** (no refresh). Re-extraction of MarkiRAT HTML after the fix yields `technical_artifact` for both zips and keeps `yemplayer.site` as domain. Production reports pick this up on **new** imports / authorized refresh only.
+
+**Projected frozen-scorecard effect (if re-extracted):** −2 verified FPs (`yemplayer.zip`, `pis2rayvpn.zip`) on MarkiRAT; strict aggregate would move from P≈0.933 toward ≈0.942 on the same GT, without changing production identities in the freeze.
 
 ---
 
 ## 2. Evaluation URL equivalence (implemented, scoring-only)
 
-`docs/evaluation/unseen-first-pass-10/_score.mjs` now writes:
+`docs/evaluation/unseen-first-pass-10/_score.mjs` writes:
 
 | File | Mode |
 |---|---|
@@ -64,7 +68,12 @@ See `MODE-A-PENDING-PACK-AUDIT.md`.
 
 **Verdict:** Trend 15/15 candidate discovery with 2/15 membership is **consistent with intended MODE A + empty IOC heading + linked pack pointer** behavior. Quality warnings already surface the gap. KongTuke’s two narrative members are a residual consistency question for a later investigation — not fixed by weakening evidence rules.
 
-**Recommendations:** separate metrics for document membership vs pending pack; UI banner; no auto-extract / auto-promote without a product-policy decision.
+**Recommendations (product-policy pending):**
+
+1. Score separately: `document_indicator_membership` vs `pending_linked_pack_declared` vs `candidate_discovery_of_gt`
+2. First-pass UI banner when authoritative inventory is a linked pack
+3. Keep pack extract analyst-gated; no auto-promote / auto-extract
+4. Follow-up: why KongTuke promoted exactly two peer narrative URLs under MODE A
 
 ---
 
@@ -72,43 +81,43 @@ See `MODE-A-PENDING-PACK-AUDIT.md`.
 
 | Check | Result |
 |---|---|
-| SSH to `192.168.1.190` (`Hostname`, `talonhound`, `ubuntu`, `root`, … + local keys) | **Permission denied** |
-| `http://192.168.1.190/api/system/version` | Reachable but **401 Unauthorized** |
-| MCP live reads | Available; InstallFix still `tl-quality-v16` / mode A / `contract_freshness=current` |
+| SSH to `192.168.1.190` | **Permission denied** |
+| `http://192.168.1.190/api/system/version` | **401 Unauthorized** |
+| MCP live reads | Available; InstallFix still mode A / `contract_freshness=current` |
 
-**Cannot independently claim a host git SHA or deployed image digest in this session.** Workspace change is `tl-type-resolver-v27`; production still runs the frozen capture contract until deploy + re-import/refresh (not performed).
+**Cannot independently claim a host git SHA or deployed image digest.** Workspace tip is `tl-type-resolver-v27`; production still runs the frozen capture contract until deploy + re-import/refresh (not performed).
 
 ---
 
 ## 5. Verification / CI
 
-- Host test run: **blocked** (SSH Permission denied to `192.168.1.190`).  
-- Production `/api/system/version`: **401** — deployed SHA not claimed.  
-- Local reproduction of MarkiRAT extract: zip → artifact, `.site` → domain.  
-- Equivalence scorer: delta as above.  
-- Frozen captures: preserved (no refresh / re-import).  
-- PR #111 opened; GitHub CI is the verification path (host SSH unavailable).
-- CI recovery: `ce445ca` mojibaked CJK/Cyrillic in the resolver (SyntaxError) and later in version-pin rewrites of regression fixtures. `89cdad6` restored resolver UTF-8; `b2ab43b` restored fixtures + refined the dual-use gate so surrounding defang (`evil[.]zip` around raw `evil.zip`) still reads as a domain.
+| Item | Result |
+|---|---|
+| Host SSH tests | Blocked |
+| MarkiRAT local re-extract | zip → artifact; `.site` → domain |
+| Equivalence rescore | +4 TP / −4 FP / −4 FN vs strict |
+| Frozen captures | Preserved |
+| PR #111 CI | **All green** (Backend, Frontend, Compose, Release, Docker smoke, Snyk) |
+| CI recovery notes | First commits mojibaked UTF-8 in resolver/fixtures; restored; dual-use gate refined for surrounding defang; benchmark control + baseline refresh for contract gate |
 
 ---
 
 ## 6. Files touched (this PR)
 
-**Code**
+**Code / tests**
 
-- `backend/lib/threatLibrary/observableTypeResolver.js` (`tl-type-resolver-v27`)
-- `backend/lib/threatLibrary/filenameZipDomainCollision.test.js` (new)
-- Version pin asserts + `benchmark/baseline.json`
+- `observableTypeResolver.js` (`tl-type-resolver-v27`)
+- `filenameZipDomainCollision.test.js`
+- `benchmark/cases/control-filename-zip-gtld-collision.{html,json}`
+- Version pins + `benchmark/baseline.json`
 
 **Eval (scoring / docs only)**
 
-- `docs/evaluation/unseen-first-pass-10/_score.mjs`
-- `docs/evaluation/unseen-first-pass-10/MODE-A-PENDING-PACK-AUDIT.md`
-- `docs/evaluation/unseen-first-pass-10/TARGETED-FIXES-TECHNICAL-REPORT.md`
-- Regenerated `score-summary.json` / `score-summary.equivalence.json` (strict preserved semantics)
+- `docs/evaluation/unseen-first-pass-10/_score.mjs` (+ equivalence summary)
+- `MODE-A-PENDING-PACK-AUDIT.md`, this report, freeze/score artifacts
 
 **Not changed**
 
 - Membership / MODE A / pack extract pipeline  
-- Frozen `first-pass-captures/*` contents from production first-pass  
+- Frozen `first-pass-captures/*`  
 - Production deployment
