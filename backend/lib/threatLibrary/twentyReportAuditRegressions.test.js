@@ -54,7 +54,7 @@ ${rows.map(([v, d]) => `<tr><td>${v}</td><td>${d}</td></tr>`).join('\n')}
 test('versions: tl-candidates-v39, tl-ipv6-tokens-v1, tl-type-resolver-v16', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(IPV6_TOKENS_VERSION, 'tl-ipv6-tokens-v1');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
 });
 
 test('A: IPv6 tokenizer accepts every valid spelling as one address', () => {
@@ -76,7 +76,7 @@ test('A: IPv6 tokenizer accepts every valid spelling as one address', () => {
 
 test('A: IPv6 tokenizer never emits fragments, code, times or MAC addresses', () => {
   for (const text of [
-    'b479:2771:8df4:b5eb:d007:63b0:2838', // 7 groups, no :: â€” invalid as a whole
+    'b479:2771:8df4:b5eb:d007:63b0:2838', // 7 groups, no :: — invalid as a whole
     'at 12:34:56 UTC',
     'mac aa:bb:cc:dd:ee:ff',
     'C++ Bad::Face and std::vector and dead::beef',

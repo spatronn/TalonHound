@@ -1,8 +1,8 @@
 /**
- * Review-queue audit (35800â€“35819) regressions (tl-candidates-v61,
+ * Review-queue audit (35800–35819) regressions (tl-candidates-v61,
  * tl-section-tree-v17).
  *
- * Generic shapes of the confirmed extraction defects, with synthetic values â€”
+ * Generic shapes of the confirmed extraction defects, with synthetic values —
  * no publisher, report or value condition:
  *
  * FN-1 An IOC inventory whose groups the publisher wrote as same-level sibling
@@ -65,7 +65,7 @@ const H6 = hex('f6');
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
 });
 
 // --- FN-1 ---------------------------------------------------------------------

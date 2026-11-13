@@ -1,0 +1,279 @@
+{
+  "id": "unseen-unit42-falcon-c2",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "The XG Files: Falcon C2 Flying Under The (Browser) Radar",
+  "publisher": "Unit 42",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Unit 42|html|ioc_table+narrative+browser_extension",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "ioc_table, narrative, browser_extension",
+    "diversity_axes": [
+      "publisher:Unit 42",
+      "trait:ioc_table",
+      "trait:narrative",
+      "trait:browser_extension"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://unit42.paloaltonetworks.com/falcon-c2-browser-compromise/",
+    "reference": "https://unit42.paloaltonetworks.com/falcon-c2-browser-compromise/",
+    "format": "html",
+    "sha256": "2742d6c934428a79abf41fd9b196daf1a069a8eb9519d560560497c4fa278423",
+    "retained_local_path": "_source_html/unit42-falcon-c2.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 335760
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full retained article and complete IOC appendix. Deduplicated SHA-256 values repeated across the Chrome and Firefox file lists. Skipped the unsupported Chrome extension ID; Additional Resources are references, not IOC packages.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "fonts.tarotfree101.top",
+        "role": "command_and_control",
+        "evidence": "IOC appendix Falcon C2 domains: fonts.tarotfree101.top.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fonts.chrorne.com",
+        "role": "command_and_control",
+        "evidence": "IOC appendix Falcon C2 domains: fonts.chrorne.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "robot.avbliud.com",
+        "role": "command_and_control",
+        "evidence": "IOC appendix Falcon C2 domains: robot.avbliud.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "3e535d63af8a95221fb517fa1b3e4a0029d3463d8b767443abdff385ee8cb6e9",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 3e535d63af8a95221fb517fa1b3e4a0029d3463d8b767443abdff385ee8cb6e9.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "f8b86238e179d88a9979b6f97750a39dda1d07b54d634bc1348fdfb0944a3b92",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: f8b86238e179d88a9979b6f97750a39dda1d07b54d634bc1348fdfb0944a3b92.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "88e8b07bdf294ace0357d35acb7e108c66ba65a2c4ad66351fb8f7806dae0862",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 88e8b07bdf294ace0357d35acb7e108c66ba65a2c4ad66351fb8f7806dae0862.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "065d18fcfeddbd718c054f4b21c3cde5b9291db921d01f343d7ac0d4b41f29ce",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 065d18fcfeddbd718c054f4b21c3cde5b9291db921d01f343d7ac0d4b41f29ce.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "3eab406d841fa22a4b0200c95c1afab068347f835400d5771e8de60aef732016",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 3eab406d841fa22a4b0200c95c1afab068347f835400d5771e8de60aef732016.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "5711586125909863b91c1b5ff7cf70ef5d35249d67b11d7a23dc864405cddfe2",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 5711586125909863b91c1b5ff7cf70ef5d35249d67b11d7a23dc864405cddfe2.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "b6a7be724871ed3e81c986b74d62da8911c82a336c4c1857b35f2446b2d49fda",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: b6a7be724871ed3e81c986b74d62da8911c82a336c4c1857b35f2446b2d49fda.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "2ed834d92bfefc9d07a9f1a48f986974ae2a29669029f8163a1f6e8706388fcd",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 2ed834d92bfefc9d07a9f1a48f986974ae2a29669029f8163a1f6e8706388fcd.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "356b96c2267c5f2d8c07693643626e090b6389318b4ffa74699fa1732da5a00c",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 356b96c2267c5f2d8c07693643626e090b6389318b4ffa74699fa1732da5a00c.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "32af8413cbd38ce8beb257288cb8e6aa2f9b781d56d0f5272bffbcdc22d999f4",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 32af8413cbd38ce8beb257288cb8e6aa2f9b781d56d0f5272bffbcdc22d999f4.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "e2b6b1becdbcc340121e163b5afdfc5437a480ca132248ed5c7c309c45ac3dbb",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: e2b6b1becdbcc340121e163b5afdfc5437a480ca132248ed5c7c309c45ac3dbb.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "265c2b36060e4b21c25aa86a8bb22d1db5f806117b484774c75c65b5b38222e0",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 265c2b36060e4b21c25aa86a8bb22d1db5f806117b484774c75c65b5b38222e0.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "66e9098551a1c0c74077d6cf55570e5d307a4a5ef0b0f2053e139394e61c442d",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 66e9098551a1c0c74077d6cf55570e5d307a4a5ef0b0f2053e139394e61c442d.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "3e923f11db08413fca8a3a69d33d8896cfd56309e5179e8604d7fb7110428da2",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 3e923f11db08413fca8a3a69d33d8896cfd56309e5179e8604d7fb7110428da2.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "2ebe36f1322b77264a33fded81cd4b8817f93362945070bf0bb5845dd27c0575",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 2ebe36f1322b77264a33fded81cd4b8817f93362945070bf0bb5845dd27c0575.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "857429faffe0e0747ce299e86eed063ed781b4e403b917ca7e853e89bedf072c",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 857429faffe0e0747ce299e86eed063ed781b4e403b917ca7e853e89bedf072c.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "b33f2e95943e3ff0a72dea1be9fdea03d986bada4def34f6991b3113ec161ad7",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: b33f2e95943e3ff0a72dea1be9fdea03d986bada4def34f6991b3113ec161ad7.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "898656c33effb51e109c548fc213f157f151a870ea64a4601eda74ae75bd3af6",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 898656c33effb51e109c548fc213f157f151a870ea64a4601eda74ae75bd3af6.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "b3d8ea89b19a87bf2fdd63127086681059f41d67b6e5f8c939f5636a1b2315ce",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: b3d8ea89b19a87bf2fdd63127086681059f41d67b6e5f8c939f5636a1b2315ce.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "24d69139cb2d32598f0f4983876f6320485fac134a66ade59cab76b50b4128f7",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 24d69139cb2d32598f0f4983876f6320485fac134a66ade59cab76b50b4128f7.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "0c39264337a1186b2e765e24073399cbdcba118306614eb411e315887af578bd",
+        "role": "malware_sample",
+        "evidence": "IOC appendix browser-extension/Antino file hash: 0c39264337a1186b2e765e24073399cbdcba118306614eb411e315887af578bd.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsoft-flash.com",
+        "role": "malware_download",
+        "evidence": "IOC appendix payload delivery domain: microsoft-flash.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "wps-cn.com",
+        "role": "malware_download",
+        "evidence": "IOC appendix payload delivery domain: wps-cn.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      }
+    ],
+    "context_only": [],
+    "ambiguous": [],
+    "linked_packages": []
+  }
+}

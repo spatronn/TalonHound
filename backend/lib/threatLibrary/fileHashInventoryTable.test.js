@@ -25,7 +25,7 @@ import { OBSERVABLE_TYPE_RESOLVER_VERSION } from './observableTypeResolver.js';
 assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v18');
 assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
 assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
 
 const LEGIT_EXE = 'd98f568496512e4f98670c61c97cb07a';
 const MAL_DLL = 'aa3086be652c8b20b0b29b2730d57119';
@@ -86,7 +86,7 @@ diagerr.xml, NtfsLog.etl, Ignored.Dat, and VistaCompat.nls.</p>
 <tr><td>DscCoreR.mui</td><td>An encrypted module that contains an embedded Cobalt Strike Beacon.</td></tr>
 <tr><td>SyncRes.dat</td><td>An encrypted DLL that is used to install multiple API hooks.</td></tr>
 </table>
-<h2>SharkLoader DLL â€“ Main implant</h2>
+<h2>SharkLoader DLL – Main implant</h2>
 <p>For detailed analysis we focus on components deployed by a malicious dropper
 named sample.pdf.exe (MD5: ${IOC_DROPPER2}).</p>
 <table>
@@ -126,7 +126,7 @@ test('Filename|MD5 under analysis is a non-explicit file-hash inventory', () => 
   assert.equal(headerIntent('MD5'), 'indicator');
   const block = {
     id: 't1',
-    section_heading: 'SharkLoader DLL â€“ Main implant',
+    section_heading: 'SharkLoader DLL – Main implant',
     zone: 'report_body',
     table: {
       headers: ['Filename', 'MD5'],

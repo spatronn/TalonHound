@@ -12,7 +12,7 @@
  *    row; "Sent as POST body" rows are request content (35527).
  * E. "1.2.3.0 (Railway.com)" and "trusted services like Railway.com" name a
  *    provider, not an Indicator (35526).
- * F. A "Suspicious DLL â€¦ signed by â€¦" row is not a legitimate signed component (35532).
+ * F. A "Suspicious DLL … signed by …" row is not a legitimate signed component (35532).
  * G. A redacted "/XXXXX" path segment makes a URL a template (35529).
  */
 import test from 'node:test';
@@ -56,7 +56,7 @@ test('versions: tl-candidates-v55, tl-section-tree-v15, tl-table-v18, tl-type-re
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
 });
 
 test('A. Acknowledgments under the IOC heading closes scope: citation links are references', () => {
@@ -134,9 +134,9 @@ test('C2. a redirect target inside a URL and a non-multiple hex run are never sp
   assert.deepEqual(url.values.map((v) => v.normalized_value), ['https://t.example/r?u=https://evil.example/x']);
   const odd = parseIndicatorCell(H('d4') + 'abcdef', parseDeclaredType('SHA-256'));
   assert.ok(!odd.values.some((v) => v.normalized_value === H('d4')), 'a 70-char run is not two digests');
-  // 1.2.3.1 + 11.2.3.4 or 1.2.3.11 + 1.2.3.4: two readings â†’ no split.
+  // 1.2.3.1 + 11.2.3.4 or 1.2.3.11 + 1.2.3.4: two readings ? no split.
   const ambiguous = parseIndicatorCell('1.2.3.111.2.3.4', parseDeclaredType('IP address'));
-  assert.ok(!ambiguous.values.some((v) => ['1.2.3.1', '11.2.3.4', '1.2.3.11', '1.2.3.4'].includes(v.normalized_value)), 'more than one reading â†’ no split');
+  assert.ok(!ambiguous.values.some((v) => ['1.2.3.1', '11.2.3.4', '1.2.3.11', '1.2.3.4'].includes(v.normalized_value)), 'more than one reading ? no split');
   const unique = parseIndicatorCell('1.2.3.45.6.7.8', parseDeclaredType('IP address'));
   assert.deepEqual(unique.values.map((v) => v.normalized_value), ['1.2.3.4', '5.6.7.8']);
 });
@@ -159,7 +159,7 @@ test('D. description-labeled digests are row values; POST-body rows are request 
 test('E. hosting-provider annotations and "trusted services like" are providers', () => {
   const cands = run(`<article>${BODY}
 <h2>Indicators of compromise (IOC)</h2>
-<table><tr><td>The threat actorâ€™s authentication infrastructure is built on well-known, trusted services like Railway.com (a popular Platform-as-a-Service (PaaS)), Cloudflare, and DigitalOcean.</td><td>Type</td><td>Description</td></tr>
+<table><tr><td>The threat actor’s authentication infrastructure is built on well-known, trusted services like Railway.com (a popular Platform-as-a-Service (PaaS)), Cloudflare, and DigitalOcean.</td><td>Type</td><td>Description</td></tr>
 <tr><td>162.220.232.0 (Railway.com)</td><td>IP Range</td><td>Threat actor infrastructure observed with sign-in</td></tr>
 <tr><td>89.150.45.0 (HZ Hosting)</td><td>IP Range</td><td>Threat actor infrastructure observed with sign-in</td></tr>
 </table></article>`);
@@ -178,7 +178,7 @@ test('E2. negative: an operator domain beside an IP in prose stays an Indicator'
   assert.equal(member(find(cands, 'domain', 'evil-relay.net')), true);
 });
 
-test('F. a "Suspicious DLL â€¦ signed by â€¦" row is an Indicator; a legitimate signed row is not', () => {
+test('F. a "Suspicious DLL … signed by …" row is an Indicator; a legitimate signed row is not', () => {
   const cands = run(`<article>${BODY}
 <h2>Indicators of compromise</h2>
 <table><tr><th>Indicator</th><th>Type</th><th>Description</th></tr>
@@ -195,7 +195,7 @@ test('G. a redacted /XXXXX path segment is a template, not a URL Indicator', () 
   const cands = run(`<article>${BODY}
 <h2>Indicators of compromise</h2>
 <table><tr><th>Indicator</th><th>Type</th><th>Description</th></tr>
-<tr><td>â€¢ hxxps[://]vscodesettingtask[.]vercel[.]app/api/settings/XXXXX<br>â€¢ hxxps[://]coredeal2[.]vercel[.]app/api/auth</td><td>URL</td><td>Consolidated URLs across delivery and staging.</td></tr>
+<tr><td>• hxxps[://]vscodesettingtask[.]vercel[.]app/api/settings/XXXXX<br>• hxxps[://]coredeal2[.]vercel[.]app/api/auth</td><td>URL</td><td>Consolidated URLs across delivery and staging.</td></tr>
 </table></article>`);
   assert.ok(!member(find(cands, 'url', 'https://vscodesettingtask.vercel.app/api/settings/XXXXX')));
   assert.equal(member(find(cands, 'url', 'https://coredeal2.vercel.app/api/auth')), true);
@@ -207,7 +207,7 @@ test('H. promote gate: actor-controlled / attacker\'s server / served malware / 
 <h2>Attack chain</h2>
 <p>The nested Google URL in the email body points to actor-controlled domain scanuae[.]com. This domain acts as a redirector.</p>
 <p>If clicked, this domain redirected to tax-statments2025[.]com, which in turn served a malware executable named 1099-FR2025.exe.</p>
-<p>The loader is downloaded later, from the attackerâ€™s server at 69[.]67[.]173[.]30/b.</p>
+<p>The loader is downloaded later, from the attacker’s server at 69[.]67[.]173[.]30/b.</p>
 <pre>let ioc_domains = dynamic(["uw05webzoom.us", "uw03webzoom.us"]);</pre>
 <pre>let watched_domains = dynamic(["neutral-list.example"]);</pre>
 <p>Victims also browsed travel-portal[.]example during the week.</p>

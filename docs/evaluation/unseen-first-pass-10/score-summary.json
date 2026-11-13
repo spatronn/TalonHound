@@ -1,0 +1,570 @@
+{
+  "generated_at": "2026-11-13T17:18:22.139Z",
+  "experiment": "unseen-first-pass-10-2026-11-13",
+  "scoring_mode": "strict",
+  "note": "Original scorecard semantics. Preserved separately from equivalence-aware metrics.",
+  "aggregate": {
+    "reports": 10,
+    "tp": 224,
+    "fp": 16,
+    "fn": 17,
+    "class_errors": 6,
+    "ioc_precision": 0.9333333333333333,
+    "discovery_recall": 0.9294605809128631
+  },
+  "reports": [
+    {
+      "id": "msft-gsocket",
+      "status": "scored",
+      "report_id": "fa2bb15a-f54e-4990-b76c-e63a51b05b02",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 8,
+        "gt_context": 3,
+        "gt_ambiguous": 0,
+        "fp_all": 33,
+        "fp_indicators": 11,
+        "fp_context": 22,
+        "tp": 8,
+        "fp": 3,
+        "fn": 0,
+        "class_errors": 3
+      },
+      "precision": 0.7272727272727273,
+      "recall": 1,
+      "fn_sample": [],
+      "fp_sample": [
+        {
+          "key": "domain:gsocket.io",
+          "type": "domain",
+          "value": "gsocket.io",
+          "labeled_context": true,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "domain:cdn.gsocket.io",
+          "type": "domain",
+          "value": "cdn.gsocket.io",
+          "labeled_context": true,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "domain:gsgg.b-cdn.net",
+          "type": "domain",
+          "value": "gsgg.b-cdn.net",
+          "labeled_context": true,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        }
+      ],
+      "class_error_sample": [
+        {
+          "kind": "context_as_indicator",
+          "key": "domain:gsocket.io"
+        },
+        {
+          "kind": "context_as_indicator",
+          "key": "domain:cdn.gsocket.io"
+        },
+        {
+          "kind": "context_as_indicator",
+          "key": "domain:gsgg.b-cdn.net"
+        }
+      ]
+    },
+    {
+      "id": "huntress-sckit",
+      "status": "scored",
+      "report_id": "a1bc50f0-e6ac-4bcc-ba8c-e9ece08c7c5e",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 24,
+        "gt_context": 0,
+        "gt_ambiguous": 0,
+        "fp_all": 42,
+        "fp_indicators": 24,
+        "fp_context": 17,
+        "tp": 24,
+        "fp": 0,
+        "fn": 0,
+        "class_errors": 0
+      },
+      "precision": 1,
+      "recall": 1,
+      "fn_sample": [],
+      "fp_sample": [],
+      "class_error_sample": []
+    },
+    {
+      "id": "rf-markirat",
+      "status": "scored",
+      "report_id": "f4d5d637-bb76-4906-b8a1-ba61110c1afe",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 68,
+        "gt_context": 0,
+        "gt_ambiguous": 0,
+        "fp_all": 86,
+        "fp_indicators": 71,
+        "fp_context": 12,
+        "tp": 68,
+        "fp": 3,
+        "fn": 0,
+        "class_errors": 0
+      },
+      "precision": 0.9577464788732394,
+      "recall": 1,
+      "fn_sample": [],
+      "fp_sample": [
+        {
+          "key": "sha256:3b172281f65ceaee280ae810edb6fd39a1ecd25649f929f246c0405df94f4c89",
+          "type": "sha256",
+          "value": "3b172281f65ceaee280ae810edb6fd39a1ecd25649f929f246c0405df94f4c89",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malware_sample"
+        },
+        {
+          "key": "domain:yemplayer.zip",
+          "type": "domain",
+          "value": "yemplayer.zip",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "command_and_control"
+        },
+        {
+          "key": "domain:pis2rayvpn.zip",
+          "type": "domain",
+          "value": "pis2rayvpn.zip",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "command_and_control"
+        }
+      ],
+      "class_error_sample": []
+    },
+    {
+      "id": "trend-installfix",
+      "status": "scored",
+      "report_id": "2a1a6e35-e808-4b4a-b311-3b1d708b32b4",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 6,
+        "gt_context": 1,
+        "gt_ambiguous": 4,
+        "fp_all": 11,
+        "fp_indicators": 0,
+        "fp_context": 6,
+        "tp": 0,
+        "fp": 0,
+        "fn": 6,
+        "class_errors": 1
+      },
+      "precision": null,
+      "recall": 0,
+      "fn_sample": [
+        {
+          "key": "domain:download-version.1-5-8.com",
+          "type": "domain",
+          "value": "download-version.1-5-8.com",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "url:https://download-version.1-5-8.com/claude.msixbundle",
+          "type": "url",
+          "value": "https://download-version.1-5-8.com/claude.msixbundle",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "domain:oakenfjrod.ru",
+          "type": "domain",
+          "value": "oakenfjrod.ru",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "sha1:811fbf0ff6b6acabe4b545e493ec0dd0178a0302",
+          "type": "sha1",
+          "value": "811fbf0ff6b6acabe4b545e493ec0dd0178a0302",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "sha256:2f04ba77bb841111036b979fc0dab7fcbae99749718ae1dd6fd348d4495b5f74",
+          "type": "sha256",
+          "value": "2f04ba77bb841111036b979fc0dab7fcbae99749718ae1dd6fd348d4495b5f74",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "ip:77.91.97.244",
+          "type": "ip",
+          "value": "77.91.97.244",
+          "seen_as_context": true,
+          "seen_at_all": true
+        }
+      ],
+      "fp_sample": [],
+      "class_error_sample": [
+        {
+          "kind": "indicator_as_context",
+          "key": "ip:77.91.97.244"
+        }
+      ]
+    },
+    {
+      "id": "trend-kongtuke",
+      "status": "scored",
+      "report_id": "15399bb2-86f5-4cab-94dc-af5818db0192",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 8,
+        "gt_context": 2,
+        "gt_ambiguous": 0,
+        "fp_all": 12,
+        "fp_indicators": 2,
+        "fp_context": 1,
+        "tp": 2,
+        "fp": 0,
+        "fn": 6,
+        "class_errors": 0
+      },
+      "precision": 1,
+      "recall": 0.25,
+      "fn_sample": [
+        {
+          "key": "url:http://foodgefy.com/6o0jk.js",
+          "type": "url",
+          "value": "http://foodgefy.com/6o0jk.js",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "ip:162.33.178.171",
+          "type": "ip",
+          "value": "162.33.178.171",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "ip:45.61.138.224",
+          "type": "ip",
+          "value": "45.61.138.224",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "url:http://45.61.138.224/n",
+          "type": "url",
+          "value": "http://45.61.138.224/n",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "ip:158.247.252.178",
+          "type": "ip",
+          "value": "158.247.252.178",
+          "seen_as_context": false,
+          "seen_at_all": true
+        },
+        {
+          "key": "ip:170.168.103.208",
+          "type": "ip",
+          "value": "170.168.103.208",
+          "seen_as_context": false,
+          "seen_at_all": true
+        }
+      ],
+      "fp_sample": [],
+      "class_error_sample": []
+    },
+    {
+      "id": "trend-teampcp",
+      "status": "scored",
+      "report_id": "e79afba9-ccdc-4f7b-a586-f6a52f45cf45",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 1,
+        "gt_context": 1,
+        "gt_ambiguous": 0,
+        "fp_all": 24,
+        "fp_indicators": 0,
+        "fp_context": 22,
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "class_errors": 0
+      },
+      "precision": null,
+      "recall": 0,
+      "fn_sample": [
+        {
+          "key": "url:https://litter.catbox.moe/iqesmbhukgd2c7hq.sh",
+          "type": "url",
+          "value": "https://litter.catbox.moe/iqesmbhukgd2c7hq.sh",
+          "seen_as_context": false,
+          "seen_at_all": true
+        }
+      ],
+      "fp_sample": [],
+      "class_error_sample": []
+    },
+    {
+      "id": "unit42-falcon-c2",
+      "status": "scored",
+      "report_id": "1ac0e043-ddb0-40e0-bf25-53c670863b63",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 26,
+        "gt_context": 0,
+        "gt_ambiguous": 0,
+        "fp_all": 52,
+        "fp_indicators": 26,
+        "fp_context": 25,
+        "tp": 26,
+        "fp": 0,
+        "fn": 0,
+        "class_errors": 0
+      },
+      "precision": 1,
+      "recall": 1,
+      "fn_sample": [],
+      "fp_sample": [],
+      "class_error_sample": []
+    },
+    {
+      "id": "groupib-ghost-stadium",
+      "status": "scored",
+      "report_id": "fd23c69b-8a8a-49a3-843f-5dac538040df",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 55,
+        "gt_context": 3,
+        "gt_ambiguous": 0,
+        "fp_all": 74,
+        "fp_indicators": 61,
+        "fp_context": 13,
+        "tp": 52,
+        "fp": 9,
+        "fn": 3,
+        "class_errors": 2
+      },
+      "precision": 0.8524590163934426,
+      "recall": 0.9454545454545454,
+      "fn_sample": [
+        {
+          "key": "url:https://fifa-tickets.vip/tickets_shop",
+          "type": "url",
+          "value": "https://fifa-tickets.vip/tickets_shop",
+          "seen_as_context": false,
+          "seen_at_all": false
+        },
+        {
+          "key": "url:https://fifa-tickets.vip/authorize.html",
+          "type": "url",
+          "value": "https://fifa-tickets.vip/authorize.html",
+          "seen_as_context": false,
+          "seen_at_all": false
+        },
+        {
+          "key": "url:https://fifa-tickets.vip/pay/fwc20260418a3230f12ac",
+          "type": "url",
+          "value": "https://fifa-tickets.vip/pay/FWC20260418A3230F12AC",
+          "seen_as_context": false,
+          "seen_at_all": false
+        }
+      ],
+      "fp_sample": [
+        {
+          "key": "sha1:3b8bb7631b39f455d31544b55ba97b49ab1888c1",
+          "type": "sha1",
+          "value": "3b8bb7631b39f455d31544b55ba97b49ab1888c1",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malware_sample"
+        },
+        {
+          "key": "sha1:84ecdca915f1af822ccc8a04479f5179104f353c",
+          "type": "sha1",
+          "value": "84ecdca915f1af822ccc8a04479f5179104f353c",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malware_sample"
+        },
+        {
+          "key": "sha1:9bd164dd3f50d196c7dff4f6c1b0f1345ac96d9a",
+          "type": "sha1",
+          "value": "9bd164dd3f50d196c7dff4f6c1b0f1345ac96d9a",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malware_sample"
+        },
+        {
+          "key": "url:fifa-tickets.vip/tickets_shop",
+          "type": "url",
+          "value": "fifa-tickets.vip/tickets_shop",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "url:fifa-tickets.vip/authorize.html",
+          "type": "url",
+          "value": "fifa-tickets.vip/authorize.html",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "url:fifa-tickets.vip/pay/fwc20260418a3230f12ac",
+          "type": "url",
+          "value": "fifa-tickets.vip/pay/FWC20260418A3230F12AC",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "url:www.billplz.com/bills/6e88393d1b82ede9",
+          "type": "url",
+          "value": "www.billplz.com/bills/6e88393d1b82ede9",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "domain:testnet.chainugo.com",
+          "type": "domain",
+          "value": "testnet.chainugo.com",
+          "labeled_context": true,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        },
+        {
+          "key": "domain:billplz.com",
+          "type": "domain",
+          "value": "billplz.com",
+          "labeled_context": true,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        }
+      ],
+      "class_error_sample": [
+        {
+          "kind": "context_as_indicator",
+          "key": "domain:testnet.chainugo.com"
+        },
+        {
+          "kind": "context_as_indicator",
+          "key": "domain:billplz.com"
+        }
+      ]
+    },
+    {
+      "id": "unit42-cairn",
+      "status": "scored",
+      "report_id": "0b4c0605-0ead-41c6-a224-9a55310de742",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 2,
+        "gt_context": 0,
+        "gt_ambiguous": 0,
+        "fp_all": 2,
+        "fp_indicators": 2,
+        "fp_context": 0,
+        "tp": 2,
+        "fp": 0,
+        "fn": 0,
+        "class_errors": 0
+      },
+      "precision": 1,
+      "recall": 1,
+      "fn_sample": [],
+      "fp_sample": [],
+      "class_error_sample": []
+    },
+    {
+      "id": "google-tag-apt42",
+      "status": "scored",
+      "report_id": "03709fc1-fb4d-460b-a18c-ef39f8462f46",
+      "scoring_mode": "strict",
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "counts": {
+        "gt_indicators": 43,
+        "gt_context": 0,
+        "gt_ambiguous": 0,
+        "fp_all": 44,
+        "fp_indicators": 43,
+        "fp_context": 1,
+        "tp": 42,
+        "fp": 1,
+        "fn": 1,
+        "class_errors": 0
+      },
+      "precision": 0.9767441860465116,
+      "recall": 0.9767441860465116,
+      "fn_sample": [
+        {
+          "key": "url:https://visioneditor.loseyourip.com",
+          "type": "url",
+          "value": "https://visioneditor.loseyourip.com",
+          "seen_as_context": false,
+          "seen_at_all": false
+        }
+      ],
+      "fp_sample": [
+        {
+          "key": "url:https://visioneditor.loseyourip.com/",
+          "type": "url",
+          "value": "https://visioneditor.loseyourip.com/",
+          "labeled_context": false,
+          "assessment": "malicious",
+          "role": "malicious_infrastructure"
+        }
+      ],
+      "class_error_sample": []
+    }
+  ]
+}

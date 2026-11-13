@@ -1,10 +1,10 @@
 /**
  * Six-report audit regressions (tl-candidates-v29 / tl-table-v8 /
  * tl-type-resolver-v9 / tl-quality-v6). Generic shapes from the confirmed
- * production defects, with synthetic values â€” no publisher condition:
+ * production defects, with synthetic values — no publisher condition:
  *
  * 1. Mixed indicator cells: a leading file path / file name swallowed the
- *    hash written after it ("C:\â€¦\x.dll SHA256: <h>", "x.dll (SHA-256 <h>)").
+ *    hash written after it ("C:\…\x.dll SHA256: <h>", "x.dll (SHA-256 <h>)").
  * 2. Row-level benign assertion: a row that calls its value a legitimate
  *    component is context, the malicious sibling row stays an Indicator.
  * 3. Certificate attribute columns: a thumbprint column beside a SHA-256
@@ -52,7 +52,7 @@ const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.cod
 test('contracts bumped for the six-report audit fixes', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
 });
 
 // --- 1. Mixed cells -----------------------------------------------------------
@@ -112,7 +112,7 @@ test('mixed cell: a multi-pair cell links each hash to the file identity written
 test('mixed cell: an unquoted path with spaces is not split into a bogus second file; its labelled hash is a value', () => {
   const r = parseIndicatorCell(`${winPath('C:', 'Program Files', 'Vendor', 'app.exe')} SHA256: ${H1}`);
   // tl-table-v12 (24-report audit): one unreadable path fragment no longer
-  // discards the hash the cell labels â€” it is a value of the cell, owned by
+  // discards the hash the cell labels — it is a value of the cell, owned by
   // the leading file identity. Still no fragment artifact.
   assert.equal(r.values.filter((v) => v.is_ioc === false).length, 1, 'no fragment artifact');
   assert.deepEqual(r.values[0].residual_observables, [`sha256:${H1}`]);
@@ -236,7 +236,7 @@ test('prose-led sysctl lines under a C2-named topic are not domains; real C2 hos
 });
 
 test('row lead reader: value-led and label-led rows qualify, prose leads do not', () => {
-  for (const lead of ['', '- ', 'C2: ', 'Domain - ', '1. ', 'â€¢ ', 'Domains: ']) assert.equal(rowLedByValueOrLabel(lead), true, JSON.stringify(lead));
+  for (const lead of ['', '- ', 'C2: ', 'Domain - ', '1. ', '• ', 'Domains: ']) assert.equal(rowLedByValueOrLabel(lead), true, JSON.stringify(lead));
   for (const lead of ['CPU count via ', 'Physical RAM via ', 'the malware reads ']) assert.equal(rowLedByValueOrLabel(lead), false, lead);
 });
 

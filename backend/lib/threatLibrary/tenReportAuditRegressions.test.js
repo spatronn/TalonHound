@@ -1,7 +1,7 @@
 /**
  * Ten-report audit regressions (tl-candidates-v31 / tl-type-resolver-v11 /
  * tl-zones-v14 / tl-section-tree-v4 / tl-quality-v8). Generic shapes of the
- * confirmed production defects, with synthetic values â€” no publisher, report
+ * confirmed production defects, with synthetic values — no publisher, report
  * or value condition:
  *
  * A. Markdown-escaped bracket defang (`host\[.\]tld`) refangs like `[.]`.
@@ -59,7 +59,7 @@ const find = (x, type, value) => x.candidates.find((c) => c.candidate_type === t
 
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(THREAT_LIBRARY_DOCUMENT_ZONES_VERSION, 'tl-zones-v18');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v16');

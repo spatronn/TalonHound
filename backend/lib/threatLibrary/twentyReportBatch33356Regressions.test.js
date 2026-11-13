@@ -1,5 +1,5 @@
 /**
- * Twenty-report batch audit regressions, reports 33356â€“33375
+ * Twenty-report batch audit regressions, reports 33356–33375
  * (tl-candidates-v42 / tl-type-resolver-v19). Generic shapes of the confirmed
  * defects of the 2026-10-27 audit, each with its negative control:
  *
@@ -7,7 +7,7 @@
  *     Indicator, not the bare network address; a plain IPv6 address stays an
  *     address.
  * D2. A community / open-source resource the publisher recommends to defenders
- *     ("Community-driven resources like lolrmm.io help â€¦") is a reference, not
+ *     ("Community-driven resources like lolrmm.io help …") is a reference, not
  *     an Indicator, even in MODE B; an operational host in the same report
  *     stays an Indicator.
  * D3. A defanged `host:port` followed by more values in the same cell
@@ -54,7 +54,7 @@ const member = (out, value) => {
 
 test('versions: tl-candidates-v42, tl-type-resolver-v19', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
 });
 
 // --- D1. IPv6 CIDR ----------------------------------------------------------
@@ -102,7 +102,7 @@ test('D2 control: abused infrastructure named in prose reaches review as an oper
 
 // --- D3. host:port followed by another value -------------------------------
 
-test('D3: defanged onion:port followed by IP:port values in one cell â†’ domain Indicator (33370)', () => {
+test('D3: defanged onion:port followed by IP:port values in one cell ? domain Indicator (33370)', () => {
   const onion = '3zciedc3enu4muwc5adxciyk6u3juhvhvbv6bfrk2arawlvb7k7ovxad.onion';
   const out = run(`<h2>Indicators of Compromise</h2>
 <table><tr><th>Description</th><th>Value</th></tr>
@@ -172,9 +172,9 @@ test('D5 control: an "MD5" column with sample descriptions keeps file hashes', (
   assert.ok(member(out, '2a0834560ed3770fc33d7a42f8229722'));
 });
 
-test('D5: classifyHexDigest â€” column header governs; file-hash header does not demote', () => {
+test('D5: classifyHexDigest — column header governs; file-hash header does not demote', () => {
   const v = 'd42595b695fc008ef2c56aabd8efd68e';
-  const line = `Imphash | Cluster | Role Â¶ ${v} | A - x64 EXE (26 samples) | Go loader EXE`;
+  const line = `Imphash | Cluster | Role ¶ ${v} | A - x64 EXE (26 samples) | Go loader EXE`;
   assert.equal(classifyHexDigest(line, v, { columnHeader: 'Imphash' }).kind, DIGEST_KINDS.SIMILARITY);
   assert.equal(classifyHexDigest(line, v, { columnHeader: 'MD5' }).kind, DIGEST_KINDS.FILE);
   assert.equal(classifyHexDigest(`SHA1 | ${v}`, v, { columnHeader: 'Certificate thumbprint' }).kind, DIGEST_KINDS.CERTIFICATE);

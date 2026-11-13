@@ -1,0 +1,542 @@
+{
+  "id": "unseen-groupib-ghost-stadium",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "The GHOST STADIUM Score: Billions At Stake At The Worlds Largest Football Tournament",
+  "publisher": "Group-IB",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Group-IB|html|ioc_table+narrative+fraud_domains",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "ioc_table, narrative, fraud_domains",
+    "diversity_axes": [
+      "publisher:Group-IB",
+      "trait:ioc_table",
+      "trait:narrative",
+      "trait:fraud_domains"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://www.group-ib.com/blog/ghost-stadium-football-fraud/",
+    "reference": "https://www.group-ib.com/blog/ghost-stadium-football-fraud/",
+    "format": "html",
+    "sha256": "9d3da977ed59a06130eb440a80530dcf7e94c13d98749f45e2bf44f53f482f67",
+    "retained_local_path": "_source_html/groupib-ghost-stadium.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 192393
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full visible IOC appendix (IOC-1 through IOC-3), including all 32 core domains rendered in the retained HTML, six additional malicious domains, 14 hosting IPs, three malicious URLs, and three abused legitimate-service identities. The heading calls the core list a representative sample of 79 and states the blog is partial; the customer-only full report was not available in the retained source, so its linked-package identities remain unverified. Unsupported IDs, payment accounts, SSL fingerprints, and pattern placeholders were skipped.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "fifa.bio",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.bio.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.center",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.center.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.gold",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.gold.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.red",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.red.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.sale",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.sale.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.shopping",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.shopping.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.show",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.show.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.ski",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.ski.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.black",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.black.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.cafe",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.cafe.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.fund",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.fund.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.market",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.market.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.tax",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.tax.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.cash",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.cash.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.city",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.city.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa.house",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa.house.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.co",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.co.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.com",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.shop",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.shop.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.site",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.store",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.website",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.xyz",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.xyz.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.vip",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.vip.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-com.top",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-com.top.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www-fifa.com",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: www-fifa.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www-fifa.co",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: www-fifa.co.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www-fifa.me",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: www-fifa.me.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www-fifaworldcup.com",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: www-fifaworldcup.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "wc26-fifa.com",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: wc26-fifa.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifa-26-worldcup.com",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifa-26-worldcup.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "fifaweb.com",
+        "role": "phishing",
+        "evidence": "IOC-1 core fraud domain: fifaweb.com.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.fifa.show",
+        "role": "phishing",
+        "evidence": "IOC-1/IOC-2 backend or redirector domain: www.fifa.show.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "mm-fifa.top",
+        "role": "phishing",
+        "evidence": "IOC-1/IOC-2 backend or redirector domain: mm-fifa.top.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "football-ticket.top",
+        "role": "phishing",
+        "evidence": "IOC-1/IOC-2 backend or redirector domain: football-ticket.top.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "football-ticket.shop",
+        "role": "phishing",
+        "evidence": "IOC-1/IOC-2 backend or redirector domain: football-ticket.shop.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "football-game.shop",
+        "role": "phishing",
+        "evidence": "IOC-1/IOC-2 backend or redirector domain: football-game.shop.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "football-tickets.top",
+        "role": "phishing",
+        "evidence": "IOC-1/IOC-2 backend or redirector domain: football-tickets.top.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "148.178.18.23",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 148.178.18.23.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "148.178.18.60",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 148.178.18.60.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "154.86.0.33",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 154.86.0.33.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "207.56.1.93",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 207.56.1.93.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "66.112.212.25",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 66.112.212.25.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "148.178.16.48",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 148.178.16.48.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "148.178.16.5",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 148.178.16.5.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "104.225.235.49",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 104.225.235.49.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "89.208.250.38",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 89.208.250.38.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "65.49.223.138",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 65.49.223.138.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "148.178.22.16",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 148.178.22.16.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "85.121.242.41",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 85.121.242.41.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "216.189.149.193",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 216.189.149.193.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "137.220.224.67",
+        "role": "staging",
+        "evidence": "IOC-1 hosting IP: 137.220.224.67.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "https://fifa-tickets.vip/tickets_shop",
+        "role": "phishing",
+        "evidence": "IOC-3 entry/capture/payment URL: https://fifa-tickets.vip/tickets_shop.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "https://fifa-tickets.vip/authorize.html",
+        "role": "phishing",
+        "evidence": "IOC-3 entry/capture/payment URL: https://fifa-tickets.vip/authorize.html.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "https://fifa-tickets.vip/pay/FWC20260418A3230F12AC",
+        "role": "phishing",
+        "evidence": "IOC-3 entry/capture/payment URL: https://fifa-tickets.vip/pay/FWC20260418A3230F12AC.",
+        "assertion": "explicit",
+        "confidence": "high"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "testnet.chainugo.com",
+        "role": "legitimate_service",
+        "evidence": "IOC-1 crypto gateway: testnet.chainugo.com.",
+        "assertion": "explicit",
+        "confidence": "high",
+        "notes": "Third-party gateway; attacker ownership is not asserted."
+      },
+      {
+        "type": "domain",
+        "value": "billplz.com",
+        "role": "legitimate_service",
+        "evidence": "IOC-3 payment gateway abused: billplz.com.",
+        "assertion": "context",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "https://www.billplz.com/bills/6e88393d1b82ede9",
+        "role": "legitimate_service",
+        "evidence": "IOC-3 example bill: https://www.billplz.com/bills/6e88393d1b82ede9.",
+        "assertion": "context",
+        "confidence": "high"
+      }
+    ],
+    "ambiguous": [],
+    "linked_packages": [
+      {
+        "url": "https://fm.group-ib.com/fraud-intell/reports?customerID=150001&schemeID=a029a25e-1c47-4d75-a13a-fdeb8d39abb5e",
+        "expected_identities": []
+      }
+    ]
+  }
+}

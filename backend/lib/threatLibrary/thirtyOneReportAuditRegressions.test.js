@@ -2,7 +2,7 @@
  * 31-report audit regressions (tl-candidates-v34 / threat_library_html_v8 /
  * tl-type-resolver-v13 / tl-section-tree-v6 / tl-quality-v9 /
  * tl-evidence-integrity-v2 / tl-ioc-source-scope-v1). Generic shapes of the
- * confirmed production defects, with synthetic values â€” no publisher, report
+ * confirmed production defects, with synthetic values — no publisher, report
  * or value condition:
  *
  * RC-1  a table behind inline wrappers inside <p> stays a table.
@@ -80,7 +80,7 @@ test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(HTML_BLOCKS_VERSION, 'threat_library_html_v11');
   assert.equal(THREAT_LIBRARY_HTML_EXTRACTOR_VERSION, 'threat_library_html_v11');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v16');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');

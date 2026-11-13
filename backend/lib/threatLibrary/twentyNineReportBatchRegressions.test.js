@@ -1,5 +1,5 @@
 /**
- * Twenty-nine-report batch audit regressions (35575â€“35605): tl-candidates-v54,
+ * Twenty-nine-report batch audit regressions (35575–35605): tl-candidates-v54,
  * tl-table-v17, tl-type-resolver-v22, tl-ioc-source-scope-v4. Shapes of the
  * confirmed production defects with the publishers' own row wording.
  *
@@ -11,7 +11,7 @@
  *    providers, even under a C&C heading (35597).
  * D. "Certificate CN only, placeholder name. Do not block as a domain" is not
  *    an Indicator; "check before blocking" still is (35602).
- * E. "AS207043 (dedik[.]io) | ASN | Hosting â€¦" names the ASN operator (35603).
+ * E. "AS207043 (dedik[.]io) | ASN | Hosting …" names the ASN operator (35603).
  * F. "abused legitimate infrastructure, not itself malicious" / "not
  *    operator-specific" rows are context; a "Handle | Repository | Role"
  *    attribution table under the IOC heading is provenance (35605).
@@ -63,7 +63,7 @@ const SHA_ABUSED = 'd71a119b4950ee88dd36205176d989a64df5248ac268591d4bbb78621a73
 test('versions: tl-candidates-v54, tl-table-v17, tl-type-resolver-v22, tl-ioc-source-scope-v4', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v8');
 });
 
@@ -204,6 +204,6 @@ test('H. month folder of slug-named inventories: only this article\'s files are 
   // Undecided: a campaign folder whose files carry no slug, or a single file.
   assert.equal(reportSlugForeignFiles(['f/README.md', 'f/samples.sha256', 'f/domains.txt'], report), null);
   assert.equal(reportSlugForeignFiles(['2026/04/powmix-botnet-targets-czech-workforce.txt'], 'https://blog.talosintelligence.com/powmix-botnet-targets-czech-workforce/'), null);
-  // Every file named after this article â†’ nothing deselected.
+  // Every file named after this article ? nothing deselected.
   assert.equal(reportSlugForeignFiles(['2026/01/uat-8837.json', '2026/01/uat-8837.txt'], report), null);
 });

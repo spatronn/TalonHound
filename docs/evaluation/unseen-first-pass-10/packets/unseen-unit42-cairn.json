@@ -1,0 +1,87 @@
+{
+  "id": "unseen-unit42-cairn",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "Attackers Use Autonomous AI to Target Semiconductor, Defense and Civil Society Sectors",
+  "publisher": "Unit 42",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Unit 42|html|ioc_table+narrative+sparse_iocs",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "ioc_table, narrative, sparse_iocs",
+    "diversity_axes": [
+      "publisher:Unit 42",
+      "trait:ioc_table",
+      "trait:narrative",
+      "trait:sparse_iocs"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://unit42.paloaltonetworks.com/cairn-framework-ai-autonomous-attacks/",
+    "reference": "https://unit42.paloaltonetworks.com/cairn-framework-ai-autonomous-attacks/",
+    "format": "html",
+    "sha256": "3503723ac62b2afa357b2eea67f787a8859af268628a70c8d013cedbf4bc166c",
+    "retained_local_path": "_source_html/unit42-cairn.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 256419
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full retained article and its complete two-row Indicators of Compromise list. Additional Resources links are project/reference links, not IOC packages.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "ip",
+        "value": "154.44.31.4",
+        "role": "staging",
+        "evidence": "Indicators of Compromise list: 154.44.31[.]4 - Cairn hosting server.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "82.29.129.54",
+        "role": "staging",
+        "evidence": "Indicators of Compromise list: 82.29.129[.]54 - Staging server and attack egress.",
+        "assertion": "explicit",
+        "confidence": "high"
+      }
+    ],
+    "context_only": [],
+    "ambiguous": [],
+    "linked_packages": []
+  }
+}

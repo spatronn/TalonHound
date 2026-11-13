@@ -1,0 +1,87 @@
+{
+  "experiment": "unseen-first-pass-10-2026-11-13",
+  "imported_at_utc": "2026-11-12T22:26:29.000Z",
+  "contract_fingerprint_at_freeze": "ee233e2fdf4e69bee40f1de64f56b091",
+  "notes": [
+    "One production import per URL via threat_library_import_url",
+    "No review / create_iocs / finalize before first-pass capture",
+    "Sophos ScreenConnect replaced by Google TAG APT42 after Sophos HTML fetch timeout",
+    "First-pass captures complete for all 10; scored via _score.mjs; report in FIRST-PASS-QUALITY-REPORT.md",
+    "No review/create_iocs/finalize/refresh performed"
+  ],
+  "imports": [
+    {
+      "id": "msft-gsocket",
+      "report_id": "fa2bb15a-f54e-4990-b76c-e63a51b05b02",
+      "job_id": "2b3873dc-f1a2-4945-baca-c475b730f587",
+      "url": "https://www.microsoft.com/en-us/security/blog/2026/11/11/global-socket-how-threat-actors-weaponizing-gsocket-stealthy-c2/"
+    },
+    {
+      "id": "huntress-sckit",
+      "report_id": "a1bc50f0-e6ac-4bcc-ba8c-e9ece08c7c5e",
+      "job_id": "475f949a-579b-405c-a68e-ebc9ce3a3fc8",
+      "url": "https://www.huntress.com/blog/sckit-worm-rogue-screenconnect"
+    },
+    {
+      "id": "rf-markirat",
+      "report_id": "f4d5d637-bb76-4906-b8a1-ba61110c1afe",
+      "job_id": "62c59a2f-0e30-40d8-8e6d-cb46c11101ee",
+      "url": "https://www.recordedfuture.com/research/nexus-tag182-disseminates-markirat"
+    },
+    {
+      "id": "trend-installfix",
+      "report_id": "2a1a6e35-e808-4b4a-b311-3b1d708b32b4",
+      "job_id": "2cecde04-69c4-42b2-9095-0670c83684ce",
+      "url": "https://www.trendmicro.com/en_us/research/26/e/installfix-and-claude-code.html"
+    },
+    {
+      "id": "trend-kongtuke",
+      "report_id": "15399bb2-86f5-4cab-94dc-af5818db0192",
+      "job_id": "edc49418-e4c0-4f6d-9f6c-f9dfe4be2e37",
+      "url": "https://www.trendmicro.com/en_us/research/26/c/kongtuke-clickfix-abuse-of-compromised-wordpress-sites.html"
+    },
+    {
+      "id": "trend-teampcp",
+      "report_id": "e79afba9-ccdc-4f7b-a586-f6a52f45cf45",
+      "job_id": "73ba5be8-a342-4d70-8b55-f0ecf8f6ccaf",
+      "url": "https://www.trendmicro.com/en_us/research/26/e/analyzing-teampcp-supply-chain-attacks.html"
+    },
+    {
+      "id": "unit42-falcon-c2",
+      "report_id": "1ac0e043-ddb0-40e0-bf25-53c670863b63",
+      "job_id": "9885ae75-4faf-44aa-84ea-c92904658161",
+      "url": "https://unit42.paloaltonetworks.com/falcon-c2-browser-compromise/"
+    },
+    {
+      "id": "groupib-ghost-stadium",
+      "report_id": "fd23c69b-8a8a-49a3-843f-5dac538040df",
+      "job_id": "27a1eb14-d571-4d4c-9552-d1f4d2980993",
+      "url": "https://www.group-ib.com/blog/ghost-stadium-football-fraud/"
+    },
+    {
+      "id": "unit42-cairn",
+      "report_id": "0b4c0605-0ead-41c6-a224-9a55310de742",
+      "job_id": "5b1110ab-f46f-44c8-8cf1-5affc4a2c5d6",
+      "url": "https://unit42.paloaltonetworks.com/cairn-framework-ai-autonomous-attacks/"
+    },
+    {
+      "id": "google-tag-apt42",
+      "report_id": "03709fc1-fb4d-460b-a18c-ef39f8462f46",
+      "job_id": "1ad74d8e-80d9-42e2-bc9e-4a21665b5d6e",
+      "url": "https://blog.google/threat-analysis-group/iranian-backed-group-steps-up-phishing-campaigns-against-israel-us/"
+    }
+  ],
+  "first_pass_capture_complete_at_utc": "2026-11-12T23:35:23.683Z",
+  "scoring": {
+    "aggregate": {
+      "reports": 10,
+      "tp": 224,
+      "fp": 16,
+      "fn": 17,
+      "class_errors": 6,
+      "ioc_precision": 0.9333333333333333,
+      "discovery_recall": 0.9294605809128631
+    },
+    "scored_reports": 10
+  }
+}

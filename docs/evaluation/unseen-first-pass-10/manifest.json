@@ -1,0 +1,155 @@
+{
+  "experiment": "unseen-first-pass-10-2026-11-13",
+  "sealed_eligible": false,
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "drawn_at": "2026-11-13T00:00:00.000Z",
+  "selection_rules": [
+    "threat_library_check_report_urls exists=false",
+    "not in first-measured-batch sealed 40",
+    "not used as golden/fixture source URL in backend/lib/threatLibrary",
+    "diverse publishers; prefer IOC tables / narrative / linked packs / mixed infra"
+  ],
+  "reports": [
+    {
+      "id": "msft-gsocket",
+      "packet": "packets/unseen-msft-gsocket.json",
+      "publisher": "Microsoft",
+      "title": "The global socket: how threat actors are weaponizing GSocket for stealthy C2",
+      "url": "https://www.microsoft.com/en-us/security/blog/2026/11/11/global-socket-how-threat-actors-weaponizing-gsocket-stealthy-c2/",
+      "sha256": "2728f7904d960d8a13913c9d41ac013163c4be09fb4aa119732f69e88a1340fa",
+      "bytes": 324257,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "mixed_legit_abuse"
+      ]
+    },
+    {
+      "id": "huntress-sckit",
+      "packet": "packets/unseen-huntress-sckit.json",
+      "publisher": "Huntress",
+      "title": "SCKit Worm Installs Rogue ScreenConnect Clients and Session Cookie Relays",
+      "url": "https://www.huntress.com/blog/sckit-worm-rogue-screenconnect",
+      "sha256": "29e12cd69b2448ab87f15429c6e08fd316024318ea9f573b7650b4e30d8912cc",
+      "bytes": 931277,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "mixed_legit_abuse"
+      ]
+    },
+    {
+      "id": "rf-markirat",
+      "packet": "packets/unseen-rf-markirat.json",
+      "publisher": "Recorded Future",
+      "title": "Iran-Nexus TAG-182 Disseminates MarkiRAT Surveillance Tool",
+      "url": "https://www.recordedfuture.com/research/nexus-tag182-disseminates-markirat",
+      "sha256": "108a8ede48dec8e10a1cfefaadb738843a2f5d4e755d1ba0586b5e55bd76f512",
+      "bytes": 36702,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "phishing"
+      ]
+    },
+    {
+      "id": "trend-installfix",
+      "packet": "packets/unseen-trend-installfix.json",
+      "publisher": "Trend Micro",
+      "title": "InstallFix and Claude Code: How Fake Install Pages Lead to Real Compromise",
+      "url": "https://www.trendmicro.com/en_us/research/26/e/installfix-and-claude-code.html",
+      "sha256": "bb68b3eb27eb95cc2f9a56600fc733f818dd04a2f483c93351e2876fcb6d01bf",
+      "bytes": 125533,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "mixed_legit_abuse"
+      ]
+    },
+    {
+      "id": "trend-kongtuke",
+      "packet": "packets/unseen-trend-kongtuke.json",
+      "publisher": "Trend Micro",
+      "title": "KongTuke ClickFix Abuse of Compromised WordPress Sites",
+      "url": "https://www.trendmicro.com/en_us/research/26/c/kongtuke-clickfix-abuse-of-compromised-wordpress-sites.html",
+      "sha256": "0c74cf7d66445e22d9d7d2309b0914de296d0502416170bc843473492219f4c5",
+      "bytes": 110202,
+      "traits": [
+        "narrative",
+        "compromised_sites",
+        "mixed_benign"
+      ]
+    },
+    {
+      "id": "trend-teampcp",
+      "packet": "packets/unseen-trend-teampcp.json",
+      "publisher": "Trend Micro",
+      "title": "Analyzing TeamPCP Supply Chain Attacks",
+      "url": "https://www.trendmicro.com/en_us/research/26/e/analyzing-teampcp-supply-chain-attacks.html",
+      "sha256": "590a3cd15a3ad8ebd661278b159506b74c737e390a9978bc7409afde05d0b8d8",
+      "bytes": 131211,
+      "traits": [
+        "narrative",
+        "linked_packages",
+        "supply_chain"
+      ]
+    },
+    {
+      "id": "unit42-falcon-c2",
+      "packet": "packets/unseen-unit42-falcon-c2.json",
+      "publisher": "Unit 42",
+      "title": "The XG Files: Falcon C2 Flying Under The (Browser) Radar",
+      "url": "https://unit42.paloaltonetworks.com/falcon-c2-browser-compromise/",
+      "sha256": "2742d6c934428a79abf41fd9b196daf1a069a8eb9519d560560497c4fa278423",
+      "bytes": 335760,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "browser_extension"
+      ]
+    },
+    {
+      "id": "groupib-ghost-stadium",
+      "packet": "packets/unseen-groupib-ghost-stadium.json",
+      "publisher": "Group-IB",
+      "title": "The GHOST STADIUM Score: Billions At Stake At The Worlds Largest Football Tournament",
+      "url": "https://www.group-ib.com/blog/ghost-stadium-football-fraud/",
+      "sha256": "9d3da977ed59a06130eb440a80530dcf7e94c13d98749f45e2bf44f53f482f67",
+      "bytes": 192393,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "fraud_domains"
+      ]
+    },
+    {
+      "id": "unit42-cairn",
+      "packet": "packets/unseen-unit42-cairn.json",
+      "publisher": "Unit 42",
+      "title": "Attackers Use Autonomous AI to Target Semiconductor, Defense and Civil Society Sectors",
+      "url": "https://unit42.paloaltonetworks.com/cairn-framework-ai-autonomous-attacks/",
+      "sha256": "3503723ac62b2afa357b2eea67f787a8859af268628a70c8d013cedbf4bc166c",
+      "bytes": 256419,
+      "traits": [
+        "ioc_table",
+        "narrative",
+        "sparse_iocs"
+      ]
+    },
+    {
+      "id": "google-tag-apt42",
+      "packet": "packets/unseen-google-tag-apt42.json",
+      "publisher": "Google TAG",
+      "title": "Iranian backed group steps up phishing campaigns against Israel, U.S.",
+      "url": "https://blog.google/threat-analysis-group/iranian-backed-group-steps-up-phishing-campaigns-against-israel-us/",
+      "sha256": "354e08cd60da4d3fba1a7d942ba90ac1f5cd4f48585e04dd5ccaf4e695c82be3",
+      "bytes": 370392,
+      "traits": [
+        "ioc_list",
+        "narrative",
+        "phishing",
+        "abused_cloud"
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
  * Nine-report audit regressions (tl-candidates-v30 / tl-type-resolver-v10 /
  * tl-section-tree-v3 / tl-scope-engine-section-tree-v2 / tl-quality-v7 /
  * tl-evidence-integrity-v1). Generic shapes of the confirmed production
- * defects, with synthetic values â€” no publisher, report or value condition:
+ * defects, with synthetic values — no publisher, report or value condition:
  *
  * A. Model output never silently replaces publisher evidence; unsupported
  *    model escalations are not applied; publisher stance beats model labels.
@@ -61,7 +61,7 @@ const codes = (x) => [...new Set(x.diagnostics.quality.warnings.map((w) => w.cod
 
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
 });
@@ -164,7 +164,7 @@ test('D: "not inherently malicious" in an IOC row is a benign stance; a maliciou
   assert.equal(find(x, 'api.messenger-platform-example.org').policy_decision, 'context_only_benign_component');
 });
 
-test('D: stance helpers â€” hedges, contrast, captions, service nouns', () => {
+test('D: stance helpers — hedges, contrast, captions, service nouns', () => {
   assert.equal(textDescribesValueAsBenign('X | api.example-msg.org | (This domain is not inherently malicious.)', ['api.example-msg.org']), true);
   assert.equal(textDescribesValueAsBenign('The attackers abused the legitimate service api.example-msg.org to host payloads.', ['api.example-msg.org']), false);
   assert.equal(textDescribesValueAsBenign('Samples hardcode eth.rpc-example.com as an additional endpoint alongside the five legitimate providers.', ['eth.rpc-example.com']), false);
@@ -285,9 +285,9 @@ const DOC = {
 };
 const CAND = { candidate_type: 'domain', normalized_value: 'beacon-relay-example.org', original_value: 'beacon-relay-example[.]org' };
 
-test('A: grounding â€” verbatim quote, paraphrase, fabricated citation, uncited reading', () => {
+test('A: grounding — verbatim quote, paraphrase, fabricated citation, uncited reading', () => {
   const blocks = indexDocumentBlocks(DOC);
-  assert.equal(normalizeEvidenceText("â€˜x[.]comâ€™ â€” hxxp"), 'x.com - http');
+  assert.equal(normalizeEvidenceText("‘x[.]com’ — hxxp"), 'x.com - http');
   const verbatim = groundAiCandidateUpdate(CAND, { evidence_text: 'configured with subdomains of beacon-relay-example[.]org as a C&C' }, blocks);
   assert.equal(verbatim.quote, 'grounded');
   assert.equal(verbatim.supported, true);

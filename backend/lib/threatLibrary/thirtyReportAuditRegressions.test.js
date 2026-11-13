@@ -4,7 +4,7 @@
  * tl-quality-v10 / tl-ioc-source-discovery-v3).
  *
  * Generic shapes of the confirmed production defects from the 2026-10-24
- * 30-report publisher ground-truth audit, with synthetic values â€” no
+ * 30-report publisher ground-truth audit, with synthetic values — no
  * publisher, report or value condition:
  *
  * RC-1  Actor-attributed hash inventory captions open MODE A; ungrounded
@@ -82,7 +82,7 @@ const codes = (x) => [...new Set((x.diagnostics?.quality?.warnings || []).map((w
 
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(SECTION_TREE_SCOPE_ENGINE_VERSION, 'tl-scope-engine-section-tree-v3');
   assert.equal(EVIDENCE_INTEGRITY_VERSION, 'tl-evidence-integrity-v3');
@@ -286,13 +286,13 @@ test('RC-5. public-key and banner digests are not file-hash Indicators', () => {
 // --- RC-6: compound cells / description context -----------------------------
 
 test('RC-6. command-line cell IP and role-labelled description domain become Indicators', () => {
-  // Use a delegated public suffix (.org): a parenthetical role "(C2 â€¦)" after a
+  // Use a delegated public suffix (.org): a parenthetical role "(C2 …)" after a
   // weak/.example token is still read as a code_call by the type resolver, but
   // real publisher C2 domains keep the host reading (same shape as the audit).
   const x = run(`<h2>Indicators of Compromise</h2>
 <table><tr><th>Indicator</th><th>Description</th></tr>
 <tr><td>C:\\Users\\Public\\conhost.exe client 203.0.113.50:443 R:203.0.113.50:43657:socks</td><td>Chisel client to tunnel traffic</td></tr>
-<tr><td>203.0.113.60</td><td>Nov 2023 â€” SystemBC Backdoor C2; www.recruitment-interview.org (C2 SystemBC)</td></tr>
+<tr><td>203.0.113.60</td><td>Nov 2023 — SystemBC Backdoor C2; www.recruitment-interview.org (C2 SystemBC)</td></tr>
 </table>`);
   assert.ok(members(x).includes('ip:203.0.113.50') || members(x).some((m) => m.includes('203.0.113.50')), members(x).join(','));
   assert.ok(
@@ -342,7 +342,7 @@ test('email local-part is never promoted as a domain Indicator', () => {
 });
 
 test('hunting-query regex fragment currentversion.run is not a domain', () => {
-  // Alternation branch with â‰¥2 regex syntax tokens (\b / \s) â€” the v15 guard.
+  // Alternation branch with =2 regex syntax tokens (\b / \s) — the v15 guard.
   const r = resolveDottedToken('currentversion.run', {
     surroundingText: 'Suggested hunting query: /\\bcurrentversion.run\\b|\\s+RunOnce/i across endpoint telemetry.'
   });

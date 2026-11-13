@@ -1,24 +1,24 @@
 /**
- * 70-report audit (35700â€“35769) regressions (tl-candidates-v55 /
+ * 70-report audit (35700–35769) regressions (tl-candidates-v55 /
  * tl-table-v18 / tl-type-resolver-v23 / tl-section-tree-v15).
  *
- * Generic shapes of the confirmed extraction defects, with synthetic values â€”
+ * Generic shapes of the confirmed extraction defects, with synthetic values —
  * no publisher, report or value condition:
  *
  * FP-1 A dotted quad glued to a User-Agent product token ("Chrome/149.0.0.1")
  *      is a browser version, not an address.
- * FP-2 A search-query field before a grouped condition ("host.services: (â€¦
- *      AND â€¦)") is a field name, not a host under the .services TLD.
+ * FP-2 A search-query field before a grouped condition ("host.services: (…
+ *      AND …)") is a field name, not a host under the .services TLD.
  * FP-3 A hex run that is the generated suffix of a word identifier
  *      ("anonymous-<32 hex>" account names) is not an MD5.
  * FP-4 A masked IPv4 address ("1.226.82.xxx") is never a domain under .xxx.
  * FP-5 A 64-hex value under an "MD5" column header is one SHA-256, never two
  *      glued MD5s.
- * FN-1 WordPress typography ("8Ã—255[.]com") keeps the hostname "8x255.com".
+ * FN-1 WordPress typography ("8×255[.]com") keeps the hostname "8x255.com".
  * FN-2 "MD5 :<hex>" (spaced label glued to the value) is that digest.
  * FN-3 A same-level "<Family> infrastructure" sibling of the open IOC heading
  *      over an Indicator | Description table continues the inventory.
- * FN-4 "Suspected source infrastructure" / "â€¦ source IPs" headings title the
+ * FN-4 "Suspected source infrastructure" / "… source IPs" headings title the
  *      publisher's address inventory (Source address | Handling tables).
  */
 import test from 'node:test';
@@ -66,7 +66,7 @@ const has = (x, type, value) => x.candidates.some((c) => c.candidate_type === ty
 test('contract versions', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
 });
 
@@ -168,11 +168,11 @@ test('FP-5 / FN-2. IOC table rows keep the publisher digests', () => {
 
 // --- FN-1: WordPress multiplication sign -------------------------------------------
 
-test('FN-1. "8Ã—255[.]com" is the hostname 8x255.com; prose dimensions are untouched', () => {
-  assert.equal(refangObservable('8Ã—255[.]com'), '8x255.com');
-  assert.equal(refangTextForExtraction('a 1920Ã—1080 screenshot'), 'a 1920Ã—1080 screenshot');
+test('FN-1. "8×255[.]com" is the hostname 8x255.com; prose dimensions are untouched', () => {
+  assert.equal(refangObservable('8×255[.]com'), '8x255.com');
+  assert.equal(refangTextForExtraction('a 1920×1080 screenshot'), 'a 1920×1080 screenshot');
   const x = run(`<h2>Indicators</h2>
-<table><tr><th>Domain</th></tr><tr><td>8Ã—255[.]com</td></tr><tr><td>example-bet[.]site</td></tr></table>`);
+<table><tr><th>Domain</th></tr><tr><td>8×255[.]com</td></tr><tr><td>example-bet[.]site</td></tr></table>`);
   assert.ok(members(x).includes('domain:8x255.com'), members(x).join(','));
   assert.equal(has(x, 'domain', '255.com'), false);
 });

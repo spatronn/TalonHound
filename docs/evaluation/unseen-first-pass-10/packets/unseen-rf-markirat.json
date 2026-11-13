@@ -1,0 +1,615 @@
+{
+  "id": "unseen-rf-markirat",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "Iran-Nexus TAG-182 Disseminates MarkiRAT Surveillance Tool",
+  "publisher": "Recorded Future",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Recorded Future|html|ioc_table+narrative+phishing",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "ioc_table, narrative, phishing",
+    "diversity_axes": [
+      "publisher:Recorded Future",
+      "trait:ioc_table",
+      "trait:narrative",
+      "trait:phishing"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://www.recordedfuture.com/research/nexus-tag182-disseminates-markirat",
+    "reference": "https://www.recordedfuture.com/research/nexus-tag182-disseminates-markirat",
+    "format": "html",
+    "sha256": "108a8ede48dec8e10a1cfefaadb738843a2f5d4e755d1ba0586b5e55bd76f512",
+    "retained_local_path": "_source_html/rf-markirat.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 36702
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full retained report, malware-sample table, and complete Appendix A. Included every supported domain, IP, and unique SHA-256 identity in Appendix A; deduplicated the repeated ea7558… hash. No linked IOC package or unsupported email/path values were present. Appendix A does not assign per-domain functions, so generic TAG-182 infrastructure is labeled staging.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "accountes.google.comesignt.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: accountes.google.comesignt.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "accounts.google.comisignin.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: accounts.google.comisignin.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "admin.google.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: admin.google.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "admin.instagram.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: admin.instagram.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "c.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: c.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "come-signin.quest",
+        "role": "staging",
+        "evidence": "Appendix A domain: come-signin.quest.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "comesignt.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: comesignt.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "comestore.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: comestore.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "comisignin.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: comisignin.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "comx-view.store",
+        "role": "staging",
+        "evidence": "Appendix A domain: comx-view.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "download.yeplayer.store",
+        "role": "staging",
+        "evidence": "Appendix A domain: download.yeplayer.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "google.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: google.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "google.com-signin.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: google.com-signin.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "google.comisignin.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: google.comisignin.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "host.comview.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: host.comview.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsoft.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: microsoft.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsoft.comesite.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: microsoft.comesite.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsoft.come-site.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: microsoft.come-site.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsoft.comi-site.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: microsoft.comi-site.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsoft.comview.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: microsoft.comview.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "microsotf.comi-site.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: microsotf.comi-site.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "miga.comesignt.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: miga.comesignt.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "migavpn.store",
+        "role": "staging",
+        "evidence": "Appendix A domain: migavpn.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "min.come-site.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: min.come-site.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "min.comi-site.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: min.comi-site.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "min.comview.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: min.comview.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "min.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: min.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "ns1.com-signin.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: ns1.com-signin.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "ns2.com-signin.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: ns2.com-signin.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "orbitx.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: orbitx.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "prx.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: prx.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "sahar2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: sahar2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "starvpn.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: starvpn.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "svpn.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: svpn.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "tools.sahar2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: tools.sahar2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "vip.yeplayer.store",
+        "role": "staging",
+        "evidence": "Appendix A domain: vip.yeplayer.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "vpn.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: vpn.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "webmail.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: webmail.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "webmail.facebook.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: webmail.facebook.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "webmail.google.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: webmail.google.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "webmail.instagram.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: webmail.instagram.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.facebook.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: www.facebook.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.google.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: www.google.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.instagram.com-accounts.website",
+        "role": "staging",
+        "evidence": "Appendix A domain: www.instagram.com-accounts.website.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.pis2ray.online",
+        "role": "staging",
+        "evidence": "Appendix A domain: www.pis2ray.online.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.yeplayer.store",
+        "role": "staging",
+        "evidence": "Appendix A domain: www.yeplayer.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.yemplayer.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: www.yemplayer.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "yeplayer.store",
+        "role": "staging",
+        "evidence": "Appendix A domain: yeplayer.store.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "yemplayer.site",
+        "role": "staging",
+        "evidence": "Appendix A domain: yemplayer.site.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "45.86.162.197",
+        "role": "command_and_control",
+        "evidence": "Appendix A IP address: 45.86.162.197.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "46.30.191.105",
+        "role": "command_and_control",
+        "evidence": "Appendix A IP address: 46.30.191.105.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "46.30.191.123",
+        "role": "command_and_control",
+        "evidence": "Appendix A IP address: 46.30.191.123.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "89.144.145.237",
+        "role": "command_and_control",
+        "evidence": "Appendix A IP address: 89.144.145.237.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "89.144.145.239",
+        "role": "command_and_control",
+        "evidence": "Appendix A IP address: 89.144.145.239.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "212.83.61.198",
+        "role": "command_and_control",
+        "evidence": "Appendix A IP address: 212.83.61.198.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "13440348516ccee839675f6ac908dd1724ce1d28f92af92fdc7938740d2b7ec5",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: 13440348516ccee839675f6ac908dd1724ce1d28f92af92fdc7938740d2b7ec5.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "400eb6a94810323a1fc5f8ab31c682fe765aaec2cc61b37c31d719c7e45c9a6c",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: 400eb6a94810323a1fc5f8ab31c682fe765aaec2cc61b37c31d719c7e45c9a6c.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "51a6686b8c5ec7c610637398f3de43589f4e9fcbe8bcc0245343c5454d3b91de",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: 51a6686b8c5ec7c610637398f3de43589f4e9fcbe8bcc0245343c5454d3b91de.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "66dcd98c6b310f4429890821e609d48cc6395a6be15ffe5a121ec68b7a8f7402",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: 66dcd98c6b310f4429890821e609d48cc6395a6be15ffe5a121ec68b7a8f7402.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "6c74d29903bc2cc17ec4afdb1a120d2060209b22830cee2b7005f5436e86f90e",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: 6c74d29903bc2cc17ec4afdb1a120d2060209b22830cee2b7005f5436e86f90e.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "8a7f5c8533df9e51b2da7cc2aeb52d8787418e4915577cc9288be1e46d1945c6",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: 8a7f5c8533df9e51b2da7cc2aeb52d8787418e4915577cc9288be1e46d1945c6.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "a4f1b79e96a7d016de1991a64506792018de99eac5df00f7cabe26ef41b2bd81",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: a4f1b79e96a7d016de1991a64506792018de99eac5df00f7cabe26ef41b2bd81.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "bb0c7ae4f12e5141480ee26f473636b07e836bb994ff3b2cfec93d4480da171b",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: bb0c7ae4f12e5141480ee26f473636b07e836bb994ff3b2cfec93d4480da171b.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "cc59bf019af195dcec4394ffd7a8e23c080f4e02b12dcb7c04fb1da6671922a1",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: cc59bf019af195dcec4394ffd7a8e23c080f4e02b12dcb7c04fb1da6671922a1.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "ea755862ee81dd0d991b4afca42d8b82bb22a8f1d370bf3d28dbf2e44ab241dd",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: ea755862ee81dd0d991b4afca42d8b82bb22a8f1d370bf3d28dbf2e44ab241dd.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha256",
+        "value": "fa246327bed8fc5864827a8147b8b7aedb6246068259b8c97e82adb957315347",
+        "role": "malware_sample",
+        "evidence": "Appendix A SHA256 hash: fa246327bed8fc5864827a8147b8b7aedb6246068259b8c97e82adb957315347.",
+        "assertion": "explicit",
+        "confidence": "high"
+      }
+    ],
+    "context_only": [],
+    "ambiguous": [],
+    "linked_packages": []
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "report_id": "2a1a6e35-e808-4b4a-b311-3b1d708b32b4",
+  "report": {
+    "title": "InstallFix and Claude Code",
+    "source_url": "https://www.trendmicro.com/en_us/research/26/e/installfix-and-claude-code.html"
+  },
+  "counts": {
+    "all": 19,
+    "indicators": 0,
+    "pending_actionable": 5,
+    "status_axes": {
+      "generation": "first_pass_recorded",
+      "contract_freshness": {
+        "status": "current"
+      },
+      "classification_uncertainty": {
+        "needs_review": 5
+      },
+      "package_discovery": {
+        "status": "pending",
+        "declared": 1,
+        "extracted": 0,
+        "pending": 1
+      }
+    }
+  },
+  "extraction_quality": {
+    "codes": [
+      "ai_escalation_unsupported",
+      "authoritative_section_empty",
+      "malicious_assessed_non_members",
+      "linked_ioc_source_not_ingested"
+    ]
+  },
+  "linked_ioc_sources": [
+    {
+      "original_url": "https://www.trendmicro.com/content/dam/trendmicro/global/en/research/26/e/installfix/IOCS_InstallFix.txt",
+      "lifecycle_status": "discovered",
+      "extraction_status": "pending"
+    }
+  ],
+  "candidates": {
+    "items": [
+      {
+        "type": "url",
+        "value": "https://download-version.1-5-8.com/claude.msixbundle",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "unknown"
+      },
+      {
+        "type": "sha1",
+        "value": "811fbf0ff6b6acabe4b545e493ec0dd0178a0302",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "malicious"
+      },
+      {
+        "type": "sha256",
+        "value": "2f04ba77bb841111036b979fc0dab7fcbae99749718ae1dd6fd348d4495b5f74",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "malicious"
+      },
+      {
+        "type": "ip",
+        "value": "104.21.0.95",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "context_only",
+        "match_state": "context_only"
+      },
+      {
+        "type": "ip",
+        "value": "185.177.239.255",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "context_only",
+        "match_state": "context_only"
+      },
+      {
+        "type": "ip",
+        "value": "77.91.97.244",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "context_only",
+        "match_state": "context_only"
+      },
+      {
+        "type": "domain",
+        "value": "download-version.1-5-8.com",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "malicious"
+      },
+      {
+        "type": "domain",
+        "value": "oakenfjrod.ru",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "malicious"
+      },
+      {
+        "type": "domain",
+        "value": "hosted-by.yeezyhost.net",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "context_only",
+        "match_state": "context_only"
+      },
+      {
+        "type": "domain",
+        "value": "1-5-8.com",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "context_only",
+        "match_state": "context_only"
+      },
+      {
+        "type": "domain",
+        "value": "get-version.com",
+        "is_ioc": true,
+        "indicator_membership": false,
+        "assessment": "context_only",
+        "match_state": "context_only"
+      }
+    ]
+  }
+}

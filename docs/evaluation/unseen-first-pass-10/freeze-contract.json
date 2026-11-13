@@ -1,0 +1,23 @@
+{
+  "frozen_at": "2026-11-12T22:25:00.000Z",
+  "experiment": "unseen-first-pass-10-2026-11-13",
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "bundle": {
+    "candidates": "tl-candidates-v63",
+    "zones": "tl-zones-v18",
+    "tables": "tl-table-v19",
+    "type_resolver": "tl-type-resolver-v26",
+    "html": "threat_library_html_v10",
+    "pdf": "threat_library_pdf_v7",
+    "section_tree": "tl-section-tree-v17",
+    "scope_engine": "tl-scope-engine-section-tree-v3",
+    "quality": "tl-quality-v16",
+    "evidence_integrity": "tl-evidence-integrity-v3",
+    "ioc_source_scope": "tl-ioc-source-scope-v8",
+    "structured_sources": "tl-ioc-source-structured-v2",
+    "dispositions": "tl-dispositions-v1",
+    "membership": "tl-membership-decision-v3"
+  },
+  "host_ssh": "permission_denied",
+  "sealed_eligible": false
+}

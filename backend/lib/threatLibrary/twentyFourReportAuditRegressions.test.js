@@ -80,7 +80,7 @@ ${rows.map(([v, d]) => `<tr><td>${v}</td><td><p>${d}</p></td></tr>`).join('\n')}
 test('versions: tl-candidates-v40, tl-table-v12, tl-type-resolver-v17, tl-section-tree-v9, tl-quality-v14, tl-ioc-source-scope-v3', () => {
   assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v66');
   assert.equal(TABLE_SEMANTICS_VERSION, 'tl-table-v19');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v26');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
   assert.equal(SECTION_TREE_VERSION, 'tl-section-tree-v19');
   assert.equal(EXTRACTION_QUALITY_VERSION, 'tl-quality-v16');
   assert.equal(IOC_SOURCE_SCOPE_VERSION, 'tl-ioc-source-scope-v8');
@@ -88,7 +88,7 @@ test('versions: tl-candidates-v40, tl-table-v12, tl-type-resolver-v17, tl-sectio
 
 // --- A. Mixed multi-value cells -------------------------------------------
 
-test('A: file paths + plural "MD5s:" label + several hashes in one cell â†’ every hash (33332 NJRAT row)', () => {
+test('A: file paths + plural "MD5s:" label + several hashes in one cell ? every hash (33332 NJRAT row)', () => {
   const hashes = ['2a0834560ed3770fc33d7a42f8229722', '57b9c56ef97a7ada98257b23577bf5e3', '60a0f58001ea7be538cd42b651924cc7'];
   const out = run(iocTable([
     [cell(['%TEMP%\\licensechecker.exe', '%TEMP%\\rockstar.exe', '%TEMP%\\any.ran.exe', 'MD5s:', ...hashes]), 'Copies of NJRAT and associated launchers'],
@@ -176,7 +176,7 @@ test('C (negative): the chain ends at the first non-indicator-class sibling; no 
   assert.equal(member(out, '203.0.113.77'), false);
 });
 
-test('C (negative): an IOC heading with its own inventory does not adopt a later same-level "Network â€¦" sibling', () => {
+test('C (negative): an IOC heading with its own inventory does not adopt a later same-level "Network …" sibling', () => {
   const out = run(`${iocTable([['agenticsora[.]com', 'Delivery C2']])}
 <h2>Network security recommendations</h2>
 <table><tr><th>Item</th><th>Description</th></tr><tr><td>45.11.57[.]9</td><td>Address the operator scanned from</td></tr></table>`);
@@ -184,7 +184,7 @@ test('C (negative): an IOC heading with its own inventory does not adopt a later
   assert.equal(member(out, '45.11.57.9'), false);
 });
 
-test('C: "Primary IOCs" is an IOC heading; narrative "Primary indicators â€¦" sentences are not (33345)', () => {
+test('C: "Primary IOCs" is an IOC heading; narrative "Primary indicators …" sentences are not (33345)', () => {
   assert.equal(classifySectionRole('Primary IOCs'), 'ioc_appendix');
   assert.equal(classifySectionRole('Primary Indicators of Compromise'), 'ioc_appendix');
   assert.equal(classifySectionRole('Primary indicators suggest a Chinese-speaking operator'), null);

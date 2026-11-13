@@ -1,0 +1,171 @@
+{
+  "id": "unseen-trend-installfix",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "InstallFix and Claude Code: How Fake Install Pages Lead to Real Compromise",
+  "publisher": "Trend Micro",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Trend Micro|html|ioc_table+narrative+mixed_legit_abuse",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "ioc_table, narrative, mixed_legit_abuse",
+    "diversity_axes": [
+      "publisher:Trend Micro",
+      "trait:ioc_table",
+      "trait:narrative",
+      "trait:mixed_legit_abuse"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://www.trendmicro.com/en_us/research/26/e/installfix-and-claude-code.html",
+    "reference": "https://www.trendmicro.com/en_us/research/26/e/installfix-and-claude-code.html",
+    "format": "html",
+    "sha256": "bb68b3eb27eb95cc2f9a56600fc733f818dd04a2f483c93351e2876fcb6d01bf",
+    "retained_local_path": "_source_html/trend-installfix.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 125533
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full retained narrative, malware-analysis network section, hunting queries, and IOC-link section. Concrete delivery, C2, sample-hash, and attempted-connection evidence was labeled; potential outbound C2, a dynamic victim placeholder, and an unexplained hunting-query domain remain ambiguous. The linked IOC text file was not retained or fetched, so expected identities are empty. Skipped unsupported paths, filenames, scheduled tasks, and computed victim MD5 tokens.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "domain",
+        "value": "download-version.1-5-8.com",
+        "role": "malware_download",
+        "evidence": "Evidence section calls this a known malicious domain serving claude.msixbundle.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "https://download-version.1-5-8.com/claude.msixbundle",
+        "role": "malware_download",
+        "evidence": "Infection chain shows the delivery URL used by mshta.",
+        "assertion": "operational",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "oakenfjrod.ru",
+        "role": "command_and_control",
+        "evidence": "Stage 4/5 calls this an attacker-controlled domain used for victim-unique C2.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "sha1",
+        "value": "811fbf0ff6b6acabe4b545e493ec0dd0178a0302",
+        "role": "malware_sample",
+        "evidence": "Stage 5 SHA1; file recovered but execution not confirmed.",
+        "assertion": "explicit",
+        "confidence": "medium"
+      },
+      {
+        "type": "sha256",
+        "value": "2f04ba77bb841111036b979fc0dab7fcbae99749718ae1dd6fd348d4495b5f74",
+        "role": "malware_sample",
+        "evidence": "Stage 5 listed SHA256.",
+        "assertion": "explicit",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "77.91.97.244",
+        "role": "command_and_control",
+        "evidence": "Figure 33 and packet analysis show an attempted HTTPS connection; surrounding figure describes C2.",
+        "assertion": "operational",
+        "confidence": "medium"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "hosted-by.yeezyhost.net",
+        "role": "reference",
+        "evidence": "Figure 33 says 77.91.97.244 resolves to this hostname.",
+        "assertion": "context",
+        "confidence": "high",
+        "notes": "Reverse-DNS context; publisher does not assert attacker control."
+      }
+    ],
+    "ambiguous": [
+      {
+        "type": "url",
+        "value": "https://[nipple].oakenfjrod.ru/cloude-91267b64-989f-49b4-89b4-984e0154d4d1",
+        "role": "placeholder",
+        "evidence": "Stage 5 prints a victim-unique URL whose subdomain is a computed machine ID.",
+        "assertion": "explicit",
+        "confidence": "high",
+        "rationale": "The URL pattern is asserted as C2, but the hostname contains a per-victim placeholder rather than one concrete observable."
+      },
+      {
+        "type": "ip",
+        "value": "104.21.0.95",
+        "role": "command_and_control",
+        "evidence": "Malware analysis lists this outbound connection and says it suggests potential C2 or exfiltration.",
+        "assertion": "operational",
+        "confidence": "low",
+        "rationale": "Observed traffic is explicit, but attacker control and C2 function are not established."
+      },
+      {
+        "type": "ip",
+        "value": "185.177.239.255",
+        "role": "command_and_control",
+        "evidence": "Malware analysis lists this outbound connection and says it suggests potential C2 or exfiltration.",
+        "assertion": "operational",
+        "confidence": "low",
+        "rationale": "Observed traffic is explicit, but attacker control and C2 function are not established."
+      },
+      {
+        "type": "domain",
+        "value": "get-version.com",
+        "role": "other",
+        "evidence": "Campaign hunting query includes this domain without narrative attribution.",
+        "assertion": "context",
+        "confidence": "low",
+        "rationale": "It appears only in a hunting query; the prose does not establish whether it is confirmed, related, or broad detection logic."
+      }
+    ],
+    "linked_packages": [
+      {
+        "url": "https://www.trendmicro.com/content/dam/trendmicro/global/en/research/26/e/installfix/IOCS_InstallFix.txt",
+        "expected_identities": []
+      }
+    ]
+  }
+}
