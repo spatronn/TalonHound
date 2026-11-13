@@ -1,6 +1,6 @@
 # Targeted First-Pass Quality Improvements — Technical Report
 
-**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`89cdad6`)  
+**Branch:** `fix/filename-zip-domain-and-eval-url-equiv` (`b2ab43b`)  
 **PR:** https://github.com/spatronn/TalonHound/pull/111  
 **Date:** 2026-11-13  
 **Scope:** two low-risk corrections + MODE A recommendations. No architecture redesign, no new AI components, no narrative auto-promote, no pack auto-extract.
@@ -88,7 +88,7 @@ See `MODE-A-PENDING-PACK-AUDIT.md`.
 - Equivalence scorer: delta as above.  
 - Frozen captures: preserved (no refresh / re-import).  
 - PR #111 opened; GitHub CI is the verification path (host SSH unavailable).
-- First CI run failed: `ce445ca` mojibaked CJK/Cyrillic label regexes in `observableTypeResolver.js` → Node `SyntaxError: Nothing to repeat`. Fixed in `89cdad6` by restoring UTF-8 from `origin/main` and re-applying only the dual-use gate.
+- CI recovery: `ce445ca` mojibaked CJK/Cyrillic in the resolver (SyntaxError) and later in version-pin rewrites of regression fixtures. `89cdad6` restored resolver UTF-8; `b2ab43b` restored fixtures + refined the dual-use gate so surrounding defang (`evil[.]zip` around raw `evil.zip`) still reads as a domain.
 
 ---
 

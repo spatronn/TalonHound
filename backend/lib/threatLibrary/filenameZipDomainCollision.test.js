@@ -108,15 +108,18 @@ test('negative: multi-label cdn.files.zip under Domains stays a domain', () => {
   assert.equal(r.reason, 'declared_network_type');
 });
 
-test('negative: IOC appendix still keeps a defanged .zip host as Indicator', () => {
+test('negative: typed Domain IOC table keeps defanged .zip hosts as Indicator domains', () => {
+  // Publisher-typed Domain cells (not a bare "Domain: value" prose prefix) are
+  // the authoritative .zip-TLD reading; the dual-use gate must not demote them.
   const html = `<html lang="en"><body><article>
 <h2>Indicators of Compromise</h2>
-<ul>
-<li>Domain: evil[.]zip</li>
-<li>Domain: cdn.payload[.]zip</li>
-</ul>
+<table>
+<tr><th>Indicator</th><th>Type</th></tr>
+<tr><td>evil[.]zip</td><td>Domain</td></tr>
+<tr><td>cdn.payload[.]zip</td><td>Domain</td></tr>
+</table>
 </article></body></html>`;
   const candidates = extract(html);
-  assert.ok(candidates.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'evil.zip'));
-  assert.ok(candidates.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'cdn.payload.zip'));
+  assert.ok(candidates.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'evil.zip' && c.is_ioc));
+  assert.ok(candidates.some((c) => c.candidate_type === 'domain' && c.normalized_value === 'cdn.payload.zip' && c.is_ioc));
 });
