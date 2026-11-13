@@ -56,7 +56,7 @@ export const PUBLICATION_DATE_SOURCE_RANK = Object.freeze({
 export const PUBLICATION_DATE_PRECISIONS = Object.freeze(['date', 'datetime']);
 
 /** Bump when detection rules change (recorded next to every detection). */
-export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v4';
+export const PUBLICATION_DATE_EXTRACTOR_VERSION = 'tl-published-at-v5';
 
 export function isValidPublicationDateSource(value) {
   return PUBLICATION_DATE_SOURCES.includes(String(value || '').toLowerCase());
@@ -590,6 +590,22 @@ function isPublishedBylineChild(el) {
 }
 
 /**
+ * The next element sibling of a date-only item is a short reading-time item
+ * ("20 Min Read"): the date is that byline's publication date.
+ * @param {object} el
+ */
+function readingTimeNextSibling(el) {
+  let sib = el?.next;
+  while (sib && sib.type !== 'tag') {
+    if (sib.type === 'text' && String(sib.data || '').trim() && !/^[\s•·|,\-–—]*$/.test(String(sib.data))) return false;
+    sib = sib.next;
+  }
+  if (!sib) return false;
+  const t = textOf(sib).replace(/\s+/g, ' ').trim();
+  return t.length > 0 && t.length <= 40 && READING_TIME_BYLINE_RE.test(t) && /^\d/.test(t);
+}
+
+/**
  * Visible article date: a short element whose text is "Published: <date>" /
  * "Posted on <date>" (label required) or whose class marks it as the post
  * date and whose text is exactly a date. Body prose, copyright lines,
@@ -630,6 +646,11 @@ export function extractVisiblePublicationDate(html, opts = {}) {
       && text.length <= 80
     ) {
       // "25 Jun 2026 • , 10 min. read" — date leads, reading-time trails.
+      signal = 'reading_time';
+    } else if (exactDate && readingTimeNextSibling(el)) {
+      // `<li>12 Nov 2026</li><li>20 Min Read</li>`: the same byline written as
+      // sibling items (tl-published-at-v5). Related-post cards repeat the
+      // layout inside noise containers, which are skipped above.
       signal = 'reading_time';
     }
     if (!signal) continue;

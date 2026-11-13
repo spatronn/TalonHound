@@ -1,0 +1,255 @@
+{
+ "experiment": "import-audit-35880-35889",
+ "sealed_eligible": false,
+ "first_pass_contract_fingerprint": "e133fab1e4ec284c2b8991e7d3511232",
+ "categories": [
+  "observable_discovery_defect",
+  "evidence_classification_defect",
+  "membership_policy_defect",
+  "normalization_issue",
+  "intentional_mode_a",
+  "pending_linked_source",
+  "unsupported_type",
+  "ambiguous_publisher_evidence",
+  "reviewer_error"
+ ],
+ "reports": {
+  "35880": {
+   "first_pass_members": 0,
+   "items": [
+    {
+     "values": "18 Cereal SHA-1 (README section + white paper)",
+     "category": "pending_linked_source",
+     "note": "campaign scope verified offline: 18/18, other Turla campaigns excluded"
+    }
+   ]
+  },
+  "35881": {
+   "first_pass_members": 12,
+   "items": [
+    {
+     "values": [
+      "domain:api.ipify.org",
+      "url:ifconfig.me/ip",
+      "domain:icanhazip.com",
+      "domain:checkip.amazonaws.com"
+     ],
+     "category": "evidence_classification_defect",
+     "first_pass": "member (R10 explicit_c2)",
+     "fixed_by": "tl-candidates-v67 IP-echo lead-in",
+     "after": "context_only (R20)",
+     "evidence": "To establish the host's public IP, SANSAR queries four external services in order ..."
+    },
+    {
+     "values": [
+      "contract 0x43eb291f56688c63c93e8a93c4591fc997cf6349"
+     ],
+     "category": "unsupported_type"
+    }
+   ]
+  },
+  "35882": {
+   "first_pass_members": 10,
+   "items": []
+  },
+  "35883": {
+   "first_pass_members": 41,
+   "items": [
+    {
+     "values": [
+      "domain:7cxmr-ru.kryptex.network"
+     ],
+     "category": "normalization_issue",
+     "first_pass": "context_only",
+     "fixed_by": "tl-candidates-v67 percent escapes"
+    },
+    {
+     "values": [
+      "url:ftp.vietnam852.com/down.exe"
+     ],
+     "category": "intentional_mode_a"
+    }
+   ]
+  },
+  "35884": {
+   "first_pass_members": 7,
+   "items": [
+    {
+     "values": [
+      "url:http://45.32.117.34/a"
+     ],
+     "category": "intentional_mode_a"
+    }
+   ]
+  },
+  "35885": {
+   "first_pass_members": 8,
+   "items": [
+    {
+     "values": [
+      "service names vmware-vdma, vspbind"
+     ],
+     "category": "unsupported_type"
+    }
+   ]
+  },
+  "35886": {
+   "first_pass_members": 62,
+   "items": [
+    {
+     "values": [
+      "published_at"
+     ],
+     "category": "observable_discovery_defect",
+     "note": "metadata: visible byline date missed",
+     "fixed_by": "tl-published-at-v5"
+    },
+    {
+     "values": [
+      "sha256:a6579b16…",
+      "sha256:65008903…"
+     ],
+     "category": "intentional_mode_a",
+     "note": "publisher labels them legitimate side-loading executables"
+    }
+   ]
+  },
+  "35887": {
+   "first_pass_members": 32,
+   "items": [
+    {
+     "values": [
+      "domain:makefile.pre.in",
+      "domain:configure.ac",
+      "domain:pyconfig.h.in",
+      "domain:manifest.in"
+     ],
+     "category": "normalization_issue",
+     "first_pass": "needs_review",
+     "fixed_by": "tl-type-resolver-v28 directory listing entries"
+    },
+    {
+     "values": [
+      "4 staging wget URLs",
+      "4 SSH hop IPs"
+     ],
+     "category": "intentional_mode_a"
+    }
+   ]
+  },
+  "35888": {
+   "first_pass_members": 8,
+   "items": [
+    {
+     "values": [
+      "ip:213.145.86.112",
+      "ip:104.145.210.184",
+      "ip:104.194.151.133",
+      "ip:104.194.159.55",
+      "ip:38.146.28.75",
+      "ip:107.189.26.194",
+      "ip:104.194.159.150",
+      "ip:38.146.28.132",
+      "domain:ms365-device.com",
+      "domain:m365-owa.com",
+      "domain:wa-meeting.com",
+      "domain:chathamhouse.eu",
+      "domain:chamber-ua.org",
+      "domain:cdncounter.net",
+      "url:https://213.145.86.112/s?r=7ed4bb1d",
+      "url:https://213.145.86.112/cdn/chunks/vendor-9f3a1c.min.js?ref=0f511e19&stub=1",
+      "url:https://213.145.86.112/cdn/chunks/vendor-9f3a1c.min.js?ref=95766022&stub=1",
+      "url:https://213.145.86.112/cdn/chunks/polyfill-7e2b.min.js",
+      "url:https://213.145.86.112/t/event"
+     ],
+     "category": "observable_discovery_defect",
+     "first_pass": "needs_review (detached streaming rows)",
+     "fixed_by": "threat_library_html_v12",
+     "after": "member"
+    },
+    {
+     "values": [
+      "sha256:be99857449d2856dd5a84e21c8a3d5e0e01456adb44062ddec5a6b4970d8d42c"
+     ],
+     "category": "observable_discovery_defect",
+     "note": "in-row split caused by the truncated table",
+     "after": "member"
+    },
+    {
+     "values": [
+      "sha1:937e75e0e1c82eecab69e9b8ad481bd7e0845308",
+      "sha1:510af9bb00ff5d4a6856b1291af55db9f6e13551",
+      "md5:c6f4df18cb880500f3921a179c3a3766",
+      "md5:fba867df17721879df9d8dcca68d6900",
+      "sha256:ca3be5885afb3eb3bb19341e2653212200c568f3f900e0b2f04de9ba209aed25",
+      "sha1:154d8cfd9e304b6644216456759b7fd12daf85c1",
+      "sha256:20e20b074967ed6f6e04d609ccec5ff7492665ef25f894c90c2ddc92fa47ac38",
+      "sha1:7acb7082d37854877a08999374460c9d7e5cd663",
+      "sha256:5bc3c615da8dd7ef45e421d26a97644679ba0a0647b24efc96ebed8348f403d2",
+      "sha1:9c5c539138df6cfcd854c55316bb527520025928",
+      "sha256:92cf0b883d220ba37f5ab378920fefdfdddc4fa76ee6c046696a7e5853a95c33",
+      "sha1:e82a7c86677c5752dceb6b848754698571fb0aa8",
+      "sha1:1b97e0df9600335b0cd8db2eb4577d3dbf6e76db",
+      "sha1:99f2eac2f00451a9a55521905add54205e336b9d",
+      "sha1:04b64591837c5c2696c2a4423b1bb3dab00a0f01",
+      "sha1:6e5c658261f72fda92d475ac96f0213159af785d",
+      "sha256:28f622028e690c943f7fa9aca426c07cab52b5aaba757ef8a3328609c0b3bec3"
+     ],
+     "category": "intentional_mode_a",
+     "note": "appendix A/B/C tables outside a declared inventory (R40)"
+    },
+    {
+     "values": [
+      "ip:192.142.52.31"
+     ],
+     "category": "intentional_mode_a",
+     "evidence": "Hunting lead (validate before blocking)"
+    },
+    {
+     "values": [
+      "2 email addresses"
+     ],
+     "category": "unsupported_type"
+    },
+    {
+     "values": [
+      "GitHub repository [LINK]"
+     ],
+     "category": "ambiguous_publisher_evidence",
+     "note": "publisher placeholder, no linked source to discover"
+    },
+    {
+     "values": "first audit count of 26",
+     "category": "reviewer_error",
+     "note": "E table has 28 rows; 11 E-table FNs were missed and 17 gated hashes were counted as defects"
+    }
+   ]
+  },
+  "35889": {
+   "first_pass_members": 2,
+   "items": [
+    {
+     "values": [
+      "published_date 2026-11-11"
+     ],
+     "category": "intentional_mode_a",
+     "note": "JSON-LD instant 2026-11-11T15:00Z = Nov 12 KST; source ranking"
+    },
+    {
+     "values": [
+      "technical_artifact:aewn.Buzz"
+     ],
+     "category": "normalization_issue",
+     "note": "not fixed: conflicts with obfuscated-casing contract; email domain is Context Only by policy"
+    },
+    {
+     "values": [
+      "domain:hosting2.ro.hostsailor.com"
+     ],
+     "category": "ambiguous_publisher_evidence",
+     "note": "publisher-declared C2 mail server on shared hosting; analyst decision"
+    }
+   ]
+  }
+ }
+}

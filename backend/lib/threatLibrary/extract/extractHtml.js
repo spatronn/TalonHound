@@ -44,7 +44,9 @@ import { selectHtmlTitle } from './titleSelection.js';
 // code viewer) is content, not noise (htmlBlocks v10).
 // v11: script / style nested in a dropped text region never makes it a significant
 // unaccounted source region (htmlBlocks v11); blocks are unchanged.
-export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v11';
+// v12: React streaming SSR segments (`$RS` / `$RC`) are put back at their
+// placeholders before blocks are read (htmlBlocks v12).
+export const THREAT_LIBRARY_HTML_EXTRACTOR_VERSION = 'threat_library_html_v12';
 export const THREAT_LIBRARY_HTML_FALLBACK_EXTRACTOR_VERSION = 'threat_library_html_fallback_v4';
 
 /** Every extractor id a stored URL-sourced canonical document may carry and still be current. */

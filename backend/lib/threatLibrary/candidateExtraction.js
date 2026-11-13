@@ -318,8 +318,15 @@ export {
  * two-column IOC-table row whose label names the service a value belongs to
  * ("Registrars | … (www[.]net[.]cn)", hosting provider, ASN, CA) is a
  * provider row, not operator infrastructure.
+ * v67 (import audit 35880–35889): tl-type-resolver-v28 and threat_library_html_v12. A list lead-in that says the listed services are
+ * queried to learn the host's own public IP ("To establish the host's public
+ * IP, <malware> queries four external services …:") names IP-echo utilities,
+ * also over a run of one-value paragraph lines; a digest written with its own
+ * key prefix ("imphash:<hex> (note)") is labelled by that prefix, not the
+ * trailing note; a host after a percent escape ("%7Cpool.example") does not
+ * absorb the escape's hex digits.
  */
-export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v66';
+export const THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION = 'tl-candidates-v67';
 
 import { normalizeObservable } from '../observable-normalization.js';
 import { refangObservable, refangTextForExtraction } from './defang.js';

@@ -21,8 +21,8 @@ function extract(html) {
   return extractCandidatesWithDiagnostics(r.document, { sourceUrl: SOURCE }).candidates;
 }
 
-test('type resolver contract is tl-type-resolver-v27', () => {
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v27');
+test('type resolver contract is tl-type-resolver-v28', () => {
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v28');
 });
 
 test('positive: bare YEMPlayer.zip / Pis2rayVPN.zip under inherited C2 label stay artifacts', () => {

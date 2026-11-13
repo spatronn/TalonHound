@@ -537,7 +537,9 @@ export function standaloneLineSpelling(blockText, refanged) {
 
 /**
  * "<label>: <digest>" for a digest in a run of "<digest> (<label>)" rows
- * (tl-candidates-v50), else null.
+ * (tl-candidates-v50), else null. A digest written with its own key prefix
+ * ("imphash:<hex> (goodware and malicious splits)", a search-query term) is
+ * labelled by that prefix, not by the note after it (tl-candidates-v67).
  * @param {string} line
  * @param {string} value
  */
@@ -546,6 +548,10 @@ export function annotatedDigestWindow(line, value) {
   if ((text.match(/\b(?:[a-f0-9]{64}|[a-f0-9]{40}|[a-f0-9]{32})\b\s*\(/gi) || []).length < 2) return null;
   const at = text.toLowerCase().indexOf(String(value || '').toLowerCase());
   if (at < 0) return null;
+  // An algorithm-only prefix ("sha256:<hex> (TLS certificate)") names no
+  // subject, so the parenthetical still does.
+  const prefix = /([A-Za-z][\w-]*):$/.exec(text.slice(Math.max(0, at - 40), at));
+  if (prefix && !/^(?:md-?5|sha-?(?:1|224|256|384|512)|hash|digest|checksum)$/i.test(prefix[1])) return null;
   let i = at + String(value).length;
   while (i < text.length && /\s/.test(text[i])) i += 1;
   if (text[i] !== '(') return null;

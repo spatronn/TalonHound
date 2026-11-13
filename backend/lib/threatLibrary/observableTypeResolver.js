@@ -97,8 +97,12 @@ import { isValidIpAddress } from '../publicIp.js';
  * Domains lead-in only inherited `declaredType=domain`. Defanged hosts
  * (`evil[.]zip`), typed Domain *table* cells, and multi-label hosts
  * (`cdn.files.zip`) keep the domain reading — `.zip` remains a valid TLD.
+ * v28 (import audit 35880–35889, Group-IB 35887): a dotted token led by a
+ * directory-tree glyph (`│ ├── Makefile.pre.in`, `|-- configure.ac`) is a
+ * listing entry (file / directory name), not a host under the .in / .ac ccTLD,
+ * unless the publisher defanged it or stated a network relation.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v27';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v28';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -474,6 +478,9 @@ export function hasCodeIdentifierShape(raw, opts = {}) {
 }
 
 /** `urn:<nid>:` (plus further NSS segments) right before the token. */
+/** Tree-drawing lead of a directory listing line (`├── `, `└── `, `|-- `, `` `-- ``). */
+const TREE_LISTING_LEAD_RE = /(?:[├└┣┗╠╚]\s*[─━═]{1,3}|(?:^|\s)[|`+\\]\s*-{2,3})\s*$/;
+
 const URN_PREFIX_BEFORE_RE = /\burn:[a-z0-9][a-z0-9-]{0,31}:(?:[^\s:]+:)*$/i;
 
 /** Row lead that only labels / enumerates the value ("C2:", "Domain -", "1.", "•"). */
@@ -965,6 +972,15 @@ export function resolveDottedToken(raw, ctx = {}) {
   //    directory or file inside a path, not a host. A URL authority (`//host`)
   //    is not a path segment, and a DNS-shaped suffix keeps the other rules.
   if (pathSegment && strength !== 'strong') return out('technical_artifact', 'path_segment');
+
+  // 3a. Directory-tree listing entry (`│ ├── Makefile.pre.in`, `` `-- configure.ac ``,
+  //     `tree` / `ls` output of a recovered toolkit): a file or directory name
+  //     whatever ccTLD its extension collides with (.in, .ac, .md). A defanged
+  //     spelling or a stated network relation keeps the other rules
+  //     (tl-type-resolver-v28).
+  if (TREE_LISTING_LEAD_RE.test(before) && !DEFANG_MARKER_RE.test(original) && !inlineNetwork && !clauseNetwork) {
+    return out('technical_artifact', 'directory_listing_entry');
+  }
 
   // 3b. A Rust source file ("Loader (build.rs)" beside a digest, "main.rs"):
   //     one bare name over the .rs ccTLD, written fanged, with no network

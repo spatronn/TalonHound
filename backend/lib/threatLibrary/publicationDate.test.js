@@ -142,7 +142,7 @@ test('URL 4b: meta name published-date is a publication date (ISO, human day, pr
   assert.equal(d.raw_value, '2026-11-10');
   assert.equal(d.evidence.selector, 'meta[name="published-date"]');
   assert.equal(d.modified_at, '2026-11-11T08:00:00Z');
-  assert.equal(d.extractor, 'tl-published-at-v4');
+  assert.equal(d.extractor, 'tl-published-at-v5');
 
   const human = extractMetaPublicationDate('<meta name="published_date" content="10 Nov 2026">', { now });
   assert.equal(human.source, 'meta');
