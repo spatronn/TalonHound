@@ -1,0 +1,94 @@
+{
+  "id": "unseen-trend-teampcp",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "Analyzing TeamPCP Supply Chain Attacks",
+  "publisher": "Trend Micro",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Trend Micro|html|narrative+linked_packages+supply_chain",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "narrative, linked_packages, supply_chain",
+    "diversity_axes": [
+      "publisher:Trend Micro",
+      "trait:narrative",
+      "trait:linked_packages",
+      "trait:supply_chain"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://www.trendmicro.com/en_us/research/26/e/analyzing-teampcp-supply-chain-attacks.html",
+    "reference": "https://www.trendmicro.com/en_us/research/26/e/analyzing-teampcp-supply-chain-attacks.html",
+    "format": "html",
+    "sha256": "590a3cd15a3ad8ebd661278b159506b74c737e390a9978bc7409afde05d0b8d8",
+    "retained_local_path": "_source_html/trend-teampcp.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 131211
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full retained narrative and the Indicators of Compromise link. Labeled the one concrete malicious URL disclosed in prose and the legitimate GHCR service named with a poisoned image. The linked IOC text file was not retained or fetched, so expected identities are empty. Unsupported package names, versions, file paths, headers, and actor strings were skipped; C2 values discussed generically but not printed were not invented.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "url",
+        "value": "https://litter.catbox.moe/iqesmbhukgd2c7hq.sh",
+        "role": "malware_download",
+        "evidence": "Case study 2: attacker pull-request comment downloads and runs this shell script URL.",
+        "assertion": "operational",
+        "confidence": "high"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "domain",
+        "value": "ghcr.io",
+        "role": "legitimate_service",
+        "evidence": "Remediation names the poisoned elementary-data container at ghcr.io.",
+        "assertion": "context",
+        "confidence": "high",
+        "notes": "Legitimate GitHub Container Registry used to distribute the poisoned artifact."
+      }
+    ],
+    "ambiguous": [],
+    "linked_packages": [
+      {
+        "url": "https://www.trendmicro.com/content/dam/trendmicro/global/en/research/26/e/teampcp/IoCs-TeamPCP.txt",
+        "expected_identities": []
+      }
+    ]
+  }
+}

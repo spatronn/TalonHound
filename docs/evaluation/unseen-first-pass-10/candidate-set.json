@@ -1,0 +1,112 @@
+﻿[
+    {
+        "url":  "https://www.microsoft.com/en-us/security/blog/2026/11/11/global-socket-how-threat-actors-weaponizing-gsocket-stealthy-c2/",
+        "title":  "The global socket: how threat actors are weaponizing GSocket for stealthy C2",
+        "pub":  "Microsoft",
+        "id":  "msft-gsocket",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "mixed_legit_abuse"
+                   ]
+    },
+    {
+        "url":  "https://www.huntress.com/blog/sckit-worm-rogue-screenconnect",
+        "title":  "SCKit Worm Installs Rogue ScreenConnect Clients and Session Cookie Relays",
+        "pub":  "Huntress",
+        "id":  "huntress-sckit",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "mixed_legit_abuse"
+                   ]
+    },
+    {
+        "url":  "https://www.recordedfuture.com/research/nexus-tag182-disseminates-markirat",
+        "title":  "Iran-Nexus TAG-182 Disseminates MarkiRAT Surveillance Tool",
+        "pub":  "Recorded Future",
+        "id":  "rf-markirat",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "phishing"
+                   ]
+    },
+    {
+        "url":  "https://www.trendmicro.com/en_us/research/26/e/installfix-and-claude-code.html",
+        "title":  "InstallFix and Claude Code: How Fake Install Pages Lead to Real Compromise",
+        "pub":  "Trend Micro",
+        "id":  "trend-installfix",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "mixed_legit_abuse"
+                   ]
+    },
+    {
+        "url":  "https://www.trendmicro.com/en_us/research/26/c/kongtuke-clickfix-abuse-of-compromised-wordpress-sites.html",
+        "title":  "KongTuke ClickFix Abuse of Compromised WordPress Sites",
+        "pub":  "Trend Micro",
+        "id":  "trend-kongtuke",
+        "traits":  [
+                       "narrative",
+                       "compromised_sites",
+                       "mixed_benign"
+                   ]
+    },
+    {
+        "url":  "https://www.trendmicro.com/en_us/research/26/e/analyzing-teampcp-supply-chain-attacks.html",
+        "title":  "Analyzing TeamPCP Supply Chain Attacks",
+        "pub":  "Trend Micro",
+        "id":  "trend-teampcp",
+        "traits":  [
+                       "narrative",
+                       "linked_packages",
+                       "supply_chain"
+                   ]
+    },
+    {
+        "url":  "https://unit42.paloaltonetworks.com/falcon-c2-browser-compromise/",
+        "title":  "The XG Files: Falcon C2 Flying Under The (Browser) Radar",
+        "pub":  "Unit 42",
+        "id":  "unit42-falcon-c2",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "browser_extension"
+                   ]
+    },
+    {
+        "url":  "https://www.group-ib.com/blog/ghost-stadium-football-fraud/",
+        "title":  "The GHOST STADIUM Score: Billions At Stake At The World Largest Football Tournament",
+        "pub":  "Group-IB",
+        "id":  "groupib-ghost-stadium",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "fraud_domains"
+                   ]
+    },
+    {
+        "url":  "https://unit42.paloaltonetworks.com/cairn-framework-ai-autonomous-attacks/",
+        "title":  "Attackers Use Autonomous AI to Target Semiconductor, Defense and Civil Society Sectors",
+        "pub":  "Unit 42",
+        "id":  "unit42-cairn",
+        "traits":  [
+                       "ioc_table",
+                       "narrative",
+                       "sparse_iocs"
+                   ]
+    },
+    {
+        "url":  "https://www.sophos.com/en-us/blog/malicious-screenconnect-deployments-observed",
+        "title":  "Malicious ScreenConnect deployments observed",
+        "pub":  "Sophos",
+        "id":  "sophos-screenconnect",
+        "traits":  [
+                       "narrative",
+                       "ioc_values",
+                       "mixed_legit_abuse"
+                   ]
+    }
+]

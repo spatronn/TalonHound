@@ -1,0 +1,93 @@
+{
+  "generated_at": "2026-11-13T16:47:21.856Z",
+  "mode": "equivalence_hostpath_trailingslash",
+  "aggregate": {
+    "tp": 228,
+    "fp": 12,
+    "fn": 13,
+    "ioc_precision": 0.95,
+    "discovery_recall": 0.946058091286307
+  },
+  "reports": [
+    {
+      "id": "msft-gsocket",
+      "tp": 8,
+      "fp": 3,
+      "fn": 0,
+      "precision": 0.7272727272727273,
+      "recall": 1
+    },
+    {
+      "id": "huntress-sckit",
+      "tp": 24,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "id": "rf-markirat",
+      "tp": 68,
+      "fp": 3,
+      "fn": 0,
+      "precision": 0.9577464788732394,
+      "recall": 1
+    },
+    {
+      "id": "trend-installfix",
+      "tp": 0,
+      "fp": 0,
+      "fn": 6,
+      "precision": null,
+      "recall": 0
+    },
+    {
+      "id": "trend-kongtuke",
+      "tp": 2,
+      "fp": 0,
+      "fn": 6,
+      "precision": 1,
+      "recall": 0.25
+    },
+    {
+      "id": "trend-teampcp",
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "precision": null,
+      "recall": 0
+    },
+    {
+      "id": "unit42-falcon-c2",
+      "tp": 26,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "id": "groupib-ghost-stadium",
+      "tp": 55,
+      "fp": 6,
+      "fn": 0,
+      "precision": 0.9016393442622951,
+      "recall": 1
+    },
+    {
+      "id": "unit42-cairn",
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+    },
+    {
+      "id": "google-tag-apt42",
+      "tp": 43,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1,
+      "recall": 1
+    }
+  ]
+}

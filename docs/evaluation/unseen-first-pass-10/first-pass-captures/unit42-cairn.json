@@ -1,0 +1,25 @@
+{
+  "report_id": "0b4c0605-0ead-41c6-a224-9a55310de742",
+  "report": {
+    "id": "0b4c0605-0ead-41c6-a224-9a55310de742",
+    "title": "Attackers Use Autonomous AI to Target Semiconductor, Defense and Civil Society Sectors",
+    "source_url": "https://unit42.paloaltonetworks.com/cairn-framework-ai-autonomous-attacks/"
+  },
+  "counts": {
+    "all": 2,
+    "indicators": 2,
+    "status_axes": {
+      "generation": "first_pass_recorded",
+      "contract_freshness": { "status": "current" },
+      "package_discovery": { "status": "no_package_declared" }
+    }
+  },
+  "extraction_quality": { "codes": [], "status": "clean" },
+  "linked_ioc_sources": [],
+  "candidates": {
+    "items": [
+      {"type":"ip","value":"154.44.31.4","is_ioc":true,"indicator_membership":true,"assessment":"malicious","source_assertion":"explicit_ioc","section":"explicit_ioc_section"},
+      {"type":"ip","value":"82.29.129.54","is_ioc":true,"indicator_membership":true,"assessment":"malicious","source_assertion":"explicit_ioc","section":"explicit_ioc_section"}
+    ]
+  }
+}

@@ -1,0 +1,286 @@
+{
+  "generated_at": "2026-11-13T16:47:21.856Z",
+  "items": [
+    {
+      "report": "msft-gsocket",
+      "kind": "FP",
+      "key": "domain:gsocket.io",
+      "verdict": "gt_error",
+      "note": "Publisher IOC table lists Domain gsocket.io as Indicator; GT demoted to legitimate_service.",
+      "labeled_context": true
+    },
+    {
+      "report": "msft-gsocket",
+      "kind": "FP",
+      "key": "domain:cdn.gsocket.io",
+      "verdict": "gt_error",
+      "note": "Publisher IOC table Domain row.",
+      "labeled_context": true
+    },
+    {
+      "report": "msft-gsocket",
+      "kind": "FP",
+      "key": "domain:gsgg.b-cdn.net",
+      "verdict": "gt_error",
+      "note": "Publisher IOC table Domain row.",
+      "labeled_context": true
+    },
+    {
+      "report": "rf-markirat",
+      "kind": "FP",
+      "key": "sha256:3b172281f65ceaee280ae810edb6fd39a1ecd25649f929f246c0405df94f4c89",
+      "verdict": "gt_omission",
+      "note": "Hash present in retained RF HTML; missing from GT indicators.",
+      "labeled_context": false
+    },
+    {
+      "report": "rf-markirat",
+      "kind": "FP",
+      "key": "domain:yemplayer.zip",
+      "verdict": "pipeline_defect",
+      "note": "Source shows filename YEMPlayer.zip; typed as domain.",
+      "labeled_context": false
+    },
+    {
+      "report": "rf-markirat",
+      "kind": "FP",
+      "key": "domain:pis2rayvpn.zip",
+      "verdict": "pipeline_defect",
+      "note": "Source shows filename Pis2rayVPN.zip; typed as domain.",
+      "labeled_context": false
+    },
+    {
+      "report": "trend-installfix",
+      "kind": "FN",
+      "key": "domain:download-version.1-5-8.com",
+      "verdict": "intentional_policy",
+      "note": "MODE A + empty authoritative + pending linked pack; body_mention non-member by contract.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-installfix",
+      "kind": "FN",
+      "key": "url:https://download-version.1-5-8.com/claude.msixbundle",
+      "verdict": "intentional_policy",
+      "note": "MODE A body_mention; pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-installfix",
+      "kind": "FN",
+      "key": "domain:oakenfjrod.ru",
+      "verdict": "intentional_policy",
+      "note": "MODE A body_mention; pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-installfix",
+      "kind": "FN",
+      "key": "sha1:811fbf0ff6b6acabe4b545e493ec0dd0178a0302",
+      "verdict": "intentional_policy",
+      "note": "MODE A body_mention; pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-installfix",
+      "kind": "FN",
+      "key": "sha256:2f04ba77bb841111036b979fc0dab7fcbae99749718ae1dd6fd348d4495b5f74",
+      "verdict": "intentional_policy",
+      "note": "MODE A body_mention; pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-installfix",
+      "kind": "FN",
+      "key": "ip:77.91.97.244",
+      "verdict": "gt_dispute",
+      "note": "Publisher shows failed SYN attempts; GT indicator vs pipeline context_only.",
+      "seen_at_all": true,
+      "seen_as_context": true
+    },
+    {
+      "report": "trend-kongtuke",
+      "kind": "FN",
+      "key": "url:http://foodgefy.com/6o0jk.js",
+      "verdict": "intentional_policy",
+      "note": "MODE A narrative non-member; pack pending. Sibling body URLs inconsistently members.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-kongtuke",
+      "kind": "FN",
+      "key": "ip:162.33.178.171",
+      "verdict": "intentional_policy",
+      "note": "MODE A + pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-kongtuke",
+      "kind": "FN",
+      "key": "ip:45.61.138.224",
+      "verdict": "intentional_policy",
+      "note": "MODE A + pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-kongtuke",
+      "kind": "FN",
+      "key": "url:http://45.61.138.224/n",
+      "verdict": "intentional_policy",
+      "note": "MODE A + pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-kongtuke",
+      "kind": "FN",
+      "key": "ip:158.247.252.178",
+      "verdict": "intentional_policy",
+      "note": "MODE A + pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-kongtuke",
+      "kind": "FN",
+      "key": "ip:170.168.103.208",
+      "verdict": "intentional_policy",
+      "note": "MODE A + pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "trend-teampcp",
+      "kind": "FN",
+      "key": "url:https://litter.catbox.moe/iqesmbhukgd2c7hq.sh",
+      "verdict": "intentional_policy",
+      "note": "MODE A narrative; pack pending.",
+      "seen_at_all": true,
+      "seen_as_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FN",
+      "key": "url:https://fifa-tickets.vip/tickets_shop",
+      "verdict": "url_serialization",
+      "note": "Publisher table scheme-less; GT added https://.",
+      "seen_at_all": false,
+      "seen_as_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FN",
+      "key": "url:https://fifa-tickets.vip/authorize.html",
+      "verdict": "url_serialization",
+      "note": "Scheme-less vs https GT.",
+      "seen_at_all": false,
+      "seen_as_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FN",
+      "key": "url:https://fifa-tickets.vip/pay/fwc20260418a3230f12ac",
+      "verdict": "url_serialization",
+      "note": "Scheme-less vs https GT.",
+      "seen_at_all": false,
+      "seen_as_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "sha1:3b8bb7631b39f455d31544b55ba97b49ab1888c1",
+      "verdict": "gt_omission_plus_role_defect",
+      "note": "Publisher IOC SSL fingerprint; GT omitted; role=malware_sample wrong.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "sha1:84ecdca915f1af822ccc8a04479f5179104f353c",
+      "verdict": "gt_omission_plus_role_defect",
+      "note": "SSL fingerprint in publisher table.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "sha1:9bd164dd3f50d196c7dff4f6c1b0f1345ac96d9a",
+      "verdict": "gt_omission_plus_role_defect",
+      "note": "SSL fingerprint in publisher table.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "url:fifa-tickets.vip/tickets_shop",
+      "verdict": "url_serialization",
+      "note": "Paired FP for scheme-less member.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "url:fifa-tickets.vip/authorize.html",
+      "verdict": "url_serialization",
+      "note": "Paired FP for scheme-less member.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "url:fifa-tickets.vip/pay/fwc20260418a3230f12ac",
+      "verdict": "url_serialization",
+      "note": "Paired FP for scheme-less member.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "url:www.billplz.com/bills/6e88393d1b82ede9",
+      "verdict": "gt_dispute",
+      "note": "Publisher IOC-3 Example bill; GT context_only.",
+      "labeled_context": false
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "domain:testnet.chainugo.com",
+      "verdict": "gt_dispute",
+      "note": "Publisher IOC-1 Crypto gateway; GT context_only.",
+      "labeled_context": true
+    },
+    {
+      "report": "groupib-ghost-stadium",
+      "kind": "FP",
+      "key": "domain:billplz.com",
+      "verdict": "gt_dispute",
+      "note": "Publisher IOC-3 Payment gateway abused; GT context_only.",
+      "labeled_context": true
+    },
+    {
+      "report": "google-tag-apt42",
+      "kind": "FN",
+      "key": "url:https://visioneditor.loseyourip.com",
+      "verdict": "url_serialization",
+      "note": "Trailing-slash mismatch.",
+      "seen_at_all": false,
+      "seen_as_context": false
+    },
+    {
+      "report": "google-tag-apt42",
+      "kind": "FP",
+      "key": "url:https://visioneditor.loseyourip.com/",
+      "verdict": "url_serialization",
+      "note": "Paired FP.",
+      "labeled_context": false
+    }
+  ]
+}

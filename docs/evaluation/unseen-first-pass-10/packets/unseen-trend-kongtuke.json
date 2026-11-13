@@ -1,0 +1,159 @@
+{
+  "id": "unseen-trend-kongtuke",
+  "evaluation_role": "unseen_first_pass_experiment",
+  "sealed_eligible": false,
+  "talonhound_report_uuid": null,
+  "talonhound_report_id": null,
+  "title": "KongTuke ClickFix Abuse of Compromised WordPress Sites",
+  "publisher": "Trend Micro",
+  "format": "html",
+  "sampling": {
+    "method": "manual_unseen_screen_2026-11-13",
+    "seed": "unseen-first-pass-10-2026-11-13",
+    "drawn_at": "2026-11-13T00:00:00.000Z",
+    "stratum": "Trend Micro|html|narrative+compromised_sites+mixed_benign",
+    "note": "Genuinely never-imported at selection time; excluded sealed 40 and known fixtures."
+  },
+  "contract_fingerprint": "ee233e2fdf4e69bee40f1de64f56b091",
+  "contract_fingerprint_note": "Workspace freeze at packet prep; confirm against freeze-contract.json and production run stamps.",
+  "selection": {
+    "difficulty_proxy": "mixed",
+    "structure_notes": "narrative, compromised_sites, mixed_benign",
+    "diversity_axes": [
+      "publisher:Trend Micro",
+      "trait:narrative",
+      "trait:compromised_sites",
+      "trait:mixed_benign"
+    ],
+    "library_check": {
+      "exists": false,
+      "checked_at": "2026-11-13T00:00:00.000Z"
+    }
+  },
+  "source": {
+    "kind": "private_source",
+    "url": "https://www.trendmicro.com/en_us/research/26/c/kongtuke-clickfix-abuse-of-compromised-wordpress-sites.html",
+    "reference": "https://www.trendmicro.com/en_us/research/26/c/kongtuke-clickfix-abuse-of-compromised-wordpress-sites.html",
+    "format": "html",
+    "sha256": "0c74cf7d66445e22d9d7d2309b0914de296d0502416170bc843473492219f4c5",
+    "retained_local_path": "_source_html/trend-kongtuke.html",
+    "snapshot_verified_at": "2026-11-13T00:00:00.000Z",
+    "snapshot_stable": true,
+    "bytes": 110202
+  },
+  "annotation_instructions": {
+    "use_only": "publisher URL or retained publisher HTML under _source_html/",
+    "methodology": "Evidence-First (see worksheets/HOW-TO-COMPLETE.md and ../annotation-packet-guide.md)",
+    "do_not_open": [
+      "TalonHound report UI / Indicators / Context Only",
+      "approved IOC rows",
+      "first-pass-captures/ until labeling of this packet is finished",
+      "Qwen or Claude assessment lists",
+      "sealed first-measured-batch packets"
+    ],
+    "leave_unverified_empty_or_ambiguous": true
+  },
+  "ground_truth": {
+    "provenance": {
+      "method": "independent_human_review_of_publisher_source",
+      "verified_by": "source-reviewer-unseen-fp10",
+      "verified_at": "2026-11-13",
+      "coverage_note": "Read the full retained narrative and IOC-link section. Labeled concrete injected-script, staging, RCE, and likely C2 network observables; treated Telegram and Dropbox as legitimate-service context. The linked IOC text file was not retained or fetched, so expected identities are empty. The redacted Dropbox object URL and unsupported paths/registry values were not scored.",
+      "second_labeler": null,
+      "disagreement_resolution": null
+    },
+    "indicators": [
+      {
+        "type": "url",
+        "value": "https://ainttby.com/6f54.js",
+        "role": "staging",
+        "evidence": "Initial-access analysis lists this injected external JavaScript reference.",
+        "assertion": "operational",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "https://ctpsih.com/2d5h.js",
+        "role": "staging",
+        "evidence": "Initial-access analysis lists this injected external JavaScript reference.",
+        "assertion": "operational",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "http://foodgefy.com/6o0jk.js",
+        "role": "staging",
+        "evidence": "Initial-access analysis identifies this injected malicious script.",
+        "assertion": "operational",
+        "confidence": "high",
+        "notes": "Publisher varies the displayed scheme between hxxps and hxxp; normalized to the explicit execution description using HTTP."
+      },
+      {
+        "type": "ip",
+        "value": "162.33.178.171",
+        "role": "staging",
+        "evidence": "Initial-access analysis places this IP beside the injected foodgefy script.",
+        "assertion": "operational",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "45.61.138.224",
+        "role": "command_and_control",
+        "evidence": "Execution section says the renamed utility connected to this external IP for remote command execution.",
+        "assertion": "operational",
+        "confidence": "high"
+      },
+      {
+        "type": "url",
+        "value": "http://45.61.138.224/n",
+        "role": "command_and_control",
+        "evidence": "C&C section says collected data is sent by HTTP POST to this URL.",
+        "assertion": "operational",
+        "confidence": "high"
+      },
+      {
+        "type": "ip",
+        "value": "158.247.252.178",
+        "role": "command_and_control",
+        "evidence": "modeloRAT analysis describes repeated outbound connections indicating likely C2.",
+        "assertion": "operational",
+        "confidence": "medium"
+      },
+      {
+        "type": "ip",
+        "value": "170.168.103.208",
+        "role": "command_and_control",
+        "evidence": "modeloRAT analysis describes repeated outbound connections indicating likely C2.",
+        "assertion": "operational",
+        "confidence": "medium"
+      }
+    ],
+    "context_only": [
+      {
+        "type": "ip",
+        "value": "149.154.164.13",
+        "role": "legitimate_service",
+        "evidence": "modeloRAT analysis calls this address associated with Telegram infrastructure.",
+        "assertion": "context",
+        "confidence": "high"
+      },
+      {
+        "type": "domain",
+        "value": "www.dropbox.com",
+        "role": "legitimate_service",
+        "evidence": "Execution section displays a redacted attacker-controlled Dropbox object link.",
+        "assertion": "context",
+        "confidence": "high",
+        "notes": "Legitimate shared service; concrete object URL is redacted with an ellipsis."
+      }
+    ],
+    "ambiguous": [],
+    "linked_packages": [
+      {
+        "url": "https://www.trendmicro.com/content/dam/trendmicro/global/en/research/26/c/clickfix/MDR-ClickFix-IOC.txt",
+        "expected_identities": []
+      }
+    ]
+  }
+}

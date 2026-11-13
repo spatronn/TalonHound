@@ -92,8 +92,13 @@ import { isValidIpAddress } from '../publicIp.js';
  * condition ("host.services: (port=22 AND …)") is a field name.
  * v26 (review queue 35800–35819): one bare fanged name over .rs with no network
  * wording ("Loader (build.rs)" beside a digest) is a Rust source file.
+ * v27 (unseen first-pass MarkiRAT): a bare two-label file/gTLD collision
+ * (`YEMPlayer.zip`, `Pis2rayVPN.zip`) stays a technical artifact when a C2 /
+ * Domains lead-in only inherited `declaredType=domain`. Defanged hosts
+ * (`evil[.]zip`), typed Domain *table* cells, and multi-label hosts
+ * (`cdn.files.zip`) keep the domain reading — `.zip` remains a valid TLD.
  */
-export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v26';
+export const OBSERVABLE_TYPE_RESOLVER_VERSION = 'tl-type-resolver-v27';
 
 const TITLE_CASE_TLD_HOST_RE = /^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}$/;
 const TITLE_CASE_TLD_HOST_GLOBAL_RE = /(?<![\w.-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[A-Z][a-z]{1,23}(?![\w-])/g;
@@ -896,9 +901,32 @@ export function resolveDottedToken(raw, ctx = {}) {
     // A URL path file (`/letgovip.zip`) is not that domain either: `.zip` is
     // a gTLD, so the lead-in would otherwise promote the archive basename
     // (tl-type-resolver-v20).
+    // Bare two-label file/gTLD collisions (`YEMPlayer.zip`) under an inherited
+    // C2 / Domains label are still filenames unless the publisher defanged the
+    // host or put it in a typed Domain table cell (tl-type-resolver-v27).
     const tableDeclared = ctx.form === 'table_row';
     const filePath = pathSegment && FILE_EXT_HINT.has(last);
-    if (!filePath && (tableDeclared || !FILE_EXT_HINT.has(last) || hasDelegatedDnsSuffix(lower))) {
+    // Publisher defang of *this* host (`evil[.]zip` around raw `evil.zip`)
+    // keeps the domain reading — do not treat that as a bare filename.
+    const leaf = labels[0];
+    const defangedHostSpelling =
+      DEFANG_MARKER_RE.test(original) ||
+      surrounding.toLowerCase().includes(`${leaf}[.]${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}(.)${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}{.}${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}[dot]${last}`) ||
+      surrounding.toLowerCase().includes(`${leaf}(dot)${last}`);
+    const dualUseBareFilename =
+      FILE_EXT_HINT.has(last) &&
+      hasDelegatedDnsSuffix(lower) &&
+      labels.length === 2 &&
+      !defangedHostSpelling &&
+      !tableDeclared;
+    if (
+      !filePath &&
+      !dualUseBareFilename &&
+      (tableDeclared || !FILE_EXT_HINT.has(last) || hasDelegatedDnsSuffix(lower))
+    ) {
       return out('domain', 'declared_network_type', true);
     }
     // else fall through — FILE_EXT / other rules decide
