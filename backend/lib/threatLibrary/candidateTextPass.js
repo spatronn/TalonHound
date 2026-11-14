@@ -9,7 +9,7 @@ import { hostnameFromUrl, pathBasenameFromUrl } from './candidateTyping.js';
 import { findTruncatedDigests } from './tableSemantics.js';
 import { ipv4VersionContext } from './ipv4VersionContext.js';
 import { lineContainingObservable } from './indicatorScope.js';
-import { RESOLVED_TYPES, trimUrlBoundary, validateUrlCandidate } from './observableTypeResolver.js';
+import { RESOLVED_TYPES, templateUrlSpanEnd, trimUrlBoundary, validateUrlCandidate } from './observableTypeResolver.js';
 import { hexRunIsHostnameLabelFragment, hexRunIsIdentifierSuffix, ipv4MatchIsStandalone } from './sourceOccurrence.js';
 import { findIpv6Tokens } from './ipv6Tokens.js';
 import { recoverDefangedLinkDomain, versionColumnTokens, IPV4_RE, IPV4_PORT_RE, IPV6_LOOPBACK_RE, URL_RE, HOST_PATH_RE, IPV4_HOST_PATH_HEAD_RE, IP_HOST_PATH_RE, trimShellContinuation, NETWORK_ENDPOINT_RE, DOMAIN_RE, IDN_DOMAIN_RE, DEFANGED_AT_BEFORE_RE, SPOOFED_SENDER_RE, isTruncatedHostTail, CVE_RE, ATTACK_RE, OCCURRENCE_FORMS, sourceSpelling, standaloneLineSpelling, portFromUrl, insideAnySpan, hitOffsets, HASH_PATTERNS, candidateKey } from './candidateHelpers.js';
@@ -21,13 +21,19 @@ import { recoverDefangedLinkDomain, versionColumnTokens, IPV4_RE, IPV4_PORT_RE, 
 const HEX_LITERAL_DIGEST_SCAN_RE = /(?<![0-9a-z_])0x([0-9a-f]{32})(?![0-9a-z_])/gi;
 
 /**
- * The block's own hyperlink text when it is a strict tail of a scheme-less
- * host/path match that markup glued onto a preceding word: the anchor is the
- * publisher's resource, the glued head is a different element's text.
+ * A paragraph whose entire text is one obfuscated address
+ * ("brad [at] malware-traffic-analysis.net"). A list or table cell is a row.
  * @param {object} block
- * @param {string} raw
- * @returns {string|null}
+ * @param {string} text
+ * @param {number} domainStart
+ * @param {number} domainEnd
  */
+function isBareObfuscatedEmailParagraph(block, text, domainStart, domainEnd) {
+  if (!block || block.type === 'list' || block.type === 'list_item' || block.type === 'table' || block.type === 'code') return false;
+  if (String(text || '').slice(domainEnd).trim()) return false;
+  return /^\s*[\w.+-]{1,64}\s*(?:\[(?:@|at)\]|\((?:@|at)\)|\{@\})\s*$/i.test(String(text || '').slice(0, domainStart));
+}
+
 function anchorBoundedResource(block, raw) {
   const links = Array.isArray(block?.links) ? block.links : [];
   for (const link of links) {
@@ -62,6 +68,22 @@ export function readDocumentText(blocks, acc, ctx) {
       const literal = m[0].split('${')[0];
       const url = trimShellContinuation(trimUrlBoundary(literal));
       if (!url) continue;
+      // The matcher stops at "<". A publisher template continues
+      // ("…/jup_start_<rig>&persist=<method>", "…?id=<linkid:8>"): the
+      // shortened prefix is not a URL anyone requested. The whole template
+      // stays one span so its host is not read as a separate observable.
+      // A single letter/hyphen slot after "=" ("…/upload?log=<data>",
+      // "…?id=<target-email-address>") is the published URL up to that
+      // parameter; the prefix stays. Colon or digit slots ("<linkid:8>") and
+      // a second placeholder after "&" stay templates.
+      const templateEnd = templateUrlSpanEnd(text, m.index + url.length);
+      const templateTail = templateEnd > m.index + url.length ? text.slice(m.index + url.length, templateEnd) : '';
+      const simpleQuerySlot = /=\s*$/.test(url) && /^<?\s*[A-Za-z_][\w-]{0,48}\s*>?$/.test(templateTail.trim()) && !/&/.test(templateTail);
+      if (templateTail && !simpleQuerySlot) {
+        spans.push([m.index, templateEnd]);
+        noteRejectedToken(text.slice(m.index, templateEnd), 'url', block, 'template_placeholder');
+        continue;
+      }
       spans.push([m.index, m.index + url.length]);
       const host = hostnameFromUrl(url);
       const base = pathBasenameFromUrl(url);
@@ -371,10 +393,16 @@ export function readDocumentText(blocks, acc, ctx) {
       // publisher says the sender is spoofed / impersonated: the domain is the
       // impersonated brand's, not the actor's (tl-candidates-v40). Other
       // defanged addresses in an IOC list keep their row reading.
+      // Look back far enough for "local [at] " (a space, and "[at]" rather than "[@]").
+      const defangedAt = DEFANGED_AT_BEFORE_RE.test(text.slice(Math.max(0, start - 40), start));
       const emailDomain = start > 0 && (
         text[start - 1] === '@' ||
-        (DEFANGED_AT_BEFORE_RE.test(text.slice(Math.max(0, start - 5), start)) &&
-          SPOOFED_SENDER_RE.test(text.slice(Math.max(0, start - 160), end + 160)))
+        (defangedAt && (
+          SPOOFED_SENDER_RE.test(text.slice(Math.max(0, start - 160), end + 160)) ||
+          // A paragraph that is only the address is an author signature, not an
+          // IOC row. A list or table cell keeps its row reading unless spoofed.
+          isBareObfuscatedEmailParagraph(block, text, start, end)
+        ))
       );
       // `host.example:443`: keep the port as parsed endpoint context of the
       // domain (the occurrence form stays standalone — a port alone asserts

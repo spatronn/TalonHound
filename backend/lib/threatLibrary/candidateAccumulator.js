@@ -9,7 +9,7 @@ import { NEGATIVE_ZONES, STRONG_IOC_ZONES } from './documentZones.js';
 import { resolveDottedTokenType, hostnameFromUrl } from './candidateTyping.js';
 import { normalizeCandidateValue } from './candidateValue.js';
 import { refangObservable } from './defang.js';
-import { isCredentialLabeledHex, isIndicatorRowShape, lineContainingObservable, tableRowProviderOwnedByOperation } from './indicatorScope.js';
+import { isCredentialLabeledHex, isIndicatorRowShape, lineContainingObservable, tableRowProviderOwnedByOperation, valueListedInDeclaration } from './indicatorScope.js';
 import { FILE_EXT_HINT, NON_NETWORK_RESOLVED_TYPES, RESOLVED_TYPES, buildTypeResolutionRecord, hasDelegatedDnsSuffix, isMutexLabeledValue, parseArtifactTypeLabel } from './observableTypeResolver.js';
 import { isOnlyEmbeddedInDnsHostname } from './sourceOccurrence.js';
 import { isDescriptionColumnMention } from './tableSemantics.js';
@@ -113,6 +113,9 @@ export function createCandidateAccumulator(ctx) {
       ...(form === OCCURRENCE_FORMS.TABLE_ROW && extra.tableRow &&
         tableRowProviderOwnedByOperation(block, extra.tableRow.source_row_index ?? extra.tableRow.row_index)
         ? { operator_owned_row: true }
+        : {}),
+      ...(block?.declared_indicator_list && valueListedInDeclaration(block.declared_indicator_list, focusValue)
+        ? { declared_indicator: true }
         : {})
     };
   }

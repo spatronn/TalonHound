@@ -815,6 +815,66 @@ function ipEchoLeadIn(text) {
   return !MALICIOUS_VALUE_ROLE_RE.test(`${qualifier} ${noun[0]}`);
 }
 
+/**
+ * Trailing publisher comment on an otherwise single-value row
+ * ("hxxp://203.0.113.5/api/t <-- HTTP POST request, …"). The comment is not
+ * a second sentence and does not stop the line being an indicator row.
+ * @param {string} text
+ */
+export function stripTrailingInlineComment(text) {
+  return String(text || '').replace(/\s+(?:<--|<!==?|←)\s+\S[\s\S]*$/u, '').trim();
+}
+
+/**
+ * "These domains and addresses are indicators, not destinations to visit: a, b".
+ * The noun and "are indicators" are required, and the list follows the colon.
+ * "are not indicators" does not match. A passing mention of a domain does not.
+ */
+const DECLARED_INDICATOR_LIST_RE =
+  /\b(?:these|the following)\s+(?:[\w-]+\s+){0,8}?(?:domains?|addresses|hosts?|hostnames?|ips?|ip\s+addresses|urls?|indicators?|observables?|hashes?)\b(?:[^.:]{0,80})?\bare\s+indicators?\b[^:]{0,180}:/i;
+
+/**
+ * The list after a declaration colon, cut at the next sentence.
+ * @param {string} text
+ * @returns {string|null}
+ */
+export function declaredIndicatorListText(text) {
+  const src = String(text || '');
+  const m = DECLARED_INDICATOR_LIST_RE.exec(src);
+  if (!m) return null;
+  const after = src.slice(m.index + m[0].length);
+  const end = after.search(/\.\s+[A-Z]/);
+  return (end >= 0 ? after.slice(0, end) : after).trim();
+}
+
+/**
+ * True when `value` is one of the observables the declaration lists after its colon.
+ * @param {string} listText
+ * @param {string} value
+ */
+export function valueListedInDeclaration(listText, value) {
+  const list = String(listText || '').toLowerCase();
+  const v = String(value || '').trim().toLowerCase();
+  if (!list || !v) return false;
+  if (list.includes(v)) return true;
+  const defanged = v.replace(/\./g, '[.]');
+  return defanged !== v && list.includes(defanged);
+}
+
+/**
+ * Mark a paragraph whose own sentence declares the values after the colon to
+ * be indicators. Code and tables are left alone: a code sample is not a
+ * declaration, and a table row is already an assertion of its own.
+ * @param {object[]} blocks
+ */
+export function annotateDeclaredIndicatorLists(blocks) {
+  for (const b of Array.isArray(blocks) ? blocks : []) {
+    if (!b || b.type === 'code' || b.type === 'table' || b.type === 'heading') continue;
+    const list = declaredIndicatorListText(b.text || '');
+    if (list) b.declared_indicator_list = list;
+  }
+}
+
 /** "These endpoints are …" / "The above domains are …": a sentence about the preceding list. */
 const LIST_ANAPHORA_RE =
   /^\s*(?:these|those|the\s+(?:above|listed|preceding|following)|all\s+(?:of\s+)?(?:these|the\s+above))\s+(?:\w+\s+){0,3}?(?:endpoints?|domains?|urls?|uris?|services?|hosts?|hostnames?|addresses|ips?|servers?|providers?|resolvers?|sites?|platforms?|nodes?)\b/i;
@@ -1846,6 +1906,17 @@ function relationDetailForOccurrence(candidate, o) {
     operatorOwnedRow: o.operator_owned_row === true
   };
   const own = classifySourceRelationDetail(o.surrounding_text || '', opts);
+  // The block's own sentence names this value in the list after "are indicators:".
+  // That declaration is the publisher assertion, including outside a curated table.
+  // A benign or provider reading of the same occurrence still wins.
+  if (o.declared_indicator === true && own.marker !== 'benign' && own.marker !== 'provider' && own.marker !== 'excluded_zone') {
+    return {
+      relation: SOURCE_RELATIONS.OPERATIONAL_MALICIOUS,
+      marker: 'declared_indicator',
+      authoritative: own.authoritative,
+      structural_row: false
+    };
+  }
   // A bare value line ("• 93.115[.]10.35") says nothing by itself; the lead-in
   // that introduces its run ("… these IPs are part of the C2 infrastructure.")
   // states what every value of the run is (tl-candidates-v48). It only adds an

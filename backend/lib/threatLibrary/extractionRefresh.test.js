@@ -573,10 +573,15 @@ test('AI replay: only rows the model decided are replayed, keyed by identity; bl
     { candidate_type: 'domain', normalized_value: 'a.example', assessment: 'malicious', role: 'command_and_control', confidence: '0.950', evidence_text: 'x', section: 'report_body', block_id: 'b3', evidence: { decision_source: 'ai' } },
     { candidate_type: 'domain', normalized_value: 'b.example', assessment: 'malicious', role: 'malicious_infrastructure', confidence: '0.900', evidence: { decision_source: 'deterministic', ai_role_suggestion: 'command_and_control' } },
     { candidate_type: 'domain', normalized_value: 'c.example', assessment: 'unknown', role: 'unknown', confidence: null, evidence: { decision_source: 'pending', ai_needed: true } },
-    { candidate_type: 'domain', normalized_value: 'd.example', assessment: 'suspicious', role: 'unknown', confidence: '0.600', evidence: { decision_source: 'analyst', promoted_from: { decision_source: 'ai', assessment: 'context_only', role: 'reference' } } }
+    { candidate_type: 'domain', normalized_value: 'd.example', assessment: 'suspicious', role: 'unknown', confidence: '0.600', evidence: { decision_source: 'analyst', promoted_from: { decision_source: 'ai', assessment: 'context_only', role: 'reference' } } },
+    { candidate_type: 'domain', normalized_value: 'e.example', assessment: 'malicious', role: 'command_and_control', confidence: '0.910', evidence_text: 'quoted', section: 'ioc', block_id: 'b9', evidence: { decision_source: 'deterministic', ai_classification: { assessment: 'malicious', role: 'command_and_control', applied: true, supported: true } } },
+    { candidate_type: 'domain', normalized_value: 'f.example', assessment: 'malicious', role: 'unknown', confidence: '0.400', evidence_text: 'refused', evidence: { decision_source: 'deterministic', ai_classification: { assessment: 'malicious', applied: false, supported: false } } }
   ];
   const same = aiReplayUpdatesFromRows(rows, { documentRebuilt: false });
-  assert.deepEqual(same.map((u) => u.normalized_value), ['a.example', 'b.example', 'd.example']);
+  assert.deepEqual(same.map((u) => u.normalized_value), ['a.example', 'b.example', 'd.example', 'e.example']);
+  assert.equal(same[3].replay, true);
+  assert.equal(same[3].assessment, 'malicious');
+  assert.equal(same[3].evidence_text, 'quoted');
   assert.deepEqual(same[0], { candidate_type: 'domain', normalized_value: 'a.example', assessment: 'malicious', role: 'command_and_control', confidence: 0.95, evidence_text: 'x', section: 'report_body', evidence_block_ids: ['b3'] });
   assert.deepEqual(same[1], { candidate_type: 'domain', normalized_value: 'b.example', role: 'command_and_control', confidence: 0.9 });
   assert.equal(same[2].assessment, 'context_only', 'the model decision recorded before the analyst promotion');

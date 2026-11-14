@@ -1,13 +1,23 @@
 -- Read-only validation of the 12 reports of import audit 35890-35901.
 --
 -- Stored Indicators = is_member rows of each report's latest non-legacy extraction run.
--- Expected = the audit's source-derived inventory below (192 IOCs, read from the original
--- documents / PDF, not from candidate or membership rows). The 5 malformed entries are
--- publisher IOCs persisted in a malformed form (placeholder URLs); they are listed as stored.
---   matched     = expected AND stored        valid = matched minus malformed
---   missing     = expected, not stored       false positive = stored, not expected
--- Pre-deploy (prod c694d6d, 2026-11-14): stored 134, matched 133, valid 128, malformed 5, FP 1, missing 59.
--- After a targeted Refresh of 35894 and 35901: stored 190, matched 189, valid 184, malformed 5, FP 1, missing 3.
+--
+-- Inventories (auditable history):
+--   original_audit_ioc (192) = the source-derived inventory before the P1 template
+--     policy, including 5 publisher-template URLs marked malformed=true.
+--   excluded_template_ioc (5) = those template URLs; never Indicators after P1.
+--   expected_ioc (187) = the revised concrete-IOC inventory used for scoring.
+--
+-- Scoring against expected_ioc:
+--   matched = expected AND stored; missing = expected, not stored;
+--   false positive = stored, not expected.
+-- Pre-deploy (prod c694d6d, 2026-11-14): stored 134, matched 133, valid 128,
+--   malformed 5, FP 1, missing 59 (against the original 192).
+-- After P0 refresh of 35894 and 35901 (f47edde): stored 190, matched 189,
+--   valid 184, malformed 5, FP 1, missing 3 (against the original 192).
+-- After a future P1 refresh (against expected_ioc 187): stored 187, matched 187,
+--   missing 0, FP 0, and 0 rows in excluded_template_ioc as Indicators.
+-- This is not proof of perfect extraction outside the curated inventory.
 
 \echo === per report: latest run, contract, extractor, title, published date
 with latest as (
@@ -18,8 +28,18 @@ select l.report_id, l.run_type, left(l.contract_fingerprint, 8) fp, t.analysis_s
        t.canonical_document->'meta'->>'extractor' extractor, left(t.title, 60) title, t.published_at::date
 from latest l join threat_reports t on t.id = l.report_id order by 1;
 
+create temp table original_audit_ioc (report_id bigint, identity text, malformed boolean) on commit preserve rows;
+create temp table excluded_template_ioc (report_id bigint, identity text) on commit preserve rows;
 create temp table expected_ioc (report_id bigint, identity text, malformed boolean) on commit preserve rows;
-insert into expected_ioc values
+
+insert into excluded_template_ioc values
+  (35892, 'url:http://157.20.241.16:8080/ob/cronhit?h=jup_start_'),
+  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/?id=%3Clinkid:8%3E'),
+  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/h?id=%3Clinkid:8%3E'),
+  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/m?id=%3Clinkid:8%3E'),
+  (35900, 'url:https://securedoc.mesuttgulerr573.workers.dev/s?id=%3Clinkid:8%3E');
+
+insert into original_audit_ioc values
   (35890, 'ip:197.47.160.252', false),
   (35890, 'ip:74.208.158.106', false),
   (35890, 'ip:87.106.111.220', false),
@@ -213,6 +233,19 @@ insert into expected_ioc values
   (35901, 'url:http://85.239.144.51:5173/api/clients/9e4dfd51fb1788a91403039724dffc0457aae05dbf9719bb9d1454cac33b9352/stream/ws', false),
   (35901, 'url:http://85.239.144.51:5173/api/clients/f14ee4054ed8f6b15042cc7a1ca56052d4d8e6558d942e32105772a54e9bfe69/stream/ws', false);
 
+insert into expected_ioc
+select report_id, identity, false
+from original_audit_ioc o
+where not exists (
+  select 1 from excluded_template_ioc t
+  where t.report_id = o.report_id and t.identity = o.identity
+);
+
+\echo === inventory sizes (expect original 192, excluded templates 5, concrete expected 187)
+select (select count(*) from original_audit_ioc) original_audit_192,
+       (select count(*) from excluded_template_ioc) excluded_templates_5,
+       (select count(*) from expected_ioc) concrete_expected_187;
+
 create temp table stored_ioc on commit preserve rows as
 with latest as (
   select distinct on (report_id) report_id, id run_id from threat_report_extraction_runs
@@ -243,13 +276,22 @@ select (select count(*) from expected_ioc) expected,
        (select count(*) from stored_ioc s2 where not exists (select 1 from expected_ioc e2 where e2.report_id = s2.report_id and e2.identity = s2.identity)) false_positive
 from expected_ioc e left join stored_ioc s on s.report_id = e.report_id and s.identity = e.identity;
 
-\echo === missing expected IOCs (after refresh expect exactly 3: 35895 x2 zap.cloud, 35899 171.22.131.24 URL)
+\echo === missing expected IOCs (after a P1 refresh expect 0 rows)
 select e.report_id, e.identity from expected_ioc e
 where not exists (select 1 from stored_ioc s where s.report_id = e.report_id and s.identity = e.identity) order by 1, 2;
 
-\echo === stored but not expected (expect exactly 1: 35899 malware-traffic-analysis.net)
+\echo === stored but not expected (after a P1 refresh expect 0 rows; f47edde still has malware-traffic-analysis.net)
 select s.report_id, s.identity from stored_ioc s
 where not exists (select 1 from expected_ioc e where e.report_id = s.report_id and e.identity = s.identity) order by 1, 2;
+
+\echo === excluded publisher-template URLs must not be Indicators (expect 0 rows after a P1 refresh)
+select t.report_id, t.identity from excluded_template_ioc t
+where exists (select 1 from stored_ioc s where s.report_id = t.report_id and s.identity = t.identity)
+order by 1, 2;
+
+\echo === template-shaped stored Indicators outside the excluded list (expect 0 rows)
+select report_id, identity from stored_ioc
+where identity like '%jup_start_%' or identity like '%linkid%' or identity ilike '%3Crig%' or identity ilike '%3Cmethod%';
 
 \echo === benign values that must not be Indicators (expect 0 rows)
 select report_id, identity from stored_ioc

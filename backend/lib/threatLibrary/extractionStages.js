@@ -419,7 +419,19 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
     // (context only, benign roles) needs grounded publisher text too: a model
     // decision resting on a fabricated quote / missing block never overrides
     // the deterministic reading (tl-evidence-integrity-v3).
-    const applyAssessment = !grounding || (escalates ? grounding.supported : grounding.grounded !== false);
+    let applyAssessment = !grounding || (escalates ? grounding.supported : grounding.grounded !== false);
+    // A stored label replayed after the publisher assertion took the decision
+    // must still point at the publisher text. Citing nothing, or a quote the
+    // document no longer contains, does not keep the label.
+    if (u.replay === true) {
+      // The stored quote has to still be in the document. A block id that
+      // merely still names the value does not keep a quote the text lost.
+      const quotePresent = String(u.evidence_text || '').trim().length > 0;
+      const quoteOk = Boolean(grounding) && (quotePresent
+        ? grounding.quote === 'grounded'
+        : grounding.cited_block === 'grounded');
+      if (!quoteOk || grounding.supported !== true) applyAssessment = false;
+    }
     applyEvidencePolicy(existing, applyAssessment
       ? { assessment: u.assessment, role: u.role || existing.role, confidence: u.confidence ?? existing.confidence }
       : null);
@@ -437,6 +449,7 @@ export function mergeAiCandidateUpdates(candidates, aiValue, opts = {}) {
           ? { unsupported_reason: 'ungrounded_citation' }
           : {}),
       applied: applyAssessment,
+      ...(u.replay === true && !applyAssessment ? { stale: true } : {}),
       integrity_version: EVIDENCE_INTEGRITY_VERSION
     };
     if (u.evidence_text) {

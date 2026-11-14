@@ -45,8 +45,8 @@ function find(cands, type, value) {
 }
 
 test('versions: tl-candidates-v47, tl-type-resolver-v20', () => {
-  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v68');
-  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v28');
+  assert.equal(THREAT_LIBRARY_CANDIDATE_EXTRACTION_VERSION, 'tl-candidates-v69');
+  assert.equal(OBSERVABLE_TYPE_RESOLVER_VERSION, 'tl-type-resolver-v29');
 });
 
 test('A. fqdn:// IOC-table hosts are domain Indicators', () => {

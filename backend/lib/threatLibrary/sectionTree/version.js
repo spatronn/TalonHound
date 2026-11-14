@@ -76,8 +76,11 @@
  * v20 (import audit 35890–35901): under authoritative ancestry a value in the
  * Description column of a headed non-IOC table is never forced into a
  * structural row (the table placement alone used to make it one).
+ * v21 (import audit 35890–35901 P1): a signature rule ("--") or an author
+ * footer label ("Keywords:", "2 comment(s)") closes an open indicator
+ * appendix. The byline after it is not part of the indicator section.
  */
-export const SECTION_TREE_VERSION = 'tl-section-tree-v20';
+export const SECTION_TREE_VERSION = 'tl-section-tree-v21';
 
 /**
  * Authoritative scope-engine stamp when section-tree owns membership zones.
